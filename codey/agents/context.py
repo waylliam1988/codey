@@ -21,12 +21,13 @@ from codey.runtime.observe.prompt_envelope import (
 )
 from codey.toolchain.runtime import safe_join
 from codey.workspace.context_epoch import context_source_ref
+from codey.workspace.context_selection import ContextSpan
 from codey.workspace.context_source import (
+    ContextCandidate,
     ContextSource,
     RenderedContextSource,
     render_context_sources_with_metadata,
 )
-from codey.workspace.ghost_selection import GhostContextSpan
 
 PROJECT_INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md")
 MAX_PROJECT_INSTRUCTION_CHARS = 12000
@@ -40,9 +41,6 @@ PROJECT_CONFIG_WARNINGS_CONTEXT_BUDGET = 1200
 WORK_CHECKPOINT_CONTEXT_BUDGET = MAX_WORK_CHECKPOINT_PROMPT_CHARS
 INITIAL_LISTING_CONTEXT_BUDGET = 4000
 CODING_CURRENT_CONTEXT_BUDGET = 3000
-GHOST_DIRECTIVE_CONTEXT_BUDGET = 900
-GHOST_CONTINUITY_CONTEXT_BUDGET = 900
-GHOST_EXPERIENCES_CONTEXT_BUDGET = 1800
 
 
 @dataclass(frozen=True)
@@ -57,7 +55,7 @@ class AgentContext:
     text: str
     sections: tuple[RenderedPromptSection, ...]
     sources: tuple[RenderedContextSource, ...]
-    ghost_spans: tuple[GhostContextSpan, ...] = ()
+    memory_spans: tuple[ContextSpan, ...] = ()
 
 
 def load_project_instructions(
@@ -104,11 +102,8 @@ def build_agent_context(
     project_map: str,
     project_config_warnings: str,
     work_checkpoint: str,
-    ghost_directive: str,
-    ghost_continuity: str,
     completion_repair_context: str,
-    ghost_experiences: str = "",
-    include_ghost_directive: bool = True,
+    memory_sources: tuple[ContextCandidate, ...] = (),
 ) -> AgentContext:
     def intro_source(
         key: str,
@@ -135,29 +130,15 @@ def build_agent_context(
         return str(text)
 
     sources: list[ContextSource] = []
-    if include_ghost_directive:
-        sources.append(intro_source(
-            "ghost_directive",
-            lambda: ghost_directive,
-            GHOST_DIRECTIVE_CONTEXT_BUDGET,
-            "bounded local confirmed Ghost memory",
-            capability_id="local_context",
-        ))
-        sources.append(intro_source(
-            "ghost_continuity",
-            lambda: ghost_continuity,
-            GHOST_CONTINUITY_CONTEXT_BUDGET,
-            "bounded local continuity projection",
-            capability_id="local_context",
-        ))
-        if (ghost_experiences or "").strip():
-            sources.append(intro_source(
-                "ghost_experiences",
-                lambda: ghost_experiences,
-                GHOST_EXPERIENCES_CONTEXT_BUDGET,
-                "related past experiences; history only, current request wins",
-                capability_id="local_context",
-            ))
+    if allows_context_source(profile, "memory"):
+        for candidate in memory_sources:
+            def load_candidate(value: ContextCandidate = candidate) -> str:
+                return value.text
+
+            sources.append(ContextSource(candidate.key, load_candidate, candidate.budget,
+                                         "run_start", "bounded memory candidate", scope=candidate.scope,
+                                         capability_id="local_context", source_refs=candidate.source_refs,
+                                         expires_at=candidate.expires_at))
     sources.extend((
         intro_source(
             "project_instructions",
@@ -216,7 +197,7 @@ def build_agent_context(
     rendered_context = render_context_sources_with_metadata(
         source
         for source in sources
-        if allows_context_source(profile, source.key)
+        if source.key.startswith("memory_") or allows_context_source(profile, source.key)
     )
     context = rendered_context.text
     context_block = f"{context}\n\n" if context else ""
@@ -250,14 +231,14 @@ def build_agent_context(
     )).render()
     offset = len(system_prompt_text) + 2 if system_prompt_text else 0
     offset += len(workspace_intro)
-    ghost_spans: list[GhostContextSpan] = []
+    memory_spans: list[ContextSpan] = []
     for source in rendered_context.sources:
-        if source.key.startswith("ghost_"):
-            ghost_spans.append(GhostContextSpan(source.key, offset, offset + len(source.text)))
+        if source.key.startswith("memory_"):
+            memory_spans.append(ContextSpan(source.key, offset, offset + len(source.text)))
         offset += len(source.text) + 2
     return AgentContext(
         text=rendered.text,
         sections=rendered.sections,
         sources=rendered_context.sources,
-        ghost_spans=tuple(ghost_spans),
+        memory_spans=tuple(memory_spans),
     )

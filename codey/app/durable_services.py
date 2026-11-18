@@ -12,7 +12,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from codey.app.ghost_input_admission import register_ghost_input
 from codey.durable import AbortInvocation, DurableSession, DurableTaskScheduler, SQLiteDurableStore
 from codey.durable.model import (
     TASK_TERMINAL_STATUSES,
@@ -49,12 +48,7 @@ class DurableAppServices:
             # Cold start is deliberately strict: schema incompatibility is a
             # startup error.  Never delete or reinterpret an existing database
             # because doing so would silently destroy durable task history.
-            session = DurableSession(
-                SQLiteDurableStore(database_path),
-                before_admit=lambda task: register_ghost_input(
-                    database_path.parent, task, database_name=database_path.name,
-                ),
-            )
+            session = DurableSession(SQLiteDurableStore(database_path))
         except BaseException:
             lease.release()
             raise

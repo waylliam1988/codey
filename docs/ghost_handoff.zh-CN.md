@@ -1,5 +1,7 @@
 # Ghost / World Model 团队交接说明
 
+> 2026-11-19：冷启动重写后的现行实现见 [Memory / Ghost 所有权边界](memory-boundary.zh-CN.md)。本页此前实现说明与实验结论保留为历史记录，不是当前生产接口。
+
 > 交接日期：2026-10-21
 > 基线提交：`3731c954`（Ghost 文档、路线图、实验脚本与历史快照归档）
 > 适用范围：Ghost、World Model，以及它们进入 Codey runtime 的实验和生产准入工作

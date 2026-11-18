@@ -25,7 +25,6 @@ from codey.app import api as app_api
 from codey.app import (
     consensus_service,
     event_bus,
-    ghost_services,
     http_plumbing,
     review_service,
     server,
@@ -39,6 +38,7 @@ from codey.completion.verification_policy import VerificationCandidate
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.project_completion_context import project_has_user_files
+from codey.policies.capabilities import BROWSER_CAPABILITIES
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import controls as provider_controls
 from codey.providers import flow as provider_flow
@@ -90,21 +90,9 @@ def _persist_approval(state, pending):
     add_pending_approval(state, pending["id"], pending)
 
 
-# Product no longer auto-waits for ghost maintenance (cold start: no
-# test-only wiring in AppContext). Tests wait explicitly here so no daemon
-# holds state files while TemporaryDirectory cleans up on Windows.
-def _run_task_with_ghost_wait(*args, **kwargs):
+def _run_task(*args, **kwargs):
     kwargs.setdefault("get_state", http_context.get_context)
-    try:
-        return task_submit.run_task(*args, **kwargs)
-    finally:
-        try:
-            state = server.CodeyHTTPServer.app_context
-            wait = getattr(state, "wait_for_ghost_sleep", None)
-            if callable(wait):
-                wait(timeout=30)
-        except Exception:
-            pass
+    return task_submit.run_task(*args, **kwargs)
 
 
 def _declare_protocol_window(provider):
@@ -272,57 +260,8 @@ def valid_research_report(url: str, conclusion: str = "Helium conclusion.") -> s
     )
 
 
-def seed_ghost_style_memory(
-    state,
-    *,
-    session_id: str = "session-ghost",
-    run_id: str = "run-ghost",
-    project: str = "",
-) -> None:
-    from codey.ghost.schema import GhostSignal
-
-    assert state.ghost_inbox is not None
-    assert state.ghost_hebbian is not None
-    created = state.ghost_inbox.ingest_signals(
-        (
-            GhostSignal(
-                kind="style_preference",
-                scope="user",
-                summary="Prefer concise answer-first replies.",
-                evidence_quote="以后先给结论",
-                confidence=0.9,
-                metadata={
-                    "conflict_key": "reply_structure",
-                    "value_key": "answer_first",
-                },
-                source="test",
-            ),
-        ),
-        session_id=session_id,
-        run_id=run_id,
-        project=project,
-        user_text="以后先给结论",
-    )
-    assert len(created) == 1
-    state.ghost_hebbian.reinforce_candidate(created[0])
 
 
-def seed_ghost_continuity(
-    state,
-    *,
-    session_id: str = "session-ghost",
-    run_id: str = "run-continuity",
-    project: str = "",
-    text: str = "Continue bounded local projection work",
-) -> None:
-    assert state.ghost_continuity is not None
-    state.ghost_continuity.sync_from_sources(
-        user_focus_excerpt=text,
-        session_id=session_id,
-        run_id=run_id,
-        project=project,
-        mode="chat" if not project else "planning",
-    )
 
 
 class GitChangesTests(unittest.TestCase):
@@ -1418,51 +1357,6 @@ class ResearchGraphApiTests(unittest.TestCase):
             list(PROVIDER_LABELS),
         )
 
-    def test_ghost_store_race_closes_discarded_loser(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            ctx = server.AppContext(state_home=td)
-            stores = ctx._ghost_stores
-            gate = threading.Barrier(2)
-            made: list[object] = []
-
-            class _Fake:
-                def __init__(self) -> None:
-                    self.closed = False
-                    self.closed_while_context_locked = False
-
-                def close(self) -> None:
-                    self.closed_while_context_locked = ctx.lock.locked()
-                    self.closed = True
-
-            def _factory(_home: object) -> object:
-                gate.wait(timeout=5)
-                fake = _Fake()
-                made.append(fake)
-                return fake
-
-            results: list[object] = []
-            threads = [
-                threading.Thread(
-                    target=lambda: results.append(stores._get("inbox", _factory)),
-                    daemon=True,
-                )
-                for _ in range(2)
-            ]
-            for thread in threads:
-                thread.start()
-            for thread in threads:
-                thread.join(timeout=5)
-            self.assertFalse(any(thread.is_alive() for thread in threads))
-
-        self.assertEqual(len(made), 2)
-        self.assertEqual(len(results), 2)
-        self.assertIs(results[0], results[1])
-        self.assertIs(stores._values["inbox"], results[0])
-        losers = [fake for fake in made if fake is not results[0]]
-        self.assertEqual(len(losers), 1)
-        self.assertTrue(losers[0].closed)
-        self.assertFalse(losers[0].closed_while_context_locked)
-        self.assertFalse(results[0].closed)
 
 
 class ResearchServerHelperTests(unittest.TestCase):
@@ -2003,31 +1897,6 @@ class LocalProviderApiTests(unittest.TestCase):
         finally:
             httpd.shutdown()
 
-    def test_new_chat_reports_unpurged_stores_on_partial_failure(self) -> None:
-        httpd, host, port = self._start_server()
-        state = server.AppContext()
-        # Mock ghost_continuity delete_scope to raise error
-        fake_continuity = mock.Mock()
-        fake_continuity.delete_scope.side_effect = OSError("disk failure")
-        state.ghost_continuity = fake_continuity
-        try:
-            with mock.patch.object(server.CodeyHTTPServer, "app_context", state):
-                conn = OperatorHTTPConnection(httpd, timeout=5)
-                conn.request(
-                    "POST",
-                    "/api/new_chat",
-                    body=json.dumps({"session_id": "session-clean"}),
-                )
-                response = conn.getresponse()
-                body = json.loads(response.read().decode("utf-8"))
-                conn.close()
-
-            self.assertEqual(response.status, 503)
-            self.assertFalse(body.get("ok"))
-            self.assertIn("unpurged_stores", body)
-            self.assertIn("ghost_continuity", body["unpurged_stores"])
-        finally:
-            httpd.shutdown()
 
     def test_changes_restore_returns_409_while_project_run_is_active(self) -> None:
         import tempfile as _tempfile
@@ -2284,6 +2153,34 @@ class LocalProviderApiTests(unittest.TestCase):
             self.assertEqual(saved_config.api_key, "")
         finally:
             httpd.shutdown()
+
+
+    def test_new_chat_reports_unpurged_stores_on_partial_failure(self) -> None:
+        httpd, host, port = self._start_server()
+        state = server.AppContext()
+        patcher = mock.patch.object(state.memory, "delete_scope", side_effect=OSError("disk failure"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(state.close)
+        try:
+            with mock.patch.object(server.CodeyHTTPServer, "app_context", state):
+                conn = OperatorHTTPConnection(httpd, timeout=5)
+                conn.request(
+                    "POST",
+                    "/api/new_chat",
+                    body=json.dumps({"session_id": "session-clean"}),
+                )
+                response = conn.getresponse()
+                body = json.loads(response.read().decode("utf-8"))
+                conn.close()
+
+            self.assertEqual(response.status, 503)
+            self.assertFalse(body.get("ok"))
+            self.assertIn("unpurged_stores", body)
+            self.assertIn("memory", body["unpurged_stores"])
+        finally:
+            httpd.shutdown()
+
 
 
 class ConsensusConnectionTests(unittest.TestCase):
@@ -2976,173 +2873,19 @@ class RunSnapshotTests(unittest.TestCase):
 
         self.assertIsNone(state.run_state_payload()["pending_event"])
 
-    def test_ghost_summary_api_is_unavailable_without_state_home(self) -> None:
-        state = server.AppContext(None)
-        status, payload = app_api.ghost_summary_response(
-            state,
-            {
-                "session_id": ["s1"],
-                "project": ["E:/project"],
-            },
-        )
-        action_status, action_payload = app_api.ghost_action_response(
-            state,
-            {
-                "action": "disable_updates",
-            },
-        )
+    def test_memory_summary_api_reports_disabled_without_state_home(self) -> None:
+        state = server.AppContext()
+        try:
+            status, payload = app_api.ghost_summary_response(state, {})
+            self.assertEqual(status, 200)
+            self.assertTrue(payload["ok"])
+            self.assertFalse(payload["enabled"])
+            action_status, action_payload = app_api.ghost_action_response(state, {"action": "disable_updates"})
+            self.assertEqual(action_status, 400)
+            self.assertFalse(action_payload["ok"])
+        finally:
+            state.close()
 
-        self.assertEqual(status, 200)
-        self.assertFalse(payload["ok"])
-        self.assertFalse(payload["available"])
-        self.assertEqual(action_status, 200)
-        self.assertFalse(action_payload["ok"])
-
-    def test_ghost_summary_api_returns_bounded_local_context(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
-            seed_ghost_style_memory(state, session_id="s1", project="")
-            status, payload = app_api.ghost_summary_response(state, {"session_id": ["s1"]})
-
-        encoded = json.dumps(payload, ensure_ascii=False)
-        self.assertEqual(status, 200)
-        self.assertTrue(payload["ok"])
-        self.assertEqual(payload["counts"]["active"], 1)
-        self.assertNotIn("evidence_quote", encoded)
-
-    def test_ghost_action_api_proposes_observation_as_reviewed_preference(self) -> None:
-        from codey.ghost.directive import build_ghost_directive
-
-        with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
-            assert state.ghost_observations is not None
-            self.assertTrue(state.ghost_observations.append_completed(
-                run_id="r1", session_id="s1", mode="chat",
-                user_text="Please keep answers concise.", assistant_text="Sure.", stop_reason="done",
-            ))
-            status, proposed = app_api.ghost_action_response(state, {
-                "action": "propose_preference", "id": "r1", "session_id": "s1",
-                "scope": "user", "conflict_key": "reply_length", "value_key": "concise",
-                "evidence_quote": "keep answers concise",
-            })
-            self.assertEqual(status, 200, proposed)
-            self.assertEqual(proposed["candidate"]["status"], "candidate")
-            accept_status, accepted = app_api.ghost_action_response(state, {
-                "action": "accept_candidate", "id": proposed["candidate"]["id"], "session_id": "s1",
-            })
-            self.assertEqual(accept_status, 200, accepted)
-            directive = build_ghost_directive(state.ghost_hebbian, session_id="s1")
-
-        self.assertIn("reply length = concise", directive.text)
-
-    def test_forgetting_session_clears_only_its_terminal_event(self) -> None:
-        from codey.ghost.affinity import GhostAffinityStore
-        from codey.ghost.continuity import build_ghost_continuity
-        from codey.ghost.work_queue import GhostWorkQueueStore
-        from codey.knowledge.research_interest import ResearchInterestCandidate
-
-        with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
-            state.run_registry.set_last_terminal_event(
-                {
-                    "type": "task_done",
-                    "run_id": "run_old",
-                    "session_id": "session-1",
-                }
-            )
-            state.run_registry.set_last_summary("old receipt")
-            state.run_registry.set_last_stop_reason("done")
-            state.run_registry.set_last_shell_result(
-                {
-                    "type": "shell_result",
-                    "id": "shell-old",
-                    "session_id": "session-1",
-                }
-            )
-            seed_ghost_continuity(
-                state,
-                session_id="session-1",
-                run_id="run-continuity-1",
-                text="Should Session one scoped focus continue?",
-            )
-            seed_ghost_continuity(
-                state,
-                session_id="session-2",
-                run_id="run-continuity-2",
-                text="Should Session two scoped focus continue?",
-            )
-            assert state.ghost_work_queue is not None
-            GhostWorkQueueStore(td).sync_from_sources(
-                continuity_store=state.ghost_continuity,
-                session_id="session-1",
-            )
-            GhostWorkQueueStore(td).sync_from_sources(
-                continuity_store=state.ghost_continuity,
-                session_id="session-2",
-            )
-            assert state.ghost_affinity is not None
-            GhostAffinityStore(td).sync_from_sources(
-                research_interest_candidates=(
-                    ResearchInterestCandidate(
-                        id="ric-session-1",
-                        question="Research whether one concept should continue",
-                        related_concepts=("session-one",),
-                        shared_neighbors=(),
-                        source_refs=("note:one",),
-                        scope="session",
-                        scope_ref="session-1",
-                        priority=0.7,
-                        confidence=0.8,
-                        why_now="Bounded server test.",
-                        source="concept_open_question",
-                        source_ref="concept:one",
-                        strong_support=True,
-                    ),
-                    ResearchInterestCandidate(
-                        id="ric-session-2",
-                        question="Research whether two concept should continue",
-                        related_concepts=("session-two",),
-                        shared_neighbors=(),
-                        source_refs=("note:two",),
-                        scope="session",
-                        scope_ref="session-2",
-                        priority=0.7,
-                        confidence=0.8,
-                        why_now="Bounded server test.",
-                        source="concept_open_question",
-                        source_ref="concept:two",
-                        strong_support=True,
-                    ),
-                ),
-                session_id="session-1",
-            )
-
-            state.forget_conversation("session-2")
-            work_items = state.ghost_work_queue.export_state()["work_queue"]["items"]
-            affinity_nodes = state.ghost_affinity.export_state()["affinity"]["nodes"]
-            self.assertIsNotNone(state.run_registry.last_terminal_event())
-            self.assertEqual(len(work_items), 1)
-            self.assertEqual([row["key"] for row in affinity_nodes], ["session-one"])
-            self.assertIn(
-                "Session one scoped focus",
-                build_ghost_continuity(state.ghost_continuity, session_id="session-1").text,
-            )
-            self.assertNotIn(
-                "Session two scoped focus",
-                build_ghost_continuity(state.ghost_continuity, session_id="session-2").text,
-            )
-            state.forget_conversation("session-1")
-
-            self.assertIsNone(state.run_registry.last_terminal_event())
-            self.assertIsNone(state.run_registry.last_shell_result())
-            self.assertEqual(state.run_registry.last_summary(), "")
-            self.assertEqual(state.run_registry.last_stop_reason(), "")
-            self.assertNotIn(
-                "Session one scoped focus",
-                build_ghost_continuity(state.ghost_continuity, session_id="session-1").text,
-            )
-            self.assertEqual(state.ghost_work_queue.export_state()["work_queue"]["items"], [])
-            self.assertEqual(state.ghost_affinity.export_state()["affinity"]["nodes"], [])
 
     def test_state_owns_runtime_operation_store_and_forget_deletes_it(self) -> None:
         from codey.runtime.core.operation_state import RuntimeOperationStore
@@ -3173,31 +2916,7 @@ class RunSnapshotTests(unittest.TestCase):
 
             self.assertIsNone(state.runtime_operations.load("session-forget", "run-forget"))
 
-    def test_state_without_state_home_still_uses_ephemeral_runtime_store(self) -> None:
-        from codey.runtime.core.operation_state import RuntimeOperationStore
 
-        state = server.AppContext()
-        self.assertIsInstance(state.runtime_operations, RuntimeOperationStore)
-        self.assertFalse(hasattr(state, "runtime_log"))
-        self.assertIsNone(state.ghost_inbox)
-
-    def test_state_home_lazily_constructs_ghost_stores(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            state_home = Path(td)
-            with (
-                mock.patch.object(ghost_services, "GhostInboxStore") as inbox_cls,
-                mock.patch.object(ghost_services, "GhostHebbianStore") as hebbian_cls,
-            ):
-                state = server.AppContext(state_home)
-
-                inbox_cls.assert_not_called()
-                hebbian_cls.assert_not_called()
-                self.assertIs(state.ghost_inbox, inbox_cls.return_value)
-                self.assertIs(state.ghost_inbox, inbox_cls.return_value)
-                self.assertIs(state.ghost_hebbian, hebbian_cls.return_value)
-
-        inbox_cls.assert_called_once_with(state_home)
-        hebbian_cls.assert_called_once_with(state_home)
 
     def test_default_state_home_lazily_constructs_knowledge_store(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -3448,7 +3167,7 @@ class RunSnapshotTests(unittest.TestCase):
                 raise AssertionError("continuation must never clear a user Stop")
 
         flipping = FlippingFlag()
-        state.run_registry.stop_flag = flipping  # type: ignore[assignment]
+        state.run_registry.stop_flag = flipping
 
         with (
             mock.patch.object(server.CodeyHTTPServer, "app_context", state),
@@ -3747,6 +3466,33 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertIn("ghost_post_turn_warning", event_bus.RUN_EVENT_TYPES)
 
 
+    def test_forgetting_session_clears_only_its_terminal_event(self) -> None:
+        with tempfile.TemporaryDirectory() as td, contextlib.closing(server.AppContext(td)) as state:
+            state.durable.create_conversation("session-1")
+            state.durable.create_conversation("session-2")
+            state.run_registry.set_last_terminal_event({"type": "task_done", "run_id": "old", "session_id": "session-1"})
+            state.run_registry.set_last_summary("old receipt")
+            state.run_registry.set_last_stop_reason("done")
+            state.run_registry.set_last_shell_result({"type": "shell_result", "id": "old-shell", "session_id": "session-1"})
+            state.forget_conversation("session-2")
+            self.assertIsNotNone(state.run_registry.last_terminal_event())
+            state.forget_conversation("session-1")
+            self.assertIsNone(state.run_registry.last_terminal_event())
+            self.assertIsNone(state.run_registry.last_shell_result())
+            self.assertEqual(state.run_registry.last_summary(), "")
+            self.assertEqual(state.run_registry.last_stop_reason(), "")
+
+    def test_state_without_state_home_still_uses_ephemeral_runtime_store(self) -> None:
+        from codey.runtime.core.operation_state import RuntimeOperationStore
+
+        state = server.AppContext()
+        self.assertIsInstance(state.runtime_operations, RuntimeOperationStore)
+        self.assertFalse(hasattr(state, "runtime_log"))
+        self.assertFalse(state.memory.export_state()["enabled"])
+        state.close()
+
+
+
 class SessionThreadingTests(unittest.TestCase):
     def setUp(self) -> None:
         self.consensus_patch = mock.patch.object(consensus_service, "run_consensus", return_value=None)
@@ -3772,16 +3518,9 @@ class SessionThreadingTests(unittest.TestCase):
         self.consensus_patch.stop()
 
     def _state(self, path) -> server.AppContext:
-        """State without background side effects for research-UI flows.
-
-        Only research/UX flow tests should use this: the ghost-sleep
-        threading tests below exercise those hooks on purpose and must keep
-        using real State instances.
-        """
+        """Isolate research UI tests from the adapter self-repair worker."""
 
         state = server.AppContext(path)
-        state.kick_ghost_sleep = mock.Mock(return_value=False)
-        state.wait_for_ghost_sleep = mock.Mock(return_value=True)
         state.self_repair = mock.Mock()
         state.self_repair.kick_if_idle.return_value = False
         return state
@@ -3813,292 +3552,16 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(connected.call_count, 2)
         self.assertEqual(connected.call_args_list, [mock.call("qwen"), mock.call("qwen")])
 
-    def test_chat_mode_prepends_ghost_directive(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
-            seed_ghost_style_memory(state, session_id="session-ghost")
-            seed_ghost_continuity(state, session_id="session-ghost")
-            events = state.subscribe()
-            provider = mock.Mock()
-            provider.name = "DeepSeek Web"
-            provider.location = "https://chat.deepseek.com/"
-            provider.send.return_value = "direct reply"
-            _declare_protocol_window(provider)
 
-            with (
-                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
-                mock.patch.object(state, "get_provider", return_value=provider),
-            ):
-                _run_task_with_ghost_wait(
-                    "session-ghost",
-                    None,
-                    "Answer this directly",
-                    8,
-                    False,
-                    "deepseek",
-                    "chat",
-                )
 
-            emitted = []
-            while not events.empty():
-                emitted.append(events.get_nowait())
 
-        prompt = provider.send.call_args.args[0]
-        done = next(event for event in emitted if event["type"] == "task_done")
-        self.assertIn("Local Context:", prompt)
-        self.assertNotIn("Ghost", prompt)
-        self.assertIn("reply structure = answer first", prompt)
-        self.assertIn("Continue bounded local projection work", prompt)
-        self.assertNotIn("Prefer concise answer-first replies.", prompt)
-        self.assertEqual(done["mode"], "chat")
 
-    def test_chat_mode_uses_project_scoped_reviewed_preference(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            project = Path(td, "project")
-            project.mkdir()
-            state = server.AppContext(td)
-            self.assertTrue(state.ghost_observations.append_completed(
-                run_id="prior", session_id="s1", project=str(project), mode="chat",
-                user_text="Please keep answers concise.", assistant_text="Sure.", stop_reason="done",
-            ))
-            status, proposed = app_api.ghost_action_response(state, {
-                "action": "propose_preference", "id": "prior", "session_id": "s1",
-                "project": str(project), "scope": "project", "conflict_key": "reply_length",
-                "value_key": "concise", "evidence_quote": "keep answers concise",
-            })
-            self.assertEqual(status, 200, proposed)
-            self.assertEqual(app_api.ghost_action_response(state, {
-                "action": "accept_candidate", "id": proposed["candidate"]["id"],
-                "session_id": "s1", "project": str(project),
-            })[0], 200)
-            provider = mock.Mock()
-            provider.name = "DeepSeek Web"
-            provider.location = "https://chat.deepseek.com/"
-            provider.send.return_value = "direct reply"
-            _declare_protocol_window(provider)
 
-            with (
-                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
-                mock.patch.object(state, "get_provider", return_value=provider),
-            ):
-                _run_task_with_ghost_wait(
-                    "s1", str(project), "Answer this directly", 8, False, "deepseek", "chat",
-                )
 
-            prompt = provider.send.call_args.args[0]
-            self.assertIn("reply length = concise", prompt)
 
-    def test_chat_mode_commits_observation_without_model_call(self) -> None:
-        """Experience-memory final state: one normal call, no Ghost model
-        call, observation committed before reply/task_done, retrievable next."""
-        with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
-            events = state.subscribe()
-            provider = mock.Mock()
-            provider.name = "DeepSeek Web"
-            provider.location = "https://chat.deepseek.com/"
-            provider.send.return_value = "normal reply"
-            _declare_protocol_window(provider)
 
-            with (
-                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
-                mock.patch.object(state, "get_provider", return_value=provider),
-            ):
-                _run_task_with_ghost_wait(
-                    "session-learn",
-                    None,
-                    "以后回答短一点",
-                    8,
-                    False,
-                    "deepseek",
-                    "chat",
-                )
 
-            emitted = []
-            while not events.empty():
-                emitted.append(events.get_nowait())
-            observations = state.ghost_observations.read_committed(
-                session_id="session-learn")
-
-        event_types = [event["type"] for event in emitted]
-        self.assertEqual(provider.send.call_count, 1)
-        self.assertEqual(event_types.count("task_done"), 1)
-        self.assertEqual(next(event for event in emitted if event["type"] == "task_done")["summary"], "normal reply")
-        self.assertNotIn("ghost_learning_done", event_types)
-        self.assertEqual(len(observations), 1)
-        self.assertIn("以后回答短一点", str(observations[0]["user_text"]))
-
-    def test_chat_ghost_disable_skips_post_turn_provider_call(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
-            assert state.ghost_inbox is not None
-            state.ghost_inbox.set_learning_enabled(False)
-            events = state.subscribe()
-            provider = mock.Mock()
-            provider.name = "DeepSeek Web"
-            provider.location = "https://chat.deepseek.com/"
-            provider.send.return_value = "normal reply"
-            _declare_protocol_window(provider)
-
-            with (
-                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
-                mock.patch.object(state, "get_provider", return_value=provider),
-            ):
-                _run_task_with_ghost_wait(
-                    "session-disabled",
-                    None,
-                    "以后回答短一点",
-                    8,
-                    False,
-                    "deepseek",
-                    "chat",
-                )
-
-            emitted = []
-            while not events.empty():
-                emitted.append(events.get_nowait())
-
-        continuity_event = next(event for event in emitted if event["type"] == "ghost_continuity_done")
-        self.assertEqual(continuity_event["skipped_reason"], "learning_disabled")
-
-    def test_state_kicks_ghost_sleep_without_sse_event(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
-            events = state.subscribe()
-            started = threading.Event()
-            assert state.ghost_sleep is not None
-            state.ghost_sleep.run_once = mock.Mock(side_effect=lambda **_kwargs: started.set())
-
-            started_ok = state.kick_ghost_sleep(run_id="r1", session_id="s1")
-
-            self.assertTrue(started_ok)
-            self.assertTrue(started.wait(2))
-            emitted = []
-            while not events.empty():
-                emitted.append(events.get_nowait())
-
-        self.assertEqual(emitted, [])
-
-    def test_state_ghost_sleep_is_single_flight(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
-            started = threading.Event()
-            release = threading.Event()
-            active = 0
-            max_active = 0
-            calls = 0
-            lock = threading.Lock()
-
-            def run_once(**_kwargs):
-                nonlocal active, calls, max_active
-                with lock:
-                    active += 1
-                    calls += 1
-                    max_active = max(max_active, active)
-                started.set()
-                release.wait(2)
-                with lock:
-                    active -= 1
-
-            assert state.ghost_sleep is not None
-            state.ghost_sleep.run_once = mock.Mock(side_effect=run_once)
-
-            first = state.kick_ghost_sleep(run_id="r1", session_id="s1")
-            self.assertTrue(started.wait(2))
-            second = state.kick_ghost_sleep(run_id="r2", session_id="s1")
-            release.set()
-            for _ in range(50):
-                with state.lock:
-                    running = state.ghost_sleep_daemon.running
-                if not running:
-                    break
-                threading.Event().wait(0.02)
-
-        self.assertTrue(first)
-        self.assertFalse(second)
-        self.assertGreaterEqual(calls, 1)
-        self.assertEqual(max_active, 1)
-
-    def test_pending_ghost_sleep_uses_latest_cursor(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
-            seen: list[dict[str, object]] = []
-
-            def run_once(**kwargs):
-                seen.append(kwargs)
-                if len(seen) == 1:
-                    state.kick_ghost_sleep(
-                        trigger="post_turn",
-                        run_id="run-2",
-                        session_id="session-2",
-                        project="project-2",
-                        run_projection={"run": 2},
-                    )
-
-            assert state.ghost_sleep is not None
-            state.ghost_sleep.run_once = mock.Mock(side_effect=run_once)
-
-            kicked = state.kick_ghost_sleep(
-                trigger="post_turn",
-                run_id="run-1",
-                session_id="session-1",
-                project="project-1",
-                run_projection={"run": 1},
-            )
-            assert state.wait_for_ghost_sleep(timeout=30)
-
-        self.assertTrue(kicked)
-        self.assertEqual([row["run_id"] for row in seen], ["run-1", "run-2"])
-        self.assertEqual(seen[1]["session_id"], "session-2")
-        self.assertEqual(seen[1]["project"], "project-2")
-        self.assertEqual(seen[1]["run_projection"], {"run": 2})
-
-    def test_ghost_disable_blocks_auto_sleep(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
-            assert state.ghost_inbox is not None
-            assert state.ghost_sleep is not None
-            state.ghost_inbox.set_learning_enabled(False)
-            state.ghost_sleep.run_once = mock.Mock()
-
-            kicked = state.kick_ghost_sleep(run_id="r1", session_id="s1")
-
-        self.assertFalse(kicked)
-        state.ghost_sleep.run_once.assert_not_called()
-
-    def test_task_done_kicks_ghost_sleep_without_sleep_event(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
-            events = state.subscribe()
-            provider = mock.Mock()
-            provider.name = "DeepSeek Web"
-            provider.location = "https://chat.deepseek.com/"
-            provider.send.return_value = "normal reply"
-            _declare_protocol_window(provider)
-
-            with (
-                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
-                mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(state, "kick_ghost_sleep") as kick_sleep,
-            ):
-                _run_task_with_ghost_wait(
-                    "session-sleep",
-                    None,
-                    "hello",
-                    8,
-                    False,
-                    "deepseek",
-                    "chat",
-                )
-
-            emitted = []
-            while not events.empty():
-                emitted.append(events.get_nowait())
-
-        kick_sleep.assert_called_once()
-        self.assertNotIn("ghost_sleep_done", [event["type"] for event in emitted])
-
-    def test_planning_readonly_does_not_run_ghost_learning_by_default(self) -> None:
+    def test_planning_readonly_reports_planning_mode(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = server.AppContext(td)
             provider = mock.Mock()
@@ -4114,7 +3577,7 @@ class SessionThreadingTests(unittest.TestCase):
                     return_value=RunResult("planned", "done", 1),
                 ),
             ):
-                _run_task_with_ghost_wait(
+                _run_task(
                     "session-plan-no-learn",
                     td,
                     "Plan only",
@@ -4126,78 +3589,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         self.assertEqual(state.run_registry.last_terminal_event()["mode"], "planning")
 
-    def test_planning_readonly_passes_ghost_directive_to_agent(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
-            seed_ghost_style_memory(state, session_id="session-plan", project=td)
-            seed_ghost_continuity(
-                state,
-                session_id="session-plan",
-                project=td,
-                text="Plan bounded continuity projection",
-            )
-            provider = mock.Mock()
-            provider.name = "DeepSeek Web"
-            provider.location = "https://chat.deepseek.com/"
 
-            with (
-                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
-                mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(
-                    task_submit,
-                    "agent_run",
-                    return_value=RunResult("planned", "done", 1),
-                ) as agent_run,
-            ):
-                _run_task_with_ghost_wait(
-                    "session-plan",
-                    td,
-                    "Plan only",
-                    8,
-                    False,
-                    "deepseek",
-                    "planning",
-                )
-
-        agent_request = agent_run.call_args.args[0]
-        self.assertEqual(agent_request.permission_profile, "planning_readonly")
-        self.assertIn("Local Context:", agent_request.ghost_directive)
-        self.assertNotIn("Ghost", agent_request.ghost_directive)
-        self.assertIn("Local Context:", agent_request.ghost_continuity)
-        self.assertIn("Plan bounded continuity projection", agent_request.ghost_continuity)
-        self.assertNotIn("Ghost", agent_request.ghost_continuity)
-
-    def test_project_writer_receives_empty_ghost_directive(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            state = server.AppContext(td)
-            seed_ghost_style_memory(state, session_id="session-project", project=td)
-            provider = mock.Mock()
-            provider.name = "DeepSeek Web"
-            provider.location = "https://chat.deepseek.com/"
-
-            with (
-                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
-                mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch.object(
-                    task_submit,
-                    "agent_run",
-                    return_value=RunResult("done", "done", 1),
-                ) as agent_run,
-            ):
-                _run_task_with_ghost_wait(
-                    "session-project",
-                    td,
-                    "Build the feature",
-                    8,
-                    False,
-                    "deepseek",
-                    "project",
-                )
-
-        agent_request = agent_run.call_args.args[0]
-        self.assertEqual(agent_request.permission_profile, "coding_writer")
-        self.assertEqual(agent_request.ghost_directive, "")
-        self.assertEqual(agent_request.ghost_continuity, "")
 
     def test_state_marks_provider_available_after_connect(self) -> None:
         class FakeProvider:
@@ -4507,7 +3899,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=RunResult("complete", "done", 3, True),
             ) as agent_run,
         ):
-            _run_task_with_ghost_wait("session-1", td, "task", 8, False, "qwen", "project")
+            _run_task("session-1", td, "task", 8, False, "qwen", "project")
 
         get_provider.assert_called_once_with("qwen")
         agent_request = agent_run.call_args.args[0]
@@ -4548,7 +3940,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
         ):
-            _run_task_with_ghost_wait(
+            _run_task(
                 "session-research-fallback",
                 None,
                 "Research storage",
@@ -4617,7 +4009,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch("codey.toolchain.runtime.RUN_OUTPUT_LIMIT", 80),
                 mock.patch("codey.toolchain.runtime.cancellation.run_process", return_value=completed),
             ):
-                _run_task_with_ghost_wait(
+                _run_task(
                     "session-managed-output",
                     str(project),
                     "Run the check",
@@ -4685,7 +4077,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
             mock.patch.object(consensus_service, "run_project_audit", return_value=()),
         ):
-            _run_task_with_ghost_wait(
+            _run_task(
                 "session-hybrid-fallback",
                 td,
                 "Research storage and update docs",
@@ -4719,7 +4111,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
         ):
-            _run_task_with_ghost_wait(
+            _run_task(
                 "session-research-connect-fallback",
                 None,
                 "Research storage",
@@ -4757,7 +4149,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
         ):
-            _run_task_with_ghost_wait(
+            _run_task(
                 "session-research-avoid-only",
                 None,
                 "Research storage",
@@ -4817,7 +4209,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=("glm", "stepfun"),
             ) as rank,
         ):
-            _run_task_with_ghost_wait(
+            _run_task(
                 "session-project-ranked-failover",
                 td,
                 "Inspect app.py",
@@ -4865,7 +4257,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
             mock.patch.object(consensus_service, "run_project_audit", return_value=()),
         ):
-            _run_task_with_ghost_wait(
+            _run_task(
                 "session-hybrid-ranked-writer-failover",
                 td,
                 "Research then inspect app.py",
@@ -4901,7 +4293,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
             ):
-                _run_task_with_ghost_wait("session-1", td, "Set up the project", 8, False, "deepseek", "project")
+                _run_task("session-1", td, "Set up the project", 8, False, "deepseek", "project")
             state.close()
 
         emitted = []
@@ -4937,7 +4329,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
             ):
-                _run_task_with_ghost_wait("session-1", td, "Run long command", 8, False, "deepseek", "project")
+                _run_task("session-1", td, "Run long command", 8, False, "deepseek", "project")
             state.close()
 
         emitted = []
@@ -4968,7 +4360,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider),
         ):
             Path(td, "empty.txt").write_text("", encoding="utf-8")
-            _run_task_with_ghost_wait("session-empty", td, "Read empty.txt", 8, False, "deepseek", "project")
+            _run_task("session-empty", td, "Read empty.txt", 8, False, "deepseek", "project")
 
         emitted = []
         while not events.empty():
@@ -4984,87 +4376,6 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(done["stop_reason"], "done")
         self.assertFalse(any(event["type"] == "log" for event in emitted))
 
-    def test_run_task_with_research_intent_uses_research_runner(self) -> None:
-        class Search:
-            def search(self, query, limit=8):
-                return [
-                    {
-                        "title": "Helium source",
-                        "url": "https://example.com/helium",
-                        "snippet": "Helium data",
-                    }
-                ]
-
-            def fetch(self, url):
-                return {"status": "ok",
-                    "url": url,
-                    "title": "Helium source",
-                    "text": "Helium is separated from natural gas.",
-                    "truncated": False,
-                }
-
-            def close(self):
-                pass
-
-        with tempfile.TemporaryDirectory() as td, contextlib.ExitStack() as cleanup:
-            state = server.AppContext(td)
-            cleanup.callback(state.close)
-            seed_ghost_style_memory(state, session_id="session-research")
-            from codey.knowledge.store import KnowledgeStore
-
-            state.knowledge_store = KnowledgeStore(Path(td, "vault"))
-            conversation = state.conversation_for("session-research")
-            conversation.begin_window("deepseek", "chat")
-            conversation.update_snapshot(
-                ConversationSnapshot(
-                    mode="chat",
-                    goal="Choose the storage layer",
-                    provider_id="deepseek",
-                    latest_user="SQLite or a flat file?",
-                    latest_reply="SQLite is better once querying matters.",
-                )
-            )
-            events = state.subscribe()
-            provider = mock.Mock()
-            _declare_protocol_window(provider)
-            provider.name = "DeepSeek Web"
-            provider.location = "https://chat.deepseek.com/"
-            provider.send.side_effect = [
-                json.dumps({'tool': 'web_search', 'args': {'query': 'helium'}}),
-                json.dumps({'tool': 'open_result', 'args': {'result_id': 'r1'}}),
-                json.dumps({'tool': 'submit_research_answer', 'args': {'markdown': 'Helium is separated from natural gas. [e1]', 'state': 'answered'}}),
-            ]
-
-            with (
-                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
-                mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch("codey.research.search_factory.WebSourceProvider", return_value=Search()),
-                mock.patch.object(task_submit, "agent_run") as agent_run,
-            ):
-                _run_task_with_ghost_wait("session-research", None, "Research helium", 8, False, "deepseek", "research")
-
-            emitted = []
-            while not events.empty():
-                emitted.append(events.get_nowait())
-            done = next(event for event in emitted if event["type"] == "task_done")
-            tool_kinds = [event["kind"] for event in emitted if event["type"] == "tool"]
-            state.knowledge_store.close()
-        self.assertEqual(done["mode"], "research")
-        self.assertEqual(done["stop_reason"], "done", done)
-        self.assertTrue(done["research"]["synthesis_id"])
-        self.assertIn("read", tool_kinds)
-        self.assertIn("citation_map", done["research"])
-        self.assertTrue(done["research"]["citation_map"])
-        self.assertIn("coverage", done["research"])
-        research_intro = provider.send.call_args_list[0].args[0]
-        self.assertIn("Conversation context from this chat", research_intro)
-        self.assertIn("Choose the storage layer", research_intro)
-        self.assertNotIn("Local Context:", research_intro)
-        self.assertNotIn("Ghost style memory", research_intro)
-        self.assertNotIn("Prefer concise answer-first replies.", research_intro)
-        self.assertIn("Cite explicit [eN] labels beside supported statements", research_intro)
-        self.assertIn("Historical search hits are leads: knowledge_read pins source/evidence versions", research_intro)
-        agent_run.assert_not_called()
 
     @pytest.mark.usefixtures("scripted_local_api_connection")
     def test_research_ui_path_reads_pdf_and_recovers_bad_excerpt(self) -> None:
@@ -5166,8 +4477,9 @@ class SessionThreadingTests(unittest.TestCase):
                     },
                 ),
             ):
-                _run_task_with_ghost_wait(
-                    "session-research-ux", None, "Research Iran-US scenarios", 8, False, "local", "research"
+                _run_task(
+                    "session-research-ux", None, "Research Iran-US scenarios", 8, False, "local", "research",
+                    denied_capabilities=BROWSER_CAPABILITIES,
                 )
 
             emitted = []
@@ -5249,11 +4561,13 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch("codey.research.search_factory.WebSourceProvider", return_value=Search()),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
-                _run_task_with_ghost_wait(
-                    "session-research", None, "Research the storage plan", 5, False, "deepseek", "research"
+                _run_task(
+                    "session-research", None, "Research the storage plan", 5, False, "deepseek", "research",
+                    denied_capabilities=BROWSER_CAPABILITIES,
                 )
-                _run_task_with_ghost_wait(
-                    "session-research", None, "Continue researching that plan", 5, False, "deepseek", "research"
+                _run_task(
+                    "session-research", None, "Continue researching that plan", 5, False, "deepseek", "research",
+                    denied_capabilities=BROWSER_CAPABILITIES,
                 )
 
             state.knowledge_store.close()
@@ -5297,7 +4611,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
-                _run_task_with_ghost_wait(
+                _run_task(
                     "session-hybrid",
                     str(project),
                     "Research that client before editing",
@@ -5345,7 +4659,7 @@ class SessionThreadingTests(unittest.TestCase):
                 ) as unified_task,
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
-                _run_task_with_ghost_wait(
+                _run_task(
                     "session-hybrid-fail",
                     str(project),
                     "Research before editing",
@@ -5406,7 +4720,7 @@ class SessionThreadingTests(unittest.TestCase):
                 ) as unified_task,
                 mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             ):
-                _run_task_with_ghost_wait(
+                _run_task(
                     "session-hybrid-ok",
                     str(project),
                     "Research then implement",
@@ -5447,8 +4761,8 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", side_effect=[first, second]),
             mock.patch.object(task_submit, "agent_run") as agent_run,
         ):
-            _run_task_with_ghost_wait("session-1", None, "First question", 8, False, "deepseek", "chat")
-            _run_task_with_ghost_wait("session-1", None, "Follow-up question", 8, False, "deepseek", "chat")
+            _run_task("session-1", None, "First question", 8, False, "deepseek", "chat")
+            _run_task("session-1", None, "Follow-up question", 8, False, "deepseek", "chat")
 
         agent_run.assert_not_called()
         first.new_chat.assert_called_once_with()
@@ -5465,7 +4779,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
             ):
-                _run_task_with_ghost_wait("session-1", None, "Explain a breathing app", 8, False, "deepseek", "chat")
+                _run_task("session-1", None, "Explain a breathing app", 8, False, "deepseek", "chat")
             self.consensus_mock.assert_not_called()
             provider.send.assert_called_once()
             self.assertEqual(state.run_registry.last_terminal_event()["summary"], "Selected model answer")
@@ -5520,7 +4834,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
-                _run_task_with_ghost_wait("session-1", None, "Add a migration plan", 8, False, "deepseek", "chat")
+                _run_task("session-1", None, "Add a migration plan", 8, False, "deepseek", "chat")
 
         agent_run.assert_not_called()
         self.consensus_mock.assert_not_called()
@@ -5598,7 +4912,7 @@ class SessionThreadingTests(unittest.TestCase):
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
-                _run_task_with_ghost_wait(
+                _run_task(
                     "session-1",
                     str(project),
                     "Apply the plan here.",
@@ -5703,7 +5017,7 @@ class SessionThreadingTests(unittest.TestCase):
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
-                _run_task_with_ghost_wait(
+                _run_task(
                     "session-1",
                     str(project),
                     "Apply the plan here.",
@@ -5743,8 +5057,8 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server.CodeyHTTPServer, "app_context", state),
             mock.patch.object(state, "get_provider", side_effect=[writer, next_model]),
         ):
-            _run_task_with_ghost_wait("session-1", None, "Choose a database", 8, False, "deepseek", "chat")
-            _run_task_with_ghost_wait("session-1", None, "Add a migration plan", 8, False, "qwen", "chat")
+            _run_task("session-1", None, "Choose a database", 8, False, "deepseek", "chat")
+            _run_task("session-1", None, "Add a migration plan", 8, False, "qwen", "chat")
 
         next_model.new_chat.assert_called_once_with()
         prompt = next_model.send.call_args.args[0]
@@ -5779,9 +5093,9 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=[first_a, session_b, second_a],
             ),
         ):
-            _run_task_with_ghost_wait("session-a", None, "Choose a database", 8, False, "deepseek", "chat")
-            _run_task_with_ghost_wait("session-b", None, "Explain Python", 8, False, "deepseek", "chat")
-            _run_task_with_ghost_wait("session-a", None, "Add migrations", 8, False, "deepseek", "chat")
+            _run_task("session-a", None, "Choose a database", 8, False, "deepseek", "chat")
+            _run_task("session-b", None, "Explain Python", 8, False, "deepseek", "chat")
+            _run_task("session-a", None, "Add migrations", 8, False, "deepseek", "chat")
 
         second_a.new_chat.assert_called_once_with()
         prompt = second_a.send.call_args.args[0]
@@ -5812,9 +5126,9 @@ class SessionThreadingTests(unittest.TestCase):
             # Windows CI temp paths can contain short-name aliases (RUNNER~1).
             # Exercise an equivalent noncanonical spelling on every platform.
             project = str(Path(td) / ".." / Path(td).name)
-            _run_task_with_ghost_wait("session-1", project, "Build the calculator", 8, False, "deepseek", "project")
+            _run_task("session-1", project, "Build the calculator", 8, False, "deepseek", "project")
             self.assertEqual(state.conversation_for("session-1").project, str(Path(td).resolve()))
-            _run_task_with_ghost_wait(
+            _run_task(
                 "session-1",
                 project,
                 "Continue the unfinished task.",
@@ -5873,7 +5187,7 @@ class SessionThreadingTests(unittest.TestCase):
             # A pytest manifest gives the run a selectable verification
             # candidate covering app.py.
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            _run_task_with_ghost_wait("session-1", td, "task", 8, False, "deepseek", "project")
+            _run_task("session-1", td, "task", 8, False, "deepseek", "project")
 
         emitted = []
         while not events.empty():
@@ -5948,7 +5262,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(provider_services, "connect_existing_provider", side_effect=RuntimeError("not open")),
                 mock.patch.object(provider_services, "connect_fresh_provider_tab", side_effect=RuntimeError("not open")),
             ):
-                _run_task_with_ghost_wait(
+                _run_task(
                     "session-memory",
                     str(project),
                     "Implement researched API",
@@ -6030,7 +5344,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=reviewer,
             ) as connect_review,
         ):
-            _run_task_with_ghost_wait("session-diff-retry", td, "task", 8, False, "deepseek", "project")
+            _run_task("session-diff-retry", td, "task", 8, False, "deepseek", "project")
 
         self.assertEqual(collect_changes.call_count, 1)
         connect_review.assert_not_called()
@@ -6077,7 +5391,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(provider_services, "connect_fresh_provider_tab") as connect_self_review,
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            _run_task_with_ghost_wait("session-1", td, "task", 8, False, "deepseek", "project")
+            _run_task("session-1", td, "task", 8, False, "deepseek", "project")
 
         self.assertEqual(agent_run.call_count, 1)
         collect_changes.assert_called_once()
@@ -6132,7 +5446,7 @@ class SessionThreadingTests(unittest.TestCase):
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             (Path(td) / "app.py").write_text("new\n", encoding="utf-8")
-            _run_task_with_ghost_wait("session-1", td, "task", 20, False, "deepseek", "project")
+            _run_task("session-1", td, "task", 20, False, "deepseek", "project")
 
         self.assertEqual(agent_run.call_count, 2)
         followup_request = agent_run.call_args_list[1].args[0]
@@ -6193,7 +5507,7 @@ class SessionThreadingTests(unittest.TestCase):
             ) as connect_self_review,
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            _run_task_with_ghost_wait("session-1", td, "task", 20, False, "deepseek", "project")
+            _run_task("session-1", td, "task", 20, False, "deepseek", "project")
 
         self.assertEqual(connect_self_review.call_args_list, [mock.call("deepseek"), mock.call("deepseek")])
         self.assertEqual(reviewer.new_chat.call_count, 2)
@@ -6274,7 +5588,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            _run_task_with_ghost_wait("session-review-failover", td, "task", 12, False, "deepseek", "project")
+            _run_task("session-review-failover", td, "task", 12, False, "deepseek", "project")
 
         self.assertEqual(agent_run.call_count, 3)
         self.assertEqual(collect_changes.call_count, 3)
@@ -6335,7 +5649,7 @@ class SessionThreadingTests(unittest.TestCase):
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             (Path(td) / "app.py").write_text("new\n", encoding="utf-8")
-            _run_task_with_ghost_wait("session-1", td, "task", 20, False, "deepseek", "project")
+            _run_task("session-1", td, "task", 20, False, "deepseek", "project")
 
         emitted = []
         while not events.empty():
@@ -6387,7 +5701,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
             (Path(td) / "app.py").write_text("new\n", encoding="utf-8")
-            _run_task_with_ghost_wait("session-1", td, "task", 20, False, "deepseek", "project")
+            _run_task("session-1", td, "task", 20, False, "deepseek", "project")
 
         emitted = []
         while not events.empty():
@@ -6438,7 +5752,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
-            _run_task_with_ghost_wait("session-1", td, "task", 20, False, "deepseek", "project")
+            _run_task("session-1", td, "task", 20, False, "deepseek", "project")
 
         emitted = []
         while not events.empty():
@@ -6481,7 +5795,7 @@ class SessionThreadingTests(unittest.TestCase):
             ) as connect_self_review,
         ):
             (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
-            _run_task_with_ghost_wait("session-1", td, "task", 8, False, "deepseek", "project")
+            _run_task("session-1", td, "task", 8, False, "deepseek", "project")
 
         self.assertEqual(agent_run.call_count, 1)
         connect_self_review.assert_called_once_with("deepseek")
@@ -6525,7 +5839,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
-            _run_task_with_ghost_wait("session-1", td, "task", 8, False, "deepseek", "project")
+            _run_task("session-1", td, "task", 8, False, "deepseek", "project")
 
         self.assertEqual(reviewer.send.call_count, 2)
         emitted = []
@@ -6574,7 +5888,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
-            _run_task_with_ghost_wait("session-1", td, "task", 8, False, "deepseek", "project")
+            _run_task("session-1", td, "task", 8, False, "deepseek", "project")
 
         self.assertEqual(states, [(False, False)])
 
@@ -6607,7 +5921,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
             mock.patch.object(provider_services, "connect_existing_provider") as connect_review,
         ):
-            _run_task_with_ghost_wait("session-1", td, "task", 8, False, "deepseek", "project")
+            _run_task("session-1", td, "task", 8, False, "deepseek", "project")
 
         connect_review.assert_not_called()
         emitted = []
@@ -6647,7 +5961,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(provider_services, "connect_existing_provider") as connect_review,
         ):
             Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
-            _run_task_with_ghost_wait("session-1", td, "Discuss architecture", 8, False, "deepseek", "project")
+            _run_task("session-1", td, "Discuss architecture", 8, False, "deepseek", "project")
 
         self.consensus_mock.assert_called_once()
         consensus_kwargs = self.consensus_mock.call_args.kwargs
@@ -6690,7 +6004,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
         ):
             Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
-            _run_task_with_ghost_wait("session-1", td, "Review this project for bugs", 8, False, "deepseek", "project")
+            _run_task("session-1", td, "Review this project for bugs", 8, False, "deepseek", "project")
 
         self.project_audit_mock.assert_called_once()
         self.assertIn("Project Map", self.project_audit_mock.call_args.kwargs["context"])
@@ -6730,7 +6044,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
         ):
             Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
-            _run_task_with_ghost_wait("session-1", td, "Review this project for bugs", 8, False, "deepseek", "project")
+            _run_task("session-1", td, "Review this project for bugs", 8, False, "deepseek", "project")
 
         self.project_audit_mock.assert_called_once()
         self.assertEqual(agent_run.call_args.args[0].task, "Review this project for bugs")
@@ -6759,7 +6073,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
         ):
             Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
-            _run_task_with_ghost_wait("session-1", td, "Discuss architecture", 8, False, "deepseek", "project")
+            _run_task("session-1", td, "Discuss architecture", 8, False, "deepseek", "project")
 
         self.consensus_mock.assert_called_once()
         self.assertNotIn("deepseek", state.providers.sessions_snapshot())
@@ -6809,7 +6123,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer) as review_connect,
         ):
             Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
-            _run_task_with_ghost_wait("session-1", td, "Build the feature", 8, False, "deepseek", "project")
+            _run_task("session-1", td, "Build the feature", 8, False, "deepseek", "project")
 
         self.consensus_mock.assert_not_called()
         agent_request = agent_run.call_args.args[0]
@@ -6890,7 +6204,7 @@ class SessionThreadingTests(unittest.TestCase):
                 "lockfileVersion: 9\n",
                 encoding="utf-8",
             )
-            _run_task_with_ghost_wait("session-1", td, "Build the feature", 8, False, "deepseek", "project")
+            _run_task("session-1", td, "Build the feature", 8, False, "deepseek", "project")
 
         prompt = reviewer.send.call_args.args[0]
         verification_map = prompt.split(
@@ -6925,7 +6239,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
         ):
             Path(td, ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
-            _run_task_with_ghost_wait("session-1", td, "Build a new breathing app", 8, False, "deepseek", "project")
+            _run_task("session-1", td, "Build a new breathing app", 8, False, "deepseek", "project")
 
         self.consensus_mock.assert_called_once()
         consensus_kwargs = self.consensus_mock.call_args.kwargs
@@ -6968,7 +6282,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
-            _run_task_with_ghost_wait("session-1", td, "Build a tiny app", 8, False, "deepseek", "project")
+            _run_task("session-1", td, "Build a tiny app", 8, False, "deepseek", "project")
 
         writer_task = agent_run.call_args.args[0].task
         review_prompt = reviewer.send.call_args.args[0]
@@ -7001,7 +6315,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
             ),
         ):
-            _run_task_with_ghost_wait("session-1", td, "Build a new breathing app", 8, False, "deepseek", "project")
+            _run_task("session-1", td, "Build a new breathing app", 8, False, "deepseek", "project")
 
         self.consensus_mock.assert_called_once()
         consensus_kwargs = self.consensus_mock.call_args.kwargs
@@ -7044,7 +6358,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(task_submit, "agent_run", side_effect=TimeoutError("response timed out")),
         ):
-            _run_task_with_ghost_wait("session-1", td, "task", 8, False, "stepfun", "project")
+            _run_task("session-1", td, "task", 8, False, "stepfun", "project")
 
         emitted = []
         while not events.empty():
@@ -7079,7 +6393,7 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=RuntimeError("Edge not reachable"),
             ) as get_provider,
         ):
-            _run_task_with_ghost_wait("session-1", None, "hello", 8, False, "qwen")
+            _run_task("session-1", None, "hello", 8, False, "qwen")
 
         emitted = []
         while not events.empty():
@@ -7115,7 +6429,7 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=provider_controls.ControlTeachCancelled("cancelled"),
             ),
         ):
-            _run_task_with_ghost_wait("session-1", td, "task", 8, False, "qwen", "project")
+            _run_task("session-1", td, "task", 8, False, "qwen", "project")
 
         emitted = []
         while not events.empty():
@@ -7147,7 +6461,7 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=cancelled_agent,
             ),
         ):
-            _run_task_with_ghost_wait("session-1", td, "hello", 8, False, "qwen", "project")
+            _run_task("session-1", td, "hello", 8, False, "qwen", "project")
 
         emitted = []
         while not events.empty():
@@ -7177,7 +6491,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(task_submit, "agent_run", side_effect=stopped_agent),
         ):
-            _run_task_with_ghost_wait("session-1", td, "task", 8, False, "qwen", "project")
+            _run_task("session-1", td, "task", 8, False, "qwen", "project")
 
         self.assertTrue(state.provider_session_changed("qwen", "session-1"))
 
@@ -7234,7 +6548,7 @@ class SessionThreadingTests(unittest.TestCase):
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
             ):
-                _run_task_with_ghost_wait("session-1", str(root), "task", 4, False, "deepseek", "project")
+                _run_task("session-1", str(root), "task", 4, False, "deepseek", "project")
 
             tracker = state.change_tracker_for(root, persistent=True)
             self.assertIsNotNone(tracker.store)
@@ -7270,6 +6584,87 @@ class SessionThreadingTests(unittest.TestCase):
             self.assertIsNone(git_tracker.store)
             self.assertIsNotNone(snapshot_tracker.store)
             self.assertTrue(recovery.is_file())
+
+
+    def test_run_task_with_research_intent_uses_research_runner(self) -> None:
+        class Search:
+            def search(self, query, limit=8):
+                return [
+                    {
+                        "title": "Helium source",
+                        "url": "https://example.com/helium",
+                        "snippet": "Helium data",
+                    }
+                ]
+
+            def fetch(self, url):
+                return {"status": "ok",
+                    "url": url,
+                    "title": "Helium source",
+                    "text": "Helium is separated from natural gas.",
+                    "truncated": False,
+                }
+
+            def close(self):
+                pass
+
+        with tempfile.TemporaryDirectory() as td, contextlib.ExitStack() as cleanup:
+            state = server.AppContext(td)
+            cleanup.callback(state.close)
+            from codey.knowledge.store import KnowledgeStore
+
+            state.knowledge_store = KnowledgeStore(Path(td, "vault"))
+            conversation = state.conversation_for("session-research")
+            conversation.begin_window("deepseek", "chat")
+            conversation.update_snapshot(
+                ConversationSnapshot(
+                    mode="chat",
+                    goal="Choose the storage layer",
+                    provider_id="deepseek",
+                    latest_user="SQLite or a flat file?",
+                    latest_reply="SQLite is better once querying matters.",
+                )
+            )
+            events = state.subscribe()
+            provider = mock.Mock()
+            _declare_protocol_window(provider)
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+            provider.send.side_effect = [
+                json.dumps({'tool': 'web_search', 'args': {'query': 'helium'}}),
+                json.dumps({'tool': 'open_result', 'args': {'result_id': 'r1'}}),
+                json.dumps({'tool': 'submit_research_answer', 'args': {'markdown': 'Helium is separated from natural gas. [e1]', 'state': 'answered'}}),
+            ]
+
+            with (
+                mock.patch.object(server.CodeyHTTPServer, "app_context", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch("codey.research.search_factory.WebSourceProvider", return_value=Search()),
+                mock.patch.object(task_submit, "agent_run") as agent_run,
+            ):
+                _run_task("session-research", None, "Research helium", 8, False, "deepseek", "research", denied_capabilities=BROWSER_CAPABILITIES)
+
+            emitted = []
+            while not events.empty():
+                emitted.append(events.get_nowait())
+            done = next(event for event in emitted if event["type"] == "task_done")
+            tool_kinds = [event["kind"] for event in emitted if event["type"] == "tool"]
+            state.knowledge_store.close()
+        self.assertEqual(done["mode"], "research")
+        self.assertEqual(done["stop_reason"], "done", done)
+        self.assertTrue(done["research"]["synthesis_id"])
+        self.assertIn("read", tool_kinds)
+        self.assertIn("citation_map", done["research"])
+        self.assertTrue(done["research"]["citation_map"])
+        self.assertIn("coverage", done["research"])
+        research_intro = provider.send.call_args_list[0].args[0]
+        self.assertIn("Conversation context from this chat", research_intro)
+        self.assertIn("Choose the storage layer", research_intro)
+        self.assertNotIn("Local Context:", research_intro)
+        self.assertIn("Cite explicit [eN] labels beside supported statements", research_intro)
+        self.assertIn("Historical search hits are leads: knowledge_read pins source/evidence versions", research_intro)
+        agent_run.assert_not_called()
+
 
 
 class UiLaunchTests(unittest.TestCase):

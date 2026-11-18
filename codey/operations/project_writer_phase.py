@@ -6,7 +6,6 @@ from collections.abc import Callable
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
-from typing import Any, cast
 
 from codey.agents.consensus import render_project_context
 from codey.agents.request import AgentRequest
@@ -15,8 +14,7 @@ from codey.agents.writer_failover import (
     WriterAttempt,
     WriterFailoverRunner,
 )
-from codey.operations.ghost_context import ghost_control_enabled
-from codey.operations.ghost_context import ghost_experiences as _ghost_experiences
+from codey.completion.verification_policy import VerificationCandidate
 from codey.operations.project_completion_context import (
     ProjectRun,
     managed_tool_fns,
@@ -36,10 +34,14 @@ from codey.operations.provider_preflight import (
 from codey.operations.task_context import safe_verification_candidates
 from codey.operations.task_execution import build_research_tools as _build_research_tools
 from codey.operations.task_state import stop_flag_for
+from codey.providers.base import ChatProvider
 from codey.providers.capabilities import rank_providers
 from codey.providers.catalog import PROVIDER_LABELS
+from codey.providers.compat_transport import require_callable
 from codey.providers.diagnostics import ProviderFailure
 from codey.providers.supervisor import run_half_open_canary
+from codey.providers.transport import ProviderTransport
+from codey.research.tools import ResearchTools
 from codey.reviews.coordinator import change_state
 from codey.runtime.core import cancellation
 from codey.runtime.core.run_result import RunResult
@@ -49,8 +51,8 @@ from codey.task.kind import writer_failover_mode as _writer_failover_mode
 from codey.workspace.config import preferred_provider_for
 
 
-def _writer_verification_candidates(ctx: ProjectRun) -> tuple[Any, ...]:
-    candidates: tuple[Any, ...] = safe_verification_candidates(
+def _writer_verification_candidates(ctx: ProjectRun) -> tuple[VerificationCandidate, ...]:
+    candidates: tuple[VerificationCandidate, ...] = safe_verification_candidates(
         ctx.project,
         ctx.verification_verified_commands,
         ctx.resumed_verification_commands,
@@ -80,23 +82,12 @@ def _run_one_writer_attempt(
     if workspace_revision_store is None:
         raise RuntimeError("coding writer requires WorkspaceRevisionStore")
     ctx.writer_attempt_index += 1
-    try:
-        writer_experiences = _ghost_experiences(
-            ctx.state,
-            session_id=ctx.request.session_id,
-            project=ctx.project,
-            query=spec.task,
-            exclude_run_id=ctx.frame.run_id,
-            scope="project",
-        )
-    except Exception:
-        writer_experiences = ""
     from codey.operations.task_effects import admitted_durable
 
     window_action = ctx.frame.window_action if spec.provider is ctx.frame.provider else None
     ctx.frame.window_action = None
 
-    return cast(RunResult, ctx.deps.agent.run(AgentRequest(
+    result: RunResult = ctx.deps.agent.run(AgentRequest(
         provider=spec.provider,
         project=Path(ctx.project),
         task=spec.task,
@@ -119,12 +110,7 @@ def _run_one_writer_attempt(
         verification_candidate_loader=partial(_writer_verification_candidates, ctx),
         verification_changed_files=spec.checkpoint.changed_files,
         verification_successful_checks=spec.checkpoint.successful_checks,
-        ghost_directive="",
-        ghost_continuity="",
-        ghost_experiences=(writer_experiences or ""),
-        admit_hints=ghost_control_enabled(
-            ctx.state, "admit_hints", project=ctx.project, session_id=ctx.request.session_id,
-        ),
+        memory=ctx.state.memory,
         completion_repair_context=(
             ctx.repair_projection.prompt_text
             if ctx.repair_projection is not None
@@ -146,7 +132,7 @@ def _run_one_writer_attempt(
         run_id=ctx.frame.run_id,
         effect_scope=f"writer:{ctx.writer_attempt_index}",
         runtime_mutations=ctx.deps.runtime.mutations,
-        durable=cast(Any, admitted_durable(ctx.state, ctx.frame.run_id)),
+        durable=admitted_durable(ctx.state, ctx.frame.run_id),
         workspace_revision_store=workspace_revision_store,
         workspace_ignored_paths=ctx.configured_ignored_paths,
         managed_outputs=ctx.deps.persistence.managed_outputs,
@@ -161,10 +147,11 @@ def _run_one_writer_attempt(
         },
         project_changes_required=bool(getattr(ctx.request, "project_changes_required", False) is True),
         research_tools=_writer_research_tools(ctx),
-    )))
+    ))
+    return result
 
 
-def _writer_research_tools(ctx: ProjectRun) -> Any:
+def _writer_research_tools(ctx: ProjectRun) -> ResearchTools | None:
     """Reuse one authorized source adapter across writer repair attempts."""
     from codey.operations.task_entry import build_task_policy_for_entry
 
@@ -192,7 +179,7 @@ def _select_next_writer(ctx: ProjectRun, excluded: set[str]) -> str | None:
         preferred=preference,
     )
     if ctx.hooks.supervisor is not None:
-        return cast(str | None, ctx.hooks.supervisor.select("", ranked_order, excluded=excluded))
+        return ctx.hooks.supervisor.select("", ranked_order, excluded=excluded)
     return next((item for item in ranked_order if item not in excluded), None)
 
 
@@ -244,8 +231,8 @@ def _on_writer_switch(ctx: ProjectRun, next_provider_id: str) -> None:
     )
 
 
-def _close_provider(item: Any) -> None:
-    item.close()
+def _close_provider(item: ChatProvider | ProviderTransport) -> None:
+    require_callable(item, "close")()
 
 
 def _needs_no_canary(_pid: str) -> bool:
@@ -260,7 +247,7 @@ def _clear_provider_session(ctx: ProjectRun, pid: str) -> None:
     ctx.state.set_provider_session(pid, None)
 
 
-def _run_writer_canary(ctx: ProjectRun, pid: str, item: Any) -> bool:
+def _run_writer_canary(ctx: ProjectRun, pid: str, item: ChatProvider | ProviderTransport) -> bool:
     assert ctx.hooks.supervisor is not None
     canary_ok: bool = run_half_open_canary(pid, item, ctx.hooks.supervisor)
     return canary_ok

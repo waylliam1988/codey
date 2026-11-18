@@ -20,6 +20,7 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
     from codey.knowledge.store import KnowledgeStore
     from codey.operations.research_flow import ResearchFlowDeps, run_research_pipeline
     from codey.operations.task_entry import build_task_policy_for_entry
+    from codey.policies.capabilities import BROWSER_CAPABILITIES
     from codey.research.context import ResearchContext
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
@@ -102,10 +103,11 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
             if position.logical_turn == 2 and leaves.get(boundary) == position.leaf:
                 os._exit(74)
         durable.subscribe_commits(committed)
-    request = SimpleNamespace(task="research recovery", session_id="s", project="", requested_capabilities=())
+    request = SimpleNamespace(task="research recovery", session_id="s", project="", requested_capabilities=(),
+                              denied_capabilities=tuple(BROWSER_CAPABILITIES))
     policy = build_task_policy_for_entry(request, "research")
-    deps = ResearchFlowDeps(state=SimpleNamespace(durable=durable), knowledge_store=store,
-        evidence_ledgers=None, search_factory=Search, ghost_continuity=lambda **_: None,
+    deps = ResearchFlowDeps(state=SimpleNamespace(durable=durable, memory=None), knowledge_store=store,
+        evidence_ledgers=None, search_factory=Search,
         managed_outputs=ManagedOutputStore(root), runtime_mutations=line)
     frame = SimpleNamespace(provider=Provider(), provider_id="local", project_text="", trace=None,
         run_id="r", research_handoff="", entry_policy=policy, request=request)
@@ -116,6 +118,45 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
     finally:
         store.close()
         durable.close()
+
+
+def _settle_production_cancel(root, *, kind="research", publication_deps=True):
+    from types import SimpleNamespace
+
+    from codey.durable import DurableSession, SQLiteDurableStore
+    from codey.durable.checkpoint import operation_from_checkpoint
+    from codey.knowledge.store import KnowledgeStore
+    from codey.operations.context import RunWork
+    from codey.operations.task_phases.settlement import settle_cancelled_run
+    from codey.runtime.observe.execution_evidence import ExecutionEvidence
+    from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from codey.storage.managed_outputs import ManagedOutputStore
+
+    durable = DurableSession(SQLiteDurableStore(root / "state.sqlite"))
+    store = KnowledgeStore(root / "knowledge")
+    events = []
+    state = SimpleNamespace(durable=durable, set_provider_session=lambda *_: None,
+                            finish_run=lambda _, event: events.append(event))
+    line = RuntimeMutationLine(durable=durable)
+    deps = SimpleNamespace(state=state, runtime_mutations=line,
+                           managed_outputs=ManagedOutputStore(root) if publication_deps else None,
+                           knowledge_store=store if publication_deps else None, run_ledgers=None, work_checkpoints=None)
+    try:
+        position = operation_from_checkpoint(durable.task("r"), "s")
+        work = RunWork(recent_events=[], evidence=ExecutionEvidence(), operation=position)
+        result = settle_cancelled_run(deps, state, work,
+            run_id="r", session_id="s", max_turns=12, provider_id="local", task_kind=kind,
+            project=None, frame=None, finish_trace=lambda _: None)
+        assert result.status == "aborted"
+        assert "runtime_settlement_error" not in events[-1]
+        assert str(durable.task("r").status) == "cancelled"
+        assert operation_from_checkpoint(durable.task("r"), "s").leaf == "terminal"
+        assert all(effect.settlement is not None for effect in durable.effects("r"))
+        return durable.effects("r")
+    finally:
+        store.close()
+        durable.close()
+
 
 
 @pytest.mark.parametrize("boundary", ["request", "response", "tool_pending", "receipt", "writer_settled",
@@ -196,43 +237,6 @@ def test_ordinary_publication_cancelled_before_admission_never_writes_answer(tmp
         store.close()
 
 
-def _settle_production_cancel(root, *, kind="research", publication_deps=True):
-    from types import SimpleNamespace
-
-    from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.durable.checkpoint import operation_from_checkpoint
-    from codey.knowledge.store import KnowledgeStore
-    from codey.operations.context import RunWork
-    from codey.operations.ghost_post_turn import GhostTaskPolicyDeps
-    from codey.operations.task_phases.settlement import settle_cancelled_run
-    from codey.runtime.observe.execution_evidence import ExecutionEvidence
-    from codey.runtime.write.mutation_line import RuntimeMutationLine
-    from codey.storage.managed_outputs import ManagedOutputStore
-
-    durable = DurableSession(SQLiteDurableStore(root / "state.sqlite"))
-    store = KnowledgeStore(root / "knowledge")
-    events = []
-    state = SimpleNamespace(durable=durable, set_provider_session=lambda *_: None,
-                            finish_run=lambda _, event: events.append(event))
-    line = RuntimeMutationLine(durable=durable)
-    deps = SimpleNamespace(state=state, runtime_mutations=line,
-                           managed_outputs=ManagedOutputStore(root) if publication_deps else None,
-                           knowledge_store=store if publication_deps else None, run_ledgers=None, work_checkpoints=None)
-    try:
-        position = operation_from_checkpoint(durable.task("r"), "s")
-        work = RunWork(recent_events=[], evidence=ExecutionEvidence(), operation=position)
-        result = settle_cancelled_run(deps, state, work, GhostTaskPolicyDeps(state=state),
-            run_id="r", session_id="s", max_turns=12, provider_id="local", task_kind=kind,
-            project=None, frame=None, finish_trace=lambda _: None)
-        assert result.status == "aborted"
-        assert "runtime_settlement_error" not in events[-1]
-        assert str(durable.task("r").status) == "cancelled"
-        assert operation_from_checkpoint(durable.task("r"), "s").leaf == "terminal"
-        assert all(effect.settlement is not None for effect in durable.effects("r"))
-        return durable.effects("r")
-    finally:
-        store.close()
-        durable.close()
 
 
 @pytest.mark.parametrize("boundary", ["publication_admitted", "synthesis_published", "publication_settled"])

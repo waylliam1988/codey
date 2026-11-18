@@ -43,18 +43,8 @@ from codey.task.model import TaskSubmission
 from tests.support.research_controller import ResearchController
 
 
-def _submission(**overrides: object) -> TaskSubmission:
-    values: dict[str, object] = {
-        "session_id": "s1",
-        "project": None,
-        "task": "do it",
-        "max_turns": 3,
-        "continue_task": False,
-        "provider_id": "qwen",
-        "run_id": "run-1",
-    }
-    values.update(overrides)
-    return TaskSubmission(**values)  # type: ignore[arg-type]
+def _submission(*, max_turns: int = 3) -> TaskSubmission:
+    return TaskSubmission("s1", None, "do it", max_turns, False, "qwen", run_id="run-1")
 
 
 class TurnBudgetTests(unittest.TestCase):
@@ -64,7 +54,7 @@ class TurnBudgetTests(unittest.TestCase):
         self.assertEqual(_turn_budget(_submission(max_turns=7)), 7)
 
     def test_turn_budget_falls_back_to_one_on_garbage(self) -> None:
-        self.assertEqual(_turn_budget(_submission(max_turns="abc")), 1)
+        self.assertEqual(_turn_budget(mock.Mock(spec=TaskSubmission, max_turns="abc")), 1)
 
 
 class SettlePropagationTests(unittest.TestCase):
@@ -250,15 +240,15 @@ class WorkerSelfHealTests(unittest.TestCase):
     def _session_for(
         self,
         provider: WorkerChatProvider,
-        proc: object | None = None,
+        proc: mock.Mock | None = None,
         *,
-        job: object | None = None,
+        job: mock.Mock | None = None,
     ) -> _WorkerSession:
         if proc is None:
             proc = mock.Mock()
             proc.poll.return_value = None
             proc.stdin = mock.Mock()
-        session = _WorkerSession(proc=proc, job=job)  # type: ignore[arg-type]
+        session = _WorkerSession(proc=proc, job=job)
         provider._session = session
         self._spawn_writer(provider, session)
         return session
@@ -1820,9 +1810,10 @@ class WorkerSelfHealTests(unittest.TestCase):
             stdout=_subprocess.PIPE,
             stderr=_subprocess.PIPE,
             start_new_session=True,
+            text=True,
         )
         try:
-            session = _WorkerSession(proc=proc, job=None)  # type: ignore[arg-type]
+            session = _WorkerSession(proc=proc, job=None)
             provider._session = session
             provider.close()
             self.assertIsNone(provider._session)
@@ -1964,167 +1955,82 @@ class PostBodyTimeoutTests(unittest.TestCase):
     def test_slow_body_returns_408(self) -> None:
         from codey.app.server import Handler
 
-        handler = Handler.__new__(Handler)
-        handler.rfile = SimpleNamespace(read=mock.Mock(side_effect=socket.timeout))
-        handler.connection = SimpleNamespace(
-            gettimeout=mock.Mock(return_value=None),
-            settimeout=mock.Mock(),
-        )
-        sent: list[tuple[int, dict]] = []
-        handler._send_json = lambda status, payload: sent.append((status, payload))  # type: ignore[method-assign]
+        sent: list[tuple[int, dict[str, object]]] = []
+
+        class TimeoutHandler(Handler):
+            def _send_json(self, status: int, payload: dict[str, object]) -> None:
+                sent.append((status, payload))
+
+        handler = TimeoutHandler.__new__(TimeoutHandler)
+        handler.rfile = mock.Mock(read=mock.Mock(side_effect=socket.timeout))
+        handler.connection = mock.Mock(gettimeout=mock.Mock(return_value=None), settimeout=mock.Mock())
         self.assertIsNone(handler._read_post_body(16))
         self.assertEqual(sent[0][0], 408)
 
 
 class AppContextLifecycleTests(unittest.TestCase):
-    def test_app_context_has_no_sync_ghost_flag_and_waits_explicitly(self) -> None:
-        ctx_default = AppContext()
-        try:
-            self.assertFalse(hasattr(ctx_default, "sync_ghost_maintenance"))
-            self.assertTrue(ctx_default.wait_for_ghost_sleep(timeout=0.1))
-        finally:
-            ctx_default.close()
-
-    def test_app_context_ghost_wait_is_always_explicit(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            custom_home = Path(td, "state")
-            ctx = AppContext(custom_home)
-            try:
-                self.assertFalse(hasattr(ctx, "sync_ghost_maintenance"))
-            finally:
-                ctx.close()
-
-    def test_app_context_close_is_explicit_and_returns_completion(self) -> None:
-        store_mock = mock.Mock()
+    def test_app_context_has_no_memory_daemon(self) -> None:
         ctx = AppContext()
         try:
-            ctx._knowledge_store = store_mock
-            with mock.patch.object(
-                ctx.ghost_sleep_daemon, "wait", return_value=True,
-            ) as daemon_wait:
-                ephemeral = ctx._ephemeral_runtime_home
-                self.assertIsNotNone(ephemeral)
-                self.assertTrue(ctx.close())
-                self.assertTrue(ctx.closed)
+            self.assertFalse(hasattr(ctx, "ghost_sleep_daemon"))
+            self.assertFalse(hasattr(ctx, "wait_for_ghost_sleep"))
         finally:
-            ctx._resources_closed = True
-        daemon_wait.assert_called_once()
-        store_mock.close.assert_called_once()
+            ctx.close()
+
+    def test_app_context_close_is_explicit_and_idempotent(self) -> None:
+        store = mock.Mock()
+        ctx = AppContext()
+        ctx._knowledge_store = store
+        self.assertTrue(ctx.close())
+        self.assertTrue(ctx.closed)
+        self.assertTrue(ctx.close())
+        store.close.assert_called_once()
 
     def test_app_context_has_no_context_manager(self) -> None:
-        # Shutdown incompleteness is a value (close() -> bool), not an
-        # exception: a context manager would silently swallow False.
         self.assertFalse(hasattr(AppContext, "__enter__"))
         self.assertFalse(hasattr(AppContext, "__exit__"))
 
-    def test_app_context_close_retains_resources_when_ghost_alive(self) -> None:
-        store_mock = mock.Mock()
-        ctx = AppContext()
-        try:
-            ctx._knowledge_store = store_mock
-            # A live Ghost owns its stores: close() retains everything and
-            # reports incomplete instead of releasing files under the
-            # daemon (the Windows .lock handle failure).
-            with (
-                mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=False),
-                mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock,
-            ):
-                assert ctx._ephemeral_runtime_home is not None
-                self.assertFalse(ctx.close())
-                cleanup_mock.assert_not_called()
-                store_mock.close.assert_not_called()
-                self.assertTrue(ctx.run_registry.stop_flag.is_set())
-                self.assertFalse(ctx.closed)
-                self.assertTrue(ctx._close_requested)
-            # Retry after the daemon finishes closes exactly once.
-            with (
-                mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=True),
-                mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock,
-            ):
-                self.assertTrue(ctx.close())
-                cleanup_mock.assert_called_once()
-                store_mock.close.assert_called_once()
-                self.assertTrue(ctx.closed)
-                # Fully closed: further calls are idempotent.
-                self.assertTrue(ctx.close())
-                store_mock.close.assert_called_once()
-        finally:
-            ctx._resources_closed = True
-
     def test_app_context_close_cleans_resources_when_finished(self) -> None:
-        store_mock = mock.Mock()
-        evidence_mock = mock.Mock()
+        store = mock.Mock()
+        evidence = mock.Mock()
         ctx = AppContext()
         try:
-            ctx._knowledge_store = store_mock
-            ctx.evidence_ledgers = evidence_mock
-            with mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=True):
-                assert ctx._ephemeral_runtime_home is not None
-                with mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock:
-                    self.assertTrue(ctx.close())
-                    store_mock.close.assert_called_once()
-                    evidence_mock.close.assert_called_once()
-                    cleanup_mock.assert_called_once()
-                    self.assertTrue(ctx.run_registry.stop_flag.is_set())
-                    self.assertTrue(ctx.closed)
-                    self.assertTrue(ctx._resources_closed)
-        finally:
-            ctx._resources_closed = True
-
-    def test_app_context_close_retries_after_ghost_finishes(self) -> None:
-        store_mock = mock.Mock()
-        evidence_mock = mock.Mock()
-        ctx = AppContext()
-        try:
-            ctx._knowledge_store = store_mock
-            ctx.evidence_ledgers = evidence_mock
+            ctx._knowledge_store = store
+            ctx.evidence_ledgers = evidence
             assert ctx._ephemeral_runtime_home is not None
-            with mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock:
-                # 1. First close: daemon still running, nothing released.
-                with mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=False):
-                    self.assertFalse(ctx.close())
-                    cleanup_mock.assert_not_called()
-                    store_mock.close.assert_not_called()
-                    evidence_mock.close.assert_not_called()
-                    self.assertTrue(ctx._close_requested)
-                    self.assertFalse(ctx._resources_closed)
-                    self.assertFalse(ctx.closed)
-
-                # 2. Second close after the daemon finishes releases once.
-                with mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=True):
-                    self.assertTrue(ctx.close())
-                    cleanup_mock.assert_called_once()
-                    store_mock.close.assert_called_once()
-                    evidence_mock.close.assert_called_once()
+            with mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup:
+                self.assertTrue(ctx.close())
+                store.close.assert_called_once()
+                evidence.close.assert_called_once()
+                cleanup.assert_called_once()
+                self.assertTrue(ctx.run_registry.stop_flag.is_set())
+                self.assertTrue(ctx.closed)
+                self.assertTrue(ctx._resources_closed)
         finally:
             ctx._resources_closed = True
 
     def test_app_context_close_retries_cleanup_failures(self) -> None:
-        store_mock = mock.Mock()
-        evidence_mock = mock.Mock()
+        store = mock.Mock()
+        evidence = mock.Mock()
         ctx = AppContext()
         try:
-            ctx._knowledge_store = store_mock
-            ctx.evidence_ledgers = evidence_mock
+            ctx._knowledge_store = store
+            ctx.evidence_ledgers = evidence
             assert ctx._ephemeral_runtime_home is not None
-            with mock.patch.object(ctx.ghost_sleep_daemon, "wait", return_value=True), mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup_mock:
-                cleanup_mock.side_effect = [PermissionError("locked"), None]
-
-                ctx.close()
-
-                store_mock.close.assert_called_once()
-                evidence_mock.close.assert_called_once()
+            with mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup:
+                cleanup.side_effect = [PermissionError("locked"), None]
+                self.assertFalse(ctx.close())
+                store.close.assert_called_once()
+                evidence.close.assert_called_once()
                 self.assertIsNone(ctx._knowledge_store)
                 self.assertFalse(ctx._knowledge_store_enabled)
                 self.assertIsNone(ctx.evidence_ledgers)
                 self.assertIsNotNone(ctx._ephemeral_runtime_home)
                 self.assertFalse(ctx.closed)
-
-                ctx.close()
-
-                store_mock.close.assert_called_once()
-                evidence_mock.close.assert_called_once()
-                self.assertEqual(cleanup_mock.call_count, 2)
+                self.assertTrue(ctx.close())
+                store.close.assert_called_once()
+                evidence.close.assert_called_once()
+                self.assertEqual(cleanup.call_count, 2)
                 self.assertIsNone(ctx._ephemeral_runtime_home)
                 self.assertTrue(ctx.closed)
         finally:

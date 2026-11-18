@@ -6,8 +6,8 @@ import time
 from collections.abc import Callable
 from uuid import uuid4
 
-from codey.ghost.payload_types import mapping_fields
 from codey.providers.summary_stream import summary_prefix
+from codey.utils.object_fields import mapping_fields
 
 logger = logging.getLogger(__name__)
 

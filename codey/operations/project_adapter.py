@@ -10,11 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from codey.agents.request import AgentRequest
-from codey.ghost.payload_types import object_fields
+from codey.memory.context import retrieve_context
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.kernel_request_builder import KernelRunRequestBuilder
-from codey.operations.project_experiences import validated_project_experiences, validated_project_preferences
-from codey.operations.project_goals import validated_project_goal_sources
 from codey.operations.provider_session import ConversationProvider
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_guidance import task_guidance_for_policy
@@ -24,9 +22,11 @@ from codey.operations.task_loop import (
 )
 from codey.operations.task_session import TaskSession, session_checks_passed
 from codey.policies.task_policy import TaskPolicy
+from codey.providers.compat_transport import require_callable
 from codey.runtime.core.run_result import RunResult
-from codey.workspace.context_admission import GhostContextSource
-from codey.workspace.ghost_selection import GhostContextSpan
+from codey.utils.object_fields import object_fields
+from codey.workspace.context_admission import ContextCandidate
+from codey.workspace.context_selection import ContextSpan
 
 
 @dataclass(frozen=True)
@@ -38,8 +38,8 @@ class _ProjectPolicyInput:
     denied_capabilities: tuple[str, ...]
 
 
-def _project_context(request: AgentRequest, *, experiences: str = "", directive: str | None = None,
-                     ghost_spans: list[GhostContextSpan] | None = None) -> str:
+def _project_context(request: AgentRequest, *, memory_sources: tuple[ContextCandidate, ...] = (),
+                     memory_spans: list[ContextSpan] | None = None) -> str:
     from codey.agents.context import build_agent_context, load_project_instructions
     from codey.agents.tools import DEFAULT_TOOL_FNS
     from codey.policies.permissions import profile_for_name
@@ -59,13 +59,11 @@ def _project_context(request: AgentRequest, *, experiences: str = "", directive:
         project_map=request.project_map,
         project_config_warnings=request.project_config_warnings,
         work_checkpoint=request.work_checkpoint,
-        ghost_directive=(request.ghost_directive if directive is None else directive) if request.admit_hints else "",
-        ghost_continuity=request.ghost_continuity if request.admit_hints else "",
-        ghost_experiences=experiences,
+        memory_sources=memory_sources,
         completion_repair_context=request.completion_repair_context,
     )
-    if ghost_spans is not None:
-        ghost_spans.extend(rendered.ghost_spans)
+    if memory_spans is not None:
+        memory_spans.extend(rendered.memory_spans)
     trace = FailOpenPromptTrace(request.trace_recorder)
     epoch = context_epoch_id(rendered.text)
     trace.call("record_permission_profile", request.permission_profile, phase="writer")
@@ -87,22 +85,6 @@ def _project_context(request: AgentRequest, *, experiences: str = "", directive:
     return f"{rendered.text}\n\n{candidate_text}" if candidate_text else rendered.text
 
 
-def _project_ghost_sources(request: AgentRequest) -> tuple[GhostContextSource, ...]:
-    from codey.policies.permissions import allows_context_source, profile_for_name
-    from codey.workspace.context_admission import request_scope, sources_from_values
-
-    profile = profile_for_name(request.permission_profile)
-    if not request.admit_hints:
-        return ()
-    return (*sources_from_values(
-        directive=(validated_project_preferences(request)
-                   if allows_context_source(profile, "ghost_directive") else ""),
-        continuity=(request.ghost_continuity
-                    if allows_context_source(profile, "ghost_continuity") else ""),
-        experiences=(validated_project_experiences(request)
-                     if allows_context_source(profile, "ghost_experiences") else ""),
-        scope=request_scope(request.project, request.session_id),
-    ), *validated_project_goal_sources(request))
 
 
 def _open_fresh_chat(request: AgentRequest) -> bool:
@@ -114,7 +96,7 @@ def _open_fresh_chat(request: AgentRequest) -> bool:
         return isinstance(window_action, OpenWindow)
     if not request.fresh_chat:
         return False
-    request.provider.new_chat()
+    require_callable(request.provider, "new_chat")()
     return True
 
 
@@ -253,28 +235,20 @@ def run(request: AgentRequest) -> RunResult:
         session.verification_forbidden = ("project.verify" in policy.denied_capabilities or
                                               task_forbids_verification(request.task))
     effect_scope = request.effect_scope or ("planning:1" if task_kind == "planning" else "writer:1")
-    ghost_sources = _project_ghost_sources(request)
-    experiences = next((source.text for source in ghost_sources if source.key == "ghost_experiences"), "")
+    memory = retrieve_context(request.memory, task=request.task, project=str(request.project),
+                              session_id=request.session_id, run_id=request.run_id)
+    memory_sources = memory.sources if request.admit_hints else ()
     completion_context: object = request.completion_context
     if completion_context is None:
         completion_context = dict[str, object]()
     if not object_fields(completion_context):
         raise TypeError("project completion context requires an object with string keys")
 
-    def sources_still_valid(actual: tuple[GhostContextSource, ...]) -> bool:
-        # Recovery can replace the transport's context/sources. Validate that
-        # actual tuple, rather than authorizing a different restored request
-        # through the new entry's otherwise valid projection.
-        return request.admit_hints and actual == ghost_sources and _project_ghost_sources(request) == actual
+    def sources_still_valid(actual: tuple[ContextCandidate, ...]) -> bool:
+        return actual == memory_sources and memory.valid(request.memory)
 
-    directive = next((source.text for source in ghost_sources if source.key == "ghost_directive"), "")
-    ghost_spans: list[GhostContextSpan] = []
-    context_text = _project_context(request, experiences=experiences, directive=directive, ghost_spans=ghost_spans)
-    for source in ghost_sources:
-        if source.key in {"ghost_project_goal_history", "ghost_confirmed_project_goal"}:
-            start = len(context_text) + 2
-            context_text = f"{context_text}\n\n{source.text}"
-            ghost_spans.append(GhostContextSpan(source.key, start, len(context_text)))
+    memory_spans: list[ContextSpan] = []
+    context_text = _project_context(request, memory_sources=memory_sources, memory_spans=memory_spans)
     outcome = run_task_kernel(
         session,
         request=KernelRunRequestBuilder(
@@ -285,10 +259,10 @@ def run(request: AgentRequest) -> RunResult:
                 user_task=request.task,
                 context_text=context_text,
                 context_scope=request_scope(request.project, request.session_id),
-                ghost_sources=ghost_sources,
-                ghost_spans=tuple(ghost_spans),
+                memory_sources=memory_sources,
+                memory_spans=tuple(memory_spans),
                 admit_hints=request.admit_hints,
-                attempt_validate_ghost_sources=sources_still_valid,
+                attempt_validate_memory_sources=sources_still_valid,
                 stop_flag=request.stop_flag,
                 stagnant_turns=request.stagnant_turns,
                 task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),

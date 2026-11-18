@@ -1,6 +1,6 @@
-"""Provider-send admission for model-visible Ghost context.
+"""Provider-send admission for model-visible memory context.
 
-Ghost projections are candidates. This module is the last synchronous check
+memory projections are candidates. This module is the last synchronous check
 before a shared-kernel provider send and records only bounded refs/digests in
 the resulting ContextEpoch.
 """
@@ -19,54 +19,44 @@ from codey.workspace.context_epoch import (
     admission_from_rendered_source,
     context_epoch_id,
 )
+from codey.workspace.context_source import ContextCandidate
 
 # Local projection character cap, independent of model/output configuration.
-GHOST_TOTAL_BUDGET_CHARS = 6000
+MEMORY_TOTAL_BUDGET_CHARS = 6000
 
 
 @dataclass(frozen=True)
-class GhostContextSource:
-    key: str
-    text: str
-    budget: int
-    scope: str
-    capability_id: str = "local_context"
-    admission_reason: str = PROVIDER_TURN_ADMISSION
-    expires_at: str = ""
-
-
-@dataclass(frozen=True)
-class GhostAdmissionRejection:
+class ContextRejection:
     key: str
     reason: str
 
 
 @dataclass(frozen=True)
-class GhostAdmissionResult:
+class ContextAdmissionResult:
     epoch: ContextEpoch
-    accepted: tuple[GhostContextSource, ...] = ()
-    rejected: tuple[GhostAdmissionRejection, ...] = ()
+    accepted: tuple[ContextCandidate, ...] = ()
+    rejected: tuple[ContextRejection, ...] = ()
 
 
-class GhostAdmissionError(ValueError):
-    """Raised before provider-send when required Ghost context is unsafe."""
+class ContextAdmissionError(ValueError):
+    """Raised before provider-send when required memory context is unsafe."""
 
-    def __init__(self, rejections: Iterable[GhostAdmissionRejection]) -> None:
+    def __init__(self, rejections: Iterable[ContextRejection]) -> None:
         self.rejections = tuple(rejections)
         summary = ", ".join(f"{row.key}:{row.reason}" for row in self.rejections)
-        super().__init__(f"Ghost context admission rejected: {summary or 'unknown'}")
+        super().__init__(f"memory context admission rejected: {summary or 'unknown'}")
 
 
-def admit_ghost_context(
+def admit_context(
     prompt: str,
-    sources: Iterable[GhostContextSource] = (),
+    sources: Iterable[ContextCandidate] = (),
     *,
     request_scope: str,
     require_all: bool = False,
     admit_hints: bool = True,
     as_of: str | None = None,
-) -> GhostAdmissionResult:
-    """Validate Ghost placement against the exact outbound prompt.
+) -> ContextAdmissionResult:
+    """Validate memory placement against the exact outbound prompt.
 
     A source is admitted only when it is present byte-for-byte in ``prompt``,
     within its declared budget, and within the request scope. On the initial
@@ -74,9 +64,9 @@ def admit_ghost_context(
     silently concatenating it.
     """
     prompt_text = str(prompt or "")
-    accepted: list[GhostContextSource] = []
+    accepted: list[ContextCandidate] = []
     admissions: list[ContextAdmission] = []
-    rejected: list[GhostAdmissionRejection] = []
+    rejected: list[ContextRejection] = []
     seen_keys: set[str] = set()
     used_chars = 0
     expected_scope = str(request_scope or "").strip()
@@ -89,52 +79,55 @@ def admit_ghost_context(
         if not text:
             continue
         if not key or key in seen_keys:
-            rejected.append(GhostAdmissionRejection(key or "<empty>", "invalid_or_duplicate_key"))
+            rejected.append(ContextRejection(key or "<empty>", "invalid_or_duplicate_key"))
             continue
         seen_keys.add(key)
         if not expected_scope:
-            rejected.append(GhostAdmissionRejection(key, "missing_request_scope"))
+            rejected.append(ContextRejection(key, "missing_request_scope"))
             continue
         if not admit_hints:
-            rejected.append(GhostAdmissionRejection(key, "hints_disabled"))
+            rejected.append(ContextRejection(key, "hints_disabled"))
+            continue
+        if source.key.startswith("memory_") and not source.source_refs:
+            rejected.append(ContextRejection(key, "missing_provenance"))
             continue
         expires_at = str(source.expires_at or "").strip()
         if expires_at:
             expires = _timestamp(expires_at)
             if expires is None:
-                rejected.append(GhostAdmissionRejection(key, "invalid_expiry"))
+                rejected.append(ContextRejection(key, "invalid_expiry"))
                 continue
             if expires <= effective_as_of:
-                rejected.append(GhostAdmissionRejection(key, "expired"))
+                rejected.append(ContextRejection(key, "expired"))
                 continue
         budget = max(0, int(source.budget or 0))
         scope = str(source.scope or "").strip()
         if budget <= 0 or len(text) > budget:
-            rejected.append(GhostAdmissionRejection(key, "over_budget"))
+            rejected.append(ContextRejection(key, "over_budget"))
             continue
-        if scope not in {expected_scope, "user", "global"}:
-            rejected.append(GhostAdmissionRejection(key, "scope_mismatch"))
+        if scope not in {expected_scope, "user"}:
+            rejected.append(ContextRejection(key, "scope_mismatch"))
             continue
         if not scope:
-            rejected.append(GhostAdmissionRejection(key, "missing_scope"))
+            rejected.append(ContextRejection(key, "missing_scope"))
             continue
         if text not in prompt_text:
-            rejected.append(GhostAdmissionRejection(key, "not_in_provider_payload"))
+            rejected.append(ContextRejection(key, "not_in_provider_payload"))
             continue
         cost = len(text) + (2 if accepted else 0)
-        if used_chars + cost > GHOST_TOTAL_BUDGET_CHARS:
-            rejected.append(GhostAdmissionRejection(key, "combined_over_budget"))
+        if used_chars + cost > MEMORY_TOTAL_BUDGET_CHARS:
+            rejected.append(ContextRejection(key, "combined_over_budget"))
             continue
         admission = admission_from_rendered_source(source, admission_reason=PROVIDER_TURN_ADMISSION)
         if admission is None:
-            rejected.append(GhostAdmissionRejection(key, "invalid_source"))
+            rejected.append(ContextRejection(key, "invalid_source"))
             continue
         accepted.append(source)
         used_chars += cost
         admissions.append(admission)
     if require_all and rejected:
-        raise GhostAdmissionError(rejected)
-    return GhostAdmissionResult(
+        raise ContextAdmissionError(rejected)
+    return ContextAdmissionResult(
         epoch=ContextEpoch(epoch_id=context_epoch_id(prompt_text), admissions=tuple(admissions)),
         accepted=tuple(accepted),
         rejected=tuple(rejected),
@@ -152,32 +145,12 @@ def request_scope(project: object = "", session_id: object = "") -> str:
     return "request"
 
 
-def sources_from_values(
-    *,
-    directive: object = "",
-    continuity: object = "",
-    experiences: object = "",
-    scope: str,
-    budgets: tuple[int, int, int] = (900, 900, 1800),
-) -> tuple[GhostContextSource, ...]:
-    values = (
-        ("ghost_directive", directive, budgets[0]),
-        ("ghost_continuity", continuity, budgets[1]),
-        ("ghost_experiences", experiences, budgets[2]),
-    )
-    return tuple(
-        GhostContextSource(key=key, text=str(value or "").strip(), budget=budget, scope=scope)
-        for key, value, budget in values
-        if str(value or "").strip()
-    )
-
-
 def source_from_value(*, key: str, text: object, budget: int, scope: str,
-                      capability_id: str = "local_context", expires_at: str = "") -> GhostContextSource | None:
+                      capability_id: str = "local_context", expires_at: str = "") -> ContextCandidate | None:
     value = str(text or "").strip()
     if not value:
         return None
-    return GhostContextSource(
+    return ContextCandidate(
         key=key,
         text=value,
         budget=budget,
@@ -196,17 +169,16 @@ def _timestamp(value: object) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
+        return None
     return parsed.astimezone(UTC)
 
 
 __all__ = [
-    "GhostAdmissionError",
-    "GhostAdmissionRejection",
-    "GhostAdmissionResult",
-    "GhostContextSource",
-    "admit_ghost_context",
+    "ContextAdmissionError",
+    "ContextRejection",
+    "ContextAdmissionResult",
+    "ContextCandidate",
+    "admit_context",
     "request_scope",
     "source_from_value",
-    "sources_from_values",
-]
+    ]

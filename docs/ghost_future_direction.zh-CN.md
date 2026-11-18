@@ -1,5 +1,7 @@
 # Codey Ghost 未来发展方向
 
+> 2026-11-19：冷启动重写后的现行实现见 [Memory / Ghost 所有权边界](memory-boundary.zh-CN.md)。本页此前实现说明与实验结论保留为历史记录，不是当前生产接口。
+
 > 文档类型：未来方向；未落地的建议不代表当前能力或发布承诺。
 > 当前行为以[能力说明](codey_capabilities.zh-CN.md)和
 > [Runtime 架构](runtime_architecture.zh-CN.md)为准。

@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from codey.app.submission_types import TaskSubmitOptions
 from codey.runtime.core.api_selection import ApiRunSelection
+from codey.utils.object_fields import object_fields
 
 if TYPE_CHECKING:
     from codey.app.context import AppContext
@@ -13,8 +15,9 @@ from codey.task.attachments import IMAGE_UNSUPPORTED, public_attachment, validat
 
 
 def _store(ctx: AppContext, session_id: object) -> InputAttachmentStore:
-    sessions = ctx.load_ui_state().get("sessions", [])
-    if not isinstance(session_id, str) or not any(s.get("id") == session_id for s in sessions):
+    value = ctx.load_ui_state().get("sessions", [])
+    sessions: list[object] = value if isinstance(value, list) else []
+    if not isinstance(session_id, str) or not any(object_fields(s) and s.get("id") == session_id for s in sessions):
         raise ValueError("Chat not found. Save the chat before attaching files.")
     if ctx.state_home is None:
         raise ValueError("Attachment storage is unavailable.")
@@ -110,7 +113,7 @@ def queued_attachments(ctx: AppContext, request: dict[str, object], selection: A
     return selection, {"attachments": items}
 
 
-def prepare_run_attachments(ctx: AppContext | None, session_id: str, refs: object, kwargs: dict[str, object]) -> tuple[int, dict[str, object]] | None:
+def prepare_run_attachments(ctx: AppContext | None, session_id: str, refs: object, kwargs: TaskSubmitOptions) -> tuple[int, dict[str, object]] | None:
     try:
         if refs == []:
             return None

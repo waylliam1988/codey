@@ -6,19 +6,16 @@ from __future__ import annotations
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+
+from codey.providers.base import ChatProvider
+from codey.runs.trace import RunTraceRecorder
 
 if TYPE_CHECKING:
     from codey.operations.task_run import TaskRunDeps
 
-from codey.ghost.work_queue_model import GhostWorkItem
 from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.conversation_plan import plan_conversation
-from codey.operations.ghost_context import (
-    ghost_continuity,
-    ghost_directive,
-    ghost_experiences,
-)
 from codey.operations.planning_flow import (
     PlanningFlowDeps,
     run_planning_readonly_mode,
@@ -38,7 +35,6 @@ from codey.operations.recovery import durable_task_for, policy_from_durable_task
 from codey.operations.research_flow import (
     ResearchFlowDeps,
     record_evidence_ledger_write,
-    research_queue_item_title,
     run_research_mode,
     run_research_pipeline,
 )
@@ -63,11 +59,11 @@ def connect_and_build_frame(
     task_kind: str,
     project: str | None,
     provider_id: str,
-    trace: Any,
+    trace: RunTraceRecorder | None,
     trace_sink: FailOpenPromptTrace,
     hooks: RunHooks,
     project_config_result: ProjectConfigLoadResult,
-) -> tuple[RunFrame, Any, str]:
+) -> tuple[RunFrame, ChatProvider, str]:
     """Run provider preflight and build the RunFrame; returns (frame, provider, provider_id)."""
     supervisor = state.providers.supervisor
 
@@ -97,7 +93,7 @@ def connect_and_build_frame(
     bind_api_usage(provider, provider_id, trace)
     bind_display = getattr(provider, "bind_display", None)
     if callable(bind_display):
-        def display_event(event: dict[str, Any]) -> None:
+        def display_event(event: dict[str, object]) -> None:
             state.emit({**event, "run_id": run_id, "session_id": request.session_id})
 
         bind_display(display_event)
@@ -164,7 +160,6 @@ def _research_deps(deps: TaskRunDeps) -> ResearchFlowDeps:
         knowledge_store=deps.knowledge_store,
         evidence_ledgers=deps.evidence_ledgers,
         search_factory=deps.search_factory or default_research_search_provider,
-        ghost_continuity=partial(ghost_continuity, deps.state),
         managed_outputs=deps.managed_outputs,
         runtime_mutations=deps.runtime_mutations,
     )
@@ -178,9 +173,6 @@ def _planning_deps(deps: TaskRunDeps) -> PlanningFlowDeps:
         knowledge_store=deps.knowledge_store,
         search_factory=deps.search_factory,
         review_log_lines=deps.review_log_lines,
-        ghost_directive=partial(ghost_directive, deps.state),
-        ghost_continuity=partial(ghost_continuity, deps.state),
-        ghost_experiences=partial(ghost_experiences, deps.state),
     )
 
 
@@ -264,17 +256,17 @@ def dispatch_run_mode(
     research_deps = _research_deps(deps)
 
     def run_project_operation(
-        active_frame: RunFrame,
-        active_work: RunWork,
-        active_hooks: RunHooks,
-        **kwargs: Any,
+        frame: RunFrame,
+        work: RunWork,
+        hooks: RunHooks,
+        *, config_result: ProjectConfigLoadResult | None = None,
     ) -> ModeOutcome:
         return run_project_mode(
             project_completion_deps,
-            active_frame,
-            active_work,
-            active_hooks,
-            **kwargs,
+            frame,
+            work,
+            hooks,
+            config_result=config_result,
         )
 
     def _run_research_op(active_frame: RunFrame, active_hooks: RunHooks) -> ModeOutcome:
@@ -282,19 +274,19 @@ def dispatch_run_mode(
             research_deps,
             active_frame,
             active_hooks,
-            proof_question=research_queue_item_title(work.claimed_work_item),
             run_pipeline=partial(
                 run_research_pipeline, research_deps,
                 record_ledger_write=record_evidence_ledger_write,
             ),
         )
 
-    def _run_planning_op(active_frame: RunFrame, active_work: RunWork, **kwargs: Any) -> ModeOutcome:
+    def _run_planning_op(active_frame: RunFrame, active_work: RunWork, *,
+                         config_result: ProjectConfigLoadResult | None = None) -> ModeOutcome:
         return run_planning_readonly_mode(
             _planning_deps(deps),
             active_frame,
             active_work,
-            **kwargs,
+            config_result=config_result,
         )
 
     if task_kind == "review":
@@ -312,7 +304,6 @@ def record_route_trace(
     baseline_task_kind: str,
     task_kind: str,
     project: str | None,
-    claimed_work_item: GhostWorkItem | None,
     recovered_resume: bool = False,
 ) -> None:
     route_source = "explicit_user_choice" if (request.intent or "").strip().lower() != "auto" else "baseline"
@@ -321,9 +312,6 @@ def record_route_trace(
     if recovered_resume:
         route_source = "runtime_recovery"
         route_reason = "safe_tool_replay"
-    elif claimed_work_item is not None:
-        route_source = "local_work_item"
-        route_reason = "claimed_work_item"
     trace_sink.call(
         "record_mode_selection",
         baseline_mode=trace_mode(baseline_task_kind, project),

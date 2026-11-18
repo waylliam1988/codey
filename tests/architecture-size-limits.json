@@ -1,7 +1,5 @@
 {
   "durable/model.py": 1014,
-  "ghost/continuity.py": 1115,
-  "ghost/inbox.py": 1178,
   "providers/api_provider.py": 1014,
   "providers/controls.py": 1384,
   "providers/worker.py": 1031,

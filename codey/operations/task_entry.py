@@ -9,22 +9,40 @@ kernel. All production tool calls converge in
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
-from contextlib import ExitStack
+from collections.abc import Callable, Mapping
+from contextlib import ExitStack, suppress
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from threading import Event
+from typing import TYPE_CHECKING, Protocol
+
+from codey.agents.handoff import ConversationContext
+from codey.agents.tools import AgentToolFns
+from codey.knowledge.changes import KnowledgeChanges
+from codey.memory.context import MemoryContext, retrieve_context
+from codey.operations.kernel_contracts import KernelResult
+from codey.operations.task_effects import KernelEffectSink
+from codey.operations.task_state import TaskState
+from codey.providers.base import ChatProvider
+from codey.providers.compat_transport import provider_window_ref, require_callable
+from codey.providers.transport import ProviderTransport
+from codey.research.tools import ResearchTools
+from codey.runtime.core.outcome import OperationOutcome
+from codey.utils.object_fields import object_fields
+from codey.utils.refs import coerce_int
+from codey.workspace.changes import ChangeTracker
+from codey.workspace.config import ProjectConfigLoadResult
 
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession
+    from codey.operations.task_run import TaskRunDeps
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
 
 from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.conversation_window import WindowActivationError, activate_window
 from codey.operations.generation_boundary import durable_generation_boundary_callback
-from codey.operations.ghost_context import ghost_hints_enabled
 from codey.operations.kernel_request_builder import KernelRunRequestBuilder
 from codey.operations.result import ModeOutcome
 from codey.operations.task_guidance import task_guidance_for_policy
@@ -36,6 +54,17 @@ from codey.policies.capabilities import BROWSER_CAPABILITIES
 from codey.task.kind import ui_mode
 from codey.task.model import TaskSubmission
 
+
+class ProjectMode(Protocol):
+    def __call__(self, frame: RunFrame, work: RunWork, hooks: RunHooks, /, *,
+                 config_result: ProjectConfigLoadResult | None = None) -> ModeOutcome: ...
+
+
+class PlanningMode(Protocol):
+    def __call__(self, frame: RunFrame, work: RunWork, /, *,
+                 config_result: ProjectConfigLoadResult | None = None) -> ModeOutcome: ...
+
+
 _TASK_KINDS = frozenset({"project", "research", "hybrid", "planning", "planning_readonly", "readonly"})
 
 
@@ -46,7 +75,7 @@ class FreshSessionOutcome:
 
 
 def _open_fresh_session(
-    conversation: Any, provider: Any, *, provider_id: str, kind: str, project: str = "",
+    conversation: ConversationContext, provider: ChatProvider | ProviderTransport, *, provider_id: str, kind: str, project: str = "",
 ) -> FreshSessionOutcome:
     """Open a fresh provider session; reset the window only on success.
 
@@ -54,10 +83,7 @@ def _open_fresh_session(
     异常后继续向旧会话发送；非成功路径绝不触碰原窗口与累计预算。
     """
     try:
-        new_chat = getattr(provider, "new_chat", None)
-        if not callable(new_chat):
-            return FreshSessionOutcome(ok=False, error="provider has no new chat session")
-        new_chat()
+        require_callable(provider, "new_chat")()
     except Exception as exc:
         return FreshSessionOutcome(ok=False, error=f"new chat failed: {exc}")
     try:
@@ -155,7 +181,7 @@ def _entry_check_conflict(policy: TaskPolicy, request: TaskSubmission, kind: str
         )
 
 
-def _entry_executors(frame: RunFrame, deps: Any, policy: Any) -> tuple[Any | None, Any, Any | None]:
+def _entry_executors(frame: RunFrame, deps: TaskRunDeps, policy: TaskPolicy) -> tuple[Path | None, AgentToolFns | None, ResearchTools | None]:
     request = frame.request
     project_path: Path | None = None
     if frame.project_text:
@@ -168,7 +194,7 @@ def _entry_executors(frame: RunFrame, deps: Any, policy: Any) -> tuple[Any | Non
     if project_path is not None:
         from codey.agents.tools import build_project_tool_fns
 
-        managed_outputs = getattr(deps, "managed_outputs", None)
+        managed_outputs = deps.managed_outputs
         tool_fns = build_project_tool_fns(
             state_home=managed_outputs.root.parent if managed_outputs is not None else None,
         )
@@ -186,11 +212,11 @@ def _entry_executors(frame: RunFrame, deps: Any, policy: Any) -> tuple[Any | Non
     return project_path, tool_fns, research_tools
 
 
-def _entry_provider_sink(frame: RunFrame, deps: Any, kind: str) -> tuple[Any, Any, Any]:
+def _entry_provider_sink(frame: RunFrame, deps: TaskRunDeps, kind: str) -> tuple[object, KernelEffectSink | None, Event]:
     request = frame.request
     intent_sink = None
-    active_provider = frame.provider
-    mutations = getattr(deps, "runtime_mutations", None)
+    active_provider: object = frame.provider
+    mutations = deps.runtime_mutations
     if mutations is not None and request.session_id and frame.run_id:
         from codey.operations.task_effects import KernelEffectSink
 
@@ -202,20 +228,18 @@ def _entry_provider_sink(frame: RunFrame, deps: Any, kind: str) -> tuple[Any, An
             mutations, session_id=request.session_id, run_id=frame.run_id,
             provider_id=frame.provider_id,
             phase="research" if kind == "research" else "writer",
-            managed_outputs=getattr(deps, "managed_outputs", None),
+            managed_outputs=deps.managed_outputs,
             durable=admitted_durable(deps.state, frame.run_id),
         )
-    if getattr(frame, "conversation", None) is not None:
+    if frame.conversation is not None:
         from codey.operations.provider_session import ConversationProvider
 
         active_provider = ConversationProvider(active_provider, frame.conversation)
-    registry = getattr(getattr(deps, "state", None), "run_registry", None)
-    stop_for = getattr(registry, "stop_flag_for", None)
-    stop_flag = stop_for(frame.run_id) if callable(stop_for) else getattr(registry, "stop_flag", None)
+    stop_flag = deps.state.stop_flag_for(frame.run_id)
     return active_provider, intent_sink, stop_flag
 
 
-def _entry_project_tracker(project_path: Path | None, deps: Any, policy: Any, run_id: str) -> Any:
+def _entry_project_tracker(project_path: Path | None, deps: TaskRunDeps, policy: TaskPolicy, run_id: str) -> ChangeTracker | None:
     if project_path is None or not policy.allows("project.write"):
         return None
     from codey.operations.kernel_errors import RecoveryFailed
@@ -223,7 +247,7 @@ def _entry_project_tracker(project_path: Path | None, deps: Any, policy: Any, ru
     try:
         from codey.operations.task_changes import task_change_tracker
 
-        tracker = task_change_tracker(deps.state, project_path, run_id)
+        tracker: ChangeTracker | None = task_change_tracker(deps.state, project_path, run_id)
         if tracker is None:
             raise ValueError("project change tracker is missing")
         return tracker
@@ -231,8 +255,8 @@ def _entry_project_tracker(project_path: Path | None, deps: Any, policy: Any, ru
         raise RecoveryFailed(f"project change tracking unavailable: {exc}") from exc
 
 
-def _entry_project_receipt(frame: RunFrame, work: RunWork, hooks: RunHooks, deps: Any,
-                           session: Any, result: Any, tracker: Any) -> tuple[dict[str, Any], dict[str, Any] | None]:
+def _entry_project_receipt(frame: RunFrame, work: RunWork, hooks: RunHooks, deps: TaskRunDeps,
+                           session: TaskSession, result: KernelResult, tracker: ChangeTracker | None) -> tuple[dict[str, object], dict[str, object] | None]:
     from codey.operations.task_session import session_checks_passed
     from codey.runs.receipt import build_task_receipt
 
@@ -246,81 +270,35 @@ def _entry_project_receipt(frame: RunFrame, work: RunWork, hooks: RunHooks, deps
     if work.ledger is not None:
         hooks.append_ledger(lambda ledger: ledger.append_changes_collected(
             changes, checks_passed=checks_passed, receipt=receipt))
-    payload = {"changed_count": changes.get("changed_count", 0),
-               "files": changes.get("files", [])[:3], "mode": changes.get("mode"),
+    files = changes.get("files", [])
+    payload: dict[str, object] = {"changed_count": changes.get("changed_count", 0),
+               "files": files[:3] if isinstance(files, list) else [], "mode": changes.get("mode"),
                "project": frame.project_text}
     return receipt, payload
 
 
-def _entry_context(frame: RunFrame, deps: Any, policy: Any) -> tuple[str, tuple[Any, ...], bool]:
+def _entry_context(frame: RunFrame, deps: TaskRunDeps, policy: TaskPolicy) -> tuple[str, MemoryContext]:
     from codey.agents.request import AgentRequest
-    from codey.operations.ghost_context import (
-        ghost_continuity,
-        ghost_control_enabled,
-        ghost_directive,
-        ghost_experiences,
-    )
     from codey.operations.project_adapter import _project_context
-    from codey.operations.prompting import record_local_context_trace
-    from codey.runtime.observe.prompt_envelope import PromptEnvelope, PromptEnvelopeSection
-    from codey.workspace.context_admission import request_scope, sources_from_values
-    from codey.workspace.context_epoch import context_source_ref
 
     request = frame.request
     if frame.provider is None:
         raise RuntimeError("provider is not connected")
-    scope = request.project or ""
-    directive = ghost_directive(
-        deps.state, session_id=request.session_id, project=scope,
-        provider=frame.provider if frame.task_kind in {"chat", "auto"} else None,
-    )
-    continuity = ghost_continuity(deps.state, session_id=request.session_id, project=scope)
-    experiences = ghost_experiences(deps.state, session_id=request.session_id, project=scope,
-                                     query=request.task, exclude_run_id=frame.run_id)
-    ghost_sources = sources_from_values(
-        directive=directive.text,
-        continuity=continuity.text,
-        experiences=experiences,
-        scope=request_scope(scope, request.session_id),
-    )
-    admit_hints = ghost_control_enabled(
-        deps.state, "admit_hints", project=scope, session_id=request.session_id,
-    )
-    if not admit_hints:
-        ghost_sources = ()
-    record_local_context_trace(getattr(frame, "trace", None), directive, continuity)
-    sections = [
-        PromptEnvelopeSection(
-            name=source.key,
-            text=source.text,
-            purpose="bounded local Ghost context",
-            freshness="run_start",
-            source_refs=(context_source_ref(source.key),),
-            budget=source.budget,
-            admission_reason=source.admission_reason,
-            capability_id=source.capability_id,
-        )
-        for source in ghost_sources
-    ]
-    if not policy.allows("project.read"):
-        return PromptEnvelope(sections).render().text, ghost_sources, admit_hints
-    workspace_context = _project_context(AgentRequest(
-        provider=frame.provider, project=Path(frame.project_text), task=request.task,
-        permission_profile="coding_writer" if policy.allows("project.write") else "planning_readonly",
-        trace_recorder=getattr(frame, "trace", None),
-    ))
-    if workspace_context:
-        sections.append(PromptEnvelopeSection(
-            name="workspace_context",
-            text=workspace_context,
-            purpose="bounded local workspace context",
-            freshness="run_start",
-            source_refs=("context_source:workspace_context",),
+    memory = retrieve_context(deps.state.memory, task=request.task, project=request.project or "",
+                              session_id=request.session_id, run_id=frame.run_id)
+    parts = [memory.text] if memory.text else []
+    if policy.allows("project.read"):
+        workspace = _project_context(AgentRequest(
+            provider=frame.provider, project=Path(frame.project_text), task=request.task,
+            permission_profile="coding_writer" if policy.allows("project.write") else "planning_readonly",
+            trace_recorder=frame.trace,
         ))
-    return PromptEnvelope(sections).render().text, ghost_sources, admit_hints
+        if workspace:
+            parts.append(workspace)
+    return "\n\n".join(parts), memory
 
 
-def _workspace_writer(frame: RunFrame, state: Any, stack: ExitStack) -> Any:
+def _workspace_writer(frame: RunFrame, state: TaskState, stack: ExitStack) -> Callable[[], None]:
     acquired = False
 
     def ensure() -> None:
@@ -339,8 +317,8 @@ def _workspace_writer(frame: RunFrame, state: Any, stack: ExitStack) -> Any:
     return ensure
 
 
-def run_entry_kernel(frame: RunFrame, work: RunWork, hooks: RunHooks, deps: Any,
-                     *, task_kind: str = "", config_result: Any = None, continuation_followup: str = "") -> ModeOutcome:
+def run_entry_kernel(frame: RunFrame, work: RunWork, hooks: RunHooks, deps: TaskRunDeps,
+                     *, task_kind: str = "", config_result: ProjectConfigLoadResult | None = None, continuation_followup: str = "") -> ModeOutcome:
     from codey.operations.task_execution import close_research_tools
 
     try:
@@ -349,17 +327,17 @@ def run_entry_kernel(frame: RunFrame, work: RunWork, hooks: RunHooks, deps: Any,
                                      task_kind=task_kind, config_result=config_result,
                                      continuation_followup=continuation_followup, writer_stack=writer_stack)
     finally:
-        close_research_tools(getattr(frame, "entry_research_tools", None))
+        close_research_tools(frame.entry_research_tools)
 
 
 def _run_entry_kernel(  # noqa: PLR0915
     frame: RunFrame,
     work: RunWork,
     hooks: RunHooks,
-    deps: Any,
+    deps: TaskRunDeps,
     *,
     task_kind: str = "",
-    config_result: Any = None,
+    config_result: ProjectConfigLoadResult | None = None,
     continuation_followup: str = "",
     writer_stack: ExitStack,
 ) -> ModeOutcome:
@@ -368,11 +346,9 @@ def _run_entry_kernel(  # noqa: PLR0915
     request = frame.request
     kind = _task_kind(task_kind or frame.task_kind)
     if not frame.project_text and kind == "chat":
-        from codey.storage.local_store import DEFAULT_STATE_HOME
         from codey.workspace.session import session_workspace
 
-        state_home = getattr(getattr(deps, "workspace_revisions", None), "state_home", None)
-        state_home = state_home or getattr(deps.state, "state_home", None) or DEFAULT_STATE_HOME
+        state_home = deps.workspace_revisions.state_home
         frame.project_text = str(session_workspace(state_home, request.session_id))
     policy = _entry_policy_with_recovery(frame, deps.state.durable, kind)
     _entry_check_conflict(policy, request, kind)
@@ -380,19 +356,19 @@ def _run_entry_kernel(  # noqa: PLR0915
     from codey.operations.recovery import durable_task_for, record_entry_policy
 
     record_entry_policy(
-        getattr(deps, "runtime_mutations", None),
+        deps.runtime_mutations,
         session_id=request.session_id, run_id=frame.run_id, policy=policy,
-        durable=durable_task_for(getattr(getattr(deps, "state", None), "durable", None), frame.run_id),
+        durable=durable_task_for(deps.state.durable, frame.run_id),
     )
     project_path, tool_fns, research_tools = _entry_executors(frame, deps, policy)
-    previous_tools = getattr(frame, "entry_research_tools", None)
+    previous_tools = frame.entry_research_tools
     if research_tools is not None and previous_tools is not None:
         research_tools.ledger = previous_tools.ledger
     frame.entry_research_tools = research_tools
     # 会话生命周期：仅 fresh_chat 且 new_chat 成功后才开启新窗口（首发之前）；
     # 重置失败立即停止并报 provider failure，不向旧会话发送；继续会话时
     # 保留原窗口与累计预算。
-    if bool(getattr(frame, "fresh_chat", False)):
+    if bool(frame.fresh_chat):
         if frame.provider is None:
             return ModeOutcome({
                 "type": "task_done",
@@ -433,10 +409,10 @@ def _run_entry_kernel(  # noqa: PLR0915
                 "receipt": {"display": {"summary": fresh.error[:2000]}},
             })
     active_provider, intent_sink, stop_flag = _entry_provider_sink(frame, deps, kind)
-    context_text, ghost_sources, admit_hints = _entry_context(frame, deps, policy)
+    context_text, memory = _entry_context(frame, deps, policy)
     ensure_workspace_writer = _workspace_writer(frame, deps.state, writer_stack) if kind == "chat" else None
     try:
-        ignored = tuple(getattr(getattr(config_result, "config", None), "ignored_paths", ()) or ())
+        ignored = config_result.config.ignored_paths if config_result is not None and config_result.config is not None else ()
     except Exception:
         ignored = ()
     try:
@@ -452,14 +428,10 @@ def _run_entry_kernel(  # noqa: PLR0915
                     stop_flag=stop_flag,
                     context_text="\n\n".join(part for part in (context_text, continuation_followup) if part),
                     context_scope=request_scope(request.project, request.session_id),
-                    ghost_sources=ghost_sources,
-                    admit_hints=admit_hints,
-                    attempt_admit_hints=lambda: ghost_hints_enabled(
-                        deps.state, project=str(request.project or ""), session_id=request.session_id,
-                        provider=frame.provider,
-                        directive_text=next((source.text for source in ghost_sources if source.key == "ghost_directive"), ""),
-                    ),
-                    window_ref=getattr(active_provider, "window_ref", None),
+                    memory_sources=memory.sources,
+                    memory_spans=memory.spans,
+                    attempt_validate_memory_sources=lambda actual: actual == memory.sources and memory.valid(deps.state.memory),
+                    window_ref=provider_window_ref(active_provider),
                     task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
                 ).build(execution=KernelExecutionDeps(
                     executors={},
@@ -470,7 +442,7 @@ def _run_entry_kernel(  # noqa: PLR0915
                     research_tools=research_tools,
                     permission_profile="research" if kind == "research" else "coding_writer",
                     workspace_ignored_paths=ignored,
-                    workspace_revision_store=getattr(deps, "workspace_revisions", None),
+                    workspace_revision_store=deps.workspace_revisions,
                     ensure_workspace_writer=ensure_workspace_writer,
                 ), observation=KernelObservationDeps(
                     on_event=hooks.on_event,
@@ -482,11 +454,11 @@ def _run_entry_kernel(  # noqa: PLR0915
                         "project": frame.project_text,
                         "execution_evidence": work.evidence,
                         "analysis_run_payloads": work.analysis_run_payloads,
-                        "research_ledger": getattr(research_tools, "ledger", None),
+                        "research_ledger": research_tools.ledger if research_tools is not None else None,
                     },
-                    trace_recorder=getattr(frame, "trace", None),
+                    trace_recorder=frame.trace,
                     on_boundary=durable_generation_boundary_callback(
-                        durable=getattr(getattr(deps, "state", None), "durable", None),
+                        durable=deps.state.durable,
                         session_id=str(request.session_id or ""),
                         task_id=frame.run_id,
                         sink=intent_sink,
@@ -520,9 +492,8 @@ def _run_entry_kernel(  # noqa: PLR0915
     # 生命周期收口：只更新同一会话视图的快照，不再无条件 begin_window
     #（继续会话保留原窗口与累计预算）。各轮 token 已由 provider 适配器
     # 逐轮记账，最终只更新任务摘要。
-    import contextlib as _contextlib
 
-    with _contextlib.suppress(Exception):
+    with suppress(Exception):
         from dataclasses import replace as _replace2
 
         summary_text = (result.summary or "")
@@ -544,13 +515,9 @@ def _run_entry_kernel(  # noqa: PLR0915
         None if result.stop_reason in {"stopped", "provider_failure", "error"} else request.session_id,
     )
     receipt, changes = _entry_project_receipt(frame, work, hooks, deps, session, result, tracker)
-    proof = getattr(result, "proof", None)
-    if proof is not None:
-        to_payload = getattr(proof, "to_payload", None)
-        if callable(to_payload):
-            with _contextlib.suppress(Exception):
-                receipt["completion_proof"] = to_payload()
-    event = {
+    if result.proof is not None:
+        receipt["completion_proof"] = result.proof.to_payload()
+    event: dict[str, object] = {
         "type": "task_done",
         "run_id": frame.run_id,
         "session_id": request.session_id,
@@ -572,7 +539,8 @@ def _run_entry_kernel(  # noqa: PLR0915
             error=RuntimeError(summary),
         ).to_dict()
     if changes is not None:
-        event["changed"] = changes["changed_count"] > 0
+        count = changes["changed_count"]
+        event["changed"] = isinstance(count, int) and count > 0
         event["changes"] = changes
     return ModeOutcome(event)
 
@@ -581,91 +549,69 @@ def run_task_mode(
     frame: RunFrame,
     work: RunWork,
     hooks: RunHooks,
-    deps: Any,
+    deps: TaskRunDeps,
     *,
     task_kind: str = "",
-    config_result: Any = None,
-    run_project: Any = None,
-    run_research: Any = None,
-    run_planning: Any = None,
+    config_result: ProjectConfigLoadResult | None = None,
+    run_project: ProjectMode | None = None,
+    run_research: Callable[[RunFrame, RunHooks], ModeOutcome] | None = None,
+    run_planning: PlanningMode | None = None,
 ) -> ModeOutcome:
-    kind = _task_kind(task_kind or getattr(frame, "task_kind", ""))
+    kind = _task_kind(task_kind or frame.task_kind)
     if kind == "hybrid":
         outcome = run_entry_kernel(frame, work, hooks, deps, task_kind="hybrid", config_result=config_result)
-        session = getattr(frame, "entry_session", None)
-        tools = getattr(frame, "entry_research_tools", None)
+        session = frame.entry_session
+        tools = frame.entry_research_tools
         enriched = _enrich_hybrid_outcome(frame, work, outcome, session=session, research_tools=tools)
-        changes = getattr(tools, "changes", None)
-        has_changes = getattr(changes, "has_changes", None)
+        changes = tools.changes if tools is not None else None
         recorder = getattr(getattr(deps, "state", None), "record_research_changes", None)
-        if callable(has_changes) and has_changes() and callable(recorder):
+        if isinstance(changes, KnowledgeChanges) and changes.has_changes() and callable(recorder):
             recorder(getattr(frame, "run_id", ""), changes, getattr(frame.request, "session_id", ""))
         return enriched
-    if kind == "project" and callable(run_project):
-        return cast(ModeOutcome, run_project(frame, work, hooks, config_result=config_result))
-    if kind == "research" and callable(run_research):
-        return cast(ModeOutcome, run_research(frame, hooks))
-    if kind == "planning" and callable(run_planning):
-        return cast(ModeOutcome, run_planning(frame, work, config_result=config_result))
+    if kind == "project" and run_project is not None:
+        return run_project(frame, work, hooks, config_result=config_result)
+    if kind == "research" and run_research is not None:
+        return run_research(frame, hooks)
+    if kind == "planning" and run_planning is not None:
+        return run_planning(frame, work, config_result=config_result)
     return run_entry_kernel(frame, work, hooks, deps, task_kind=kind, config_result=config_result)
 
 
 def _enrich_hybrid_outcome(
-    frame: RunFrame, work: RunWork, outcome: ModeOutcome, *, session: Any = None, research_tools: Any = None,
+    frame: RunFrame, work: RunWork, outcome: ModeOutcome, *, session: TaskSession | None = None, research_tools: ResearchTools | None = None,
 ) -> ModeOutcome:
     event = dict(outcome.event or {})
     if research_tools is not None:
         from codey.operations.research_flow import research_payload_from_tools
 
-        request = getattr(frame, "request", None)
+        request = frame.request
         event["research"] = research_payload_from_tools(
             research_tools,
-            question=str(getattr(request, "task", "") or ""),
+            question=request.task,
             summary=str(event.get("summary", "") or ""),
             stop_reason=str(event.get("stop_reason", "") or ""),
-            turns=int(event.get("turns", 0) or 0),
-            synthesis_id=str(getattr(research_tools, "synthesis_id", "") or ""),
+            turns=coerce_int(event.get("turns", 0)),
+            synthesis_id=research_tools.synthesis_id,
         )
-    try:
-        evidence = getattr(work, "evidence", None)
-        receipt = dict(event.get("receipt") or {})
-        display = dict(receipt.get("display") or {})
-        # 1) Evidence archiving: bounded local facts for review/display.
-        try:
-            rendered = evidence.render_for_review() if evidence is not None else ""
-        except Exception:
-            rendered = ""
-        if rendered and "evidence" not in display:
-            display["evidence"] = str(rendered)[:2000]
-        # Strict research quality is decided in completion_gate before done;
-        # display never re-judges quality after the kernel verdict.
-        # 2) Changed files projection: already-decided session facts only.
-        try:
-            edited = dict(getattr(session, "edited_files", {}) or {}) if session is not None else dict[str, object]()
-            verifs = list(getattr(session, "verifications", ()) or []) if session is not None else list[dict[str, Any]]()
-            if edited:
-                display["changed_files"] = sorted(str(k)[:240] for k in edited)[:20]
-                try:
-                    last = verifs[-1] if verifs else dict[str, object]()
-                    display["verification"] = str(last.get("command", "") or "")[:240] if isinstance(last, dict) else ""
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        # 3) SSE/final display: keep single-session result, add projections.
-        # SSE turn/tool events were already emitted via hooks.on_event in the
-        # kernel; here we keep the ModeOutcome display shape compatible.
-        if display != (event.get("receipt") or {}).get("display", {}):
-            receipt["display"] = display
-            event["receipt"] = receipt
-    except Exception:
-        pass
+    raw_receipt = event.get("receipt")
+    receipt = dict(raw_receipt) if object_fields(raw_receipt) else dict[str, object]()
+    raw_display = receipt.get("display")
+    display = dict(raw_display) if object_fields(raw_display) else dict[str, object]()
+    rendered = work.evidence.render_for_review()
+    if rendered and "evidence" not in display:
+        display["evidence"] = rendered[:2000]
+    if session is not None and session.edited_files:
+        display["changed_files"] = sorted(session.edited_files)[:20]
+        display["verification"] = session.verifications[-1]["command"][:240] if session.verifications else ""
+    if display != raw_display:
+        receipt["display"] = display
+        event["receipt"] = receipt
     from dataclasses import replace
 
     return replace(outcome, event=event)
 
 
-def run_task_submission(deps: Any, request: TaskSubmission) -> None:
+def run_task_submission(deps: TaskRunDeps, request: TaskSubmission) -> None:
     # Lazy imports: task_run imports task_phases.dispatch which imports this
     # module for run_task_mode; top-level import would cycle.
     from codey.operations.task_run import (
@@ -691,14 +637,14 @@ def run_task_submission(deps: Any, request: TaskSubmission) -> None:
             release_unstarted_submission(deps.state, prepared)
             raise
 
-    def execute(request: TaskSubmission) -> Any:
+    def execute(request: TaskSubmission) -> OperationOutcome | None:
         if not request.model_selection:
             return execute_task_run(deps, request)
         from codey.runtime.core.api_selection import ApiRunSelection
 
         selection = ApiRunSelection.from_payload(request.model_selection)
 
-        def connect_selected(provider_id: str) -> Any:
+        def connect_selected(provider_id: str) -> ChatProvider:
             if provider_id != selection.connection_id:
                 raise ValueError("admitted API connection cannot switch during this run")
             return (deps.connect_provider or deps.state.get_provider)(provider_id)
@@ -714,7 +660,7 @@ def run_task_submission(deps: Any, request: TaskSubmission) -> None:
     runtime.run(request)
 
 
-def _admit_api_selection(state: Any, request: TaskSubmission) -> TaskSubmission:
+def _admit_api_selection(state: TaskState, request: TaskSubmission) -> TaskSubmission:
     from codey.providers.api_connections import capture_selection, connection_for
     from codey.providers.catalog import API_CONNECTIONS
     from codey.runtime.core.api_selection import ApiRunSelection

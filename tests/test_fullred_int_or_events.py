@@ -39,12 +39,6 @@ def test_events_managed_bytes_malformed_does_not_crash() -> None:
     assert payload["stored_bytes"] == 0
 
 
-def test_expires_at_minimum_one_day_is_intentional() -> None:
-    from codey.ghost.continuity import _expires_at
-
-    # minimum 1 day is intentional clamp; days=0 -> +1 day must hold
-    assert _expires_at("2026-01-01T00:00:00Z", 0) == "2026-01-02T00:00:00Z"
-    assert _expires_at("2026-01-01T00:00:00Z", None) == "2026-01-02T00:00:00Z"  # type: ignore[arg-type]
 
 
 def test_bounded_limit_default_zero_clamps_to_one() -> None:
@@ -67,16 +61,6 @@ def test_turn_budget_min_one_is_intentional() -> None:
     assert _turn_budget(SimpleNamespace(max_turns=5)) == 5
 
 
-def test_merge_metadata_rejects_non_dict() -> None:
-    from codey.ghost.inbox import _merge_metadata
-
-    # correct code must reject list input, not silently coerce
-    try:
-        result = _merge_metadata([("a", 1)], None)  # type: ignore[arg-type]
-    except (TypeError, AttributeError):
-        return
-    # if it returns, it must not silently accept list as dict
-    assert result == {}, f"list input silently coerced to {result!r}"
 
 
 def test_search_page_offset_min_one_is_intentional() -> None:

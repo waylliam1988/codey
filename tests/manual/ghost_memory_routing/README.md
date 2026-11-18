@@ -1,3 +1,5 @@
+> 冷启动重写后的现行边界见 [Memory / Ghost](../../../docs/memory-boundary.zh-CN.md)。依赖退役实现的脚本已删除，历史报告保留；独立 World Model 验证实验保留。下方脚本清单是历史记录。
+
 # Ghost 偏好投递与预算路由实验
 
 现行[生产晋级与默认启用规则](../../../docs/ghost_production_promotion.zh-CN.md)：一个实际模型验证收益、

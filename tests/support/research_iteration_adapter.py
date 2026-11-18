@@ -12,13 +12,21 @@ protocol-text tests only).
 
 from __future__ import annotations
 
+from collections.abc import Generator, Mapping
 from types import SimpleNamespace
-from typing import Any
 
+from codey.knowledge.store import KnowledgeStore
+from codey.operations.provider_session import ProviderAdapter
+from codey.providers.requests import ProviderRequest
+from codey.research.run_result import ResearchRunResult
+from codey.research.source_gateway import _SearchProvider
+from codey.research.tools import ResearchTools
+from codey.runs.trace import RunTraceRecorder
+from codey.storage.managed_outputs import ManagedOutputStore
 from tests.support.kernel_runtime import run_research_iteration
 
 
-def render_research_repair_prompt(codec: Any, plan: Any, state: Any | None = None) -> str:
+def render_research_repair_prompt(codec: object, plan: object, state: object | None = None) -> str:
     del codec, state
     try:
         kind = str(getattr(plan, "protocol_error_kind", "") or "")
@@ -53,22 +61,22 @@ class ResearchIteration:
 
     def __init__(
         self,
-        provider: Any,
-        search: Any,
-        store: Any,
+        provider: object,
+        search: _SearchProvider,
+        store: KnowledgeStore,
         *,
         max_turns: int = 8,
-        codec: Any | None = None,
+        codec: object | None = None,
         session_id: str = "",
         project: str = "",
         chat_handoff: str = "",
-        trace_recorder: Any = None,
+        trace_recorder: RunTraceRecorder | None = None,
         run_id: str = "",
-        tools: Any | None = None,
+        tools: ResearchTools | None = None,
         iteration_context: str = "",
         topic_continuity_context: str = "",
-        topic_continuity_payload: Any | None = None,
-        managed_outputs: Any = None,
+        topic_continuity_payload: Mapping[str, object] | None = None,
+        managed_outputs: ManagedOutputStore | None = None,
         controller_denied: tuple[str, ...] = (),
     ) -> None:
         # 薄适配：形状兼容旧调用（含 codec 探针字段），行为一律走生产
@@ -88,14 +96,14 @@ class ResearchIteration:
         self.topic_continuity_payload = topic_continuity_payload
         self.managed_outputs = managed_outputs
         self.controller_denied = controller_denied
-        self._last_result: Any | None = None
+        self._last_result: ResearchRunResult | None = None
         if tools is not None:
             self.tools = tools
         else:
             self.tools = self._build_tools()
-        self.changes = getattr(self.tools, "changes", None)
+        self.changes = self.tools.changes
 
-    def _build_tools(self) -> Any | None:
+    def _build_tools(self) -> ResearchTools:
         from codey.knowledge.changes import KnowledgeChanges
         from codey.research.tools import ResearchTools
 
@@ -109,15 +117,15 @@ class ResearchIteration:
         return str(question or "")
 
     def _send_provider(self, message: str) -> str:
-        return str(self.provider.send(message))
+        return ProviderAdapter(self.provider).send(message)
 
-    def run(self, question: str) -> Any:
+    def run(self, question: str) -> Generator[ResearchRunResult, None, None]:
         from codey.operations.provider_session import ProviderAdapter
 
         outer = self
 
         class ProbeProvider(ProviderAdapter):
-            def execute_request(self, request):
+            def execute_request(self, request: ProviderRequest) -> object:
                 from codey.providers.requests import SendTextRequest
 
                 if isinstance(request, SendTextRequest):
@@ -128,9 +136,7 @@ class ResearchIteration:
         extension = intro.removeprefix(str(question)).strip()
         deps = SimpleNamespace(
             state=SimpleNamespace(
-                ghost_inbox=SimpleNamespace(
-                    control_enabled=lambda _name, **_kwargs: True,
-                ),
+                memory=None,
             ),
             knowledge_store=self.store,
             managed_outputs=self.managed_outputs,
@@ -158,17 +164,17 @@ class ResearchIteration:
             controller_denied=self.controller_denied,
         )
         self.tools = iteration.tools or tools
-        self.changes = getattr(self.tools, "changes", None)
+        self.changes = self.tools.changes
         self._last_result = iteration.result
         self.result = iteration.result
         yield iteration.result
 
     @property
-    def result(self) -> Any:
+    def result(self) -> ResearchRunResult | None:
         return self._last_result
 
     @result.setter
-    def result(self, value: Any) -> None:
+    def result(self, value: ResearchRunResult | None) -> None:
         self._last_result = value
 
 

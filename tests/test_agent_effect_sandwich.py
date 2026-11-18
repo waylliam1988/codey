@@ -7,7 +7,6 @@ import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
 from codey.agents.request import AgentRequest
@@ -79,7 +78,7 @@ def _commit_log_entry(
 
 
 def _admit_durable_tool_recovery(
-    state: Any,
+    state: server.AppContext,
     *,
     session_id: str,
     run_id: str,
@@ -445,7 +444,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         state = server.AppContext(state_home=self.temp_dir.name)
         agent_called = False
 
-        def fake_agent_run(req: Any) -> RunResult:
+        def fake_agent_run(req: object) -> RunResult:
             nonlocal agent_called
             agent_called = True
             return RunResult("ok", "done", 1, 0, (), ())
@@ -497,50 +496,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.assertEqual(len(done_events), 1)
         self.assertEqual(done_events[0].get("stop_reason"), "error")
 
-    def test_runtime_start_failure_happens_before_work_item_claim(self) -> None:
-        state = server.AppContext(state_home=self.temp_dir.name)
-        mock_work_queue = Mock()
-        state.ghost_work_queue = mock_work_queue
-
-        deps = TaskRunDeps(
-            state=state,
-            agent_run=Mock(),
-            collect_changes=Mock(return_value={"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"}),
-            run_review=Mock(return_value=None),
-            capture_provider_failure=task_submit.capture_provider_failure,
-            project_facts=state.project_facts,
-            work_checkpoints=state.work_checkpoints,
-            workspace_revisions=state.workspace_revisions,
-            run_ledgers=state.run_ledgers,
-            run_traces=state.run_traces,
-            evidence_ledgers=state.evidence_ledgers,
-            managed_outputs=state.managed_outputs,
-            knowledge_store=state.knowledge_store,
-            runtime_mutations=state.runtime_mutations,
-            runtime_effects=self.effects,
-            is_git_repository=lambda _project: True,
-        )
-
-        with patch.object(state, "get_provider", return_value=MockProvider()), \
-             patch("codey.operations.task_phases.ghost.maybe_claim_work_item") as claim_work_item, \
-             patch.object(state.runtime_mutations, "accept_operation", return_value=None):
-            run_task_submission(
-                deps,
-                TaskSubmission(
-                    self.session_id,
-                    str(self.project_dir),
-                    "task to run",
-                    5,
-                    False,
-                    "mock_provider",
-                    intent="project",
-                    run_id="run-transition-1",
-                ),
-            )
-
-        claim_work_item.assert_not_called()
-        mock_work_queue.block_item.assert_not_called()
-        mock_work_queue.release_item.assert_not_called()
 
     def test_recovery_fails_before_provider_send(self) -> None:
         from codey.operations.task_loop import run_task_kernel
@@ -557,7 +512,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             self.assertNotEqual(fixture.durable.task("r").phase, "completed")
 
 
-    def test_recovered_tool_outcomes_skip_work_claim(self) -> None:
+    def test_recovered_tool_outcomes_keep_original_policy(self) -> None:
         # This test drives the recovery entry directly; the background
         # scheduler must not dispatch the admitted checkpoint concurrently
         # while the recovered effect fixture is being assembled.
@@ -642,9 +597,9 @@ class AgentEffectSandwichTests(unittest.TestCase):
                 batch_digest=compute_batch_digest(items),
             ),
         )
-        seen_requests: list[Any] = []
+        seen_requests: list[object] = []
 
-        def fake_agent_run(req: Any) -> RunResult:
+        def fake_agent_run(req: object) -> RunResult:
             seen_requests.append(req)
             self.assertEqual(req.task_policy, original_policy)
             return RunResult("ok", "done", 2, False, False, False)
@@ -668,8 +623,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             is_git_repository=lambda _project: True,
         )
 
-        with patch.object(state, "get_provider", return_value=MockProvider()), \
-             patch("codey.operations.task_phases.ghost.maybe_claim_work_item", autospec=True) as mock_claim:
+        with patch.object(state, "get_provider", return_value=MockProvider()):
             run_task_submission(
                 deps,
                 TaskSubmission(
@@ -684,7 +638,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
                 ),
             )
 
-        self.assertEqual(mock_claim.call_count, 0)
         self.assertEqual(len(seen_requests), 1)
         self.assertTrue(any(event.get("type") == "task_done" and event.get("stop_reason") != "done"
                             for event in emitted_events))
@@ -774,9 +727,9 @@ class AgentEffectSandwichTests(unittest.TestCase):
         record_entry_policy(state.runtime_mutations, session_id=self.session_id, run_id=run_id,
                             policy=TaskPolicy(grants=frozenset({"control", "project.read"})),
                             durable=state.durable)
-        seen_requests: list[Any] = []
+        seen_requests: list[object] = []
 
-        def fake_agent_run(req: Any) -> RunResult:
+        def fake_agent_run(req: object) -> RunResult:
             seen_requests.append(req)
             return RunResult("ok", "done", 2, False, False, False)
 
@@ -899,7 +852,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             self.assertEqual(phase, "writer")
             return SimpleNamespace(name="custom_writer")
 
-        def fake_evaluate(call: ToolCall, **kwargs: Any) -> tuple[None, Any]:
+        def fake_evaluate(call: ToolCall, **kwargs: object) -> tuple[None, object]:
             seen_profiles.append(str(kwargs.get("permission_profile") or ""))
             return None, tool_replay_policy(call.name)
 

@@ -159,77 +159,9 @@ class LedgerStrictTests(unittest.TestCase):
                 reopened.finish(summary="x", stop_reason="done", turns=1, max_turns=2, provider="p")
             self.assertEqual(read_ledger(path), [])
 
-    def test_ghost_ignores_incomplete_projection_with_warning(self) -> None:
-        from codey.operations.ghost_post_turn import GhostTaskPolicyDeps, _run_projection
-        from codey.runs.ledger import RunLedgerStore
-
-        with tempfile.TemporaryDirectory() as td:
-            store = RunLedgerStore(td)
-            writer = store.open(run_id="r1", session_id="s1", project="E:/p", task="t", provider="p", mode="m")
-            writer.append("info", text="first")
-            # Corrupt the tail: Ghost must see no projection.
-            path = store.path_for("s1", "r1")
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write("bad\n")
-            warnings: list[dict] = []
-            state = mock.Mock()
-            state.emit = warnings.append
-            deps = GhostTaskPolicyDeps(state=state, run_ledgers=store)
-            self.assertIsNone(_run_projection(deps, "s1", "r1"))
-            self.assertTrue(any(w.get("type") == "ghost_post_turn_warning" for w in warnings))
-
-    def test_ghost_ignores_unfinished_but_valid_prefix(self) -> None:
-        from codey.operations.ghost_post_turn import GhostTaskPolicyDeps, _run_projection
-        from codey.runs.ledger import RunLedgerStore
-
-        with tempfile.TemporaryDirectory() as td:
-            store = RunLedgerStore(td)
-            store.open(run_id="r2", session_id="s2", project="E:/p", task="t", provider="p", mode="m")
-            warnings: list[dict] = []
-            state = mock.Mock()
-            state.emit = warnings.append
-            deps = GhostTaskPolicyDeps(state=state, run_ledgers=store)
-            # Valid prefix without run_finished is not complete.
-            self.assertIsNone(_run_projection(deps, "s2", "r2"))
-            self.assertTrue(any(w.get("type") == "ghost_post_turn_warning" for w in warnings))
 
 
-class GhostKnowledgeScopeTests(unittest.TestCase):
-    def test_project_query_failure_yields_no_items(self) -> None:
-        from codey.ghost.continuity import _items_from_knowledge
 
-        class BadIndex:
-            def recent(self, *args, **kwargs):
-                raise OSError("index down")
-
-        store = mock.Mock()
-        store.index = BadIndex()
-        warnings: list[str] = []
-        out = _items_from_knowledge(store, now="2026-01-01T00:00:00Z", session_id="s1", project="E:/p1", warnings=warnings)
-        self.assertEqual(out, [])
-        self.assertIn("knowledge_unreadable", warnings)
-
-    def test_foreign_project_note_is_skipped(self) -> None:
-        from codey.ghost.continuity import _items_from_knowledge
-
-        foreign = {
-            "id": "n-foreign",
-            "project": "E:/other",
-            "session_id": "s-other",
-            "title": "Foreign focus",
-            "type": "synthesis",
-            "updated": "2026-01-01T00:00:00Z",
-        }
-        store = mock.Mock()
-        store.index.recent.return_value = [foreign]
-        warnings: list[str] = []
-        out = _items_from_knowledge(store, now="2026-01-01T00:00:00Z", session_id="s1", project="E:/p1", warnings=warnings)
-        self.assertEqual(out, [])
-        self.assertIn("knowledge_scope_mismatch", warnings)
-        # Old wide fallback must be gone: single recent call with project filter.
-        self.assertEqual(store.index.recent.call_count, 1)
-        _, kwargs = store.index.recent.call_args
-        self.assertIn("project", kwargs)
 
 
 class UiStateConflictApiTests(unittest.TestCase):

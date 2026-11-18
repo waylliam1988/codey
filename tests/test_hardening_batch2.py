@@ -60,27 +60,7 @@ class ApprovalFailClosedTests(unittest.TestCase):
 
 
 class CancellationPropagationTests(unittest.TestCase):
-    def test_affinity_list_nodes_reraises_cancel(self) -> None:
-        from codey.ghost.affinity import GhostAffinityStore
 
-        with tempfile.TemporaryDirectory() as td:
-            store = GhostAffinityStore(Path(td))
-            with mock.patch.object(
-                store,
-                "_load_state_for_read_unlocked",
-                side_effect=cancellation.TaskCancelled("stop"),
-            ), self.assertRaises(cancellation.TaskCancelled):
-                store.list_nodes()
-
-    def test_affinity_cross_store_specs_reraise_cancel(self) -> None:
-        from codey.ghost import affinity_sources as affinity_sources_owner
-
-        class _Boom:
-            def list_nodes(self, **_kwargs):
-                raise cancellation.TaskCancelled("stop")
-
-        with self.assertRaises(cancellation.TaskCancelled):
-            affinity_sources_owner._node_specs_from_hebbian(_Boom())
 
     def test_details_recovery_reraises_cancel(self) -> None:
         from codey.runs import details as details_module
@@ -152,16 +132,22 @@ class PostBodyCoercionTests(unittest.TestCase):
         from codey.app import server as server_module
         from codey.app.operator_auth import OperatorAuth
 
-        handler = server_module.Handler.__new__(server_module.Handler)
+        sent: list[tuple[int, dict[str, object]]] = []
+
+        class FailingHandler(server_module.Handler):
+            def _send_json(self, status: int, payload: dict[str, object]) -> None:
+                sent.append((status, payload))
+
+            def _request_origin_allowed(self) -> bool:
+                return True
+
+        handler = FailingHandler.__new__(FailingHandler)
         handler.path = "/api/stop"
         auth = OperatorAuth(8080)
         cookie = auth.exchange(auth.issue_bootstrap())
         assert cookie is not None
         handler.server = SimpleNamespace(operator_auth=auth)
         handler.headers = {"Cookie": cookie.split(";", 1)[0]}
-        sent: list[tuple[int, dict]] = []
-        handler._send_json = lambda status, payload: sent.append((status, payload))  # type: ignore[method-assign]
-        handler._request_origin_allowed = lambda: True  # type: ignore[method-assign]
         broken = SimpleNamespace()
         with mock.patch.object(server_module.CodeyHTTPServer, "app_context", broken):
             handler.do_POST()

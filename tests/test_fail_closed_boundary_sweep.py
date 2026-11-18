@@ -35,10 +35,6 @@ class OverflowSweepTests(unittest.TestCase):
             [{"kind": "x", "target": "t", "weight": 10 ** 400, "confidence": 1.0}], kind="x")
         self.assertEqual(out.get("t"), 0.0)
 
-    def test_ghost_numbers_huge(self):
-        from codey.ghost.numbers import clamp_unit_float, coerce_unit_float
-        self.assertIsNone(coerce_unit_float(10 ** 400))
-        self.assertEqual(clamp_unit_float(10 ** 400), 0.0)
 
     def test_receipt_nonnegative_inf(self):
         from codey.runs.receipt import _nonnegative_int
@@ -97,14 +93,7 @@ class OverflowSweepTests(unittest.TestCase):
         from codey.research.connector_search import _bounded_timeout
         self.assertEqual(_bounded_timeout(10 ** 400), 4.0)
 
-    def test_sleep_int_inf(self):
-        from codey.ghost.sleep import _int
-        self.assertEqual(_int(float("inf")), 0)
 
-    def test_work_queue_future_ts_inf(self):
-        from codey.ghost.work_queue import _future_ts
-        out = _future_ts("2026-01-01T00:00:00Z", float("inf"))
-        self.assertIsInstance(out, str)
 
     def test_proof_quality_inf(self):
         from codey.research.proof_quality import _bounded_score, _positive_ints
@@ -132,11 +121,6 @@ class OverflowSweepTests(unittest.TestCase):
         from codey.storage.ui_state_store import _int
         self.assertEqual(_int(10 ** 400), 0)
 
-    def test_directive_hint_weight_huge(self):
-        from codey.ghost.directive import _hint_weight_by_target
-        out = _hint_weight_by_target(
-            [{"kind": "x", "target": "t", "weight": 10 ** 400, "confidence": 1.0}], kind="x")
-        self.assertEqual(out.get("t"), 0.0)
 
     def test_discovery_bare_float_does_not_crash(self):
         from codey.providers import discovery as dv
@@ -151,13 +135,6 @@ class OverflowSweepTests(unittest.TestCase):
 
 
 class BoolUnicodeFiniteTests(unittest.TestCase):
-    def test_bool_is_not_one(self):
-        from codey.completion.repair_context import _nonnegative_int as cr
-        from codey.ghost.sleep import _int as sl
-        from codey.research.source_search import bounded_limit as bl
-        self.assertEqual(cr(True), 0)
-        self.assertEqual(sl(True), 0)
-        self.assertEqual(bl(True), 6)
 
     def test_ascii_digit_gate(self):
         from codey.research.proof_quality import _positive_ints as pi
@@ -177,20 +154,7 @@ class BoolUnicodeFiniteTests(unittest.TestCase):
         self.assertIsNone(rt(float("inf")))
         self.assertIsNone(kn("inf"))
 
-    def test_bounded_scores_finite(self):
-        from codey.ghost.hebbian import _clamp01 as hb
-        from codey.knowledge.research_interest import _unit_float as ri
-        from codey.research.proof_quality import _bounded_score as pq
-        from codey.runs.trace_values import _unit_float as tr
-        self.assertEqual(pq(float("nan")), 0.0)
-        self.assertEqual(pq("inf"), 0.0)
-        self.assertEqual(ri(float("nan")), 0.0)
-        self.assertEqual(tr(float("nan")), 0.0)
-        self.assertEqual(hb(float("nan")), 0.0)
 
-    def test_confidence_label_inf_is_unknown(self):
-        from codey.ghost.control_surface import _confidence_label
-        self.assertEqual(_confidence_label(float("inf")), "Unknown confidence")
 
     def test_local_config_rejects_underscore(self):
         from codey.providers.local_config import _parse_positive_int
@@ -358,7 +322,7 @@ class LedgerEventGuardTests(unittest.TestCase):
             for bad_args in (None, 123, "oops", [("path", "x")]):
                 w = RunLedgerWriter(Path(td) / "ledger.jsonl",
                                     run_id="run-args-guard", session_id="sess")
-                call = ToolCall(name="edit", args=bad_args)  # type: ignore[arg-type]
+                call = ToolCall(name="edit", args=bad_args)
                 outcome = ToolOutcome("ok", True, changed=True)
                 w.append_run_event(RunEvent(kind="tool", turn=1, call=call, outcome=outcome))
 
@@ -366,7 +330,7 @@ class LedgerEventGuardTests(unittest.TestCase):
         from codey.runtime.core.models import ToolCall
         from codey.runtime.observe.events import RunEvent, render_run_event, run_event_ui_payload
         from codey.toolchain.runtime import ToolOutcome
-        call = ToolCall(name="edit", args=None)  # type: ignore[arg-type]
+        call = ToolCall(name="edit", args=None)
         outcome = ToolOutcome("ok", True, changed=True)
         ev = RunEvent(kind="tool", turn=1, call=call, outcome=outcome)
         self.assertIsInstance(render_run_event(ev), str)

@@ -39,6 +39,9 @@ from contextlib import nullcontext
 from pathlib import Path
 from urllib.request import urlopen
 
+from codey.providers.base import ChatProvider
+from codey.types.json_value import decode_json_object
+
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -246,7 +249,7 @@ def _ran_zero_tests(output: str) -> bool:
     return re.search(r"Ran\s+0\s+tests?\b", output) is not None
 
 
-def _canonical_tool_name(row: dict) -> str:
+def _canonical_tool_name(row: dict[str, object]) -> str:
     """Canonical tool name for gate assertions; display ``tool`` is ignored.
 
     Headless audit rows carry ``tool_name`` (canonical ``event.call.name``)
@@ -256,7 +259,7 @@ def _canonical_tool_name(row: dict) -> str:
     return str(row.get("tool_name") or "").strip().lower()
 
 
-def _tool_names_in_order(rows: list[dict]) -> list[str]:
+def _tool_names_in_order(rows: list[dict[str, object]]) -> list[str]:
     """Canonical tool names in JSONL order; task_done folds to ``done``."""
     names: list[str] = []
     for row in rows or []:
@@ -280,11 +283,11 @@ def _normalize_hybrid_step(name: str) -> str:
 _TASK_IDENTITY_TYPES = frozenset({"task_start", "turn", "tool_started", "tool", "task_done"})
 
 
-def _row_ok(row: dict) -> bool:
+def _row_ok(row: dict[str, object]) -> bool:
     return bool(row.get("ok") is True)
 
 
-def _run_row_ok(row: dict) -> bool:
+def _run_row_ok(row: dict[str, object]) -> bool:
     if not _row_ok(row):
         return False
     from codey.utils.refs import strict_exit_code
@@ -293,7 +296,7 @@ def _run_row_ok(row: dict) -> bool:
     return code is not None and code == 0
 
 
-def check_hybrid_tool_order(rows: list[dict]) -> dict:
+def check_hybrid_tool_order(rows: list[dict[str, object]]) -> dict[str, object]:
     """Deterministic order assertion: search -> open -> read -> edit -> run -> done.
 
     Returns ``{"ok": bool, "tool_names": [...], "detail": str}``. Hybrid proves
@@ -358,7 +361,7 @@ def check_hybrid_tool_order(rows: list[dict]) -> dict:
     return {"ok": True, "tool_names": names, "detail": "search->open->read->edit->run->done"}
 
 
-def check_research_tool_order(rows: list[dict]) -> dict:
+def check_research_tool_order(rows: list[dict[str, object]]) -> dict[str, object]:
     """Require successful web search, source opening, and terminal done evidence."""
     relevant = [r for r in (rows or []) if str(r.get("type") or "") in {"tool", "task_done"}]
     identities = {(str(r.get("run_id") or ""), str(r.get("session_id") or "")) for r in relevant}
@@ -382,7 +385,7 @@ def check_research_tool_order(rows: list[dict]) -> dict:
     return {"ok": True, "tool_names": _tool_names_in_order(rows), "detail": "search->open->done", "positions": [search, opened, done]}
 
 
-def check_single_session_identity(rows: list[dict]) -> dict:
+def check_single_session_identity(rows: list[dict[str, object]]) -> dict[str, object]:
     """Task-run rows must share one run_id/session_id (same Codey run/session).
 
     Only task-run events participate (task_start, turn, tool_started, tool,
@@ -400,13 +403,13 @@ def check_single_session_identity(rows: list[dict]) -> dict:
         r for r in task_rows if not str(r.get("run_id") or "") or not str(r.get("session_id") or "")
     ]
     if missing:
-        run_ids = sorted({str(r.get("run_id") or "") for r in task_rows})
-        sess_ids = sorted({str(r.get("session_id") or "") for r in task_rows})
+        missing_run_ids = sorted({str(r.get("run_id") or "") for r in task_rows})
+        missing_sess_ids = sorted({str(r.get("session_id") or "") for r in task_rows})
         return {
             "ok": False,
-            "run_ids": run_ids,
-            "session_ids": sess_ids,
-            "detail": f"missing run_id/session_id in {len(missing)} task row(s); run_ids={run_ids} session_ids={sess_ids}",
+            "run_ids": missing_run_ids,
+            "session_ids": missing_sess_ids,
+            "detail": f"missing run_id/session_id in {len(missing)} task row(s); run_ids={missing_run_ids} session_ids={missing_sess_ids}",
         }
     run_ids = {str(r.get("run_id") or "") for r in task_rows}
     sess_ids = {str(r.get("session_id") or "") for r in task_rows}
@@ -440,7 +443,7 @@ def fixture_file_hashes(root: Path) -> dict[str, str]:
 def _verify_fixture(
     root: Path, case: str, *, baseline_tests: dict[str, str] | None = None,
     baseline_files: dict[str, str] | None = None,
-) -> dict:
+) -> dict[str, object]:
     if baseline_tests is not None:
         current = fixture_test_hashes(root)
         changed = [name for name, digest in baseline_tests.items() if current.get(name) != digest]
@@ -456,7 +459,7 @@ def _verify_fixture(
         test_path = root / "tests" / "test_calculator.py"
         if not test_path.exists():
             return {"ok": False, "exit_code": 1, "output": "tests/test_calculator.py missing"}
-        commands = ([sys.executable, "-B", "-m", "unittest", "discover"],)
+        commands: tuple[list[str], ...] = ([sys.executable, "-B", "-m", "unittest", "discover"],)
         assertion = ""
     elif case == "create":
         assertion = (
@@ -534,7 +537,7 @@ def _verify_fixture(
     return {"ok": True, "exit_code": 0, "output": combined}
 
 
-def _verify_generated_tests(root: Path) -> dict | None:
+def _verify_generated_tests(root: Path) -> dict[str, object] | None:
     """Require the generated suite to distinguish addition from subtraction.
 
     Mutate an isolated copy, never the project the agent just completed.
@@ -556,7 +559,7 @@ def _verify_generated_tests(root: Path) -> dict | None:
     return None
 
 
-def run_chat_case(target: attempts.GateTarget, case_dir: Path) -> dict:
+def run_chat_case(target: attempts.GateTarget, case_dir: Path) -> dict[str, object]:
     provider = attempts.make_provider(target, case_dir)
     t0 = time.perf_counter()
     try:
@@ -573,15 +576,15 @@ def run_chat_case(target: attempts.GateTarget, case_dir: Path) -> dict:
     }
 
 
-def run_agent_case(case: str, *, target: attempts.GateTarget, case_dir: Path) -> dict:
+def run_agent_case(case: str, *, target: attempts.GateTarget, case_dir: Path) -> dict[str, object]:
     task, intent, max_turns = _task_for(case)
     max_turns = target.turn_budget or max_turns
     input_path = case_dir / "input.json"
     config = json.loads(input_path.read_text(encoding="utf-8"))
     root = Path(config["project"])
     state_home = Path(config["state"])
-    rows: list[dict] = []
-    def record_event(row):
+    rows: list[dict[str, object]] = []
+    def record_event(row: dict[str, object]) -> None:
         rows.append(row)
         with (case_dir / "events.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -615,10 +618,10 @@ def run_agent_case(case: str, *, target: attempts.GateTarget, case_dir: Path) ->
         # Hybrid additionally proves ordered tool use on one session:
         # search -> open -> read -> edit -> run -> done. Other cases prove
         # files+done+independent verification only (see module docstring).
-        hybrid_order: dict | None = None
+        hybrid_order: dict[str, object] | None = None
         if case == "hybrid":
             hybrid_order = check_hybrid_tool_order(rows)
-        research_order: dict | None = None
+        research_order: dict[str, object] | None = None
         if case == "research":
             research_order = check_research_tool_order(rows)
         order = hybrid_order or research_order
@@ -626,8 +629,8 @@ def run_agent_case(case: str, *, target: attempts.GateTarget, case_dir: Path) ->
             stop_reason == "done"
             and result.exit_code == 0
             and done is not None
-            and verification["ok"]
-            and single_session["ok"]
+            and bool(verification["ok"])
+            and bool(single_session["ok"])
             and (order is None or bool(order.get("ok")))
             and (case != "read" or any(r.get("tool_name") == "read_file" and r.get("ok") is True for r in rows))
         )
@@ -639,7 +642,7 @@ def run_agent_case(case: str, *, target: attempts.GateTarget, case_dir: Path) ->
             failure_stage = "research_environment_unavailable"
         data = {
             "case": case, "ok": ok, "seconds": dt,
-            "stop_reason": stop_reason, "turns": int((done or {}).get("turns") or 0),
+            "stop_reason": stop_reason, "turns": _integer((done or {}).get("turns")),
             "exit_code": result.exit_code,
             "summary": str((done or {}).get("summary") or "")[:1000],
             "verification": verification,
@@ -660,13 +663,14 @@ def run_agent_case(case: str, *, target: attempts.GateTarget, case_dir: Path) ->
     return data
 
 
-def _connect_gate_provider(provider_id: str, target: attempts.GateTarget, directory: Path):
+def _connect_gate_provider(provider_id: str, target: attempts.GateTarget, directory: Path) -> ChatProvider:
     if provider_id != target.provider_id:
         raise RuntimeError(f"gate pins provider {target.provider_id}; refusing failover to {provider_id}")
     return attempts.make_provider(target, directory)
 
 
-def _agent_failure_stage(ok, verification, identity, order, stop_reason):
+def _agent_failure_stage(ok: bool, verification: dict[str, object], identity: dict[str, object],
+                         order: dict[str, object] | None, stop_reason: str) -> str:
     if ok:
         return ""
     if verification.get("ok") is not True:
@@ -678,56 +682,42 @@ def _agent_failure_stage(ok, verification, identity, order, stop_reason):
     return "completion:" + stop_reason
 
 
-def run_ghost_case() -> dict:
-    """Ghost control-plane roundtrip inside an isolated state home.
+def run_ghost_case() -> dict[str, object]:
+    """Exercise the Core protocol against an isolated memory implementation."""
+    from contextlib import closing
 
-    Writes one observation for this run, reads it back by run_id, checks
-    retrieval surfaces it, deletes the session scope, and asserts it is
-    no longer retrievable. The user's default state is not part of this test.
-    """
-    from codey.ghost.observation_index import retrieve_relevant_observations
-    from codey.ghost.observations import GhostObservationStore
-    state_home = Path(tempfile.mkdtemp(prefix="codey-kobold-gate-ghost-")).resolve()
-    try:
-        store = GhostObservationStore(state_home)
-        run_id = "gate-ghost-roundtrip"
-        session_id = "gate-session"
-        if not store.append_completed(
-            run_id=run_id, session_id=session_id, project="",
-            mode="chat", user_text="gate breathing plan",
-            assistant_text="gate reply about breathing",
-            stop_reason="done", provider_id="local",
-        ):
-            return {"case": "ghost", "ok": False, "error": "roundtrip append failed"}
-        committed = store.read_committed(session_id=session_id)
-        seen = [row for row in committed if str(row.get("run_id") or "") == run_id]
-        if not seen:
-            return {"case": "ghost", "ok": False, "error": "roundtrip read by run_id failed"}
-        picked = retrieve_relevant_observations(
-            committed, "breathing plan", exclude_run_id="other-run",
-        )
-        if not any(str(row.get("run_id") or "") == run_id for row in picked):
-            return {"case": "ghost", "ok": False, "error": "roundtrip retrieval missed"}
-        removed = store.delete_scope("session", session_id=session_id)
-        if removed < 1:
-            return {"case": "ghost", "ok": False, "error": "roundtrip delete removed nothing"}
-        after = [row for row in store.read_committed(session_id=session_id)
-                 if str(row.get("run_id") or "") == run_id]
-        if after:
-            return {"case": "ghost", "ok": False, "error": "deleted observation still retrievable"}
-        return {
-            "case": "ghost", "ok": True, "observations": len(committed),
-            "roundtrip": "write->read->retrieve->delete->gone",
-        }
-    except Exception as exc:  # noqa: BLE001
-        return {"case": "ghost", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
-    finally:
-        shutil.rmtree(state_home, ignore_errors=True)
+    from codey.app.context import AppContext
+    from codey.app.memory_setup import observe_terminal
+    from codey.memory.contracts import DeleteScopeRequest, MemoryQuery
+    from codey.workspace.context_admission import request_scope
 
+    with (
+        tempfile.TemporaryDirectory(prefix="codey-gate-memory-") as temporary,
+        closing(AppContext(Path(temporary), start_scheduler=False)) as state,
+    ):
+        state.durable.admit_input(conversation_id="s", request_id="input", task_id="r",
+            text="breathing plan", provider_snapshot={}, task_state={"task": "breathing plan"})
+        state.durable.claim_task("r")
+        state.durable.complete_task("r", "A breathing plan", state={})
+        observe_terminal(state.memory, state.durable, "r")
+        scope = request_scope("", "s")
+        query = MemoryQuery("breathing", (scope,), state.memory.clock())
+        items = state.memory.retrieve(query).items
+        deleted = state.memory.delete_scope(DeleteScopeRequest(scope))
+        after = state.memory.retrieve(query).items
+        return {"case": "ghost", "ok": len(items) == 1 and deleted.deleted == 1 and not after,
+                "observations": len(items), "roundtrip": "complete->observe->retrieve->delete->gone"}
 
 def _worker(case: str, directory: Path) -> int:
-    config = json.loads((directory / "input.json").read_text(encoding="utf-8"))
-    target = attempts.GateTarget(**config["target"])
+    config = decode_json_object(json.loads((directory / "input.json").read_text(encoding="utf-8")))
+    raw = decode_json_object(config["target"])
+    target = attempts.GateTarget(
+        str(raw["base_url"]), str(raw["model"]), _integer(raw["context_window_tokens"]),
+        _integer(raw["context_reserve_tokens"]), _integer(raw["context_keep_recent_tokens"]),
+        protocol=str(raw["protocol"]), temperature=float(str(raw["temperature"])), provider_id=str(raw["provider_id"]),
+        api_selection=decode_json_object(raw["api_selection"]),
+        request_timeout=float(str(raw["request_timeout"])),
+        api_protocol=str(raw["api_protocol"]), turn_budget=_integer(raw["turn_budget"]))
     recorder = attempts.record_api_generations(directory / "provider.jsonl") if target.provider_id != "local" else nullcontext()
     with recorder, attempts.isolate_gate_secondary_models(target):
         return _run_worker(case, directory, target)
@@ -765,27 +755,27 @@ def _run_worker(case: str, directory: Path, target: attempts.GateTarget) -> int:
     return 0  # Transport succeeded; data.ok owns the case verdict.
 
 
-def _server_observations(base_url: str) -> dict:
+def _server_observations(base_url: str) -> dict[str, object]:
     from urllib.parse import urlsplit
 
     parsed = urlsplit(base_url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
-    observations = {}
+    observations: dict[str, object] = {}
     for path in ("/api/extra/version", "/api/v1/config/max_context_length", "/api/v1/config/max_length"):
         try:
             with urlopen(origin + path, timeout=5) as response:
-                observations[path] = json.loads(response.read(8192))
+                observations[path] = decode_json_object(json.loads(response.read(8192)))
         except Exception as exc:
             observations[path] = {"unavailable": type(exc).__name__}
     return observations
 
 
-def _metadata(target: attempts.GateTarget) -> dict:
+def _metadata(target: attempts.GateTarget) -> dict[str, object]:
     from dataclasses import asdict
 
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=attempts.REPO_ROOT,
                             capture_output=True, text=True, check=False, timeout=10)
-    metadata = {
+    metadata: dict[str, object] = {
         "target": asdict(target), "python": sys.version, "git_commit": commit.stdout.strip(),
         **source_fingerprints(attempts.REPO_ROOT, target.provider_id),
         "server_observations": _server_observations(target.base_url) if target.provider_id == "local" else {},
@@ -802,6 +792,26 @@ def _positive_int(value: str) -> int:
     if number <= 0:
         raise argparse.ArgumentTypeError("must be positive")
     return number
+
+
+def _integer(value: object) -> int:
+    return value if isinstance(value, int) else 0
+
+
+class _Arguments(argparse.Namespace):
+    case: str
+    cases: str | None
+    json: bool
+    repeat: int
+    timeout: int
+    protocol: str
+    model: str
+    provider: str
+    profile: str
+    turn_budget: int
+    run_dir: Path | None
+    worker_case: str | None
+    worker_dir: Path | None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -822,7 +832,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--run-dir", type=Path, help="new artifact directory; existing directories are rejected")
     ap.add_argument("--worker-case", choices=CASES, help=argparse.SUPPRESS)
     ap.add_argument("--worker-dir", type=Path, help=argparse.SUPPRESS)
-    args = ap.parse_args(argv)
+    args = ap.parse_args(argv, namespace=_Arguments())
     if args.worker_case:
         if args.worker_dir is None:
             ap.error("worker directory required")
@@ -865,7 +875,7 @@ def main(argv: list[str] | None = None) -> int:
                 turn_budget=args.turn_budget)
         attempts.write_json(directory / "metadata.json", _metadata(target))
         _log(f"[gate] model={model} protocol={args.protocol} repeat={args.repeat}")
-        results = attempts.run_attempts(selected, directory, target, repeat=args.repeat, timeout=args.timeout)
+        results = attempts.run_attempts(tuple(selected), directory, target, repeat=args.repeat, timeout=args.timeout)
         payload = attempts.summarize(results, expected_cases=tuple(selected), repeat=args.repeat)
         payload = scope_verdict(
             payload,
@@ -881,7 +891,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps(payload, ensure_ascii=False))
     else:
-        for item in payload["results"]:
+        raw_results = payload["results"]
+        if not isinstance(raw_results, list):
+            raise ValueError("gate results must be a list")
+        for value in raw_results:
+            item = decode_json_object(value)
             print(f"{item['case']}: {'PASS' if item.get('ok') else 'FAIL'}")
     ready = payload.get("release_ready") if args.profile == "release" else payload.get("ok")
     return 0 if payload.get("ok") is True and ready is True else 1

@@ -28,42 +28,55 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any
 from unittest import mock
 
+from codey.durable.model import DurableMutation
+from codey.memory.contracts import MemoryItem
+from codey.storage import atomic_io
+from codey.types.json_value import (
+    JsonObject,
+    decode_json_object,
+    require_json_integer,
+    require_json_string,
+    require_json_strings,
+)
+from tests.stress.world import StressWorld
 
-def _say(payload: dict) -> None:
+
+def _say(payload: dict[str, object]) -> None:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
     sys.stdout.flush()
 
 
-def _run_write(state_home: str, steps: list) -> int:
+def _run_write(state_home: str, steps: list[JsonObject]) -> int:
     from tests.stress.world import StressWorld
 
     world = StressWorld(Path(state_home), seed=0)
-    manifest: dict = {"effects": [], "batches": [], "ghosts": 0}
+    effects: list[str] = []
+    batches: list[str] = []
+    ghosts = 0
     checkpoint = ""
     for step in steps:
         action = step.get("do")
         if action == "accept":
-            world.accept_operation(step["run"])
+            world.accept_operation(require_json_string(step["run"], "run"))
         elif action == "begin_provider":
-            intent = world.provider_intent(step["run"])
-            world.begin_provider(step["run"], intent)
-            manifest["effects"].append(intent.effect_id)
+            intent = world.provider_intent(require_json_string(step["run"], "run"))
+            world.begin_provider(require_json_string(step["run"], "run"), intent)
+            effects.append(intent.effect_id)
         elif action == "settle_provider":
-            world.settle_provider(step["run"], step["effect"])
+            world.settle_provider(require_json_string(step["run"], "run"), require_json_string(step["effect"], "effect"))
         elif action == "tool_batch":
-            batch = world.tool_batch_intent(step["run"], 1, tuple(step["refs"]))
-            tool = world.tool_intent(step["run"], step["refs"][0])
-            world.begin_batch(step["run"], batch, tool)
-            manifest["batches"].append(batch.batch_id)
+            batch = world.tool_batch_intent(require_json_string(step["run"], "run"), 1, tuple(require_json_strings(step["refs"], "refs")))
+            tool = world.tool_intent(require_json_string(step["run"], "run"), require_json_strings(step["refs"], "refs")[0])
+            world.begin_batch(require_json_string(step["run"], "run"), batch, tool)
+            batches.append(batch.batch_id)
         elif action == "ghost":
-            world.ghost_append(int(step.get("n", 1)), tag=step.get("tag", "kill"))
-            manifest["ghosts"] += int(step.get("n", 1))
+            world.ghost_append(require_json_integer(step.get("n", 1), "n"), tag=require_json_string(step.get("tag", "kill"), "tag"))
+            ghosts += require_json_integer(step.get("n", 1), "n")
         elif action == "checkpoint":
             checkpoint = str(step["file"])
-            _say({"manifest": manifest})
+            _say({"manifest": {"effects": effects, "batches": batches, "ghosts": ghosts}})
             Path(checkpoint).write_text("ready\n", encoding="utf-8")
         else:
             raise ValueError(f"unknown step: {action!r}")
@@ -85,64 +98,7 @@ class _CrashPointReached(Exception):
     """Test-only fault: stop a real write path exactly at a critical point."""
 
 
-class _ShortWriteProxy:
-    """File-object proxy that replays a torn OS write then dies.
-
-    Either truncates one chunk mid-write (``short_chunk``) or stops the
-    stream after ``stop_after_chunks`` full chunks. In both cases the bytes
-    already delivered are flushed to the page cache -- exactly what a real
-    kill would leave behind -- and ``_CrashPointReached`` aborts the path
-    before flush/fsync/rename observe anything further. Everything else
-    delegates to the real handle (including the context protocol, so the
-    production ``with`` blocks and lock handling run unmodified).
-    """
-
-    def __init__(
-        self,
-        handle: Any,
-        *,
-        short_chunk: int | None = None,
-        stop_after_chunks: int | None = None,
-    ) -> None:
-        self._handle = handle
-        self._short_chunk = short_chunk
-        self._stop_after_chunks = stop_after_chunks
-        self._writes = 0
-
-    def write(self, data: bytes) -> int:
-        index = self._writes
-        self._writes += 1
-        if self._short_chunk is not None and index == self._short_chunk:
-            self._handle.write(bytes(data)[: max(1, len(data) // 2)])
-            self._handle.flush()
-            raise _CrashPointReached(f"torn write at chunk {index}")
-        if self._stop_after_chunks is not None and index >= self._stop_after_chunks:
-            self._handle.flush()
-            raise _CrashPointReached(f"stopped after {index} chunks")
-        return self._handle.write(data)
-
-    def __enter__(self) -> _ShortWriteProxy:
-        self._handle.__enter__()
-        return self
-
-    def __exit__(self, *exc: object) -> bool:
-        return bool(self._handle.__exit__(*exc))
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._handle, name)
-
-
-def _faulty_fdopen(
-    real_fdopen: Any,
-    proxy_kwargs: dict,
-    fd: int,
-    *args: object,
-    **kwargs: object,
-) -> Any:
-    return _ShortWriteProxy(real_fdopen(fd, *args, **kwargs), **proxy_kwargs)
-
-
-def _crash_baseline(world: Any) -> str:
+def _crash_baseline(world: StressWorld) -> str:
     """Commit one full op + provider intent every point asserts as intact."""
     world.accept_operation("run-cp-1")
     intent = world.provider_intent("run-cp-1")
@@ -150,7 +106,7 @@ def _crash_baseline(world: Any) -> str:
     return intent.effect_id
 
 
-def _point_session_torn_row(world: Any) -> dict:
+def _point_session_torn_row(world: StressWorld) -> dict[str, object]:
     """A failed SQLite mutation is atomic: no partial runtime row is visible."""
     baseline = _crash_baseline(world)
     world.accept_operation("run-cp-2")
@@ -168,7 +124,7 @@ def _point_session_torn_row(world: Any) -> dict:
     return {"point": "session-torn-row", "baseline_effect": baseline, "crashed_effect": doomed.effect_id}
 
 
-def _point_session_full_no_ack(world: Any) -> dict:
+def _point_session_full_no_ack(world: StressWorld) -> dict[str, object]:
     """Bytes fsynced, caller killed before observing the return.
 
     Unlike an idle-checkpoint kill, the fault fires *inside* the write
@@ -180,7 +136,7 @@ def _point_session_full_no_ack(world: Any) -> dict:
     committed = world.provider_intent("run-cp-2")
     real_commit = world.durable.store.commit
 
-    def _die_after_commit(mutation: object) -> Any:
+    def _die_after_commit(mutation: DurableMutation) -> None:
         real_commit(mutation)
         raise _CrashPointReached("died after durable commit, before ack")
 
@@ -194,7 +150,7 @@ def _point_session_full_no_ack(world: Any) -> dict:
     return {"point": "session-full-no-ack", "baseline_effect": baseline, "crashed_effect": committed.effect_id}
 
 
-def _point_ghost_partial_batch(world: Any) -> dict:
+def _point_ghost_partial_batch(world: StressWorld) -> dict[str, object]:
     """Abort a Ghost SQLite transaction after all rows are staged.
 
     Ghost no longer appends JSONL chunks.  Its write contract is one SQLite
@@ -202,10 +158,10 @@ def _point_ghost_partial_batch(world: Any) -> dict:
     atomic counterpart of the old partial-file test).
     """
     baseline = _crash_baseline(world)
-    def _abort_after_rows() -> None:
+    def _abort_after_rows(_item: MemoryItem) -> str:
         raise _CrashPointReached("ghost transaction aborted before commit")
 
-    with mock.patch.object(world.ghost, "_check_cursor", _abort_after_rows):
+    with mock.patch("codey.ghost.backend._payload", _abort_after_rows):
         try:
             world.ghost_append(5, tag="cp")
         except _CrashPointReached:
@@ -220,13 +176,13 @@ def _point_ghost_partial_batch(world: Any) -> dict:
     }
 
 
-def _point_ghost_torn_row(world: Any) -> dict:
+def _point_ghost_torn_row(world: StressWorld) -> dict[str, object]:
     """Abort a Ghost SQLite transaction before commit; no torn row is visible."""
     baseline = _crash_baseline(world)
-    def _abort_after_rows() -> None:
+    def _abort_after_rows(_item: MemoryItem) -> str:
         raise _CrashPointReached("ghost transaction aborted before commit")
 
-    with mock.patch.object(world.ghost, "_check_cursor", _abort_after_rows):
+    with mock.patch("codey.ghost.backend._payload", _abort_after_rows):
         try:
             world.ghost_append(3, tag="cp")
         except _CrashPointReached:
@@ -240,7 +196,7 @@ def _point_ghost_torn_row(world: Any) -> dict:
     }
 
 
-def _point_primitive_replace(world: Any, *, before_rename: bool) -> dict:
+def _point_primitive_replace(world: StressWorld, *, before_rename: bool) -> dict[str, object]:
     from codey.storage import atomic_io
 
     _crash_baseline(world)
@@ -249,10 +205,10 @@ def _point_primitive_replace(world: Any, *, before_rename: bool) -> dict:
     target.write_bytes(b'{"v":1}')
     real_replace = os.replace
 
-    def _blocked_replace(src: object, dst: object) -> None:
+    def _blocked_replace(src: str | Path, dst: str | Path) -> None:
         raise _CrashPointReached("blocked before rename")
 
-    def _die_after_replace(src: object, dst: object) -> None:
+    def _die_after_replace(src: str | Path, dst: str | Path) -> None:
         real_replace(src, dst)
         raise _CrashPointReached("died after rename")
 
@@ -264,10 +220,10 @@ def _point_primitive_replace(world: Any, *, before_rename: bool) -> dict:
         # production ``finally`` cleanup: keep the orphan tmp on disk so
         # recovery must prove it ignores it.
         with replace_patch, mock.patch.object(atomic_io, "_cleanup_temp_file", lambda path: None):
-            _attempt_replace(atomic_io, target)
+            _attempt_replace(target)
     else:
         with replace_patch:
-            _attempt_replace(atomic_io, target)
+            _attempt_replace(target)
     return {
         "point": "primitive-replace-pre-rename" if before_rename else "primitive-replace-post-rename",
         "target": str(target),
@@ -276,7 +232,7 @@ def _point_primitive_replace(world: Any, *, before_rename: bool) -> dict:
     }
 
 
-def _point_journal_torn_tail(world: Any) -> dict:
+def _point_journal_torn_tail(world: StressWorld) -> dict[str, object]:
     baseline = _crash_baseline(world)
     world.journal.append("cp-baseline", run="run-cp-1")
     journal_path = world.journal.path
@@ -290,7 +246,7 @@ def _point_journal_torn_tail(world: Any) -> dict:
     return {"point": "journal-torn-tail", "baseline_effect": baseline, "journal": str(journal_path)}
 
 
-def _attempt_replace(atomic_io: Any, target: Path) -> None:
+def _attempt_replace(target: Path) -> None:
     try:
         atomic_io.write_bytes_atomic(target, b'{"v":2}')
     except _CrashPointReached:
@@ -336,6 +292,14 @@ def _run_crashpoint(state_home: str, point: str, rendezvous: str) -> int:
         time.sleep(0.2)
 
 
+class _Arguments(argparse.Namespace):
+    mode: str
+    state_home: str
+    steps: str
+    point: str
+    rendezvous: str
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", required=True, choices=("write", "recover", "crashpoint"))
@@ -343,9 +307,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--steps", default="[]")
     parser.add_argument("--point", default="")
     parser.add_argument("--rendezvous", default="")
-    args = parser.parse_args(argv)
+    args = parser.parse_args(argv, namespace=_Arguments())
     if args.mode == "write":
-        return _run_write(args.state_home, json.loads(args.steps))
+        raw_steps: object = json.loads(args.steps)
+        if not isinstance(raw_steps, list):
+            raise ValueError("steps must be a list")
+        return _run_write(args.state_home, [decode_json_object(step) for step in raw_steps])
     if args.mode == "crashpoint":
         if not args.point or not args.rendezvous:
             raise ValueError("crashpoint mode needs --point and --rendezvous")

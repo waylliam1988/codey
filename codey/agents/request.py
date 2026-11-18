@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from codey.agents.handoff import ConversationContext
 from codey.agents.shell_approval import ShellApprovalRequest
@@ -20,6 +20,8 @@ from codey.toolchain.runtime import ToolOutcome
 
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession
+    from codey.memory.service import MemoryService
+    from codey.providers.transport import ProviderTransport
     from codey.research.tools import ResearchTools
     from codey.runs.trace import RunTraceRecorder
     from codey.runtime.core.window_action import WindowAction
@@ -57,7 +59,7 @@ class RecoveredToolOutcome:
 
 @dataclass(frozen=True)
 class AgentRequest:
-    provider: ChatProvider
+    provider: ChatProvider | ProviderTransport
     project: Path
     task: str
     max_turns: int = DEFAULT_MAX_TURNS
@@ -83,9 +85,7 @@ class AgentRequest:
     verification_changed_files: tuple[str, ...] = ()
     verification_successful_checks: tuple[VerificationCandidate, ...] = ()
     coding_context_enabled: bool = True
-    ghost_directive: str = ""
-    ghost_continuity: str = ""
-    ghost_experiences: str = ""
+    memory: MemoryService | None = None
     admit_hints: bool = True
     completion_repair_context: str = ""
     completion_repair_context_payload: dict[str, object] | None = None
@@ -105,8 +105,8 @@ class AgentRequest:
     project_changes_required: bool = False
     strict_research: bool = False
     task_policy: object | None = None
-    task_session: Any | None = None
-    completion_context: dict[str, Any] | None = None
+    task_session: object | None = None
+    completion_context: dict[str, object] | None = None
     output_format: str = "text"
     output_schema: str = ""
 

@@ -1035,15 +1035,6 @@ setuptools==70.2.0 \
     --hash=sha256:b8b8060bb426838fbe942479c90296ce976249451118ef566a5a0b7d8b78fb05 \
     --hash=sha256:bd63e505105011b25c3c11f753f7e3b8465ea739efddaccef8f0efac2137bac1
     # via -r requirements-ci.in
-sqlite-vec==0.1.6 \
-    --hash=sha256:77491bcaa6d496f2acb5cc0d0ff0b8964434f141523c121e313f9a7d8088dee3 \
-    --hash=sha256:7b0519d9cd96164cd2e08e8eed225197f9cd2f0be82cb04567692a0a4be02da3 \
-    --hash=sha256:823b0493add80d7fe82ab0fe25df7c0703f4752941aee1c7b2b02cec9656cb24 \
-    --hash=sha256:c65bcfd90fa2f41f9000052bcb8bb75d38240b2dae49225389eca6c3136d3f0c \
-    --hash=sha256:fdca35f7ee3243668a055255d4dee4dea7eed5a06da8cad409f89facf4595361
-    # via
-    #   -r requirements-ci.in
-    #   codey (pyproject.toml)
 sse-starlette==3.5.0 \
     --hash=sha256:3e6e1070df3f0f5d9cea81496de92dbb72f6721871d99748ece67441dd8b7997 \
     --hash=sha256:75de713aa8a9441513cc283220826da079d982770965b951e9437720e8bafdb2

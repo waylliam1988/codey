@@ -58,7 +58,7 @@ from codey.runtime.log.session_view import (
 )
 from codey.types.json_value import decode_json_object, require_json_string
 from codey.workspace.coding_context import render_coding_context
-from codey.workspace.context_admission import admit_ghost_context
+from codey.workspace.context_admission import admit_context
 
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession
@@ -117,7 +117,7 @@ class KernelContext:
         self.attempt_gate_bound = wiring._bind_attempt_gate(self.provider, self.transport, self.observation.trace_recorder)
 
     def restore_context(self, payload: ProviderRequestContext) -> None:
-        self.transport = replace(self.transport, context_text=payload.context_text, ghost_sources=payload.ghost_sources)
+        self.transport = replace(self.transport, context_text=payload.context_text, memory_sources=payload.memory_sources)
         self.attempt_gate_bound = wiring._bind_attempt_gate(self.provider, self.transport, self.observation.trace_recorder)
 
     @property
@@ -437,7 +437,7 @@ class KernelContext:
             prompt = kernel_prompt._text_request_prompt(prompt, snapshot)
         self.snapshots[turn] = snapshot
         self.sink.bind_request(snapshot, logical_turn=turn, window_ref=self.window,
-            context_text=prompt if explanation_only else self.transport.context_text, ghost_sources=self.transport.ghost_sources,
+            context_text=prompt if explanation_only else self.transport.context_text, memory_sources=self.transport.memory_sources,
             effect_scope=self.effect_scope, close_reply=acknowledge,
             delivery_purpose=self.decision(state)["purpose"] if state.work_ref else "", work_ref=state.work_ref,
             source_response_ref=self.response_reference(state) if state.response_ref or state.work_ref
@@ -461,7 +461,7 @@ class KernelContext:
                 self.execution.research_tools.store if self.execution.research_tools is not None else None,
                 self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research_scope,
                 tool_names=snapshot.tool_names, provider=self.provider)
-            # Canonical replay excludes Ghost hints. Each continuation must
+            # Canonical replay excludes optional memory candidates. Each continuation must
             # carry its frozen context without relying on a warm wire history.
             context = self.transport.context_text
             options = replace(options, supplied=options.supplied | {"tool_call_observations"}, tool_call_observations="\n\n".join(part for part in (
@@ -537,7 +537,7 @@ class KernelContext:
                            "Command execution still requires its own approval.")
         if state.logical_turn and self.boundary_text():
             prompt += "\n\nNew user input at provider boundary:\n" + self.boundary_text()
-        admission = admit_ghost_context(prompt, self.transport.ghost_sources, request_scope=self.transport.context_scope,
+        admission = admit_context(prompt, self.transport.memory_sources, request_scope=self.transport.context_scope,
             require_all=not self.attempt_gate_bound, admit_hints=self.transport.admit_hints)
         if not self.attempt_gate_bound:
             record_outbound(self.observation.trace_recorder, prompt, admission=admission)

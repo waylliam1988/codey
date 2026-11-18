@@ -5,25 +5,20 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codey.research.tools import ResearchTools
 
 from codey.agents.request import AgentRequest
-from codey.ghost.continuity import GhostContinuity
-from codey.ghost.directive import GhostDirective
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.context import RunFrame, RunWork
-from codey.operations.ghost_context import ghost_continuity as _ghost_continuity_fn
-from codey.operations.ghost_context import ghost_control_enabled
-from codey.operations.ghost_context import ghost_directive as _ghost_directive_fn
-from codey.operations.prompting import record_local_context_trace
 from codey.operations.result import ModeOutcome
 from codey.operations.task_context import ProjectTaskContextBuilder
 from codey.operations.task_state import TaskState, stop_flag_for
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import ChatProvider
+from codey.providers.transport import ProviderTransport
 from codey.runs.trace import RunTraceRecorder
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent, render_run_event, run_event_ui_payload
@@ -34,18 +29,6 @@ from codey.workspace.facts import ProjectFactsStore
 from codey.workspace.revision import WorkspaceRevisionStore
 
 
-class _DirectiveProjection(Protocol):
-    def __call__(self, *, project: str, session_id: str) -> GhostDirective: ...
-
-
-class _ContinuityProjection(Protocol):
-    def __call__(self, *, project: str, session_id: str) -> GhostContinuity: ...
-
-
-class _ExperienceProjection(Protocol):
-    def __call__(self, *, session_id: str, project: str, query: str) -> str: ...
-
-
 @dataclass(frozen=True)
 class PlanningFlowDeps:
     state: TaskState
@@ -54,9 +37,6 @@ class PlanningFlowDeps:
     knowledge_store: KnowledgeStore | None = None
     search_factory: Callable[[], object] | None = None
     review_log_lines: int = 80
-    ghost_directive: _DirectiveProjection | None = None
-    ghost_continuity: _ContinuityProjection | None = None
-    ghost_experiences: _ExperienceProjection | None = None
 
 
 def _planning_entry_policy(frame: RunFrame, request: TaskSubmission) -> TaskPolicy:
@@ -94,7 +74,7 @@ def run_planning_readonly_mode(
     project = request.project
     if project is None:
         raise RuntimeError("planning_readonly mode requires a project")
-    provider: ChatProvider | None = frame.provider
+    provider: ChatProvider | ProviderTransport | None = frame.provider
     trace: RunTraceRecorder | None = frame.trace
     if provider is None:
         raise RuntimeError("provider is not connected")
@@ -114,28 +94,6 @@ def run_planning_readonly_mode(
         continue_task=False,
         provider_session_changed=frame.provider_session_changed,
     )
-    ghost_directive = deps.ghost_directive(
-        project=project,
-        session_id=request.session_id,
-    ) if deps.ghost_directive is not None else None
-    ghost_continuity = deps.ghost_continuity(
-        project=project,
-        session_id=request.session_id,
-    ) if deps.ghost_continuity is not None else None
-    if ghost_directive is None or ghost_continuity is None:
-        ghost_directive = ghost_directive or _ghost_directive_fn(deps.state, project=project, session_id=request.session_id)
-        ghost_continuity = ghost_continuity or _ghost_continuity_fn(deps.state, project=project, session_id=request.session_id)
-    record_local_context_trace(trace, ghost_directive, ghost_continuity)
-    experiences = ""
-    if deps.ghost_experiences is not None:
-        try:
-            experiences = deps.ghost_experiences(
-                session_id=request.session_id,
-                project=project,
-                query=request.task,
-            )
-        except Exception:
-            experiences = ""
     entry_policy = _planning_entry_policy(frame, request)
     # 共同任务准备：策略一次确定、run 身份、授权资源、恢复行全部传入，
     # planning 只收窄写权限并提供规划上下文。
@@ -167,12 +125,7 @@ def run_planning_readonly_mode(
             research_context=project_context.research_context,
             project_map=project_context.project_map,
             project_config_warnings=project_context.project_config_warnings,
-            ghost_directive=ghost_directive.text,
-            ghost_continuity=ghost_continuity.text,
-            ghost_experiences=experiences,
-            admit_hints=ghost_control_enabled(
-                state, "admit_hints", project=project, session_id=request.session_id,
-            ),
+            memory=state.memory,
             permission_profile="planning_readonly",
             trace_recorder=trace,
             session_id=request.session_id,

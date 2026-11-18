@@ -15,6 +15,9 @@ TASK = "Explain writer concurrency. Distinguish historical version restrictions.
 UNSUPPORTED_GAP_ANSWER = "We measured WAL on this machine: it is always 10x faster."
 
 
+
+
+
 def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task=TASK,
          provider_factory=None, required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS,
          unsupported_claim=False, bad_reference=False, gap_answer=None, gap_investigation=False, boundary_turn=None,
@@ -133,8 +136,8 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
         durable.subscribe_commits(committed)
     policy = TaskPolicy(frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}), strict_research=True,
                         required_checks=required_checks)
-    deps = ResearchFlowDeps(state=SimpleNamespace(durable=durable), knowledge_store=store, evidence_ledgers=None,
-        search_factory=Search, ghost_continuity=lambda **_: None,
+    deps = ResearchFlowDeps(state=SimpleNamespace(durable=durable, memory=None), knowledge_store=store, evidence_ledgers=None,
+        search_factory=Search,
         managed_outputs=ManagedOutputStore(root), runtime_mutations=line)
     frame = SimpleNamespace(provider=provider_factory(Provider()) if provider_factory else Provider(),
         provider_id="local", project_text="", trace=None, run_id=run_id, research_handoff="", entry_policy=policy,
@@ -146,6 +149,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
     finally:
         store.close()
         durable.close()
+
 
 
 @pytest.mark.usefixtures("public_source_dns")

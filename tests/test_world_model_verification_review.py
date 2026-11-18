@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from datetime import datetime, tzinfo
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
-from codey.ghost.payload_types import object_fields
-from codey.workspace.context_admission import GhostAdmissionError
+from codey.utils.object_fields import object_fields
 from tests.manual.ghost_memory_routing.world_model_verification_review import (
     AS_OF,
     BUDGET,
@@ -128,26 +125,6 @@ def test_committed_input_reopen_and_corruption_fail_closed(tmp_path: Path) -> No
     assert load_event(path) == prior
 
 
-def test_independent_context_source_admission_disable_expiry_and_budget(tmp_path: Path) -> None:
-    base, hint, _ = fixture(tmp_path, CASES[0])
-    with pytest.raises(GhostAdmissionError, match="hints_disabled"):
-        render_request(base, hint, scope="user", as_of=THIRD, admit=False)
-    with pytest.raises(GhostAdmissionError, match="expired"):
-        render_request(base, hint, scope="user", as_of=EXPIRY)
-    with pytest.raises(ValueError, match="truncated"):
-        render_request(base, hint * 10, scope="user", as_of=THIRD)
-    class ForbiddenClock(datetime):
-        @classmethod
-        def now(cls, tz: tzinfo | None = None) -> ForbiddenClock:
-            raise AssertionError("implicit wall clock")
-
-    with patch("codey.workspace.context_admission.datetime", ForbiddenClock), patch(
-        "codey.ghost.graph_primitives.datetime", ForbiddenClock,
-    ):
-        prior, current = _events(tmp_path / "clock")
-        result = review(predict(prior), current, as_of=THIRD)
-        assert result.outcome == "miss"
-        assert render_request(base, hint, scope="user", as_of=THIRD).endswith(hint)
 
 
 @pytest.mark.parametrize(("reply", "expected"), (

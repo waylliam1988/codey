@@ -342,7 +342,6 @@ class ProjectFactsTests(unittest.TestCase):
             ):
                 task_submit.run_task("session-1", str(project), "Update backend", 8, False, "deepseek", "project", get_state=http_context.get_context)
 
-            state.wait_for_ghost_sleep(timeout=30)
             facts = state.project_facts.load(project)
             rendered = state.project_facts.render(project)
             stop_reason = state.run_registry.last_stop_reason()
@@ -415,7 +414,6 @@ class ProjectFactsTests(unittest.TestCase):
             ):
                 task_submit.run_task("session-1", td, "task", 4, False, "deepseek", "project", get_state=http_context.get_context)
 
-            state.wait_for_ghost_sleep(timeout=30)
             self.assertEqual(state.run_registry.last_stop_reason(), "done")
             state.close()
 

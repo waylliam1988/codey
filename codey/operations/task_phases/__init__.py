@@ -7,7 +7,6 @@ from codey.operations.task_phases.dispatch import (
     record_route_trace,
     review_flow_deps,
 )
-from codey.operations.task_phases.ghost import claim_or_route_ghost_work, ghost_task_deps
 from codey.operations.task_phases.hooks import build_hooks
 from codey.operations.task_phases.lifecycle import (
     build_run_work,
@@ -26,13 +25,11 @@ from codey.operations.task_phases.settlement import (
 __all__ = [
     "build_hooks",
     "build_run_work",
-    "claim_or_route_ghost_work",
     "connect_and_build_frame",
     "dispatch_run_mode",
     "ensure_run_reserved_and_started",
     "finish_mode_outcome",
     "finish_run_operation",
-    "ghost_task_deps",
     "open_run_ledger",
     "open_run_trace",
     "project_completion_deps",

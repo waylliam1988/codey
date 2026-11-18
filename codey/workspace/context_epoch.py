@@ -79,6 +79,7 @@ class ContextAdmission:
     digest: str = ""
     scope: str = ""
     expires_at: str = ""
+    source_refs: tuple[str, ...] = ()
 
     def to_payload(self) -> dict[str, object]:
         capability = _identifier(self.capability_id, 80)
@@ -101,6 +102,8 @@ class ContextAdmission:
         expires_at = _clip(self.expires_at, 80)
         if expires_at:
             payload["expires_at"] = expires_at
+        if self.source_refs:
+            payload["source_refs"] = list(self.source_refs)
         return payload
 
 
@@ -136,7 +139,7 @@ def admission_from_rendered_source(
     text = str(getattr(rendered_source, "text", "") or "")
     if not text:
         return None
-    key = getattr(rendered_source, "key", "")
+    key: object = getattr(rendered_source, "key", "")
     source_ref = context_source_ref(key)
     if not source_ref:
         return None
@@ -152,14 +155,19 @@ def admission_from_rendered_source(
         # silently overstating.
         chars = MAX_ADMISSION_CHARS
         truncated = True
+    raw_refs: object = getattr(rendered_source, "source_refs", ())
+    refs = tuple(ref for ref in raw_refs if isinstance(ref, str)) if isinstance(raw_refs, (tuple, list)) else ()
+    raw_budget: object = getattr(rendered_source, "budget", 0)
+    budget = raw_budget if isinstance(raw_budget, int) else 0
     return ContextAdmission(
+        source_refs=refs,
         source_key=_identifier(key, 80),
         source_ref=source_ref,
         capability_id=_identifier(getattr(rendered_source, "capability_id", ""), 80),
         admission_reason=_identifier(reason, 80),
         scope=_clip(getattr(rendered_source, "scope", ""), 160),
         expires_at=_clip(getattr(rendered_source, "expires_at", ""), 80),
-        budget=max(0, int(getattr(rendered_source, "budget", 0) or 0)),
+        budget=max(0, budget),
         chars=chars,
         truncated=truncated,
         digest="sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest(),

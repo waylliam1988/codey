@@ -186,6 +186,7 @@ Reviewer 连接器。审查通过不能代替新鲜验证。
 - [项目结构与职责地图](docs/project_structure.zh-CN.md)
 - [Durable 调度器运维说明](docs/durable_scheduler_operations.zh-CN.md)
 - [0.5.11 发布验收](docs/release_0.5.11.zh-CN.md)（[早期版本提交记录](docs/release_0.5.10.zh-CN.md)）
+- [Memory / Ghost ownership](docs/memory-boundary.zh-CN.md)
 - [Ghost 未来方向](docs/ghost_future_direction.zh-CN.md)
 
 ## 安全边界

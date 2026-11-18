@@ -14,6 +14,18 @@ FAILURE_POLICIES = frozenset((FAILURE_POLICY_OMIT, FAILURE_POLICY_RAISE))
 
 
 @dataclass(frozen=True)
+class ContextCandidate:
+    key: str
+    text: str
+    budget: int
+    scope: str
+    capability_id: str = "local_context"
+    admission_reason: str = "provider_turn_boundary"
+    expires_at: str = ""
+    source_refs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class ContextSource:
     key: str
     loader: Callable[[], str]
@@ -25,6 +37,8 @@ class ContextSource:
     capability_id: str = ""
     admission_reason: str = ""
     scope: str = ""
+    source_refs: tuple[str, ...] = ()
+    expires_at: str = ""
 
 
 @dataclass(frozen=True)
@@ -38,6 +52,8 @@ class RenderedContextSource:
     capability_id: str = ""
     admission_reason: str = ""
     scope: str = ""
+    source_refs: tuple[str, ...] = ()
+    expires_at: str = ""
 
 
 @dataclass(frozen=True)
@@ -82,6 +98,8 @@ def render_context_source(source: ContextSource) -> RenderedContextSource | None
         capability_id=source.capability_id,
         admission_reason=source.admission_reason,
         scope=source.scope,
+        source_refs=source.source_refs,
+        expires_at=source.expires_at,
     )
 
 

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
     from codey.toolchain.tool_spec import ToolSpec
-    from codey.workspace.context_admission import GhostContextSource
+    from codey.workspace.context_admission import ContextCandidate
 
 from codey.operations.provider_request_context import ProviderRequestContext
 from codey.providers.base import AssistantTurn
@@ -171,11 +171,11 @@ class KernelEffectSink:
         return identity in self._old_pending
 
     def bind_request(self, snapshot: TurnSnapshot, *, logical_turn: int, window_ref: ProtocolWindowRef | None = None,
-                     context_text: str = "", ghost_sources: tuple[GhostContextSource, ...] = (),
+                     context_text: str = "", memory_sources: tuple[ContextCandidate, ...] = (),
                      effect_scope: str = "", close_reply: bool = False, delivery_purpose: str = "",
                      work_ref: str = "", source_response_ref: str = "") -> None:
         self.request_context = ProviderRequestContext(logical_turn, snapshot, window_ref,
-            context_text, ghost_sources, effect_scope, close_reply, delivery_purpose, work_ref, source_response_ref)
+            context_text, memory_sources, effect_scope, close_reply, delivery_purpose, work_ref, source_response_ref)
 
     def counters(self) -> RuntimeExecutionCounters:
         from codey.durable.checkpoint import operation_from_checkpoint

@@ -10,11 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 KNOWN_CONTEXT_SOURCE_KEYS = frozenset({
-    "ghost_continuity",
-    "ghost_directive",
-    "ghost_experiences",
-    "ghost_project_goal_history",
-    "ghost_confirmed_project_goal",
+    "memory",
     "project_instructions",
     "verified_facts",
     "research_brief",
@@ -27,10 +23,7 @@ KNOWN_CONTEXT_SOURCE_KEYS = frozenset({
     "completion_repair_context",
 })
 CODING_WRITER_CONTEXT_SOURCE_KEYS = (
-    "ghost_directive",
-    "ghost_experiences",
-    "ghost_project_goal_history",
-    "ghost_confirmed_project_goal",
+    "memory",
     "project_instructions",
     "verified_facts",
     "research_brief",
@@ -44,11 +37,7 @@ CODING_WRITER_CONTEXT_SOURCE_KEYS = (
     "completion_repair_context",
 )
 PLANNING_READONLY_CONTEXT_SOURCE_KEYS = (
-    "ghost_experiences",
-    "ghost_continuity",
-    "ghost_directive",
-    "ghost_project_goal_history",
-    "ghost_confirmed_project_goal",
+    "memory",
     "project_instructions",
     "verified_facts",
     "research_brief",
@@ -101,8 +90,7 @@ PERMISSION_PROFILES = {
         ),
         # Preferences and confirmed goals guide presentation/intent, not evidence.
         # Raw chat experiences remain excluded from this profile.
-        context_sources=("research_topic_continuity", "ghost_directive",
-                         "ghost_project_goal_history", "ghost_confirmed_project_goal"),
+        context_sources=("research_topic_continuity", "memory"),
         project_read=False,
         project_write=False,
     ),

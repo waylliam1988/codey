@@ -16,11 +16,11 @@ import pytest
 
 from codey.agents.shell_approval import ShellApprovalRequest
 from codey.durable import DurableSession
-from codey.ghost.payload_types import object_fields
 from codey.operations.kernel_contracts import KernelRunRequest
 from codey.operations.task_effects import KernelEffectSink
 from codey.providers.base import ProviderToolResult
 from codey.storage.managed_outputs import ManagedOutputStore
+from codey.utils.object_fields import object_fields
 from codey.workspace.revision import WorkspaceRevisionStore
 
 

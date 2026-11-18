@@ -6,18 +6,18 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING
+
+from codey.agents.handoff import ConversationContext
+from codey.providers.base import ChatProvider
+from codey.providers.transport import ProviderTransport
+
+if TYPE_CHECKING:
+    from codey.operations.task_run import TaskRunDeps
 
 from codey.durable.errors import DurableStoreError
 from codey.durable.events import committed_task_version
 from codey.operations.context import RunFrame, RunWork
-from codey.operations.ghost_post_turn import (
-    GhostTaskPolicyDeps,
-    complete_or_block_work_item,
-    maybe_sync_work_queue,
-    release_work_item,
-    run_ghost_post_turn,
-)
 from codey.operations.result import ModeOutcome
 from codey.operations.task_phases.lifecycle import (
     _update_checkpoint_safely,
@@ -53,116 +53,13 @@ def _display_reply_text(outcome: ModeOutcome) -> str:
     return ""
 
 
-def _persist_observation_row(
-    state: Any,
-    *,
-    run_id: str,
-    session_id: str,
-    project: str,
-    mode: str,
-    user_text: str,
-    assistant_text: str,
-    stop_reason: str,
-    provider_id: str,
-) -> tuple[bool, str]:
-    """Write one experience row; False means the file must be left alone.
-
-    Returns (ok, status) where status is
-    committed/uncommitted/skipped/settings_error/failed.
-    ``committed`` (stop_reason=done) rows are retrievable; other rows are kept
-    as experience but never retrieved as successful facts. A ``failed`` write
-    must be reported as Ghost-record-failed with a warning: the round is shown
-    to the user but must not be claimed recoverable for Ghost. A
-    ``settings_error`` means the learning switch itself is unreadable: the
-    write is skipped fail-closed and the caller must surface a visible
-    config warning instead of silently re-enabling learning.
-    """
-    try:
-        inbox = getattr(state, "ghost_inbox", None) if state is not None else None
-        if inbox is None:
-            return True, "skipped"
-        try:
-            accept_events_on = inbox.control_enabled("accept_events", project=project, session_id=session_id)
-        except Exception:
-            return False, "settings_error"
-        if type(accept_events_on) is not bool:
-            return False, "settings_error"
-        if not accept_events_on:
-            return True, "skipped"
-        store = getattr(state, "ghost_observations", None) if state is not None else None
-        if store is None:
-            return True, "skipped"
-        ok = bool(
-            store.append_completed(
-                run_id=run_id,
-                session_id=session_id,
-                project=(project or ""),
-                mode=(mode or "chat"),
-                user_text=(user_text or ""),
-                assistant_text=(assistant_text or ""),
-                stop_reason=(stop_reason or ""),
-                provider_id=(provider_id or ""),
-            )
-        )
-        if not ok:
-            return False, "failed"
-        return True, (
-            "committed"
-            if (stop_reason or "") == "done"
-            else "uncommitted"
-        )
-    except Exception:
-        return False, "failed"
 
 
-def _emit_observation_warning(
-    state: Any,
-    *,
-    run_id: str,
-    session_id: str,
-    status: str,
-) -> None:
-    """Report actual observation failures before task_done, not normal pauses."""
-    if status == "failed":
-        error_type, error_ref = "GhostObservationFailed", "ghost_observation_failed"
-    elif status == "settings_error":
-        error_type, error_ref = "GhostSettingsCorrupt", "ghost_settings_corrupt"
-    else:
-        return
-    with suppress(Exception):
-        state.emit({
-            "type": "ghost_post_turn_warning",
-            "stage": "observation_commit",
-            "run_id": run_id,
-            "session_id": session_id,
-            "error_type": error_type,
-            "error_ref": error_ref,
-        })
 
 
-def _persist_experience_observation(
-    deps: Any,
-    frame: RunFrame,
-    event: dict[str, object],
-    outcome: ModeOutcome,
-) -> tuple[bool, str]:
-    """Persist the completed-round experience before any final display emit."""
-    request = getattr(frame, "request", None)
-    display_text = _display_reply_text(outcome)
-    return _persist_observation_row(
-        getattr(deps, "state", None),
-        run_id=str(event.get("run_id") or getattr(frame, "run_id", "")),
-        session_id=str(event.get("session_id") or ""),
-        project=str(getattr(request, "project", "") or ""),
-        mode=str(event.get("mode") or getattr(frame, "task_kind", "") or "chat"),
-        user_text=str(getattr(request, "task", "") or ""),
-        assistant_text=display_text or str(event.get("summary") or ""),
-        stop_reason=str(event.get("stop_reason") or ""),
-        provider_id=str(event.get("provider") or ""),
-    )
 
 
-def _publish_display_after_commit(deps: Any, outcome: ModeOutcome) -> None:
+def _publish_display_after_commit(deps: TaskRunDeps, outcome: ModeOutcome) -> None:
     """Emit final display events carried by the mode (settlement-owned)."""
     for payload in tuple(getattr(outcome, "display", ()) or ()):
         if not isinstance(payload, dict) or not payload.get("type"):
@@ -173,7 +70,7 @@ def _publish_display_after_commit(deps: Any, outcome: ModeOutcome) -> None:
             continue
 
 
-def _commit_durable_terminal(deps: Any, frame: RunFrame, event: dict[str, object], outcome: ModeOutcome) -> None:
+def _commit_durable_terminal(deps: TaskRunDeps, frame: RunFrame, event: dict[str, object], outcome: ModeOutcome) -> None:
     durable = getattr(deps.state, "durable", None)
     if durable is None:
         return
@@ -219,7 +116,7 @@ def _commit_durable_terminal(deps: Any, frame: RunFrame, event: dict[str, object
         event.update(committed_task_version(committed, run_id))
 
 
-def _fail_durable_task(deps: Any, run_id: str, event: dict[str, object]) -> None:
+def _fail_durable_task(deps: TaskRunDeps, run_id: str, event: dict[str, object]) -> None:
     durable = getattr(deps.state, "durable", None)
     if durable is None:
         return
@@ -247,7 +144,7 @@ def _fail_durable_task(deps: Any, run_id: str, event: dict[str, object]) -> None
         )
 
 
-def _seal_cancel_before_runtime(deps: Any, run_id: str, event: dict[str, object]) -> bool:
+def _seal_cancel_before_runtime(deps: TaskRunDeps, run_id: str, event: dict[str, object]) -> bool:
     """Close a durable cancellation barrier before runtime projection writes."""
     durable = getattr(getattr(deps, "state", None), "durable", None)
     if durable is None:
@@ -263,7 +160,7 @@ def _seal_cancel_before_runtime(deps: Any, run_id: str, event: dict[str, object]
     return True
 
 
-def _settle_research_publications(deps: Any, session_id: str, run_id: str) -> None:
+def _settle_research_publications(deps: TaskRunDeps, session_id: str, run_id: str) -> None:
     from codey.durable.checkpoint import operation_from_checkpoint
     from codey.operations.research_continuation import ResearchContinuation
     from codey.operations.research_publication import settle_cancelled_publications
@@ -286,7 +183,7 @@ def _settle_research_publications(deps: Any, session_id: str, run_id: str) -> No
     settle_cancelled_publications(history, getattr(deps, "knowledge_store", None))
 
 
-def _finish_failed_operation(deps: Any, work: RunWork | None, event: dict[str, object]) -> None:
+def _finish_failed_operation(deps: TaskRunDeps, work: RunWork | None, event: dict[str, object]) -> None:
     """Report an uncommittable stop while retaining its authoritative position."""
     if work is None:
         return
@@ -298,10 +195,9 @@ def _finish_failed_operation(deps: Any, work: RunWork | None, event: dict[str, o
 
 
 def settle_cancelled_run(
-    deps: Any,
+    deps: TaskRunDeps,
     state: TaskState,
     work: RunWork | None,
-    ghost_deps: GhostTaskPolicyDeps,
     *,
     run_id: str,
     session_id: str,
@@ -311,7 +207,7 @@ def settle_cancelled_run(
     project: str | None,
     frame: RunFrame | None,
     finish_trace: Callable[[dict[str, object]], None],
-    conversation: Any | None = None,
+    conversation: ConversationContext | None = None,
 ) -> OperationOutcome:
     """Settle a TaskCancelled stop; mirrors the previous inline except block."""
     _settle_research_publications(deps, session_id, run_id)
@@ -351,38 +247,15 @@ def settle_cancelled_run(
     if not cancelled:
         _fail_durable_task(deps, run_id, stopped_event)
     finish_trace(stopped_event)
-    # Cancelled rounds leave an unretrievable experience row so the attempt
-    # stays visible in export instead of vanishing silently.
-    request_task = str(getattr(getattr(frame, "request", None), "task", "") or "")
-    persisted, obs_status = _persist_observation_row(
-        state,
-        run_id=run_id,
-        session_id=session_id,
-        project=(project or ""),
-        mode=str(stopped_event.get("mode") or task_kind or "chat"),
-        user_text=request_task,
-        assistant_text="",
-        stop_reason="stopped",
-        provider_id=provider_id,
-    )
-    if not persisted or obs_status != "committed":
-        _emit_observation_warning(state, run_id=run_id, session_id=session_id, status=obs_status)
     state.finish_run(run_id, stopped_event)
-    release_work_item(
-        ghost_deps,
-        work.claimed_work_item if work is not None else None,
-        run_id=run_id,
-        reason="stopped",
-    )
     return operation_outcome_from_task_done_event(stopped_event)
 
 
 def settle_error_run(
-    deps: Any,
+    deps: TaskRunDeps,
     state: TaskState,
     exc: Exception,
     work: RunWork | None,
-    ghost_deps: GhostTaskPolicyDeps,
     *,
     run_id: str,
     session_id: str,
@@ -391,9 +264,9 @@ def settle_error_run(
     task_kind: str,
     project: str | None,
     frame: RunFrame | None,
-    provider: Any | None,
+    provider: ChatProvider | ProviderTransport | None,
     finish_trace: Callable[[dict[str, object]], None],
-    conversation: Any | None = None,
+    conversation: ConversationContext | None = None,
 ) -> OperationOutcome:
     """Settle an unexpected error; mirrors the previous inline except block."""
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryError
@@ -448,36 +321,12 @@ def settle_error_run(
     finish_trace(error_event)
     if not cancelled:
         _fail_durable_task(deps, run_id, error_event)
-    # Failed rounds leave an unretrievable experience row for the same reason.
-    request_task = str(getattr(getattr(frame, "request", None), "task", "") or "")
-    persisted, obs_status = _persist_observation_row(
-        state,
-        run_id=run_id,
-        session_id=session_id,
-        project=(project or ""),
-        mode=str(error_event.get("mode") or task_kind or "chat"),
-        user_text=request_task,
-        assistant_text=str(error_event.get("summary") or ""),
-        stop_reason="error",
-        provider_id=provider_id,
-    )
-    if not persisted or obs_status != "committed":
-        _emit_observation_warning(state, run_id=run_id, session_id=session_id, status=obs_status)
     state.finish_run(run_id, error_event)
-    current_work_item = work.claimed_work_item if work is not None else None
-    if frame is not None:
-        complete_or_block_work_item(ghost_deps, frame, error_event, current_work_item)
-        maybe_sync_work_queue(ghost_deps, frame, error_event)
-    else:
-        run_ghost_post_turn(
-            ghost_deps, None, error_event, current_work_item, project_text=(project or "")
-        )
     return operation_outcome_from_task_done_event(error_event)
 
 
 def finish_mode_outcome(
-    deps: Any,
-    ghost_deps: GhostTaskPolicyDeps,
+    deps: TaskRunDeps,
     frame: RunFrame,
     work: RunWork,
     outcome: ModeOutcome,
@@ -487,14 +336,13 @@ def finish_mode_outcome(
 ) -> OperationOutcome:
     """Public orchestrator for mode finish; delegates to the durable helper."""
     return _finish_mode_outcome(
-        deps, ghost_deps, frame, work, outcome,
+        deps, frame, work, outcome,
         append_ledger=append_ledger, finish_trace=finish_trace,
     )
 
 
 def _finish_mode_outcome(
-    deps: Any,
-    ghost_deps: GhostTaskPolicyDeps,
+    deps: TaskRunDeps,
     frame: RunFrame,
     work: RunWork,
     outcome: ModeOutcome,
@@ -516,27 +364,10 @@ def _finish_mode_outcome(
         finish_run_operation(deps, work, event)
     finish_trace(event)
     _commit_durable_terminal(deps, frame, event, outcome)
-    # SQLite owns the checkpoint/answer commit above. The run report and
-    # Ghost observation are independent consumers, never recovery inputs.
-    persisted, obs_status = _persist_experience_observation(deps, frame, event, outcome)
     _publish_display_after_commit(deps, outcome)
-    if not persisted or obs_status != "committed":
-        _emit_observation_warning(
-            deps.state,
-            run_id=frame.run_id,
-            session_id=frame.request.session_id,
-            status=obs_status,
-        )
     deps.state.finish_run(frame.run_id, event)
     if event.get("stop_reason") == "approval":
         workflow = getattr(deps.state, "shell_approval_workflow", None)
         if workflow is not None:
             workflow.apply_remembered(frame.request.session_id, frame.run_id)
-    run_ghost_post_turn(
-        ghost_deps,
-        frame,
-        event,
-        work.claimed_work_item,
-        research_result=outcome.research_result,
-    )
     return operation_outcome_from_task_done_event(event)

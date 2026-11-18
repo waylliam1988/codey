@@ -1,12 +1,7 @@
-"""Parity guard for generated-ref validation.
+"""Validate research proof references through the shared generated-ref helper.
 
-Both Ghost completion (``codey.ghost.work_queue_model._research_proof_ref``) and
-Research product (``codey.research.proof_quality._proof_ref_or_empty``) must
-accept exactly ``research_proof:<16 lowercase hex>``. Both delegate to the
-generic ``codey.utils.refs.generated_ref`` with their own prefix; this
-battery locks the boundary through both call paths so a future one-sided
-edit is caught. The generic helper itself is prefix-parameterized: wrong
-prefix, uppercase hex, and bad lengths all fail closed.
+Only lowercase hexadecimal identities of the declared length are admitted;
+wrong prefixes, uppercase characters and malformed lengths fail closed.
 """
 from __future__ import annotations
 
@@ -49,15 +44,6 @@ class ProofRefParityTests(unittest.TestCase):
                 else:
                     self.assertEqual(_shared(ref), "")
 
-    def test_ghost_and_research_paths_agree(self) -> None:
-        from codey.ghost.work_queue_model import _research_proof_ref as ghost_ref
-        from codey.research.proof_quality import _proof_ref_or_empty as research_ref
-
-        cases = list(VALID) + [c for c in INVALID if isinstance(c, str)]
-        for ref in cases:
-            with self.subTest(ref=ref):
-                self.assertEqual(ghost_ref(ref), research_ref(ref))
-                self.assertEqual(ghost_ref(ref), _shared(ref))
 
     def test_whitespace_is_stripped_before_validation(self) -> None:
         self.assertEqual(
@@ -88,28 +74,23 @@ class ProofRefParityTests(unittest.TestCase):
 
         self.assertNotIn("research_proof", refs_mod.generated_ref.__code__.co_consts)
 
-    def test_non_string_scalars_fail_closed_through_all_paths(self) -> None:
-        from codey.ghost.work_queue_model import _research_proof_ref as ghost_ref
-        from codey.research.proof_quality import _proof_ref_or_empty as research_ref
 
-        cases = [
-            None,
-            123,
-            0,
-            0.0,
-            True,
-            False,
-            b"research_proof:" + b"a" * 16,
-            ["research_proof:" + "a" * 16],
-            {"ref": "research_proof:" + "a" * 16},
-            ("research_proof:" + "a" * 16,),
-            {"research_proof:" + "a" * 16},
-        ]
+    def test_research_path_uses_the_shared_shape(self) -> None:
+        from codey.research.proof_quality import _proof_ref_or_empty
+
+        for ref in (*VALID, *(value for value in INVALID if isinstance(value, str))):
+            with self.subTest(ref=ref):
+                self.assertEqual(_proof_ref_or_empty(ref), _shared(ref))
+
+    def test_non_string_scalars_fail_closed(self) -> None:
+        from codey.research.proof_quality import _proof_ref_or_empty
+
+        cases: tuple[object, ...] = (None, 123, 0, 0.0, True, False, b"research_proof:" + b"a" * 16,
+                                    [VALID[0]], {"ref": VALID[0]}, (VALID[0],), {VALID[0]})
         for value in cases:
             with self.subTest(value=repr(value)):
                 self.assertEqual(_shared(value), "")
-                self.assertEqual(ghost_ref(value), "")
-                self.assertEqual(research_ref(value), "")
+                self.assertEqual(_proof_ref_or_empty(value), "")
 
 
 if __name__ == "__main__":

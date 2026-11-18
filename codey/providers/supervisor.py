@@ -7,12 +7,11 @@ import logging
 import secrets
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Generator, Iterable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any
 
-from codey.providers.base import ChatProvider
+from codey.providers.compat_transport import require_callable
 from codey.providers.diagnostics import (
     FAILURE_AUTHENTICATION_REQUIRED,
     FAILURE_CHALLENGE_REQUIRED,
@@ -135,7 +134,7 @@ class ProviderSupervisor:
             return self._last_save_error
 
     @contextlib.contextmanager
-    def _exclusive(self) -> Any:
+    def _exclusive(self) -> Generator[None, None, None]:
         """Hold the in-process lock and the file lock in one fixed order.
 
         All reads that must see fresh cross-instance state (get/select)
@@ -482,7 +481,7 @@ def _failure_family(kind: str) -> str:
 
 def run_half_open_canary(
     provider_id: str,
-    provider: ChatProvider,
+    provider: object,
     supervisor: ProviderSupervisor,
 ) -> bool:
     """Probe one cooled-down provider without exposing task or project data."""
@@ -493,8 +492,8 @@ def run_half_open_canary(
     deadline = start_deadline(CANARY_TIMEOUT)
     try:
         with cancellation.deadline_scope(deadline):
-            provider.new_chat(timeout=remaining(deadline, CANARY_TIMEOUT))
-            reply = provider.send(prompt, timeout=remaining(deadline, CANARY_TIMEOUT))
+            require_callable(provider, "new_chat")(timeout=remaining(deadline, CANARY_TIMEOUT))
+            reply = require_callable(provider, "send")(prompt, timeout=remaining(deadline, CANARY_TIMEOUT))
     except cancellation.TaskCancelled:
         raise
     except cancellation.DeadlineExceeded:
@@ -534,7 +533,7 @@ def run_half_open_canary(
         except HealthStoreError:
             logger.exception("canary health record failed for provider %s", provider_id)
         return False
-    if (reply or "").strip() != marker:
+    if not isinstance(reply, str) or reply.strip() != marker:
         try:
             supervisor.record_canary_failure(
                 provider_id,

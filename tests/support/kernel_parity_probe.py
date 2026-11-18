@@ -296,9 +296,7 @@ def research_loop(case, legacy):
         # admit behavior explicit in the fixture instead of relying on a
         # missing-state fallback in production code.
         state = SimpleNamespace(
-            ghost_inbox=SimpleNamespace(
-                control_enabled=lambda _name, **_kwargs: True,
-            ),
+            memory=None,
         )
         try:
             with (

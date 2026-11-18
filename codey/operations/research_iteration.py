@@ -2,13 +2,29 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING
 
+from codey.completion.contract import CompletionProof
+from codey.knowledge.changes import KnowledgeChanges
+from codey.knowledge.store import KnowledgeStore
+from codey.operations.kernel_contracts import KernelResult
+from codey.operations.research_continuation import ResearchContinuation
+from codey.policies.task_policy import TaskPolicy
+from codey.research.finding_report import ResearchReport
+from codey.research.source_gateway import _SearchProvider
+from codey.research.staging import StagedKnowledgeStore
+from codey.research.tools import ResearchTools
+from codey.runs.trace import RunTraceRecorder
+
+if TYPE_CHECKING:
+    from codey.operations.research_flow import ResearchFlowDeps
+
+from codey.memory.context import retrieve_context
 from codey.operations.generation_boundary import durable_generation_boundary_callback
-from codey.operations.ghost_context import ghost_control_enabled
 from codey.operations.kernel_request_builder import KernelRunRequestBuilder
 from codey.operations.research_continuation import ResearchInvocation
 from codey.operations.task_guidance import task_guidance_for_policy
@@ -19,6 +35,7 @@ from codey.operations.task_loop import (
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.run_result import ResearchRunResult
 from codey.runtime.observe.events import RunEvent
+from codey.workspace.context_selection import assemble_context_candidates
 
 
 def _proposal_knowledge_refs(proposal: Mapping[str, object]) -> list[object]:
@@ -37,7 +54,7 @@ def _stable_synthesis_id(run_id: str) -> str:
     return "synthesis-" + hashlib.sha256(run_id.encode("utf-8")).hexdigest()
 
 
-def _selected_note_sources(store: Any, note_ids: list[str]) -> set[str]:
+def _selected_note_sources(store: KnowledgeStore | StagedKnowledgeStore, note_ids: list[str]) -> set[str]:
     sources: set[str] = set()
     for identity in note_ids:
         note = store.read_note(identity)
@@ -46,19 +63,19 @@ def _selected_note_sources(store: Any, note_ids: list[str]) -> set[str]:
     return sources
 
 
-def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
+def _persist_synthesis(tools: ResearchTools, task: str, summary: str, *, session_id: str,
                        project: str, run_id: str,
-                       on_event: Callable[[RunEvent], None], open_questions: Any = (),
-                       policy: Any, projection: str = "initial", knowledge_refs: Any = (),
-                       finding_ids: tuple[str, ...] = (), question_coverage: Any = (), accepted_report: Any = None,
-                       semantic_review: Any = None, publisher: Callable[[dict[str, Any]], str] | None = None) -> str:
+                       on_event: Callable[[RunEvent], None], open_questions: Iterable[object] = (),
+                       policy: TaskPolicy | None, projection: str = "initial", knowledge_refs: Iterable[object] = (),
+                       finding_ids: tuple[str, ...] = (), question_coverage: Iterable[object] = (), accepted_report: ResearchReport | None = None,
+                       semantic_review: dict[str, object] | None = None, publisher: Callable[[dict[str, object]], str] | None = None) -> str:
     """Persist one synthesis note under the parent task policy (required).
 
     ``policy=None`` denies like any non-allowing policy (fail-closed). The
     note id is stable per run: a retry after a successful write reuses the
     original id via store upsert instead of creating a duplicate note.
     """
-    if not summary or getattr(tools, "store", None) is None or getattr(tools, "changes", None) is None:
+    if not summary or tools.store is None or tools.changes is None:
         return ""
     allows = getattr(policy, "allows", None)
     try:
@@ -80,8 +97,8 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
         if accepted_report.text != summary or publisher is None:
             raise ValueError("whole answers require their original frozen publication effect")
         note_id = _stable_synthesis_id(run_id if projection == "initial" else run_id + ":" + projection)
-        return publisher(publication_command(accepted_report, task=task, run_id=run_id, projection=projection,
-            note_id=note_id, session_id=session_id, project=project, store=tools.store))
+        return publisher(dict[str, object](publication_command(accepted_report, task=task, run_id=run_id, projection=projection,
+            note_id=note_id, session_id=session_id, project=project, store=tools.store)))
     import hashlib
 
     from codey.knowledge.archive import stable_identity
@@ -115,12 +132,13 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
 
     references = list(answer_references(knowledge_refs, tools.store, project=project, session_id=session_id))
     scope, scope_id = answer_scope(references, tools.store, project=project, session_id=session_id)
-    publication_digest = hashlib.sha256(canonical_json({"schema": 1, "task": task, "summary": summary,
+    publication_payload: dict[str, object] = {"schema": 1, "task": task, "summary": summary,
         "references": [{"id": ref.target, "revision": ref.revision} for ref in references],
         "findings": list(finding_ids), "coverage": list(question_coverage), "open_questions": list(open_questions),
         "scope": [scope, scope_id], "session_id": session_id, "project": project, "sources": sorted(selected_sources),
         "report": accepted_report.to_payload() if accepted_report is not None else None,
-        "semantic_review": semantic_review}).encode()).hexdigest()
+        "semantic_review": semantic_review}
+    publication_digest = hashlib.sha256(canonical_json(publication_payload).encode()).hexdigest()
     previous = tools.store.repository.read(answer_id)
     if previous is not None:
         if previous.value.provenance.get("publication_digest") != publication_digest:
@@ -155,7 +173,7 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
                           "mutations": [{"value": answer.to_dict(), "expected_revision": 0}]})
     try:
         tools.store.publish_note(note, stable_identity("answer-commit", run_id, projection),
-                                 [KnowledgeMutation(answer)], changes=tools.changes)
+                                 [KnowledgeMutation(answer)], changes=tools.changes if isinstance(tools.changes, KnowledgeChanges) else None)
     except OSError as exc:
         from codey.research.pipeline import ResearchContinuationError
 
@@ -169,22 +187,22 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
     return note.id
 
 
-def _link_synthesis(tools: Any, note_id: str, note_ids: list[str], policy: Any) -> None:
+def _link_synthesis(tools: ResearchTools, note_id: str, note_ids: list[str], policy: TaskPolicy | None) -> None:
     allows_link = getattr(policy, "allows", None)
     try:
         can_link = bool(allows_link("knowledge.link")) if callable(allows_link) else False
     except Exception:
         can_link = False
-    if can_link:
+    if can_link and tools.store is not None:
         for related_id in note_ids:
             if related_id and related_id != note_id:
                 try:
-                    tools.store.link(note_id, related_id, "derives", changes=tools.changes)
+                    tools.store.link(note_id, related_id, "derives", changes=tools.changes if isinstance(tools.changes, KnowledgeChanges) else None)
                 except OSError:
                     break
 
 
-def _publication_proof(outcome: Any, compiled: Any, history: Any, synthesis_id: str, publish: bool) -> Any:
+def _publication_proof(outcome: KernelResult, compiled: ResearchReport | None, history: ResearchContinuation, synthesis_id: str, publish: bool) -> CompletionProof | None:
     if compiled is None or not publish:
         return outcome.proof
     from codey.operations.research_publication import published_answer_version
@@ -192,31 +210,43 @@ def _publication_proof(outcome: Any, compiled: Any, history: Any, synthesis_id: 
     from codey.research.report_projection import published_completion
 
     version = published_answer_version(history, synthesis_id) if isinstance(compiled, AnswerReport) else None
+    if outcome.proof is None:
+        raise ValueError("published research report has no completion proof")
     return published_completion(outcome.proof, compiled, synthesis_id=synthesis_id, result_ref=history.state().work_ref,
                                 answer_version=version)
 
 
+def _research_tools(deps: ResearchFlowDeps, search: object, session_id: str, project: str) -> ResearchTools:
+    store = deps.knowledge_store
+    if store is None:
+        raise RuntimeError("Research is not configured")
+    if not isinstance(search, _SearchProvider):
+        raise TypeError("research requires a search provider")
+    return ResearchTools(search=search, store=store, changes=KnowledgeChanges(root=store.root),
+                         session_id=session_id, project=project)
+
+
 def run_research_iteration(
-    deps: Any,
+    deps: ResearchFlowDeps,
     *,
-    provider: Any,
+    provider: object,
     session_id: str,
     project: str,
     task: str,
     max_turns: int,
     on_event: Callable[[RunEvent], None],
-    stop_flag: Any,
+    stop_flag: Event | None,
     provider_id: str,
     run_id: str,
     chat_handoff: str,
-    trace_recorder: Any,
-    search: Any,
-    tools: Any = None,
+    trace_recorder: RunTraceRecorder | None,
+    search: object,
+    tools: ResearchTools | None = None,
     iteration_context: str = "",
     topic_continuity_context: str = "",
-    topic_continuity_payload: Any = None,
+    topic_continuity_payload: Mapping[str, object] | None = None,
     requested_capabilities: tuple[str, ...] = (),
-    task_policy: Any = None,
+    task_policy: TaskPolicy | None = None,
     controller_denied: tuple[str, ...] = (),
     writer_attempt: int = 1,
     invocation: ResearchInvocation | None = None,
@@ -228,19 +258,7 @@ def run_research_iteration(
     invocation = invocation or ResearchInvocation(writer_attempt, "research" if writer_attempt == 1 else "synthesize")
     writer_attempt = invocation.attempt
     if tools is None:
-        from codey.knowledge.changes import KnowledgeChanges
-        from codey.research.tools import ResearchTools
-
-        store = getattr(deps, "knowledge_store", None)
-        if store is None:
-            raise RuntimeError("Research is not configured")
-        tools = ResearchTools(
-            search=search,
-            store=store,
-            changes=KnowledgeChanges(root=store.root),
-            session_id=session_id,
-            project=project,
-        )
+        tools = _research_tools(deps, search, session_id, project)
     from codey.operations.provider_session import ObservedProvider
     from codey.providers.requests import ProviderRequest, SendTextRequest, SendTurnRequest
     from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
@@ -295,20 +313,20 @@ def run_research_iteration(
     intent_sink = None
     active_provider = provider
     admitted = None
-    mutations = getattr(deps, "runtime_mutations", None)
+    mutations = deps.runtime_mutations
     if mutations is not None and session_id and run_id:
         from codey.operations.task_effects import KernelEffectSink, admitted_durable
 
-        admitted = admitted_durable(getattr(deps, "state", None), run_id)
+        admitted = admitted_durable(deps.state, run_id)
         intent_sink = KernelEffectSink(
             mutations, session_id=session_id, run_id=run_id,
             provider_id=provider_id, phase="research",
-            managed_outputs=getattr(deps, "managed_outputs", None),
+            managed_outputs=deps.managed_outputs,
             durable=admitted,
         )
     from codey.operations.research_continuation import ResearchContinuation
 
-    history = ResearchContinuation(mutations, getattr(deps, "managed_outputs", None),
+    history = ResearchContinuation(mutations, deps.managed_outputs,
                                    session_id=session_id, run_id=run_id)
     prerequisites = history.prerequisite_facts(before_attempt=writer_attempt, policy=policy)
     session.handoff += prerequisites.handoff
@@ -324,6 +342,7 @@ def run_research_iteration(
             or (position.writer_attempt == writer_attempt and position.leaf in {"accepted", "writer_running"}
                 and not position.logical_turn)):
         provider.new_chat()
+    memory = retrieve_context(deps.state.memory, task=task, project=project, session_id=session_id, run_id=run_id)
     topic_source = source_from_value(
         key="research_topic_continuity",
         text=topic_continuity_context,
@@ -331,6 +350,8 @@ def run_research_iteration(
         scope=request_scope(project, session_id),
         capability_id="research_topic_continuity",
     )
+    sources = (*memory.sources, *((topic_source,) if topic_source is not None else ()))
+    context_text, context_spans = assemble_context_candidates(sources)
     outcome = history.kernel(
         session,
         invocation=invocation,
@@ -342,10 +363,10 @@ def run_research_iteration(
                 user_task=task,
                 stagnant_turns=5,
                 context_scope=request_scope(project, session_id),
-                ghost_sources=(topic_source,) if topic_source is not None else (),
-                admit_hints=ghost_control_enabled(
-                    deps.state, "admit_hints", project=project, session_id=session_id,
-                ),
+                context_text=context_text,
+                memory_sources=sources,
+                memory_spans=context_spans,
+                attempt_validate_memory_sources=lambda actual: memory.valid(deps.state.memory),
                 stop_flag=stop_flag,
                 task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
             ).build(execution=KernelExecutionDeps(

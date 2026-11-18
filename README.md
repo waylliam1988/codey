@@ -228,6 +228,7 @@ See [desktop/CLI parity evidence](docs/desktop-cli-task-parity-2026-10-04.zh-CN.
 - [Changelog](CHANGELOG.md)
 - [Project structure and ownership](docs/project_structure.md)
 - [0.5.11 release review (Chinese)](docs/release_0.5.11.zh-CN.md)
+- [Memory / Ghost ownership](docs/memory-boundary.zh-CN.md)
 - [Ghost future direction](docs/ghost_future_direction.zh-CN.md)
 
 ## Safety Model

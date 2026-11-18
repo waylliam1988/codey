@@ -4,15 +4,20 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+    from codey.providers.base import ChatProvider
+    from codey.providers.supervisor import ProviderSupervisor
+    from codey.providers.transport import ProviderTransport
+    from codey.research.tools import ResearchTools
+    from codey.runs.trace import RunTraceRecorder
+    from codey.workspace.revision import WorkspaceRevisionStore
 
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.agents.shell_approval import ShellApprovalRequest
-from codey.ghost.work_queue_model import GhostWorkItem
 from codey.operations.conversation_window import WindowAction
 from codey.providers.diagnostics import ProviderFailure
 from codey.runs.ledger import RunLedgerWriter
@@ -29,7 +34,7 @@ class RunFrame:
     request: TaskSubmission
     run_id: str
     task_kind: str
-    provider: Any | None
+    provider: ChatProvider | ProviderTransport | None
     provider_id: str
     project_text: str
     conversation: ConversationContext
@@ -42,10 +47,10 @@ class RunFrame:
     preflight_tried: set[str]
     preflight_switches: int
     window_action: WindowAction | None = None
-    trace: Any | None = None
+    trace: RunTraceRecorder | None = None
     entry_policy: TaskPolicy | None = None
     entry_session: TaskSession | None = None
-    entry_research_tools: Any | None = None
+    entry_research_tools: ResearchTools | None = None
 
 
 @dataclass
@@ -54,9 +59,8 @@ class RunWork:
     evidence: ExecutionEvidence
     work_checkpoint: WorkCheckpoint | None = None
     ledger: RunLedgerWriter | None = None
-    trace: Any | None = None
+    trace: RunTraceRecorder | None = None
     record_agent_events_in_ledger: bool = False
-    claimed_work_item: GhostWorkItem | None = None
     analysis_run_payloads: list[dict[str, object]] = field(default_factory=list)
     artifact_payloads: list[dict[str, object]] = field(default_factory=list)
     operation: RuntimeOperationState | None = None
@@ -66,7 +70,7 @@ class RunWork:
 
     def refresh_workspace_state(
         self,
-        store: Any,
+        store: WorkspaceRevisionStore,
         project: str,
         *,
         ignored_paths: tuple[str, ...] = (),
@@ -78,7 +82,7 @@ class RunWork:
 
     def advance_workspace_revision(
         self,
-        store: Any,
+        store: WorkspaceRevisionStore,
         project: str,
         *,
         ignored_paths: tuple[str, ...] = (),
@@ -100,5 +104,5 @@ class RunHooks:
     record_provider_failure: Callable[[str, ProviderFailure], None]
     append_ledger: Callable[[Callable[[RunLedgerWriter], None]], None]
     provider_failover_order: Callable[[], tuple[str, ...]]
-    supervisor: Any | None
-    trace: Any | None = None
+    supervisor: ProviderSupervisor | None
+    trace: RunTraceRecorder | None = None

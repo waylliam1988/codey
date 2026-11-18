@@ -162,7 +162,6 @@ def test_project_config_reorders_writer_failover_candidates() -> None:
                 "deepseek",
                 intent="project",
             ))
-            assert state.wait_for_ghost_sleep(timeout=30)
 
     # Without the preference the tie-broken order would try stepfun first;
     # the soft preference moves glm to the front of the failover candidates.
@@ -215,7 +214,6 @@ def test_preference_does_not_override_the_user_selected_provider() -> None:
                 "stepfun",
                 intent="project",
             ))
-            assert state.wait_for_ghost_sleep(timeout=30)
 
     # The user picked stepfun; the project preference must not replace it,
     # not even when the preferred provider sits earlier in every ranking.
@@ -282,13 +280,12 @@ def test_unavailable_preferred_provider_is_skipped_by_supervisor() -> None:
                 "deepseek",
                 intent="project",
             ))
-            assert state.wait_for_ghost_sleep(timeout=30)
 
     assert calls[1] == "StepFun Chat"
     assert state.run_registry.last_terminal_event()["provider"] == "stepfun"
 
 
-def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None:
+def test_early_failure_inside_workload_setup_releases_the_run_slot() -> None:
     with tempfile.TemporaryDirectory() as td:
         state = server.AppContext(td)
         runner = TaskRunDeps(state=state,
@@ -305,7 +302,7 @@ def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None
         )
 
         with mock.patch(
-            "codey.operations.task_phases.ghost.maybe_claim_work_item",
+            "codey.operations.task_run._build_workload",
             side_effect=ValueError("route exploded"),
         ) as route:
             run_task_submission(runner, TaskSubmission(
@@ -317,7 +314,6 @@ def test_early_failure_inside_claim_route_window_releases_the_run_slot() -> None
                 "deepseek",
                 intent="auto",
             ))
-            assert state.wait_for_ghost_sleep(timeout=30)
         route.assert_called_once()
 
     # The started run must end with a bounded error terminal event, not a

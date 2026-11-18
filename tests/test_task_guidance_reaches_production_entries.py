@@ -1,26 +1,30 @@
 """Formal task entry, project adapter, and Research iteration inject domain guidance."""
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
+from codey.operations.context import RunWork
+from tests.support.task_entry_helpers import entry_frame
 
 
 class CaptureProvider:
     name = "deepseek"
 
-    def __init__(self):
-        self.sent = []
+    def __init__(self) -> None:
+        self.sent: list[str] = []
 
-    def new_chat(self):
+    def new_chat(self) -> None:
         pass
 
-    def send(self, text, timeout=None):
+    def send(self, text: str, timeout: float | None = None) -> str:
         self.sent.append(text)
         return '{"tool":"done","args":{"summary":"inspected"}}'
 
 
 @pytest.mark.parametrize("strict", [False, True])
-def test_project_adapter_supplies_guidance_only_when_policy_requires_it(tmp_path, strict):
+def test_project_adapter_supplies_guidance_only_when_policy_requires_it(tmp_path: Path, strict: bool) -> None:
     from codey.agents.request import AgentRequest
     from tests.support.kernel_runtime import run_agent as run
 
@@ -32,7 +36,7 @@ def test_project_adapter_supplies_guidance_only_when_policy_requires_it(tmp_path
 
 
 @pytest.mark.parametrize("strict", [False, True])
-def test_formal_task_entry_supplies_guidance_from_original_policy(tmp_path, strict):
+def test_formal_task_entry_supplies_guidance_from_original_policy(tmp_path: Path, strict: bool) -> None:
     from codey.app.context import AppContext
     from codey.operations.task_entry import run_entry_kernel
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
@@ -42,19 +46,17 @@ def test_formal_task_entry_supplies_guidance_from_original_policy(tmp_path, stri
     provider = CaptureProvider()
     submission = TaskSubmission("s", str(tmp_path), "inspect", 1, False, "deepseek",
                                 intent="project", run_id="r", strict_research=strict)
-    frame = SimpleNamespace(request=submission, task_kind="project", run_id="r", provider=provider,
-                            provider_id="deepseek", project_text=str(tmp_path), handoff="",
-                            recovered_tool_outcomes=(), settled_tool_outcomes=(), recovered_tool_result_batch_id="",
-                            entry_initial_turn=None, window_action=None, entry_policy=None, entry_session=None)
+    frame = entry_frame(submission)
+    frame.provider = provider
     hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
     state = AppContext(tmp_path / "state")
     admit_entry_frame(frame, state)
     state.runtime_mutations.accept_operation(session_id="s", run_id="r", provider_id="deepseek",
         turn_budget=submission.max_turns, max_repair_rounds=1, task_kind="project")
     deps = SimpleNamespace(knowledge_store=None, runtime_mutations=state.runtime_mutations,
-                           managed_outputs=state.managed_outputs, state=state)
+                           managed_outputs=state.managed_outputs, workspace_revisions=state.workspace_revisions, state=state)
     try:
-        outcome = run_entry_kernel(frame, SimpleNamespace(evidence=ExecutionEvidence(), analysis_run_payloads=[]), hooks, deps)
+        outcome = run_entry_kernel(frame, RunWork(recent_events=[], evidence=ExecutionEvidence()), hooks, deps)
     finally:
         state.close()
     assert len(provider.sent) == 1
@@ -63,9 +65,12 @@ def test_formal_task_entry_supplies_guidance_from_original_policy(tmp_path, stri
         assert outcome.event["stop_reason"] != "done"
 
 
-def test_research_iteration_supplies_guidance_through_actual_shared_kernel(tmp_path, request):
+def test_research_iteration_supplies_guidance_through_actual_shared_kernel(tmp_path: Path, request: pytest.FixtureRequest) -> None:
     from codey.knowledge.store import KnowledgeStore
+    from codey.policies.capabilities import BROWSER_CAPABILITIES
+    from codey.policies.task_policy import build_task_policy
     from codey.research.tools import ResearchTools
+    from codey.task.model import TaskSubmission
     from tests.support.kernel_runtime import run_research_iteration
 
     provider = CaptureProvider()
@@ -75,15 +80,15 @@ def test_research_iteration_supplies_guidance_through_actual_shared_kernel(tmp_p
     result = run_research_iteration(
         SimpleNamespace(
             state=SimpleNamespace(
-                ghost_inbox=SimpleNamespace(
-                    control_enabled=lambda _name, **_kwargs: True,
-                ),
+                memory=None,
             ),
             knowledge_store=store, managed_outputs=None,
         ),
         provider=provider, session_id="s", project="", task="research question", max_turns=1,
         on_event=lambda _event: None, stop_flag=None, provider_id="deepseek", run_id="r",
-        chat_handoff="", trace_recorder=None, search=object(), tools=tools,
+        chat_handoff="", trace_recorder=None, task_policy=build_task_policy(
+            TaskSubmission("s", None, "research", 1, False, "deepseek", denied_capabilities=BROWSER_CAPABILITIES),
+            task_kind="research", strict_research=True), search=object(), tools=tools,
     )
     assert len(provider.sent) == 1
     from codey.research.answer_contract import ANSWER_GUIDANCE

@@ -5,8 +5,8 @@ from __future__ import annotations
 import contextlib
 from dataclasses import replace
 from functools import partial
-from typing import Any
 
+from codey.agents.writer_failover import CheckpointView
 from codey.completion.edit_scope import changed_paths_from_changes
 from codey.completion.verification_policy import (
     selected_verification_candidate_lines,
@@ -23,10 +23,14 @@ from codey.operations.task_context import (
     safe_verification_candidates,
 )
 from codey.operations.task_state import stop_flag_for
+from codey.providers.compat_transport import require_callable
 from codey.reviews.coordinator import ReviewCoordinator, change_state
+from codey.reviews.core import ReviewResult
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.reviews.persistence import append_review_result_ledger
 from codey.runtime.core import cancellation
+from codey.runtime.core.run_result import RunResult
+from codey.utils.object_fields import object_fields
 
 
 def _render_review_change_brief(ctx: ProjectRun) -> str:
@@ -64,7 +68,7 @@ def _refresh_review_project_map(ctx: ProjectRun) -> str:
 def _close_writer_for_review(ctx: ProjectRun) -> None:
     if ctx.frame.provider is not None:
         with contextlib.suppress(Exception):
-            ctx.frame.provider.close()
+            require_callable(ctx.frame.provider, "close")()
     ctx.frame.provider = None
     runner = ctx.failover
     assert runner is not None
@@ -74,8 +78,8 @@ def _close_writer_for_review(ctx: ProjectRun) -> None:
 def _repair_writer(
     ctx: ProjectRun,
     followup: str,
-    checkpoint: Any,
-) -> Any:
+    checkpoint: CheckpointView,
+) -> RunResult:
     runner = ctx.failover
     assert runner is not None
     assert ctx.result is not None
@@ -129,12 +133,12 @@ def _emit_review_unavailable(ctx: ProjectRun) -> None:
     )
 
 
-def _run_review_with_trace(ctx: ProjectRun, **kwargs: Any) -> Any:
+def _run_review_with_trace(ctx: ProjectRun, **kwargs: object) -> tuple[str, ReviewResult] | None:
     changes_value = kwargs.get("changes")
-    changes = changes_value if isinstance(changes_value, dict) else dict[str, object]()
+    changes = changes_value if object_fields(changes_value) else dict[str, object]()
     try:
         review_impact_map = safe_review_impact_map(
-            kwargs.get("project") or ctx.project,
+            str(kwargs.get("project") or ctx.project),
             changes,
         )
     except cancellation.TaskCancelled:
@@ -167,7 +171,7 @@ def _run_review_with_trace(ctx: ProjectRun, **kwargs: Any) -> Any:
         source = ""
     if source and "review_source_run_id" not in kwargs:
         kwargs["review_source_run_id"] = source
-    reviewed = ctx.deps.review.run(**kwargs)
+    reviewed: tuple[str, ReviewResult] | None = ctx.deps.review.run(**kwargs)
     with contextlib.suppress(Exception):
         _persist_project_review_ledger(ctx, reviewed)
     return reviewed
@@ -185,7 +189,7 @@ def _persist_project_review_ledger(ctx: ProjectRun, reviewed: object) -> None:
 
 def _build_review_verification_map(
     ctx: ProjectRun,
-    changes: dict[str, Any],
+    changes: dict[str, object],
     current_project_map: str,
 ) -> str:
     return safe_verification_map(

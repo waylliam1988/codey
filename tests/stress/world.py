@@ -16,14 +16,14 @@ away by ``model.normalize``.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
 
 from codey.app.approval_registry import ApprovalRegistry
 from codey.app.event_bus import EventBus
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.ghost.record_store import GhostRecords
-from codey.ghost.sqlite import GhostSQLite
+from codey.ghost.backend import GhostMemory
+from codey.memory.contracts import MemoryEvent, MemoryHost
 from codey.repairs.journal import RepairJournal
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import (
@@ -37,12 +37,14 @@ from codey.runtime.effects.effect_records import (
 from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
+    DeliveryBatchProjection,
     ToolResultDeliveryStore,
     compute_batch_digest,
 )
+from codey.runtime.log.entries import RuntimeLogEntry
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.types.json_value import JsonObject, decode_json_object, decode_json_value, require_json_string
 from tests.stress.faults import FaultController
-from tests.stress.model import DurableSnapshot
 
 
 class FakeClock:
@@ -75,10 +77,10 @@ class FakeProvider:
 
     def __init__(self, mode: str = NORMAL) -> None:
         self.mode = mode
-        self.received: list[dict] = []
-        self.executed: list[dict] = []
+        self.received: list[dict[str, object]] = []
+        self.executed: list[dict[str, object]] = []
 
-    def send(self, request: dict) -> dict:
+    def send(self, request: dict[str, object]) -> dict[str, object]:
         if self.mode == self.TIMEOUT_BEFORE_EXECUTE:
             raise FakeProviderTimeout("provider timeout before execute")
         self.received.append(dict(request))
@@ -120,7 +122,9 @@ class StressWorld:
         self.operations = RuntimeOperationStore(durable=self.durable)
         self.effects = RuntimeEffectStore(durable=self.durable)
         self.delivery = ToolResultDeliveryStore(durable=self.durable)
-        self.ghost = GhostRecords(GhostSQLite(self.state_home), "inbox")
+        self.ghost = GhostMemory(MemoryHost(self.state_home / "memory" / "ghost",
+            lambda: (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=self.clock.now)).isoformat(),
+            lambda: None))
         self.bus = EventBus(replay_limit=512)
         self.approvals = ApprovalRegistry()
         self.journal = RepairJournal(self.state_home)
@@ -270,13 +274,13 @@ class StressWorld:
             delivery_intent=batch,
         )
 
-    def undelivered_batches(self, run_id: str) -> tuple:
+    def undelivered_batches(self, run_id: str) -> tuple[DeliveryBatchProjection, ...]:
         return self.delivery.undelivered_replayable_batches(self.session_id, run_id)
 
     # -- ghost ---------------------------------------------------------------
 
-    def ghost_append(self, n: int = 1, *, tag: str = "op") -> list[dict]:
-        events = [
+    def ghost_append(self, n: int = 1, *, tag: str = "op") -> list[JsonObject]:
+        events: list[JsonObject] = [
             {
                 "schema_version": self.GHOST_SCHEMA_VERSION,
                 "type": self.GHOST_KIND,
@@ -286,17 +290,32 @@ class StressWorld:
             for index in range(n)
         ]
         self._ghost_seq += n
-        with self.ghost.transaction():
-            self.ghost.append(events)
-            self.ghost.mark_applied()
+        for payload in events:
+            identity = require_json_string(payload["id"], "id")
+            self.ghost.observe(MemoryEvent(identity, "task.completed", self.ghost_time(),
+                self.session_id, "", identity, "stress",
+                {"user_text": json.dumps(payload, sort_keys=True), "assistant_text": "stress"},
+                ("stress:" + identity,)))
         return events
 
-    def ghost_rows(self) -> tuple:
-        return tuple(self.ghost.events())
+    def ghost_time(self) -> str:
+        return (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=self.clock.now)).isoformat()
+
+    def ghost_rows(self) -> tuple[JsonObject, ...]:
+        state = self.ghost.export_state()
+        items = state["items"]
+        if not isinstance(items, list):
+            raise ValueError("expected memory items")
+        result: list[JsonObject] = []
+        for value in items:
+            item = decode_json_object(value)
+            experience = decode_json_object(json.loads(require_json_string(item["text"], "text")))
+            result.append(decode_json_object(json.loads(require_json_string(experience["user"], "user"))))
+        return tuple(result)
 
     # -- bus / approvals / journal ----------------------------------------------
 
-    def sse_emit(self, event_id: str, **fields: Any) -> None:
+    def sse_emit(self, event_id: str, **fields: object) -> None:
         self.bus.emit({"event_key": event_id, **fields})
 
     def approve(self, command: str = "echo hi", run_id: str = "run-1") -> str:
@@ -324,12 +343,13 @@ class StressWorld:
     #: convergence facts. Dropped from canonical rows (documented, not hidden).
     VOLATILE_PAYLOAD_KEYS = frozenset({"created_at", "started_at", "updated_at"})
 
-    def canonical(self) -> dict:
+    def canonical(self) -> dict[str, object]:
         from codey.durable.checkpoint import checkpoint_entries
 
-        rows = []
+        rows: list[dict[str, object]] = []
         batch_aliases: dict[str, str] = {}
-        entries = []
+        entries: list[RuntimeLogEntry] = []
+        durable_runs: set[str] = set()
         for task in self.durable.tasks():
             if task.conversation_id != self.session_id:
                 continue
@@ -338,12 +358,13 @@ class StressWorld:
             except KeyError:
                 continue
             entries.extend(checkpoint_entries(task, effects, session_id=self.session_id))
+            durable_runs.add(task.task_id)
         for entry in entries:
             batch_id = entry.batch_id
             if batch_id not in batch_aliases:
                 batch_aliases[batch_id] = f"<batch{len(batch_aliases)}>"
             payload = {
-                key: json.loads(json.dumps(value, sort_keys=True, default=str))
+                key: decode_json_value(json.loads(json.dumps(value, sort_keys=True, default=str)))
                 for key, value in entry.payload.items()
                 if key not in self.VOLATILE_PAYLOAD_KEYS
             }
@@ -366,12 +387,8 @@ class StressWorld:
         ]
         # Run ids come from durable rows, never from memory: _runs is empty
         # after a restart and must not hide committed batches.
-        durable_runs = sorted({
-            str(row.get("payload", {}).get("run_id") or "")
-            for row in rows
-        } - {""})
         batches = []
-        for run_id in durable_runs:
+        for run_id in sorted(durable_runs):
             undelivered = {
                 b.intent.batch_id
                 for b in self.delivery.undelivered_replayable_batches(self.session_id, run_id)
@@ -384,7 +401,7 @@ class StressWorld:
                     "digest": b.intent.batch_digest,
                     "delivered": b.intent.batch_id not in undelivered,
                 })
-        batches.sort(key=lambda b: b["batch_id"])
+        batches.sort(key=lambda b: str(b["batch_id"]))
         approvals = sorted(
             {
                 approval_id: {
@@ -401,7 +418,7 @@ class StressWorld:
                 if not line.strip():
                     continue
                 try:
-                    record = json.loads(line)
+                    record = decode_json_object(json.loads(line))
                 except json.JSONDecodeError:
                     # Torn tail from a mid-flush kill: the audit trail loses
                     # its tail, but recovery must not die with it (cf. the
@@ -409,13 +426,9 @@ class StressWorld:
                     continue
                 record.pop("time", None)
                 journal_events.append(record)
-        return DurableSnapshot(
-            log_rows=tuple(rows),
-            ghost_rows=tuple(ghost_rows),
-            delivery_batches=tuple(batches),
-            approvals=tuple(approvals),
-            journal_events=tuple(journal_events),
-        ).to_facts()
+        return {"log_rows": rows, "ghost_rows": ghost_rows, "delivery_batches": batches,
+                "approvals": approvals, "journal_events": journal_events}
+
 
 
 __all__ = [

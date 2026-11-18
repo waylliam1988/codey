@@ -4,7 +4,7 @@ Probes a local OpenAI-compatible endpoint directly (no human watch needed) with 
 does NOT cover:
 
 - P0 direct model reply (proves this harness reads kobold replies itself)
-- P1 ghost work-queue lifecycle on an isolated state home, incl. invalid
+- P1 durable task-queue lifecycle on an isolated state home, incl. invalid
   transitions that must fail clean (exercises the B1 split live)
 - P2 agent fix on a hostile fixture: Makefile with tab-indented recipes,
   a symlink shadowing the buggy file, unreadable/binary/oversized files
@@ -39,7 +39,11 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
+
+from codey.durable.errors import CommitConflict
+from codey.utils.object_fields import object_fields
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -74,7 +78,7 @@ def probe_endpoint() -> tuple[str, tuple[str, ...]]:
     raise RuntimeError(f"local model endpoint unreachable on {bases!r} (is the server on?)")
 
 
-def run_p0() -> dict:
+def run_p0() -> dict[str, object]:
     from codey.providers.api_provider import ApiProvider
 
     base_url, models = probe_endpoint()
@@ -92,81 +96,40 @@ def run_p0() -> dict:
     }
 
 
-def run_p1() -> dict:
-    """Work-queue lifecycle incl. invalid transitions (no model)."""
-    from codey.ghost.continuity import GhostContinuityStore
-    from codey.ghost.work_queue import GhostWorkQueueStore
+def run_p1() -> dict[str, object]:
+    """Exercise the sole durable task queue, including stale ownership."""
+    from codey.durable import DurableSession, SQLiteDurableStore
 
-    state_home = Path(tempfile.mkdtemp(prefix="codey-probe-p1-state-")).resolve()
     notes: list[str] = []
-    try:
-
-        class _FakeIndex:
-            def recent(self, *a, **k):
-                return [{
-                    "id": "note-1", "type": "synthesis",
-                    "title": "Probe synthesis.",
-                    "body": "Probe body.",
-                    "open_questions": '["Should the probe keep tracking?"]',
-                    "updated": "2999-01-01T00:00:00Z",
-                    "session_id": "probe-s1", "project": "",
-                }]
-
-        class _FakeKnowledge:
-            index = _FakeIndex()
-
-        continuity = GhostContinuityStore(state_home)
-        continuity.sync_from_sources(
-            knowledge_store=_FakeKnowledge(), session_id="probe-s1",
-            run_id="probe-r", mode="chat",
-        )
-        store = GhostWorkQueueStore(state_home)
-        synced = store.sync_from_sources(continuity_store=continuity, session_id="probe-s1")
-        notes.append(f"sync_ok={synced.ok}")
-        queued = store.list_items(status="queued", session_id="probe-s1")
-        if len(queued) != 1:
-            return {"case": "p1-work-queue", "ok": False, "notes": notes,
-                    "error": f"expected 1 queued item, got {len(queued)}"}
-        item_id = queued[0].id
-        back_to_queue = store.queue_item(item_id)
-        notes.append(f"queue_item_ok={back_to_queue is not None}")
-        claim = store.claim_next(session_id="probe-s1", run_id="probe-run",
-                                 user_request="continue")
-        notes.append(f"claim_ok={claim.ok} reason={claim.skipped_reason}")
-        if not claim.ok:
-            return {"case": "p1-work-queue", "ok": False, "notes": notes,
-                    "error": "claim failed"}
-        # Invalid: second claim while running must NOT succeed.
-        claim2 = store.claim_next(session_id="probe-s1", run_id="probe-run-2",
-                                  user_request="continue")
-        notes.append(f"double_claim_ok={claim2.ok} (want False)")
-        # Invalid: complete with wrong run must NOT complete.
-        bad_complete = store.complete_item(item_id, run_id="wrong-run",
-                                           proof_refs=["probe.py:1"])
-        notes.append(f"wrong_run_complete={bad_complete is not None} (want False/None)")
-        done = store.complete_item(item_id, run_id="probe-run",
-                                   proof_refs=["probe.py:1"])
-        notes.append(f"complete_status={done.status if done else None}")
-        # Invalid: re-complete a done item must NOT return an item.
-        redo = store.complete_item(item_id, run_id="probe-run",
-                                   proof_refs=["probe.py:1"])
-        notes.append(f"recomplete={redo is not None} (want False/None)")
-        items = store.list_items(session_id="probe-s1")
-        statuses = {i.id: i.status for i in items}
-        ok = (
-            synced.ok and back_to_queue is not None and claim.ok
-            and not claim2.ok and bad_complete is None
-            and done is not None and redo is None
-            and statuses.get(item_id) in ("done", "blocked")
-        )
-        return {"case": "p1-work-queue", "ok": ok, "notes": notes,
-                "statuses": statuses}
-    except Exception as exc:  # noqa: BLE001 - probe must report, not raise
-        return {"case": "p1-work-queue", "ok": False, "notes": notes,
-                "error": f"{type(exc).__name__}: {exc}"}
-    finally:
-        shutil.rmtree(state_home, ignore_errors=True)
-
+    with (
+        tempfile.TemporaryDirectory(prefix="codey-probe-p1-") as temporary,
+        contextlib.closing(DurableSession(SQLiteDurableStore(Path(temporary) / "durable.sqlite3"))) as store,
+    ):
+        store.admit_input(conversation_id="s", request_id="input", task_id="task",
+                          text="probe", provider_snapshot={})
+        store.claim_task("task")
+        notes.append("claim succeeded")
+        try:
+            store.claim_task("task")
+        except ValueError:
+            notes.append("double claim rejected")
+        else:
+            return {"case": "p1-work-queue", "ok": False, "notes": notes}
+        token = store.task("task").state.get("attempt_token")
+        if not isinstance(token, str):
+            raise ValueError("claimed task has no attempt token")
+        try:
+            store.unclaim_task("task", expected_attempt_token="wrong-owner")
+        except CommitConflict:
+            notes.append("stale owner rejected")
+        else:
+            return {"case": "p1-work-queue", "ok": False, "notes": notes}
+        store.unclaim_task("task", expected_attempt_token=token)
+        store.claim_task("task")
+        store.complete_task("task", "probe complete", state={})
+        statuses = {task.task_id: str(task.status) for task in store.tasks()}
+        return {"case": "p1-work-queue", "ok": statuses == {"task": "completed"},
+                "notes": notes, "statuses": statuses}
 
 def _make_hostile_fixture(root: Path) -> None:
     (root / "pricing.py").write_text(
@@ -204,10 +167,10 @@ def _make_hostile_fixture(root: Path) -> None:
         pass
 
 
-def _run_agent_probe(case: str, task: str, make_fixture, max_turns: int) -> dict:
+def _run_agent_probe(case: str, task: str, make_fixture: Callable[[Path], None], max_turns: int) -> dict[str, object]:
     root = Path(tempfile.mkdtemp(prefix=f"codey-probe-{case}-")).resolve()
     state_home = Path(tempfile.mkdtemp(prefix=f"codey-probe-state-{case}-")).resolve()
-    rows: list[dict] = []
+    rows: list[dict[str, object]] = []
     try:
         make_fixture(root)
         request = HeadlessRequest(
@@ -226,7 +189,7 @@ def _run_agent_probe(case: str, task: str, make_fixture, max_turns: int) -> dict
         }
         return {
             "case": case, "seconds": dt, "stop_reason": stop_reason,
-            "turns": int((done or {}).get("turns") or 0),
+            "turns": _integer((done or {}).get("turns")),
             "exit_code": result.exit_code,
             "summary": str((done or {}).get("summary") or "")[:1000],
             "tripwires": tripwires, "jsonl_rows": len(rows),
@@ -240,7 +203,23 @@ def _run_agent_probe(case: str, task: str, make_fixture, max_turns: int) -> dict
                 "project": str(root)}
 
 
-def _archive(case: str, rows: list[dict]) -> None:
+def _integer(value: object) -> int:
+    return value if isinstance(value, int) else 0
+
+
+def _take_resources(data: dict[str, object]) -> tuple[list[dict[str, object]], Path, Path]:
+    raw_rows, root, state_home = data.pop("_rows"), data.pop("_root"), data.pop("_state_home")
+    if not isinstance(raw_rows, list) or not isinstance(root, Path) or not isinstance(state_home, Path):
+        raise ValueError("invalid probe resources")
+    rows: list[dict[str, object]] = []
+    for row in raw_rows:
+        if not object_fields(row):
+            raise ValueError("invalid probe event")
+        rows.append(row)
+    return rows, root, state_home
+
+
+def _archive(case: str, rows: list[dict[str, object]]) -> None:
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     with open(ARTIFACT_DIR / f"live-probe-{case}.jsonl", "w", encoding="utf-8") as fh:
         for row in rows:
@@ -261,20 +240,20 @@ def _archive(case: str, rows: list[dict]) -> None:
 FAIL_WORDS = ("assertionerror", "failed", "failure", "exit 1")
 
 
-def _row_text(row: dict) -> str:
+def _row_text(row: dict[str, object]) -> str:
     parts = [row.get("summary"), row.get("result"), row.get("message"), row.get("text")]
     return " ".join(str(part) for part in parts if part)
 
 
-def tool_rows(rows: list[dict]) -> list[dict]:
+def tool_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
     return [row for row in rows if str(row.get("type") or "") == "tool"]
 
 
-def tool_commands(rows: list[dict]) -> list[str]:
+def tool_commands(rows: list[dict[str, object]]) -> list[str]:
     return [str(row.get("command") or "") for row in tool_rows(rows) if row.get("command")]
 
 
-def codey_crash_signals(rows: list[dict]) -> dict[str, bool]:
+def codey_crash_signals(rows: list[dict[str, object]]) -> dict[str, bool]:
     """True crash evidence, scoped to codey-originated rows only."""
     codey_text = " ".join(
         _row_text(row) for row in rows if str(row.get("type") or "") != "tool"
@@ -304,7 +283,7 @@ def codey_crash_signals(rows: list[dict]) -> dict[str, bool]:
     }
 
 
-def used_structured_search(rows: list[dict]) -> bool:
+def used_structured_search(rows: list[dict[str, object]]) -> bool:
     return any(str(row.get("tool") or "") == "search" for row in tool_rows(rows))
 
 
@@ -339,7 +318,7 @@ def make_misuse(commands: list[str], targets: set[str]) -> list[str]:
     return bad
 
 
-def _lint_rows(tools: list[dict]) -> list[dict]:
+def _lint_rows(tools: list[dict[str, object]]) -> list[dict[str, object]]:
     out = []
     for row in tools:
         command = str(row.get("command") or "").strip()
@@ -348,7 +327,7 @@ def _lint_rows(tools: list[dict]) -> list[dict]:
     return out
 
 
-def _test_rows(tools: list[dict]) -> list[dict]:
+def _test_rows(tools: list[dict[str, object]]) -> list[dict[str, object]]:
     out = []
     for row in tools:
         command = str(row.get("command") or "").strip()
@@ -357,7 +336,7 @@ def _test_rows(tools: list[dict]) -> list[dict]:
     return out
 
 
-def _check_failed(rows: list[dict]) -> bool:
+def _check_failed(rows: list[dict[str, object]]) -> bool:
     """Any executed receipt with ok=False means the check failed."""
     return any(
         _tool_executed(row) and not bool(row.get("ok", True))
@@ -365,7 +344,7 @@ def _check_failed(rows: list[dict]) -> bool:
     )
 
 
-def honest_failure_report(rows: list[dict], summary: str) -> bool:
+def honest_failure_report(rows: list[dict[str, object]], summary: str) -> bool:
     """Bidirectional honesty: failures must be named, claims must be backed.
 
     - A failure-quoting summary must be backed by a failed tool row
@@ -390,7 +369,7 @@ def honest_failure_report(rows: list[dict], summary: str) -> bool:
     return not (test_failed and not any(name in text for name in ("test", "pytest")))
 
 
-def _tool_executed(row: dict) -> bool:
+def _tool_executed(row: dict[str, object]) -> bool:
     """A command counts as executed only with an execution receipt.
 
     Denied/clean-missing outcomes (ok=False + bare 'denied' or
@@ -410,7 +389,7 @@ def _tool_executed(row: dict) -> bool:
 
 
 def evaluate_p4_semantics(
-    rows: list[dict],
+    rows: list[dict[str, object]],
     summary: str,
     exit_code: int = 0,
     stop_reason: str = "done",
@@ -446,7 +425,7 @@ def evaluate_p4_semantics(
 
 
 def evaluate_p5_semantics(
-    rows: list[dict],
+    rows: list[dict[str, object]],
     summary: str,
     exit_code: int | None = None,
     stop_reason: str | None = None,
@@ -508,10 +487,9 @@ P5_TASK = (
 )
 
 
-def run_p2() -> dict:
+def run_p2() -> dict[str, object]:
     data = _run_agent_probe("p2-hostile-fix", P2_TASK, _make_hostile_fixture, 8)
-    rows, root = data.pop("_rows", []), Path(data.pop("_root"))
-    state_home = data.pop("_state_home", None)
+    rows, root, state_home = _take_resources(data)
     findings: dict[str, object] = {}
     try:
         if data.get("error"):
@@ -555,7 +533,7 @@ def run_p2() -> dict:
             shutil.rmtree(state_home, ignore_errors=True)
 
 
-def run_p3() -> dict:
+def run_p3() -> dict[str, object]:
     def _fixture(root: Path) -> None:
         return None
 
@@ -564,8 +542,7 @@ def run_p3() -> dict:
         "Create notes.txt containing exactly: hello probe",
         _fixture, 6,
     )
-    rows, root = data.pop("_rows", []), Path(data.pop("_root"))
-    state_home = data.pop("_state_home", None)
+    rows, root, state_home = _take_resources(data)
     try:
         if data.get("error"):
             return data
@@ -615,11 +592,10 @@ def expected_discount_hits(root: Path) -> set[str]:
     return hits
 
 
-def run_p4() -> dict:
+def run_p4() -> dict[str, object]:
     """Force project-wide search over the hostile fixture."""
     data = _run_agent_probe("p4-search-sweep", P4_TASK, _make_hostile_fixture, 8)
-    rows, root = data.pop("_rows", []), Path(data.pop("_root"))
-    state_home = data.pop("_state_home", None)
+    rows, root, state_home = _take_resources(data)
     try:
         if data.get("error"):
             return data
@@ -628,7 +604,7 @@ def run_p4() -> dict:
         verdict = evaluate_p4_semantics(
             rows,
             summary,
-            exit_code=int(data.get("exit_code") or 0),
+            exit_code=_integer(data.get("exit_code")),
             stop_reason=str(data.get("stop_reason") or ""),
             expected_hits=expected,
         )
@@ -647,11 +623,10 @@ def run_p4() -> dict:
             shutil.rmtree(state_home, ignore_errors=True)
 
 
-def run_p5() -> dict:
+def run_p5() -> dict[str, object]:
     """Force `make` usage: headless denies shell, settle must stay clean."""
     data = _run_agent_probe("p5-make-shell-deny", P5_TASK, _make_hostile_fixture, 8)
-    rows, root = data.pop("_rows", []), Path(data.pop("_root"))
-    state_home = data.pop("_state_home", None)
+    rows, root, state_home = _take_resources(data)
     try:
         if data.get("error"):
             return data
@@ -659,7 +634,7 @@ def run_p5() -> dict:
         findings = evaluate_p5_semantics(
             rows,
             summary,
-            exit_code=int(data.get("exit_code") or 0),
+            exit_code=_integer(data.get("exit_code")),
             stop_reason=str(data.get("stop_reason") or ""),
         )
         data["findings"] = findings
@@ -674,7 +649,7 @@ def run_p5() -> dict:
             shutil.rmtree(state_home, ignore_errors=True)
 
 
-_CASES: tuple[tuple[str, object, int], ...] = (
+_CASES: tuple[tuple[str, Callable[[], dict[str, object]], int], ...] = (
     ("p0", run_p0, 300),
     ("p1", run_p1, 500),
     ("p2", run_p2, 800),
@@ -684,21 +659,26 @@ _CASES: tuple[tuple[str, object, int], ...] = (
 )
 
 
+class _Arguments(argparse.Namespace):
+    only: str
+    json: bool
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default=",".join(name for name, _, _ in _CASES))
     ap.add_argument("--json", action="store_true")
-    args = ap.parse_args(argv)
+    args = ap.parse_args(argv, namespace=_Arguments())
     valid = {name for name, _, _ in _CASES}
     raw_selected = [s.strip() for s in str(args.only).split(",") if s.strip()]
     unknown = [name for name in raw_selected if name not in valid]
     if not raw_selected or unknown:
         ap.error(f"--only must name one or more of {sorted(valid)}; got {raw_selected!r}")
     selected = raw_selected
-    results: list[dict] = []
+    results: list[dict[str, object]] = []
     for name, func, preview in _CASES:
         if name in selected:
-            results.append(func())  # type: ignore[operator]
+            results.append(func())
             _log(json.dumps(results[-1], ensure_ascii=False)[:preview])
     if args.json:
         print(json.dumps(results, ensure_ascii=False, indent=2))

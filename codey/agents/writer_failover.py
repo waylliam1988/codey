@@ -37,6 +37,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from codey.completion.verification_policy import VerificationCandidate
     from codey.providers.base import ChatProvider
     from codey.providers.diagnostics import ProviderFailure
+    from codey.providers.transport import ProviderTransport
     from codey.runtime.core.run_result import RunResult
 
 
@@ -60,7 +61,7 @@ class WriterAttempt:
 
     task: str
     provider_id: str
-    provider: ChatProvider
+    provider: ChatProvider | ProviderTransport
     remaining_turns: int
     fresh_chat: bool
     handoff: str
@@ -91,16 +92,16 @@ class WriterFailoverRunner:
     matches the original closure behaviour.
     """
 
-    provider: ChatProvider | None
+    provider: ChatProvider | ProviderTransport | None
     provider_id: str
     switches: int
     tried: set[str]
     attempt: Callable[[WriterAttempt, Callable[[int], None]], RunResult]
     select_next: Callable[[set[str]], str | None]
-    connect: Callable[[str], ChatProvider]
-    close: Callable[[ChatProvider], None]
+    connect: Callable[[str], ChatProvider | ProviderTransport]
+    close: Callable[[ChatProvider | ProviderTransport], None]
     needs_canary: Callable[[str], bool]
-    run_canary: Callable[[str, ChatProvider], bool]
+    run_canary: Callable[[str, ChatProvider | ProviderTransport], bool]
     capture_failure: Callable[[str, str, BaseException], ProviderFailure]
     record_failure: Callable[[str, ProviderFailure], None]
     record_success: Callable[[str], None]

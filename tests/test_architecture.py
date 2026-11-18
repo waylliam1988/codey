@@ -296,25 +296,15 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("ConversationStore", registry_source)
         self.assertNotIn("conversation_store", server_source)
 
-    def test_background_workers_own_single_flight_state(self) -> None:
-        server_source = APP_CONTEXT_PATH.read_text(encoding="utf-8")
-        ghost_source = (ROOT / "codey" / "app" / "ghost_daemon.py").read_text(encoding="utf-8")
-        indexer_source = (ROOT / "codey" / "app" / "knowledge_indexer.py").read_text(encoding="utf-8")
 
-        imports = imported_modules(APP_CONTEXT_PATH)
-        self.assertIn("codey.app.ghost_daemon", imports)
-        self.assertIn("codey.app.knowledge_indexer", imports)
-        self.assertIn("class GhostSleepDaemon", ghost_source)
-        self.assertIn("class KnowledgeIndexer", indexer_source)
-        for token in (
-            "_knowledge_rebuild_running",
-            "_knowledge_rebuild_pending",
-            "_ghost_sleep_running",
-            "_ghost_sleep_pending",
-            "_ghost_sleep_thread",
-        ):
+    def test_knowledge_indexer_owns_single_flight_state(self) -> None:
+        source = APP_CONTEXT_PATH.read_text(encoding="utf-8")
+        indexer = ROOT / "codey" / "app" / "knowledge_indexer.py"
+        self.assertIn("codey.app.knowledge_indexer", imported_modules(APP_CONTEXT_PATH))
+        self.assertIn("class KnowledgeIndexer", indexer.read_text(encoding="utf-8"))
+        for token in ("_knowledge_rebuild_running", "_knowledge_rebuild_pending"):
             with self.subTest(token=token):
-                self.assertNotIn(token, server_source)
+                self.assertNotIn(token, source)
 
     def test_task_entry_and_task_run_have_no_http_dependency(self) -> None:
         for path in (TASK_ENTRY_PATH, TASK_RUN_PATH):
@@ -645,37 +635,26 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 imports = imported_modules(path)
                 self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
 
-    def test_affinity_boundaries_do_not_expand_execution_or_research_authority(self) -> None:
-        affinity_imports = imported_modules(ROOT / "codey" / "ghost" / "affinity.py")
-        forbidden_affinity = {
-            "torch",
-            "transformers",
-            "codey.automation.browser",
-            "codey.providers",
-            "codey.providers.controls",
-            "codey.toolchain.runtime",
-            "codey.research.runner",
-            "codey.research.tools",
-        }
-        self.assertTrue(
-            forbidden_affinity.isdisjoint(affinity_imports),
-            sorted(forbidden_affinity & affinity_imports),
+
+    def test_memory_has_no_execution_or_research_authority(self) -> None:
+        backend_imports = imported_modules(ROOT / "codey" / "ghost" / "backend.py")
+        forbidden = (
+            "torch", "transformers", "codey.app", "codey.operations", "codey.durable",
+            "codey.runtime", "codey.automation", "codey.providers", "codey.toolchain", "codey.research",
         )
-
-        research_imports = imported_modules(ROOT / "codey" / "operations" / "research_iteration.py")
-        permission_imports = imported_modules(ROOT / "codey" / "policies" / "permissions.py")
-        repair_source = (ROOT / "codey" / "repairs" / "adapter_repair.py").read_text(encoding="utf-8")
-        tool_runtime_imports = imported_modules(ROOT / "codey" / "toolchain" / "runtime.py")
-
-        self.assertNotIn("codey.ghost.affinity", research_imports)
-        self.assertNotIn("codey.ghost.affinity", permission_imports)
-        self.assertNotIn("affinity", repair_source.casefold())
-        self.assertNotIn("codey.ghost", tool_runtime_imports)
+        self.assertFalse(any(module == prefix or module.startswith(prefix + ".")
+                             for module in backend_imports for prefix in forbidden))
+        for relative in ("operations/research_iteration.py", "policies/permissions.py", "toolchain/runtime.py"):
+            with self.subTest(relative=relative):
+                imports = imported_modules(ROOT / "codey" / relative)
+                self.assertFalse(any(name == "codey.ghost" or name.startswith("codey.ghost.") for name in imports))
+        repair = ROOT / "codey" / "repairs" / "adapter_repair.py"
+        self.assertNotIn("affinity", repair.read_text(encoding="utf-8").casefold())
 
     def test_ghost_package_root_has_small_public_surface(self) -> None:
         source = (ROOT / "codey" / "ghost" / "__init__.py").read_text(encoding="utf-8")
 
-        self.assertIn('"GhostControlSurface"', source)
+        self.assertNotIn("import", source)
         self.assertNotIn("GhostHebbianStore", source)
         self.assertNotIn("GhostAffinityStore", source)
         self.assertNotIn("GhostSleepStore", source)
@@ -2054,9 +2033,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
     def test_confirmed_dead_convenience_exports_do_not_exist(self) -> None:
         import codey.agents.runaway_guard as runaway_guard
-        import codey.ghost._common as ghost_common
-        import codey.ghost.affinity as ghost_affinity
-        import codey.operations.ghost_context as ghost_context
         import codey.operations.research_flow as research_flow
         import codey.providers.base as provider_base
         import codey.providers.error_classification as provider_errors
@@ -2065,14 +2041,11 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         for module, names in (
             (research_flow, ("record_research_result_trace", "record_evidence_ledger_write_trace")),
-            (ghost_context, ("ghost_directive_text", "ghost_continuity_text")),
             (runaway_guard, ("repeated_failure_key",)),
             (provider_base, ("StructuredChatProvider",)),
             (provider_errors, ("is_auth_message",)),
             (web_common, ("last_response_text", "clean_whitespace")),
             (openai_tools, ("research_openai_tools",)),
-            (ghost_affinity, ("apply_affinity_research_boost",)),
-            (ghost_common, ("normalize_scope",)),
         ):
             exported = set(getattr(module, "__all__", ()))
             for name in names:

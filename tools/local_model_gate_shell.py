@@ -142,7 +142,7 @@ def gate_application(
                 native_tools_mode="on", connection_revision="isolated-shell-gate",
                 context=local_config.LocalContextBudget(target.context_window_tokens,
                     target.context_reserve_tokens, target.context_keep_recent_tokens)))
-        state = AppContext(state_root)
+        state = AppContext(state_root, memory_enabled=False)
         stack.callback(state.close)
         # Record production events without modifying dispatch or provider state.
         def record_event(payload: dict[str, object]) -> None:
@@ -154,9 +154,6 @@ def gate_application(
         sources = snapshot["sources"]
         sources[target.provider_id] = {"enabled": True, "models": [target.model]}
         preferences.save(sources, base_revision=snapshot["revision"])
-        if state.ghost_inbox is None:
-            raise RuntimeError("ghost inbox is unavailable")
-        state.ghost_inbox.set_learning_enabled(False)
         stack.enter_context(isolate_gate_secondary_models(target))
         stack.enter_context(record_api_generations(directory / "provider.jsonl"))
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)

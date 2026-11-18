@@ -14,21 +14,29 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Protocol, TextIO
 
-from codey.agents.request import DEFAULT_MAX_TURNS
+from codey.agents.request import DEFAULT_MAX_TURNS, AgentRequest
 from codey.agents.shell_approval import shell_command_event_fields
 from codey.app.context import AppContext
 from codey.app.event_payloads import SCHEMA_VERSION, machine_event_payload
 from codey.app.task_services import build_task_deps
 from codey.operations.task_entry import run_task_submission
+from codey.operations.task_run import CaptureProviderFailure, CollectChanges
+from codey.providers.base import ChatProvider
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.providers.registry import connect_provider as default_connect_provider
 from codey.reviews.review_policy import allow_self_review, load_review_policy
+from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import clip_event_text
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.task.entry_auth import derive_entry_auth
 from codey.task.model import TaskInput, TaskSubmission
+
+
+class HeadlessConnector(Protocol):
+    def __call__(self, provider_id: str, *, port: int) -> ChatProvider: ...
+
 
 HEADLESS_SESSION_PREFIX = "headless_"
 
@@ -54,7 +62,7 @@ class HeadlessRequest:
     review_source_run_id: str = ""
     continue_task: bool = False
     review_policy: str | None = None
-    model_selection: dict[str, Any] = field(default_factory=dict)
+    model_selection: dict[str, object] = field(default_factory=dict)
     input: TaskInput | None = None
     output_format: str = "text"
     output_schema: str = ""
@@ -71,14 +79,14 @@ class HeadlessResult:
     ledger_path: str = ""
 
 
-class HeadlessAppContext(AppContext):  # type: ignore[misc,unused-ignore]
+class HeadlessAppContext(AppContext):
     def __init__(
         self,
         state_home: str | Path | None,
         *,
         port: int,
         emit_jsonl: Callable[[dict[str, object]], None],
-        connect_provider: Callable[..., Any] = default_connect_provider,
+        connect_provider: HeadlessConnector = default_connect_provider,
     ) -> None:
         super().__init__(
             state_home,
@@ -94,7 +102,7 @@ class HeadlessAppContext(AppContext):  # type: ignore[misc,unused-ignore]
         # (or invoking overridden methods before subclass initialization).
         self.durable.recover_scheduler_state()
 
-    def get_provider(self, provider_id: str = DEFAULT_PROVIDER_ID) -> Any:
+    def get_provider(self, provider_id: str = DEFAULT_PROVIDER_ID) -> ChatProvider:
         self.set_run_status("connecting")
         self.emit({"type": "status", "status": "connecting"})
         run = self.current_run()
@@ -109,7 +117,7 @@ class HeadlessAppContext(AppContext):  # type: ignore[misc,unused-ignore]
         self.emit({"type": "status", "status": "running"})
         return provider
 
-    def _on_event_emitted(self, payload: dict[str, Any]) -> None:
+    def _on_event_emitted(self, payload: dict[str, object]) -> None:
         payload_event = payload
         machine_payload = machine_event_payload(payload_event)
         if machine_payload is not None:
@@ -131,7 +139,7 @@ class HeadlessAppContext(AppContext):  # type: ignore[misc,unused-ignore]
             self._emit_jsonl(rejected)
 
 
-def emit_jsonl(payload: dict[str, object], *, file: Any = None) -> None:
+def emit_jsonl(payload: dict[str, object], *, file: TextIO | None = None) -> None:
     if file is None:
         file = sys.stdout
     text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
@@ -144,11 +152,11 @@ def run_headless(
     request: HeadlessRequest,
     *,
     emit_jsonl: Callable[[dict[str, object]], None],
-    agent_run: Callable[..., Any] | None = None,
-    collect_changes: Callable[..., Any] | None = None,
-    capture_provider_failure: Callable[..., Any] | None = None,
-    connect_provider: Callable[..., Any] = default_connect_provider,
-    connect_reviewer: Callable[..., Any] | None = None,
+    agent_run: Callable[[AgentRequest], RunResult] | None = None,
+    collect_changes: CollectChanges | None = None,
+    capture_provider_failure: CaptureProviderFailure | None = None,
+    connect_provider: HeadlessConnector = default_connect_provider,
+    connect_reviewer: Callable[[str], ChatProvider] | None = None,
 ) -> HeadlessResult:
     intent = _request_intent(request.intent)
     policy = load_review_policy() if request.review_policy is None else request.review_policy
@@ -230,8 +238,6 @@ def run_headless(
         close_error = exc
         closed = False
     if not closed:
-        with contextlib.suppress(Exception):
-            state.wait_for_ghost_sleep(timeout=30)
         try:
             closed = state.close()
         except BaseException as exc:
@@ -259,7 +265,7 @@ def run_headless(
         if not closed:
             with contextlib.suppress(Exception):
                 task_error.add_note(
-                    "headless close incomplete: ghost still alive or resources retained"
+                    "headless close incomplete: resources retained"
                 )
             if close_error is not None:
                 with contextlib.suppress(Exception):
@@ -294,10 +300,10 @@ def _run_headless_task(
     session_id: str,
     project: Path | None,
     pre_reserved_run_id: str,
-    agent_run: Callable[..., Any] | None,
-    collect_changes: Callable[..., Any] | None,
-    capture_provider_failure: Callable[..., Any] | None,
-    connect_reviewer: Callable[..., Any] | None,
+    agent_run: Callable[[AgentRequest], RunResult] | None,
+    collect_changes: CollectChanges | None,
+    capture_provider_failure: CaptureProviderFailure | None,
+    connect_reviewer: Callable[[str], ChatProvider] | None,
     review_policy: str,
 ) -> tuple[HeadlessResult | None, BaseException | None]:
     """Run the submission; the caller owns shutdown so close never masks this."""
@@ -333,7 +339,7 @@ def _run_headless_task(
             request.provider_id,
             request.model_selection if request.model_selection else None,
         )
-        selection_payload: dict[str, Any] = (
+        selection_payload: dict[str, object] = (
             admitted_selection.to_payload() if admitted_selection is not None else {}
         )
         run_id = pre_reserved_run_id

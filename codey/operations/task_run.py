@@ -2,7 +2,7 @@
 
 Thin orchestrator around task_phases: run slot, provider task context,
 trace/ledger wiring, and terminal settlement. Phase helpers live in
-task_phases (split by concern: lifecycle, ghost, hooks, dispatch,
+task_phases (split by concern: lifecycle, hooks, dispatch,
 settlement) so this module stays under the long-file guardrail.
 Mode behavior lives in the mode flow modules.
 """
@@ -14,26 +14,46 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from threading import Event
+from typing import TYPE_CHECKING, Protocol
+
+from codey.agents.consensus import ConsensusAdvice, ConsensusResult
+from codey.agents.handoff import ConversationContext
+from codey.agents.request import AgentRequest
+from codey.knowledge.store import KnowledgeStore
+from codey.operations.context import RunHooks
+from codey.operations.review_flow import ReviewFlowDeps
+from codey.providers.base import ChatProvider
+from codey.providers.compat_transport import require_callable
+from codey.providers.diagnostics import ProviderFailure
+from codey.providers.transport import ProviderTransport
+from codey.research.evidence_ledger import EvidenceLedgerStore
+from codey.reviews.core import ReviewResult
+from codey.runs.ledger import RunLedgerStore
+from codey.runs.trace import RunTraceRecorder, RunTraceStore
+from codey.runs.work_checkpoint import WorkCheckpointStore
+from codey.runtime.core.run_result import RunResult
+from codey.storage.execution_output_store import ExecutionOutputStore
+from codey.storage.managed_outputs import ManagedOutputStore
+from codey.workspace.facts import ProjectFactsStore
+from codey.workspace.revision import WorkspaceRevisionStore
 
 if TYPE_CHECKING:
+    from codey.policies.task_policy import TaskPolicy
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from codey.workspace.changes import ChangeTracker
 
 from codey.app.sibling_probe import bind_provider_handlers
-from codey.ghost.work_queue_model import GhostWorkItem
 from codey.operations.context import RunFrame, RunWork
-from codey.operations.ghost_post_turn import release_work_item, run_ghost_post_turn
 from codey.operations.task_phases import (
     build_hooks,
     build_run_work,
-    claim_or_route_ghost_work,
     connect_and_build_frame,
     dispatch_run_mode,
     ensure_run_reserved_and_started,
     finish_mode_outcome,
     finish_run_operation,
-    ghost_task_deps,
     open_run_ledger,
     open_run_trace,
     project_completion_deps,
@@ -60,32 +80,60 @@ from codey.workspace.config import ProjectConfigLoadResult, load_project_config
 logger = logging.getLogger(__name__)
 
 
+class CollectChanges(Protocol):
+    def __call__(self, project: str | Path, tracker: ChangeTracker | None) -> dict[str, object]: ...
+
+
+class ReviewTask(Protocol):
+    def __call__(self, *, session_id: str, project: str, task: str, writer_summary: str,
+                 changes: dict[str, object], recent_log: str, writer_id: str, change_brief: str = "",
+                 project_map: str = "", verification_map: str = "", review_impact_map: str | None = None,
+                 execution_evidence: str = "", trace_recorder: object | None = None, run_id: str = "",
+                 review_source_run_id: str = "", standalone: bool = False) -> tuple[str, ReviewResult] | None: ...
+
+
+class CaptureProviderFailure(Protocol):
+    def __call__(self, *, model: str, action: str, page: object, error: BaseException) -> ProviderFailure: ...
+
+
+class ConsensusTask(Protocol):
+    def __call__(self, *, selected_provider: object, selected_provider_id: str, task: str,
+                 context: str = "", draft: str = "", plan: bool = False, draft_first: bool = False,
+                 owner_prompt: str = "", trace_recorder: object | None = None) -> ConsensusResult | None: ...
+
+
+class ProjectAuditTask(Protocol):
+    def __call__(self, *, parent_policy: TaskPolicy, project: str | Path, selected_provider: object = None,
+                 selected_provider_id: str, task: str, context: str = "",
+                 trace_recorder: object | None = None) -> tuple[ConsensusAdvice, ...]: ...
+
+
 @dataclass(frozen=True)
 class TaskRunDeps:
     state: TaskState
-    agent_run: Callable[..., Any]
-    collect_changes: Callable[..., Any]
-    run_review: Callable[..., Any]
-    capture_provider_failure: Callable[..., Any]
-    workspace_revisions: Any
-    collect_review_changes: Callable[..., Any] | None = None
-    run_consensus: Callable[..., Any] | None = None
-    run_project_audit: Callable[..., Any] | None = None
-    project_facts: Any = None
-    work_checkpoints: Any = None
-    run_ledgers: Any = None
-    run_traces: Any = None
-    evidence_ledgers: Any = None
-    managed_outputs: Any = None
-    execution_outputs: Any = None
-    knowledge_store: Any = None
+    agent_run: Callable[[AgentRequest], RunResult]
+    collect_changes: CollectChanges
+    run_review: ReviewTask
+    capture_provider_failure: CaptureProviderFailure
+    workspace_revisions: WorkspaceRevisionStore
+    collect_review_changes: CollectChanges | None = None
+    run_consensus: ConsensusTask | None = None
+    run_project_audit: ProjectAuditTask | None = None
+    project_facts: ProjectFactsStore | None = None
+    work_checkpoints: WorkCheckpointStore | None = None
+    run_ledgers: RunLedgerStore | None = None
+    run_traces: RunTraceStore | None = None
+    evidence_ledgers: EvidenceLedgerStore | None = None
+    managed_outputs: ManagedOutputStore | None = None
+    execution_outputs: ExecutionOutputStore | None = None
+    knowledge_store: KnowledgeStore | None = None
     search_factory: Callable[[], object] | None = None
     is_git_repository: Callable[[str | Path], bool] | None = None
     review_fix_turns: int = 12
     review_log_lines: int = 80
     runtime_mutations: RuntimeMutationLine | None = None
     runtime_effects: RuntimeEffectStore | None = None
-    connect_provider: Callable[[str], Any] | None = None
+    connect_provider: Callable[[str], ChatProvider] | None = None
 
     @classmethod
     def from_submission_stores(
@@ -93,18 +141,18 @@ class TaskRunDeps:
         *,
         state: TaskState,
         stores: TaskSubmissionStores,
-        agent_run: Callable[..., Any],
-        collect_changes: Callable[..., Any],
-        run_review: Callable[..., Any],
-        capture_provider_failure: Callable[..., Any],
-        collect_review_changes: Callable[..., Any] | None = None,
-        run_consensus: Callable[..., Any] | None = None,
-        run_project_audit: Callable[..., Any] | None = None,
+        agent_run: Callable[[AgentRequest], RunResult],
+        collect_changes: CollectChanges,
+        run_review: ReviewTask,
+        capture_provider_failure: CaptureProviderFailure,
+        collect_review_changes: CollectChanges | None = None,
+        run_consensus: ConsensusTask | None = None,
+        run_project_audit: ProjectAuditTask | None = None,
         search_factory: Callable[[], object] | None = None,
         is_git_repository: Callable[[str | Path], bool] | None = None,
         review_fix_turns: int = 12,
         review_log_lines: int = 80,
-        connect_provider: Callable[[str], Any] | None = None,
+        connect_provider: Callable[[str], ChatProvider] | None = None,
     ) -> TaskRunDeps:
         """Assemble task dependencies from one explicit resource bundle."""
         return cls(
@@ -213,14 +261,12 @@ class _RunSetup:
     provider_id: str
     baseline_task_kind: str
     task_kind: str
-    trace: Any
+    trace: RunTraceRecorder | None
     trace_sink: FailOpenPromptTrace
     project_config_result: ProjectConfigLoadResult
-    ghost_deps: Any
-    review_deps: Any
-    claimed_work_item: GhostWorkItem | None = None
+    review_deps: ReviewFlowDeps
     recovered_resume: bool = False
-    previous_cancel_event: Any = None
+    previous_cancel_event: Event | None = None
     writer_acquired: bool = False
 
 
@@ -270,20 +316,13 @@ def _fail_early_run(
         task_kind=setup.task_kind, project=setup.project, provider_id=setup.provider_id,
     )
     state.finish_run(setup.run_id, error_event)
-    run_ghost_post_turn(
-        setup.ghost_deps,
-        None,
-        error_event,
-        current_work.claimed_work_item if current_work is not None else setup.claimed_work_item,
-        project_text=(setup.project or ""),
-    )
     return operation_outcome_from_task_done_event(error_event)
 
 
 def _release_setup_resources(
     state: TaskState,
     project: str | None,
-    previous_cancel_event: Any,
+    previous_cancel_event: Event | None,
     task_context_started: bool,
     writer_acquired: bool,
 ) -> None:
@@ -359,7 +398,7 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
     provider_id = request.provider_id
     baseline_task_kind = resolve_task_kind(request)
 
-    previous_cancel_event: Any = None
+    previous_cancel_event: Event | None = None
     task_context_started = False
     writer_acquired = False
     try:
@@ -411,7 +450,6 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
                     return None, outcome
 
         review_deps = review_flow_deps(deps)
-        ghost_deps = ghost_task_deps(deps, review_deps)
         return _RunSetup(
             state=state,
             request=request,
@@ -427,7 +465,6 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
             trace=trace,
             trace_sink=trace_sink,
             project_config_result=project_config_result,
-            ghost_deps=ghost_deps,
             review_deps=review_deps,
             previous_cancel_event=previous_cancel_event,
             writer_acquired=writer_acquired,
@@ -491,7 +528,6 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
                 workspace_revision=_workspace_state.revision,
                 workspace_fingerprint=_workspace_state.fingerprint,
             ),
-            claimed_work_item=setup.claimed_work_item,
             trace=setup.trace,
             workspace_revision=_workspace_state.revision,
             workspace_fingerprint=_workspace_state.fingerprint,
@@ -527,67 +563,17 @@ def _build_workload(deps: TaskRunDeps, setup: _RunSetup) -> tuple[_PhaseWork | N
     return _PhaseWork(work=work), None
 
 
-def _route_ghost_work(
+def _start_task(
     setup: _RunSetup, workload: _PhaseWork
 ) -> OperationOutcome | None:
-    """Phase 3 -- GhostLifecycle (pre): claim or route ghost work.
-
-    Returns an early outcome when Stop lands before start; otherwise updates
-    ``setup`` in place (request, kinds, claimed item) and emits ``task_start``.
-    Post-turn ghost work still runs inside the settlement helpers, so the
-    ghost lifecycle bookends the run instead of hiding mid-orchestrator."""
+    """Record core routing and publish the start of the admitted task."""
     state = setup.state
-    if not setup.recovered_resume:
-        try:
-            claimed = claim_or_route_ghost_work(
-                setup.ghost_deps, setup.request,
-                baseline_task_kind=setup.baseline_task_kind, run_id=setup.run_id,
-            )
-        except cancellation.TaskCancelled:
-            state.set_provider_session(setup.provider_id, None)
-            release_work_item(
-                setup.ghost_deps,
-                setup.claimed_work_item,
-                run_id=setup.run_id,
-                reason="stopped_before_start",
-            )
-            stopped_event = task_done_event(
-                run_id=setup.run_id,
-                session_id=setup.session_id,
-                summary="",
-                stop_reason="stopped",
-                max_turns=setup.max_turns,
-                provider=setup.provider_id,
-                mode=ui_mode(setup.baseline_task_kind, setup.project),
-            )
-            setup.trace_sink.call(
-                "record_mode_selection",
-                baseline_mode=trace_mode(setup.baseline_task_kind, setup.project),
-                selected_mode=trace_mode(setup.task_kind, setup.project),
-                final_mode=trace_mode(setup.task_kind, setup.project),
-                source="local_work_item" if setup.claimed_work_item else "baseline",
-                reason_code="stopped_before_start",
-            )
-            _finish_trace_event(
-                setup.trace_sink, stopped_event,
-                task_kind=setup.task_kind, project=setup.project,
-                provider_id=setup.provider_id,
-            )
-            state.finish_run(setup.run_id, stopped_event)
-            return operation_outcome_from_task_done_event(stopped_event)
-        setup.request = claimed.request
-        setup.task_kind = claimed.task_kind
-        setup.claimed_work_item = claimed.claimed_work_item
-        workload.work.claimed_work_item = claimed.claimed_work_item
-        setup.task = setup.request.task
-        setup.continue_task = setup.request.continue_task
     record_route_trace(
         setup.trace_sink,
         request=setup.request,
         baseline_task_kind=setup.baseline_task_kind,
         task_kind=setup.task_kind,
         project=setup.project,
-        claimed_work_item=setup.claimed_work_item,
         recovered_resume=setup.recovered_resume,
     )
     state.emit({
@@ -613,8 +599,8 @@ def _route_ghost_work(
 
 
 def _connect_provider_frame(
-    deps: TaskRunDeps, setup: _RunSetup, workload: _PhaseWork, hooks: Any
-) -> tuple[RunFrame, Any, str, Any]:
+    deps: TaskRunDeps, setup: _RunSetup, workload: _PhaseWork, hooks: RunHooks
+) -> tuple[RunFrame, ChatProvider | None, str, ConversationContext]:
     """Phase 4 -- ProviderConnect: review frames skip providers entirely."""
     state = setup.state
     if setup.task_kind == "review":
@@ -661,14 +647,14 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         return early
     state = setup.state
     frame: RunFrame | None = None
-    provider: Any | None = None
+    provider: ChatProvider | None = None
     conversation = None
     workload: _PhaseWork | None = None
 
     def current_provider_id() -> str:
         return frame.provider_id if frame is not None else setup.provider_id
 
-    def current_provider() -> Any | None:
+    def current_provider() -> ChatProvider | ProviderTransport | None:
         return frame.provider if frame is not None else provider
 
     def finish_trace(event: dict[str, object]) -> None:
@@ -683,7 +669,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         if workload is None:
             return early
 
-        early = _route_ghost_work(setup, workload)
+        early = _start_task(setup, workload)
         if early is not None:
             return early
 
@@ -715,8 +701,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         if callable(register_provider):
             register_provider(setup.run_id, provider)
 
-        # Phase 5 -- ModeExecution + RunFinalizer (both delegated; ghost
-        # post-turn runs inside finish/settle helpers).
+        # Execute the mode and settle through the existing task runtime.
         outcome = dispatch_run_mode(
             deps,
             completion_deps,
@@ -729,7 +714,6 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         )
         return finish_mode_outcome(
             deps,
-            setup.ghost_deps,
             frame,
             workload.work,
             outcome,
@@ -741,7 +725,6 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             deps,
             state,
             workload.work if workload is not None else None,
-            setup.ghost_deps,
             run_id=setup.run_id,
             session_id=setup.session_id,
             max_turns=setup.max_turns,
@@ -758,7 +741,6 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
             state,
             exc,
             workload.work if workload is not None else None,
-            setup.ghost_deps,
             run_id=setup.run_id,
             session_id=setup.session_id,
             max_turns=setup.max_turns,
@@ -776,7 +758,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         try:
             current_item = current_provider()
             if current_item is not None:
-                current_item.close()
+                require_callable(current_item, "close")()
         except Exception:
             pass
         unregister_provider = getattr(state, "unregister_active_provider", None)

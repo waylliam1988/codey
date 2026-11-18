@@ -14,7 +14,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -27,14 +27,13 @@ from codey.completion.contract import (
     project_completion_proof,
 )
 from codey.completion.verification import classify_verification_failure
-from codey.ghost.graph_primitives import parse_ts
-from codey.ghost.payload_types import object_fields
 from codey.providers.api_provider import ApiProvider
 from codey.providers.api_request_policy import LocalRequestPolicy
 from codey.providers.base import TurnFinish
 from codey.providers.token_accounting import ApiExchangeUsage, ReportedUsage
 from codey.runtime.observe.prompt_envelope import PromptEnvelope, PromptEnvelopeSection
-from codey.workspace.context_admission import GhostContextSource, admit_ghost_context
+from codey.utils.object_fields import object_fields
+from codey.workspace.context_admission import ContextCandidate, admit_context
 from codey.workspace.context_source import ContextSource, render_context_source
 
 MODEL = "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M"
@@ -108,7 +107,7 @@ class Review:
 def predict(event: VerificationEvent) -> Prediction:
     # The candidate under test is intentionally simple persistence prediction.
     # Its confidence is an uncalibrated prediction value, never truth confidence.
-    due = (parse_ts(event.occurred_at) + timedelta(days=1)).isoformat()
+    due = (datetime.fromisoformat(event.occurred_at) + timedelta(days=1)).isoformat()
     return Prediction(
         "prediction:" + event.payload_digest.removeprefix("sha256:"), event.source_ref,
         event.command_digest, event.workspace_fingerprint, event.scope, event.category,
@@ -117,14 +116,14 @@ def predict(event: VerificationEvent) -> Prediction:
 
 
 def review(prediction: Prediction, event: VerificationEvent | None, *, as_of: str) -> Review:
-    moment = parse_ts(as_of)
+    moment = datetime.fromisoformat(as_of)
     if event is None:
         return Review("unjudged", "verification_missing")
     if (event.scope != prediction.scope or event.command_digest != prediction.command_digest
             or event.workspace_fingerprint != prediction.workspace_fingerprint):
         return Review("unjudged", "identity_mismatch")
-    observed_at = parse_ts(event.occurred_at)
-    if not (parse_ts(prediction.created_at) < observed_at <= moment < parse_ts(prediction.due_at)):
+    observed_at = datetime.fromisoformat(event.occurred_at)
+    if not (datetime.fromisoformat(prediction.created_at) < observed_at <= moment < datetime.fromisoformat(prediction.due_at)):
         return Review("unjudged", "verification_not_due_or_expired")
     return Review(
         "hit" if event.category == prediction.expected else "miss", "verification_observed",
@@ -137,7 +136,7 @@ def projection(
     active_refs: frozenset[str], retrieve: bool = True,
 ) -> str:
     if (not retrieve or scope != prediction.scope or prediction.source_ref not in active_refs
-            or parse_ts(as_of) >= parse_ts(prediction.due_at)):
+            or datetime.fromisoformat(as_of) >= datetime.fromisoformat(prediction.due_at)):
         return ""
     if result.outcome == "unjudged" or not result.review_ref or result.review_ref not in active_refs:
         return ""
@@ -161,16 +160,16 @@ def render_request(
         scope=scope,
     ))
     sections = [PromptEnvelopeSection("current_verification", base)]
-    candidates: tuple[GhostContextSource, ...] = ()
+    candidates: tuple[ContextCandidate, ...] = ()
     if source is not None:
         if source.truncated:
             raise ValueError("World Model projection was truncated")
         sections.append(PromptEnvelopeSection(
             source.key, source.text, source_refs=("context_source:" + source.key,), budget=BUDGET,
         ))
-        candidates = (GhostContextSource(source.key, source.text, BUDGET, scope, expires_at=EXPIRY),)
+        candidates = (ContextCandidate(source.key, source.text, BUDGET, scope, expires_at=EXPIRY),)
     prompt = PromptEnvelope(sections).render().text
-    admission = admit_ghost_context(
+    admission = admit_context(
         prompt, candidates, request_scope=scope, require_all=True, admit_hints=admit, as_of=as_of,
     )
     if len(admission.accepted) != len(candidates):
@@ -262,7 +261,7 @@ def load_event(path: Path) -> VerificationEvent | None:
         else:
             return None
         parsed = VerificationEvent(ref, command, fingerprint, scope, timestamp, kind, status)
-        parse_ts(timestamp)
+        datetime.fromisoformat(timestamp)
         if (parsed.payload_digest != raw.get("event_digest") or ref != proof.get("proof_id")
                 or status != proof.get("status") or not ref.startswith("completion_proof:")):
             return None

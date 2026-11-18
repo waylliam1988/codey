@@ -4,16 +4,21 @@ import contextlib
 import logging
 import os
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from codey.app.context import AppContext
 
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.app import provider_services
+from codey.app.memory_routes import memory_action, memory_summary
+from codey.app.submission_types import ContinuationSubmitter, TaskSubmitOptions, TaskSubmitter
 from codey.automation.browser_worker import BrowserWorkerBusy
 from codey.durable.errors import CommitConflict, IdempotencyConflict
 from codey.env_names import LOCAL_OPENAI_BASE_URL_ENV
-from codey.ghost.control_surface import GhostControlSurface
+from codey.knowledge.note import KnowledgeNote
 from codey.policies.output_requirement import submission_fields
 from codey.providers.catalog import API_CONNECTIONS, DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers.local_config import (
@@ -33,12 +38,17 @@ from codey.runtime.core.api_selection import ApiRunSelection
 from codey.storage.local_store import StoreCorruption
 from codey.task.entry_auth import EntryAuth, derive_entry_auth
 from codey.task.model import EditUserMessage
+from codey.utils.object_fields import object_fields
+from codey.utils.refs import coerce_int
 from codey.workspace.changes import (
+    ChangeTracker,
     collect_changes,
     collect_git_file_diff,
     is_git_repository,
     restore_snapshot_changes,
 )
+
+_SubmissionArgs = tuple[str, str | None, str, int, bool, str, str]
 
 
 def query_list(query: Mapping[str, Sequence[object]], key: str) -> list[str]:
@@ -82,11 +92,11 @@ def query_value(query: Mapping[str, Sequence[object]], key: str) -> str:
     return raw.strip()
 
 
-def ui_state_response(ctx: Any) -> tuple[int, dict[str, Any]]:
+def ui_state_response(ctx: AppContext) -> tuple[int, dict[str, object]]:
     return 200, {"ok": True, "state": ctx.load_ui_state()}
 
 
-def save_ui_state_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def save_ui_state_response(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
     state = body.get("state") if isinstance(body, dict) else None
     base_revision = body.get("base_revision") if isinstance(body, dict) else None
     if type(base_revision) is not int:
@@ -103,7 +113,7 @@ def save_ui_state_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[st
         if isinstance(exc, OSError):
             return 500, {"ok": False, "error": str(exc)}
         raise
-    return 200, {"ok": True, "revision": int(saved.get("revision") or 0)}
+    return 200, {"ok": True, "revision": coerce_int(saved.get("revision") or 0)}
 
 
 def _project_directory_error(project: str | None) -> str:
@@ -120,12 +130,13 @@ def _project_directory_error(project: str | None) -> str:
 logger = logging.getLogger(__name__)
 
 
-def providers_response(ctx: Any) -> tuple[int, dict[str, Any]]:
+def providers_response(ctx: AppContext) -> tuple[int, dict[str, object]]:
+    state_home: object = getattr(ctx, "state_home", None)
     try:
         ctx._provider_status_snapshot_requested = True
         legacy_statuses = (
             provider_services.provider_availability(ctx)
-            if getattr(ctx, "state_home", None) is None else None
+            if state_home is None else None
         )
         provider_rows = (
             provider_services.provider_payload(legacy_statuses)
@@ -145,7 +156,7 @@ def providers_response(ctx: Any) -> tuple[int, dict[str, Any]]:
     }
 
 
-def provider_catalog_response() -> tuple[int, dict[str, Any]]:
+def provider_catalog_response() -> tuple[int, dict[str, object]]:
     """Boot-time catalog: static ids + labels, never runs the availability probe."""
     return 200, {
         "default": DEFAULT_PROVIDER_ID,
@@ -153,19 +164,19 @@ def provider_catalog_response() -> tuple[int, dict[str, Any]]:
     }
 
 
-def local_provider_response(ctx: Any = None) -> tuple[int, dict[str, Any]]:
+def local_provider_response(ctx: AppContext | None = None) -> tuple[int, dict[str, object]]:
     from codey.app.model_settings import preferences_for
 
-    coordinator = getattr(ctx, "connection_status", None)
+    coordinator = ctx.connection_status if ctx is not None else None
     if coordinator is not None and preferences_for(ctx).enabled("local"):
-        force_probe = not bool(getattr(ctx, "_provider_status_snapshot_requested", False))
+        force_probe = not bool(ctx._provider_status_snapshot_requested if ctx is not None else False)
         coordinator.refresh("local", force=force_probe)
         if force_probe:
             coordinator.wait_for("local", timeout=2.0)
         status_snapshot = coordinator.current("local")
-        data = coordinator.data("local")
-        local = data.get("local") if isinstance(data.get("local"), dict) else local_bootstrap_payload(probe=False)
-        local = dict(local)
+        data: dict[str, object] = coordinator.data("local")
+        cached_local = data.get("local")
+        local: dict[str, object] = dict(cached_local) if object_fields(cached_local) else local_bootstrap_payload(probe=False)
         local.update({
             "state": status_snapshot.state,
             "freshness": status_snapshot.freshness,
@@ -178,28 +189,28 @@ def local_provider_response(ctx: Any = None) -> tuple[int, dict[str, Any]]:
     return 200, {"ok": True, "local": local}
 
 
-def api_models_response(ctx: Any = None) -> tuple[int, dict[str, Any]]:
+def api_models_response(ctx: AppContext | None = None) -> tuple[int, dict[str, object]]:
     from codey.app.model_settings import preferences_for
     from codey.providers.api_connections import connection_for
 
     preferences = preferences_for(ctx)
-    payload: list[dict[str, Any]] = []
+    payload: list[dict[str, object]] = []
     for connection_id in API_CONNECTIONS:
         if not preferences.enabled(connection_id):
             continue
-        coordinator = getattr(ctx, "connection_status", None)
+        coordinator = ctx.connection_status if ctx is not None else None
         if coordinator is not None:
             coordinator.refresh(
                 connection_id,
-                force=not bool(getattr(ctx, "_provider_status_snapshot_requested", False)),
+                force=not bool(ctx._provider_status_snapshot_requested if ctx is not None else False),
             )
             current = coordinator.current(connection_id)
             if connection_id == "local" and current.state == "checking":
                 coordinator.wait_for(connection_id, timeout=2.0)
                 current = coordinator.current(connection_id)
-            cached_data = coordinator.data(connection_id)
+            cached_data: dict[str, object] = coordinator.data(connection_id)
             cached = cached_data.get("payload")
-            if isinstance(cached, dict):
+            if object_fields(cached):
                 item = cached
                 preferences.observe_catalog(item)
                 payload.append(item)
@@ -224,7 +235,7 @@ def api_models_response(ctx: Any = None) -> tuple[int, dict[str, Any]]:
     return 200, {"connections": payload}
 
 
-def _attach_local_metadata(local: dict[str, Any]) -> None:
+def _attach_local_metadata(local: dict[str, object]) -> None:
     from codey.providers.local_selection import model_metadata
 
     config = load_local_config()
@@ -241,8 +252,8 @@ def _attach_local_metadata(local: dict[str, Any]) -> None:
         local["thinking_options"] = ["off"]
 
 
-def save_local_provider_response(body: object) -> tuple[int, dict[str, Any]]:
-    if not isinstance(body, dict):
+def save_local_provider_response(body: object) -> tuple[int, dict[str, object]]:
+    if not object_fields(body):
         return 400, {"ok": False, "error": "request body must be an object"}
     previous = load_local_config()
     parsed, error = parse_local_config_update(body, previous)
@@ -317,11 +328,11 @@ def save_local_provider_response(body: object) -> tuple[int, dict[str, Any]]:
     return 200, {"ok": True, "local": local}
 
 
-def research_unconfigured_response() -> tuple[int, dict[str, Any]]:
+def research_unconfigured_response() -> tuple[int, dict[str, object]]:
     return 404, {"ok": False, "error": "Research is not configured"}
 
 
-def research_graph_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
+def research_graph_response(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, dict[str, object]]:
     if ctx.knowledge_store is None:
         return research_unconfigured_response()
     # Lazy import: importing api must not load the knowledge graph stack.
@@ -343,7 +354,7 @@ def research_graph_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int,
     return 200, {"ok": True, "graph": graph.to_dict()}
 
 
-def research_notes_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def research_notes_response(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
     raw_ids = body.get("ids") if isinstance(body, dict) else None
     if not isinstance(raw_ids, list):
         return 400, {"ok": False, "error": "ids required"}
@@ -356,7 +367,7 @@ def research_notes_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[s
         return 400, {"ok": False, "error": "ids required"}
     if ctx.knowledge_store is None:
         return research_unconfigured_response()
-    notes: dict[str, dict[str, Any]] = {}
+    notes: dict[str, dict[str, object]] = {}
     missing: list[str] = []
     for note_id, (note, row) in ctx.knowledge_store.read_notes_with_rows(seen).items():
         notes[note_id] = _research_note_payload(note, row)
@@ -366,7 +377,7 @@ def research_notes_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[s
     return 200, {"ok": True, "notes": notes, "missing": missing}
 
 
-def _research_note_payload(note: Any, row: dict[str, Any]) -> dict[str, Any]:
+def _research_note_payload(note: KnowledgeNote, row: dict[str, object]) -> dict[str, object]:
     return {
         "id": note.id,
         "type": note.type,
@@ -380,7 +391,7 @@ def _research_note_payload(note: Any, row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def run_details_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
+def run_details_response(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, dict[str, object]]:
     session_id = ((query.get("session_id") or [""])[0] or "").strip()
     run_id = ((query.get("run_id") or [""])[0] or "").strip()
     if not session_id or not run_id:
@@ -389,8 +400,8 @@ def run_details_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, di
         run_ledgers=ctx.run_ledgers,
         run_traces=ctx.run_traces,
         runtime_operations=ctx.runtime_operations,
-        runtime_effects=getattr(ctx, "runtime_effects", None),
-        tool_result_delivery=getattr(ctx, "tool_result_delivery", None),
+        runtime_effects=ctx.runtime_effects,
+        tool_result_delivery=ctx.tool_result_delivery,
         session_id=session_id,
         run_id=run_id,
     )
@@ -401,7 +412,7 @@ def run_details_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, di
     }
 
 
-def run_review_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
+def run_review_response(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, dict[str, object]]:
     """Structured cold read using the same authenticated run lookup as Details."""
     from dataclasses import asdict
 
@@ -431,7 +442,7 @@ def run_review_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dic
     return 200, {"ok": True, "available": True, "review": payload}
 
 
-def research_restore_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def research_restore_response(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
     run_id = str(body.get("run_id") or "").strip()
     if not run_id:
         return 400, {"ok": False, "error": "run_id required"}
@@ -439,35 +450,21 @@ def research_restore_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict
     return 200 if payload.get("ok") else 409, payload
 
 
-def ghost_control_surface(ctx: Any) -> GhostControlSurface:
-    return GhostControlSurface(
-        inbox=ctx.ghost_inbox,
-        hebbian=ctx.ghost_hebbian,
-        continuity=ctx.ghost_continuity,
-        sleep=ctx.ghost_sleep,
-        work_queue=ctx.ghost_work_queue,
-        affinity=ctx.ghost_affinity,
-        observations=ctx.ghost_observations,
-    )
 
 
-def ghost_summary_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
-    payload = ghost_control_surface(ctx).summary(
-        session_id=query_value(query, "session_id"),
-        project=query_value(query, "project"),
-    )
-    return 200, payload
+def ghost_summary_response(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, dict[str, object]]:
+    return memory_summary(ctx, query)
 
 
-def ghost_export_response(ctx: Any) -> tuple[int, dict[str, Any]]:
-    return 200, ghost_control_surface(ctx).export_state()
+def ghost_export_response(ctx: AppContext) -> tuple[int, dict[str, object]]:
+    return 200, dict[str, object](ctx.memory.export_state())
 
 
-def ghost_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    return ghost_control_surface(ctx).dispatch_action(body)
+def ghost_action_response(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
+    return memory_action(ctx, body)
 
 
-def changes_response(ctx: Any, project: object) -> tuple[int, dict[str, Any]]:
+def changes_response(ctx: AppContext, project: object) -> tuple[int, dict[str, object]]:
     project_text = str(project or "").strip()
     if "\0" in project_text:
         return 400, {"ok": False, "error": "project invalid", "files": [], "diff": ""}
@@ -481,7 +478,7 @@ def changes_response(ctx: Any, project: object) -> tuple[int, dict[str, Any]]:
             if key
             else None
         )
-        payload = collect_changes(project_text, tracker)
+        payload: dict[str, object] = dict(collect_changes(project_text, tracker))
     except StoreCorruption:
         payload = {
             "ok": False,
@@ -492,7 +489,7 @@ def changes_response(ctx: Any, project: object) -> tuple[int, dict[str, Any]]:
     return 200 if payload.get("ok") else 400, payload
 
 
-def changes_file_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def changes_file_response(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
     project = str((body.get("project") if isinstance(body, dict) else "") or "").strip()
     path = str((body.get("path") if isinstance(body, dict) else "") or "").strip()
     if not project or not path:
@@ -506,7 +503,7 @@ def changes_file_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str
     return 200 if payload.get("ok") else 400, payload
 
 
-def restore_changes_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def restore_changes_response(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
     project = str((body.get("project") if isinstance(body, dict) else "") or "").strip()
     if not project:
         return 400, {"ok": False, "error": "project required"}
@@ -529,11 +526,11 @@ def restore_changes_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[
     try:
         if not acquired:
             return 409, {"ok": False, "error": "project writer busy"}
-        tracker = ctx.change_tracker_for(
+        tracker: ChangeTracker | None = ctx.change_tracker_for(
             key,
             persistent=not is_git_repository(key),
         )
-        if not tracker.has_snapshots:
+        if tracker is not None and not tracker.has_snapshots:
             tracker = None
         return restore_snapshot_changes(project, tracker, clean_paths)
     finally:
@@ -542,22 +539,25 @@ def restore_changes_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[
                 ctx.release_project_writer(key)
 
 
-def _model_disabled(ctx: Any, body: dict[str, Any], provider_id: str) -> bool:
+def _model_disabled(ctx: AppContext | None, body: dict[str, object], provider_id: str) -> bool:
     from codey.app.model_settings import preferences_for
 
     selection = body.get("model_selection")
-    model_id = str(selection.get("model") or "") if isinstance(selection, dict) else ""
+    model_id = str(selection.get("model") or "") if object_fields(selection) else ""
     return not preferences_for(ctx).allows(provider_id, model_id)
 
 
-def _api_selection_for_submit(ctx: Any, provider_id: str, selection: object) -> tuple[dict[str, Any], tuple[int, dict[str, Any]] | None]:
+def _api_selection_for_submit(ctx: AppContext | None, provider_id: str, selection: object) -> tuple[TaskSubmitOptions, tuple[int, dict[str, object]] | None]:
     if provider_id not in API_CONNECTIONS:
         return {}, (400, {"error": "model_selection requires an API model"})
     from codey.app.model_settings import preferences_for
     from codey.providers.api_connections import capture_selection
 
     try:
-        if not isinstance(selection, dict) or not isinstance(selection.get("model"), str) or not selection["model"].strip():
+        if not object_fields(selection):
+            raise ValueError("Choose an explicit model")
+        model = selection.get("model")
+        if not isinstance(model, str) or not model.strip():
             raise ValueError("Choose an explicit model")
         captured = capture_selection(provider_id, selection)
         if not preferences_for(ctx).allows(provider_id, captured.model_id):
@@ -567,7 +567,7 @@ def _api_selection_for_submit(ctx: Any, provider_id: str, selection: object) -> 
         return {}, (400, {"error": str(exc), "reason": "model_selection_invalid"})
 
 
-def _approval_entry(ctx: Any, session_id: str, source_run_id: str) -> tuple[str, tuple[int, dict[str, Any]] | None]:
+def _approval_entry(ctx: AppContext | None, session_id: str, source_run_id: str) -> tuple[str, tuple[int, dict[str, object]] | None]:
     if ctx is None:
         return source_run_id, None
     state = ctx.shell_approval_workflow.for_source(session_id, source_run_id)
@@ -590,10 +590,13 @@ def _approval_entry(ctx: Any, session_id: str, source_run_id: str) -> tuple[str,
     }[code], 'code': code, 'approval': state})
 
 
-def _completion_fields(body: dict[str, Any]) -> dict[str, object]:
+def _completion_fields(body: dict[str, object]) -> TaskSubmitOptions:
     from codey.policies.tool_requirement import required_tool_names
 
-    fields: dict[str, object] = dict(submission_fields(body))
+    output = submission_fields(body)
+    fields: TaskSubmitOptions = {}
+    if output:
+        fields.update({"output_format": output["output_format"], "output_schema": output["output_schema"]})
     names = required_tool_names(body.get("required_tools", ()))
     if names:
         fields["required_tools"] = names
@@ -602,13 +605,13 @@ def _completion_fields(body: dict[str, Any]) -> dict[str, object]:
 
 def run_submit_response(  # noqa: C901, PLR0912
     body: object,
-    submit_task: Callable[..., str | None],
+    submit_task: TaskSubmitter,
     *,
-    ctx: Any = None,
+    ctx: AppContext | None = None,
     captured_selection: ApiRunSelection | None = None,
     captured_auth: EntryAuth | None = None,
-) -> tuple[int, dict[str, Any]]:  # noqa: C901, PLR0912
-    if not isinstance(body, dict):
+) -> tuple[int, dict[str, object]]:  # noqa: C901, PLR0912
+    if not object_fields(body):
         return 400, {"error": "invalid json"}
     if "continue_task" in body:
         return 400, {"error": "continue_task is no longer accepted; use input.kind=resume_run"}
@@ -617,11 +620,12 @@ def run_submit_response(  # noqa: C901, PLR0912
     input_source_run = ""
     edit_input: EditUserMessage | None = None
     if input_payload is not None:
-        if not isinstance(input_payload, dict):
+        if not object_fields(input_payload):
             return 400, {"error": "input must be an object"}
         input_kind = str(input_payload.get("kind") or "").strip().lower()
         if input_kind in {"start_task", "edit_user_message"}:
-            if not isinstance(input_payload.get("text"), str) or not input_payload["text"].strip():
+            input_text = input_payload.get("text")
+            if not isinstance(input_text, str) or not input_text.strip():
                 return 400, {"error": "input.text required"}
             if input_kind == "edit_user_message":
                 entry_id = input_payload.get("entry_id")
@@ -630,7 +634,7 @@ def run_submit_response(  # noqa: C901, PLR0912
                     return 400, {"error": "input.entry_id required"}
                 if type(expected_revision) is not int or expected_revision < 0:
                     return 400, {"error": "input.expected_revision must be a non-negative integer"}
-                edit_input = EditUserMessage(entry_id, input_payload["text"].strip(), expected_revision)
+                edit_input = EditUserMessage(entry_id, input_text.strip(), expected_revision)
         elif input_kind == "resume_run":
             input_source_run = str(input_payload.get("source_run_id") or "").strip()
             if not input_source_run:
@@ -674,7 +678,7 @@ def run_submit_response(  # noqa: C901, PLR0912
     }:
         return 400, {"error": "invalid intent"}
     raw_max_turns = body.get("max_turns")
-    if isinstance(raw_max_turns, bool):
+    if isinstance(raw_max_turns, bool) or (raw_max_turns is not None and not isinstance(raw_max_turns, (str, int, float))):
         return 400, {"error": "invalid max_turns"}
     try:
         max_turns = int(raw_max_turns or DEFAULT_MAX_TURNS)
@@ -711,7 +715,7 @@ def run_submit_response(  # noqa: C901, PLR0912
     project_error = _project_directory_error(project)
     if project_error:
         return 400, {"error": project_error}
-    submit_kwargs: dict[str, object] = {
+    submit_kwargs: TaskSubmitOptions = {
         "requested_capabilities": entry_auth.requested_capabilities,
         "strict_research": entry_auth.strict_research,
         "sources_open_required": entry_auth.sources_open_required,
@@ -738,17 +742,17 @@ def run_submit_response(  # noqa: C901, PLR0912
         (session_id, project, task, max_turns, continue_task, provider_id, intent), submit_kwargs)
 
 
-def _submit_with_attachments(ctx: Any, body: dict[str, Any], submit: Callable[..., str | None], args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def _submit_with_attachments(ctx: AppContext | None, body: dict[str, object], submit: TaskSubmitter, args: _SubmissionArgs, kwargs: TaskSubmitOptions) -> tuple[int, dict[str, object]]:
     if "attachments" in body:
         from codey.app.attachment_routes import prepare_run_attachments
 
-        error = prepare_run_attachments(ctx, args[0], body["attachments"], kwargs)
+        error = prepare_run_attachments(ctx, str(args[0]), body["attachments"], kwargs)
         if error:
             return error
     return _submit_task_response(submit, args, kwargs)
 
 
-def _submit_task_response(submit_task: Callable[..., str | None], args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def _submit_task_response(submit_task: TaskSubmitter, args: _SubmissionArgs, kwargs: TaskSubmitOptions) -> tuple[int, dict[str, object]]:
     try:
         run_id = submit_task(*args, **kwargs)
     except BrowserWorkerBusy:
@@ -765,29 +769,29 @@ def _submit_task_response(submit_task: Callable[..., str | None], args: tuple[An
 
 
 def shell_approval_response(
-    ctx: Any,
-    body: dict[str, Any],
+    ctx: AppContext,
+    body: dict[str, object],
     *,
-    submit_task_after_slot_release: Callable[..., str | None],
-) -> tuple[int, dict[str, Any]]:
+    submit_task_after_slot_release: ContinuationSubmitter,
+) -> tuple[int, dict[str, object]]:
     approval_id = str(body.get("id") or "").strip()
     approved = body.get("approved")
     if type(approved) is not bool:
         return 400, {"error": "approved must be a boolean"}
-    response: tuple[int, dict[str, Any]] = ctx.shell_approval_workflow.accept(
-        approval_id, approved, submit_task_after_slot_release, scope=body.get("scope", "once"),
+    response: tuple[int, dict[str, object]] = ctx.shell_approval_workflow.accept(
+        approval_id, approved, submit_task_after_slot_release, scope=str(body.get("scope", "once")),
     )
     return response
 
 
-def teach_resume_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def teach_resume_response(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
     teach_id = str(body.get("id") or "").strip()
     if not ctx.resume_pending_teach(teach_id):
         return 404, {"error": "pause not found"}
     return 200, {"ok": True}
 
 
-def new_chat_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def new_chat_response(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
     session_id = str(body.get("session_id") or "").strip()
     if not session_id:
         return 400, {"ok": False, "error": "session_id required"}
@@ -808,7 +812,7 @@ def new_chat_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, An
     return 200, {"ok": True, "state": ctx.load_ui_state()}
 
 
-def stop_response(ctx: Any, body: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
+def stop_response(ctx: AppContext, body: dict[str, object] | None = None) -> tuple[int, dict[str, object]]:
     run_id = str((body or {}).get("run_id") or "").strip() or None
     ctx.request_stop(run_id)
     return 200, {"ok": True}

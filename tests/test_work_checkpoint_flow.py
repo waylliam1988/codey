@@ -52,17 +52,9 @@ def tearDownModule() -> None:
 
 class WorkCheckpointFlowTests(unittest.TestCase):
     def _state(self, path: Path) -> server.AppContext:
-        """Checkpoint-flow State without background side effects.
-
-        These tests exercise checkpoint/failover/recovery, not Ghost sleep
-        learning or self repair. The real background hooks add a fixed
-        ~15s wait per task (ghost sleep join) and may reach providers, so
-        the flow tests disable them at the source.
-        """
+        """Isolate checkpoint, failover and recovery from self repair."""
 
         state = server.AppContext(path)
-        state.kick_ghost_sleep = mock.Mock(return_value=False)
-        state.wait_for_ghost_sleep = mock.Mock(return_value=True)
         state.kick_self_repair = mock.Mock(return_value=False)
         return state
 
@@ -780,9 +772,11 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
                 mock.patch.object(review_service, "run_review", return_value=None),
             ):
-                task_submit.run_task("session-1", str(project), "Continue", 8, True, "deepseek", get_state=http_context.get_context)
+                task_submit.run_task("session-1", str(project), "Continue", 8, True, "deepseek", "project", get_state=http_context.get_context)
 
-            self.assertFalse(state.run_registry.last_terminal_event()["receipt"]["verification"]["checks_passed"])
+            terminal = state.run_registry.last_terminal_event()
+            self.assertIn("receipt", terminal, terminal)
+            self.assertFalse(terminal["receipt"]["verification"]["checks_passed"])
 
     def test_receipt_rejects_green_command_other_than_selected_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as td:

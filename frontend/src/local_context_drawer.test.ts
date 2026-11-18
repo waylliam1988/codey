@@ -7,14 +7,8 @@ import './local_context_drawer';
 interface Drawer {
   init(deps: LocalContextDeps): void;
   open(): void;
+  handleScopeChanged(): void;
 }
-
-function drawer(): Drawer {
-  const value: unknown = runtime.LocalContextDrawer;
-  if (isDrawer(value)) return value;
-  throw new Error('Drawer unavailable');
-}
-
 function isDrawer(value: unknown): value is Drawer {
   return (
     typeof value === 'object' &&
@@ -22,37 +16,42 @@ function isDrawer(value: unknown): value is Drawer {
     'init' in value &&
     typeof value.init === 'function' &&
     'open' in value &&
-    typeof value.open === 'function'
+    typeof value.open === 'function' &&
+    'handleScopeChanged' in value &&
+    typeof value.handleScopeChanged === 'function'
   );
 }
-
+function drawer(): Drawer {
+  const value: unknown = runtime.LocalContextDrawer;
+  if (isDrawer(value)) return value;
+  throw new Error('Drawer unavailable');
+}
 function element(id: string): HTMLElement {
-  const value = document.getElementById(id);
-  if (!value) throw new Error(id);
-  return value;
+  const node = document.getElementById(id);
+  if (!node) throw new Error(id);
+  return node;
 }
-
-function select(label: string): HTMLSelectElement {
-  const value = document.querySelector(`select[aria-label="${label}"]`);
-  if (!(value instanceof HTMLSelectElement)) throw new Error(label);
-  return value;
+function click(label: string): void {
+  const node = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === label);
+  if (!node) throw new Error(label);
+  node.click();
 }
-
 const actions: unknown[] = [];
-let activeSession = 'new-session';
-const observation = (id: string, session: string, summary: string) => ({
-  id,
-  session_id: session,
-  project: 'D:/project',
-  type: 'observation',
-  summary,
-  reply_digest: 'a'.repeat(64),
-  status: 'committed',
-});
-
+let session = 's';
+let failure = false;
+let enabled = true;
+const memory = {
+  item_id: 'p',
+  kind: 'preference',
+  text: '<script>concise</script>',
+  scope: 'project:1',
+  source_refs: ['record:s:1'],
+};
 beforeEach(async () => {
   actions.length = 0;
-  activeSession = 'new-session';
+  session = 's';
+  failure = false;
+  enabled = true;
   document.body.innerHTML = ['drawer', 'close', 'export', 'refresh', 'menu', 'subtitle', 'body']
     .map((id) => `<div id="local-context-${id}"></div>`)
     .join('');
@@ -65,88 +64,79 @@ beforeEach(async () => {
     if (url === '/api/ghost/action') {
       const body: unknown = JSON.parse(String(init?.body));
       actions.push(body);
-      return Response.json({ ok: true });
+      return Response.json(failure ? { ok: false, error: 'storage unavailable' } : { ok: true }, {
+        status: failure ? 503 : 200,
+      });
     }
     return Response.json({
       ok: true,
-      available: true,
-      enabled: true,
-      counts: {},
-      scope: { session_id: 'new-session', project: 'D:/project' },
-      observations: [
-        observation('correction', 'old-session', 'Prioritize accessibility.'),
-        observation('earlier', 'earlier-session', 'An earlier proposal.'),
-      ],
-      health: {},
+      enabled,
+      scope: { session_id: 's', project: 'D:/project' },
+      items: [memory],
+      pending: [{ proposal_id: 'p', version: 'exact-content-version', item: memory }],
     });
   });
   drawer().init({
     $: element,
-    getActiveId: () => activeSession,
+    getActiveId: () => session,
     currentProjectPath: () => 'D:/project',
-    copyText: async (_text: string): Promise<boolean> => true,
+    copyText: async () => true,
   });
   drawer().open();
   await vi.waitFor(() => expect(document.querySelectorAll('.local-context-row')).toHaveLength(2));
-  const more = document.querySelector('.local-context-more');
-  if (!(more instanceof HTMLButtonElement)) throw new Error('More missing');
-  more.click();
-  const remember = document.querySelector('[data-act="propose_preference"]');
-  if (!(remember instanceof HTMLButtonElement)) throw new Error('Remember missing');
-  remember.click();
 });
-
 afterEach(() => vi.unstubAllGlobals());
 
-function submit(): void {
-  const form = document.querySelector('form');
-  if (!(form instanceof HTMLFormElement)) throw new Error('Form missing');
-  form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-}
-
-it('offers warm tone and defaults to all local chats/projects with source session authority', async () => {
-  expect(select('Where to remember').value).toBe('user');
-  expect(select('Where to remember').textContent).toContain('All chats and projects');
-  select('Preference').value = 'tone:warm';
-  submit();
-  await vi.waitFor(() => expect(actions).toHaveLength(1));
-  expect(actions[0]).toMatchObject({
-    action: 'propose_preference',
-    scope: 'user',
-    session_id: 'old-session',
-    conflict_key: 'tone',
-    value_key: 'warm',
-  });
+it('renders memory as text and shows provenance', () => {
+  expect(document.querySelector('script')).toBeNull();
+  expect(element('local-context-body').textContent).toContain(memory.text);
+  expect(element('local-context-body').textContent).toContain('record:s:1');
 });
-
-it('submits a generic grounded project goal and the exact earlier reply binding', async () => {
-  const preference = select('Preference');
-  preference.value = 'project_goal';
-  preference.dispatchEvent(new Event('change'));
-  expect(select('Where to remember').value).toBe('project');
-  expect(select('Where to remember').disabled).toBe(true);
-  const replies = select('Earlier exchange this updates');
-  expect(replies.hidden).toBe(false);
-  expect(Array.from(replies.options).map((option) => option.value)).toEqual(['', 'earlier']);
-  replies.value = 'earlier';
-  submit();
-  await vi.waitFor(() => expect(actions).toHaveLength(1));
-  expect(actions[0]).toMatchObject({
-    action: 'propose_project_goal',
-    scope: 'project',
-    project: 'D:/project',
-    session_id: 'old-session',
-    goal: 'Prioritize accessibility.',
-    goal_key: 'focus',
-    reply_run_id: 'earlier',
-    reply_digest: 'a'.repeat(64),
-  });
+it('confirms the exact displayed proposal and version in the loaded scope', async () => {
+  click('Confirm');
+  await vi.waitFor(() =>
+    expect(actions).toEqual([
+      { action: 'accept', session_id: 's', project: 'D:/project', proposal_id: 'p', version: 'exact-content-version' },
+    ]),
+  );
 });
-
-it('does not submit stale forms after switching sessions', () => {
-  activeSession = 'changed-session';
-  select('Preference').value = 'tone:warm';
-  submit();
+it('rejects without silently accepting the candidate', async () => {
+  click('Reject');
+  await vi.waitFor(() =>
+    expect(actions).toEqual([expect.objectContaining({ action: 'reject', version: 'exact-content-version' })]),
+  );
+});
+it('requires an explicit second action to delete the scope', async () => {
+  click('Delete memories in this scope');
+  expect(actions).toEqual([]);
+  click('Confirm deletion');
+  await vi.waitFor(() => expect(actions).toEqual([{ action: 'delete_scope', session_id: 's', project: 'D:/project' }]));
+});
+it('submits a proposal that still requires a separate confirmation', async () => {
+  const text = document.querySelector('textarea');
+  if (!text) throw new Error('Missing text');
+  text.value = 'Prefer concise replies';
+  click('Propose memory');
+  await vi.waitFor(() =>
+    expect(actions).toEqual([
+      { action: 'propose', session_id: 's', project: 'D:/project', kind: 'preference', text: 'Prefer concise replies' },
+    ]),
+  );
+});
+it('closes without mutation when the active scope changes', () => {
+  session = 'other';
+  click('Confirm');
   expect(actions).toEqual([]);
   expect(element('local-context-drawer').classList.contains('open')).toBe(false);
+});
+it('keeps storage failures visible', async () => {
+  failure = true;
+  click('Confirm');
+  await vi.waitFor(() => expect(element('local-context-subtitle').textContent).toBe('storage unavailable'));
+});
+it('hides mutation forms when memory is disabled', async () => {
+  enabled = false;
+  element('local-context-refresh').click();
+  await vi.waitFor(() => expect(element('local-context-subtitle').textContent).toBe('Memory disabled'));
+  expect(document.querySelector('form')).toBeNull();
 });

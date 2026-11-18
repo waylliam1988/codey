@@ -145,16 +145,6 @@ class UiStateCanonicalShapeLocks(unittest.TestCase):
         self.assertEqual(without, with_explicit)
 
 
-class GhostWarningsUnificationLocks(unittest.TestCase):
-    def test_no_legacy_slice_event_warnings(self) -> None:
-        """RED before fix: legacy slice path still exists in _warnings."""
-        import codey.ghost._warnings as warnings_mod
-
-        self.assertFalse(
-            hasattr(warnings_mod, "slice_event_warnings"),
-            "slice_event_warnings is legacy and must be removed",
-        )
-        self.assertNotIn("slice_event_warnings", set(warnings_mod.__all__))
 
 
 

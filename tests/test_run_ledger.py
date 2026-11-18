@@ -382,7 +382,6 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
 
             # Explicit ghost wait replaces the removed sync flag: no daemon
             # may hold state files while TemporaryDirectory cleans up.
-            state.wait_for_ghost_sleep(timeout=30)
             run_id = state.run_registry.last_terminal_event()["run_id"]
             path = state.run_ledgers.path_for("session-ledger", run_id)
             rows = [item.payload for item in read_ledger(path)]
@@ -458,7 +457,6 @@ class RunLedgerTaskEntryIntegrationTests(unittest.TestCase):
             ):
                 task_submit.run_task("session-fail-open", str(project), "Read app.py", 8, False, "deepseek", "project", get_state=http_context.get_context)
 
-            state.wait_for_ghost_sleep(timeout=30)
             self.assertEqual(state.run_registry.last_terminal_event()["stop_reason"], "done")
             state.close()
 

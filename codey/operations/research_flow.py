@@ -3,28 +3,32 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from functools import partial
-from typing import Any
+from threading import Event
+from typing import Protocol
 
-from codey.ghost.work_queue_model import GhostWorkItem
+from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.research_interest import (
     build_research_interest_candidates,
     candidate_to_topic_hint,
 )
+from codey.knowledge.store import KnowledgeStore
 from codey.operations.context import RunFrame, RunHooks
 from codey.operations.result import ModeOutcome
 from codey.operations.task_state import TaskState, stop_flag_for
 from codey.policies.permissions import allows_context_source, profile_for_name
+from codey.policies.task_policy import TaskPolicy
 from codey.research.audit_projection import project_audit_diagnostics
-from codey.research.completion_gate import RESEARCH_QUEUE_KINDS
 from codey.research.context import ResearchContext, RunTraceResearchSink
-from codey.research.evidence_ledger import EvidenceLedgerWriteResult
+from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
 from codey.research.pipeline import (
     ResearchIterationRun,
     ResearchPipeline,
     ResearchPipelineResult,
 )
-from codey.research.proof_quality import proof_review_trace_payload
+from codey.research.proof_quality import ResearchProofReview, proof_review_trace_payload
 from codey.research.query_planner import build_research_plan, research_plan_trace_payload
+from codey.research.run_result import ResearchRunResult
+from codey.research.tools import ResearchTools
 from codey.research.topic_continuity import (
     CONTEXT_SOURCE_KEY as TOPIC_CONTINUITY_CONTEXT_SOURCE_KEY,
 )
@@ -32,22 +36,55 @@ from codey.research.topic_continuity import (
     MAX_TOPIC_CLAIM_REFS,
     project_topic_continuity,
 )
+from codey.runs.trace import RunTraceRecorder
 from codey.runtime.core import cancellation
+from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
+from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.storage.managed_outputs import ManagedOutputStore
+from codey.utils.object_fields import mapping_fields
+from codey.utils.refs import coerce_int
+
+
+class ResearchPipelineRunner(Protocol):
+    def __call__(self, frame: RunFrame, hooks: RunHooks, *, max_turns: int,
+                 proof_question: str = "") -> ResearchPipelineResult: ...
+
+
+class ClaimRefLoader(Protocol):
+    def __call__(self, *, session_id: str, project: str) -> tuple[dict[str, object], ...]: ...
+
+
+class TopicContinuityBuilder(Protocol):
+    def __call__(self, *, session_id: str, project: str,
+                 trace: object | None = None) -> tuple[str, dict[str, object] | None]: ...
+
+
+class ResearchContextBuilder(Protocol):
+    def __call__(self, frame: RunFrame, *, proof_question: str, max_turns: int) -> ResearchContext: ...
+
+
+class ResearchIterationRunner(Protocol):
+    def __call__(self, *, provider: object, session_id: str, project: str, task: str,
+                 max_turns: int, on_event: Callable[[RunEvent], None], stop_flag: Event | None,
+                 provider_id: str, run_id: str, chat_handoff: str, trace_recorder: RunTraceRecorder | None,
+                 search: object, topic_continuity_context: str = "",
+                 topic_continuity_payload: Mapping[str, object] | None = None,
+                 requested_capabilities: tuple[str, ...] = (), task_policy: TaskPolicy | None = None,
+                 publish_synthesis: bool = True) -> ResearchIterationRun: ...
 
 
 @dataclass(frozen=True)
 class ResearchFlowDeps:
     state: TaskState
-    knowledge_store: Any
-    evidence_ledgers: Any
+    knowledge_store: KnowledgeStore | None
+    evidence_ledgers: EvidenceLedgerStore | None
     search_factory: Callable[[], object]
-    ghost_continuity: Callable[..., object]
-    managed_outputs: Any = None
-    runtime_mutations: Any = None
+    managed_outputs: ManagedOutputStore | None = None
+    runtime_mutations: RuntimeMutationLine | None = None
 
 
-def record_research_proof_review_trace(trace: Any | None, review: Any) -> None:
+def record_research_proof_review_trace(trace: object | None, review: ResearchProofReview | None) -> None:
     if trace is None or review is None:
         return
     sink = FailOpenPromptTrace(trace)
@@ -59,8 +96,8 @@ def record_research_proof_review_trace(trace: Any | None, review: Any) -> None:
 
 
 def record_research_plan_trace(
-    trace: Any | None,
-    review: Any,
+    trace: object | None,
+    review: ResearchProofReview | None,
     *,
     question: str = "",
 ) -> None:
@@ -76,12 +113,6 @@ def record_research_plan_trace(
     sink.call("flush")
 
 
-def research_queue_item_title(item: GhostWorkItem | None) -> str:
-    if item is None:
-        return ""
-    if str(getattr(item, "kind", "") or "") not in RESEARCH_QUEUE_KINDS:
-        return ""
-    return str(getattr(item, "title", "") or "").strip()
 
 
 def run_research_mode(
@@ -90,7 +121,7 @@ def run_research_mode(
     hooks: RunHooks,
     *,
     proof_question: str = "",
-    run_pipeline: Callable[..., ResearchPipelineResult] | None = None,
+    run_pipeline: ResearchPipelineRunner | None = None,
 ) -> ModeOutcome:
     request = frame.request
     if frame.provider is None:
@@ -158,10 +189,10 @@ def build_research_topic_continuity(
     *,
     session_id: str,
     project: str,
-    trace: Any | None = None,
-    prior_claim_refs: Callable[..., tuple[dict[str, object], ...]] | None = None,
+    trace: object | None = None,
+    prior_claim_refs: ClaimRefLoader | None = None,
 ) -> tuple[str, dict[str, object] | None]:
-    """Admit bounded Ghost-to-Research topic continuity."""
+    """Admit bounded research topic continuity from core-owned knowledge."""
 
     try:
         profile = profile_for_name("research")
@@ -175,13 +206,12 @@ def build_research_topic_continuity(
                 project=project,
             )
         ]
-        continuity = deps.ghost_continuity(project=project, session_id=session_id)
         claim_ref_loader = prior_claim_refs or (
             partial(deps_prior_claim_refs, deps=deps)
         )
         projection = project_topic_continuity(
             interest_hints=interest_hints,
-            continuity_hints=tuple(getattr(continuity, "selected_items", ()) or ()),
+            continuity_hints=(),
             claim_refs=claim_ref_loader(session_id=session_id, project=project),
         )
     except cancellation.TaskCancelled:
@@ -211,7 +241,7 @@ def deps_prior_claim_refs(
 
 
 def prior_claim_refs(
-    evidence_ledgers: Any,
+    evidence_ledgers: EvidenceLedgerStore | None,
     *,
     session_id: str,
     project: str,
@@ -224,12 +254,20 @@ def prior_claim_refs(
         snapshot = evidence_ledgers.load(session_id=session_id, project=project)
     except Exception:
         return ()
-    payload = getattr(snapshot, "payload", None)
-    if not getattr(snapshot, "available", False) or not isinstance(payload, Mapping):
+    payload = snapshot.payload
+    if not snapshot.available:
         return ()
     refs: list[dict[str, object]] = []
-    for record in list(payload.get("records") or ())[-4:]:
-        for claim_ref in record.get("claim_refs") or ():
+    records = payload.get("records")
+    if not isinstance(records, (list, tuple)):
+        return ()
+    for record in records[-4:]:
+        if not mapping_fields(record):
+            continue
+        claim_refs = record.get("claim_refs")
+        if not isinstance(claim_refs, (list, tuple)):
+            continue
+        for claim_ref in claim_refs:
             text = str(claim_ref or "").strip()
             if not text:
                 continue
@@ -247,7 +285,7 @@ def build_research_context(
     *,
     proof_question: str,
     max_turns: int,
-    build_topic_continuity: Callable[..., tuple[str, dict[str, object] | None]] | None = None,
+    build_topic_continuity: TopicContinuityBuilder | None = None,
 ) -> ResearchContext:
     request = frame.request
     if build_topic_continuity is None:
@@ -286,8 +324,8 @@ def run_research_pipeline(
     *,
     max_turns: int,
     proof_question: str = "",
-    run_iteration: Callable[..., ResearchIterationRun] | None = None,
-    build_context: Callable[..., ResearchContext] | None = None,
+    run_iteration: ResearchIterationRunner | None = None,
+    build_context: ResearchContextBuilder | None = None,
     record_ledger_write: Callable[[RunHooks, EvidenceLedgerWriteResult], None] | None = None,
 ) -> ResearchPipelineResult:
     request = frame.request
@@ -301,8 +339,8 @@ def run_research_pipeline(
         chat_handoff: str,
         search: object,
         topic_continuity_context: str = "",
-        topic_continuity_payload: Any = None,
-    ) -> Any:
+        topic_continuity_payload: Mapping[str, object] | None = None,
+    ) -> ResearchIterationRun:
         import functools
 
         from codey.operations.research_iteration import run_research_iteration as _canonical
@@ -370,13 +408,13 @@ def record_evidence_ledger_write(
 
 
 def research_payload(
-    result: Any,
+    result: ResearchRunResult,
     *,
-    pipeline_result: Any | None = None,
+    pipeline_result: ResearchPipelineResult | None = None,
     restoreable: bool | None = None,
-) -> dict[str, Any]:
-    payload = {
-        "max_turns_used": int(getattr(result, "max_turns_used", 0) or 0),
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "max_turns_used": result.max_turns_used,
         "synthesis_id": result.synthesis_id,
         "notes_created": result.notes_created,
         "notes_updated": result.notes_updated,
@@ -390,31 +428,24 @@ def research_payload(
         "evidence_items": result.evidence_items,
         "counterpoints": result.counterpoints,
         "quality_warnings": result.quality_warnings,
-        "semantic_review": getattr(result, "semantic_review", None),
+        "semantic_review": result.semantic_review,
     }
-    # 共同 gate 的权威证明随投影保留，不得丢弃后另造。
-    try:
-        proof = getattr(result, "completion_proof", None)
-        to_payload = getattr(proof, "to_payload", None)
-        if callable(to_payload):
-            payload["completion_proof"] = to_payload()
-    except Exception:
-        pass
+    if result.completion_proof is not None:
+        payload["completion_proof"] = result.completion_proof.to_payload()
     if pipeline_result is not None:
-        to_payload = getattr(pipeline_result, "to_payload", None)
-        metadata = to_payload() if callable(to_payload) else dict[str, Any]()
+        metadata = pipeline_result.to_payload()
         if isinstance(metadata, dict):
             payload.update({
                 "audit_diagnostics": project_audit_diagnostics(metadata.get("audit_diagnostics")),
                 "followup_applied": bool(metadata.get("followup_applied")),
-                "followup_rounds": max(0, min(3, int(metadata.get("followup_rounds") or 0))),
+                "followup_rounds": max(0, min(3, coerce_int(metadata.get("followup_rounds") or 0))),
                 "pipeline_stop_reason": str(metadata.get("stop_reason") or ""),
                 "planner_stop_reason": str(metadata.get("planner_stop_reason") or ""),
-                "fresh_source_count": max(0, int(metadata.get("fresh_source_count") or 0)),
-                "new_evidence_count": max(0, int(metadata.get("new_evidence_count") or 0)),
-                "final_evidence_count": max(0, int(metadata.get("final_evidence_count") or 0)),
-                "attempted_fresh_source_count": max(0, int(metadata.get("attempted_fresh_source_count") or 0)),
-                "attempted_new_evidence_count": max(0, int(metadata.get("attempted_new_evidence_count") or 0)),
+                "fresh_source_count": max(0, coerce_int(metadata.get("fresh_source_count") or 0)),
+                "new_evidence_count": max(0, coerce_int(metadata.get("new_evidence_count") or 0)),
+                "final_evidence_count": max(0, coerce_int(metadata.get("final_evidence_count") or 0)),
+                "attempted_fresh_source_count": max(0, coerce_int(metadata.get("attempted_fresh_source_count") or 0)),
+                "attempted_new_evidence_count": max(0, coerce_int(metadata.get("attempted_new_evidence_count") or 0)),
             })
     if restoreable is not None:
         payload["restoreable"] = restoreable
@@ -422,14 +453,14 @@ def research_payload(
 
 
 def research_payload_from_tools(
-    tools: Any,
+    tools: ResearchTools,
     *,
     question: str,
     summary: str,
     stop_reason: str,
     turns: int,
     synthesis_id: str = "",
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Project facts already collected by a hybrid run into the UI DTO.
 
     Hybrid execution shares ``ResearchTools`` with the kernel, so constructing
@@ -438,31 +469,29 @@ def research_payload_from_tools(
     """
     from codey.research.run_result import ResearchRunResult
 
-    ledger = getattr(tools, "ledger", None)
+    ledger = tools.ledger
     if ledger is None:
         raise ValueError("hybrid research tools have no ledger")
-    searches = list(getattr(ledger, "searches", ()) or ())
+    searches = list(ledger.searches)
     result = ResearchRunResult(
         question=question,
         summary=summary,
         stop_reason=stop_reason,
         turns=max(0, (turns or 0)),
-        queries=[str(getattr(item, "query", "")) for item in searches if getattr(item, "query", "")],
+        queries=[item.query for item in searches if item.query],
         search_results=list(ledger.search_results_payload()),
         opened_sources=list(ledger.opened_sources_payload()),
         coverage=dict(ledger.coverage_payload()),
         evidence_items=list(ledger.evidence_payload()),
-        notes_created=[str(item) for item in getattr(tools, "created_ids", ()) or ()],
-        notes_updated=[str(item) for item in getattr(tools, "updated_ids", ()) or ()],
-        links_created=max(0, int(getattr(tools, "links_created", 0) or 0)),
-        sources_read=len(getattr(tools, "sources_read", ()) or ()),
-        source_urls=sorted(str(item) for item in getattr(tools, "sources_read", ()) or () if item),
+        notes_created=[str(item) for item in tools.created_ids],
+        notes_updated=[str(item) for item in tools.updated_ids],
+        links_created=max(0, tools.links_created),
+        sources_read=len(tools.sources_read),
+        source_urls=sorted(str(item) for item in tools.sources_read if item),
         synthesis_id=synthesis_id,
     )
     payload = research_payload(result)
-    changes = getattr(tools, "changes", None)
-    has_changes = getattr(changes, "has_changes", None)
-    payload["restoreable"] = bool(has_changes()) if callable(has_changes) else False
+    payload["restoreable"] = tools.changes.has_changes() if isinstance(tools.changes, KnowledgeChanges) else False
     return payload
 
 
@@ -477,7 +506,6 @@ __all__ = [
     "record_research_proof_review_trace",
     "research_payload",
     "research_payload_from_tools",
-    "research_queue_item_title",
     "run_research_mode",
     "run_research_pipeline",
 ]

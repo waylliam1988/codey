@@ -4,12 +4,10 @@
 from __future__ import annotations
 
 import logging
-import sqlite3
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from typing import Protocol
 
-from codey.ghost.payload_types import object_fields
 from codey.operations.context import RunWork
 from codey.operations.project_completion_context import MAX_COMPLETION_REPAIR_ROUNDS
 from codey.operations.task_state import TaskState
@@ -23,6 +21,7 @@ from codey.runtime.observe.terminalizer import terminal_turns
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.task.kind import resolve_task_kind_values, trace_mode, ui_mode
 from codey.task.model import TaskSubmission
+from codey.utils.object_fields import object_fields
 from codey.utils.refs import coerce_int
 from codey.workspace.revision import INITIAL_WORKSPACE_REVISION, WorkspaceRevisionStore, WorkspaceState
 
@@ -90,7 +89,6 @@ def _ensure_durable_task(state: TaskState, request: TaskSubmission) -> bool:
     durable = state.durable
     if durable is None or not request.run_id:
         return False
-    _register_ghost_input(state, request)
     try:
         existing = durable.task(request.run_id)
         if existing.status == "pending":
@@ -142,25 +140,6 @@ def _ensure_durable_task(state: TaskState, request: TaskSubmission) -> bool:
     return True
 
 
-def _register_ghost_input(state: TaskState, request: TaskSubmission) -> None:
-    from codey.ghost.observations import GhostObservationStore
-
-    try:
-        store: object = getattr(state, "ghost_observations", None)
-        if isinstance(store, GhostObservationStore):
-            store.register_input(
-                run_id=request.run_id, session_id=request.session_id, project=request.project or "",
-            )
-    except (OSError, sqlite3.Error, TypeError, ValueError) as exc:
-        # A Ghost storage failure does not cancel the canonical task. Existing
-        # Ghost stores still fail closed; expose the missing safety receipt.
-        logger.warning("Ghost input registration failed: %s", type(exc).__name__)
-        with suppress(Exception):
-            state.emit({
-                "type": "ghost_post_turn_warning", "stage": "input_origin",
-                "run_id": request.run_id, "session_id": request.session_id,
-                "error_type": type(exc).__name__, "error_ref": "ghost_input_origin_failed",
-            })
 
 
 def build_run_work(
@@ -183,7 +162,6 @@ def build_run_work(
             workspace_revision=workspace_state.revision,
             workspace_fingerprint=workspace_state.fingerprint,
         ),
-        claimed_work_item=None,
         trace=trace,
         workspace_revision=workspace_state.revision,
         workspace_fingerprint=workspace_state.fingerprint,

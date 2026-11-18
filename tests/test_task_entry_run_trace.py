@@ -10,7 +10,6 @@ from codey.agents.handoff import ConversationSnapshot, render_summary_prompt
 from codey.agents.request import AgentRequest
 from codey.app import server
 from codey.app import task_submit as task_submit
-from codey.operations.prompting import record_local_context_trace
 from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
 from codey.research.ledger import ResearchLedger
@@ -219,7 +218,6 @@ def test_project_run_writes_bounded_trace_without_raw_prompt_or_provider_error()
                     intent="project",
                 )
             )
-            assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-trace", run_id)
@@ -288,7 +286,6 @@ def test_explicit_research_result_writes_structured_trace_refs() -> None:
                         intent="research",
                     )
                 )
-                assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-research-trace", run_id)
@@ -367,7 +364,6 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
                     intent="research",
                 )
             )
-            assert state.wait_for_ghost_sleep(timeout=30)
 
         assert state.evidence_ledgers is not None
         snapshot = state.evidence_ledgers.load(
@@ -504,7 +500,6 @@ def test_hybrid_trace_records_research_and_writer_phases() -> None:
                         intent="hybrid",
                     )
                 )
-                assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-hybrid-trace", run_id)
@@ -517,18 +512,6 @@ def test_hybrid_trace_records_research_and_writer_phases() -> None:
         assert {item["phase"] for item in payload["tool_contracts"]} >= {"research", "writer"}
         assert "SECRET_RESEARCH_PROMPT_SHOULD_NOT_BE_SAVED" not in serialized
 
-
-def test_local_context_trace_skips_scanning_when_trace_is_missing() -> None:
-    class _ExplodingContext:
-        @property
-        def selected_nodes(self):  # pragma: no cover - exercised through early return
-            raise AssertionError("should not inspect local contexts without trace")
-
-        @property
-        def selected_items(self):  # pragma: no cover - exercised through early return
-            raise AssertionError("should not inspect local contexts without trace")
-
-    record_local_context_trace(None, _ExplodingContext())
 
 
 def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
@@ -574,7 +557,6 @@ def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
                     intent="project",
                 )
             )
-            assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-secondary-trace", run_id)
@@ -618,7 +600,6 @@ def test_chat_workspace_prompt_is_traced_by_digest_without_hidden_consensus() ->
                     intent="chat",
                 )
             )
-            assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-consensus-trace", run_id)
@@ -654,7 +635,6 @@ def test_chat_outbound_prompt_carries_shared_workspace_kernel_provenance() -> No
                     intent="chat",
                 )
             )
-            assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-chat-provenance", run_id)
@@ -701,7 +681,6 @@ def test_conversation_handoff_summary_prompt_is_traced_on_rollover() -> None:
                     intent="chat",
                 )
             )
-            assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, session_id, run_id)
@@ -745,7 +724,6 @@ def test_project_audit_inputs_are_prepared_metadata_not_model_boundary() -> None
                     intent="project",
                 )
             )
-            assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-project-audit-prepared", run_id)
@@ -780,7 +758,6 @@ def test_preflight_provider_switch_is_recorded_as_fallback(monkeypatch) -> None:
                     intent="project",
                 )
             )
-            assert state.wait_for_ghost_sleep(timeout=30)
 
         run_id = state.run_registry.last_terminal_event()["run_id"]
         payload = _trace_payload(state, "session-fallback-trace", run_id)
@@ -846,7 +823,6 @@ def _run_project_task(state: server.AppContext, project: Path, session_id: str, 
                 intent="project",
             )
         )
-        assert state.wait_for_ghost_sleep(timeout=30)
     run_id = state.run_registry.last_terminal_event()["run_id"]
     return _trace_payload(state, session_id, run_id)
 

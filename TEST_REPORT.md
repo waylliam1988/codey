@@ -2,6 +2,56 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+
+## Memory ownership cold start (2026-11-19)
+
+Ghost remains the built-in `codey/ghost` implementation behind the sole
+`codey/memory/contracts.py` boundary. Core owns execution, durable state,
+permissions, evidence, completion, queueing and physical prompt admission.
+The rewrite removes the old Ghost stores, task queue, daemon, control surface,
+and their implementation-specific tests and experiments. No legacy database
+migration, dual writes, separate distribution or second runtime was added.
+The current algorithm is a new lexical retrieval/decay baseline; this change
+does not preserve or prove the quality of the previous learning algorithms.
+See [the current boundary](docs/memory-boundary.zh-CN.md).
+
+The final selection of 39 related regression modules passed 899 tests and
+46 subtests, with one skip. Core assertions in mixed legacy tests were retained
+while removing only their Ghost-specific setup and assertions. Their follow-up
+selection passed 17 tests and 37 subtests. Full-tree collection passed with
+14,802 tests; collection did not execute the full suite.
+
+Relevant regressions cover absent/disabled/corrupt memory, replacement memory
+through a real headless task entry, explicit proposal decisions, concurrent
+opposite decisions, source revocation, frozen provider payloads, native/text
+continuations, ordinary task/approval/completion flows, and real process
+kill/restart recovery. The recovery/stress group passed 104 tests. The final
+focused fixes passed 247 tests, including cancellation/deadline after canonical
+task completion. Optional terminal projection cancellation cannot reopen or
+break a committed terminal outcome. Internal enum events still serialize
+through the existing transport encoder; external JSON validation stays strict.
+
+Production-tree verification follows the repository CI scope (`codey`): mypy
+passed 674 sources; Pyrefly reported 0 errors, 35 existing suppressions and 165
+warnings; ty and the kernel precision gate passed. Full repository Ruff passed.
+No new casts, ignore directives or checker exclusions were added. Frontend
+TypeScript/format/Vitest checks passed 413 tests across 65 files; the production
+build, asset publication and published-source fingerprint checks passed.
+
+The architecture selection reported 96 passed, 416 subtests passed and two
+existing failures: size limits in `toolchain/runtime.py`, `toolchain/tool_spec.py`,
+`operations/kernel_protocol.py`, `operations/task_execution.py`; and the runtime
+import of `codey.protocols.json_repair` in `runtime/core/models.py`. All five
+production files match HEAD byte-for-byte after newline normalization. Their
+baselines and allowed imports were not relaxed.
+
+No full pytest execution, live model quality trial, browser UI trial, installer
+build or worktree copy was performed. Memory shares the Core process and uses
+cooperative cancellation; a permanently blocked arbitrary replacement cannot
+be forcibly stopped by a Protocol. Revocation or backend failure after request
+freezing can reject physical delivery rather than silently rewriting frozen
+bytes. Existing historical reports below describe earlier implementations.
+
 ## Captured source convergence and English failures (2026-11-09)
 
 The four batches pin source versions, share source intake and passages,

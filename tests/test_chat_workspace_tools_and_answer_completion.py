@@ -222,48 +222,8 @@ def test_busy_workspace_blocks_chat_edit_but_allows_greeting(tmp_path):
         assert not reader.acquire_project_writer(root)
 
 
-def test_shared_chat_preserves_local_context_without_additional_inference(tmp_path, monkeypatch):
-    seen = []
-
-    def directive(state, *, session_id, project):
-        seen.append((session_id, project))
-        return SimpleNamespace(text="Reviewed preference: concise answers")
-
-    monkeypatch.setattr("codey.operations.ghost_context.ghost_directive", directive)
-    provider = NativeConversation(AssistantTurn(text="Hello!"))
-    frame = workspace_frame("", provider)
-    with closing(AppContext(_state_home(tmp_path))) as state:
-        result, _ = execute_frame(frame, state)
-    assert result.event["stop_reason"] == "done"
-    assert seen == [(frame.request.session_id, "")]
-    assert "Reviewed preference: concise answers" in provider.requests[0][0]
-    assert len(provider.requests) == 1
 
 
-@pytest.mark.parametrize("control", ["enabled", "disabled", "scoped_error"])
-def test_shared_chat_hint_admission_never_downgrades_scoped_read(tmp_path, monkeypatch, control):
-    hint = "Synthetic reviewed preference"
-    monkeypatch.setattr("codey.operations.ghost_context.ghost_directive",
-                        lambda *args, **kwargs: SimpleNamespace(text=hint))
-    calls = []
-
-    def read(name, **scope):
-        if name == "admit_hints":
-            calls.append(scope)
-            if control == "scoped_error" and scope:
-                raise TypeError("scoped read failed")
-            return control != "disabled"
-        return True
-
-    provider = NativeConversation(AssistantTurn(text="Hello!"))
-    frame = workspace_frame("", provider)
-    with closing(AppContext(_state_home(tmp_path))) as state:
-        monkeypatch.setattr(state.ghost_inbox, "control_enabled", read)
-        result, _ = execute_frame(frame, state)
-    assert result.event["stop_reason"] == "done"
-    assert len(provider.requests) == 1
-    assert (hint in provider.requests[0][0]) == (control == "enabled")
-    assert calls == [{"project": "", "session_id": frame.request.session_id}]
 
 
 def test_chat_with_attached_folder_receives_existing_project_instructions(tmp_path):

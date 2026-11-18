@@ -25,7 +25,7 @@ from codey.types.json_value import (
     require_json_string,
     require_json_strings,
 )
-from codey.workspace.context_admission import GhostContextSource
+from codey.workspace.context_admission import ContextCandidate
 
 if TYPE_CHECKING:
     from codey.operations.browser_copy import CopyTurn
@@ -38,21 +38,29 @@ REQUEST_KIND = "provider_request"
 RESPONSE_KIND = "provider_response"
 
 
-def restore_ghost_context(payload: object) -> tuple[str, tuple[GhostContextSource, ...]]:
+def restore_context(payload: object) -> tuple[str, tuple[ContextCandidate, ...]]:
     payload = decode_json_object(payload)
-    if (set(payload) != {"text", "ghost_sources"}
-            or not isinstance(payload["text"], str) or not isinstance(payload["ghost_sources"], list)):
+    if (set(payload) != {"text", "memory_sources"}
+            or not isinstance(payload["text"], str) or not isinstance(payload["memory_sources"], list)):
         raise ValueError("frozen request has no valid context snapshot")
     sources = []
-    source_fields: tuple[Field[object], ...] = fields(GhostContextSource)
+    source_fields: tuple[Field[object], ...] = fields(ContextCandidate)
     expected = {field.name for field in source_fields}
-    for raw in payload["ghost_sources"]:
+    for raw in payload["memory_sources"]:
         row = decode_json_object(raw)
         if (set(row) != expected or type(row["budget"]) is not int
-                or any(not isinstance(row[key], str) for key in expected - {"budget"})):
-            raise ValueError("invalid frozen Ghost source")
-        strings = {key: require_json_string(row[key], key) for key in expected - {"budget"}}
-        sources.append(GhostContextSource(budget=require_json_integer(row["budget"], "budget"), **strings))
+                or any(not isinstance(row[key], str) for key in expected - {"budget", "source_refs"})):
+            raise ValueError("invalid frozen context source")
+        sources.append(ContextCandidate(
+            key=require_json_string(row["key"], "key"),
+            text=require_json_string(row["text"], "text"),
+            budget=require_json_integer(row["budget"], "budget"),
+            scope=require_json_string(row["scope"], "scope"),
+            capability_id=require_json_string(row["capability_id"], "capability_id"),
+            admission_reason=require_json_string(row["admission_reason"], "admission_reason"),
+            expires_at=require_json_string(row["expires_at"], "expires_at"),
+            source_refs=tuple(require_json_strings(row["source_refs"], "source_refs")),
+        ))
     return payload["text"], tuple(sources)
 
 

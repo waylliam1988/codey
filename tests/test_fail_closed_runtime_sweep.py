@@ -6,7 +6,6 @@ as non-bugs in TEST_REPORT.
 """
 from __future__ import annotations
 
-import datetime
 import tempfile
 import unittest
 from pathlib import Path
@@ -305,69 +304,13 @@ class _ExplodingInteger:
 
 
 class GhostKnowledgeSweepTests(unittest.TestCase):
-    def test_work_queue_int_bool(self):
-        from codey.ghost.work_queue import _int
-        self.assertEqual(_int(True), 0)
 
-    def test_work_queue_transition_rejects_invalid_counter_without_conversion(self):
-        from codey.ghost import work_queue_events as wq_events
-        from tests.test_work_queue_events_owns_replay import _item
 
-        item = _item(status="blocked")
-        before = item.to_payload()
-        for value in (float("inf"), float("nan"), True, False, "0", 0.0, -1, 1, _ExplodingInteger()):
-            # Keep the adversarial object out of unittest.subTest metadata:
-            # pytest-xdist must pickle subtest parameters between workers.
-            self.assertIsNone(wq_events._apply_queue_transition(item, {"retry_count": value}, now="now"))
-            self.assertEqual(item.to_payload(), before)
-        queued = wq_events._apply_queue_transition(item, {"retry_count": 0}, now="now")
-        self.assertIsNotNone(queued)
-        self.assertEqual(queued.status, "queued")
-        self.assertEqual(queued.retry_count, 0)
-        self.assertEqual(item.to_payload(), before)
 
-    def test_inbox_int_bool(self):
-        from codey.ghost.inbox import _int_or_default
-        self.assertEqual(_int_or_default(True, 1), 1)
-        # contract: bool must map to default, not 1
-        self.assertEqual(_int_or_default(True, 7), 7)
 
-    def test_observation_budget_no_crash(self):
-        from codey.ghost.observation_index import _content_budget
-        try:
-            _content_budget("oops")
-        except (ValueError, TypeError, OverflowError):
-            self.fail("_content_budget crashed on bad budget")
 
-    def test_compact_result_no_crash(self):
-        from codey.ghost.events import compact_result_payload
-        try:
-            compact_result_payload(True, False, {"events": "abc", "bytes": 0}, {}, [])
-        except (ValueError, TypeError, OverflowError):
-            self.fail("compact_result_payload crashed on bad events")
 
-    def test_expires_at_no_crash(self):
-        from codey.ghost.continuity import _expires_at
-        now = datetime.datetime.now(datetime.UTC)
-        try:
-            _expires_at(now, "abc")
-        except (ValueError, TypeError, OverflowError):
-            self.fail("_expires_at crashed on bad days")
 
-    def test_continuity_items_skip_bad(self):
-        from codey.ghost.continuity import _items_from_events
-        try:
-            _items_from_events([None])
-            _items_from_events(["x"])
-        except AttributeError:
-            self.fail("_items_from_events crashed on bad row, should skip")
-
-    def test_hebbian_sync_no_crash(self):
-        import inspect
-
-        from codey.ghost import hebbian as hebb_mod
-        src = inspect.getsource(hebb_mod)
-        self.assertNotIn('int(removed.get("nodes"', src, "hebbian still uses bare int(nodes)")
 
     def test_concepts_bool_ascii(self):
         from codey.knowledge.concepts import _bounded_int
@@ -419,7 +362,7 @@ class GhostKnowledgeSweepTests(unittest.TestCase):
     def test_refs_bounded_non_iterable(self):
         from codey.utils.refs import bounded_refs
         try:
-            bounded_refs(True)  # type: ignore[arg-type]
+            bounded_refs(True)
         except TypeError:
             self.fail("bounded_refs crashed on bool, should be ()")
             return

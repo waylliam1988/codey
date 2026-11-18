@@ -11,8 +11,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codey.ghost.observation_index import history_refs
-from codey.ghost.payload_types import object_fields
 from codey.operations import kernel_prompt as _prompt
 from codey.operations import kernel_transport as _transport
 from codey.operations.completion_context import CompletionContext, CompletionContextInput
@@ -25,7 +23,6 @@ from codey.operations.kernel_contracts import (
 from codey.operations.kernel_execution import execute_turn as _execute_turn
 from codey.operations.kernel_trace import record_outbound
 from codey.operations.project_prompt_context import prepare_coding_context
-from codey.operations.represented_history import compaction_history_refs, user_message_text
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
 from codey.policies.command_line import ShellSpec
 from codey.providers.attempt_gate import AttemptGateClient
@@ -39,7 +36,7 @@ from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.types.json_value import JsonObject
 from codey.workspace.coding_context import render_coding_context
-from codey.workspace.context_admission import GhostAdmissionError, GhostAdmissionRejection, admit_ghost_context
+from codey.workspace.context_admission import ContextAdmissionError, ContextRejection, admit_context
 from codey.workspace.context_epoch import ContextEpoch, context_epoch_id
 
 if TYPE_CHECKING:
@@ -77,30 +74,15 @@ def _bind_attempt_gate(
     provider: ProviderTransport, transport: KernelTransportDeps, trace_recorder: object,
 ) -> bool:
     gate = transport.attempt_gate
-    if gate is None and (transport.ghost_sources or transport.attempt_validate_ghost_sources is not None):
+    if gate is None and (transport.memory_sources or transport.attempt_validate_memory_sources is not None):
         def gate(client: AttemptGateClient, payload: JsonObject) -> None:
             rendered = "\n".join(_payload_strings(payload))
             enabled = (transport.attempt_admit_hints() if transport.attempt_admit_hints is not None
                        else transport.admit_hints)
-            sources = transport.ghost_sources
-            if (transport.attempt_validate_ghost_sources is not None
-                    and not transport.attempt_validate_ghost_sources(sources)):
-                raise GhostAdmissionError((GhostAdmissionRejection("ghost_sources", "source_snapshot_changed"),))
-            if transport.required_history_refs:
-                actual_refs = frozenset(ref for value in _payload_strings(payload) for ref in history_refs(value))
-                user_texts: set[str] = set()
-                for key in ("messages", "input"):
-                    messages = payload.get(key)
-                    if isinstance(messages, list):
-                        for entry in messages:
-                            if object_fields(entry) and (text := user_message_text(entry)) is not None:
-                                user_texts.add(text)
-                actual_refs |= frozenset(ref for ref, text in transport.required_history_inputs if text in user_texts)
-                if client.purpose == "compaction":
-                    actual_refs |= compaction_history_refs(dict[str, object](payload), transport.provider,
-                                                           transport.required_history_inputs)
-                if not transport.required_history_refs <= actual_refs:
-                    raise GhostAdmissionError((GhostAdmissionRejection("ghost_sources", "represented_history_missing"),))
+            sources = transport.memory_sources
+            if (transport.attempt_validate_memory_sources is not None
+                    and not transport.attempt_validate_memory_sources(sources)):
+                raise ContextAdmissionError((ContextRejection("memory_sources", "source_snapshot_changed"),))
             if client.purpose == "compaction":
                 # Auxiliary prompts may contain only a declared encoding of a
                 # source.  Gate the representations that are actually present;
@@ -113,7 +95,7 @@ def _bind_attempt_gate(
                                 for source, escaped in variants
                                 if source.text in rendered or escaped.text in rendered)
                 sources = present
-            admission = admit_ghost_context(
+            admission = admit_context(
                 rendered, sources, request_scope=transport.context_scope,
                 require_all=bool(sources), admit_hints=enabled,
             )

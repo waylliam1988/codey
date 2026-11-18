@@ -11,9 +11,9 @@ from threading import Thread
 
 import pytest
 
-from codey.ghost.payload_types import object_fields
 from codey.providers.api_transport import GenerationRejectedError
 from codey.types.json_value import JsonObject, decode_json_object, decode_json_value
+from codey.utils.object_fields import object_fields
 from tests.manual.ghost_memory_routing import world_model_verification_review as original
 from tests.manual.ghost_memory_routing.world_model_structured_review import response_format, run_structured
 

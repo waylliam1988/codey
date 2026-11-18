@@ -16,7 +16,6 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 # ruff: noqa: E402 - direct script execution must add the repository root first.
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,7 +37,6 @@ from codey.research.source_search import bounded_limit, render_results, search_p
 from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import Control, ToolPlan
-from tests.support.kernel_runtime import run_research_iteration
 from tests.support.research_iteration_adapter import ResearchIteration
 from tests.support.research_protocol import MAX_CALLS_PER_TURN as _MAX_CALLS_PER_TURN
 from tests.support.research_protocol import JsonToolCodec
@@ -79,7 +77,7 @@ class FixtureDocument:
             for index, page in enumerate(self.pages, 1)
         )
 
-    def result(self) -> dict:
+    def result(self) -> dict[str, object]:
         return {
             "title": self.title,
             "url": self.url,
@@ -348,11 +346,11 @@ class FixtureSearchProvider:
         self.queries: list[str] = []
         self.fetches: list[str] = []
 
-    def search(self, query: str, limit: int = 8) -> list[dict]:
+    def search(self, query: str, limit: int = 8) -> list[dict[str, object]]:
         self.queries.append(str(query or ""))
         return [doc.result() for doc in self.case.documents[:limit]]
 
-    def fetch(self, url: str) -> dict:
+    def fetch(self, url: str) -> dict[str, object]:
         self.fetches.append(str(url or ""))
         doc = self.document_for_url(url)
         if doc is None:
@@ -387,7 +385,7 @@ class FixtureSourceGateway(ResearchSourceGateway):
     def _source_document_from_fetch(
         self,
         requested_url: str,
-        page: dict,
+        page: dict[str, object],
         *,
         pages: str = "",
     ) -> SourceDocument | PdfSkipped:
@@ -566,65 +564,6 @@ class ProbeResearchIteration(ResearchIteration):
                 return ""
         return ""
 
-    def run(self, question: str):
-        """Drive the production kernel while retaining probe-only telemetry.
-
-        分组隔离经实际发送的 prompt 与工具 schema 断言（见 test 文件），
-        工具范围经实际快照策略配置，不由 codec 控制。
-        """
-
-        outer = self
-
-        class ProbeProvider:
-            name = getattr(outer.provider, "name", "probe")
-            location = getattr(outer.provider, "location", "")
-
-            def new_chat(self, timeout=None):
-                return outer.provider.new_chat(timeout=timeout)
-
-            def send(self, message, timeout=None):
-                del timeout
-                return outer._send_provider(str(message))
-
-            def close(self):
-                close = getattr(outer.provider, "close", None)
-                if callable(close):
-                    return close()
-                return None
-
-        deps = type("ProbeDeps", (), {
-            "state": type("ProbeState", (), {
-                "ghost_inbox": type("ProbeGhostInbox", (), {
-                    "control_enabled": staticmethod(lambda _name, **_kwargs: True),
-                })(),
-            })(),
-            "knowledge_store": self.store,
-            "managed_outputs": None,
-            "runtime_mutations": None,
-        })()
-        arm_ext = self._arm_prompt_extension()
-        arm_context = "\n\n".join(x for x in (str(getattr(self, "iteration_context", "") or ""), arm_ext) if x)
-        iteration = run_research_iteration(
-            deps,
-            provider=ProbeProvider(),
-            session_id=self.session_id,
-            project="",
-            task=str(question or ""),
-            max_turns=self.max_turns,
-            on_event=self.events.append,
-            stop_flag=None,
-            provider_id=self.provider_id or "local",
-            run_id=self.run_id,
-            chat_handoff="",
-            trace_recorder=self.trace,
-            search=self.search,
-            tools=self.tools,
-            iteration_context=arm_context,
-            controller_denied=_arm_controller_denied(self.arm),
-        )
-        self.tools = iteration.tools
-        self._last_result = iteration.result
-        yield iteration.result
 
 
 class TimedProvider:
@@ -661,9 +600,9 @@ class LiveTrace:
     def __init__(self, path: Path) -> None:
         self.path = path
         self.started = time.monotonic()
-        self.events: list[dict[str, Any]] = []
+        self.events: list[dict[str, object]] = []
 
-    def record(self, event: dict[str, Any]) -> None:
+    def record(self, event: dict[str, object]) -> None:
         payload = dict(event)
         payload["elapsed_seconds"] = round(time.monotonic() - self.started, 3)
         self.events.append(payload)
@@ -818,7 +757,7 @@ class ProbeJsonToolCodec(JsonToolCodec):
             )
         return plan
 
-    def _rewrite_id_args(self, obj: dict[str, Any]) -> dict[str, Any]:
+    def _rewrite_id_args(self, obj: dict[str, object]) -> dict[str, object]:
         rewritten = dict(obj)
         args = rewritten.get("args")
         if not isinstance(args, dict):
@@ -1123,7 +1062,7 @@ def run_case(
     max_turns: int,
     timeout: float,
     trace: LiveTrace | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="codey-deep-research-ab-") as td:
         store = KnowledgeStore(Path(td))
         _seed_store(store, case)
@@ -1197,8 +1136,8 @@ def run_case(
             store.close()
 
 
-def _tool_calls(events: list[object]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
+def _tool_calls(events: list[object]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
     for event in events:
         call = getattr(event, "call", None)
         if getattr(event, "kind", "") != "tool" or call is None:
@@ -1215,9 +1154,9 @@ def _tool_calls(events: list[object]) -> list[dict[str, Any]]:
 
 def _score(
     case: ResearchProbeCase,
-    row: dict[str, Any],
+    row: dict[str, object],
     result,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     tool_calls = row["tool_calls"]
     model_text = _model_claim_text(tool_calls, result.summary)
     summary_text = str(result.summary or "").lower()
@@ -1300,7 +1239,7 @@ def _score(
     }
 
 
-def _model_claim_text(tool_calls: list[dict[str, Any]], summary: str) -> str:
+def _model_claim_text(tool_calls: list[dict[str, object]], summary: str) -> str:
     parts = [str(summary or "")]
     for call in tool_calls:
         if call.get("name") != "knowledge_write":
@@ -1324,7 +1263,7 @@ def _model_claim_text(tool_calls: list[dict[str, Any]], summary: str) -> str:
 
 def _opened_target_locator(
     case: ResearchProbeCase,
-    tool_calls: list[dict[str, Any]],
+    tool_calls: list[dict[str, object]],
     result,
 ) -> bool:
     if not case.expected_target_url:
@@ -1374,7 +1313,7 @@ def run_provider(
     timeout: float,
     new_chat_timeout: float,
     trace: LiveTrace | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     try:
         if fresh_tab:
             provider = connect_fresh_provider_tab(provider_id, port=port)
@@ -1423,7 +1362,7 @@ def run_provider(
         new_chat_timeout=new_chat_timeout,
         no_new_chat=no_new_chat,
     )
-    rows: list[dict[str, Any]] = []
+    rows: list[dict[str, object]] = []
     started = time.monotonic()
     try:
         for case in cases:
@@ -1496,8 +1435,8 @@ def run_provider(
     }
 
 
-def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    summary: dict[str, Any] = {"arms": {}}
+def _summarize(rows: list[dict[str, object]]) -> dict[str, object]:
+    summary: dict[str, object] = {"arms": {}}
     for arm in ARMS:
         arm_rows = [row for row in rows if row.get("arm") == arm and "error" not in row]
         if not arm_rows:
@@ -1618,7 +1557,7 @@ def _provider_failure_payload(exc: BaseException, provider: object | None = None
     return failure.to_dict()
 
 
-def _last_done_quality_review(runner: ProbeResearchIteration) -> dict[str, Any]:
+def _last_done_quality_review(runner: ProbeResearchIteration) -> dict[str, object]:
     answer = _last_done_answer(runner.received_replies)
     if not answer:
         return {}
@@ -1694,14 +1633,14 @@ def _protocol_repair_prompt_count(messages: list[str]) -> int:
     )
 
 
-def _rate(rows: list[dict[str, Any]], key: str) -> float:
+def _rate(rows: list[dict[str, object]], key: str) -> float:
     if not rows:
         return 0.0
     return round(sum(1 for row in rows if row.get(key)) / len(rows), 3)
 
 
 def _conditional_rate(
-    rows: list[dict[str, Any]],
+    rows: list[dict[str, object]],
     key: str,
     applicable_key: str,
 ) -> float:
@@ -1711,7 +1650,7 @@ def _conditional_rate(
     return round(sum(1 for row in scoped if row.get(key)) / len(scoped), 3)
 
 
-def _avg(rows: list[dict[str, Any]], key: str) -> float:
+def _avg(rows: list[dict[str, object]], key: str) -> float:
     if not rows:
         return 0.0
     return round(sum(float(row.get(key) or 0) for row in rows) / len(rows), 3)
@@ -1779,11 +1718,11 @@ def _ensure_profile(profile: str) -> None:
         raise SystemExit(f"unknown profile: {profile}")
 
 
-def _write_output(path: Path, payload: dict[str, Any]) -> None:
+def _write_output(path: Path, payload: dict[str, object]) -> None:
     _write_json_atomic(path, payload)
 
 
-def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1811,8 +1750,8 @@ def _as_int(value: object, default: int) -> int:
         return default
 
 
-def _extract_json_objects(text: str) -> list[dict[str, Any]]:
-    objects: list[dict[str, Any]] = []
+def _extract_json_objects(text: str) -> list[dict[str, object]]:
+    objects: list[dict[str, object]] = []
     depth = 0
     start = -1
     in_string = False
@@ -2057,7 +1996,7 @@ def main() -> int:
     global SINGLE_TOOL_BOUNDARY
     SINGLE_TOOL_BOUNDARY = bool(args.single_tool_boundary)
     provider_results = []
-    all_rows: list[dict[str, Any]] = []
+    all_rows: list[dict[str, object]] = []
     started = time.monotonic()
     trace = None if args.no_live_trace else LiveTrace(args.trace_output or _trace_output_path(args.output))
     if trace is not None:

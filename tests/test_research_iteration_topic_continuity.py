@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import tempfile
-from pathlib import Path
 
-from codey.knowledge.store import KnowledgeStore
 from codey.research.context import ResearchContext, RunTraceResearchSink
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
 from codey.research.run_result import ResearchRunResult
@@ -98,61 +96,6 @@ def _stub_result() -> ResearchRunResult:
     )
 
 
-def test_continuity_appears_in_prompt_via_new_entry() -> None:
-    """Continuity via the new single entry (migrated from old _intro)."""
-    import tempfile
-    from types import SimpleNamespace
-
-    from tests.support.kernel_runtime import run_research_iteration
-
-    class _CaptureProvider:
-        def __init__(self, replies: list[str]) -> None:
-            self._replies = list(replies)
-            self.sent: list[str] = []
-
-        def new_chat(self, timeout: object = None) -> None:
-            return None
-
-        def send(self, prompt: str, timeout: object = None) -> str:
-            self.sent.append(str(prompt))
-            return self._replies.pop(0) if self._replies else '{"tool":"done","args":{"summary":"done"}}'
-
-        def close(self) -> None:
-            return None
-
-    projection = project_topic_continuity(
-        interest_hints=[{"ref": "research_interest:ric_x", "question": "Does the 2026 finding still hold?"}],
-    )
-    trace = _SectionRecorder()
-    with tempfile.TemporaryDirectory() as td:
-        store = KnowledgeStore(Path(td) / "knowledge")
-        provider = _CaptureProvider(['{"tool":"done","args":{"summary":"done"}}'])
-        deps = SimpleNamespace(
-            state=SimpleNamespace(
-                ghost_inbox=SimpleNamespace(
-                    control_enabled=lambda _name, **_kwargs: True,
-                ),
-            ),
-            knowledge_store=store,
-            search_factory=lambda: (lambda *a, **k: ""),
-            managed_outputs=None,
-            runtime_mutations=None,
-        )
-        run_research_iteration(
-            deps, provider=provider, session_id="s", project="",
-            task="Research question about continuity", max_turns=1,
-            on_event=lambda _e: None, stop_flag=None, provider_id="local",
-            run_id="r", chat_handoff="", trace_recorder=trace,
-            search=lambda: "", topic_continuity_context=projection.prompt_text,
-            topic_continuity_payload=projection.to_payload(),
-        )
-        store.close()
-    assert provider.sent
-    assert "Does the 2026 finding still hold?" in provider.sent[0]
-    assert "Research question about continuity" in provider.sent[0]
-    rows = [row for row in trace.calls if row[0] == "record_research_topic_continuity"]
-    assert len(rows) == 1
-    assert rows[0][2]["epoch_id"] == context_epoch_id(provider.sent[0])
 
 
 def test_pipeline_forwards_continuity_payload_without_pre_recording() -> None:

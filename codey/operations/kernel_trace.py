@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
 from codey.utils.refs import digest_text
-from codey.workspace.context_admission import GhostAdmissionResult
+from codey.workspace.context_admission import ContextAdmissionResult
 
 if TYPE_CHECKING:
     from codey.operations.kernel_protocol import TurnSnapshot
@@ -18,7 +18,7 @@ def record_outbound(
     trace: object | None,
     prompt: str,
     *,
-    admission: GhostAdmissionResult,
+    admission: ContextAdmissionResult,
 ) -> None:
     if trace is not None and admission.accepted:
         FailOpenPromptTrace(trace).call(

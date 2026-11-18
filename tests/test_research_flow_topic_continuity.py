@@ -7,7 +7,6 @@ from unittest import mock
 
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.app import server
-from codey.ghost.continuity import build_ghost_continuity
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.context import RunFrame
@@ -17,13 +16,17 @@ from codey.operations.research_flow import (
     build_research_topic_continuity,
     prior_claim_refs,
 )
-from codey.research.context import ResearchContext
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.report_quality import review_report_quality
 from codey.task.model import TaskSubmission
 
 _QUESTION = "Should provider recovery be re-checked against fresh sources?"
+
+
+def _deps(state: server.AppContext) -> ResearchFlowDeps:
+    return ResearchFlowDeps(state=state, knowledge_store=state.knowledge_store,
+                            evidence_ledgers=state.evidence_ledgers, search_factory=object)
 
 
 def _make_frame(project_text: str) -> RunFrame:
@@ -54,20 +57,6 @@ def _make_frame(project_text: str) -> RunFrame:
     )
 
 
-def _deps(state: server.AppContext) -> ResearchFlowDeps:
-    def ghost_continuity(*, project: str = "", session_id: str = ""):
-        store = getattr(state, "ghost_continuity", None)
-        if store is None:
-            return build_ghost_continuity(None)
-        return build_ghost_continuity(store, project=project, session_id=session_id)
-
-    return ResearchFlowDeps(
-        state=state,
-        knowledge_store=state.knowledge_store,
-        evidence_ledgers=state.evidence_ledgers,
-        search_factory=lambda: object(),
-        ghost_continuity=ghost_continuity,
-    )
 
 
 def _seed_open_question_note(store: KnowledgeStore, *, session_id: str) -> None:
@@ -155,38 +144,6 @@ def _seed_prior_claim(state: server.AppContext, *, session_id: str, project: str
     )
 
 
-def test_topic_continuity_admission_is_bounded_refs_and_hint_text() -> None:
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
-        root = Path(td)
-        state = server.AppContext(root / "state")
-        state.knowledge_store = KnowledgeStore(root / "knowledge")
-        _seed_open_question_note(state.knowledge_store, session_id="s1")
-        if state.ghost_continuity is not None:
-            state.ghost_continuity.sync_from_sources(
-                knowledge_store=state.knowledge_store,
-                session_id="s1",
-                run_id="run-seed",
-            )
-        text, payload = build_research_topic_continuity(
-            _deps(state),
-            session_id="s1",
-            project=str(root / "project"),
-        )
-
-    assert text, "expected admitted continuity text"
-    assert "not evidence" in text
-    assert _QUESTION in text
-    lowered = text.casefold()
-    assert not any(term in lowered for term in ("ghost", "work queue", "concept graph"))
-    assert payload is not None and payload["admitted"] is True
-    raw = json.dumps(payload, ensure_ascii=False)
-    assert _QUESTION not in raw  # digest-only trace projection
-    refs = [
-        ref
-        for row in payload["items"]
-        for ref in row["refs"]
-    ]
-    assert any(ref.startswith("continuity:") or ref.startswith("research_interest:") for ref in refs)
 
 
 def _seed_prior_claim_overflow(
@@ -400,35 +357,6 @@ def test_empty_local_state_admits_nothing() -> None:
     assert payload["admitted"] is False
 
 
-def test_build_research_context_carries_bounded_continuity() -> None:
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
-        root = Path(td)
-        project = str(root / "project")
-        (root / "project").mkdir()
-        state = server.AppContext(root / "state")
-        state.knowledge_store = KnowledgeStore(root / "knowledge")
-        _seed_open_question_note(state.knowledge_store, session_id="s1")
-        if state.ghost_continuity is not None:
-            state.ghost_continuity.sync_from_sources(
-                knowledge_store=state.knowledge_store,
-                session_id="s1",
-                run_id="run-seed-context",
-            )
-        frame = _make_frame(project_text=project)
-
-        context = build_research_context(
-            _deps(state),
-            frame,
-            proof_question="proof",
-            max_turns=8,
-        )
-
-    assert isinstance(context, ResearchContext)
-    assert context.topic_continuity_context
-    assert "not evidence" in context.topic_continuity_context
-    payload = context.topic_continuity_payload or {}
-    assert payload.get("admitted") is True
-    assert context.question == "research the continuity question"
 
 
 def test_build_research_context_baseline_without_seeds() -> None:

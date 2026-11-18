@@ -18,7 +18,7 @@ from codey.types.json_value import (
     require_json_integer,
     require_json_string,
 )
-from codey.workspace.context_admission import GhostContextSource
+from codey.workspace.context_admission import ContextCandidate
 
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
@@ -155,18 +155,14 @@ class KernelTransportDeps:
     # Logical request authority, independent of an automatically allocated
     # execution workspace. Unscoped standalone requests use "request".
     context_scope: str = "request"
-    ghost_sources: tuple[GhostContextSource, ...] = ()
-    # Refs omitted only because their exact role text is retained by this
-    # protocol window. Rechecked against the actual outbound payload.
-    required_history_refs: frozenset[str] = frozenset()
-    required_history_inputs: tuple[tuple[str, str], ...] = ()
+    memory_sources: tuple[ContextCandidate, ...] = ()
     admit_hints: bool = True
     attempt_gate: AttemptGateCallback | None = None
     attempt_admit_hints: Callable[[], bool] | None = None
     stop_flag: StopSignal | None = None
     stagnant_turns: int | None = None
     window_ref: ProtocolWindowRef | None = None
-    attempt_validate_ghost_sources: Callable[[tuple[GhostContextSource, ...]], bool] | None = None
+    attempt_validate_memory_sources: Callable[[tuple[ContextCandidate, ...]], bool] | None = None
 
     def __post_init__(self) -> None:
         from codey.operations.provider_session import adapt_provider

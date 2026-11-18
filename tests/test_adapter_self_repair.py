@@ -1126,7 +1126,6 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
             ):
                 task_submit.run_task("session-self-repair", td, "task", 8, False, "deepseek", "project", get_state=http_context.get_context)
 
-            state.wait_for_ghost_sleep(timeout=30)
             state.self_repair.maybe_enqueue.assert_called_once()
             args = state.self_repair.maybe_enqueue.call_args.args
             self.assertEqual(args[0], "deepseek")

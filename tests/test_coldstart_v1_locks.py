@@ -102,9 +102,9 @@ def test_config_from_dict_requires_v1() -> None:
 
     # Non-dict input is also an explicit error.
     with pytest.raises((ValueError, TypeError)):
-        mod.config_from_dict(None)  # type: ignore[arg-type]
+        mod.config_from_dict(None)
     with pytest.raises((ValueError, TypeError)):
-        mod.config_from_dict([])  # type: ignore[arg-type]
+        mod.config_from_dict([])
 
 
 def test_load_local_config_missing_returns_default_without_backup(tmp_path: Path) -> None:
@@ -162,10 +162,6 @@ def test_load_local_config_rejects_unversioned_and_bad_version(tmp_path: Path) -
     assert list(tmp_path.glob("local3.json.corrupt*"))
 
 
-def test_control_surface_schema_is_v1() -> None:
-    from codey.ghost import control_surface as mod
-
-    assert mod.CONTROL_SURFACE_SCHEMA_VERSION == 1
 
 
 def test_bundled_profiles_are_exact_v1() -> None:
@@ -345,12 +341,13 @@ def test_mode_selection_trace_is_live_not_dead_code() -> None:
     from codey.runs.trace import RunTraceManifest, RunTraceRecorder
 
     manifest = RunTraceManifest(run_id="r1", session_id="s1")
-    rec = RunTraceRecorder.__new__(RunTraceRecorder)
+    class Recorder(RunTraceRecorder):
+        def flush(self) -> None:
+            pass
+
+    rec = Recorder.__new__(Recorder)
     rec.manifest = manifest
-    # Bypass __init__ side effects; record_mode_selection only touches manifest + flush.
-    # Monkey-patch flush to no-op for this unit lock.
-    rec.flush = lambda: None  # type: ignore[method-assign]
-    rec.path = None  # type: ignore[assignment]
+    rec.path = Path("unused-trace.json")
     rec.disabled = False
     rec.record_mode_selection(
         baseline_mode="project",

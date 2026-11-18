@@ -11,13 +11,13 @@ import pytest
 from codey.app.api import shell_approval_response
 from codey.app.context import AppContext
 from codey.app.task_services import build_task_deps
-from codey.ghost.payload_types import object_fields
 from codey.operations.task_entry import run_task_submission
 from codey.providers import api_generation
 from codey.providers.token_accounting import ContextBudget
 from codey.storage.local_store import session_key
 from codey.task.model import TaskSubmission
 from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object
+from codey.utils.object_fields import object_fields
 from tests.support.workspace_conversation import short_test_state_home
 
 
@@ -111,7 +111,6 @@ def test_shell_decision_resumes_chat_without_project_workflow(
         assert task.state["project"] == (str(root) if attached else None)
         assert task.state["intent"] == "chat"
         assert not _pending(state)
-        assert state.wait_for_ghost_sleep(timeout=30)
 
 
 @pytest.mark.parametrize("approved", [False, True])
@@ -174,7 +173,6 @@ def test_native_approval_resume_keeps_original_task_and_tool_history(
         assert workflow_status is not None
         assert workflow_status["continuation"] == "started"
         assert resumed_done.wait(10)
-        assert state.wait_for_ghost_sleep(timeout=30)
         assert len(payloads) == 2
         raw_messages = payloads[1]["messages"]
         assert isinstance(raw_messages, list)

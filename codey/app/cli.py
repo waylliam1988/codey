@@ -12,12 +12,50 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import Protocol, TextIO, runtime_checkable
 
 from codey.policies.capabilities import BROWSER_CAPABILITIES
 
 
-def _safe_print(value: Any, *, file: Any = None) -> None:
+class _Arguments(argparse.Namespace):
+    cmd: str
+    func: object
+    state_home: str
+    port: int
+    provider: str
+    prompt: list[str]
+    timeout: float
+    readonly: bool
+    auto: bool
+    intent: str
+    task: list[str]
+    project: str
+    json: bool
+    max_turns: int | None
+    session_id: str
+    continue_task: bool
+    review_source_run_id: str
+    review_policy: str | None
+    allow_web: bool | None
+    allow_browser: bool
+    allow_write: bool
+    output_format: str
+    output_schema: str
+    model: str
+    effort: str | None
+    ghost_cmd: str
+    kind: str
+    text: str
+    proposal_id: str
+    version: str
+
+
+@runtime_checkable
+class _Command(Protocol):
+    def __call__(self, args: _Arguments) -> int: ...
+
+
+def _safe_print(value: object, *, file: TextIO | None = None) -> None:
     if file is None:
         file = sys.stdout
     text = str(value)
@@ -26,7 +64,7 @@ def _safe_print(value: Any, *, file: Any = None) -> None:
     file.write(safe + "\n")
 
 
-def cmd_ui(args: argparse.Namespace) -> int:
+def cmd_ui(args: _Arguments) -> int:
     from codey.app.desktop import open_desktop
     from codey.storage.local_store import DEFAULT_STATE_HOME
 
@@ -34,7 +72,7 @@ def cmd_ui(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_chat(args: argparse.Namespace) -> int:
+def cmd_chat(args: _Arguments) -> int:
     from codey.providers import controls as provider_controls
     from codey.providers.registry import connect_provider
 
@@ -55,7 +93,7 @@ def cmd_chat(args: argparse.Namespace) -> int:
     return 0
 
 
-def _agent_intent(args: argparse.Namespace) -> str:
+def _agent_intent(args: _Arguments) -> str:
     if args.readonly:
         return "planning_readonly"
     if args.auto:
@@ -63,7 +101,7 @@ def _agent_intent(args: argparse.Namespace) -> str:
     return args.intent or "project"
 
 
-def cmd_agent(args: argparse.Namespace) -> int:
+def cmd_agent(args: _Arguments) -> int:
     task = " ".join(args.task)
     project = Path(args.project).resolve() if args.project else None
     json_mode = args.json is True
@@ -150,402 +188,45 @@ def _human_cli_line(row: dict[str, object]) -> str:
     return ""
 
 
-def _ghost_list(args: argparse.Namespace, store: Any) -> int:
-    candidates = [
-        candidate.to_payload()
-        for candidate in store.list_candidates(
-            status=getattr(args, "status", "") or None,
-            scope=getattr(args, "scope", "") or "",
-            project=getattr(args, "project", "") or "",
-            session_id=getattr(args, "session_id", "") or "",
-        )
-    ]
-    _print_json({
-        "schema_version": 1,
-        "ok": True,
-        "learning_enabled": store.learning_enabled(),
-        "candidates": candidates,
-        "warnings": list(store.last_warnings),
-    })
-    return 0
-
-
-def _ghost_export(surface: Any) -> int:
-    _print_json(surface.export_state())
-    return 0
-
-
-def _ghost_work_list(args: argparse.Namespace, work_queue_store: Any) -> int:
-    items = [
-        item.to_payload()
-        for item in work_queue_store.list_items(
-            status=getattr(args, "status", "") or "",
-            kind=getattr(args, "kind", "") or "",
-            scope=getattr(args, "scope", "") or "",
-            project=getattr(args, "project", "") or "",
-            session_id=getattr(args, "session_id", "") or "",
-        )
-    ]
-    _print_json({
-        "schema_version": 1,
-        "ok": True,
-        "items": items,
-        "warnings": list(work_queue_store.last_warnings),
-    })
-    return 0
-
-
-def _ghost_work_transition(action: str, args: argparse.Namespace, work_queue_store: Any) -> int:
-    try:
-        item = (
-            work_queue_store.queue_item(args.item_id)
-            if action == "work-queue"
-            else work_queue_store.reject_item(args.item_id)
-        )
-    except (OSError, TypeError, ValueError) as exc:
-        _print_error_json(exc)
-        return 1
-    if item is None:
-        _print_error_json("work item not found or invalid transition")
-        return 1
-    _print_json({
-        "schema_version": 1,
-        "ok": True,
-        "item": item.to_payload(),
-    })
-    return 0
-
-
-def _ghost_review(action: str, args: argparse.Namespace, store: Any, hebbian_store: Any) -> int:
-    try:
-        candidate = store.review_candidate(
-            args.candidate_id,
-            "accept" if action == "accept" else "reject",
-            reviewed_by="cli",
-        )
-    except ValueError as exc:
-        _print_error_json(exc)
-        return 2
-    except (OSError, TypeError) as exc:
-        _print_error_json(exc)
-        return 1
-    if candidate is None:
-        _print_error_json("candidate not found or storage failed")
-        return 1
-    payload: dict[str, object] = {
-        "schema_version": 1,
-        "ok": True,
-        "candidate": candidate.to_payload(),
-    }
-    if action == "accept":
-        related_candidates = [
-            row for row in store.list_candidates(status="accepted")
-            if row.id != candidate.id and row.run_id and row.run_id == candidate.run_id
-        ]
-        result = hebbian_store.reinforce_candidate(
-            candidate,
-            related_candidates=related_candidates,
-        )
-        payload["hebbian"] = {
-            "applied": result.applied,
-            "reason": result.reason,
-            "node": result.node.to_payload() if result.node is not None else None,
-            "edges": [edge.to_payload() for edge in result.edges],
-        }
-    else:
-        try:
-            payload["hebbian_removed"] = hebbian_store.remove_candidate(candidate)
-        except (OSError, TypeError, ValueError) as exc:
-            _print_error_json(exc)
-            return 1
-    _print_json(payload)
-    return 0
-
-
-def _ghost_state(hebbian_store: Any) -> int:
-    payload = hebbian_store.export_state()
-    payload["ok"] = True
-    _print_json(payload)
-    return 0
-
-
-def _ghost_directive(args: argparse.Namespace, hebbian_store: Any) -> int:
-    from codey.ghost.directive import build_ghost_directive
-
-    budget_arg = getattr(args, "budget", 900)
-    directive = build_ghost_directive(
-        hebbian_store,
-        project=getattr(args, "project", "") or "",
-        session_id=getattr(args, "session_id", "") or "",
-        budget=900 if budget_arg is None else budget_arg,
-    )
-    payload = directive.to_payload()
-    payload["schema_version"] = 1
-    payload["ok"] = True
-    _print_json(payload)
-    return 0
-
-
-def _ghost_continuity(args: argparse.Namespace, continuity_store: Any) -> int:
-    from codey.ghost.continuity import build_ghost_continuity
-
-    budget_arg = getattr(args, "budget", 900)
-    continuity = build_ghost_continuity(
-        continuity_store,
-        project=getattr(args, "project", "") or "",
-        session_id=getattr(args, "session_id", "") or "",
-        budget=900 if budget_arg is None else budget_arg,
-    )
-    payload = continuity.to_payload()
-    payload["schema_version"] = 1
-    payload["ok"] = True
-    _print_json(payload)
-    return 0
-
-
-def _ghost_rebuild_state(args: argparse.Namespace, hebbian_store: Any) -> int:
-    if not getattr(args, "yes", False):
-        _print_error_json("rebuild-state requires --yes")
-        return 2
-    ok = hebbian_store.rebuild_from_events()
-    _print_json({"schema_version": 1, "ok": ok})
-    return 0 if ok else 1
-
-
-def _ghost_rebuild_continuity(args: argparse.Namespace, continuity_store: Any) -> int:
-    if not getattr(args, "yes", False):
-        _print_error_json("rebuild-continuity requires --yes")
-        return 2
-    ok = continuity_store.rebuild_from_events()
-    _print_json({"schema_version": 1, "ok": ok})
-    return 0 if ok else 1
-
-
-def _ghost_rebuild_affinity(args: argparse.Namespace, affinity_store: Any) -> int:
-    if not getattr(args, "yes", False):
-        _print_error_json("rebuild-affinity requires --yes")
-        return 2
-    ok = affinity_store.rebuild_from_events()
-    _print_json({"schema_version": 1, "ok": ok})
-    return 0 if ok else 1
-
-
-def _ghost_reset(args: argparse.Namespace, surface: Any) -> int:
-    if not getattr(args, "yes", False):
-        _print_error_json("reset requires --yes")
-        return 2
-    status, payload = surface.dispatch_action({"action": "reset_all", "confirm": True})
-    _print_json(payload)
-    if status == 400:
-        return 2
-    return 0 if payload.get("ok") else 1
-
-
-def _ghost_delete_scope(args: argparse.Namespace, surface: Any) -> int:
-    if not getattr(args, "yes", False):
-        _print_error_json("delete-scope requires --yes")
-        return 2
-    status, payload = surface.dispatch_action({
-        "action": "delete_scope",
-        "confirm": True,
-        "scope": getattr(args, "scope_name", ""),
-        "project": getattr(args, "project", "") or "",
-        "session_id": getattr(args, "session_id", "") or "",
-    })
-    _print_json(payload)
-    if status == 400:
-        return 2
-    return 0 if payload.get("ok") else 1
-
-
-def _ghost_enable_disable(action: str, surface: Any, store: Any) -> int:
-    _status, payload = surface.dispatch_action(
-        {"action": "enable_updates" if action == "enable" else "disable_updates"}
-    )
-    _print_json({
-        "schema_version": 1,
-        "ok": payload.get("ok"),
-        "learning_enabled": payload.get("enabled", store.learning_enabled()),
-    })
-    return 0 if payload.get("ok") else 1
-
-
-def _ghost_control(args: argparse.Namespace, surface: Any) -> int:
-    control = str(getattr(args, "control", "") or "")
-    enabled = str(getattr(args, "enabled", "off") or "off") == "on"
-    scope = str(getattr(args, "scope", "user") or "user")
-    _status, payload = surface.dispatch_action(
-        {
-            "action": "set_control", "control": control, "enabled": enabled,
-            "scope": scope, "project": getattr(args, "project", ""),
-            "session_id": getattr(args, "session_id", ""),
-        }
-    )
-    _print_json(payload)
-    return 0 if payload.get("ok") else 1
-
-
-def cmd_ghost(args: argparse.Namespace) -> int:
-    from codey.ghost.control_surface import GhostControlSurface
+def cmd_ghost(args: _Arguments) -> int:
+    from codey.app.context import AppContext
+    from codey.app.memory_routes import memory_action
     from codey.storage.local_store import DEFAULT_STATE_HOME
 
-    state_home_arg = getattr(args, "state_home", "") or ""
-    state_home = Path(state_home_arg).expanduser() if state_home_arg else DEFAULT_STATE_HOME
-    surface = GhostControlSurface.from_state_home(state_home)
-    if not surface.available or surface.inbox is None:
-        _print_error_json("ghost store unavailable")
-        return 1
-    store = surface.inbox
-    hebbian_store = surface.hebbian
-    continuity_store = surface.continuity
-    affinity_store = surface.affinity
-    work_queue_store = surface.work_queue
-    action = str(getattr(args, "ghost_cmd", "") or "").strip()
-    if action == "list":
-        return _ghost_list(args, store)
-    if action == "export":
-        return _ghost_export(surface)
-    if action == "work-list":
-        return _ghost_work_list(args, work_queue_store)
-    if action in {"work-queue", "work-reject"}:
-        return _ghost_work_transition(action, args, work_queue_store)
-    if action in {"accept", "reject"}:
-        return _ghost_review(action, args, store, hebbian_store)
-    if action == "state":
-        return _ghost_state(hebbian_store)
-    if action == "directive":
-        return _ghost_directive(args, hebbian_store)
-    if action == "continuity":
-        return _ghost_continuity(args, continuity_store)
-    if action == "rebuild-state":
-        return _ghost_rebuild_state(args, hebbian_store)
-    if action == "rebuild-continuity":
-        return _ghost_rebuild_continuity(args, continuity_store)
-    if action == "rebuild-affinity":
-        return _ghost_rebuild_affinity(args, affinity_store)
-    if action == "reset":
-        return _ghost_reset(args, surface)
-    if action == "delete-scope":
-        return _ghost_delete_scope(args, surface)
-    if action in {"enable", "disable"}:
-        return _ghost_enable_disable(action, surface, store)
-    if action == "control":
-        return _ghost_control(args, surface)
-    _safe_print("ghost subcommand required", file=sys.stderr)
-    return 2
+    home: str = args.state_home
+    state = AppContext(Path(home).expanduser() if home else DEFAULT_STATE_HOME, start_scheduler=False)
+    try:
+        action: str = args.ghost_cmd
+        if action == "maintain":
+            return 0 if state.memory.maintain(as_of=state.memory.clock()) else 1
+        if action == "export":
+            _safe_print(json.dumps(state.memory.export_state(), ensure_ascii=False, indent=2))
+            return 0
+        body: dict[str, object] = {"action": action, "session_id": args.session_id, "project": args.project}
+        if action == "propose":
+            body.update(kind=args.kind, text=args.text)
+        elif action in {"accept", "reject"}:
+            body.update(proposal_id=args.proposal_id, version=args.version)
+        status, payload = memory_action(state, body)
+        _safe_print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if status == 200 else 1
+    finally:
+        state.close()
 
 
-def _print_error_json(error: object) -> None:
-    _print_json({
-        "schema_version": 1,
-        "ok": False,
-        "error": str(error or "error")[:240],
-    })
-
-
-def _print_json(payload: dict[str, object]) -> None:
-    _safe_print(
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True),
-        file=sys.stdout,
-    )
-
-
-def _add_ghost_subcommands(sub: Any) -> None:
-    ghost_common = argparse.ArgumentParser(add_help=False)
-    ghost_common.add_argument("--state-home", default="", help="local Codey state directory")
-
-    sp_ghost_list = sub.add_parser("list", parents=[ghost_common], help="list inbox candidates")
-    sp_ghost_list.add_argument("--status", default="", help="optional status filter")
-    sp_ghost_list.add_argument("--scope", choices=("user", "project", "session"), default="", help="optional scope filter")
-    sp_ghost_list.add_argument("--project", default="", help="project path for project scope filtering")
-    sp_ghost_list.add_argument("--session-id", default="", help="session id for session scope filtering")
-    sp_ghost_list.set_defaults(func=cmd_ghost)
-
-    sp_ghost_export = sub.add_parser("export", parents=[ghost_common], help="export all Ghost local state")
-    sp_ghost_export.set_defaults(func=cmd_ghost)
-
-    sp_ghost_work_list = sub.add_parser("work-list", parents=[ghost_common], help="list Ghost work items")
-    sp_ghost_work_list.add_argument("--status", default="", help="optional status filter")
-    sp_ghost_work_list.add_argument("--kind", default="", help="optional kind filter")
-    sp_ghost_work_list.add_argument("--scope", choices=("user", "project", "session"), default="", help="optional scope filter")
-    sp_ghost_work_list.add_argument("--project", default="", help="project path for project scope filtering")
-    sp_ghost_work_list.add_argument("--session-id", default="", help="session id for session scope filtering")
-    sp_ghost_work_list.set_defaults(func=cmd_ghost)
-
-    sp_ghost_work_queue = sub.add_parser("work-queue", parents=[ghost_common], help="queue a Ghost work item")
-    sp_ghost_work_queue.add_argument("item_id")
-    sp_ghost_work_queue.set_defaults(func=cmd_ghost)
-
-    sp_ghost_work_reject = sub.add_parser("work-reject", parents=[ghost_common], help="reject a Ghost work item")
-    sp_ghost_work_reject.add_argument("item_id")
-    sp_ghost_work_reject.set_defaults(func=cmd_ghost)
-
-    sp_ghost_accept = sub.add_parser("accept", parents=[ghost_common], help="accept an inbox candidate")
-    sp_ghost_accept.add_argument("candidate_id")
-    sp_ghost_accept.set_defaults(func=cmd_ghost)
-
-    sp_ghost_reject = sub.add_parser("reject", parents=[ghost_common], help="reject an inbox candidate")
-    sp_ghost_reject.add_argument("candidate_id")
-    sp_ghost_reject.set_defaults(func=cmd_ghost)
-
-    sp_ghost_state = sub.add_parser("state", parents=[ghost_common], help="export Ghost Hebbian state")
-    sp_ghost_state.set_defaults(func=cmd_ghost)
-
-    sp_ghost_directive = sub.add_parser("directive", parents=[ghost_common], help="preview Ghost Directive prompt context")
-    sp_ghost_directive.add_argument("--project", default="", help="project path for project-scoped memory")
-    sp_ghost_directive.add_argument("--session-id", default="", help="session id for session-scoped memory")
-    sp_ghost_directive.add_argument("--budget", type=int, default=900, help="maximum directive characters")
-    sp_ghost_directive.set_defaults(func=cmd_ghost)
-
-    sp_ghost_continuity = sub.add_parser("continuity", parents=[ghost_common], help="preview Ghost continuity prompt context")
-    sp_ghost_continuity.add_argument("--project", default="", help="project path for project-scoped continuity")
-    sp_ghost_continuity.add_argument("--session-id", default="", help="session id for session-scoped continuity")
-    sp_ghost_continuity.add_argument("--budget", type=int, default=900, help="maximum continuity characters")
-    sp_ghost_continuity.set_defaults(func=cmd_ghost)
-
-    sp_ghost_rebuild = sub.add_parser("rebuild-state", parents=[ghost_common], help="rebuild Ghost Hebbian state from events")
-    sp_ghost_rebuild.add_argument("--yes", action="store_true")
-    sp_ghost_rebuild.set_defaults(func=cmd_ghost)
-
-    sp_ghost_rebuild_continuity = sub.add_parser(
-        "rebuild-continuity",
-        parents=[ghost_common],
-        help="rebuild Ghost continuity projection from events",
-    )
-    sp_ghost_rebuild_continuity.add_argument("--yes", action="store_true")
-    sp_ghost_rebuild_continuity.set_defaults(func=cmd_ghost)
-
-    sp_ghost_rebuild_affinity = sub.add_parser(
-        "rebuild-affinity",
-        parents=[ghost_common],
-        help="rebuild Ghost Affinity projection from events",
-    )
-    sp_ghost_rebuild_affinity.add_argument("--yes", action="store_true")
-    sp_ghost_rebuild_affinity.set_defaults(func=cmd_ghost)
-
-    sp_ghost_reset = sub.add_parser("reset", parents=[ghost_common], help="delete all Ghost local state")
-    sp_ghost_reset.add_argument("--yes", action="store_true")
-    sp_ghost_reset.set_defaults(func=cmd_ghost)
-
-    sp_ghost_delete = sub.add_parser("delete-scope", parents=[ghost_common], help="delete one Ghost memory scope")
-    sp_ghost_delete.add_argument("scope_name", choices=("user", "project", "session"))
-    sp_ghost_delete.add_argument("--project", default="", help="required for project scope")
-    sp_ghost_delete.add_argument("--session-id", default="", help="required for session scope")
-    sp_ghost_delete.add_argument("--yes", action="store_true")
-    sp_ghost_delete.set_defaults(func=cmd_ghost)
-
-    sp_ghost_enable = sub.add_parser("enable", parents=[ghost_common], help="enable future Ghost learning ingest")
-    sp_ghost_enable.set_defaults(func=cmd_ghost)
-
-    sp_ghost_disable = sub.add_parser("disable", parents=[ghost_common], help="disable future Ghost learning ingest")
-    sp_ghost_disable.set_defaults(func=cmd_ghost)
-    sp_ghost_control = sub.add_parser("control", parents=[ghost_common], help="set one independent Ghost control")
-    sp_ghost_control.add_argument("control", choices=("accept_events", "retrieve_projections", "run_maintenance", "admit_hints"))
-    sp_ghost_control.add_argument("enabled", choices=("on", "off"))
-    sp_ghost_control.add_argument("--scope", choices=("user", "project", "session"), default="user")
-    sp_ghost_control.add_argument("--project", default="")
-    sp_ghost_control.add_argument("--session-id", default="")
-    sp_ghost_control.set_defaults(func=cmd_ghost)
+def _add_ghost_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    for action in ("export", "propose", "accept", "reject", "delete_scope", "maintain"):
+        command = sub.add_parser(action)
+        command.add_argument("--state-home", default="")
+        command.add_argument("--project", default="")
+        command.add_argument("--session-id", default="")
+        if action == "propose":
+            command.add_argument("kind", choices=("preference", "goal", "hypothesis"))
+            command.add_argument("text")
+        if action in {"accept", "reject"}:
+            command.add_argument("proposal_id")
+            command.add_argument("version")
+        command.set_defaults(func=cmd_ghost)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -610,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
 
     register(sub)
 
-    args = ap.parse_args(argv)
+    args = ap.parse_args(argv, namespace=_Arguments())
     if args.cmd == "agent":
         from codey.providers.catalog import API_CONNECTIONS
 
@@ -626,7 +307,10 @@ def main(argv: list[str] | None = None) -> int:
                 sp_agent.error("--review-source-run-id requires --session-id")
             if intent not in {"project", "review"}:
                 sp_agent.error("review source requires project or review intent")
-    return cast(int, args.func(args))
+    handler: object = args.func
+    if not isinstance(handler, _Command):
+        raise TypeError("invalid command handler")
+    return handler(args)
 
 
 if __name__ == "__main__":

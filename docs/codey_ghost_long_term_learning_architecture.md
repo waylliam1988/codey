@@ -1,5 +1,7 @@
 # Codey / Ghost 长期学习架构：从经验到可塑性认知网络
 
+> 2026-11-19：冷启动重写后的现行实现见 [Memory / Ghost 所有权边界](memory-boundary.zh-CN.md)。本页此前实现说明与实验结论保留为历史记录，不是当前生产接口。
+
 > 文档类型：长期研究愿景，不是当前已实现的功能清单或发布验收标准。
 > 与[Ghost 方向](ghost_future_direction.zh-CN.md)一起阅读；当前能力见
 > [能力说明](codey_capabilities.zh-CN.md)。

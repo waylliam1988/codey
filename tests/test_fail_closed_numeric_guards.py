@@ -29,7 +29,7 @@ def test_search_page_footer_malformed_does_not_crash() -> None:
     from codey.toolchain.search_page import page_footer
 
     for bad in ("abc", float("inf"), "2.0", None):
-        out = page_footer(query="q", path="p", offset=bad, limit=10, shown=1, has_more=False)  # type: ignore[arg-type]
+        out = page_footer(query="q", path="p", offset=bad, limit=10, shown=1, has_more=False)
         assert "results 1-1" in out, f"bad={bad!r} got {out!r}"
 
 
@@ -56,20 +56,8 @@ def test_guards_bounded_int_overflow_does_not_crash() -> None:
     assert bounded_int("abc", 1, 5) == 1
 
 
-def test_work_queue_int_overflow_does_not_crash() -> None:
-    from codey.ghost.work_queue import _int as _wq_int
-
-    assert _wq_int(float("inf")) == 0
-    assert _wq_int("abc") == 0
-    assert _wq_int(3) == 3
 
 
-def test_inbox_int_or_default_overflow_does_not_crash() -> None:
-    from codey.ghost.inbox import _int_or_default
-
-    assert _int_or_default(float("inf"), 1) == 1
-    assert _int_or_default("abc", 7) == 7
-    assert _int_or_default(3, 1) == 3
 
 
 def test_trace_int_overflow_does_not_crash() -> None:
@@ -146,7 +134,7 @@ def test_api_max_turns_overflow_is_400_not_500() -> None:
             "intent": "auto",
             "max_turns": float("inf"),
         },
-        _fake,  # type: ignore[arg-type]
+        _fake,
     )
     assert code == 400
 
@@ -168,8 +156,8 @@ def test_event_bus_replay_malformed_does_not_crash() -> None:
     from codey.app.event_bus import EventBus
 
     bus = EventBus(replay_limit=10)
-    assert bus.replay_events_after("abc") == []  # type: ignore[arg-type]
-    assert bus.replay_events_after(float("inf")) == []  # type: ignore[arg-type]
+    assert bus.replay_events_after("abc") == []
+    assert bus.replay_events_after(float("inf")) == []
 
 
 def test_local_config_window_malformed_rejects_cleanly() -> None:
@@ -177,7 +165,7 @@ def test_local_config_window_malformed_rejects_cleanly() -> None:
 
     for bad in ("8192x", "12.0", float("inf"), True, None):
         try:
-            out = context_budget_for_window(bad)  # type: ignore[arg-type]
+            out = context_budget_for_window(bad)
         except (ValueError, TypeError):
             continue
         raise AssertionError(f"bad={bad!r} should raise, got {out!r}")
@@ -205,22 +193,6 @@ def test_controls_host_port_and_direction() -> None:
     assert _host_matches("chat.deepseek.com", "chat.deepseek.com") is True
 
 
-def test_observation_index_skips_bad_rows() -> None:
-    from codey.ghost.observation_index import _fit_blocks, retrieve_relevant_observations
-
-    good = {
-        "user_text": "hi",
-        "assistant_text": "yo",
-        "ts": "2026-01-01T00:00:00Z",
-        "run_id": "r1",
-        "mode": "chat",
-    }
-    rows = [good, None, 123, "oops"]  # type: ignore[list-item]
-    out = retrieve_relevant_observations(rows, "hi", budget_chars=1000, max_items=5)  # type: ignore[arg-type]
-    assert isinstance(out, tuple)
-    assert all(isinstance(r, dict) for r in out)
-    out2 = _fit_blocks([good], 1000, 5)
-    assert len(out2) == 1
 
 
 def test_ascii_digit_gate_rejects_non_ascii() -> None:

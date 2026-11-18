@@ -11,8 +11,11 @@ import pytest
 
 from codey.operations.context import RunWork
 from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
+from codey.policies.capabilities import BROWSER_CAPABILITIES
+from codey.research.ledger import ResearchLedger
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.storage.managed_outputs import ManagedOutputStore
+from tests.support.task_entry_helpers import entry_frame
 
 
 def _cutover_parent_policy():
@@ -103,10 +106,12 @@ def test_task_entry_research_builds_default_search_provider(tmp_path) -> None:
     from codey.operations.task_execution import build_research_tools
 
     deps = SimpleNamespace(
-        knowledge_store=SimpleNamespace(root=tmp_path),
+        knowledge_store=None,
         search_factory=None,
     )
-    search = object()
+    from codey.research.web_sources import WebSourceProvider
+
+    search = WebSourceProvider()
     with patch("codey.research.search_factory.default_research_search_provider", return_value=search):
         tools = build_research_tools(deps, session_id="s", project="")
     assert tools is not None
@@ -122,13 +127,8 @@ def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
     request = TaskSubmission("s", str(tmp_path), "inspect", 1, False, "deepseek",
                              intent="project", run_id="r")
     provider = SimpleNamespace(send=lambda *_args, **_kwargs: "")
-    frame = SimpleNamespace(
-        request=request, task_kind="project", run_id="r", provider=provider,
-        provider_id="deepseek", project_text=str(tmp_path), handoff="",
-        recovered_tool_outcomes=(),
-        settled_tool_outcomes=(), recovered_tool_result_batch_id="", entry_initial_turn=None,
-        window_action=None, entry_policy=None, entry_session=None,
-    )
+    frame = entry_frame(request)
+    frame.provider = provider
     events: list[object] = []
     hooks = SimpleNamespace(on_event=events.append, on_shell_request=events.append)
     state = AppContext(tmp_path / ".codey")
@@ -138,7 +138,7 @@ def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
     managed = state.managed_outputs
     deps = SimpleNamespace(
         knowledge_store=None, search_factory=None, runtime_mutations=state.runtime_mutations,
-        managed_outputs=managed, state=state,
+        managed_outputs=managed, workspace_revisions=state.workspace_revisions, state=state,
     )
     with (patch("codey.operations.task_loop.run_task_kernel",
                 return_value=KernelResult(True, "done", 1, "done")) as kernel,
@@ -164,17 +164,12 @@ def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
     project = tmp_path / "new-project"
     request = TaskSubmission("s", str(project), "create app", 1, False, "local",
                              intent="project", run_id="r")
-    frame = SimpleNamespace(
-        request=request, task_kind="project", run_id="r",
-        provider=SimpleNamespace(send=lambda *_args, **_kwargs: ""),
-        provider_id="local", project_text=str(project), handoff="",
-        recovered_tool_outcomes=(),
-        settled_tool_outcomes=(), recovered_tool_result_batch_id="", entry_initial_turn=None,
-        window_action=None, entry_policy=None, entry_session=None,
-    )
+    frame = entry_frame(request)
+    frame.provider = SimpleNamespace(send=lambda *_args, **_kwargs: "")
     hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
     state = AppContext(tmp_path / "state")
-    deps = SimpleNamespace(knowledge_store=None, runtime_mutations=None, state=state)
+    deps = SimpleNamespace(knowledge_store=None, runtime_mutations=None, state=state,
+                           managed_outputs=state.managed_outputs, workspace_revisions=state.workspace_revisions)
     from tests.support.workspace_conversation import admit_entry_frame
 
     admit_entry_frame(frame, state)
@@ -225,7 +220,6 @@ def _prepared_research_prompt(*, native=False):
     from codey.policies.task_policy import TaskPolicy
     from codey.research.answer_context import answer_context
     from codey.research.answer_contract import answer_scope
-    from codey.research.ledger import ResearchLedger
 
     session = TaskSession(
         policy=TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}),
@@ -294,7 +288,7 @@ def test_web_research_shows_result_and_source_ids_to_model(tmp_path) -> None:
 
     store = KnowledgeStore(tmp_path / "knowledge")
     tools = ResearchTools(search=Search(), store=store, changes=KnowledgeChanges(root=store.root))
-    policy = build_task_policy(TaskSubmission("s", None, "claim", 3, False, "deepseek"),
+    policy = build_task_policy(TaskSubmission("s", None, "claim", 3, False, "deepseek", denied_capabilities=BROWSER_CAPABILITIES),
                                task_kind="research", strict_research=True)
     session = TaskSession(policy=policy, task_kind="research", max_turns=3, task_text="claim")
     run_task_kernel(
@@ -343,7 +337,6 @@ def test_open_hit_uses_source_locator_in_shared_research_kernel() -> None:
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
-    from codey.research.ledger import ResearchLedger
     from codey.research.ledger_receipts import source_observation
     from codey.research.passages import describe_window
     from codey.research.tools import ResearchToolOutput
@@ -355,11 +348,11 @@ def test_open_hit_uses_source_locator_in_shared_research_kernel() -> None:
     session.record_open(url)
     opened: list[tuple[str, int]] = []
 
-    class Tools:
+    from codey.research.tools import ResearchTools
+
+    class Tools(ResearchTools):
         def __init__(self) -> None:
-            self.ledger = ResearchLedger()
-            self.sources_read: set[str] = set()
-            self.search_result_urls: set[str] = set()
+            super().__init__(search=SimpleNamespace(), store=None, changes=None)
 
         def source_search(self, target, _query, _limit):
             assert target == url
@@ -423,6 +416,7 @@ def test_default_project_writer_uses_shared_turn_kernel(tmp_path) -> None:
 
 def test_project_writer_can_search_and_read_in_one_model_loop(tmp_path) -> None:
     from codey.agents.request import AgentRequest
+    from codey.policies.task_policy import TaskPolicy
     from codey.research.tools import ResearchTools
     from tests.support.kernel_runtime import run_agent as run
 
@@ -452,7 +446,7 @@ def test_project_writer_can_search_and_read_in_one_model_loop(tmp_path) -> None:
 
     result = run(AgentRequest(
         provider=WebProvider(), project=tmp_path, task="查官方文档并读 file.txt",
-        max_turns=4, requested_capabilities=("web.read",),
+        max_turns=4, task_policy=TaskPolicy(grants=frozenset({"control", "web.read", "project.read"})),
         research_tools=ResearchTools(search=Search(), store=None, changes=None),
         on_event=events.append,
     ))
@@ -667,36 +661,6 @@ def test_noop_edit_does_not_create_false_freshness(tmp_path) -> None:
     assert not session.edited_files
 
 
-def test_default_research_iteration_uses_shared_turn_kernel() -> None:
-    from codey.operations.task_loop import KernelResult
-    from codey.research.ledger import ResearchLedger
-    from tests.support.kernel_runtime import run_research_iteration
-
-    tools = SimpleNamespace(
-        ledger=ResearchLedger(), created_ids=[], updated_ids=[],
-        links_created=0, sources_read=set(), search_result_urls=set(),
-    )
-    deps = SimpleNamespace(
-        state=SimpleNamespace(
-            ghost_inbox=SimpleNamespace(
-                control_enabled=lambda _name, **_kwargs: True,
-            ),
-        ),
-        knowledge_store=object(), managed_outputs=None,
-    )
-    provider = SimpleNamespace(new_chat=lambda: None)
-    with patch("codey.operations.task_loop.run_task_kernel", return_value=KernelResult(
-        False, "unfinished", 1, "max_turns",
-    )) as kernel:
-        iteration = run_research_iteration(
-            deps, provider=provider, session_id="s", project="", task="research question",
-            max_turns=1, on_event=lambda _event: None, stop_flag=None,
-            provider_id="deepseek", run_id="r", chat_handoff="",
-            trace_recorder=None, search=object(), tools=tools,
-        )
-    kernel.assert_called_once()
-    assert iteration.result.question == "research question"
-    assert iteration.tools is tools
 
 
 def test_research_done_builds_proof_record_from_current_ledger(tmp_path) -> None:
@@ -705,7 +669,6 @@ def test_research_done_builds_proof_record_from_current_ledger(tmp_path) -> None
     from codey.operations.completion_gate import evaluate
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, TaskPolicy
-    from codey.research.ledger import ResearchLedger
 
     ledger = ResearchLedger()
     session = TaskSession(
@@ -726,60 +689,6 @@ def test_research_done_builds_proof_record_from_current_ledger(tmp_path) -> None
     assert "whole research answer has not been submitted" in verdict.followup
 
 
-@pytest.mark.usefixtures("public_source_dns")
-def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path) -> None:
-    from codey.knowledge.store import KnowledgeStore
-    from tests.support.kernel_runtime import run_research_iteration
-
-    url = "https://example.com/pipeline"
-    markdown = "Pipeline source text says the fact. [e1]"
-    replies = iter(json.dumps(item, ensure_ascii=False) for item in (
-        {"tool": "web_search", "args": {"query": "pipeline question"}},
-        {"tool": "open_result", "args": {"result_id": "r1"}},
-        {"tool": "submit_research_answer", "args": {"markdown": markdown, "state": "answered"}},
-    ))
-
-    class Search:
-        def search(self, *_args, **_kwargs):
-            return [{"title": "Pipeline source", "url": url, "snippet": "Pipeline source text."}]
-
-        def fetch(self, target):
-            return {"status": "ok", "url": target, "title": "Pipeline source",
-                    "text": "Pipeline source text says the fact.", "truncated": False}
-
-    class Provider:
-        name = "deepseek"
-
-        def new_chat(self, timeout=None):
-            return None
-
-        def send(self, _prompt, timeout=None):
-            return next(replies)
-
-    store = KnowledgeStore(tmp_path / "knowledge")
-    iteration = run_research_iteration(
-        SimpleNamespace(
-            state=SimpleNamespace(
-                ghost_inbox=SimpleNamespace(
-                    control_enabled=lambda _name, **_kwargs: True,
-                ),
-            ),
-            knowledge_store=store,
-        ), provider=Provider(), session_id="s",
-        project="", task="pipeline question", max_turns=3,
-        on_event=lambda _event: None, stop_flag=None, provider_id="deepseek",
-        run_id="run-1", chat_handoff="", trace_recorder=None, search=Search(),
-    )
-    assert iteration.result.stop_reason == "done", iteration.result.summary
-    assert iteration.result.research_record is not None
-    assert iteration.tools.ledger.read_passages
-    report = iteration.result.accepted_report
-    assert report.markdown == markdown
-    assert report.evidence_bindings
-    for row in report.evidence_bindings:
-        evidence = store.repository.read(row["evidence_id"], row["evidence_revision"])
-        assert evidence.value.content == "Pipeline source text says the fact."
-    store.close()
 
 
 def test_project_shell_requests_approval_in_shared_kernel(tmp_path) -> None:
@@ -1111,64 +1020,6 @@ def test_writer_recovery_delivers_previous_tool_result_without_rerunning(tmp_pat
         assert "ORIGINAL_RESULT" in runtime.events[-1][1]
 
 
-def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) -> None:
-    from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.knowledge.store import KnowledgeStore
-    from codey.runtime.effects.effect_records import RuntimeEffectStore
-    from codey.runtime.write.mutation_line import RuntimeMutationLine
-    from tests.support.kernel_runtime import run_research_iteration
-
-    durable = DurableSession(SQLiteDurableStore(tmp_path / "state" / "durable.sqlite3"))
-    durable.admit_input(conversation_id="s", request_id="request-r", task_id="r", text="q",
-                        provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
-    durable.start_task("r", state={"task_kind": "research"})
-    durable.advance_task(task_id="r", phase="running", state={"task_kind": "research"})
-    line = RuntimeMutationLine(durable=durable)
-    line.accept_operation(session_id="s", run_id="r", project="", provider_id="deepseek",
-                          turn_budget=2, max_repair_rounds=0, task_kind="research")
-
-    class Search:
-        def search(self, query, limit=8):
-            return [{"title": "Result", "url": "https://example.com", "snippet": query}]
-
-    replies = iter([
-        '{"tool":"web_search","args":{"query":"q"}}',
-        '{"tool":"web_search","args":{"query":"q details"}}',
-    ])
-
-    class Provider:
-        name = "deepseek"
-
-        def new_chat(self):
-            return None
-
-        def send(self, _prompt, timeout=None):
-            return next(replies)
-
-    store = KnowledgeStore(tmp_path / "knowledge")
-    iteration = run_research_iteration(
-        SimpleNamespace(
-            state=SimpleNamespace(
-                durable=durable,
-                ghost_inbox=SimpleNamespace(
-                    control_enabled=lambda _name, **_kwargs: True,
-                ),
-            ),
-            knowledge_store=store, runtime_mutations=line, managed_outputs=ManagedOutputStore(tmp_path / "outputs"),
-        ),
-        provider=Provider(), session_id="s", project="", task="q", max_turns=2,
-        on_event=lambda _event: None, stop_flag=None, provider_id="deepseek",
-        run_id="r", chat_handoff="", trace_recorder=None, search=Search(),
-    )
-    effects = RuntimeEffectStore(durable=durable).load_effects("s", "r")
-    calls = [row for row in effects if row.intent.effect_category == "tool_call"]
-    assert len(calls) == 2, iteration.result.summary
-    assert all(row.intent.tool_name == "web_search" for row in calls)
-    assert any(row.intent.effect_category == "provider_send" for row in effects)
-    assert iteration.result.synthesis_id == ""
-    assert not iteration.result.notes_created
-    store.close()
-    durable.close()
 
 
 def test_unified_edit_keeps_existing_file_guard_and_read_before_edit(tmp_path) -> None:
@@ -1510,3 +1361,156 @@ def test_research_project_verification_runs_without_write_grant(tmp_path) -> Non
     assert not result.model_text.startswith("ERROR:")
     assert calls == ["python -m pytest"]
     assert not policy.allows("project.write")
+
+
+def test_default_research_iteration_uses_shared_turn_kernel() -> None:
+    from codey.operations.task_loop import KernelResult
+    from codey.policies.task_policy import build_task_policy
+    from codey.research.tools import ResearchTools
+    from codey.task.model import TaskSubmission
+    from tests.support.kernel_runtime import run_research_iteration
+
+    tools = ResearchTools(search=SimpleNamespace(), store=None, changes=None)
+    deps = SimpleNamespace(
+        state=SimpleNamespace(
+            memory=None,
+        ),
+        knowledge_store=None, managed_outputs=None,
+    )
+    provider = SimpleNamespace(new_chat=lambda: None)
+    with patch("codey.operations.task_loop.run_task_kernel", return_value=KernelResult(
+        False, "unfinished", 1, "max_turns",
+    )) as kernel:
+        iteration = run_research_iteration(
+            deps, provider=provider, session_id="s", project="", task="research question",
+            max_turns=1, on_event=lambda _event: None, stop_flag=None,
+            provider_id="deepseek", run_id="r", chat_handoff="",
+            trace_recorder=None, task_policy=build_task_policy(
+            TaskSubmission("s", None, "research", 3, False, "deepseek", denied_capabilities=BROWSER_CAPABILITIES),
+            task_kind="research", strict_research=True), search=object(), tools=tools,
+        )
+    kernel.assert_called_once()
+    assert iteration.result.question == "research question"
+    assert iteration.tools is tools
+
+
+def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path) -> None:
+    from codey.knowledge.store import KnowledgeStore
+    from codey.policies.task_policy import build_task_policy
+    from codey.task.model import TaskSubmission
+    from tests.support.kernel_runtime import run_research_iteration
+
+    url = "https://example.com/pipeline"
+    markdown = "Pipeline source text says the fact. [e1]"
+    replies = iter(json.dumps(item, ensure_ascii=False) for item in (
+        {"tool": "web_search", "args": {"query": "pipeline question"}},
+        {"tool": "open_result", "args": {"result_id": "r1"}},
+        {"tool": "submit_research_answer", "args": {"markdown": markdown, "state": "answered"}},
+    ))
+
+    class Search:
+        def search(self, *_args, **_kwargs):
+            return [{"title": "Pipeline source", "url": url, "snippet": "Pipeline source text."}]
+
+        def fetch(self, target):
+            return {"status": "ok", "url": target, "title": "Pipeline source",
+                    "text": "Pipeline source text says the fact.", "truncated": False}
+
+    class Provider:
+        name = "deepseek"
+
+        def new_chat(self, timeout=None):
+            return None
+
+        def send(self, _prompt, timeout=None):
+            return next(replies)
+
+    store = KnowledgeStore(tmp_path / "knowledge")
+    iteration = run_research_iteration(
+        SimpleNamespace(
+            state=SimpleNamespace(
+                memory=None,
+            ),
+            knowledge_store=store,
+        ), provider=Provider(), session_id="s",
+        project="", task="pipeline question", max_turns=3,
+        on_event=lambda _event: None, stop_flag=None, provider_id="deepseek",
+        run_id="run-1", chat_handoff="", trace_recorder=None, task_policy=build_task_policy(
+            TaskSubmission("s", None, "research", 3, False, "deepseek", denied_capabilities=BROWSER_CAPABILITIES),
+            task_kind="research", strict_research=True), search=Search(),
+    )
+    assert iteration.result.stop_reason == "done", iteration.result.summary
+    assert iteration.result.research_record is not None
+    assert iteration.tools.ledger.read_passages
+    report = iteration.result.accepted_report
+    assert report.markdown == markdown
+    assert report.evidence_bindings
+    for row in report.evidence_bindings:
+        evidence = store.repository.read(row["evidence_id"], row["evidence_revision"])
+        assert evidence.value.content == "Pipeline source text says the fact."
+    store.close()
+
+
+def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) -> None:
+    from codey.durable import DurableSession, SQLiteDurableStore
+    from codey.knowledge.store import KnowledgeStore
+    from codey.policies.task_policy import build_task_policy
+    from codey.runtime.effects.effect_records import RuntimeEffectStore
+    from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from codey.task.model import TaskSubmission
+    from tests.support.kernel_runtime import run_research_iteration
+
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "state" / "durable.sqlite3"))
+    durable.admit_input(conversation_id="s", request_id="request-r", task_id="r", text="q",
+                        provider_snapshot={"provider_id": "deepseek", "model_id": "test"})
+    durable.start_task("r", state={"task_kind": "research"})
+    durable.advance_task(task_id="r", phase="running", state={"task_kind": "research"})
+    line = RuntimeMutationLine(durable=durable)
+    line.accept_operation(session_id="s", run_id="r", project="", provider_id="deepseek",
+                          turn_budget=2, max_repair_rounds=0, task_kind="research")
+
+    class Search:
+        def search(self, query, limit=8):
+            return [{"title": "Result", "url": "https://example.com", "snippet": query}]
+
+        def fetch(self, url: str) -> dict[str, object]:
+            raise AssertionError("this test only searches")
+
+    replies = iter([
+        '{"tool":"web_search","args":{"query":"q"}}',
+        '{"tool":"web_search","args":{"query":"q details"}}',
+    ])
+
+    class Provider:
+        name = "deepseek"
+
+        def new_chat(self):
+            return None
+
+        def send(self, _prompt, timeout=None):
+            return next(replies)
+
+    store = KnowledgeStore(tmp_path / "knowledge")
+    iteration = run_research_iteration(
+        SimpleNamespace(
+            state=SimpleNamespace(
+                durable=durable,
+                memory=None,
+            ),
+            knowledge_store=store, runtime_mutations=line, managed_outputs=ManagedOutputStore(tmp_path / "outputs"),
+        ),
+        provider=Provider(), session_id="s", project="", task="q", max_turns=2,
+        on_event=lambda _event: None, stop_flag=None, provider_id="deepseek",
+        run_id="r", chat_handoff="", trace_recorder=None, task_policy=build_task_policy(
+            TaskSubmission("s", None, "research", 3, False, "deepseek", denied_capabilities=BROWSER_CAPABILITIES),
+            task_kind="research", strict_research=True), search=Search(),
+    )
+    effects = RuntimeEffectStore(durable=durable).load_effects("s", "r")
+    calls = [row for row in effects if row.intent.effect_category == "tool_call"]
+    assert len(calls) == 2, iteration.result.summary
+    assert all(row.intent.tool_name == "web_search" for row in calls)
+    assert any(row.intent.effect_category == "provider_send" for row in effects)
+    assert iteration.result.synthesis_id == ""
+    assert not iteration.result.notes_created
+    store.close()
+    durable.close()
