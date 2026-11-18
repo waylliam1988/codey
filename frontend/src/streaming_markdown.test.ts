@@ -1,6 +1,18 @@
 import { expect, it, vi } from 'vitest';
 import './render';
 
+it('renders Chinese emphasis when the closing stars and following text arrive', () => {
+  const host = document.createElement('div');
+  const prefix = '作者将网络作为**层（Layers）';
+  window.Render.updateMarkdown(host, prefix);
+  expect(host.querySelector('strong')).toBeNull();
+  window.Render.updateMarkdown(host, prefix + '**');
+  expect(host.querySelector('strong')?.textContent).toBe('层（Layers）');
+  window.Render.updateMarkdown(host, prefix + '**集成。');
+  expect(host.querySelector('strong')?.textContent).toBe('层（Layers）');
+  expect(host.textContent).toBe('作者将网络作为层（Layers）集成。');
+});
+
 it('keeps completed paragraphs and code blocks mounted while the tail changes', () => {
   const host = document.createElement('div');
   window.Render.updateMarkdown(host, '第一段。\n\n```py\nprint(1)\n```\n\n尾');

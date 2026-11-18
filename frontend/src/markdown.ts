@@ -7,6 +7,28 @@ import { parseDocumentLink } from './document_links';
 const parser = new MarkdownIt({ html: false, linkify: false, breaks: false }).use(taskLists);
 const escape = parser.utils.escapeHtml;
 
+// CommonMark rejects a closing star after punctuation when CJK prose follows
+// (e.g. **层（Layers）**集成). Treat the CJK side as a word boundary, retaining
+// the parser's delimiter pairing, nesting, escaping and code handling.
+const cjk = '[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}\\p{Script=Hangul}]';
+const cjkBefore = new RegExp(`${cjk}$`, 'u');
+const cjkAfter = new RegExp(`^${cjk}`, 'u');
+parser.inline.State = class extends parser.inline.State {
+  scanDelims(start: number, canSplitWord: boolean) {
+    const scanned = super.scanDelims(start, canSplitWord);
+    if (this.src[start] !== '*') return scanned;
+    const before = this.src.slice(Math.max(0, start - 2), start);
+    const end = start + scanned.length;
+    const after = this.src.slice(end, end + 2);
+    if (cjkBefore.test(before) && /^[\p{P}\p{S}]/u.test(after)) {
+      scanned.can_open = true;
+    } else if (/[\p{P}\p{S}]$/u.test(before) && cjkAfter.test(after)) {
+      scanned.can_close = true;
+    }
+    return scanned;
+  }
+};
+
 function mathMarkup(source: string, display: boolean): string {
   const value = source.trim();
   try {

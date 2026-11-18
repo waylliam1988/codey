@@ -8,6 +8,53 @@ function render(text: string): HTMLElement {
 }
 
 describe('conversation content contract', () => {
+  it('renders the Hopfield answer emphasis next to Chinese prose', () => {
+    const host = render(
+      '文章提出了一种具有**连续状态（Continuous States）**的现代霍普菲尔德网络。\n\n' +
+        '作者将这种现代霍普菲尔德网络作为**层（Layers）**集成到深度学习架构中。\n\n' +
+        '提供**池化（Pooling）、记忆（Memory）、关联（Association）和注意力（Attention）**机制。\n\n' +
+        '- **高效存储**：能够以指数级存储模式。',
+    );
+    expect([...host.querySelectorAll('strong')].map((node) => node.textContent)).toEqual([
+      '连续状态（Continuous States）',
+      '层（Layers）',
+      '池化（Pooling）、记忆（Memory）、关联（Association）和注意力（Attention）',
+      '高效存储',
+    ]);
+    expect(host.textContent).not.toContain('**');
+  });
+
+  it('handles punctuation at either emphasis boundary and preserves nested inline content', () => {
+    const host = render(
+      '这是**（重点）**内容，与**「说明」**相连。\n\n' +
+        '使用**层（[说明](https://example.test)和`x ** y`）**集成。\n\n' +
+        '这是***（重点）***内容。',
+    );
+    expect([...host.querySelectorAll('strong')].map((node) => node.textContent)).toEqual([
+      '（重点）',
+      '「说明」',
+      '层（说明和x ** y）',
+      '（重点）',
+    ]);
+    expect(host.querySelector('strong a')?.textContent).toBe('说明');
+    expect(host.querySelector('strong code')?.textContent).toBe('x ** y');
+    expect(host.querySelector('em strong')?.textContent).toBe('（重点）');
+  });
+
+  it('keeps escaped stars, code, whitespace and unmatched delimiters literal', () => {
+    const host = render(
+      String.raw`作为\*\*层（Layers）\*\*集成。` +
+        '\n\n`作为**层（Layers）**集成`\n\n```text\n作为**层（Layers）**集成\n```\n\n' +
+        '作为** 层（Layers）**集成。\n\n作为**层（Layers）集成。\n\nword**(text)**word',
+    );
+    expect(host.querySelector('strong')).toBeNull();
+    expect(host.querySelector('p')?.textContent).toBe('作为**层（Layers）**集成。');
+    expect([...host.querySelectorAll('code')].map((node) => node.textContent)).toEqual([
+      '作为**层（Layers）**集成',
+      '作为**层（Layers）**集成',
+    ]);
+  });
+
   it('repairs model emphasis with a space before the closing stars, preserving code literals', () => {
     const host = render('**最需要动手：`selfie/ui/main_window.py` 有 2084 行。 ** 继续阅读。\n\n`**literal **`');
     expect(host.querySelector('strong')?.textContent).toBe('最需要动手：selfie/ui/main_window.py 有 2084 行。');
