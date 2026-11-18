@@ -25,6 +25,12 @@
 KoboldCpp工具流仍无usage，summary单引号格式导致停止。保留INCOMPLETE，不重试或改分；13项专项通过，交付复查Ruff有并行collaboration改动6条诊断，完整类型与精度门通过。
 没有为Ghost增加生成，没有恢复下方被中断的条件接受率批次。
 
+后续获准修改实验脚本，完成[原生字段六格接口冒烟](ghost_progress/portable-context-native-fields-20261118.md)：
+实机前冻结`cf8e7c2d`，四个评估字段直接通过原生工具传递；两种模式三臂均通过格式/来源/覆盖门，
+每格一次请求。流式usage未知，保留v2/v3失败。单个合成经历、独立评估入口，无生产改动或学习晋级。
+最终74项相关回归、五个全树静态门与owned专项通过。中间Pyrefly在同事kernel_preparation.py
+报5条容器类型错误，同事调整后再次完整检查通过；未由本批修改或纳入提交，失败日志保留。
+
 ## 当前恢复批次（2026-11-18）
 
 当前收尾：[条件接受率/纠正成本用户中断记录](ghost_progress/proposal-risk-interrupted-20261118.md)。

@@ -100,3 +100,7 @@ Pyrefly、ty及kernel精度门通过；**全仓Ruff退出1，6条诊断**，位�
 
 修复与v2冻结`39b7adf4`；v2失败记录`9b0a1fb8`；v3冻结`c69c85d7`。
 本结果随独立实验记录提交，不作生产晋级，不改变既有默认消费范围。
+
+后续另行冻结[直接原生字段接口冒烟](portable-context-native-fields-20261118.md)，六格完成。
+该候选移除summary内嵌JSON，使用独立评估工具；不重判本页v3失败或INCOMPLETE，
+不改变本页缺失用量及评分，也不作为生产done解析的修复。

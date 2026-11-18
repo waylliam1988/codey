@@ -1769,6 +1769,9 @@ R0  研究基准与可塑性实验    0.9.x+
 短标签匹配失败、流式用量缺失和单合成样本限制保留，不宣布整体效果实验通过或各模型同等收益。
 后续[遥测/标签定向复验](docs/ghost_progress/portable-context-labels-v3-20261118.md)修脚本include_usage遗漏，
 但工具流仍无usage且summary序列化失败，按协议停止；没有新增效果/成本验收或生产晋级。
+随后[直接原生字段接口冒烟](docs/ghost_progress/portable-context-native-fields-20261118.md)
+冻结`cf8e7c2d`并完成六格，来源消费、当前覆盖及格式均通过；单个合成经历、独立评估入口，
+流式usage仍未知，不代表自然语气、自主学习、完整成本验收或新增生产晋级。
 以下窄配置范围及中断快照是历史记录，现行可用范围以本接线记录为准。World Model仍未生产晋级。
 
 新候选[条件接受率与纠正成本](docs/ghost_progress/proposal-risk-interrupted-20261118.md)

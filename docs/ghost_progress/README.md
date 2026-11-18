@@ -10,6 +10,13 @@
 
 ## 当前状态
 
+2026-11-18 [原生字段上下文接口冒烟](portable-context-native-fields-20261118.md)：
+冻结`cf8e7c2d`，独立评估工具直接接收四个字段，移除summary内嵌JSON。
+非流式/流式各off/on/override，六格格式、来源及覆盖边界均通过，每格一次请求，无重试或额外Ghost生成。
+流式usage仍null；单个合成经历，仅测标签，不代表自然语气、自主学习或生产晋级。
+最终相关回归74项、五个全树静态门及owned专项均通过；中间并行文件的Pyrefly失败与恢复详见记录。
+v2/v3历史失败与INCOMPLETE不改；生产默认范围不变。
+
 2026-11-18 [用量与标签接口定向复验](portable-context-labels-v3-20261118.md)：
 已修脚本遗漏include_usage并新增真实HTTP/SSE回归；v2首格、v3第二格因summary非JSON停止。
 v3两次工具流均已请求usage但未收到，同版本KoboldCpp工具转流分支遗漏usage逻辑与现象一致。

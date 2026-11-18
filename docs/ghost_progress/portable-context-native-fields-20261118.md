@@ -1,6 +1,7 @@
 # 原生字段工具：本地上下文接口定向冒烟
 
-日期2026-11-18；状态`FROZEN / NOT_RUN`，实机前独立提交协议与脚本。
+日期2026-11-18；状态`COMPLETE / ISOLATED_NATIVE_INTERFACE_SMOKE`。
+实机前独立冻结协议与脚本，提交`cf8e7c2d`；本记录追加执行结果，不修改冻结指标。
 脚本`tests/manual/ghost_memory_routing/portable_context_native_trial.py`，协议`native-fields-v4`。
 [v2](portable-context-labels-v2-20261118.md)和[v3](portable-context-labels-v3-20261118.md)的
 JSON字符串失败、未完成状态、未知用量和旧评分均保留；本轮不是补跑或重判它们。
@@ -67,4 +68,67 @@ python -m tests.manual.ghost_memory_routing.portable_context_native_trial --outp
 
 ## 结果
 
-待按本冻结协议执行。
+六格均完成，各一次物理请求、一次有效原生工具调用；无重试，Ghost额外生成0。
+
+| 模式 | 臂 | 格式 | 选择/理由 | 目标/语气标签 | 关闭臂unknown/neutral |
+| --- | --- | --- | --- | --- | --- |
+| 非流式 | off | 有效 | 无历史，不要求恢复 | 无历史，不要求恢复 | 正确 |
+| 非流式 | on | 有效 | opalpanel/offline_cursor_sync | keyboard/warm | 不适用 |
+| 非流式 | override | 有效 | opalpanel/offline_cursor_sync | animations/technical | 不适用 |
+| 流式 | off | 有效 | 无历史，不要求恢复 | 无历史，不要求恢复 | 正确 |
+| 流式 | on | 有效 | opalpanel/offline_cursor_sync | keyboard/warm | 不适用 |
+| 流式 | override | 有效 | opalpanel/offline_cursor_sync | animations/technical | 不适用 |
+
+脱敏指标见[报告](../../tests/manual/ghost_memory_routing/reports/portable-context-native-fields-20261118.json)。
+原scorer对off的recall/priority/preference均为false，保留原值；该臂验收依据是baseline_unknown=true，
+不能将它算成召回失败。独立wire审计核对工具schema无summary、四个字段直接传参、
+单请求、off三类来源全无、on/override全有以及实际标签，均与指标一致。
+
+非流式三臂input/output分别437/35、718/40、729/40；流式三臂usage均null，
+已发送include_usage但服务没有返回。按冻结约定，此次接口测试不因缺失用量失败，
+也不宣称完整成本门通过。六格耗时约1515/11906/9546/6844/7204/8062ms，
+只作描述，不推断性能收益；本地模型服务可能有其他使用者。
+
+每格前后源码/配置快照均未变化，最终sources-before/after完全一致，
+快照SHA256为`a8e332b8667e96c7e57c6ef967c6828ca0e8dbe9cbdb22437af88307787009de`。
+完整请求、原始回复、state、用量、模型及源码快照、audit留本地
+`.e2e-artifacts/portable-context-native-fields-20261118/`，不入库。
+
+## 回归与静态检查
+
+最终相关回归74项通过，命令：
+
+```powershell
+python -m pytest tests/test_ghost_portable_context_native_trial.py tests/test_ghost_portable_context_trial.py tests/test_ghost_context_admission.py tests/test_ghost_portable_context.py -q --maxfail=2
+```
+
+覆盖直接字段及拒绝分支、真实HTTP/SSE三臂、未知用量、不重试、物理发送前关闭/删除/撤回重读、
+错误prompt/scope及既有正常消费边界。未运行全量pytest。较早同命令64通过/2失败，
+原因是并行修改的research fixture缺run_id；同事修复后最终同命令74通过，未由本批改写该测试。
+
+本批三个Python文件的Ruff、mypy、Pyrefly、ty专项均通过。额外严格Any审计在这三个文件中0诊断，
+但未修改依赖332文件/11837诊断导致命令退出1，不声称该额外命令整体通过。
+最终全仓Ruff、完整生产树mypy（709文件）、Pyrefly、ty及kernel_type_precision_gate全部通过。
+中间一次完整生产树Pyrefly退出1，5个bad-argument-type，均在同事当时未提交的
+`codey/operations/kernel_preparation.py:40/42/55/59/61`，guidance容器被推断为LiteralString列表。
+同事后续调整该文件后，本批再次执行相同74项回归及五个完整静态门，均通过；
+该生产文件未由本批改写或纳入提交。前次失败日志保留，不将其改写成通过。
+Pyrefly另有35项既有suppression、160条warning。
+
+初次全树mypy因共享增量缓存内部断言崩溃，改用独立cache目录后同范围检查通过；
+最终命令为`python -m mypy codey --python-version 3.11 --cache-dir .e2e-artifacts/mypy-native-v4-handoff`。
+其他全树命令按仓库约定执行。完整输出、前后哈希与归属见
+`.e2e-artifacts/portable-native-v4-handoff-*`，检查期间源码无变化；中间失败日志见
+`.e2e-artifacts/portable-native-v4-delivery-*`。
+专项、Any审计及回归日志见`.e2e-artifacts/portable-native-v4-*`。
+
+## 结论与下一步
+
+本配置、单个合成经历下，直接原生字段接口完成了六格来源消费和当前覆盖冒烟，
+避开了让模型在自然语言summary中再序列化JSON的接口负担。
+v2/v3失败仍保留；因上下文构造也不同，不把此次通过解释成schema的单变量因果证明。
+生产done.summary本来允许自然语言，没有据此修改生产解析器或接受Python字典。
+
+下一步结构化测量可复用此评估入口；开放偏好学习、自然回答语气效果和真实协作收益需各自冻结实验。
+四个枚举只服务本次评分，不是新增的生产偏好词表。本次未修改生产代码、未默认启用新功能，
+不标记PRODUCTION_MERGED，也不代表World Model或自主学习完成。

@@ -1,5 +1,12 @@
 # Ghost 偏好投递与预算路由实验
 
+2026-11-18：[原生字段上下文接口冒烟](../../../docs/ghost_progress/portable-context-native-fields-20261118.md)，
+脚本`portable_context_native_trial.py`，协议`native-fields-v4`，实机前冻结`cf8e7c2d`。
+六格完成，每格一次请求，直接工具字段均合法；关闭unknown、开启恢复与当前指令覆盖均正确。
+单个合成经历、独立评估入口；流式usage未知，不代表完整成本门或自然语气/自主学习通过。
+最终74项相关回归、五个全树静态门及owned专项通过；中间Pyrefly失败与恢复独立记录。
+脱敏指标`reports/portable-context-native-fields-20261118.json`，原始请求/回复/state仅留本地。
+
 2026-11-18：[流式用量/明确JSON字符串复验](../../../docs/ghost_progress/portable-context-labels-v3-20261118.md)，
 脚本`portable_context_trial.py --protocol labels-v3`。脚本已补include_usage；v2首格、v3第二格
 非JSON停止，v3两次工具流仍无usage；KoboldCpp 1.117.1对应分支定位、13项最终回归和静态结果见记录。
