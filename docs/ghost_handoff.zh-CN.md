@@ -15,9 +15,10 @@
 
 ## 当前恢复批次（2026-11-18）
 
-当前新批次：[项目目标/新方案选择运行前冻结](ghost_progress/semantic-goal-protocol-20261118.md)。
-语义取舍及output8192是新增变量；20条合成流、240请求、四臂分开判断人工确认与预测收益。
-冻结时未调用模型，未改生产默认状态；旧实验结果不重判。
+当前新批次：[项目目标/新方案选择结果](ghost_progress/semantic-goal-result-20261118.md)。
+语义取舍及output8192是新增变量；20条合成流、240请求完整，三阶段全对流0/20对
+检索/确认/预测各20/20。确认状态不优于检索，预测无新增收益而终止；
+[正常入口候选](ghost_progress/project-goal-production-20261118.md)正在验收，旧结果不重判。
 
 用户已恢复持续实现/实验授权，直接使用原 master，不创建或复制worktree。
 当前[项目经历生产接线](ghost_progress/project-experience-production-20261118.md)的用户可见目标：

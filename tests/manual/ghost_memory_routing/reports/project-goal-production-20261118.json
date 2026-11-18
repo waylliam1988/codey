@@ -1,0 +1,128 @@
+{
+  "status": "BOUNDARIES_PASSED",
+  "production_decision": "PENDING_PRODUCTION_COMMIT",
+  "experiment_freeze_commit": "2b5946a8",
+  "experiment_report": "semantic-goal-20261118.json",
+  "consumer": "manually_confirmed_storage_goal_continuity",
+  "scope": {
+    "profile": "coding_writer",
+    "context": "storage_design",
+    "trigger_terms": [
+      "storage",
+      "存储",
+      "儲存"
+    ],
+    "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+    "endpoint": "loopback HTTP /v1",
+    "protocol": "openai-completions",
+    "native_tools": true,
+    "temperature": 0,
+    "stream": false,
+    "window": 262144,
+    "output": 8192,
+    "safety": 24576,
+    "keep_recent": 32000,
+    "input_limit": null
+  },
+  "regressions": {
+    "affected_passed": 369,
+    "affected_subtests": 154,
+    "affected_command": [
+      "python",
+      "-m",
+      "pytest",
+      "tests/test_project_goal_production.py",
+      "tests/test_semantic_goal_trial.py",
+      "tests/test_project_experience_production.py",
+      "tests/test_ghost_experience_role_budget.py",
+      "tests/test_project_experience_continuity_trial.py",
+      "tests/test_interaction_feedback_trial.py",
+      "tests/test_ghost_control_surface.py",
+      "tests/test_ghost_control_mutation_failures.py",
+      "tests/test_ghost_controls.py",
+      "tests/test_ghost_inbox.py",
+      "tests/test_ghost_language_production.py",
+      "tests/test_ghost_context_admission.py",
+      "tests/test_permission_profiles.py",
+      "tests/test_ghost_deletion_manifest.py",
+      "tests/test_ghost_deletion_manifest_recovery.py",
+      "tests/test_manual_project_adapter_entry_contract.py",
+      "-q"
+    ],
+    "final_isolation_passed": 84,
+    "final_isolation_command": [
+      "python",
+      "-m",
+      "pytest",
+      "tests/test_project_goal_production.py",
+      "tests/test_ghost_control_surface.py",
+      "tests/test_ghost_language_production.py",
+      "-q"
+    ]
+  },
+  "owned_type_audit": {
+    "full_five_gates_passed": true,
+    "owned_python_files": 22,
+    "mypy-owned-final": {
+      "owned_errors": 0,
+      "unmodified_dependency_errors": 269,
+      "dependency_files": 8,
+      "command_exit_code": 1,
+      "dependency_diagnostics_equal_previous_batch_ignoring_order": true,
+      "raw_summary": "Found 269 errors in 8 files (checked 22 source files)"
+    },
+    "any-owned-final": {
+      "owned_errors": 0,
+      "unmodified_dependency_errors": 14107,
+      "dependency_files": 351,
+      "command_exit_code": 1,
+      "dependency_diagnostics_equal_previous_batch_ignoring_order": true,
+      "raw_summary": "Found 14107 errors in 351 files (checked 22 source files)"
+    },
+    "pyrefly": {
+      "errors": 0,
+      "production_suppressed": 35,
+      "production_warnings": 159,
+      "owned_warnings": 11
+    },
+    "ty": "All checks passed",
+    "verified_source_hashes": 716
+  },
+  "frozen_experiment_costs": {
+    "verified_all_frozen_fields_equal": true,
+    "physical_wire_requests": 240,
+    "local_full_audit_bytes": 76540190,
+    "derived_jsonl_bytes_total": 34530,
+    "derived_jsonl_bytes_max": 1729,
+    "state_preparation_max_ms": 0.0,
+    "none": {
+      "input_tokens_total": 77520,
+      "output_tokens_total": 1020
+    },
+    "retrieval": {
+      "input_tokens_total": 85680,
+      "output_tokens_total": 1020
+    },
+    "confirmed": {
+      "input_tokens_total": 88710,
+      "output_tokens_total": 1020
+    },
+    "forecast": {
+      "input_tokens_total": 94500,
+      "output_tokens_total": 1020
+    }
+  },
+  "forecast_decision": "TERMINATED_NO_INCREMENTAL_BENEFIT",
+  "extra_runtime_generation_requests": 0,
+  "additional_embedding_requests": 0,
+  "storage": "existing inbox and committed observations; no new store",
+  "limits": [
+    "synthetic binary choices",
+    "manual confirmation only",
+    "permanent project storage goals only",
+    "nonstreaming",
+    "single model/config",
+    "no incremental accuracy over same-history retrieval",
+    "no beneficial World Model production consumer"
+  ]
+}
