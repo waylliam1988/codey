@@ -1,5 +1,11 @@
 # Ghost 偏好投递与预算路由实验
 
+2026-11-18：[历史投递三组对照与正常入口检查](../../../docs/ghost_progress/history-projection-result-20261118.md)。
+脚本 `history_projection_trial.py`，冻结旧输出在 `history_projection_cases.json`；
+脱敏指标 `history_projection_metrics_20261118.json`。first/labels-v2各48请求，另6次正常入口。
+first精确标签失败保留；v2新旧投递效果相同，不声明降低事实错误或节省输入。
+真实回复、请求和state留本地；没有恢复开放协作学习或新增Ghost生成。
+
 2026-11-18：[开放协作学习提取收尾](../../../docs/ghost_progress/open-collaboration-result-20261118.md)。
 两轮完整矩阵各26请求、四个诊断均保留；自然任务未产生偏好记录，自动写回不晋级。
 原型和脚本在`open_collaboration_candidate.patch`，应用前审查并`git apply --check`，无需worktree。
