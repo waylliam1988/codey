@@ -27,6 +27,10 @@
 
 ## 文件与数据位置
 
+2026-11-18 新冻结[条件化讨论开头/用户反应预测](../../../docs/ghost_progress/interaction-feedback-protocol-20261118.md)：
+`interaction_feedback_trial.py`，三臂为none/相同经历检索/经历加有界预测；20条流、5阶段、
+计划300物理请求。仅实验消费者，冻结前45项契约测试；实际结果另记，不改旧实验指标。
+
 2026-11-18 当前[项目经历连续性](../../../docs/ghost_progress/project-experience-continuity-result-20261118.md)：
 `project_experience_continuity.py`冻结20条独立合成流、40物理请求，19/20对0/20，成本门通过。
 `project_experience_continuity_metrics.json`保留当时`EXPERIMENT_ONLY`，不重写实验历史；
