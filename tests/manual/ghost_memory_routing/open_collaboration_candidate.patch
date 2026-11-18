@@ -3,9 +3,9 @@ index 59d9403d..bbd9508b 100644
 --- a/codey/operations/ghost_post_turn.py
 +++ b/codey/operations/ghost_post_turn.py
 @@ -7,6 +7,7 @@ implementation exists.
- 
+
  from __future__ import annotations
- 
+
 +import sqlite3
  from collections.abc import Callable
  from dataclasses import dataclass
@@ -35,7 +35,7 @@ index 59d9403d..bbd9508b 100644
 +from codey.storage.managed_outputs import ManagedOutputStore
  from codey.task.model import TaskSubmission
  from codey.utils.refs import digest_text
- 
+
 @@ -147,6 +153,17 @@ def run_ghost_post_turn(
      session_id = str(event.get("session_id") or (frame.request.session_id if frame else ""))
      run_id = str(event.get("run_id") or (frame.run_id if frame else "") or "")
@@ -61,7 +61,7 @@ index 76b25039..3de0211a 100644
 @@ -13,6 +13,7 @@ from collections.abc import Callable, Mapping
  from dataclasses import dataclass
  from typing import TYPE_CHECKING
- 
+
 +from codey.ghost.collaboration import GUIDANCE as COLLABORATION_GUIDANCE
  from codey.operations.task_session import TaskSession
  from codey.policies.command_line import COMMAND_WORKDIR_DESCRIPTION
@@ -100,14 +100,14 @@ index 1ea83da8..e6c207a5 100644
 --- a/codey/operations/project_adapter.py
 +++ b/codey/operations/project_adapter.py
 @@ -84,13 +84,18 @@ def _project_context(request: AgentRequest, *, experiences: str = "", directive:
- 
- 
+
+
  def _project_ghost_sources(request: AgentRequest) -> tuple[GhostContextSource, ...]:
 +    from codey.ghost.collaboration import SOURCE_KEY
 +    from codey.operations.collaboration_context import collaboration_sources
      from codey.policies.permissions import allows_context_source, profile_for_name
      from codey.workspace.context_admission import request_scope, sources_from_values
- 
+
      profile = profile_for_name(request.permission_profile)
      if not request.admit_hints:
          return ()
@@ -121,7 +121,7 @@ index 1ea83da8..e6c207a5 100644
          continuity=(request.ghost_continuity
 @@ -264,7 +269,7 @@ def run(request: AgentRequest) -> RunResult:
          return request.admit_hints and actual == ghost_sources and _project_ghost_sources(request) == actual
- 
+
      goal_context = "\n\n".join(source.text for source in ghost_sources
 -                               if source.key in {"ghost_project_goal_history", "ghost_confirmed_project_goal"})
 +                               if source.key in {"ghost_project_goal_history", "ghost_confirmed_project_goal", "ghost_collaboration"})
@@ -134,7 +134,7 @@ index 188a8ce0..4e4a66dc 100644
 +++ b/codey/policies/permissions.py
 @@ -10,6 +10,7 @@ from __future__ import annotations
  from dataclasses import dataclass
- 
+
  KNOWN_CONTEXT_SOURCE_KEYS = frozenset({
 +    "ghost_collaboration",
      "ghost_continuity",
@@ -172,7 +172,7 @@ index 1d18808e..621b9580 100644
 @@ -5,6 +5,9 @@ from __future__ import annotations
  from collections.abc import Mapping
  from dataclasses import dataclass, field
- 
+
 +from codey.ghost.collaboration import GUIDANCE as COLLABORATION_GUIDANCE
 +from codey.ghost.collaboration import updates_schema
 +from codey.ghost.payload_types import mapping_fields
@@ -1187,7 +1187,7 @@ diff --git a/codey/operations/personal_context.py b/codey/operations/personal_co
 +++ b/codey/operations/personal_context.py
 @@ -8,11 +8,13 @@
  from pathlib import Path
- 
+
  from codey.ghost.affinity import GhostAffinityStore
 +from codey.ghost.collaboration import SOURCE_KEY
  from codey.ghost.directive import build_ghost_directive

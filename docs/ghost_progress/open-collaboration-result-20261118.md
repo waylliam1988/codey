@@ -36,14 +36,26 @@ v1/v2 非流式实际回合延迟中位数分别 5.30/6.91 秒，流式 5.25/5.9
 
 以上修复在正常路径默认生效；不是自动学习晋级。没有扩大偏好白名单、改变模型配置、增加模型调用或改变完成合同。回滚对应修复提交即可；原有 Ghost 控制开关保持适用。本轮未改前端，无需发布静态资源。
 
+生产修复分别提交为 `20326131`（逻辑身份）和 `88e93d8e`（流式正文）。最终另做 1 次真实模型边界探测：在项目中以既有人工确认入口建立用户级偏好与项目目标，再用无项目的新 Chat/流式/output4096 请求。任务完成、实际 HTTP 生成 1 次；冻结的真实请求仅有独立 `ghost_directive`，没有项目目标来源。随后另有一次本地 close_reply 结算，未发 HTTP。原始请求、SSE、终态和逐 effect 来源留在 `D:/codey-local-evidence/no-project-scope-production-live`；该探测验证发送边界，不评分温暖程度，也不并入前面 56 次学习实验。
+
 ## 验证与剩余限制
 
 原型尚在生产树时：283 项回归与 25 个子测试通过，另有浏览器 B3 `timeout_ms` 必填断言失败；撤出候选后独立复现相同失败，未放宽断言或修改浏览器生产。该项不属于本轮 scope，待所有者审查 `tests/test_protocol_surface.py:300` 与当前 browser_wait 默认值合同。
 
-原型阶段全仓 Ruff、完整 codey mypy/Pyrefly/ty 和 kernel precision 均通过。累计 15 个修改文件额外 Any 审计零诊断；完整额外严格命令仍含 329 个未修改依赖文件的 11828 条既有诊断，单独留档，不能称全仓 Any 清零。最终生产修复的复查结果在本段收尾时补充。
+原型阶段全仓 Ruff、完整 codey mypy/Pyrefly/ty 和 kernel precision 均通过。累计 15 个修改文件额外 Any 审计零诊断；完整额外严格命令仍含 329 个未修改依赖文件的 11828 条既有诊断，单独留档，不能称全仓 Any 清零。
+
+撤出原型后的最终相关回归：264 项及 25 个子测试通过，仍有上述 1 条浏览器失败；没有运行全量 pytest。新增 Chat 回归另用 HEAD 原实现注入复现失败，再用修复实现通过，确认不是原型带来的假象。流式专门复验 5 项通过。最终全仓 Ruff、完整 `codey` 的 mypy（707 文件）/Pyrefly/ty、kernel precision，以及修改测试的三个专项类型检查均通过；Pyrefly 全树另有既有 suppressed/warnings，并非零警告。最终 5 个生产/测试文件额外 Any 审计零诊断；该额外命令的未修改依赖仍有 330 文件/11829 条诊断，未扩大清理范围，也不更改检查配置。
+
+完整命令：`python -m ruff check .`、`python -m mypy codey --python-version 3.11`、`pyrefly check codey --python-version 3.11`、`ty check codey --python-version 3.11`、`python -m tools.kernel_type_precision_gate`。专项检查包含 `personal_context.py`、`display_stream.py`、`summary_stream.py`、`test_done_summary_stream.py` 和 `test_ghost_portable_context.py`，另加 `--disallow-any-expr --disallow-any-explicit --disallow-any-generics --disallow-any-unimported` 核对 owned 诊断；不把导入依赖的失败命令称为整体通过。
+
+最终回归命令：
+
+```powershell
+python -m pytest tests/test_done_summary_stream.py tests/test_ghost_portable_context.py tests/test_permission_profiles.py tests/test_conversation_display_stream.py tests/test_kernel_protocol_validator_failclosed.py tests/test_ghost_context_admission.py tests/test_ghost_language_production.py tests/test_ghost_experience_role_budget.py tests/test_project_goal_production.py tests/test_ghost_manual_memory.py tests/test_ghost_deleted_input_fence.py tests/test_ghost_deleted_source_lifetime.py tests/test_ghost_history_delete_guards.py tests/test_ghost_controls.py tests/test_coldstart_native_local_receipts.py tests/test_api_chat_native_turns_and_history.py tests/test_api_request_context_protocols.py tests/test_protocol_surface.py::test_b3_frozen_permissions_descriptions_and_no_implicit_b1_defaults -q --maxfail=5
+```
 
 原始请求、SSE、回执、显示快照、Inbox/observations 和完整 state 留在 `D:/codey-local-evidence/open-collaboration-*`。仓库只保留脚本/补丁、协议及[脱敏指标](../../tests/manual/ghost_memory_routing/reports/open-collaboration-20261118.json)。
 
-复现原型前先审查补丁，`git apply --check tests/manual/ghost_memory_routing/open_collaboration_candidate.patch`；在干净 checkout 中按需应用并运行冻结命令。无需 worktree。补丁实现与当前已确认偏好/经历消费者分开审查，不将归档视作默认关闭的生产功能。
+复现原型前先审查补丁，`git apply --check tests/manual/ghost_memory_routing/open_collaboration_candidate.patch`；在干净 checkout 中按需应用并运行冻结命令。无需 worktree。脚本的 `open-collaboration-v1` 表示冻结的任务/scorer 协议；当前补丁对应最后 v3 提示实现。补丁实现与当前已确认偏好/经历消费者分开审查，不将归档视作默认关闭的生产功能。
 
 下一步仍需新的、可解释的同次结构化出口或支持该出口的实际模型证据；不继续堆叠相同模型的提示措辞，不恢复第二次生成，不从口头承诺正则提取来掩盖遗漏。当前四步闭环中的自动理解和可靠写回仍缺，World Model 的历史状态不变。

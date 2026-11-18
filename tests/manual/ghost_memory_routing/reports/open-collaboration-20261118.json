@@ -376,5 +376,20 @@
     "synthetic deterministic histories, one model",
     "same-session behavior may be supplied by history",
     "absence of false learning without any extraction is not a quality demonstration"
-  ]
+  ],
+  "prototype_patch_sha256": "56d4718f87f9158a937c54ac418921680504268f3b90627d1df3a0a4fbbc46a6",
+  "separate_production_scope_probe": {
+    "generation_requests": 1,
+    "completed": true,
+    "native": true,
+    "stream": true,
+    "output_tokens": 4096,
+    "logical_project": null,
+    "frozen_generation_source_keys": [
+      "ghost_directive"
+    ],
+    "project_goals_absent": true,
+    "close_reply": "local acknowledgement, no HTTP generation",
+    "behavior_quality_scored": false
+  }
 }
