@@ -176,16 +176,11 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("handoff summary", HTML.lower())
 
 
-    def test_local_context_entry_is_quiet_top_menu_item(self) -> None:
-        self.assertNotIn('<button data-act="rename">Rename chat</button>', HTML)
-        local_match = re.search(r'<button data-act="local-context"[^>]*>Local context</button>', HTML)
-        clear_match = re.search(r'<button data-act="clear"[^>]*class="danger"[^>]*>Clear messages</button>', HTML)
-        self.assertIsNotNone(local_match)
-        self.assertIsNotNone(clear_match)
-        local = local_match.start()
-        clear = clear_match.start()
-
-        self.assertLess(local, clear)
+    def test_local_context_is_in_the_right_workspace(self) -> None:
+        self.assertNotIn('id="topbar-more"', HTML)
+        self.assertNotIn('id="top-menu"', HTML)
+        self.assertNotIn('>Clear messages<', HTML)
+        self.assertIn("workspace.register('context', 'Local context'", APP_RUNTIME_SOURCE)
         self.assertIn('id="local-context-drawer"', HTML)
         self.assertIn('<strong>Local context</strong>', HTML)
         self.assertIn("./local_context_drawer", APP_RUNTIME_SOURCE)
@@ -252,21 +247,6 @@ class ProviderSelectorUiTests(unittest.TestCase):
         start = APP_CSS.index(".local-context-more {")
         end = APP_CSS.index(".local-context-settings", start)
         self.assertNotIn("visibility: hidden", APP_CSS[start:end])
-
-    def test_drawer_opening_is_mutually_exclusive(self) -> None:
-        self.assertIn("function closeOtherDrawers(active)", HTML)
-        self.assertIn("if (active !== 'changes') closeChangesDrawer();", HTML)
-        self.assertIn("if (active !== 'research') runtime.ResearchDrawer.close();", HTML)
-        self.assertIn("if (active !== 'local_context') closeLocalContextDrawer();", HTML)
-        self.assertIn("deps.closeOtherDrawers('changes')", CHANGES_DRAWER_JS)
-        self.assertIn("deps.closeOtherDrawers('research')", RESEARCH_DRAWER_JS)
-        self.assertIn("deps.closeOtherDrawers?.('local_context')", LOCAL_CONTEXT_DRAWER_JS)
-
-
-
-
-
-
 
     def test_local_save_failure_keeps_popover_open(self) -> None:
         start = SETTINGS_JS.index("async function save()")

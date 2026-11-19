@@ -89,37 +89,8 @@ body:has(.workspace .document-pane:not([hidden])) {
 .workspace-tabs button:hover {
   color: var(--text);
 }
-.workspace-chooser {
-  position: relative;
-}
-.workspace-picker {
-  position: absolute;
-  z-index: 90;
-  top: 36px;
-  right: 0;
-  width: 180px;
-  padding: 5px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--panel-radius);
-}
-.workspace-picker button {
-  width: 100%;
-  display: block;
-  padding: 7px 10px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-dim);
-  text-align: left;
-  cursor: pointer;
-  font: calc(12px * var(--font-scale)) var(--font-sans);
-}
-.workspace-picker button:hover,
-.workspace-picker button:focus-visible {
-  background: var(--hover);
-  color: var(--text);
-  outline: none;
+.workspace-open .workspace-icon-pane {
+  fill: currentColor;
 }
 .input-mode {
   max-width: 150px;

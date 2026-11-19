@@ -586,8 +586,12 @@ export interface UiStateApi {
   }
 
   function setDrawerOpen(id: string, open: boolean): void {
-    if (runtime.Workspace && (id === 'changes-drawer' || id === 'research-drawer')) {
-      const panel = id === 'changes-drawer' ? 'changes' : 'research';
+    const panel = {
+      'changes-drawer': 'changes',
+      'research-drawer': 'research',
+      'local-context-drawer': 'context',
+    }[id];
+    if (runtime.Workspace && panel) {
       const element = document.getElementById(id);
       element?.classList.toggle('open', open);
       element?.setAttribute('aria-hidden', String(!open));

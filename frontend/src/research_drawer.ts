@@ -54,7 +54,6 @@ export interface ResearchDrawerDeps {
   $(id: string): HTMLElement;
   getCurrentRun(sessionId: string, runId: string): ResearchRunView | null;
   copyText(text: string): Promise<boolean>;
-  closeOtherDrawers?(active?: string): void;
   getSessionTitle?(sessionId: string): string;
   getResearchDrawerTab(): string;
   setResearchDrawerTab(value: string): void;
@@ -111,7 +110,6 @@ export interface ResearchDrawerDeps {
 
   function openResearchDrawer(sessionId: string, runId: string) {
     if (!runId) return;
-    if (deps.closeOtherDrawers) deps.closeOtherDrawers('research');
     boundSessionId = sessionId;
     boundRunId = runId;
     runtime.Workspace?.target('research', { runId });

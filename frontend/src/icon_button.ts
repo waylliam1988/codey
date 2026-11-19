@@ -23,7 +23,8 @@ const paths: Record<Icon, string> = {
   close: 'm6 6 12 12M18 6 6 18',
   expand: 'M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5',
   dock: 'M3 3h18v18H3ZM14 3v18',
-  workspace: 'M3 3h18v18H3ZM14 3v18M14 9h7',
+  workspace:
+    'M5 2.5h14A2.5 2.5 0 0 1 21.5 5v14a2.5 2.5 0 0 1-2.5 2.5H5A2.5 2.5 0 0 1 2.5 19V5A2.5 2.5 0 0 1 5 2.5ZM14.5 2.5v19',
   branch: 'M6 3v12a3 3 0 0 0 3 3h9M6 9a9 9 0 0 0 9-9',
 };
 
@@ -47,6 +48,13 @@ export function createIconSvg(icon: Icon, className = ''): SVGSVGElement {
     svg.setAttribute('stroke', 'none');
     svg.innerHTML = messageIcons[icon].body;
   } else {
+    if (icon === 'workspace') {
+      const pane = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      pane.classList.add('workspace-icon-pane');
+      pane.setAttribute('stroke', 'none');
+      pane.setAttribute('d', 'M14.5 2.5H19A2.5 2.5 0 0 1 21.5 5v14a2.5 2.5 0 0 1-2.5 2.5h-4.5Z');
+      svg.append(pane);
+    }
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', paths[icon]);
     svg.append(path);

@@ -127,8 +127,11 @@ export class DocumentPane {
     this.setSession(session);
     const state = this.sessions.get(session);
     if (!state?.tabs.size) {
+      const empty = document.createElement('div');
+      empty.className = 'changes-empty';
+      empty.textContent = 'Open a file from the conversation to preview it here.';
       this.element.hidden = false;
-      this.element.textContent = 'Open a file from the conversation to preview it here.';
+      this.element.replaceChildren(empty);
       return;
     }
     state.visible = true;

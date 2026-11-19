@@ -10,7 +10,6 @@ import { RecordedPanels } from './recorded_panels';
 import { Workspace } from './workspace';
 import './chat_fork.css';
 import { CommandPalette } from './command_palette';
-import { iconButton } from './icon_button';
 import './workspace.css';
 import { showCommandPermissions } from './command_permissions';
 import { reportDesktopFailure, reportDesktopReady } from './desktop_ready';
@@ -170,18 +169,9 @@ const historyPanel = new HistoryPanel({
 workspace.register('history', 'History', historyPanel.element, (target) => {
   void historyPanel.show(target);
 });
+workspace.register('context', 'Local context', $('local-context-drawer'), () => runtime.LocalContextDrawer.open());
 document.body.append(workspace.element);
-const workspaceMenu = document.createElement('div');
-workspaceMenu.className = 'workspace-picker';
-workspaceMenu.hidden = true;
-workspaceMenu.setAttribute('role', 'menu');
-const workspaceButton = iconButton('Open workspace', 'workspace', () => {
-  workspaceMenu.hidden = !workspaceMenu.hidden;
-  workspaceButton.setAttribute('aria-expanded', String(!workspaceMenu.hidden));
-  if (!workspaceMenu.hidden) workspaceMenu.querySelector<HTMLElement>('button')?.focus();
-});
-workspaceButton.setAttribute('aria-haspopup', 'menu');
-workspaceButton.setAttribute('aria-expanded', 'false');
+document.querySelector('.topbar-actions')?.append(workspace.toggleButton);
 const workspaceActions = [
   ['files', 'Files'],
   ['changes', 'Changes'],
@@ -190,43 +180,6 @@ const workspaceActions = [
   ['outputs', 'Command output'],
   ['history', 'Branches and workflow'],
 ] as const;
-for (const [id, label] of workspaceActions) {
-  const item = document.createElement('button');
-  item.type = 'button';
-  item.setAttribute('role', 'menuitem');
-  item.textContent = label;
-  item.onclick = () => {
-    workspaceMenu.hidden = true;
-    workspaceButton.setAttribute('aria-expanded', 'false');
-    workspace.select(id);
-    workspace.element.querySelector<HTMLElement>(`[role="tab"][aria-selected="true"]`)?.focus();
-  };
-  workspaceMenu.append(item);
-}
-workspaceMenu.onkeydown = (event) => {
-  const rows = Array.from(workspaceMenu.querySelectorAll('button'));
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    event.stopPropagation();
-    workspaceMenu.hidden = true;
-    workspaceButton.setAttribute('aria-expanded', 'false');
-    workspaceButton.focus();
-  } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-    event.preventDefault();
-    const index = rows.indexOf(document.activeElement as HTMLButtonElement);
-    rows[
-      event.key === 'Home'
-        ? 0
-        : event.key === 'End'
-          ? rows.length - 1
-          : (index + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length
-    ]?.focus();
-  }
-};
-const workspaceChooser = document.createElement('div');
-workspaceChooser.className = 'workspace-chooser';
-workspaceChooser.append(workspaceButton, workspaceMenu);
-document.querySelector('.topbar-actions')?.append(workspaceChooser);
 const commandPalette = new CommandPalette(() => [
   ...workspaceActions.map(([id, label]) => ({ id, label, run: () => workspace.select(id) })),
   { id: 'search-conversation', label: 'Search this conversation', run: () => runtime.ConversationUI.searchHistory() },
@@ -252,12 +205,6 @@ document.addEventListener('keydown', (event) => {
     commandPalette.open();
   }
 });
-document.addEventListener('pointerdown', (event) => {
-  if (event.target instanceof Node && !workspaceChooser.contains(event.target)) {
-    workspaceMenu.hidden = true;
-    workspaceButton.setAttribute('aria-expanded', 'false');
-  }
-});
 const userQuestions = new UserQuestions({
   instanceId: (() => {
     try {
@@ -276,7 +223,6 @@ const userQuestions = new UserQuestions({
 });
 runtime.UserQuestions = userQuestions;
 function openDocument(sessionId: string, ref: DocumentRef): void {
-  closeOtherDrawers('document');
   void documentPane.open(sessionId, ref);
 }
 document.addEventListener('click', (event) => {
@@ -709,10 +655,6 @@ function openSessionMenu(anchor: HTMLElement, sessionId: string) {
   menu.dataset.sessionId = sessionId;
   openMenuAt(menu, anchor);
 }
-function openTopMenu(anchor: HTMLElement) {
-  closeAllMenus();
-  openMenuAt($('top-menu'), anchor);
-}
 $('proj-menu').addEventListener('click', (e) => {
   const btn = eventElement(e)?.closest<HTMLButtonElement>('button[data-act]');
   if (!btn) return;
@@ -740,22 +682,9 @@ $('sess-menu').addEventListener('click', (e) => {
   if (!id) return;
   if (act === 'rename') renameSession(id);
 });
-$('top-menu').addEventListener('click', (e) => {
-  const btn = eventElement(e)?.closest<HTMLButtonElement>('button[data-act]');
-  if (!btn) return;
-  const act = btn.dataset.act;
-  if (act === 'clear') {
-    armDanger(btn, () => clearMessages(sessionState.activeId));
-    return;
-  }
-  closeAllMenus();
-  if (act === 'local-context') openLocalContextDrawer();
-  if (act === 'search-history') runtime.ConversationUI.searchHistory();
-  if (act === 'commands') commandPalette.open();
-});
 document.addEventListener('click', (e) => {
   if (eventElement(e)?.closest('.ctx-menu')) return;
-  if (eventElement(e)?.closest('.project-more, .session-more, #topbar-more')) return;
+  if (eventElement(e)?.closest('.project-more, .session-more')) return;
   closeAllMenus();
 });
 
@@ -1004,31 +933,23 @@ function closeChangesDrawer() {
   runtime.ChangesDrawer.close();
 }
 
-function openLocalContextDrawer() {
-  runtime.LocalContextDrawer.open();
-}
-
 function closeLocalContextDrawer() {
   runtime.LocalContextDrawer.close();
 }
 
 function handleLocalContextScopeChanged() {
+  runtime.LocalContextDrawer?.handleScopeChanged();
   workspace.suspend();
   closeChangesDrawer();
   runtime.ResearchDrawer.close();
-  if (runtime.LocalContextDrawer) runtime.LocalContextDrawer.handleScopeChanged();
 }
 
-function closeOtherDrawers(active: string | undefined) {
-  if (active && active !== 'local_context') {
-    closeLocalContextDrawer();
-    return;
-  }
+function closeOtherDrawers() {
   workspace.close();
-  if (active !== 'document') documentPane.close();
-  if (active !== 'changes') closeChangesDrawer();
-  if (active !== 'research') runtime.ResearchDrawer.close();
-  if (active !== 'local_context') closeLocalContextDrawer();
+  documentPane.close();
+  closeChangesDrawer();
+  runtime.ResearchDrawer.close();
+  closeLocalContextDrawer();
 }
 
 const approvalController = createApprovalController({
@@ -1110,11 +1031,6 @@ $('show-sidebar').onclick = () => {
   $('aside').inert = false;
   $('toggle-sidebar').focus();
 };
-$('topbar-more').onclick = (e) => {
-  e.stopPropagation();
-  openTopMenu(e.currentTarget as HTMLElement);
-};
-
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && (e.key === 'n' || e.key === 'N')) {
     if (eventElement(e)?.closest('.rename-input')) return;
@@ -1125,7 +1041,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (eventElement(e)?.closest('.rename-input')) return;
     closeAllMenus();
-    closeOtherDrawers(undefined);
+    closeOtherDrawers();
     runtime.ProviderUI.closeMenu($('provider-menu').classList.contains('open'));
     if (runtime.ProviderUI) runtime.ProviderUI.closeLocalConfig();
   }
@@ -1169,7 +1085,6 @@ async function boot() {
       workspace.target('research', { tab: value });
     },
     copyText,
-    closeOtherDrawers,
   });
   runtime.ChangesDrawer.init({
     $,
@@ -1177,15 +1092,11 @@ async function boot() {
     fetchChangeFile,
     restoreChanges,
     escapeHtml,
-    closeOtherDrawers,
   });
   runtime.LocalContextDrawer.init({
     $,
     getActiveId: () => sessionState.activeId,
     currentProjectPath: () => currentProjectPath(),
-    openMenuAt,
-    closeAllMenus,
-    closeOtherDrawers,
     copyText,
   });
   runtime.RunDetails.init({ getActiveId: () => sessionState.activeId });

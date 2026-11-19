@@ -216,7 +216,7 @@ def test_only_chat_breadcrumb_is_editable_and_title_fits_narrow_window(page):
     editor.press("Enter")
     expect(title_button(page)).to_have_text("x" * 80)
     expect(page.locator(".crumb-proj")).to_have_text("Project name")
-    assert title_button(page).bounding_box()["x"] + title_button(page).bounding_box()["width"] <= page.locator("#topbar-more").bounding_box()["x"]
+    assert title_button(page).bounding_box()["x"] + title_button(page).bounding_box()["width"] <= page.locator("#workspace-toggle").bounding_box()["x"]
 
 
 def test_late_composition_event_cannot_finish_new_editor_during_chat_click(page):
@@ -239,12 +239,7 @@ def test_late_composition_event_cannot_finish_new_editor_during_chat_click(page)
     assert page.evaluate("UiState.current().sessions.map(s=>s.title)") == ["Original chat name", "New Beta name"]
 
 
-def test_top_menu_has_no_rename_but_sidebar_keeps_other_chat_rename(page):
-    page.locator("#topbar-more").click()
-    expect(page.locator("#top-menu")).to_be_visible()
-    expect(page.locator("#top-menu").get_by_role("menuitem", name="Rename chat", exact=True)).to_have_count(0)
-    expect(page.locator("#top-menu").get_by_role("menuitem", name="Local context", exact=True)).to_be_visible()
-    page.keyboard.press("Escape")
+def test_sidebar_keeps_other_chat_rename(page):
     row = page.locator(".session-item").filter(has=page.get_by_role("button", name="Beta", exact=True))
     row.hover()
     row.locator(".session-more").click()

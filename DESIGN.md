@@ -407,6 +407,7 @@ Context menus (`.ctx-menu`):
 ### 5.4 Top bar
 
 - Title breadcrumb: `project-name / chat-title` — project in `--muted`, slash in `--faint`, chat in `--text`.
+- One right sidebar button directly opens or closes the workspace. It opens to the last view for the current conversation, or Files on the first open. The workspace shows Files, Changes, Research, and Local context as tabs. Commands and conversation search remain available via `Ctrl+K` and `Ctrl+F` respectively.
 - The chat title is a plain text button: click, or focus it with Tab and press Enter/Space, to rename in place. Only the chat name is editable; the project crumb and unused topbar space are not rename targets. Hover/focus uses a subtle gray background, without a permanent pencil icon. The topbar editor is transparent and borderless, with no outline, shadow, or native control frame; text stays aligned with the original title. It fits within the topbar and initially selects the full name; the caret and native text selection communicate editing. Sidebar inline rename retains its existing gray input style. Enter saves, Escape cancels, and leaving the editor saves; blank input keeps the original name, and names are limited to 80 characters. Respect IME composition. Commit updates the same session's title, sidebar, search, and durable state together; preserve drafts, message DOM, reading position, and ongoing work. Background rendering preserves the editor and caret, switching chats settles the original session's edit, and stale input events are ignored. Automatic naming must not replace active edits or confirmed custom titles. Remove `Rename chat` from the topbar menu; retain `Rename` in each sidebar chat menu for other chats.
 - **Status area:**
   - Idle: empty (no dot, no “Connected” label)
@@ -761,15 +762,13 @@ Research remains an explicit user action; existing evidence and handoff rules ap
 - Restore is shown as a text action only when the backend has a valid restore snapshot for that run.
 - Do not call this drawer `Knowledge` or `Vault` in the UI.
 
-### 5.9 Local context drawer
+### 5.9 Local context
 
-- Entry lives only in the topbar more menu as `Local context`.
-- Same fixed right panel language as Changes and Research.
-- Changes, Research, and Local context are mutually exclusive; opening one closes the others.
-- The drawer is a quiet audit surface, not a workspace, personality panel, or sidebar section.
+- Entry lives in the right workspace as the `Local context` tab.
+- Opening the tab loads the audit for the current scope. Switching tabs hides it, and switching scope clears the previous audit before any new load.
 - User-facing copy stays neutral: `Local context`, `Recent focus`, `Pending review`, `Active preferences`, `Follow-ups`, `Health`.
 - Do not expose internal terms such as Ghost, Memory, Affinity, Hebbian, Directive, Work Queue, or Router in the UI.
-- The drawer binds to the session/project scope it loaded; switching chat/project closes it.
+- The tab binds to the session/project scope it loaded; switching chat/project invalidates any outstanding response for that scope.
 
 ### 5.10 Icons
 

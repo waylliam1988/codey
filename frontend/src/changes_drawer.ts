@@ -7,7 +7,6 @@ export interface ChangesDrawerDeps {
   fetchChangeFile(project: string, path: string): Promise<ChangeFilePreview>;
   restoreChanges(project: string): Promise<RestoreChangesResult>;
   escapeHtml(text: string): string;
-  closeOtherDrawers?: (name: string) => void;
 }
 /* Codey changes drawer: per-file diff list with fold/unfold rendering.
    Zero-build asset module; index.html injects dependencies via init() at boot. */
@@ -32,7 +31,6 @@ export interface ChangesDrawerDeps {
     fetchChangeFile(project: string, path: string): Promise<ChangeFilePreview>;
     restoreChanges(project: string): Promise<RestoreChangesResult>;
     escapeHtml(text: string): string;
-    closeOtherDrawers?: (name: string) => void;
   }
   let deps: ChangesDeps;
   let generation = 0;
@@ -102,7 +100,6 @@ export interface ChangesDrawerDeps {
   }
   async function openChangesDrawer(project: string, path = ''): Promise<void> {
     if (!project) return;
-    if (deps.closeOtherDrawers) deps.closeOtherDrawers('changes');
     if (project !== activeProject) {
       lastData = null;
       fresh = false;

@@ -2,11 +2,8 @@ import { runtime } from './runtime';
 
 export interface LocalContextDeps {
   $(id: string): HTMLElement;
-  closeOtherDrawers?(active?: string): void;
   getActiveId(): string;
   currentProjectPath(): string;
-  openMenuAt?(menu: HTMLElement, anchor: HTMLElement): void;
-  closeAllMenus?(): void;
   copyText(text: string): Promise<boolean>;
 }
 interface Scope {
@@ -84,12 +81,14 @@ function sameScope(left: Scope, right: Scope): boolean {
   return left.session_id === right.session_id && left.project === right.project;
 }
 function isOpen(): boolean {
-  return $('drawer').classList.contains('open');
+  const drawer = $('drawer');
+  return drawer.classList.contains('open') && !drawer.closest('[hidden]');
 }
 function close(): void {
   generation++;
   loadedScope = null;
-  deps.closeAllMenus?.();
+  $('body').replaceChildren();
+  $('subtitle').textContent = 'Not loaded';
   runtime.UiState.setDrawerOpen('local-context-drawer', false);
 }
 function handleScopeChanged(): void {
@@ -211,12 +210,10 @@ async function exportMemory(): Promise<void> {
 }
 function init(next: LocalContextDeps): void {
   deps = next;
-  $('close').onclick = close;
   $('refresh').onclick = () => void load();
   $('export').onclick = () => void exportMemory();
 }
 function open(): void {
-  deps.closeOtherDrawers?.('local_context');
   runtime.UiState.setDrawerOpen('local-context-drawer', true);
   void load();
 }

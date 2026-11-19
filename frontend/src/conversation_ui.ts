@@ -56,7 +56,7 @@ export interface ConversationUiDeps {
   renderSidebar(): void;
   switchSession(id: string): void;
   closeAllMenus(active?: string): void;
-  closeOtherDrawers(active?: string): void;
+  closeOtherDrawers(): void;
   currentProjectPath(): string;
   commitSessionRename(id: string, value: string): void;
   renameInputEl(

@@ -1,6 +1,6 @@
 import { iconButton } from './icon_button';
 
-export type PanelId = 'files' | 'changes' | 'research' | 'review' | 'outputs' | 'history';
+export type PanelId = 'files' | 'changes' | 'research' | 'context' | 'review' | 'outputs' | 'history';
 type Target = Record<string, string>;
 interface Layout {
   open: boolean;
@@ -18,7 +18,8 @@ interface Panel {
   show(target: Target): void;
 }
 const KEY = 'codey:workspace:v1';
-const ids: PanelId[] = ['files', 'changes', 'research', 'review', 'outputs', 'history'];
+const primary: PanelId[] = ['files', 'changes', 'research', 'context'];
+const ids: PanelId[] = [...primary, 'review', 'outputs', 'history'];
 const initial = (): Layout => ({
   open: false,
   selected: 'files',
@@ -32,6 +33,10 @@ const initial = (): Layout => ({
 /** Only view metadata is stored here. Documents and run facts are read from their scoped APIs. */
 export class Workspace {
   readonly element = document.createElement('aside');
+  readonly toggleButton = iconButton('Show right sidebar', 'workspace', () => {
+    if (this.element.hidden) this.select(this.layout.selected);
+    else this.close();
+  });
   private panels = new Map<PanelId, Panel>();
   private layouts = new Map<string, Layout>();
   private session = '';
@@ -45,9 +50,14 @@ export class Workspace {
   private handle = document.createElement('div');
 
   constructor() {
+    this.element.id = 'right-workspace';
     this.element.className = 'workspace';
     this.element.hidden = true;
     this.element.setAttribute('aria-label', 'Workspace');
+    this.toggleButton.id = 'workspace-toggle';
+    this.toggleButton.disabled = true;
+    this.toggleButton.setAttribute('aria-controls', this.element.id);
+    this.toggleButton.setAttribute('aria-expanded', 'false');
     this.header.className = 'workspace-header';
     this.body.className = 'workspace-panels';
     this.notice.className = 'workspace-notice';
@@ -248,6 +258,11 @@ export class Workspace {
   private render(): void {
     const state = this.layout;
     this.element.hidden = !state.open;
+    const toggleLabel = state.open ? 'Hide right sidebar' : 'Show right sidebar';
+    this.toggleButton.disabled = !this.session;
+    this.toggleButton.title = toggleLabel;
+    this.toggleButton.setAttribute('aria-label', toggleLabel);
+    this.toggleButton.setAttribute('aria-expanded', String(state.open));
     document.body.classList.toggle('workspace-open', state.open);
     this.element.classList.toggle('workspace-full', state.full);
     this.paintSize();
@@ -256,7 +271,7 @@ export class Workspace {
     tabs.className = 'workspace-tabs';
     tabs.setAttribute('role', 'tablist');
     tabs.setAttribute('aria-label', 'Workspace views');
-    const available = state.tabs.filter((id) => this.panels.has(id));
+    const available = [...new Set([...primary, ...state.tabs])].filter((id) => this.panels.has(id));
     for (const id of available) {
       const tab = document.createElement('button');
       tab.type = 'button';
@@ -266,7 +281,10 @@ export class Workspace {
       tab.setAttribute('aria-selected', String(id === state.selected));
       tab.setAttribute('aria-controls', `workspace-panel-${id}`);
       tab.tabIndex = id === state.selected ? 0 : -1;
-      tab.onclick = () => this.select(id);
+      tab.onclick = () => {
+        this.select(id);
+        this.header.querySelector<HTMLElement>(`#workspace-tab-${id}`)?.focus({ preventScroll: true });
+      };
       tab.onkeydown = (event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
