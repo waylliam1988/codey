@@ -216,19 +216,6 @@ def test_real_background_command_uses_original_runtime_and_one_result(runtime: R
     result_value = decode_json_object(value["result"])
     assert result_value["ok"] is True
     assert result_value["exit_code"] == 0
-    assert result_value["result_ref"] == execution_effect_id(ref)
-    assert "text" not in result_value  # The same output is not repeated in result and output.
-    output = decode_json_object(value["output"])
-    assert "1 passed" in json.dumps(output)
-    assert "next_read" not in value
-    from codey.operations.kernel_prompt import working_context
-
-    observations = decode_json_object(json.loads(working_context(runtime.session).splitlines()[1]))
-    executions = observations["executions"]
-    assert isinstance(executions, list)
-    admission = decode_json_object(executions[0])
-    assert admission["terminal_observed"] is True
-    assert "next_read" not in admission
     assert runtime.app.durable.store.submission(completed.submission_id).status == SubmissionStatus.RUNNING
 
 
@@ -258,15 +245,6 @@ def test_wait_timeout_and_independent_utf8_output_cursors(runtime: Runtime) -> N
     assert first == again
     assert first["next_cursor"] == 6
     assert store.read_since(execution_effect_id(ref), "stdout", 6)["next_cursor"] == 12
-    observed = control_tool_task(ToolCall("task_output", {"task_ref": ref, "limit": 2}),
-        durable=runtime.app.durable, owner_task_id="r", store=runtime.app.managed_outputs)
-    payload = decode_json_object(json.loads(observed.model_text))
-    next_read = decode_json_object(payload["next_read"])
-    args = decode_json_object(next_read["args"])
-    assert args["stdout_cursor"] == 6 and args["stderr_cursor"] == 0
-    again_observed = control_tool_task(ToolCall("task_output", args), durable=runtime.app.durable,
-        owner_task_id="r", store=runtime.app.managed_outputs)
-    assert "世界" in again_observed.model_text and "你好" not in again_observed.model_text
 
 
 def test_snapshot_and_argument_contracts_agree(runtime: Runtime) -> None:
@@ -678,12 +656,8 @@ def test_headless_entry_starts_child_without_dispatching_another_model(tmp_path:
             pass
 
     provider = Scripted()
-
-    def connect(provider_id: str, *, port: int) -> Scripted:
-        return provider
-
     rows: list[dict[str, object]] = []
     result = run_headless(HeadlessRequest(project, "后台运行测试，查看结果，再告诉我结果。不要修改文件。", provider_id="local",
         run_id="headless-background", state_home=tmp_path / "state", max_turns=4, project_changes_required=False),
-        emit_jsonl=rows.append, connect_provider=connect)
+        emit_jsonl=rows.append, connect_provider=lambda _provider, *, port: provider)
     assert result.stop_reason == "done", rows

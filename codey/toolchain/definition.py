@@ -184,21 +184,15 @@ TOOL_DEFINITIONS = (
         "edit",
         permission="project_write",
         examples=(
-            '{"tool":"edit","args":{"path":"app.py","base_result_ref":"<complete read_file result_ref>","region":"process","relative_indent":true,"content":"def process():\\n    return new_value\\n"}}',
             '{"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"def process():\\n    return old_value\\n","new_string":"def process():\\n    return new_value\\n"}]}}',
             '{"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}',
             '{"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old1","new_string":"new1"},{"old_string":"old2","new_string":"new2"}]}}',
         ),
         description=(
-            "Edit a local Python region with content + base_result_ref + region (a qualified class/function name, "
-            "e.g. Store.place_order). The program computes its line boundaries. "
-            "Use the actual reference and region name from a complete read_file receipt in this task; "
-            "changed file versions are rejected. Provide only the new region, without copying old text. "
-            "For Python blocks, relative_indent=true "
-            "aligns the replacement to the target's indentation; internal indentation remains your responsibility. "
-            f"For small exact changes, up to {MAX_REPLACEMENTS} replacements are also available; "
-            "omit content and base_result_ref with replacements. "
-            "Create new files with content. For a whole-file update, use content plus base_result_ref without region. "
+            f"Edit existing files with up to {MAX_REPLACEMENTS} exact replacements, preserving unrelated code. "
+            "For replacements, omit content and base_result_ref. "
+            "Create new files with content. For a whole-file update, use content plus base_result_ref. "
+            "base_result_ref must be a complete read_file receipt from this task; changed versions are rejected. "
             + EXACT_REPLACEMENT_CONTEXT_HINT
         ),
         output_facts=("file_changed",),
@@ -207,11 +201,7 @@ TOOL_DEFINITIONS = (
         parameters=(
             ("path", {"type": "string"}),
             ("content", {"type": "string", "description":
-                "New class/function text when region is set; otherwise complete file text."}),
-            ("region", {"type": "string", "description":
-                "Exact qualified Python class/function name from the complete read, e.g. Store.place_order. Includes decorators."}),
-            ("relative_indent", {"type": "boolean", "description":
-                "Only for Python regions: align the outer indentation and reject unsafe strings/tabs or invalid syntax."}),
+                "Complete file text; preserve unrelated content. Prefer replacements for focused edits."}),
             ("base_result_ref", {
                 "type": "string",
                 "description": "Only for content mode; omit this field with replacements. " + FULL_READ_REFERENCE_HINT,

@@ -275,15 +275,13 @@ def _normalize_edit(
     args: Mapping[str, JsonValue],
     limits: ToolArgLimits,
 ) -> ToolArgsRepairResult:
-    _reject_unknown_args(args, {"path", "cwd", "content", "replacements", "base_result_ref",
-                                "region", "relative_indent"}, context="edit")
+    _reject_unknown_args(args, {"path", "cwd", "content", "replacements", "base_result_ref"}, context="edit")
     norm_path, rewrites, counts = _resolve_path_arg(
         args, missing_msg="edit requires a top-level path and can only edit one file",
     )
     call_args: ToolArgs = {"path": norm_path}
     if ("content" in args) == ("replacements" in args):
         raise ToolArgsRepairError("edit requires exactly one mode: content or replacements", repair_kind="invalid_args")
-    call_args.update(_edit_region_args(args))
     if "content" in args:
         if not isinstance(args["content"], str):
             raise ToolArgsRepairError("edit content must be a string", repair_kind="invalid_args")
@@ -317,20 +315,6 @@ def _normalize_edit(
             normalized.append({"old_string": old, "new_string": new})
         call_args["replacements"] = normalized
     return ToolArgsRepairResult(args=call_args, alias_rewrite_count=rewrites, arg_repair_counts=counts)
-
-
-def _edit_region_args(args: Mapping[str, JsonValue]) -> ToolArgs:
-    if not {"region", "relative_indent"}.intersection(args):
-        return {}
-    if "content" not in args or "base_result_ref" not in args or "region" not in args:
-        raise ToolArgsRepairError("region edit requires content, base_result_ref and region together")
-    region, _ = _require_text_arg(args, ("region",), "region", allow_blank=False)
-    normalized: ToolArgs = {"region": region}
-    if "relative_indent" in args:
-        if not isinstance(args["relative_indent"], bool):
-            raise ToolArgsRepairError("relative_indent must be a boolean")
-        normalized["relative_indent"] = args["relative_indent"]
-    return normalized
 
 
 def _normalize_read(

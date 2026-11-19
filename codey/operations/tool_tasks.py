@@ -23,7 +23,6 @@ from codey.operations.kernel_result import _error_result
 from codey.operations.task_session import TaskSession
 from codey.operations.task_state import TaskSubmissionStores
 from codey.runtime.core import cancellation
-from codey.runtime.core.execution_receipt import execution_receipt
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.tool_dispatch import ToolDispatch
 from codey.runtime.effects.effect_records import (
@@ -260,12 +259,9 @@ def control_tool_task(call: ToolCall, *, durable: object, owner_task_id: str,
             if child.state.get("cancel_requested") and child.status not in TASK_TERMINAL_STATUSES else str(child.status)}
         result = tool_execution_result(durable, child, store=store)
         if result is not None:
-            payload["result"] = {"ok": result[1].ok, "result_ref": result[0],
+            payload["result"] = {"ok": result[1].ok, "text": result[1].model_text[:4000],
+                                 "text_truncated": len(result[1].model_text) > 4000,
                                  "exit_code": result[1].audit.get("exit_code")}
-            execution = execution_receipt(result[1])
-            if execution is not None and execution.status != "exit":
-                payload["execution_status"] = execution.status
-                payload["diagnostic"] = execution.output[:1000]
         if child.state.get("failure_reason"):
             payload["failure_reason"] = child.state["failure_reason"]
         if child.state.get("cleanup_unknown"):
@@ -278,20 +274,9 @@ def control_tool_task(call: ToolCall, *, durable: object, owner_task_id: str,
             except KeyError:
                 snapshot = None
             if snapshot is not None:
-                output = {channel: ExecutionOutputStore.stream_since(snapshot, channel,
+                payload["output"] = {channel: ExecutionOutputStore.stream_since(snapshot, channel,
                     require_json_integer(call.args.get(f"{channel}_cursor", 0), f"{channel}_cursor"), limit=limit)
                     for channel in ("stdout", "stderr")}
-                payload["output"] = output
-                if (child.status not in TASK_TERMINAL_STATUSES
-                        or any(row.get("incremental_available") is not False
-                               and row["next_cursor"] != row["total_bytes"] for row in output.values())):
-                    payload["next_read"] = {"tool": "task_output", "args": {"task_ref": task_ref,
-                        "stdout_cursor": output["stdout"]["next_cursor"],
-                        "stderr_cursor": output["stderr"]["next_cursor"],
-                        "wait_ms": 30000 if child.status not in TASK_TERMINAL_STATUSES else 0}}
-        if result is not None and "output" not in payload:
-            payload["result"] = {**decode_json_object(payload["result"]), "text": result[1].model_text[:4000],
-                                 "text_truncated": len(result[1].model_text) > 4000}
         return ToolResult(call, json.dumps(payload, ensure_ascii=False), ok=True, canonical={"value": payload})
     except (KeyError, ValueError) as exc:
         return _error_result(call, str(exc))

@@ -181,51 +181,7 @@ def _observation_program(result: ToolResult, receipts: Mapping[str, ToolResult])
         decode_json_object(result.canonical)["value"])})
 
 
-def _tool_task_value(result: ToolResult, receipts: Mapping[str, ToolResult]) -> tuple[ToolCall, JsonObject] | None:
-    if result.kind == "accepted":
-        return result.call, {"kind": "accepted", "operation": {"tool": result.call.name, "args": result.call.args}}
-    if result.call.name not in {"task_output", "task_cancel"} or not result.ok:
-        return None
-    value = decode_json_object(result.canonical.get("value"))
-    ref = value.get("task_ref")
-    if not isinstance(ref, str):
-        return None
-    origin = next((receipt for receipt in receipts.values() if receipt.kind == "accepted"
-                   and decode_json_object(receipt.canonical.get("value")).get("task_ref") == ref), None)
-    if origin is None:
-        return None
-    # Normalize only protocol-owned identities. Output text, status, cursors,
-    # gaps and exit facts remain observations, including literal ref strings.
-    call = ToolCall(result.call.name, {**{key: item for key, item in result.call.args.items() if key != "task_ref"},
-                    "operation": {"tool": origin.call.name, "args": origin.call.args}})
-    value.pop("task_ref", None)
-    if isinstance(value.get("result"), dict):
-        formal = decode_json_object(value["result"])
-        formal.pop("result_ref", None)
-        value["result"] = formal
-    if isinstance(value.get("output"), dict):
-        streams = decode_json_object(value["output"])
-        for channel in ("stdout", "stderr"):
-            if isinstance(streams.get(channel), dict):
-                stream = decode_json_object(streams[channel])
-                for field in ("execution_id", "revision"):
-                    stream.pop(field, None)
-                streams[channel] = stream
-        value["output"] = streams
-    if isinstance(value.get("next_read"), dict):
-        next_read = decode_json_object(value["next_read"])
-        args = decode_json_object(next_read.get("args"))
-        args.pop("task_ref", None)
-        next_read["args"] = args
-        value["next_read"] = next_read
-    return call, value
-
-
 def progress_comparison(result: ToolResult, receipts: Mapping[str, ToolResult]) -> ProgressComparison:
-    if (tool_task := _tool_task_value(result, receipts)) is not None:
-        call, task_value = tool_task
-        text = _encoded({"ok": result.ok, "value": task_value, "truncated": result.truncated})
-        return ProgressComparison(call, ToolResult(call, text, ok=result.ok, kind=result.kind, audit=result.audit), text)
     value = _browser_value(result)
     if value is not None:
         call = ToolCall(result.call.name, _target(result.call.args, receipts))
