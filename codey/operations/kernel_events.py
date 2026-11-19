@@ -8,18 +8,22 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING
 
 from codey.operations.task_session import TaskSession, turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import SOURCE_READ_TOOL_NAMES
 from codey.utils.refs import strict_exit_code
 
+if TYPE_CHECKING:
+    from codey.providers.base import AssistantTurn
+    from codey.runtime.observe.events import RunEvent
+
 __all__: list[str] = []
 
 
 def _emit_tool_projection_failure(
-    on_event: Callable[[Any], None] | None,
+    on_event: Callable[[RunEvent], None] | None,
     session: TaskSession,
     call: ToolCall,
     *,
@@ -41,22 +45,22 @@ def _emit_tool_projection_failure(
         presentation={"result": "recovery failed"},
     )
     event = RunEvent.tool_finished(turn, _event_call(session, call), outcome, index)
-    canonical_name = str(getattr(call, "name", "") or "").strip().lower()
-    if canonical_name and isinstance(getattr(event, "metadata", None), dict):
+    canonical_name = call.name.strip().lower()
+    if canonical_name:
         event.metadata["tool_name"] = canonical_name
     # Keep the original RecoveryFailed authoritative if a secondary sink is down.
     with contextlib.suppress(Exception):
         on_event(event)
 
 
-def _emit_turn_event(on_event: Callable[[Any], None] | None, turn: int, reply: Any) -> None:
+def _emit_turn_event(on_event: Callable[[RunEvent], None] | None, turn: int, reply: str | AssistantTurn) -> None:
     if on_event is None:
         return
     from codey.runtime.observe.events import RunEvent
 
-    display = reply if isinstance(reply, str) else str(getattr(reply, "text", "") or "")
-    reasoning = getattr(reply, "reasoning", "")
-    on_event(RunEvent.turn_started(turn, display, reasoning=reasoning if isinstance(reasoning, str) else ""))
+    display = reply if isinstance(reply, str) else reply.text
+    reasoning = "" if isinstance(reply, str) else reply.reasoning
+    on_event(RunEvent.turn_started(turn, display, reasoning=reasoning))
 
 
 def _event_call(session: TaskSession, call: ToolCall) -> ToolCall:
@@ -80,7 +84,7 @@ def _event_call(session: TaskSession, call: ToolCall) -> ToolCall:
 
 
 def _emit_tool_starts(
-    on_event: Callable[[Any], None] | None, session: TaskSession, turn: int, calls: list[ToolCall]
+    on_event: Callable[[RunEvent], None] | None, session: TaskSession, turn: int, calls: list[ToolCall]
 ) -> None:
     if on_event is None:
         return
@@ -88,19 +92,16 @@ def _emit_tool_starts(
     from codey.toolchain.definition import render_tool_activity
 
     for index, call in enumerate(calls):
-        canonical = str(getattr(call, "name", "") or "").strip().lower()
+        canonical = call.name.strip().lower()
         display_call = _event_call(session, call)
         event = RunEvent.tool_started(turn, display_call, render_tool_activity(display_call), index)
-        try:
-            if isinstance(getattr(event, "metadata", None), dict) and canonical:
-                event.metadata["tool_name"] = canonical
-        except Exception:
-            pass
+        if canonical:
+            event.metadata["tool_name"] = canonical
         on_event(event)
 
 
 def _emit_tool_results(
-    on_event: Callable[[Any], None] | None,
+    on_event: Callable[[RunEvent], None] | None,
     session: TaskSession,
     results: list[ToolResult],
     *,
@@ -115,8 +116,7 @@ def _emit_tool_results(
     for index, result in enumerate(results):
         identity = turn_effect_id(str(run_id or "adhoc"), turn, index)
         record = session.executed.get(identity)
-        raw_ok = record.get("ok", False) if isinstance(record, dict) else False
-        ok = raw_ok if type(raw_ok) is bool else False
+        ok = result.ok if result.kind == "accepted" else record is not None and record.get("ok") is True
         # Strict exit projection: only real ints pass. A present-but-invalid
         # audit/receipt exits (bool/str/float) are omitted, never coerced to 0.
         # A present record is authoritative even when its exit is unknown.
@@ -143,14 +143,14 @@ def _emit_tool_results(
             truncated=result.truncated,
             canonical=result.canonical,
             audit=audit,
-            presentation={"result": display[:500], **dict(result.presentation)},
+            presentation={"result": display[:500], **dict(result.presentation),
+                          **({"status": "accepted"} if result.kind == "accepted" else {})},
         )
-        canonical_name = str(getattr(result.call, "name", "") or "").strip().lower()
+        canonical_name = result.call.name.strip().lower()
         display_call = _event_call(session, result.call)
         event = RunEvent.tool_finished(turn, display_call, outcome, index)
-        if isinstance(getattr(event, "metadata", None), dict):
-            if canonical_name:
-                event.metadata["tool_name"] = canonical_name
+        if canonical_name:
+            event.metadata["tool_name"] = canonical_name
             # Only the kernel side-channel attached by
             # _with_trusted_workspace_state may be carried. Raw audit
             # workspace keys are executor-forgeable and never trusted;

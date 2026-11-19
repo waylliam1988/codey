@@ -55,6 +55,9 @@ class DurableAppServices:
         scheduler = DurableTaskScheduler(session, dispatch, abort_handler=abort_handler)
         def observe(result: CommitResult, mutation: DurableMutation) -> None:
             del result
+            for child in mutation.task_updates:
+                if child.execution_kind == "tool":
+                    scheduler.notify(child.task_id)
             if mutation.task is None:
                 if mutation.submission is not None and mutation.submission.mode == "write":
                     scheduler.notify()

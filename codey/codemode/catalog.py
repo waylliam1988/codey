@@ -17,7 +17,7 @@ from codey.codemode.types import (
 )
 from codey.operations.browser_references import BrowserReferences, reference_spec
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
-from codey.toolchain.result_schema import schema_typescript
+from codey.toolchain.result_schema import model_output_schema, schema_typescript
 from codey.toolchain.tool_spec import ToolSpec, is_text_batch_tool
 from codey.types.json_value import canonical_json_object, require_json_strings
 
@@ -108,7 +108,8 @@ def build_catalog_from_specs(specs: Mapping[str, ToolSpec] | Iterable[ToolSpec])
             "grant": spec.grant,
             "read_only": spec.read_only,
             "parallel_safe": spec.parallel_safe,
-            "output_schema": spec.output_schema,
+            "output_schema": model_output_schema(canonical_json_object(spec.output_schema),
+                                                 supports_background=spec.supports_background),
         })
     return build_catalog_snapshot(rows)
 
@@ -152,12 +153,11 @@ def build_codemode_catalog(
         if (
             (entry.read_only and entry.namespace in {"project", "source", "knowledge"}
              and entry.grant in {"project.read", "web.read", "knowledge.read"})
-            or entry.namespace == "browser"
+            or entry.namespace in {"browser", "task_control"}
             or (
                 entry.namespace == "project"
-                and entry.grant == "project.write"
-                and ((allow_project_edit and entry.name == "edit")
-                     or (allow_project_run and entry.name == "run"))
+                and ((entry.grant == "project.write" and allow_project_edit and entry.name == "edit")
+                     or (entry.grant == "project.verify" and allow_project_run and entry.name == "run"))
             )
         ):
             if entry.name == "browser_navigate" and task_navigation_url is not None:

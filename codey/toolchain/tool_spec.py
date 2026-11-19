@@ -21,7 +21,7 @@ from codey.toolchain.result_schema import text_output_schema
 from codey.toolchain.schema_validation import _valid_custom_schema
 from codey.toolchain.tool_prompt import json_contract_text as json_contract_text
 from codey.toolchain.tool_prompt import model_tool_description
-from codey.types.json_value import ToolArgs, canonical_json_object
+from codey.types.json_value import ToolArgs, canonical_json_object, parse_json_object
 
 _TEXT_BATCH_TOOLS = frozenset({"parallel", "read_files"})
 SOURCE_GAPS_GUIDANCE = (
@@ -80,6 +80,7 @@ class ToolSpec:
     executor: str = ""
     replay_class: str = "unsafe"
     parallel_safe: bool = False
+    supports_background: bool = False
     output_schema: Mapping[str, object] = field(default_factory=text_output_schema)
     declarations: str = ""
     namespace: str = "core"
@@ -118,6 +119,8 @@ def freeze_spec_parameters(spec: ToolSpec) -> ToolSpec:
     """Return a copy of ``spec`` with nested parameter schemas frozen."""
     from dataclasses import replace as _replace
 
+    if type(spec.supports_background) is not bool:
+        raise ValueError(f"invalid background capability for {spec.name}")
     if not _valid_custom_schema(thaw_schema_value(spec.output_schema)):
         raise ValueError(f"invalid output schema for {spec.name}")
     try:
@@ -157,6 +160,7 @@ def _coding_specs() -> dict[str, ToolSpec]:
             executor="project",
             replay_class="safe" if definition.read_only else "unsafe",
             parallel_safe=definition.parallel_safe,
+            supports_background=definition.supports_background,
             output_schema=definition.output_schema,
         )
     return specs
@@ -414,6 +418,9 @@ def _all_specs() -> dict[str, ToolSpec]:
             continue
         specs[name] = spec
     specs.update(_browser_specs())
+    from codey.toolchain.task_control_specs import task_control_specs
+
+    specs.update(task_control_specs())
     if "done" not in specs:
         specs["done"] = _coding_specs().get("done", ToolSpec(name="done", grant="control"))
     done = specs["done"]
@@ -428,7 +435,25 @@ def _all_specs() -> dict[str, ToolSpec]:
             "required": ["result_ref", "reason"], "additionalProperties": False,
             "properties": {"result_ref": {"type": "string"}, "reason": {"type": "string", "minLength": 1}}}}),
     ))
-    return specs
+    return {name: _execution_parameters(spec) for name, spec in specs.items()}
+
+
+def _execution_parameters(spec: ToolSpec) -> ToolSpec:
+    if not spec.supports_background:
+        return spec
+    if "run_in_background" in dict(spec.parameters):
+        raise ValueError("execution option conflicts with business parameters")
+    example = parse_json_object(spec.json_examples[0])
+    args = canonical_json_object(example["args"])
+    args["run_in_background"] = True
+    example["args"] = args
+    background_example = json.dumps(example, ensure_ascii=False, separators=(",", ":"))
+    return replace(spec, parameters=(*spec.parameters, ("run_in_background", {
+        "type": "boolean", "description": "Set true for background execution; omitted or false waits for completion. "
+        "Returns an accepted task_ref, not a test result. Read task_output for the final result."})),
+        description=spec.description + " Set run_in_background=true to accept owned work and return a task_ref. "
+        "Acceptance is not completion. Use task_output to wait/read, or task_cancel to stop. "
+        f"Background call example: {background_example}")
 
 
 _SPECS: dict[str, ToolSpec] | None = None

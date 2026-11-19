@@ -5,7 +5,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
-from typing import cast
 
 TASK_PHASE_TRANSITIONS: Mapping[str, frozenset[str]] = MappingProxyType({
     "accepted": frozenset({"dispatching", "running", "failed", "cancelled"}),
@@ -34,6 +33,8 @@ def migrate_checkpoint_phase(phase: str, schema_version: int) -> tuple[str, int]
         raise ValueError(f"unknown task phase: {phase}")
     return phase, TASK_CHECKPOINT_SCHEMA_VERSION
 FROZEN_TASK_STATE_KEYS = (
+    "execution_kind",
+    "tool_input",
     "input_entry_id",
     "input_identity",
     "input_request",
@@ -53,11 +54,20 @@ FROZEN_TASK_STATE_KEYS = (
 
 
 def valid_frozen_task_state(previous: Mapping[str, object], current: Mapping[str, object]) -> bool:
-    return all(key not in previous or (key in current and thaw_json(previous[key]) == thaw_json(current[key]))
-               for key in FROZEN_TASK_STATE_KEYS)
+    return (previous.get("execution_kind", "model") == current.get("execution_kind", "model")
+            and all(key not in previous or (key in current and thaw_json(previous[key]) == thaw_json(current[key]))
+                    for key in FROZEN_TASK_STATE_KEYS))
 
 
 def _validate_task_scheduler_state(state: Mapping[str, object]) -> None:
+    if state.get("execution_kind", "model") not in {"model", "tool"}:
+        raise ValueError("unknown task execution kind")
+    if state.get("execution_kind") == "tool":
+        from codey.durable.tool_task import ToolTaskInput
+
+        ToolTaskInput.from_payload(state.get("tool_input"))
+        if not state.get("owner_task_id"):
+            raise ValueError("tool task requires an owner")
     owner = state.get("owner_task_id")
     if owner is not None and (not isinstance(owner, str) or not owner):
         raise ValueError("owner task ID must be a non-empty string")
@@ -111,6 +121,17 @@ def valid_cancellation_cleanup(previous: Mapping[str, object], current: TaskChec
     save returned facts and close native calls through the existing ledger.
     Effect-intent validation independently limits admission to close receipts.
     """
+    if current.execution_kind == "tool":
+        mutable = {"pending_effect_ids", "tool_worker_active", "attempt_token", "attempt_owner",
+                   "attempt_process_id", "attempt_number"}
+        before_pending, after_pending = previous.get("pending_effect_ids", ()), current.state.get("pending_effect_ids", ())
+        return (current.phase in {"dispatching", "running"} and current.status in {TaskStatus.RUNNING, TaskStatus.PENDING}
+                and current.state.get("cancel_requested") is True
+                and thaw_json({key: value for key, value in previous.items() if key not in mutable})
+                == thaw_json({key: value for key, value in current.state.items() if key not in mutable})
+                and isinstance(before_pending, (list, tuple)) and isinstance(after_pending, (list, tuple))
+                and all(identity in before_pending for identity in after_pending)
+                and (previous.get("tool_worker_active") is True or not current.state.get("tool_worker_active")))
     before, after = previous.get("operation"), current.state.get("operation")
     if (not current.state.get("cancel_requested") or current.phase != "running"
             or current.status not in {TaskStatus.RUNNING, TaskStatus.PENDING, TaskStatus.WAITING}
@@ -126,6 +147,8 @@ def valid_cancellation_cleanup(previous: Mapping[str, object], current: TaskChec
 
 def kernel_cleanup_required(task: TaskCheckpoint) -> bool:
     """Scheduling predicate only; the operation reducer still chooses the work."""
+    if task.execution_kind == "tool":
+        return bool(task.state.get("pending_effect_ids")) or task.state.get("tool_worker_active") is True
     operation = task.state.get("operation")
     return isinstance(operation, Mapping) and (
         bool(task.state.get("pending_effect_ids"))
@@ -335,6 +358,14 @@ def thaw_json(value: object) -> object:
     return value
 
 
+def _thaw_object(value: object) -> dict[str, object]:
+    raw = thaw_json(value)
+    if not isinstance(raw, Mapping):
+        raise TypeError("durable payload must be an object")
+    fields: Mapping[object, object] = raw
+    return {str(key): item for key, item in fields.items()}
+
+
 @dataclass(frozen=True)
 class EntryDraft:
     entry_id: str
@@ -350,7 +381,7 @@ class EntryDraft:
             raise ValueError("entry identity and kind are required")
         if not isinstance(self.payload, Mapping):
             raise ValueError("entry payload must be a mapping")
-        copied = cast(dict[str, object], thaw_json(self.payload))
+        copied = _thaw_object(self.payload)
         _validate_json(copied)
         object.__setattr__(self, "payload", _freeze_json(copied))
 
@@ -415,7 +446,7 @@ class SubmissionDraft:
         if placement is SubmissionPlacement.QUEUED and self.entry is not None:
             raise ValueError("queued submissions cannot already have an entry")
         if self.content is not None:
-            content = cast(dict[str, object], thaw_json(self.content))
+            content = _thaw_object(self.content)
             _validate_json(content)
             object.__setattr__(self, "content", _freeze_json(content))
         if placement is SubmissionPlacement.QUEUED and self.content is None:
@@ -450,11 +481,11 @@ class SubmissionRecord:
         if self.placement is SubmissionPlacement.QUEUED and self.input_entry_id is not None:
             raise ValueError("queued submissions cannot reference an input entry")
         if self.detail is not None:
-            detail = cast(dict[str, object], thaw_json(self.detail))
+            detail = _thaw_object(self.detail)
             _validate_json(detail)
             object.__setattr__(self, "detail", _freeze_json(detail))
         if self.content is not None:
-            content = cast(dict[str, object], thaw_json(self.content))
+            content = _thaw_object(self.content)
             _validate_json(content)
             object.__setattr__(self, "content", _freeze_json(content))
         if self.status == SubmissionStatus.DONE:
@@ -491,7 +522,7 @@ class SubmissionUpdate:
         if self.mode is not None and self.mode not in {"steer", "follow_up"}:
             raise ValueError("invalid queued input mode")
         if self.content is not None:
-            content = cast(dict[str, object], thaw_json(self.content))
+            content = _thaw_object(self.content)
             _validate_json(content)
             object.__setattr__(self, "content", _freeze_json(content))
         if self.expected_status != self.status and not valid_submission_transition(self.expected_status, self.status):
@@ -499,7 +530,7 @@ class SubmissionUpdate:
                 f"invalid submission transition: {self.expected_status} -> {self.status}"
             )
         if self.detail is not None:
-            detail = cast(dict[str, object], thaw_json(self.detail))
+            detail = _thaw_object(self.detail)
             _validate_json(detail)
             object.__setattr__(self, "detail", _freeze_json(detail))
         if self.status == SubmissionStatus.DONE and self.answer_entry_id is None and self.input_entry_id is None:
@@ -548,7 +579,7 @@ class ApprovalRecord:
         }:
             raise ValueError("invalid approval continuation status")
         if self.settlement is not None:
-            settlement = cast(dict[str, object], thaw_json(self.settlement))
+            settlement = _thaw_object(self.settlement)
             _validate_json(settlement)
             object.__setattr__(self, "settlement", _freeze_json(settlement))
 
@@ -572,7 +603,7 @@ class ApprovalRecord:
         raw_revision = payload.get("revision")
         revision = int(raw_revision) if isinstance(raw_revision, (int, str)) else 0
         raw_settlement = payload.get("settlement")
-        settlement = cast(Mapping[str, object], raw_settlement) if isinstance(raw_settlement, Mapping) else None
+        settlement = _thaw_object(raw_settlement) if isinstance(raw_settlement, Mapping) else None
         return cls(
             approval_id=str(payload.get("approval_id") or ""),
             task_id=str(payload.get("task_id") or ""),
@@ -633,13 +664,13 @@ class CommitRecord:
     payload: Mapping[str, object]
 
     def __post_init__(self) -> None:
-        payload = cast(dict[str, object], thaw_json(self.payload))
+        payload = _thaw_object(self.payload)
         _validate_json(payload)
         object.__setattr__(self, "payload", _freeze_json(payload))
 
     def to_payload(self) -> dict[str, object]:
         return {
-            **cast(dict[str, object], thaw_json(self.payload)),
+            **_thaw_object(self.payload),
             "type": "durable_commit",
             "commit_seq": self.sequence,
             "kind": self.kind,
@@ -670,6 +701,10 @@ class TaskCheckpoint:
     pending_effect_id: str | None = None
     status: TaskStatus | str | None = None
     schema_version: int = TASK_CHECKPOINT_SCHEMA_VERSION
+
+    @property
+    def execution_kind(self) -> str:
+        return "tool" if self.state.get("execution_kind") == "tool" else "model"
 
     @property
     def attempt_token(self) -> str:
@@ -733,11 +768,16 @@ class TaskCheckpoint:
         if status not in TASK_TERMINAL_STATUSES and self.phase in {"completed", "failed", "cancelled"}:
             raise ValueError("terminal task phase requires a terminal status")
         object.__setattr__(self, "status", status)
-        provider_snapshot = cast(dict[str, object], thaw_json(self.provider_snapshot))
-        state = cast(dict[str, object], thaw_json(self.state))
+        provider_snapshot = _thaw_object(self.provider_snapshot)
+        state = _thaw_object(self.state)
         _validate_json(provider_snapshot)
         _validate_json(state)
         _validate_task_scheduler_state(state)
+        if self.execution_kind == "tool":
+            from codey.durable.tool_task import ToolTaskInput, tool_task_id
+
+            if self.task_id != tool_task_id(ToolTaskInput.from_payload(state["tool_input"]).origin_effect_id):
+                raise ValueError("tool task identity differs from its original effect")
         _validate_workflow_state(state)
         attempt = state.get("attempt_number", 0)
         token = state.get("attempt_token", "")
@@ -783,11 +823,11 @@ class EffectRecord:
     def __post_init__(self) -> None:
         if not all((self.effect_id, self.task_id, self.category, self.replay_class, self.args_digest, self.status)):
             raise ValueError("effect identity and classification are required")
-        intent = cast(dict[str, object], thaw_json(self.intent))
+        intent = _thaw_object(self.intent)
         _validate_json(intent)
         object.__setattr__(self, "intent", _freeze_json(intent))
         if self.settlement is not None:
-            settlement = cast(dict[str, object], thaw_json(self.settlement))
+            settlement = _thaw_object(self.settlement)
             _validate_json(settlement)
             object.__setattr__(self, "settlement", _freeze_json(settlement))
 
@@ -820,7 +860,7 @@ class ArtifactRecord:
             raise ValueError("artifact task owner cannot be empty")
         if self.owner_effect_id is not None and not self.owner_effect_id:
             raise ValueError("artifact effect owner cannot be empty")
-        metadata = cast(dict[str, object], thaw_json(self.metadata))
+        metadata = _thaw_object(self.metadata)
         _validate_json(metadata)
         object.__setattr__(self, "metadata", _freeze_json(metadata))
 
@@ -934,6 +974,18 @@ def _validate_mutation_tasks(mutation: DurableMutation) -> None:
         raise ValueError("task IDs must be unique within a mutation")
     if any(task.conversation_id != mutation.conversation_id for task in all_tasks):
         raise ValueError("task belongs to another conversation")
+    for child in mutation.task_updates:
+        if child.execution_kind != "tool" or child.revision != 0:
+            continue
+        from codey.durable.tool_task import ToolTaskInput
+
+        parent = mutation.task
+        origin = ToolTaskInput.from_payload(child.state["tool_input"]).origin_effect_id
+        admission = next((effect for effect in mutation.settlements if effect.effect_id == origin), None)
+        if (parent is None or parent.execution_kind != "model" or child.owner_task_id != parent.task_id
+                or child.submission_id != parent.submission_id or admission is None
+                or admission.task_id != parent.task_id or admission.status != "ok"):
+            raise ValueError("tool task must be atomically admitted by its original owner effect")
 
 
 def _validate_mutation_effects(mutation: DurableMutation) -> None:

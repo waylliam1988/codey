@@ -44,6 +44,7 @@ def snapshot_tasks(durable: DurableSession, payload: TaskLifecyclePayload) -> li
     for _, event in events:
         ids.add(str((event or {}).get("run_id") or ""))
     rows: list[JsonValue] = []
+    included: set[str] = set()
     inactive: set[str] = set()
     for task_id in sorted(ids - {""}):
         try:
@@ -52,7 +53,10 @@ def snapshot_tasks(durable: DurableSession, payload: TaskLifecyclePayload) -> li
             if input_id and input_id not in {entry.entry_id for entry in durable.context(checkpoint.conversation_id)}:
                 inactive.add(task_id)
                 continue
-            rows.append(task_lifecycle(checkpoint))
+            for task in (checkpoint, *durable.owned_tasks(task_id)):
+                if task.task_id not in included and (task.task_id == task_id or task.execution_kind == "tool"):
+                    rows.append(task_lifecycle(task))
+                    included.add(task.task_id)
         except (KeyError, AttributeError):
             continue
     for key, event in events:

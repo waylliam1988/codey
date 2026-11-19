@@ -22,9 +22,13 @@ STALE_READ_REFERENCE_ERROR = (
     "before retrying; the old receipt cannot authorize this write. " + FULL_READ_REFERENCE_HINT
 )
 EXACT_REPLACEMENT_CONTEXT_HINT = (
+    "Copy old_string exactly, including indentation and whitespace. "
     "Include surrounding lines and the target text together in old_string of the same replacement "
     "so it matches one location uniquely. Preserve those surrounding lines in new_string. "
-    "Separate replacement objects do not scope one another."
+    "Separate replacement objects do not scope one another. "
+    "After a mismatch, reread the file instead of repeating the failed search. "
+    "For a difficult multiline change, use content with the complete read_file base_result_ref, "
+    "preserving unrelated text."
 )
 
 SEARCH_EXCLUDED_DIRS = {

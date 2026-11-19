@@ -275,12 +275,15 @@ class ToolResult:
     call: ToolCall
     model_text: str
     ok: bool = field(kw_only=True)
+    kind: str = field(default="completed", kw_only=True)
     truncated: bool = False
     presentation: Mapping[str, object] = field(default_factory=dict)
     audit: Mapping[str, object] = field(default_factory=dict)
     canonical: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if self.kind not in {"completed", "accepted"}:
+            raise ValueError("invalid tool result kind")
         if type(self.ok) is not bool:
             raise TypeError("tool result ok must be an exact boolean")
         presentation = json_safe_projection(self.presentation, label="presentation")

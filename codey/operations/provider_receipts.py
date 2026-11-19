@@ -122,7 +122,7 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
     """Persist the captured contract, never Python callables or a live registry."""
     if snapshot.policy is None:
         raise ValueError("captured turn has no authorization policy")
-    payload = decode_json_object(json_value({"schema_version": 9,
+    payload = decode_json_object(json_value({"schema_version": 10,
             "task_navigation_url": snapshot.task_navigation_url,
             "browser_copy": snapshot.browser_copy.payload() if snapshot.browser_copy is not None else None,
             "input_binding": json_value(snapshot.input_binding),
@@ -199,6 +199,7 @@ def _restore_spec(value: object) -> ToolSpec:
         executor=require_json_string(row["executor"], "executor"),
         replay_class=require_json_string(row["replay_class"], "replay_class"),
         parallel_safe=require_json_boolean(row["parallel_safe"], "parallel_safe"),
+        supports_background=require_json_boolean(row["supports_background"], "supports_background"),
         output_schema=decode_json_object(row["output_schema"]),
         declarations=require_json_string(row["declarations"], "declarations"),
         namespace=require_json_string(row["namespace"], "namespace"),
@@ -263,22 +264,17 @@ def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSp
     return binding, True
 
 
-def _snapshot_payload(raw: object) -> tuple[JsonObject, int]:
+def _snapshot_payload(raw: object) -> JsonObject:
     payload = decode_json_object(raw)
     expected = {"schema_version", "implementation_id", "allowed", "contract_text", "tool_names", "policy", "specs", "executors",
-                "nested_tool_names", "research_scope", "ignore_runtime_claims", "browser_copy", "input_binding"}
+                "nested_tool_names", "research_scope", "ignore_runtime_claims", "browser_copy", "input_binding",
+                "task_navigation_url", "browser_fill_text", "browser_followups", "browser_references"}
     version = require_json_integer(payload.get("schema_version"), "snapshot version")
-    if version not in {6, 7, 8, 9}:
+    if version != 10:
         raise ValueError("unsupported captured turn snapshot version; start a new request")
-    if version >= 7:
-        expected.add("task_navigation_url")
-    if version >= 8:
-        expected.add("browser_fill_text")
-    if version >= 9:
-        expected.update({"browser_followups", "browser_references"})
     if set(payload) != expected:
         raise ValueError("invalid captured turn snapshot version/shape")
-    return payload, version
+    return payload
 
 
 def _restore_model_contract(snapshot: TurnSnapshot, raw_references: object) -> TurnSnapshot:
@@ -304,7 +300,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.tool_spec import custom_executor_for
 
-    payload, version = _snapshot_payload(payload)
+    payload = _snapshot_payload(payload)
     raw_binding = payload["input_binding"]
     names = require_json_strings(payload["tool_names"], "tool_names")
     nested = require_json_strings(payload["nested_tool_names"], "nested_tool_names")
@@ -383,7 +379,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         raise ValueError("invalid captured browser fill text")
     from codey.operations.browser_references import BrowserReferences
 
-    followups = require_json_boolean(payload["browser_followups"], "browser_followups") if version >= 9 else version == 8
+    followups = require_json_boolean(payload["browser_followups"], "browser_followups")
     raw_references = payload.get("browser_references")
     references = BrowserReferences.restore(raw_references) if raw_references is not None else None
     if (fill_text is not None and not followups or references is not None

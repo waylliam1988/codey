@@ -93,6 +93,7 @@ class SettleToolResult(Protocol):
         ok: bool,
         *,
         exit_code: object = None,
+        committed: bool = False,
     ) -> ToolResult: ...
 
 
@@ -123,6 +124,8 @@ class ToolExecutionContext:
     durable: DurableStore | DurableSession | None
     managed_outputs: ManagedOutputStore | None
     run_id: str
+    snapshot: TurnSnapshot | None = None
+    permission_profile: str = "coding_writer"
 
 
 def _build_delegate(
@@ -275,6 +278,31 @@ def _run_via_delegate_or_fn(
     return _error_result(call, f"unknown tool executor: {name or '?'}"), False, None
 
 
+def execute_tool_operation(
+    session: TaskSession, call: ToolCall, *, delegate: ToolDelegate | None,
+    runnable: Mapping[str, ToolExecutor], turn: int, tool_index: int, project_path: Path | None,
+    workspace_revision_store: WorkspaceRevisionStore | None = None,
+) -> tuple[ToolResult, bool, int | None]:
+    """The same business operation and normalization for inline and owned work."""
+    from codey.toolchain.execution_options import split_execution_options
+    from codey.workspace.revision import WorkspaceIdentity
+
+    args, _options = split_execution_options(call.args)
+    result, ok, code = _run_via_delegate_or_fn(delegate, runnable, session, replace(call, args=args), call.name,
+        active_turn=turn, tool_index=tool_index, project_path=project_path)
+    result = replace(result, call=call)
+    stable_workspace = True
+    if call.name == "run" and project_path is not None and workspace_revision_store is not None:
+        after = workspace_revision_store.current_state(project_path)
+        stable_workspace = (not after.identity_reason and after.revision == session.workspace_revision
+                            and after.fingerprint == session.workspace_fingerprint)
+    if call.name == "run" and code is not None and stable_workspace and WorkspaceIdentity.trusted_pair(
+            session.workspace_revision, session.workspace_fingerprint).trusted:
+        result = _with_trusted_workspace_state(result, revision=session.workspace_revision,
+                                              fingerprint=session.workspace_fingerprint)
+    return result, ok, code
+
+
 def execute_turn(
     session: TaskSession,
     calls: list[ToolCall],
@@ -378,6 +406,7 @@ def execute_turn(
         ok: bool,
         *,
         exit_code: object = None,
+        committed: bool = False,
     ) -> ToolResult:
         # Parallel tools may finish together. Serialize only the commit view,
         # so two successful receipts cannot publish clones that erase each other.
@@ -392,7 +421,7 @@ def execute_turn(
                 project_result_observation(staged, call, result, ok=ok,
                                            exit_code=strict_exit_code_or_none(exit_code), research_ledger=staged_ledger)
             project_execution_record(staged, identity, call, result, ok=ok, exit_code=exit_code)
-            if intent_sink is not None:
+            if intent_sink is not None and not committed:
                 # 统一 sink 协议：生产 sink 一律接收 result/exit_code，无旧签名回退
                 intent_sink.settle(
                     identity,
@@ -465,6 +494,8 @@ def execute_turn(
         durable=durable,
         managed_outputs=managed_outputs,
         run_id=run_ref_str,
+        snapshot=snapshot,
+        permission_profile=permission_profile,
     )
     with cancellation.linked_scope(stop_flag):
         return _execute_slots(execution_context, calls)
@@ -538,6 +569,11 @@ def _settle_delivered_slot(
     delivered_map: Mapping[str, ToolResult], identity: str, call: ToolCall,
     settle: SettleToolResult, results: list[ToolResult],
 ) -> bool:
+    stored = delivered_map.get(identity)
+    if stored is not None and stored.kind == "accepted":
+        restored = _consistent_tool_result(call, stored, runtime_guard=True)
+        results.append(settle(identity, call, restored, ok=restored.ok, committed=True))
+        return True
     slot = delivered_slot_typed(delivered_map, identity, call)
     if slot.disposition == "NO_MATCH":
         return False
@@ -633,7 +669,9 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
                 # children re-enter this same admission and settlement path.
                 # Existing receipts need neither admission nor a new verdict,
                 # including when cancellation arrives before their delivery.
-                if name != "codemode" and identity not in session.executed and identity not in delivered_map:
+                if (name not in {"codemode", "task_output", "task_cancel"}
+                        and call.args.get("run_in_background") is not True
+                        and identity not in session.executed and identity not in delivered_map):
                     if frozen_specs is None:
                         from codey.toolchain.tool_spec import spec_for_tool
 
@@ -642,6 +680,10 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
                         spec = frozen_specs.get(name)
                     parallel = spec is not None and spec.parallel_safe and spec.replay_class == "safe"
                     admission.enter_context(session.tool_dispatch.admit(parallel=parallel))
+                    if name in {"run", "edit", "shell"} and project_path is not None:
+                        from codey.runtime.core.tool_dispatch import ToolDispatch
+
+                        admission.enter_context(ToolDispatch.for_resource(str(project_path.resolve()).casefold()).admit(parallel=False))
             except (cancellation.TaskCancelled, cancellation.DeadlineExceeded) as exc:
                 if identity not in session.executed and identity not in delivered_map:
                     blocked = _error_result(call, str(exc))
@@ -657,6 +699,10 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
                 results.append(blocked)
                 continue
             if _settle_delivered_slot(delivered_map, identity, call, settle, results):
+                continue
+            stored = session._memory_results.get(identity)
+            if stored is not None and stored.kind == "accepted":
+                results.append(_consistent_tool_result(call, stored, runtime_guard=True))
                 continue
             guarded = _guarded_slot_result(
                 session, identity, call, name, active_turn, intent_sink, controller_allowed,
@@ -699,18 +745,19 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
                 settle(identity, call, verification_blocked, ok=False)
                 results.append(verification_blocked)
                 continue
-            result, ok, exit_code = _run_via_delegate_or_fn(
-                delegate, runnable, session, call, name, active_turn=active_turn,
-                tool_index=base_index + offset, project_path=project_path,
-            )
-            from codey.workspace.revision import WorkspaceIdentity
+            if call.args.get("run_in_background") is True:
+                result = _admit_background(context, identity, call, base_index + offset)
+                results.append(settle(identity, call, result, ok=result.ok, committed=result.kind == "accepted"))
+                continue
+            if name in {"task_output", "task_cancel"}:
+                from codey.operations.tool_tasks import control_tool_task
 
-            if name == "run" and exit_code is not None and WorkspaceIdentity.trusted_pair(
-                session.workspace_revision, session.workspace_fingerprint,
-            ).trusted:
-                result = _with_trusted_workspace_state(
-                    result, revision=session.workspace_revision, fingerprint=session.workspace_fingerprint,
-                )
+                result = control_tool_task(call, durable=durable, owner_task_id=run_id, store=managed_outputs)
+                results.append(settle(identity, call, result, ok=result.ok))
+                continue
+            result, ok, exit_code = execute_tool_operation(session, call, delegate=delegate, runnable=runnable,
+                turn=active_turn, tool_index=base_index + offset, project_path=project_path,
+                workspace_revision_store=workspace_revision_store)
             # Single settlement per effect: edits defer settlement until the
             # authoritative bump decides the final result.
             edit_done = _settle_edit_with_workspace_bump(
@@ -727,6 +774,17 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
                 continue
             results.append(settle(identity, call, result, ok=ok, exit_code=exit_code))
     return results
+
+
+def _admit_background(context: ToolExecutionContext, identity: str, call: ToolCall, index: int) -> ToolResult:
+    spec = context.frozen_specs.get(call.name) if context.frozen_specs is not None else None
+    if (spec is None or not spec.supports_background or context.snapshot is None
+            or context.intent_sink is None or context.project_path is None or call.name in context.runnable
+            or dict(context.snapshot.custom_executors).get(call.name) is not None):
+        return _error_result(call, "background execution requires a captured durable production operation")
+    return context.intent_sink.admit_tool_task(identity, call, snapshot=context.snapshot,
+        project=str(context.project_path.resolve()), permission_profile=context.permission_profile,
+        turn=context.active_turn, tool_index=index)
 
 
 def _structured_executor_result(value: object) -> ToolResult | None:

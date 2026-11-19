@@ -170,6 +170,39 @@ class KernelEffectSink:
     def has_unsettled(self, identity: str) -> bool:
         return identity in self._old_pending
 
+    def admit_tool_task(self, identity: str, call: ToolCall, *, snapshot: TurnSnapshot,
+                        project: str, permission_profile: str, turn: int, tool_index: int) -> ToolResult:
+        import json
+        import time
+
+        from codey.durable.model import TaskCheckpoint
+        from codey.durable.tool_task import ToolTaskInput, tool_task_id
+        from codey.operations.kernel_receipts import result_receipt_fields, tool_history_messages
+        from codey.operations.provider_receipts import snapshot_description
+        from codey.runtime.core import cancellation
+        from codey.toolchain.execution_options import split_execution_options
+
+        parent = self.durable.task(self.run_id)
+        business, _options = split_execution_options(call.args)
+        deadline = cancellation.current_deadline()
+        request = ToolTaskInput(identity, call.name, business, snapshot_description(snapshot), project,
+            permission_profile, turn, tool_index,
+            time.time() + max(0.0, deadline - time.monotonic()) if deadline is not None else None)
+        child_id = tool_task_id(identity)
+        value = {"kind": "accepted", "task_ref": child_id}
+        result = ToolResult(call, json.dumps(value, ensure_ascii=False), ok=True, kind="accepted", canonical={"value": value})
+        child = TaskCheckpoint(child_id, parent.conversation_id, parent.submission_id, "accepted", 0,
+            parent.provider_snapshot, {"execution_kind": "tool", "owner_task_id": parent.task_id,
+                "tool_input": request.to_payload(),
+                **{key: parent.state[key] for key in ("controller_actor_id", "control_generation") if key in parent.state}})
+        settlement = RuntimeEffectSettlement(effect_id=identity, effect_category=EFFECT_CATEGORY_TOOL_CALL,
+            session_id=self.session_id, run_id=self.run_id, status=SETTLEMENT_STATUS_OK,
+            replay_class=self._replay_classes[identity], **result_receipt_fields(result, store=self._managed_outputs,
+                session_id=self.session_id, run_id=self.run_id, effect_id=identity))
+        self.mutations.admit_tool_task(self.session_id, self.run_id, settlement=settlement, child=child,
+            messages=tool_history_messages(settlement) if not self.parent_effect_id else ())
+        return result
+
     def bind_request(self, snapshot: TurnSnapshot, *, logical_turn: int, window_ref: ProtocolWindowRef | None = None,
                      context_text: str = "", memory_sources: tuple[ContextCandidate, ...] = (),
                      effect_scope: str = "", close_reply: bool = False, delivery_purpose: str = "",

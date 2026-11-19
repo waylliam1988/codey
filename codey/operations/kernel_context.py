@@ -280,14 +280,21 @@ class KernelContext:
         from codey.operations.kernel_facts import project_execution_record, project_result_observation
         from codey.operations.kernel_receipts import restore_result_receipt
 
-        for effect in RuntimeEffectStore(durable=self.durable).load_effects(self.sink.session_id, self.sink.run_id):
+        effects = list(RuntimeEffectStore(durable=self.durable).load_effects(self.sink.session_id, self.sink.run_id))
+        for child in self.durable.owned_tasks(self.sink.run_id):
+            if child.execution_kind == "tool":
+                from codey.operations.tool_tasks import owned_tool_task
+
+                owned_tool_task(self.durable, child.task_id, owner_task_id=self.sink.run_id)
+                effects.extend(RuntimeEffectStore(durable=self.durable).load_effects(self.sink.session_id, child.task_id))
+        for effect in effects:
             identity = effect.intent.effect_id
             if effect.intent.tool_name == "_publish_research_answer":
                 continue
             if effect.intent.effect_category == "provider_send":
                 self.restore_completion_proposal(effect)
                 continue
-            if self.session.task_kind in {"research", "evidence_followup"}:
+            if self.session.task_kind in {"research", "evidence_followup"} and effect.intent.run_id == self.sink.run_id:
                 from codey.operations.task_session import turn_effect_id
                 scoped_run = f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id
                 if identity != turn_effect_id(scoped_run, effect.intent.turn, effect.intent.tool_index):
@@ -295,8 +302,17 @@ class KernelContext:
             if (effect.intent.effect_category != "tool_call" or effect.settlement is None
                     or identity in self.session.executed or identity in self.session.restored_effect_ids):
                 continue
-            result = restore_result_receipt(effect, store=self.sink.managed_outputs,
-                session_id=self.sink.session_id, run_id=self.sink.run_id, project_path=self.execution.project_path,
+            if effect.intent.run_id != self.sink.run_id and effect.settlement.status == "interrupted":
+                from codey.operations.tool_tasks import tool_execution_result
+
+                restored = tool_execution_result(self.durable, self.durable.task(effect.intent.run_id),
+                                                store=self.sink.managed_outputs)
+                if restored is None:
+                    continue
+                result = restored[1]
+            else:
+                result = restore_result_receipt(effect, store=self.sink.managed_outputs,
+                session_id=self.sink.session_id, run_id=effect.intent.run_id, project_path=self.execution.project_path,
                 workspace_store=self.execution.workspace_revision_store, ignored_paths=self.execution.workspace_ignored_paths)
             staged = self.session.clone_projection()
             ledger = self.execution.research_tools.ledger if self.execution.research_tools is not None else None

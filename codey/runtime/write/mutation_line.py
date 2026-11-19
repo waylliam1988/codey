@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codey.durable.contracts import RuntimeCheckpointPort
-    from codey.durable.model import ArtifactRecord, SubmissionRecord
+    from codey.durable.model import ArtifactRecord, SubmissionRecord, TaskCheckpoint
     from codey.runtime.log.entries import RuntimeLogEntry
     from codey.runtime.log.session_projection import RuntimeProjection, RuntimeRows, RuntimeRowsBuilder
 
@@ -708,6 +708,7 @@ class RuntimeMutationLine:
         *,
         messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
         artifacts: tuple[ArtifactRecord, ...] = (),
+        admitted_task: TaskCheckpoint | None = None,
     ) -> RuntimeEffectSettlement:
         committed: RuntimeEffectSettlement | None = None
 
@@ -724,10 +725,18 @@ class RuntimeMutationLine:
             committed = prepared
             return rows
 
-        self._mutate(session_id, run_id, mutation, messages=messages, artifacts=tuple(artifacts))
+        from codey.durable.checkpoint import mutate_checkpoint
+
+        mutate_checkpoint(self.durable, session_id, run_id, mutation, messages=messages, artifacts=artifacts,
+                          task_updates=(admitted_task,) if admitted_task is not None else ())
         if committed is None:
             raise RuntimeEffectError("tool effect settlement was not committed")
         return committed
+
+    def admit_tool_task(self, session_id: str, run_id: str, *, settlement: RuntimeEffectSettlement,
+                        child: TaskCheckpoint, messages: tuple[tuple[str, Mapping[str, object]], ...] = ()) -> None:
+        self.settle_tool_effect(session_id, run_id, settlement, admitted_task=child,
+                               messages=messages)
 
     def settle_effect(
         self,

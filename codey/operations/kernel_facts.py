@@ -34,6 +34,8 @@ def project_result_observation(
     exit_code: int | None = None, research_ledger: ResearchLedger | None = None,
 ) -> None:
     """The shared live/recovery projection, applied only to staged views."""
+    if result.kind == "accepted":
+        return
     from codey.research.source_acquisition import acquisition_observation, failure_event
 
     if "source_acquisition" in result.canonical:
@@ -275,7 +277,7 @@ def project_execution_record(
     try:
         record: ExecutionRecord = {
             "name": canonical_tool_name(result.call.name),
-            "ok": ok if type(ok) is bool else False,
+            "ok": result.kind == "completed" and ok is True,
             "call_id": str(result.call.call_id or getattr(call, "call_id", "") or ""),
             "excerpt": (result.model_text or "")[:500],
             "args_digest": _call_args_digest(call),

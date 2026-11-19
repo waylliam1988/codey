@@ -4,7 +4,6 @@ import os
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import replace
-from typing import cast
 
 from codey.durable.errors import (
     CommitConflict,
@@ -25,6 +24,7 @@ from codey.durable.operations import SessionOperations, operation_line
 from codey.durable.process import process_is_alive as _process_is_alive
 from codey.durable.task_state import release_attempt_state
 from codey.durable.workflow import WorkflowDefinition, workflow_digest
+from codey.types.json_value import canonical_json_object
 
 
 class TaskLifecycleOperations(SessionOperations):
@@ -208,6 +208,8 @@ class TaskLifecycleOperations(SessionOperations):
         # old worker may only settle an already admitted external effect or
         # commit the terminal cancellation; it cannot advance the workflow or
         # create another effect.
+        if current.execution_kind == "tool" and (answer is not None or submission_status is not None):
+            raise ValueError("tool tasks cannot answer or update a user submission")
         if current.state.get("cancel_requested") and phase not in {"cancelled", "failed"}:
             raise CommitConflict("task cancellation barrier is active")
         _head, conversation_revision = self._kernel.store.head(current.conversation_id)
@@ -237,7 +239,7 @@ class TaskLifecycleOperations(SessionOperations):
                 current.workflow_name,
                 version,
                 current.workflow_input,
-                cast(Mapping[str, object], merged_state["workflow_checkpoint"]),
+                canonical_json_object(merged_state["workflow_checkpoint"]),
             )
         next_task = TaskCheckpoint(
             task_id=current.task_id,
@@ -278,7 +280,7 @@ class TaskLifecycleOperations(SessionOperations):
             task_id=task_id,
             phase="running",
             state=state,
-            submission_status=SubmissionStatus.RUNNING,
+            submission_status=None if self._kernel.store.task(task_id).execution_kind == "tool" else SubmissionStatus.RUNNING,
         )
 
     def _owned_descendants(self, task_id: str) -> tuple[TaskCheckpoint, ...]:
@@ -402,12 +404,12 @@ class TaskLifecycleOperations(SessionOperations):
             current,
             phase="cancelled",
             revision=current.revision + 1,
-            state=release_attempt_state(state),
+            state=release_attempt_state({**state, **({"tool_worker_active": False} if current.execution_kind == "tool" else {})}),
             status=TaskStatus.CANCELLED,
         )
         submission = self._kernel.store.submission(current.submission_id)
         update = None
-        if submission.status in {SubmissionStatus.QUEUED, SubmissionStatus.RUNNING}:
+        if current.execution_kind != "tool" and submission.status in {SubmissionStatus.QUEUED, SubmissionStatus.RUNNING}:
             update = SubmissionUpdate(
                 submission.submission_id, current.conversation_id,
                 submission.status, SubmissionStatus.CANCELLED, reason=reason,
@@ -586,6 +588,14 @@ class TaskLifecycleOperations(SessionOperations):
 
     @operation_line
     def finish_task(self, task_id: str, answer: str, *, state: Mapping[str, object]) -> CommitResult:
+        current = self._kernel.store.task(task_id)
+        if current.execution_kind == "tool":
+            from codey.durable.tool_task import execution_effect_id
+
+            effect = self._kernel.store.effect(execution_effect_id(task_id))
+            if effect.settlement is None or current.pending_effect_id is not None:
+                raise CommitConflict("tool task requires its formal execution result")
+            return self.advance_task(task_id=task_id, phase="completed", state=state)
         if self._live_owned_descendants(task_id):
             return self._hold_completion(task_id, answer, state)
         return self.advance_task(
@@ -652,7 +662,9 @@ class TaskLifecycleOperations(SessionOperations):
             joined = [children[task_id] for task_id in task.waiting_on]
             if task.join_policy == "failFast" and any(child.status in {TaskStatus.FAILED, TaskStatus.CANCELLED} for child in joined):
                 failed = next(child for child in joined if child.status in {TaskStatus.FAILED, TaskStatus.CANCELLED})
-                child_reason = self._kernel.store.submission(failed.submission_id).reason
+                child_reason = (str(failed.state.get("failure_reason") or failed.state.get("cancel_reason") or "")
+                                if failed.execution_kind == "tool"
+                                else self._kernel.store.submission(failed.submission_id).reason)
                 self.fail_task(
                     task.task_id,
                     child_reason or f"owned task {failed.task_id} did not complete",
@@ -691,6 +703,10 @@ class TaskLifecycleOperations(SessionOperations):
                 self._cancel_terminal(task, state=dict(task.state), reason=str(task.state.get("cancel_reason") or "cancelled"))
                 continue
             if task.status == TaskStatus.COMPLETING:
+                failure = task.state.get("failure_pending")
+                if isinstance(failure, str):
+                    self.fail_task(task.task_id, failure, state={})
+                    continue
                 answer = task.state.get("completion_answer")
                 completion_state = task.state.get("completion_state", {})
                 if isinstance(answer, str) and isinstance(completion_state, Mapping):
@@ -711,6 +727,11 @@ class TaskLifecycleOperations(SessionOperations):
         A lifecycle failure preserves pending receipts and execution position.
         """
         current = self._kernel.store.task(task_id)
+        children = tuple(child for child in self._live_owned_descendants(task_id) if child.execution_kind == "tool")
+        if children:
+            for child in children:
+                self.request_cancel(child.task_id, reason="owner failed")
+            return self._hold_completion(task_id, "", {**dict(current.state), **dict(state), "failure_pending": reason})
         _head, revision = self._kernel.store.head(current.conversation_id)
         pending = tuple(effect for effect in self._kernel.store.effects_for_task(task_id) if effect.settlement is None)
         for key in ("operation", "delivery_batches", "pending_effect_ids", "approvals"):
@@ -723,7 +744,7 @@ class TaskLifecycleOperations(SessionOperations):
             current,
             phase="failed",
             revision=current.revision + 1,
-            state=release_attempt_state({**dict(current.state), **dict(state),
+            state=release_attempt_state({**dict(current.state), **dict(state), "failure_reason": reason,
                                           "pending_effect_ids": list(pending_ids)}),
             status=TaskStatus.FAILED,
         )
@@ -733,7 +754,7 @@ class TaskLifecycleOperations(SessionOperations):
                 conversation_id=current.conversation_id,
                 expected_revision=revision,
                 task=next_task,
-                submission_update=SubmissionUpdate(
+                submission_update=None if current.execution_kind == "tool" else SubmissionUpdate(
                     submission.submission_id, current.conversation_id,
                     submission.status, SubmissionStatus.UNANSWERED, reason=reason,
                 ),

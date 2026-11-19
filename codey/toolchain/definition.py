@@ -20,6 +20,7 @@ class ToolDefinition:
     aliases: tuple[str, ...] = ()
     read_only: bool = False
     parallel_safe: bool = False
+    supports_background: bool = False
     permission: str = ""
     examples: tuple[str, ...] = ()
     description: str = ""
@@ -228,6 +229,7 @@ TOOL_DEFINITIONS = (
     ToolDefinition(
         "run",
         "run",
+        supports_background=True,
         permission="project_verify",
         examples=(
             '{"tool":"run","args":{"command":"python -m unittest","path":"."}}',

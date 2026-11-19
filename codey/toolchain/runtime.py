@@ -598,7 +598,7 @@ def _search_not_found(
     replacement_index: int,
     replacement_count: int,
 ) -> ToolOutcome:
-    lines = [f"SEARCH text not found in {rel}; exact replacement was not applied."]
+    lines = [f"SEARCH text not found in {rel}; exact replacement was not applied.", EXACT_REPLACEMENT_CONTEXT_HINT]
     note = _replacement_failure_note(replacement_index, replacement_count)
     if note:
         lines.append(note)
@@ -606,11 +606,6 @@ def _search_not_found(
     if context:
         lines.append("")
         lines.extend(context.splitlines())
-    else:
-        lines.append(
-            "old_string must match exact file text including indentation and "
-            "whitespace. Use read_file and copy exact complete lines."
-        )
     return ToolOutcome.error(_bounded_failure_output(lines))
 
 
@@ -1092,6 +1087,7 @@ def run_command_raw(
     execution_store: ExecutionOutputStore | None = None,
     session_id: str = "",
     run_id: str = "",
+    execution_id: str = "",
 ) -> RunCommandRawResult | ToolOutcome:
     command = command.strip()
     decision = evaluate_action(ActionSubject(
@@ -1120,13 +1116,12 @@ def run_command_raw(
     timeout = RUN_SUITE_TIMEOUT_SECONDS if _is_suite_run_command(argv) else RUN_TIMEOUT_SECONDS
     started_at = _utc_now_iso()
     started_monotonic = time.monotonic()
-    execution_id = ""
     observer = None
     if execution_store is not None:
         import uuid
 
         from codey.storage.execution_output_store import ExecutionOutputObserver
-        execution_id = "execution_" + uuid.uuid4().hex
+        execution_id = execution_id or "execution_" + uuid.uuid4().hex
         execution_store.create(execution_id, session_id=session_id or "run", run_id=run_id or "run", max_bytes=capture_limit_bytes)
         observer = ExecutionOutputObserver(execution_store, execution_id)
     def mark_unavailable() -> None:

@@ -5,7 +5,7 @@ import json
 from collections.abc import Mapping
 
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
-from codey.types.json_value import decode_json_object, require_json_integer, require_json_string
+from codey.types.json_value import canonical_json_object, decode_json_object, require_json_integer, require_json_string
 
 
 def browser_output_schema(name: str) -> dict[str, object]:
@@ -63,6 +63,26 @@ def browser_output_schema(name: str) -> dict[str, object]:
 def text_output_schema() -> dict[str, object]:
     """Text tools explicitly return their model_text, without probing canonical."""
     return {"type": "string"}
+
+
+def accepted_output_schema() -> dict[str, object]:
+    return {"type": "object", "additionalProperties": False, "required": ["kind", "task_ref"],
+            "properties": {"kind": {"type": "string", "enum": ["accepted"]},
+                           "task_ref": {"type": "string", "minLength": 1}}}
+
+
+def model_output_schema(completed: Mapping[str, object], *, supports_background: bool) -> dict[str, object]:
+    final = canonical_json_object(completed)
+    return {"anyOf": [final, accepted_output_schema()]} if supports_background else dict(completed)
+
+
+def completed_output_schema(model_schema: Mapping[str, object]) -> dict[str, object]:
+    """Select the completed branch of the union generated above."""
+    schema = canonical_json_object(model_schema)
+    alternatives = schema.get("anyOf")
+    if isinstance(alternatives, list) and len(alternatives) == 2 and alternatives[1] == accepted_output_schema():
+        return dict(decode_json_object(alternatives[0]))
+    return dict(schema)
 
 
 def read_file_output_schema() -> dict[str, object]:

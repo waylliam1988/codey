@@ -45,6 +45,16 @@ def test_render_coding_context_marks_fresh_verification() -> None:
     assert "not yet passed" not in prompt
 
 
+def test_failed_verification_directs_repair_instead_of_unchanged_rerun() -> None:
+    prompt = render_coding_context(CodingContext(
+        changed_files=("app.py",), selected_verification=VerificationCandidate("python -m pytest", "."),
+        verification_failed=True))
+    assert "failed against the current files" in prompt
+    assert "Read the failed receipt" in prompt
+    assert "Suggested verification" not in prompt
+    assert '{"tool":"run"' not in prompt
+
+
 def test_render_coding_context_suppresses_suggested_check_when_verification_forbidden() -> None:
     prompt = render_coding_context(
         CodingContext(

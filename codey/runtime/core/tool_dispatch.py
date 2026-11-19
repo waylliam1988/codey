@@ -5,8 +5,12 @@ import threading
 from collections import deque
 from collections.abc import Generator
 from contextlib import contextmanager
+from weakref import WeakValueDictionary
 
 from codey.runtime.core import cancellation
+
+_resources: WeakValueDictionary[str, ToolDispatch] = WeakValueDictionary()
+_resource_lock = threading.Lock()
 
 
 class ToolDispatch:
@@ -17,6 +21,16 @@ class ToolDispatch:
         self._waiting: deque[object] = deque()
         self._readers = 0
         self._writer = False
+
+    @classmethod
+    def for_resource(cls, resource: str) -> ToolDispatch:
+        """All parent/child workers coordinate through the same live lock."""
+        with _resource_lock:
+            current = _resources.get(resource)
+            if current is None:
+                current = cls()
+                _resources[resource] = current
+            return current
 
     @contextmanager
     def admit(self, *, parallel: bool) -> Generator[None, None, None]:

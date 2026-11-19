@@ -11,7 +11,7 @@ from codey.runtime.core.execution_receipt import ExecutionOutputReference, execu
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.storage.execution_output_store import ExecutionOutputStore
 from codey.storage.managed_outputs import ManagedOutputStore
-from codey.types.json_value import JsonObject, JsonValue, require_json_string
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_string
 
 
 class ReceiptReaderContext(Protocol):
@@ -96,6 +96,13 @@ def resolve_result_output(context: ReceiptReaderContext, result: ToolResult) -> 
                           None, incomplete, recoverable)
 
 
+def _admission_navigation(result: ToolResult) -> JsonObject:
+    if result.kind != "accepted":
+        return {}
+    value = decode_json_object(result.canonical["value"])
+    return {"kind": "accepted", "next_read": {"tool": "task_output", "args": {"task_ref": value["task_ref"], "wait_ms": 30000}}}
+
+
 def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall) -> ToolResult:
     known: JsonObject = {}
     try:
@@ -161,6 +168,7 @@ def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall) -> ToolResu
                 "output_reference": resolved.reference, "full_output_recoverable": resolved.full_output_recoverable}
         if execution is not None:
             data["execution"] = execution.facts()
+        data.update(_admission_navigation(result))
         if query is not None:
             data["match_offset"] = match_offset
             if match_offset is None:

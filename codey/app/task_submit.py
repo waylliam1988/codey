@@ -17,6 +17,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from codey.app.control_service import ControlService
     from codey.app.run_registry import RunSnapshot
     from codey.runtime.core.api_selection import ApiRunSelection
 
@@ -34,6 +35,17 @@ from codey.task.model import EditUserMessage, ResolveShellApproval, ResumeRun, S
 from codey.workspace.task_changes import collect_task_changes
 
 SHELL_CONTINUATION_IDLE_TIMEOUT = 15.0
+
+
+def _control_service_for(state: TaskSubmissionState) -> ControlService | None:
+    service: object = getattr(state, "control_service", None)
+    if service is None:
+        return None
+    from codey.app.control_service import ControlService
+
+    if not isinstance(service, ControlService):
+        raise TypeError("task control requires the application control service")
+    return service
 
 
 def run_task(
@@ -91,7 +103,7 @@ def run_task(
                     return
                 if checkpoint.phase == "dispatching":
                     runtime_state = dict(checkpoint.state)
-                    control = getattr(state, "control_service", None)
+                    control = _control_service_for(state)
                     if control is not None:
                         runtime_state["execution_runtime"] = {"instance_id": control.instance_id, "release_id": control.release_id}
                     state.durable.start_task(run_id, state=runtime_state)
@@ -216,7 +228,7 @@ def submit_task(
     # init-phase cleanup never depends on the accessor working a second time.
     review_policy = load_review_policy()
     state = get_state()
-    service = getattr(state, "control_service", None)
+    service = _control_service_for(state)
     if service is not None and service.draining:
         return None
     admitted_selection = capture_provider_selection(provider_id, model_selection)
@@ -245,7 +257,7 @@ def submit_task(
                 return None
             if str(approval.status) not in {"execution_settled", "denied"}:
                 return None
-            if str(getattr(approval, "continuation_status", "waiting_for_result")) in {
+            if approval.continuation_status in {
                 "cancelled", "failed", "unavailable",
             }:
                 return None
@@ -413,9 +425,15 @@ def _dispatch_durable_task(checkpoint: object, *, state: TaskSubmissionState) ->
 
     if not isinstance(checkpoint, TaskCheckpoint):
         raise TypeError("durable dispatcher requires a TaskCheckpoint")
-    control_service = getattr(state, "control_service", None)
+    control_service = _control_service_for(state)
     if control_service is not None and not control_service.permits_dispatch(checkpoint):
         return False
+    if checkpoint.execution_kind == "tool":
+        from codey.operations.tool_tasks import run_tool_task
+
+        return state.durable_scheduler.dispatch_tool_task(checkpoint, lambda signal: run_tool_task(
+            state.durable, checkpoint, stores=state.task_submission_stores, signal=signal,
+            permits_execution=lambda: control_service is None or control_service.permits_dispatch(state.durable.task(checkpoint.task_id))))
     stored = thaw_json(checkpoint.state)
     if not isinstance(stored, dict):
         raise TypeError("task checkpoint state must be an object")

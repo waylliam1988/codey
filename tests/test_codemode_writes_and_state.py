@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 
 def test_codemode_catalog_exposes_project_writes_only_when_explicit() -> None:
     from codey.codemode.catalog import build_codemode_catalog
-    from codey.toolchain.tool_spec import ToolSpec
+    from codey.toolchain.tool_spec import ToolSpec, spec_for_tool
 
+    run = spec_for_tool("run")
+    assert run is not None
     specs = (
         ToolSpec(name="read_file", grant="project.read", executor="project", replay_class="safe"),
         ToolSpec(name="edit", grant="project.write", executor="project", replay_class="unsafe"),
-        ToolSpec(name="run", grant="project.write", executor="project", replay_class="unsafe"),
+        run,
         ToolSpec(name="shell", grant="shell.approval", executor="project", replay_class="unsafe"),
     )
     assert [entry.name for entry in build_codemode_catalog(specs).entries] == ["read_file"]
@@ -26,7 +30,7 @@ def test_codemode_host_requires_explicit_write_capability() -> None:
 
     writable = ToolCatalogEntry("edit", "write", namespace="project", read_only=False, grant="project.write")
     with pytest.raises(ValueError, match="allow_writes"):
-        CodeModeHost(execution_id="cm", catalog=(writable,), execute=lambda _call: None)
+        CodeModeHost(execution_id="cm", catalog=(writable,), execute=lambda call: ToolResult(call, "unreachable", ok=False))
 
     host = CodeModeHost(
         execution_id="cm", catalog=(writable,),
@@ -35,7 +39,7 @@ def test_codemode_host_requires_explicit_write_capability() -> None:
     assert host.invoke("edit", {"path": "a.py"}) == {"ok": True, "value": "a.py"}
 
 
-def test_durable_codemode_state_survives_close_and_reopen(tmp_path) -> None:
+def test_durable_codemode_state_survives_close_and_reopen(tmp_path: Path) -> None:
     from codey.codemode.state import DurableCodeModeState
     from codey.durable import DurableSession, SQLiteDurableStore
 

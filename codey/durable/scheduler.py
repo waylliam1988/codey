@@ -102,6 +102,37 @@ class DurableTaskScheduler:
         self._owner_id = f"scheduler-{uuid.uuid4().hex}"
         self._owns_scheduler = False
         self._health_callback: Callable[[], None] | None = None
+        self._tool_workers: dict[tuple[str, str], tuple[threading.Thread, threading.Event]] = {}
+        self._tool_tasks_only = False
+
+    def dispatch_tool_task(self, task: TaskCheckpoint, worker: Callable[[threading.Event], None]) -> bool:
+        """Bounded host execution; all business state stays in the durable task."""
+        key = (task.task_id, task.attempt_token)
+        with self._lock:
+            if key in self._tool_workers:
+                return True
+            if self._closed.is_set() or len(self._tool_workers) >= 4:
+                return False
+            signal = threading.Event()
+
+            def run() -> None:
+                try:
+                    worker(signal)
+                except Exception as exc:
+                    self._finish_task_error(task.task_id, exc, phase="tool_worker")
+                finally:
+                    with self._lock:
+                        self._tool_workers.pop(key, None)
+                    self.notify()
+
+            thread = threading.Thread(target=run, name=f"codey-tool-{task.task_id}", daemon=True)
+            self._tool_workers[key] = (thread, signal)
+            try:
+                thread.start()
+            except RuntimeError:
+                self._tool_workers.pop(key, None)
+                return False
+        return True
 
     @property
     def in_flight(self) -> tuple[str, ...]:
@@ -196,6 +227,9 @@ class DurableTaskScheduler:
         handler also runs when no scheduler invocation is present.
         """
         result = self._session.request_cancel(task_id, reason=reason)
+        if self._session.task(task_id).execution_kind == "tool":
+            self.notify(task_id)
+            return result
         with self._lock:
             invocation = self._invocations.get(task_id)
         handler = self._abort_handler
@@ -258,7 +292,7 @@ class DurableTaskScheduler:
                 if self._abort_invocations.get(invocation.task_id) is invocation:
                     self._abort_invocations.pop(invocation.task_id, None)
 
-    def start(self) -> None:
+    def start(self, *, tool_tasks_only: bool = False) -> None:
         resumed = False
         with self._lock:
             if self._owns_scheduler:
@@ -276,6 +310,7 @@ class DurableTaskScheduler:
             with self._lock:
                 self._owns_scheduler = True
                 self._enabled = True
+                self._tool_tasks_only = tool_tasks_only
         try:
             if not resumed and not self._recovered:
                 self._session.recover_scheduler_state()
@@ -368,8 +403,11 @@ class DurableTaskScheduler:
             invocations = tuple(self._invocations.values())
             abort_invocations = tuple(self._abort_invocations.values())
             threads = tuple(dict.fromkeys(
-                thread for thread in (self._thread, *self._retiring_threads) if thread is not None
+                thread for thread in (self._thread, *self._retiring_threads,
+                                      *(item[0] for item in self._tool_workers.values())) if thread is not None
             ))
+            for _thread, signal in self._tool_workers.values():
+                signal.set()
         self._wake.set()
         for invocation in invocations:
             # Closing the scheduler is a lifecycle boundary, not a durable
@@ -467,7 +505,8 @@ class DurableTaskScheduler:
         self._release_pending_claims()
         if self._workflows:
             self._session.reconcile_workflows(self._workflows)
-        self._place_ready_inputs()
+        if not self._tool_tasks_only:
+            self._place_ready_inputs()
         self.notify(start=False, include_queued_submissions=False, wake=False)
         finalization = self._session.store.finalization_queue()
         self._session.reconcile_finalization(finalization)
@@ -506,6 +545,8 @@ class DurableTaskScheduler:
         if task.state.get("input_state") == "queued":
             # The inbox boundary owns placement. A queued input is a durable
             # submission, not a runnable task.
+            return
+        if self._tool_tasks_only and task.execution_kind != "tool":
             return
         block_reason = self._workflow_block_reason(task)
         if block_reason is not None:

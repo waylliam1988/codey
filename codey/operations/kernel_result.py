@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
-from typing import Any
 
 from codey.operations.kernel_provenance import _EXECUTOR_STRIPPED_AUDIT_KEYS
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -33,6 +32,8 @@ def result_ok(name: str, result: ToolResult, *, exit_code: int | None = None) ->
     """Structured status plus strict exit identity; display text has no authority."""
     if not result.ok:
         return False
+    if result.kind == "accepted":
+        return True
     audit_raw = result.audit.get("exit_code")
     audit_code = strict_exit_code_or_none(audit_raw)
     explicit_code = strict_exit_code_or_none(exit_code)
@@ -45,10 +46,22 @@ def result_ok(name: str, result: ToolResult, *, exit_code: int | None = None) ->
     return code == 0 if (name or "").strip().lower() == "run" else True
 
 
-def _strip_executor_workspace_audit(audit: object) -> dict[str, Any]:
+def _result_mapping(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        raise TypeError("result field must be a mapping")
+    source: Mapping[object, object] = value
+    result: dict[str, object] = {}
+    for key, item in source.items():
+        if not isinstance(key, str):
+            raise TypeError("result field keys must be strings")
+        result[key] = item
+    return result
+
+
+def _strip_executor_workspace_audit(audit: object) -> dict[str, object]:
     """Remove executor-forgeable workspace provenance from an audit dict."""
     try:
-        source = dict(audit) if isinstance(audit, dict) else {}
+        source = _result_mapping(audit) if isinstance(audit, dict) else {}
     except Exception:
         return {}
     for key in _EXECUTOR_STRIPPED_AUDIT_KEYS:
@@ -56,7 +69,7 @@ def _strip_executor_workspace_audit(audit: object) -> dict[str, Any]:
     return source
 
 
-def _normalize_audit_exit_code(audit: dict[str, Any]) -> tuple[dict[str, Any], int | None, bool]:
+def _normalize_audit_exit_code(audit: dict[str, object]) -> tuple[dict[str, object], int | None, bool]:
     """Split audit exit_code into (cleaned_audit, strict_code_or_None, invalid).
 
     Invalid means the key was present with a non-None value that is not a
@@ -87,6 +100,7 @@ def build_recovered_tool_result(
     presentation: object = None,
     canonical: object = None,
     truncated: object = False,
+    kind: str = "completed",
 ) -> ToolResult:
     """Shared rebuild for recovered/delivered results (single helper, strict).
 
@@ -100,36 +114,36 @@ def build_recovered_tool_result(
 
 
     if audit is None:
-        audit_dict: dict[str, Any] = {}
+        audit_dict: dict[str, object] = {}
     elif not isinstance(audit, Mapping):
         raise RecoveryFailed(f"recovered audit must be a mapping, got {type(audit).__name__}")
     else:
         try:
-            audit_dict = dict(audit)
+            audit_dict = _result_mapping(audit)
         except Exception as exc:
             raise RecoveryFailed(f"recovered audit unreadable: {exc}") from exc
     for key in _EXECUTOR_STRIPPED_AUDIT_KEYS:
         audit_dict.pop(key, None)
     if presentation is None:
-        presentation_dict: dict[str, Any] = {}
+        presentation_dict: dict[str, object] = {}
     elif not isinstance(presentation, Mapping):
         raise RecoveryFailed(
             f"recovered presentation must be a mapping, got {type(presentation).__name__}"
         )
     else:
         try:
-            presentation_dict = dict(presentation)
+            presentation_dict = _result_mapping(presentation)
         except Exception as exc:
             raise RecoveryFailed(f"recovered presentation unreadable: {exc}") from exc
     if canonical is None:
-        canonical_dict: dict[str, Any] = {}
+        canonical_dict: dict[str, object] = {}
     elif not isinstance(canonical, Mapping):
         raise RecoveryFailed(
             f"recovered canonical must be a mapping, got {type(canonical).__name__}"
         )
     else:
         try:
-            canonical_dict = dict(canonical)
+            canonical_dict = _result_mapping(canonical)
         except Exception as exc:
             raise RecoveryFailed(f"recovered canonical unreadable: {exc}") from exc
     if model_text is None:
@@ -150,7 +164,7 @@ def build_recovered_tool_result(
         truncated_flag = truncated
     try:
         return ToolResult(
-            ok=ok, call=call,
+            ok=ok, call=call, kind=kind,
             model_text=text,
             truncated=truncated_flag,
             presentation=presentation_dict,
@@ -203,19 +217,21 @@ def _consistent_tool_result(
     Args are compared by digest so same name/id with a different path is
     rejected instead of silently accepted.
     """
+    if produced.kind == "accepted" and not runtime_guard:
+        return _error_result(requested, "only the kernel may accept background work")
     try:
-        produced_call = getattr(produced, "call", None)
-        if produced_call is None:
+        produced_call: object = produced.call
+        if not isinstance(produced_call, ToolCall):
             return _error_result(requested, "tool returned no call; refusing to lose receipt")
-        want_name = str(getattr(requested, "name", "") or "").strip().lower()
-        got_name = str(getattr(produced_call, "name", "") or "").strip().lower()
+        want_name = requested.name.strip().lower()
+        got_name = produced_call.name.strip().lower()
         if want_name != got_name:
             return _error_result(
                 requested,
                 f"tool call mismatch: requested {want_name or '?'} got {got_name or '?'}; refusing to lose receipt",
             )
-        want_id = str(getattr(requested, "call_id", "") or "")
-        got_id = str(getattr(produced_call, "call_id", "") or "")
+        want_id = requested.call_id
+        got_id = produced_call.call_id
         if want_id != got_id:
             return _error_result(
                 requested,
@@ -238,12 +254,12 @@ def _consistent_tool_result(
     # bump (via _with_trusted_workspace_state) can re-attach provenance.
     try:
         cleaned_audit = _strip_executor_workspace_audit(
-            dict(produced.audit) if isinstance(getattr(produced, "audit", None), dict) else {}
+            dict(produced.audit) if isinstance(produced.audit, dict) else {}
         )
         if not runtime_guard:
             cleaned_audit.pop("execution_disposition", None)
         return ToolResult(
-            ok=produced.ok, call=requested,
+            ok=produced.ok, call=requested, kind=produced.kind,
             model_text=produced.model_text,
             truncated=produced.truncated,
             presentation=dict(produced.presentation) if isinstance(produced.presentation, dict) else {},

@@ -59,7 +59,8 @@ def result_receipt_fields(result: ToolResult, *, store: ManagedOutputStore | Non
 
     identity = _kernel_workspace_identity_of(result)
     data = {
-        "schema_version": 2,
+        "schema_version": 3,
+        "kind": result.kind,
         "call_name": result.call.name,
         "ok": result.ok,
         "args": result.call.args,
@@ -135,9 +136,10 @@ def restore_result_receipt(projection: RuntimeEffectProjection, *, store: Manage
     if not payload or text_digest(payload) != settlement.result_payload_sha256:
         raise ValueError("tool result receipt digest mismatch")
     data = decode_json_object(json.loads(payload))
-    if set(data) != {
-        "schema_version", "call_name", "ok", "args", "model_text", "canonical", "presentation", "audit", "truncated", "workspace_identity",
-    }:
+    expected = {
+        "schema_version", "kind", "call_name", "ok", "args", "model_text", "canonical", "presentation", "audit", "truncated", "workspace_identity",
+    }
+    if set(data) != expected:
         raise ValueError("invalid tool result receipt fields")
     _validate_call_name(data, intent.tool_name)
     if type(data["ok"]) is not bool or data["ok"] != (settlement.status == "ok"):
@@ -159,6 +161,7 @@ def restore_result_receipt(projection: RuntimeEffectProjection, *, store: Manage
     # resolver when read; losing an attachment cannot erase known execution facts.
     result = ToolResult(
         ok=require_json_boolean(data["ok"], "ok"),
+        kind=require_json_string(data["kind"], "kind"),
         call=ToolCall(require_json_string(data["call_name"], "call_name"), decode_json_object(data["args"]), call_id=intent.call_id),
         model_text=text, canonical=decode_json_object(data["canonical"]), presentation=decode_json_object(data["presentation"]),
         audit=decode_json_object(data["audit"]), truncated=require_json_boolean(data["truncated"], "truncated"),
@@ -180,7 +183,7 @@ def restore_result_receipt(projection: RuntimeEffectProjection, *, store: Manage
 
 def _validate_call_name(data: JsonObject, tool_name: str) -> None:
     from codey.operations.task_effects import _runtime_name
-    if (type(data["schema_version"]) is not int or data["schema_version"] != 2
+    if (type(data["schema_version"]) is not int or data["schema_version"] != 3
             or not isinstance(data["call_name"], str) or not data["call_name"]
             or _runtime_name(data["call_name"]) != tool_name):
         raise ValueError("tool result original call name differs from intent")

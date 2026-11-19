@@ -30,14 +30,18 @@ def _normalize_open_result_args(args: JsonObject) -> JsonObject:
 
 
 def successful_tool_value(raw: ToolResult, entry: ToolCatalogEntry) -> object:
-    schema = entry.output_schema
-    if schema.get("type") == "string":
-        value: object = raw.model_text
+    from codey.toolchain.result_schema import completed_output_schema
+
+    schema = completed_output_schema(entry.output_schema)
+    if raw.kind == "accepted":
+        value: object = raw.canonical.get("value")
+    elif schema.get("type") == "string":
+        value = raw.model_text
     else:
         if "value" not in raw.canonical:
             raise ValueError(f"missing structured result for {entry.name}")
         value = raw.canonical["value"]
-    validate_output(entry.name, schema, value)
+    validate_output(entry.name, entry.output_schema, value)
     return value
 
 
@@ -65,10 +69,12 @@ class CodeModeHost:
         if any(not entry.read_only for entry in catalog) and not allow_writes:
             raise ValueError("CodeMode read-only host requires allow_writes=True for write tools")
         if any(not entry.read_only and not (
-            entry.grant == "project.write" or entry.namespace == "browser"
+            entry.grant == "project.write"
+            or (entry.namespace == "project" and entry.name == "run" and entry.grant == "project.verify")
+            or entry.namespace == "browser"
             and entry.grant in {"browser.interact", "browser.effect"}
         ) for entry in catalog):
-            raise ValueError("CodeMode only permits project.write tools or authorized browser actions")
+            raise ValueError("CodeMode only permits authorized project actions and browser actions")
         self._allow_writes = bool(allow_writes)
         self._catalog = {entry.name: entry for entry in catalog}
         self._execute = execute

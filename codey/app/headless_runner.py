@@ -101,6 +101,9 @@ class HeadlessAppContext(AppContext):
         # Reconcile abandoned attempts without scheduling a second worker
         # (or invoking overridden methods before subclass initialization).
         self.durable.recover_scheduler_state()
+        # The CLI owns the model call synchronously. Its owned tool work still
+        # uses the application's durable scheduler and original worker path.
+        self.durable_scheduler.start(tool_tasks_only=True)
 
     def get_provider(self, provider_id: str = DEFAULT_PROVIDER_ID) -> ChatProvider:
         self.set_run_status("connecting")

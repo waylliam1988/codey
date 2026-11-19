@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 from codey.durable.model import (
     ArtifactRecord,
@@ -23,6 +23,7 @@ from codey.durable.model import (
     thaw_json,
 )
 from codey.durable.reducer import with_effect_intents, with_effect_settlement
+from codey.types.json_value import canonical_json_object, require_json_string, require_json_strings
 
 if TYPE_CHECKING:
     from codey.durable.contracts import RuntimeCheckpointPort
@@ -33,11 +34,12 @@ if TYPE_CHECKING:
     from codey.runtime.log.session_projection import RuntimeRowsBuilder
 
 
-def _entry(session_id: str, row: dict[str, Any]) -> RuntimeLogEntry:
+def _entry(session_id: str, row: dict[str, object]) -> RuntimeLogEntry:
     from codey.runtime.log.entries import RuntimeLogEntry
 
-    return RuntimeLogEntry(session_id=session_id, lane=row["lane"], operation_id=row["operation_id"],
-                           kind=row["kind"], payload=row["payload"])
+    return RuntimeLogEntry(session_id=session_id, lane=require_json_string(row["lane"], "lane"),
+        operation_id=require_json_string(row["operation_id"], "operation_id"),
+        kind=require_json_string(row["kind"], "kind"), payload=canonical_json_object(row["payload"]))
 
 
 def operation_from_checkpoint(task: TaskCheckpoint, session_id: str) -> RuntimeOperationState | None:
@@ -72,10 +74,10 @@ def operation_from_checkpoint(task: TaskCheckpoint, session_id: str) -> RuntimeO
     return state
 
 
-def _delivery_rows(snapshot: dict[str, Any]) -> list[dict[str, object]]:
+def _delivery_rows(snapshot: dict[str, object]) -> list[dict[str, object]]:
     from codey.runtime.effects.tool_result_delivery import delivery_record_entry
 
-    intent = snapshot["intent"]
+    intent = canonical_json_object(snapshot["intent"])
     rows = [delivery_record_entry(intent)]
     base = {key: intent[key] for key in (
         "schema_version", "effect_kind", "batch_id", "session_id", "run_id", "lane", "operation_id", "created_at",
@@ -85,7 +87,7 @@ def _delivery_rows(snapshot: dict[str, Any]) -> list[dict[str, object]]:
         ("superseded_effect_ids", "send_superseded", "delivery_superseded"),
         ("delivered_effect_ids", "delivered", "delivery_delivered"),
     ):
-        for identity in snapshot[field]:
+        for identity in require_json_strings(snapshot[field], field):
             rows.append(delivery_record_entry({**base, "record_kind": kind,
                 "ref": f"{ref}:{intent['batch_id']}:{identity}", "provider_effect_id": identity}))
     if snapshot["is_recovered"]:
@@ -113,23 +115,23 @@ def checkpoint_entries(task: TaskCheckpoint, effects: tuple[EffectRecord, ...], 
     state = operation_from_checkpoint(task, session_id)
     if state is None:
         return ()
-    rows = [operation_started_entry(state), operation_state_entry(state)]
+    rows: list[dict[str, object]] = [operation_started_entry(state), operation_state_entry(state)]
     for effect in effects:
         # Shell approvals are owned by the durable approval state machine;
         # their receipt shape is intentionally outside the runtime projection.
         if effect.category == "shell":
             continue
-        rows.append(effect_intent_entry(RuntimeEffectIntent.from_payload(cast(dict[str, Any], thaw_json(effect.intent)))))
+        rows.append(effect_intent_entry(RuntimeEffectIntent.from_payload(dict(canonical_json_object(effect.intent)))))
         if effect.settlement is not None:
             rows.append(effect_settlement_entry(RuntimeEffectSettlement.from_payload(
-                cast(dict[str, Any], thaw_json(effect.settlement)))))
+                dict(canonical_json_object(effect.settlement)))))
     snapshots = thaw_json(task.state.get("delivery_batches", ()))
     if not isinstance(snapshots, list):
         raise RuntimeOperationTransitionError("invalid delivery checkpoint")
     for snapshot in snapshots:
         if not isinstance(snapshot, dict):
             raise RuntimeOperationTransitionError("invalid delivery batch snapshot")
-        rows.extend(_delivery_rows(snapshot))
+        rows.extend(_delivery_rows(dict(canonical_json_object(snapshot))))
     if state.leaf == LEAF_TERMINAL:
         rows.append({"lane": state.lane, "operation_id": state.operation_id,
                      "kind": "operation_settled", "payload": outcome_for_terminal(state).to_payload()})
@@ -193,6 +195,7 @@ def mutate_checkpoint(durable: RuntimeCheckpointPort, session_id: str, run_id: s
                       derive_rows: RuntimeRowsBuilder, *,
                       messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
                       artifacts: tuple[ArtifactRecord, ...] = (),
+                      task_updates: tuple[TaskCheckpoint, ...] = (),
                       generation_boundary: str | None = None,
                       boundary_result: list[SubmissionRecord] | None = None,
                       boundary_transition: Callable[[RuntimeOperationState, tuple[SubmissionRecord, ...]], RuntimeOperationState] | None = None) -> None:
@@ -234,7 +237,7 @@ def mutate_checkpoint(durable: RuntimeCheckpointPort, session_id: str, run_id: s
             appended.append(entry)
             head = entry.entry_id
         mutation = DurableMutation(
-            session_id, revision, task=next_task, entries=tuple(appended),
+            session_id, revision, task=next_task, task_updates=task_updates, entries=tuple(appended),
             effects=tuple(intents), settlements=tuple(settlements), artifacts=_unregistered_artifacts(durable, artifacts),
         )
         if generation_boundary is not None:

@@ -27,6 +27,7 @@ from codey.types.json_value import (
     decode_json_object,
     decode_json_value,
     parse_json_object,
+    require_json_string,
 )
 from codey.utils.refs import strict_exit_code, strict_verification_success
 from codey.workspace.coding_context import CodingContext, render_coding_context
@@ -439,6 +440,13 @@ def _browser_followup_context(result: ToolResult, session: TaskSession) -> str:
 
 def _result_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool = True) -> str:
     text = (result.model_text or "")
+    if result.kind == "accepted":
+        value = decode_json_object(result.canonical["value"])
+        task_ref = require_json_string(value["task_ref"], "task_ref")
+        return (text + '\n\nBackground admission only. The command result is not in this receipt. '
+                'Read its output and formal result with task_output('
+                + json.dumps({"task_ref": task_ref, "wait_ms": 30000})
+                + '). Use task_cancel to stop it. Read the terminal state before reporting its outcome.')
     if result.call.name == "codemode":
         if result.ok:
             text = f"Result data (JSON):\n{text}"
@@ -606,6 +614,13 @@ def working_context(session: TaskSession) -> str:
     for identity, record in commands[-12:]:
         result = session._memory_results.get(identity)
         args: JsonObject = result.call.args if result is not None else {}
+        if result is not None and result.kind == "accepted":
+            value = decode_json_object(result.canonical["value"])
+            executions.append({"admission_ref": identity, "task_ref": value["task_ref"],
+                "command": args.get("command", ""), "cwd": args.get("path", "."),
+                "status": "accepted", "result_available": False,
+                "next_read": {"tool": "task_output", "args": {"task_ref": value["task_ref"], "wait_ms": 30000}}})
+            continue
         fingerprint = record.get("workspace_fingerprint")
         audit: Mapping[str, object] = result.audit if result is not None else {}
         receipt = execution_receipt(result) if result is not None else None

@@ -280,6 +280,9 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
         """Read a checkpoint and its effects without an intervening commit."""
         return self.task_queries.task_facts(task_id)
 
+    def owned_tasks(self, task_id: str) -> tuple[TaskCheckpoint, ...]:
+        return self.task_queries.owned_tasks(task_id)
+
     def effect(self, effect_id: str) -> EffectRecord:
         return self.task_queries.effect(effect_id)
 

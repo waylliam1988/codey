@@ -15,6 +15,7 @@ class CodingContext:
     changed_files: tuple[str, ...] = ()
     selected_verification: VerificationCandidate | None = None
     verification_fresh: bool = False
+    verification_failed: bool = False
     verification_forbidden: bool = False
 
 
@@ -44,6 +45,10 @@ def render_coding_context(context: CodingContext, *, native: bool = False) -> st
         lines.append(f"- {label}: {_format_paths(changed_files)}")
     if context.verification_forbidden and changed_files:
         lines.append("- Verification status: not run because the task forbids local checks.")
+    elif context.verification_failed:
+        lines.append("- Verification status: failed against the current files. Read the failed receipt, "
+                     "inspect the affected code and repair the cause before verifying again. "
+                     "Repeat an unchanged check only for an explicit reason, such as investigating a transient failure.")
     elif candidate is not None:
         if context.verification_fresh:
             lines.append(

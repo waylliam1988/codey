@@ -33,6 +33,9 @@ class TaskQueryFacade:
     def pending_tasks(self) -> tuple[TaskCheckpoint, ...]:
         return self._query_line(lambda: tuple(self._store.pending_tasks()))
 
+    def owned_tasks(self, task_id: str) -> tuple[TaskCheckpoint, ...]:
+        return self._query_line(lambda: tuple(self._store.owned_dependents(task_id)))
+
     def task(self, task_id: str) -> TaskCheckpoint:
         def read() -> TaskCheckpoint:
             return self._store.task(task_id)

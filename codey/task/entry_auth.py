@@ -25,6 +25,10 @@ _READONLY_MUST_NOT_CHANGE_MARKERS = (
     "read-only", "readonly", "do not modify", "don't modify", "do not change", "don't change",
     "do not edit", "don't edit", "must not modify", "must not change", "must not edit",
 )
+_NAMED_PRESERVATION_TARGET = (
+    r"(?:(?:the|existing|original)\s+)*(?:tests\b|test suite\b|测试(?:文件|脚本|用例)?|"
+    r"[\w/-]+\.(?:py|js|ts|tsx|jsx|json|md|txt)(?![a-z0-9_]))"
+)
 
 def _explicit_readonly_task(task: str) -> bool:
     lowered = (task or "").lower()
@@ -33,13 +37,13 @@ def _explicit_readonly_task(task: str) -> bool:
             suffix = lowered[match.end():].lstrip()
             # A request to preserve tests or one named file is a local task
             # constraint, not a denial of every implementation edit.
-            scoped = re.match(
-                r"(?:(?:the|existing|original)\s+)*(?:tests\b|test suite\b|[\w/-]+\.(?:py|js|ts|tsx|jsx|json|md|txt)\b)",
-                suffix,
-            )
-            if marker.endswith((" modify", " change", " edit")) and scoped:
-                remainder = re.split(r"[.!?;\n]", suffix[scoped.end():], maxsplit=1)[0]
-                if not re.search(r"\b(?:any|all|other)\b.*\bfiles?\b", remainder):
+            scoped = re.match(_NAMED_PRESERVATION_TARGET, suffix)
+            preceding = re.search(_NAMED_PRESERVATION_TARGET + r"\s*$", lowered[:match.start()])
+            preservation = (marker.endswith((" modify", " change", " edit"))
+                            or marker in {"不要修改", "不要改", "不要改动", "不修改", "不改动"})
+            if preservation and (scoped or preceding):
+                remainder = re.split(r"[.!?;。！？；\n]", suffix[scoped.end():] if scoped else suffix, maxsplit=1)[0]
+                if not re.search(r"\b(?:any|all|other)\b.*\bfiles?\b|(?:任何|所有|全部|其他|其它|其余).{0,16}(?:文件|代码|源码|项目)", remainder):
                     continue
             return True
     return False

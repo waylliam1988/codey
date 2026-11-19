@@ -107,15 +107,10 @@ class ExecutionOutputStore:
             return self._append_text_locked(database, execution_id, channel, str(text), row)
 
     def _append_text_locked(self, database: sqlite3.Connection, execution_id: str, channel: str, text: str, row: Sequence[object]) -> ExecutionSnapshot:
-        stdout, stderr = str(row[0]), str(row[1])
-        stdout_bytes, stderr_bytes, max_bytes, revision = (require_json_integer(row[index], "output row") for index in (2, 3, 4, 5))
-        if channel == "stdout":
-            stdout, stdout_bytes = _bounded_text(stdout, stdout_bytes, text, max_bytes)
-        else:
-            stderr, stderr_bytes = _bounded_text(stderr, stderr_bytes, text, max_bytes)
-        revision += 1
-        database.execute(f"UPDATE execution_outputs SET stdout=?,stderr=?,stdout_bytes=?,stderr_bytes=?,revision=?,{channel}_meta='{{}}' WHERE execution_id=?", (stdout, stderr, stdout_bytes, stderr_bytes, revision, execution_id))
-        return self.snapshot(execution_id, database=database)
+        snapshot = self.snapshot(execution_id, database=database)
+        previous = snapshot["stdout"] if channel == "stdout" else snapshot["stderr"]
+        capture = _bounded_text(previous, text, require_json_integer(row[4], "max_bytes"))
+        return self._replace_capture_locked(database, execution_id, channel, capture)
 
     def capture_limit(self, execution_id: str) -> int:
         with conversation_database(self.path) as database:
@@ -127,12 +122,16 @@ class ExecutionOutputStore:
     def replace_capture(self, execution_id: str, channel: str, capture: CapturedText) -> ExecutionSnapshot:
         if channel not in {"stdout", "stderr"}:
             raise ValueError("invalid output channel")
+        with conversation_database(self.path) as database:
+            return self._replace_capture_locked(database, execution_id, channel, capture)
+
+    def _replace_capture_locked(self, database: sqlite3.Connection, execution_id: str, channel: str,
+                                capture: CapturedText) -> ExecutionSnapshot:
         meta = json.dumps({"head": capture.head, "tail": capture.tail, "omitted_bytes": capture.omitted_bytes,
                            "encoding": capture.encoding, "decoding_errors": capture.decoding_errors})
-        with conversation_database(self.path) as database:
-            database.execute(f"UPDATE execution_outputs SET {channel}=?,{channel}_bytes=?,{channel}_meta=?,revision=revision+1 WHERE execution_id=?",
-                             (capture.text, capture.total_bytes, meta, execution_id))
-            return self.snapshot(execution_id, database=database)
+        database.execute(f"UPDATE execution_outputs SET {channel}=?,{channel}_bytes=?,{channel}_meta=?,revision=revision+1 WHERE execution_id=?",
+                         (capture.text, capture.total_bytes, meta, execution_id))
+        return self.snapshot(execution_id, database=database)
 
     def settled(self, execution_id: str, exit_code: int | None) -> ExecutionSnapshot:
         with conversation_database(self.path) as database:
@@ -148,6 +147,49 @@ class ExecutionOutputStore:
             with conversation_database(self.path) as connection:
                 return self.snapshot(execution_id, database=connection)
         return self._snapshot(execution_id, database)
+
+    def read_since(self, execution_id: str, channel: str, cursor: int = 0, *, limit: int = 4000) -> dict[str, object]:
+        """A caller-owned byte cursor over the retained head/tail, with explicit gaps."""
+        return self.stream_since(self.snapshot(execution_id), channel, cursor, limit=limit)
+
+    @staticmethod
+    def stream_since(snapshot: ExecutionSnapshot, channel: str, cursor: int = 0, *, limit: int = 4000) -> dict[str, object]:
+        if channel not in {"stdout", "stderr"} or type(cursor) is not int or cursor < 0 or limit < 1:
+            raise ValueError("invalid output cursor/channel/limit")
+        stream = snapshot["stdout"] if channel == "stdout" else snapshot["stderr"]
+        total = stream["total_bytes"]
+        if cursor > total:
+            raise ValueError("output cursor exceeds this execution's stream")
+        head, tail = stream["head"], stream["tail"]
+        # Byte positions cannot be reconstructed from lossy/code-page text or
+        # legacy trimmed captures. Keep the cursor and expose a bounded preview.
+        if (stream["encoding"] != "utf-8" or stream["decoding_errors"]
+                or (stream["truncated"] and len((head + tail).encode("utf-8")) + stream["omitted_bytes"] != total)):
+            return {"execution_id": snapshot["execution_id"], "channel": channel, "chunks": [], "gaps": [],
+                    "next_cursor": cursor, "total_bytes": total, "revision": snapshot["revision"],
+                    "incremental_available": False, "preview": stream["text"][:limit]}
+        segments = [(0, head + tail)] if not stream["truncated"] else [
+            (0, head), (max(len(head.encode("utf-8")), total - len(tail.encode("utf-8"))), tail)]
+        chunks: list[dict[str, object]] = []
+        gaps: list[dict[str, int]] = []
+        remaining = limit
+        for start, text in segments:
+            end = start + len(text.encode("utf-8"))
+            if cursor >= end:
+                continue
+            if cursor < start:
+                gaps.append({"start": cursor, "end": start})
+                cursor = start
+            encoded = text.encode("utf-8")[cursor - start:]
+            decoded = encoded.decode("utf-8", errors="strict")[:remaining]
+            if decoded:
+                chunks.append({"start": cursor, "text": decoded})
+                cursor += len(decoded.encode("utf-8"))
+                remaining -= len(decoded)
+            if remaining == 0:
+                break
+        return {"execution_id": snapshot["execution_id"], "channel": channel, "chunks": chunks, "gaps": gaps,
+                "next_cursor": cursor, "total_bytes": total, "revision": snapshot["revision"]}
 
     @classmethod
     def read_existing(cls, root: Path, execution_id: str) -> ExecutionSnapshot:
@@ -171,15 +213,18 @@ class ExecutionOutputStore:
                 "result_revision": revision if row[3] == "settled" else None}
 
 
-def _bounded_text(existing: str, total: int, added: str, limit: int) -> tuple[str, int]:
-    total += len(added.encode("utf-8"))
-    text = existing + added
-    if len(text.encode("utf-8")) <= limit:
-        return text, total
-    head = limit // 4
-    encoded = text.encode("utf-8")
-    visible = encoded[:head].decode("utf-8", errors="ignore") + encoded[-(limit - head):].decode("utf-8", errors="ignore")
-    return visible, total
+def _bounded_text(existing: StreamSnapshot, added: str, limit: int) -> CapturedText:
+    total = existing["total_bytes"] + len(added.encode("utf-8"))
+    text = existing["text"] + added
+    if not existing["truncated"] and len(text.encode("utf-8")) <= limit:
+        return CapturedText(text, total, False, 0, head=text)
+    head_limit = limit // 4
+    prefix = existing["head"] if existing["truncated"] else text
+    suffix = existing["tail"] + added if existing["truncated"] else text
+    head = prefix.encode("utf-8")[:head_limit].decode("utf-8", errors="ignore")
+    tail = suffix.encode("utf-8")[-(limit - head_limit):].decode("utf-8", errors="ignore")
+    omitted = total - len((head + tail).encode("utf-8"))
+    return CapturedText(head + tail, total, True, omitted, head=head, tail=tail)
 
 
 def _stream_payload(text: str, total: int, encoded_meta: str) -> StreamSnapshot:
@@ -189,7 +234,7 @@ def _stream_payload(text: str, total: int, encoded_meta: str) -> StreamSnapshot:
             "head": require_json_string(meta.get("head", text[:len(text) // 2]), "head"),
             "tail": require_json_string(meta.get("tail", text[len(text) // 2:]), "tail"),
             "total_bytes": total, "omitted_bytes": omitted, "truncated": omitted > 0,
-            "encoding": require_json_string(meta.get("encoding", "utf-8"), "encoding"),
+            "encoding": require_json_string(meta.get("encoding", "unknown" if omitted else "utf-8"), "encoding"),
             "decoding_errors": require_json_boolean(meta.get("decoding_errors", False), "decoding_errors")}
 
 

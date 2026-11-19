@@ -266,7 +266,13 @@ def _validate_tool_args(
     if name in _CONTROLLER_ALIASES or (isinstance(args, dict) and name == "source_search" and "source_id" in args):
         return _validate_research_args(name, args)
     if executor == "project":
-        return _validate_coding_args(name, args)
+        from codey.toolchain.execution_options import split_execution_options
+
+        business, _options = split_execution_options(args)
+        normalized, error = _validate_coding_args(name, business)
+        if "run_in_background" in args:
+            normalized["run_in_background"] = args["run_in_background"]
+        return normalized, error
     if executor in {"source", "knowledge"}:
         return dict(args), ""
     return {}, "unsupported tool executor"
