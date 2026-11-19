@@ -1,9 +1,12 @@
 """Strict Research restores its ledger from real settled tool receipts."""
 from dataclasses import replace
+from threading import Event
 from types import SimpleNamespace
 
 import pytest
 
+from codey.memory.null import null_capabilities
+from codey.memory.service import MemoryService
 from codey.operations.context import RunWork
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.recovery import record_entry_policy
@@ -85,7 +88,12 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
         frame.recovered_tool_outcomes = recovered.recovered_tool_outcomes
         frame.settled_tool_outcomes = recovered.settled_tool_outcomes
         frame.recovered_tool_result_batch_id = recovered.recovered_tool_result_batch_id
-        deps.state = SimpleNamespace(durable=deps.runtime_mutations.durable, set_provider_session=lambda *a: None)
+        stop_flag = Event()
+        deps.state = SimpleNamespace(
+            durable=deps.runtime_mutations.durable, set_provider_session=lambda *a: None,
+            stop_flag_for=lambda _: stop_flag,
+            memory=MemoryService(null_capabilities(), source_available=lambda _: False),
+        )
         deps.knowledge_store = store
         outcome = run_entry_kernel(frame, RunWork([], ExecutionEvidence()),
             SimpleNamespace(on_event=lambda _: None, on_shell_request=None), deps, task_kind="research")

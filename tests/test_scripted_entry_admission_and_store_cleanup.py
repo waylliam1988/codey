@@ -32,7 +32,7 @@ def test_scripted_ci_entry_cases_do_not_discover_a_real_local_endpoint(tmp_path)
     targets = [
         "tests/test_gate_task_identity_excludes_global_status.py::GateTaskIdentityExcludesGlobalStatusTests::test_real_headless_done_with_status_row_passes_identity",
         "tests/test_required_modification_check_is_produced.py::test_real_headless_required_edit_and_fresh_verification_finish",
-        "tests/test_web_execution_without_knowledge_store.py::test_real_headless_hybrid_executes_search_and_open_in_isolated_state",
+        "tests/test_web_execution_without_knowledge_store.py::test_real_headless_executes_search_and_open_in_isolated_state",
         "tests/test_server.py::SessionThreadingTests::test_research_ui_path_reads_pdf_and_recovers_bad_excerpt",
     ]
     env = {**os.environ, "PYTHONPATH": str(tmp_path) + os.pathsep + os.environ.get("PYTHONPATH", "")}
@@ -41,7 +41,7 @@ def test_scripted_ci_entry_cases_do_not_discover_a_real_local_endpoint(tmp_path)
         cwd=Path(__file__).resolve().parents[1], env=env, capture_output=True, text=True, timeout=90,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "4 passed" in result.stdout
+    assert "7 passed" in result.stdout
 
 
 def test_pdf_ui_fixture_closes_knowledge_store_when_task_submission_raises(tmp_path):

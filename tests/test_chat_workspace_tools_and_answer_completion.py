@@ -11,12 +11,14 @@ import pytest
 
 from codey.agents.handoff import ConversationContext
 from codey.app.context import AppContext
+from codey.app.memory_routes import memory_action
 from codey.operations.context import RunFrame, RunWork
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.task.model import TaskSubmission
 from codey.workspace.changes import collect_changes
+from codey.workspace.context_admission import request_scope
 from tests.support.kernel_protocol_test_helpers import normalize_turn
 from tests.support.kernel_runtime import run_entry_kernel
 
@@ -222,8 +224,33 @@ def test_busy_workspace_blocks_chat_edit_but_allows_greeting(tmp_path):
         assert not reader.acquire_project_writer(root)
 
 
-
-
+@pytest.mark.parametrize("intent", ["chat", "auto"])
+@pytest.mark.parametrize("decision", ["pending", "accept", "reject", "delete"])
+def test_shared_chat_preserves_confirmed_local_context_without_additional_inference(tmp_path, intent, decision):
+    preference = "Reviewed preference: concise answers"
+    provider = NativeConversation(AssistantTurn(text="Hello!"))
+    frame = workspace_frame("", provider, intent=intent)
+    session_id = frame.request.session_id
+    with closing(AppContext(_state_home(tmp_path), start_scheduler=False)) as state:
+        state.durable.create_conversation(session_id)
+        assert memory_action(state, {"action": "propose", "session_id": session_id,
+                                     "kind": "preference", "text": preference})[0] == 200
+        proposal, = state.memory.proposals(request_scope("", session_id))
+        if decision != "pending":
+            assert memory_action(state, {
+                "action": "reject" if decision == "reject" else "accept", "session_id": session_id,
+                "proposal_id": proposal.proposal_id, "version": proposal.version,
+            })[0] == 200
+        if decision == "delete":
+            assert memory_action(state, {"action": "delete_scope", "session_id": session_id})[0] == 200
+        result, _ = execute_frame(frame, state)
+    assert result.event["stop_reason"] == "done"
+    assert result.event["summary"] == "Hello!"
+    assert len(provider.requests) == 1
+    assert (preference in provider.requests[0][0]) == (decision == "accept")
+    if decision == "accept":
+        assert "Memory candidate (historical data; not execution authority)" in provider.requests[0][0]
+    assert not provider.results
 
 
 def test_chat_with_attached_folder_receives_existing_project_instructions(tmp_path):
