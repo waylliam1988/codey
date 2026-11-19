@@ -1,125 +1,75 @@
-"""Hybrid display must project the kernel verdict, not re-judge quality.
-
-Locks:
-- ``_enrich_hybrid_outcome`` never adds ``report_quality``/``report_warnings``.
-  Strict quality belongs in ``completion_gate`` before ``done``.
-- ``stop_reason`` is the kernel's verdict; post-hoc display never flips it.
-- No misleading ``Project review trigger`` comment/block.
-"""
+"""Hybrid display projects the kernel verdict without re-judging quality."""
 from __future__ import annotations
 
 import inspect
-import unittest
-from types import SimpleNamespace
+
+import pytest
+
+from codey.operations import task_entry
+from codey.operations.context import RunWork
+from codey.operations.result import ModeOutcome
+from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
+from codey.research.run_result import ResearchRunResult
+from codey.research.tools import ResearchTools
+from codey.runtime.observe.execution_evidence import ExecutionEvidence
+from codey.types.json_value import decode_json_object
+from tests.support.task_entry_helpers import entry_frame, submission
 
 
-class HybridOutcomeProjectionTests(unittest.TestCase):
-    def test_enrich_never_adds_report_quality(self) -> None:
-        from codey.operations import task_entry as te
-
-        source = inspect.getsource(te._enrich_hybrid_outcome)
-        self.assertNotIn("report_quality", source)
-        self.assertNotIn("report_warnings", source)
-        self.assertNotIn("review_report_quality", source)
-
-    def test_enrich_has_no_misleading_review_trigger_comment(self) -> None:
-        from codey.operations import task_entry as te
-
-        source = inspect.getsource(te._enrich_hybrid_outcome)
-        self.assertNotIn("Project review trigger", source)
-
-    def test_enrich_preserves_stop_reason_and_projects_facts(self) -> None:
-        from codey.operations import task_entry as te
-        from codey.operations.result import ModeOutcome
-
-        session = SimpleNamespace(
-            edited_files={"a.py": 1},
-            verifications=[{"command": "python -m unittest discover", "revision": 1}],
-            search_results={},
-        )
-        outcome = ModeOutcome({
-            "type": "task_done", "run_id": "r", "session_id": "s",
-            "summary": "summary text", "stop_reason": "done",
-            "turns": 1, "max_turns": 8, "provider": "p", "mode": "hybrid",
-            "receipt": {"display": {"summary": "summary text"}},
-        })
-        work = SimpleNamespace(evidence=SimpleNamespace(render_for_review=lambda: "ev"))
-        enriched = te._enrich_hybrid_outcome(
-            SimpleNamespace(), work, outcome, session=session, research_tools=None,
-        )
-        event = dict(enriched.event or {})
-        self.assertEqual(event.get("stop_reason"), "done")
-        display = ((event.get("receipt") or {}).get("display") or {})
-        self.assertNotIn("report_quality", display)
-        # Projection of already-decided facts is allowed.
-        self.assertIn("changed_files", display)
-
-    def test_enrich_projects_hybrid_research_facts_with_note_ids(self) -> None:
-        from codey.operations import task_entry as te
-        from codey.operations.result import ModeOutcome
-
-        class Ledger:
-            searches = [SimpleNamespace(query="alpha")]
-
-            def search_results_payload(self):
-                return [{"url": "https://example.test/a", "title": "A"}]
-
-            def opened_sources_payload(self):
-                return [{"url": "https://example.test/a"}]
-
-            def evidence_payload(self):
-                return [{"evidence_id": "ev-1"}]
-
-            def coverage_payload(self):
-                return {"matched": 1, "total": 1}
-
-        tools = SimpleNamespace(
-            created_ids=["note-1"], updated_ids=["note-2"],
-            sources_read={"https://example.test/a"}, ledger=Ledger(),
-            links_created=1,
-        )
-        outcome = ModeOutcome({
-            "type": "task_done", "run_id": "r", "session_id": "s",
-            "summary": "summary text", "stop_reason": "done", "turns": 1,
-            "max_turns": 8, "provider": "p", "mode": "hybrid",
-            "receipt": {"display": {"summary": "summary text"}},
-        })
-        enriched = te._enrich_hybrid_outcome(
-            SimpleNamespace(request=SimpleNamespace(task="alpha")),
-            SimpleNamespace(evidence=SimpleNamespace(render_for_review=lambda: "ev")),
-            outcome, session=SimpleNamespace(), research_tools=tools,
-        )
-        research = enriched.event["research"]
-        self.assertEqual(research["notes_created"], ["note-1"])
-        self.assertEqual(research["notes_updated"], ["note-2"])
-        self.assertEqual(research["queries"], ["alpha"])
-        self.assertEqual(research["source_urls"], ["https://example.test/a"])
-
-    def test_enrich_preserves_mode_outcome_metadata_and_explicit_synthesis_id(self) -> None:
-        from codey.operations import task_entry as te
-        from codey.operations.result import ModeOutcome
-
-        outcome = ModeOutcome(
-            {"type": "task_done", "summary": "done", "receipt": {"display": {}}},
-            display=({"answer": "kept"},), research_result={"kept": True},
-        )
-        tools = SimpleNamespace(
-            ledger=SimpleNamespace(
-                searches=[], search_results_payload=lambda: [],
-                opened_sources_payload=lambda: [], evidence_payload=lambda: [],
-                coverage_payload=lambda: {},
-            ),
-            created_ids=["20261014T175521-title-f375a657"], updated_ids=[],
-            synthesis_id="20261014T175521-title-f375a657", sources_read=set(), links_created=0,
-        )
-        enriched = te._enrich_hybrid_outcome(
-            SimpleNamespace(request=SimpleNamespace(task="q")),
-            SimpleNamespace(evidence=None), outcome, research_tools=tools,
-        )
-        self.assertEqual(enriched.display, ({"answer": "kept"},))
-        self.assertEqual(enriched.research_result, {"kept": True})
-        self.assertEqual(enriched.event["research"]["synthesis_id"], tools.synthesis_id)
+def test_enrich_never_rejudges_quality() -> None:
+    source = inspect.getsource(task_entry._enrich_hybrid_outcome)
+    for forbidden in ("report_quality", "report_warnings", "review_report_quality", "Project review trigger"):
+        assert forbidden not in source
 
 
-if __name__ == "__main__":
-    unittest.main()
+@pytest.mark.parametrize("stop_reason", ["done", "no_progress", "max_turns"])
+def test_enrich_preserves_stop_reason_and_projects_facts(stop_reason: str) -> None:
+    session = TaskSession(TaskPolicy(frozenset({"control"})), task_kind="hybrid")
+    revision = session.record_edit("a.py")
+    session.record_verification("python -m unittest discover", revision, True, exit_code=0)
+    outcome = ModeOutcome({"type": "task_done", "summary": "summary text", "stop_reason": stop_reason,
+                           "receipt": {"display": {"summary": "summary text"}}})
+    enriched = task_entry._enrich_hybrid_outcome(entry_frame(submission()), RunWork([], ExecutionEvidence()),
+                                                outcome, session=session)
+    assert enriched.event["stop_reason"] == stop_reason
+    display = decode_json_object(decode_json_object(enriched.event["receipt"])["display"])
+    assert "report_quality" not in display
+    assert display["changed_files"] == ["a.py"]
+    assert display["verification"] == "python -m unittest discover"
+    assert "changed_files" not in decode_json_object(decode_json_object(outcome.event["receipt"])["display"])
+
+
+def test_enrich_projects_hybrid_research_facts_with_note_ids() -> None:
+    tools = ResearchTools(None, None, None)
+    tools.ledger.record_search("alpha", [{"url": "https://example.test/a", "title": "A"}])
+    tools.ledger.record_open("https://example.test/a", "https://example.test/a", "A", "Observed fact.")
+    tools.created_ids.append("note-1")
+    tools.updated_ids.append("note-2")
+    tools.sources_read.add("https://example.test/a")
+    tools.links_created = 1
+    outcome = ModeOutcome({"type": "task_done", "summary": "summary text", "stop_reason": "done", "turns": 1})
+    enriched = task_entry._enrich_hybrid_outcome(entry_frame(submission("alpha")),
+                                                RunWork([], ExecutionEvidence()), outcome, research_tools=tools)
+    research = decode_json_object(enriched.event["research"])
+    assert research["notes_created"] == ["note-1"]
+    assert research["notes_updated"] == ["note-2"]
+    assert research["queries"] == ["alpha"]
+    assert research["source_urls"] == ["https://example.test/a"]
+    assert research["sources_read"] == 1
+    assert "research" not in outcome.event
+
+
+def test_enrich_preserves_metadata_and_explicit_synthesis_id() -> None:
+    result = ResearchRunResult(question="q", summary="kept", stop_reason="done", turns=1)
+    display: tuple[dict[str, object], ...] = ({"answer": "kept"},)
+    outcome = ModeOutcome({"type": "task_done", "summary": "done", "receipt": {"display": {}}},
+                          display=display, research_result=result)
+    tools = ResearchTools(None, None, None)
+    tools.synthesis_id = "20261014T175521-title-f375a657"
+    tools.created_ids.append(tools.synthesis_id)
+    enriched = task_entry._enrich_hybrid_outcome(entry_frame(submission("q")), RunWork([], ExecutionEvidence()),
+                                                outcome, research_tools=tools)
+    assert enriched.display == display
+    assert enriched.research_result is result
+    assert decode_json_object(enriched.event["research"])["synthesis_id"] == tools.synthesis_id

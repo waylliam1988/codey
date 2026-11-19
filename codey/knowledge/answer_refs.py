@@ -2,33 +2,50 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 from codey.knowledge.model import KnowledgeReference
 from codey.knowledge.recall import KnowledgeAccess
+from codey.types.json_value import decode_json_value, require_json_integer, require_json_string
+
+if TYPE_CHECKING:
+    from codey.knowledge.store import KnowledgeStore
+    from codey.research.staging import StagedKnowledgeStore
 
 
-def answer_references(raw: Any, store: Any, *, project: str = "", session_id: str = "") -> tuple[KnowledgeReference, ...]:
+class KnowledgeReferenceError(ValueError):
+    """A rejected exact identity, retained for completion feedback."""
+
+    def __init__(self, message: str, reference: KnowledgeReference) -> None:
+        super().__init__(message)
+        self.reference: KnowledgeReference = reference
+
+
+def answer_references(raw: object, store: KnowledgeStore | StagedKnowledgeStore | None, *,
+                      project: str = "", session_id: str = "") -> tuple[KnowledgeReference, ...]:
     if raw is None or raw == ():
         return ()
-    if not isinstance(raw, list) or len(raw) > 32:
+    rows = decode_json_value(raw)
+    if not isinstance(rows, list) or len(rows) > 32:
         raise ValueError("knowledge_refs must be a bounded list of {id, revision}")
-    refs = []
-    access = KnowledgeAccess(project, session_id, getattr(store, "owner_id", ""))
-    for row in raw:
+    refs: list[KnowledgeReference] = []
+    access = KnowledgeAccess(project, session_id, store.owner_id if store is not None else "")
+    for row in rows:
         if not isinstance(row, dict) or set(row) != {"id", "revision"}:
             raise ValueError("knowledge_refs require id and revision")
-        reference = KnowledgeReference(row["id"], row["revision"], "uses")
+        reference = KnowledgeReference(require_json_string(row["id"], "knowledge id"),
+                                       require_json_integer(row["revision"], "knowledge revision"), "uses")
         version = store.repository.read(reference.target, reference.revision) if store is not None else None
         if version is None or not access.allows(version):
-            raise ValueError("cited knowledge version is missing or inaccessible")
+            raise KnowledgeReferenceError("cited knowledge version is missing or inaccessible", reference)
         if version.value.kind == "answer":
-            raise ValueError("cite the original premises rather than an old answer")
+            raise KnowledgeReferenceError("cite the original premises rather than an old answer", reference)
         refs.append(reference)
-    return tuple(dict.fromkeys(refs))
+    return tuple({ref: None for ref in refs})
 
 
-def answer_scope(references: list[KnowledgeReference], store: Any, *, project: str, session_id: str) -> tuple[str, str]:
+def answer_scope(references: list[KnowledgeReference], store: KnowledgeStore | StagedKnowledgeStore, *,
+                 project: str, session_id: str) -> tuple[str, str]:
     """A report inherits restricted premises instead of publishing them globally."""
     restricted = {(version.value.scope, version.value.scope_id) for ref in references
                   if (version := store.repository.read(ref.target, ref.revision)) is not None

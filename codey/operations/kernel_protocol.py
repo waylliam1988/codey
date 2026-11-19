@@ -404,7 +404,7 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
                      scope: AnswerScope | None) -> tuple[ToolSpec, ...]:
     """Select completion once; bind investigation tools on their separate route."""
     from codey.operations.browser_waits import wait_spec
-    from codey.operations.chat_knowledge import chat_knowledge_spec, read_knowledge_versions
+    from codey.operations.chat_knowledge import chat_knowledge_spec, hybrid_knowledge_spec, read_knowledge_versions
     from codey.policies.output_requirement import explanation_spec, has_explanation
     from codey.research.answer_contract import answer_spec
     from codey.research.questions import requires_question_ref
@@ -420,7 +420,9 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
         return tuple(answer_spec(spec, scope) for spec in frozen)
     purpose = ("evidence" if session.task_kind == "evidence_followup" else
                "report" if session.policy.strict_research else "chat" if session.task_kind == "chat" else "ordinary")
-    versions = read_knowledge_versions(session.executed, session._memory_results) if purpose == "chat" and not explaining else []
+    hybrid = purpose == "ordinary" and session.task_kind == "hybrid"
+    versions = (read_knowledge_versions(session.executed, session._memory_results)
+                if (purpose == "chat" or hybrid) and not explaining else [])
     bind_questions = requires_question_ref(session)
     question_refs = tuple(f"q{index}" for index in range(1, len(session.research_questions) + 1))
     selected: list[ToolSpec] = []
@@ -432,6 +434,9 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
                 spec = done_spec_for_purpose(spec, purpose, task=session.task_text, questions=session.research_questions)
                 if purpose == "chat":
                     spec = chat_knowledge_spec(spec, versions)
+                elif hybrid:
+                    spec = hybrid_knowledge_spec(spec, versions,
+                        knowledge_required="knowledge_versions" in session.policy.required_checks)
         elif bind_questions:
             bound = question_bound_spec(spec, question_refs=question_refs)
             if bound is None:

@@ -13,6 +13,8 @@ from codey.completion.contract import (
     CompletionCheck,
     completion_check,
 )
+from codey.knowledge.answer_refs import KnowledgeReferenceError, answer_references
+from codey.knowledge.model import KnowledgeReference, canonical_json
 from codey.operations.completion_context import CompletionContext
 from codey.operations.task_session import TaskSession
 from codey.research.finding_report import ResearchReport, compile_finding_report
@@ -73,27 +75,64 @@ def _hybrid_knowledge_refs(session: TaskSession, raw: JsonValue) -> JsonValue:
     ]
 
 
-def knowledge_reference_checks(session: TaskSession, context: object = None) -> list[CompletionCheck]:
-    context = CompletionContext.from_value(context)
+def _knowledge_references(session: TaskSession, context: CompletionContext) -> tuple[KnowledgeReference, ...]:
     raw = _hybrid_knowledge_refs(session, session.last_done_args.get("knowledge_refs"))
     if not raw:
-        return []
-    from codey.knowledge.answer_refs import answer_references
+        return ()
+    references = answer_references(raw, context.knowledge_store,
+                      project=str(context.knowledge_project or ""),
+                      session_id=str(context.knowledge_session_id or ""))
+    if session.task_kind == "chat" and not session.policy.strict_research:
+        from codey.operations.chat_knowledge import read_knowledge_versions
 
+        versions = read_knowledge_versions(session.executed, session._memory_results)
+        for ref in references:
+            if {"id": ref.target, "revision": ref.revision} not in versions:
+                raise KnowledgeReferenceError("Chat citations require a committed knowledge read of the exact version", ref)
+    return references
+
+
+def knowledge_reference_checks(session: TaskSession, context: object = None) -> list[CompletionCheck]:
     try:
-        references = answer_references(raw, context.knowledge_store,
-                          project=str(context.knowledge_project or ""),
-                          session_id=str(context.knowledge_session_id or ""))
-        if session.task_kind == "chat" and not session.policy.strict_research:
-            from codey.operations.chat_knowledge import read_knowledge_versions
-
-            versions = read_knowledge_versions(session.executed, session._memory_results)
-            if any({"id": ref.target, "revision": ref.revision} not in versions for ref in references):
-                raise ValueError("Chat citations require a committed knowledge read of the exact version")
+        references = _knowledge_references(session, CompletionContext.from_value(context))
     except (ValueError, TypeError, KeyError):
         return [CompletionCheck("knowledge_versions", CHECK_FAIL, "knowledge_reference_invalid")]
     # A locator/version check cannot prove an interpretation or applicability.
-    return [CompletionCheck("knowledge_versions", CHECK_PASS)]
+    return [CompletionCheck("knowledge_versions", CHECK_PASS)] if references else []
+
+
+def _knowledge_reference_feedback(session: TaskSession, context: CompletionContext) -> str:
+    from codey.operations.browser_completion import committed_results
+    from codey.operations.chat_knowledge import read_knowledge_versions
+
+    try:
+        _knowledge_references(session, context)
+    except (ValueError, TypeError, KeyError) as exc:
+        detail = str(exc)
+        if isinstance(exc, KnowledgeReferenceError):
+            ref = exc.reference
+            detail = canonical_json({"id": ref.target, "revision": ref.revision}) + ": " + detail
+            if ref.target in session.edited_files:
+                detail += ". This identity is also a recorded output file path; writing that file does not establish a knowledge version"
+            elif ref.target in session.read_files:
+                detail += ". This identity is also a recorded file read path; reading that file does not establish a knowledge version"
+        feedback = "done.knowledge_refs rejected: " + detail + ". "
+    else:
+        feedback = ("The task's knowledge validation requirement is not satisfied. For read-based citations, use the "
+                    "exact object id and revision actually read, not an old answer. ")
+    reads = committed_results(session.executed, session._memory_results, frozenset({"knowledge_read"}))
+    if not reads:
+        feedback += "No successful knowledge_read is recorded for this task. This does not exclude other legal saved knowledge. "
+    versions = read_knowledge_versions(session.executed, session._memory_results)
+    if versions:
+        feedback += "Committed structured-object reads (not exhaustive; select only adopted knowledge): " + canonical_json(versions) + ". "
+    if (session.task_kind == "hybrid" and not session.policy.strict_research
+            and "knowledge_versions" not in session.policy.required_checks):
+        feedback += ("If no saved knowledge was used, omit optional knowledge_refs; retain references to knowledge actually adopted. "
+                     "Correct the completion proposal; this rejection does not require repeating successful browser actions or file edits.")
+    else:
+        feedback += "Use legal exact saved-knowledge identities and versions; do not omit required or adopted references to bypass validation."
+    return feedback
 
 
 def source_requirement_checks(session: TaskSession, context: object = None, *,
@@ -208,7 +247,7 @@ def research_completion_feedback(session: TaskSession, text: str, context: objec
                 "any supported new finding. If acquisition fails, report the actual failed attempt and remaining "
                 "gap in a brief done.summary; do not invent evidence or repeat the parent report.")
     if "knowledge_versions" in failed:
-        return "done.knowledge_refs must use the exact object id and revision actually read; cite original premises, not an old answer."
+        return _knowledge_reference_feedback(session, CompletionContext.from_value(context))
     if "research_report_sections" in failed:
         return "The strict report requires its validated structured proposal and exact reference compilation."
     return ""

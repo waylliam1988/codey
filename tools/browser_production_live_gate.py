@@ -375,7 +375,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                 upload_schema if assembled_upload else explanation_output_schema() if explanation_output else
                 {"type": "object", "properties": {"amount": {"type": "integer"}, "code": {"type": "string"}},
                  "required": ["amount", "code"], "additionalProperties": False})
-            selection: dict[str, str] = {"model": target.model, "base_url": target.base_url}
+            selection: dict[str, object] = {"model": target.model, "base_url": target.base_url}
             request = HeadlessRequest(
                 project if project_task else None, task, intent=mode, provider_id="local", max_turns=max_turns,
                 session_id=session_id,

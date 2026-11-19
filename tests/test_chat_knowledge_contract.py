@@ -21,10 +21,19 @@ from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.types.json_value import JsonObject
+from codey.types.json_value import JsonObject, decode_json_object
 from tests.test_research_submission_handoff_production import NativeExperimentProvider, install_http, requests
 from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import ExperimentProvider, Target
+
+
+def completion_parameters(request: JsonObject) -> object:
+    """Inspect the offered parameters, not incidental field names in descriptions."""
+    raw = request.get("tools")
+    if isinstance(raw, list):
+        functions = [decode_json_object(decode_json_object(row)["function"]) for row in raw]
+        return next(function["parameters"] for function in functions if function["name"] == "done")
+    return request["response_format"]
 
 
 @pytest.mark.parametrize("native", [False, True])
@@ -93,7 +102,7 @@ def test_actual_chat_requests_and_durable_receipt_share_read_versions(
     provider = provider_type(Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10), directory,
                              fixed_acquisition=False)
 
-    def connect(_identity: str, **_kwargs: object) -> ExperimentProvider:
+    def connect(provider_id: str, *, port: int) -> ExperimentProvider:
         return provider
 
     events: list[dict[str, object]] = []
@@ -107,9 +116,9 @@ def test_actual_chat_requests_and_durable_receipt_share_read_versions(
     assert "knowledge_read" in json.dumps(first["messages"])
     assert "When using saved versions, include knowledge_refs" not in json.dumps(first["messages"])
     if search_first:
-        assert "knowledge_refs" not in json.dumps(wire[1].get("response_format", wire[1].get("tools")))
+        assert "knowledge_refs" not in json.dumps(completion_parameters(wire[1]))
         assert "When using saved versions, include knowledge_refs" not in json.dumps(wire[1]["messages"])
-    assert "knowledge_refs" not in json.dumps(first.get("response_format", first.get("tools")))
+    assert "knowledge_refs" not in json.dumps(completion_parameters(first))
     assert "saved-observation" in json.dumps(second.get("response_format", second.get("tools")))
     assert "knowledge_refs" in json.dumps(second.get("response_format", second.get("tools")))
     read, = [row.result for row in tool_receipts(directory / "state") if row.result.call.name == "knowledge_read"]
