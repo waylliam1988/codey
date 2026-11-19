@@ -3,6 +3,43 @@
 This file records the current verification state, not an append-only experiment diary.
 
 
+## Memory integrity fixes (2026-11-19)
+
+All four reported defects were reproduced before fixing production code. The
+initial 12 parametrized regressions failed, including captured physical HTTP
+requests for both OpenAI protocols. The final integrity module has 14 cases:
+management records remain auditable but cannot become messages or context edits;
+project decisions remain canonical across sessions, branches, concurrent requests,
+projection failures and restart; experiences bind the submitted final answer and
+both message identities/text digests; the 200-experience window cannot displace
+confirmed preferences, goals or hypotheses. Scope, expiry, run exclusion and the
+final result limit remain enforced. No second decision store, schema migration,
+dual writes or new runtime was introduced.
+
+The related production regression selection passed 339 tests and 13 subtests
+across 29 modules. After the final structural typing cleanup, the focused
+memory/context/provider-history selection passed 88 tests. These selections
+overlap. They cover durable history and branches, context edits and compaction,
+both API protocols, ordinary/headless tasks, approval and completion authority.
+No full pytest suite or live model call was run. Requests and replies in the
+protocol regressions use the real provider/transport path with a deterministic
+HTTP fixture; these are production defects, independent of model output.
+
+Production-tree mypy, Pyrefly and ty passed; mypy also checks the new regression
+module (675 sources total). Pyrefly reported 0 errors, 35 existing suppressions
+and 164 warnings. The kernel precision gate passed. An additional explicit/
+expression-Any audit found no diagnostics in the edited Python files; imported
+unchanged modules still have existing diagnostics under that stricter audit.
+No casts, ignore directives or checker exclusions were added. One intermediate
+mypy run hit an internal cache assertion while checks shared a cache; the serial
+nonincremental rerun is the recorded gate result.
+
+Full-repository Ruff was run and reports one unrelated SIM905 diagnostic in the
+untracked `tools/work_graph_candidate.py:38`. That file was left untouched and
+is not part of this commit. Ruff passes for `codey`, `tests` and every edited
+Python file. Existing unrelated workspace changes are preserved.
+
+
 ## Memory ownership cold start (2026-11-19)
 
 Ghost remains the built-in `codey/ghost` implementation behind the sole

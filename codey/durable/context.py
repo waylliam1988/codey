@@ -8,6 +8,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
 from codey.durable.model import EntryDraft, thaw_json
+from codey.utils.object_fields import mapping_fields, object_fields
 from codey.utils.text_budget import estimate_tokens
 
 
@@ -28,6 +29,8 @@ def build_context(
 ) -> ContextSnapshot:
     if token_budget <= 0:
         raise ValueError("token_budget must be positive")
+    # Memory management is audit data, never model history or context edits.
+    entries = tuple(entry for entry in entries if entry.kind not in {"memory_proposal", "memory_decision"})
     selected: list[EntryDraft] = []
     latest_compaction = max(
         (index for index, entry in enumerate(entries) if entry.kind == "compaction"),
@@ -83,14 +86,14 @@ def build_context(
 
 def _message_for(entry: EntryDraft) -> Mapping[str, object]:
     raw_payload = thaw_json(entry.payload)
-    payload = raw_payload if isinstance(raw_payload, dict) else {}
+    payload = raw_payload if object_fields(raw_payload) else {}
     if entry.kind == "user_message":
         return {"role": "user", "content": str(payload.get("text") or ""),
                 **({"attachments": payload["attachments"]} if payload.get("attachments") else {})}
     if entry.kind == "assistant_message":
         return {"role": "assistant", "content": str(payload.get("text") or "")}
     if entry.kind == "tool_call":
-        assistant_message = {"role": "assistant", "tool_calls": payload.get("tool_calls", [payload])}
+        assistant_message: dict[str, object] = {"role": "assistant", "tool_calls": payload.get("tool_calls", [payload])}
         for key in ("content", "reasoning_content"):
             if isinstance(payload.get(key), str):
                 assistant_message[key] = payload[key]
@@ -122,9 +125,7 @@ def _is_aborted_assistant(entry: EntryDraft) -> bool:
     """
     if entry.kind != "assistant_message":
         return False
-    payload = thaw_json(entry.payload)
-    if not isinstance(payload, Mapping):
-        return False
+    payload = entry.payload
     status = payload.get("status")
     return isinstance(status, str) and status.casefold() in {
         "aborted",
@@ -134,26 +135,25 @@ def _is_aborted_assistant(entry: EntryDraft) -> bool:
 
 
 def _is_display_only(entry: EntryDraft) -> bool:
-    payload = thaw_json(entry.payload)
-    return isinstance(payload, Mapping) and payload.get("display_only") is True
+    return entry.payload.get("display_only") is True
 
 
 def _summary_text(value: object) -> str:
     if isinstance(value, str):
         return value
-    if isinstance(value, Mapping):
-        return json.dumps(dict(value), ensure_ascii=False, sort_keys=True)
+    if mapping_fields(value):
+        summary = dict(value)
+        return json.dumps(summary, ensure_ascii=False, sort_keys=True)
     return str(value or "")
 
 
-def _estimate_tokens(value: object) -> int:
-    if value == () or value == []:
+def _estimate_tokens(messages: tuple[Mapping[str, object], ...]) -> int:
+    if not messages:
         return 0
     from codey.task.attachments import attachment_message, image_estimate_view, validate_attachments
 
-    if isinstance(value, (list, tuple)):
-        value = [{**message, "attachments": list[dict[str, object]](), "content": attachment_message(str(message.get("content") or ""), validate_attachments(message["attachments"]), protocol="openai-completions", images=True)}
-                 if isinstance(message, Mapping) and message.get("attachments") else message for message in value]
+    value = [{**message, "attachments": list[dict[str, object]](), "content": attachment_message(str(message.get("content") or ""), validate_attachments(message["attachments"]), protocol="openai-completions", images=True)}
+             if message.get("attachments") else dict(message) for message in messages]
     view, images = image_estimate_view(value)
     encoded = json.dumps(view, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return estimate_tokens(encoded) + images
@@ -258,24 +258,7 @@ def _restore_tool_pairs(selected: list[EntryDraft], candidates: Sequence[EntryDr
                 continue
             removals.add(entry.entry_id)
             continue
-        position = index[entry.entry_id]
-        payload = thaw_json(entry.payload)
-        result_call_id: object = payload.get("call_id") if isinstance(payload, Mapping) else None
-        match = None
-        for previous in reversed(candidates[:position]):
-            if previous.kind != "tool_call":
-                continue
-            previous_payload = thaw_json(previous.payload)
-            calls = previous_payload.get("tool_calls") if isinstance(previous_payload, dict) else None
-            ids = {
-                str(call.get("id"))
-                for call in calls or ()
-                if isinstance(call, Mapping) and call.get("id") is not None
-            }
-            matches = not ids if result_call_id is None else str(result_call_id) in ids
-            if matches:
-                match = previous
-                break
+        match = _find_tool_call(candidates, index[entry.entry_id], entry.payload.get("call_id"))
         if match is None:
             removals.add(entry.entry_id)
             continue
@@ -290,12 +273,13 @@ def _restore_tool_pairs(selected: list[EntryDraft], candidates: Sequence[EntryDr
     for entry in selected:
         if entry.kind == "tool_result" and entry.entry_id not in paired_results:
             removals.add(entry.entry_id)
+    def sort_position(entry: EntryDraft) -> tuple[int, bool]:
+        return (index[entry.entry_id] if entry.entry_id in index else index[entry.parent_id or ""],
+                entry.entry_id not in index)
+
     return sorted(
         (entry for entry in (*selected, *additions) if entry.entry_id not in removals),
-        key=lambda entry: (
-            index[entry.entry_id] if entry.entry_id in index else index[entry.parent_id or ""],
-            entry.entry_id not in index,
-        ),
+        key=sort_position,
     )
 
 
@@ -321,40 +305,39 @@ def _drop_oldest_context_unit(selected: list[EntryDraft]) -> None:
     if not call_id:
         return
     for index, entry in enumerate(selected):
-        if entry.kind != "tool_call" or str(call_id) not in _tool_call_ids(entry):
+        if entry.kind != "tool_call" or call_id not in _tool_call_ids(entry):
             continue
         selected.pop(index)
         return
 
 
 def _tool_result_call_id(entry: EntryDraft) -> str:
-    payload = thaw_json(entry.payload)
-    if not isinstance(payload, Mapping):
-        return ""
-    return str(payload.get("call_id") or "")
+    return str(entry.payload.get("call_id") or "")
 
 
 def _tool_call_ids(entry: EntryDraft) -> tuple[str, ...]:
-    payload = thaw_json(entry.payload)
-    calls = payload.get("tool_calls") if isinstance(payload, Mapping) else None
-    if not isinstance(calls, Sequence) or isinstance(calls, (str, bytes)):
-        return ()
     return tuple(
-        str(call.get("id"))
-        for call in calls
-        if isinstance(call, Mapping) and isinstance(call.get("id"), str) and call.get("id")
+        identity
+        for call in _tool_calls(entry)
+        if mapping_fields(call) and isinstance(identity := call.get("id"), str) and identity
     )
+
+
+def _tool_calls(entry: EntryDraft) -> Sequence[object]:
+    value = entry.payload.get("tool_calls")
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return ()
+    calls: Sequence[object] = value
+    return calls
 
 
 def _missing_tool_result_text(entry: EntryDraft, call_id: str) -> str:
     """Describe an unfinished call without inventing an external outcome."""
-    payload = thaw_json(entry.payload)
-    calls = payload.get("tool_calls") if isinstance(payload, Mapping) else None
-    for call in calls or ():
-        if not isinstance(call, Mapping) or str(call.get("id") or "") != call_id:
+    for call in _tool_calls(entry):
+        if not mapping_fields(call) or str(call.get("id") or "") != call_id:
             continue
         function = call.get("function")
-        function_name = function.get("name") if isinstance(function, Mapping) else None
+        function_name = function.get("name") if mapping_fields(function) else None
         name = str(call.get("name") or function_name or "")
         if name == "ask_user":
             return "No execution authorized: the user question was answered outside the provider turn."
@@ -368,9 +351,19 @@ def _find_tool_result(
     for candidate in candidates[call_position + 1:]:
         if candidate.kind != "tool_result":
             continue
-        payload = thaw_json(candidate.payload)
-        if isinstance(payload, Mapping) and str(payload.get("call_id") or "") == call_id:
+        if str(candidate.payload.get("call_id") or "") == call_id:
             return candidate
+    return None
+
+
+def _find_tool_call(candidates: Sequence[EntryDraft], result_position: int, call_id: object) -> EntryDraft | None:
+    for previous in reversed(candidates[:result_position]):
+        if previous.kind != "tool_call":
+            continue
+        ids = _tool_call_ids(previous)
+        matches = not ids if call_id is None else str(call_id) in ids
+        if matches:
+            return previous
     return None
 
 
@@ -386,16 +379,15 @@ def _apply_context_edits(entries: Sequence[EntryDraft]) -> tuple[EntryDraft, ...
             originals[entry.entry_id] = entry
             views[entry.entry_id] = [entry]
             roots[entry.entry_id] = entry.entry_id
-        payload = thaw_json(entry.payload)
-        if not isinstance(payload, Mapping):
-            continue
+        payload = entry.payload
         raw_edits = payload.get("edits", payload.get("context_edits"))
         if entry.kind != "context_edit" and raw_edits is None:
             continue
         if not isinstance(raw_edits, Sequence) or isinstance(raw_edits, (str, bytes)):
             raise ValueError("context edits must be a list")
-        for raw_edit in raw_edits:
-            if not isinstance(raw_edit, Mapping):
+        edits: Sequence[object] = raw_edits
+        for raw_edit in edits:
+            if not mapping_fields(raw_edit):
                 raise ValueError("context edit must be an object")
             target = raw_edit.get("target")
             action = raw_edit.get("action")
@@ -425,8 +417,9 @@ def _context_replacement(source: EntryDraft, edit: Mapping[str, object]) -> list
     if not isinstance(messages, Sequence) or isinstance(messages, (str, bytes)):
         raise ValueError("replacement context messages must be a list")
     result: list[EntryDraft] = []
-    for index, message in enumerate(messages):
-        if not isinstance(message, Mapping):
+    values: Sequence[object] = messages
+    for index, message in enumerate(values):
+        if not mapping_fields(message):
             raise ValueError("replacement context message must be an object")
         result.append(EntryDraft(
             f"{source.entry_id}:replacement:{index}", source.conversation_id, source.parent_id,

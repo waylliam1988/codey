@@ -19,8 +19,12 @@ Ghost 不导入 app、operations、durable、runtime。移除 Ghost 实现或设
   Ghost 没有队列、claim/release/complete、模型调用、worker 或 scheduler。
 - `finish_run` 从已提交任务和实际 assistant message 生成规范事件；Ghost 按 event_id 去重生成经验投影。
   投影失败不会回滚已完成任务，也不把失败任务投影成成功经验。没有旧观察存储双写。
+  经验使用 submission 的最终 answer_entry_id，并绑定用户输入和助手答案各自的消息身份与文本 SHA-256；
+  缺少完整来源时不生成经验，读取和发送前都要求两条消息仍在来源会话的当前分支中且摘要一致。
 - 用户提案和决定写入 Core 对话记录；Ghost 仅存投影和稳定引用。确认必须匹配 proposal_id 与版本；
-  投影失败重试复用已提交决定，不能以相反决定覆盖。助手文本不会自动成为长期偏好、目标或假设。
+  决定查询在同一 Core mutation line 中覆盖所有会话和分支的持久记录，唯一性不依赖当前请求会话。
+  投影失败后跨会话或重启重试仍复用原决定和原来源，不能以相反决定覆盖。
+  助手文本不会自动成为长期偏好、目标或假设。
 
 ## 上下文安全边界
 
@@ -33,11 +37,15 @@ Ghost 返回带来源、scope、时间的结构化 item，不返回 prompt。Cor
 定义在 `workspace/context_admission.py`。位置登记使失效候选只能在请求冻结前按所属区段移除。
 物理发送继续检查真实 payload、来源有效性、scope、过期与预算；文本、原生工具结果续发和 compaction 共用边界。
 这些候选不构成事实裁决、授权、执行收据或完成证明。
+`memory_proposal` 和 `memory_decision` 仅用于审计和来源校验；它们在历史编辑、预算及消息编码之前
+就被排除，不能作为 system 消息或通过 payload 内的 context_edits 改写模型历史。
 
 ## 存储和维护
 
 当前文件为 `<state_home>/memory/ghost/memory.sqlite3`，不读、不迁移旧 `ghost.sqlite3`。
 Ghost 自己的事件去重、item 和提案使用同一 SQLite 事务；与 durable.sqlite3 没有共享表、外键或跨库事务。
+最新 200 条的检索窗口只限制经历；已确认偏好、目标、假设单独进入候选集，再共同检查有效期、排序和
+应用最终数量与 Core 预算限制。新增经历不会隐式遗忘仍有效的长期项，也没有新增重复分类字段或存储。
 删除 scope 或会话来源会删除投影，保留 event_id 防止重放复活。存储损坏不触发自动修复或猜测迁移。
 
 当前算法是本地词法匹配、排序和时间衰减的冷启动基线。旧图、Hebbian、Hopfield、自动提取和历史学习

@@ -69,7 +69,8 @@ def memory_action(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[s
                     raise ValueError("proposal is missing, changed or already decided")
                 # The durable record owns the user's decision. Ghost receives a
                 # reference and projects it; it never acquires an approval capability.
-                prior = next((row for row in ctx.durable.context(session_id)
+                prior = next((row for identity in ctx.durable.conversation_ids()
+                              for row in ctx.durable.entries(identity)
                               if row.kind == "memory_decision"
                               and row.payload.get("proposal_id") == proposal.proposal_id
                               and row.payload.get("version") == proposal.version), None)
@@ -80,7 +81,7 @@ def memory_action(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[s
                     "accepted": action == "accept",
                 })
                 ctx.memory.decide(MemoryDecision(proposal.proposal_id, proposal.version, action == "accept",
-                                                f"decision:{session_id}:{entry.entry_id}", ctx.memory.clock()))
+                                                f"decision:{entry.conversation_id}:{entry.entry_id}", ctx.memory.clock()))
                 return 200, {"ok": True}
         raise ValueError("unsupported memory action")
     except ValueError as exc:

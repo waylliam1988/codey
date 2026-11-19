@@ -106,10 +106,15 @@ class GhostMemory:
         if not query.scopes or query.max_items <= 0:
             return MemoryResult()
         placeholders = ",".join("?" for _ in query.scopes)
+        eligible = f"scope IN ({placeholders}) AND (? = '' OR run_id != ?)"
+        parameters = (*query.scopes, query.exclude_run_id, query.exclude_run_id)
         with self._connect() as connection:
             payloads = _texts(connection.execute(
-                f"SELECT payload FROM items WHERE scope IN ({placeholders}) AND (? = '' OR run_id != ?) "
-                "ORDER BY rowid DESC LIMIT 200", (*query.scopes, query.exclude_run_id, query.exclude_run_id),
+                f"SELECT payload FROM (SELECT payload FROM items WHERE {eligible} "
+                "AND json_extract(payload, '$.kind') = 'experience' ORDER BY rowid DESC LIMIT 200) "
+                f"UNION ALL SELECT payload FROM items WHERE {eligible} "
+                "AND json_extract(payload, '$.kind') IN ('preference', 'goal', 'hypothesis')",
+                (*parameters, *parameters),
             ))
         items: list[MemoryItem] = []
         for payload in payloads:
@@ -119,7 +124,10 @@ class GhostMemory:
             if item.expires_at and datetime.fromisoformat(item.expires_at) <= datetime.fromisoformat(query.as_of):
                 continue
             items.append(item)
-        ranked = sorted(items, key=lambda item: (-relevance(query.text, item, query.as_of), item.item_id))
+        def rank(item: MemoryItem) -> tuple[float, str]:
+            return -relevance(query.text, item, query.as_of), item.item_id
+
+        ranked = sorted(items, key=rank)
         return MemoryResult(tuple(item for item in ranked
                                   if item.kind != "experience" or relevance(query.text, item, query.as_of) > 0)
                             [:query.max_items])
@@ -134,8 +142,8 @@ class GhostMemory:
             if event.kind == "task.completed":
                 user = require_json_string(event.payload.get("user_text"), "user_text")
                 assistant = require_json_string(event.payload.get("assistant_text"), "assistant_text")
-                text = json.dumps({"user": user, "assistant": assistant},
-                                  ensure_ascii=False)
+                exchange: dict[str, str] = {"user": user, "assistant": assistant}
+                text = json.dumps(exchange, ensure_ascii=False)
                 item = MemoryItem(event.event_id, "experience", text, event.scope,
                                   event.provenance, event.occurred_at)
                 connection.execute("INSERT INTO items VALUES (?, ?, ?, ?)",
@@ -203,7 +211,11 @@ class GhostMemory:
         with self._connect() as connection:
             for table in ("items", "proposals"):
                 payloads = _texts(connection.execute(f"SELECT payload FROM {table} ORDER BY rowid"))
-                result[table] = [decode_json_object(json.loads(payload)) for payload in payloads]
+                decoded: list[JsonValue] = []
+                for payload in payloads:
+                    value: object = json.loads(payload)
+                    decoded.append(decode_json_object(value))
+                result[table] = decoded
         return result
 
     def maintain(self, *, as_of: str) -> None:
