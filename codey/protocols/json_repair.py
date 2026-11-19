@@ -1,16 +1,8 @@
 """Generate one suffix-only JSON candidate; callers own authorization."""
 from __future__ import annotations
 
-from dataclasses import dataclass
-
+from codey.runtime.core.models import JsonTailClosure as JsonTailClosure
 from codey.types.json_value import parse_json_object
-
-
-@dataclass(frozen=True)
-class JsonTailClosure:
-    original: str
-    candidate: str
-    suffix: str
 
 
 def close_json_tail(source: str) -> JsonTailClosure | None:

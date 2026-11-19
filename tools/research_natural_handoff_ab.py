@@ -132,6 +132,7 @@ def assessment_snapshot(snapshot: TurnSnapshot, evidence: Evidence) -> TurnSnaps
     spec = next(spec for spec in snapshot.frozen_specs if spec.name == "codemode")
     spec = replace(spec, description=ASSESS, declarations=json.dumps({"key": evidence.key, "labels": list(evidence.texts)}))
     return replace(snapshot, tool_names=("codemode",), nested_tool_names=(), frozen_specs=(spec,),
+        browser_references=None, browser_fill_text=None, browser_followups=False,
         custom_executors=tuple(row for row in snapshot.custom_executors if row[0] == "codemode"),
         contract_text=json_contract_text((assessment_spec(spec),)))
 

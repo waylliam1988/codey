@@ -2,6 +2,7 @@
 import pytest
 from playwright.sync_api import expect
 
+from tests.test_ui_workflow import admit_run
 from tests.test_ui_workflow import page as page
 from tests.test_ui_workflow import ui_browser as ui_browser
 
@@ -51,6 +52,7 @@ def test_packaged_math_has_styles_and_loadable_fonts(page):
 
 
 def test_late_replayed_command_events_keep_terminal_result_and_new_turn_separate(page):
+    admit_run(page, "old")
     page.evaluate("""() => {
       addToSession('a',{type:'user',text:'Old question'});
       addToSession('a',{type:'asst',runId:'old',text:'Old answer',finalAnswer:true});
@@ -76,6 +78,7 @@ def test_late_replayed_command_events_keep_terminal_result_and_new_turn_separate
 
 
 def test_results_update_while_answer_streams_and_identical_commands_remain_distinct(page):
+    admit_run(page, "stream-run")
     page.evaluate("""() => {
       addToSession('a',{type:'user',text:'Check two sources'});
       handleServerEvent({type:'task_start',session_id:'a',run_id:'stream-run',mode:'chat'});

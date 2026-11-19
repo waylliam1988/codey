@@ -109,9 +109,12 @@ def test_saved_basic_replies_change_only_navigation_argument_and_reach_real_brow
     assert audit["all_navigations_exact"] is (arm == "B")
     assert audit["browser_chain_reached"] is (arm == "B")
     navigation = audit["formal_navigations"]
-    assert isinstance(navigation, list) and len(navigation) == 1
-    assert all(decode_json_object(item)["http_status"] == (200 if arm == "B" else 404) for item in navigation)
-    assert decode_json_object(navigation[0])["observed_url"] == (URL if arm == "B" else URL.replace("-", "_"))
+    assert isinstance(navigation, list) and len(navigation) == 2
+    # Required-source navigation precedes the scripted model program.
+    assert decode_json_object(navigation[0])["observed_url"] == URL
+    assert decode_json_object(navigation[0])["http_status"] == 200
+    assert decode_json_object(navigation[1])["http_status"] == (200 if arm == "B" else 404)
+    assert decode_json_object(navigation[1])["observed_url"] == (URL if arm == "B" else URL.replace("-", "_"))
     parents = [r.result for r in tool_receipts(directory / "state") if r.result.call.name == "codemode"]
     assert parents[0].audit["error_code"] == "syntax_error"
     assert all("recovery did not consume" not in parent.model_text for parent in parents)

@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from codey.completion.contract import CHECK_FAIL, CHECK_PASS, CompletionCheck
 from codey.operations import completion_gate
+from codey.operations.browser_text_report import BrowserMetadata, MetadataPending
 from codey.operations.completion_inputs import CompletionCheckInput
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
@@ -184,10 +185,11 @@ def observe_completion(directory: Path, case: str, arm: Arm) -> Generator[None]:
         return [CompletionCheck(CHECK, CHECK_FAIL if progress.next_step else CHECK_PASS, progress.next_step)]
 
     def evaluate(session: TaskSession, done_text: object, *, context: object = None,
-                 observations: Mapping[str, ToolObservation] | None = None) -> completion_gate.GateVerdict:
+                 observations: Mapping[str, ToolObservation] | None = None,
+                 metadata: BrowserMetadata | MetadataPending | None = None) -> completion_gate.GateVerdict:
         nonlocal progress
         progress = check_progress(tool_receipts(directory / "state"))
-        verdict = original(session, done_text, context=context, observations=observations)
+        verdict = original(session, done_text, context=context, observations=observations, metadata=metadata)
         append_json(directory / "prerequisite-checks.jsonl", {**progress.payload(), "accepted": verdict.complete})
         if arm == "B" and progress.next_step and not verdict.complete and not verdict.blocked:
             return replace(verdict, followup=progress.feedback + "\n\n" + verdict.followup)

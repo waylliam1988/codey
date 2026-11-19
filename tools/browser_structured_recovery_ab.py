@@ -38,6 +38,7 @@ OBSERVE_CODE = (
     "if(t.truncated||j.truncated||Boolean(t.value.length)===Boolean(j.value.length))"
     "throw Error('Expected exactly one complete supported source format');"
     "const capture=t.value.length?table:json;"
+    "unwrap(await tools.browser_read({}));"
     "await store('source',capture.result_ref);return unwrap(capture).value;"
 )
 

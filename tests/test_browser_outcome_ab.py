@@ -14,7 +14,7 @@ READ = "return unwrap(await tools.browser_read({}));"
 WAIT = "unwrap(await tools.browser_wait({condition:'text',value:'鱼丸',timeout_ms:5000}));"
 NAVIGATE = "unwrap(await tools.browser_navigate({url:inputs.url}));"
 EDIT = ("const read=await tools.read_file({path:'result.json'});"
-        "return unwrap(await tools.edit({read,changes:{amount:173,code:'QUARTZ_851'}}));")
+        "return unwrap(await tools.edit({base_result_ref:read.result_ref,changes:{amount:173,code:'QUARTZ_851'}}));")
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
@@ -28,7 +28,7 @@ def test_text_delivery_uses_original_receipts(
         + ("return {body,url,token};" if token else "return {body,url};"))
     summary = (f"{FACTS} URL {URL.replace('production-browser-record', 'production_browser_record')}，"
                "token SCHEMA_TOKEN_74。") if arm == "A" else FACTS
-    install_http(monkeypatch, [action(code), done(summary)])
+    install_http(monkeypatch, [action(code), done(summary, explanation=arm == "B")])
     directory = tmp_path / "run"
     row = probe.run_arm(directory, "legacy_structured", arm, TARGET, max_turns=2)
     assert row["passed"] is passed, row
@@ -37,7 +37,7 @@ def test_text_delivery_uses_original_receipts(
         assert f"当前标签页 URL：{URL}" in str(row["answer"])
         assert not (directory / "rendered-answer.txt").exists()
     elif passed:
-        assert row["rendered_answer"] == f"{FACTS}\n\n页面地址：{URL}\nToken：SCHEMA_TOKEN_74\n"
+        assert row["rendered_answer"] == f"{FACTS}\n\n已核对当前页面的记录。\n\n页面地址：{URL}\nToken：SCHEMA_TOKEN_74\n"
         assert row["raw_explanation_preserved"] is True
     else:
         assert not (directory / "rendered-answer.txt").exists()
@@ -59,8 +59,8 @@ def test_post_load_read_preserves_real_conflict_and_rejects_replaced_document(
     row = probe.run_arm(tmp_path / "run", case, arm, TARGET, max_turns=4)
     assert row["passed"] is passed, row
     assert row["explicit_waits"] == 0
-    assert row["true_stale_conflicts"] == 1
-    assert row["fresh_read_recovery"] is True
+    assert row["true_stale_conflicts"] == (0 if reload else 1)
+    assert row["fresh_read_recovery"] is (not reload)
     if arm == "B":
         evidence = row["evidence"]
         assert isinstance(evidence, list) and evidence

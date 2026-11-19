@@ -19,8 +19,14 @@ from typing import Literal, Protocol
 from unittest.mock import patch
 
 from codey.codemode import catalog as codemode_catalog
-from codey.codemode.runtime import NodeWorkerRuntime, ToolInvoker
-from codey.codemode.types import CodeModeLimits, CodeModeResult, ToolCatalogEntry, ToolCatalogSnapshot
+from codey.codemode.runtime import DeliveryRecorder, NodeWorkerRuntime, ToolInvoker
+from codey.codemode.types import (
+    CodeModeLimits,
+    CodeModeResult,
+    DeliveryReference,
+    ToolCatalogEntry,
+    ToolCatalogSnapshot,
+)
 from codey.policies.network import check_fetch_url
 from codey.task.web_intent import explicit_web_intent, source_url_key
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer
@@ -39,6 +45,7 @@ class RuntimeExecute(Protocol):
     def __call__(self, runtime: NodeWorkerRuntime, code: str, /, *, catalog: Sequence[ToolCatalogEntry],
                  invoke: ToolInvoker, inputs: Mapping[str, object] | None = None, state_store: object = None,
                  replay_context: Mapping[str, object] | None = None,
+                 delivery: Sequence[DeliveryReference] = (), on_delivery: DeliveryRecorder | None = None,
                  limits: CodeModeLimits | None = None) -> CodeModeResult: ...
 
 
@@ -99,6 +106,7 @@ def navigation_surface(directory: Path, destination: TaskDestination, *, enabled
     def recorded_execute(runtime: NodeWorkerRuntime, code: str, *, catalog: Sequence[ToolCatalogEntry],
                          invoke: ToolInvoker, inputs: Mapping[str, object] | None = None, state_store: object = None,
                          replay_context: Mapping[str, object] | None = None,
+                         delivery: Sequence[DeliveryReference] = (), on_delivery: DeliveryRecorder | None = None,
                          limits: CodeModeLimits | None = None) -> CodeModeResult:
         expanded = helper + code + SUFFIX if enabled else code
         append_json(directory / "programs.jsonl", {"model_code": code, "executed_code": expanded,
@@ -112,7 +120,7 @@ def navigation_surface(directory: Path, destination: TaskDestination, *, enabled
             return invoke(name, args)
 
         return execute(runtime, expanded, catalog=catalog, invoke=observed_invoke, inputs=inputs,
-                       state_store=state_store, replay_context=replay_context, limits=limits)
+                       state_store=state_store, replay_context=replay_context, delivery=delivery, on_delivery=on_delivery, limits=limits)
 
     with ExitStack() as stack:
         stack.enter_context(patch.object(NodeWorkerRuntime, "execute", recorded_execute))

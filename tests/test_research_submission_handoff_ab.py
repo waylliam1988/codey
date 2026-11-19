@@ -106,16 +106,20 @@ def test_handoff_and_repair_follow_current_browser_evidence(
     result = probe.run_arm(directory, "B", Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10))
     assert result["passed"] is True and result["stop_reason"] == "done", result
     receipts = [item.result for item in tool_receipts(directory / "state")]
+    initial_reads = [r for r in receipts if r.call.name == "browser_read"
+                     and "required-source:navigation" in r.call.call_id]
+    assert len(initial_reads) == 1
+    scripted_reads = [r for r in receipts if r.call.name == "browser_read" and r not in initial_reads]
     submissions = [result for result in receipts if result.call.name == "submit_research_answer"]
     if case in {"citation_format", "citation"}:
         assert [item.ok for item in submissions] == [False, True]
-        assert result["source_reads"] == 1
+        assert len(scripted_reads) == 1
     elif case == "answer_format":
         assert [item.ok for item in submissions] == [True]
-        assert result["source_reads"] == 1 and result["model_calls"] == 3
+        assert len(scripted_reads) == 1 and result["model_calls"] == 3
     elif case == "old_citation":
         assert [item.ok for item in submissions] == [True, True]
-        assert result["source_reads"] == 2 and "browser_post_wait_citation_missing" in str(result["first_rejection"])
+        assert len(scripted_reads) == 2 and "browser_post_wait_citation_missing" in str(result["first_rejection"])
     elif case == "lost_after_submit":
         assert [item.ok for item in submissions] == [True, True]
         assert "browser_wait_missing" in str(result["first_rejection"])

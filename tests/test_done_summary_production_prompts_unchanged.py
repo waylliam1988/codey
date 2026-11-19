@@ -135,4 +135,6 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path, monkey
     assert "base_result_ref: string; changes: Record<string, JsonEditValue>" in prompt
     assert "await describe('tools.NAME') for the full omitted declaration" in prompt
     assert "Returning modified data does not persist it" in prompt
-    assert _sha256(prompt) == "d5de36dcb368d9925b1ee816d2cff76e69519a60d58c84cbc02aa8f3da60ec42"
+    # Reviewed: browser tools are baseline capabilities and task URLs are runtime-resolved.
+    assert "browser_navigate" in prompt
+    assert _sha256(prompt) == "69dc0a767ced36636facc5fa312fe6136b57f4839ec33ad392938b65bff9dd65"

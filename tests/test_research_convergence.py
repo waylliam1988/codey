@@ -63,7 +63,7 @@ def test_old_frozen_local_request_fails_explicitly_instead_of_becoming_whole_ans
         raw = snapshot_description(build_turn_snapshot(session))
         raw["research_scope"] = {"schema_version": 3, "plan_digest": "a" * 64,
                                  "unit_ref": "q1.u1", "question_ref": "q1"}
-        with pytest.raises(ValueError, match="legacy local Research request.*start a new"):
+        with pytest.raises(ValueError, match="invalid whole-task research scope"):
             restore_snapshot(raw)
     finally:
         store.close()
@@ -108,7 +108,7 @@ def test_background_guidance_only_requests_fields_the_task_can_submit(kind, has_
     value = KnowledgeObject("claim-writer", "claim", "Only one writer can write at a time.", "model_extraction")
     hits = [KnowledgeHit(KnowledgeVersion(value, 3, "2026-11-04", "old-commit"), "text")] if has_prior else []
     tools = SimpleNamespace(store=SimpleNamespace(search=lambda *args, **kwargs: hits, owner_id="owner"),
-                            project="", session_id="s")
+                            project="", session_id="s", created_ids=[], updated_ids=[])
     session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read", "knowledge.write"}),
                                     strict_research=kind != "chat"), task_kind=kind)
     text = knowledge_background(tools, session, "writer")

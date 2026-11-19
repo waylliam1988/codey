@@ -13,6 +13,7 @@ from codey.runtime.observe.events import RunEvent, run_event_ui_payload
 
 def response(message: dict, finish: str = "stop") -> mock.MagicMock:
     result = mock.MagicMock()
+    result.__enter__.return_value.headers = {"Content-Type": "application/json"}
     result.__enter__.return_value.read.return_value = json.dumps({
         "choices": [{"finish_reason": finish, "message": message}],
     }).encode()

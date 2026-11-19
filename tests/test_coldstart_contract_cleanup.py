@@ -407,12 +407,13 @@ class AgentCliStrictTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(run_headless.call_count, 1)
 
-    def test_ghost_getattr_kept(self) -> None:
+    def test_memory_cli_uses_explicit_action_fields(self) -> None:
         import codey.app.cli as cli
-
-        source = std_inspect.getsource(cli)
-        # ghost subcommands legitimately differ per subcommand; keep fallback.
-        self.assertIn('getattr(args, "status"', source)
+        source = std_inspect.getsource(cli.cmd_ghost)
+        self.assertNotIn('getattr(args, "status"', source)
+        self.assertIn('args.ghost_cmd', source)
+        self.assertIn('args.proposal_id', source)
+        self.assertIn('args.version', source)
 
 
 class CompletionEvidenceDirectTests(unittest.TestCase):

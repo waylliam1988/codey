@@ -200,7 +200,7 @@ def test_named_upload_helper_projects_its_single_original_receipt(tmp_path: Path
 def test_wait_errors_are_prechecked_then_real_wait_can_continue(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scenario: str,
 ) -> None:
-    bad = action("return await tools.browser_wait({condition:'text',value:'missing'});")
+    bad = action("return await tools.browser_wait({condition:'text',value:'missing',timeout_ms:'invalid'});")
     invalid = action("return await tools.browser_wait({condition:'invalid',value:'missing',timeout_ms:5000});")
     code = browser_code()
     if scenario == "stale_ref":

@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import NoReturn
 from unittest.mock import patch
 
-from codey.codemode.runtime import NodeWorkerRuntime, ToolInvoker
-from codey.codemode.types import CodeModeLimits, CodeModeResult, ToolCatalogEntry
+from codey.codemode.runtime import DeliveryRecorder, NodeWorkerRuntime, ToolInvoker
+from codey.codemode.types import CodeModeLimits, CodeModeResult, DeliveryReference, ToolCatalogEntry
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 from tools import receipt_bound_edit_ab as ab
 from tools.completion_artifact_audit import EffectReceipt, tool_receipts
@@ -96,6 +96,7 @@ def field_interface(directory: Path) -> Generator[None, None, None]:
     def lower_edits(runtime: NodeWorkerRuntime, code: str, *, catalog: Sequence[ToolCatalogEntry],
                     invoke: ToolInvoker, inputs: Mapping[str, object] | None = None, state_store: object = None,
                     replay_context: Mapping[str, object] | None = None,
+                    delivery: Sequence[DeliveryReference] = (), on_delivery: DeliveryRecorder | None = None,
                     limits: CodeModeLimits | None = None) -> CodeModeResult:
         reads: dict[str, str] = {}
 
@@ -118,7 +119,7 @@ def field_interface(directory: Path) -> Generator[None, None, None]:
             return result
 
         return execute(runtime, code, catalog=catalog, invoke=lower, inputs=inputs, state_store=state_store,
-                       replay_context=replay_context, limits=limits)
+                       replay_context=replay_context, delivery=delivery, on_delivery=on_delivery, limits=limits)
 
     with (patch.object(NodeWorkerRuntime, "execute", lower_edits),
           ab.prototype_helper(directory, enabled=True, helper=HELPER, declaration=DECLARATION)):

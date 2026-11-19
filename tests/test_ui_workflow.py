@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(scope="module")
 def ui_browser(tmp_path_factory):
-    app_context = server.AppContext(tmp_path_factory.mktemp("ui-workflow") / "state")
+    app_context = server.AppContext(tmp_path_factory.mktemp("ui-workflow") / "state", start_scheduler=False)
     original = server.CodeyHTTPServer.app_context
     server.CodeyHTTPServer.app_context = app_context
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
@@ -152,6 +152,13 @@ def page(ui_browser):
         yield page
     finally:
         page.close()
+
+
+def admit_run(page, run_id, *, session_id="a", text="Scripted task"):
+    """Register scripted workers on the real conversation path before publishing events."""
+    durable = page.codey_context.durable
+    durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
+                        text=text, provider_snapshot={"provider_id": "deepseek"})
 
 
 def test_long_answer_is_visible_and_pointer_selection_survives_tool_update(page):
@@ -587,6 +594,7 @@ def test_change_file_link_expands_exact_file_and_escape_returns_focus(page):
 
 
 def test_hybrid_task_done_research_payload_creates_graph_entry(page):
+    admit_run(page, "hybrid-run")
     page.route("**/api/research/graph**", lambda route: route.fulfill(json={
         "ok": True,
         "graph": {"nodes": [{"id": "note-1", "label": "Research note", "kind": "note"}], "edges": []},
@@ -598,6 +606,7 @@ def test_hybrid_task_done_research_payload_creates_graph_entry(page):
           queries: ['graph'], search_results: [], opened_sources: [], coverage: {},
           evidence_items: [], citation_map: [], counterpoints: [], quality_warnings: []}
     })""")
+    page.wait_for_function("sessions.find(s => s.id === 'a').researchRuns?.some(r => r.runId === 'hybrid-run')")
     page.evaluate("ResearchDrawer.open('a', 'hybrid-run')")
     expect(page.locator("#research-drawer")).to_be_visible()
     expect(page.get_by_role("button", name="Graph", exact=True)).to_be_visible()
@@ -606,6 +615,9 @@ def test_hybrid_task_done_research_payload_creates_graph_entry(page):
 
 
 def test_invalid_terminal_event_does_not_consume_run_and_valid_replay_finishes_once(page):
+    admit_run(page, "replay-run")
+    page.evaluate("handleServerEvent({type:'task_start',run_id:'replay-run',session_id:'a'})")
+    page.wait_for_function("ConversationUI.acceptsRun('a', 'replay-run')")
     result = page.evaluate("""() => {
         const invalid = {
             type: 'task_done', run_id: 'replay-run', session_id: 'a',

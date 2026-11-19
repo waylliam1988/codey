@@ -49,6 +49,7 @@ class LocalService:
         self.thread: threading.Thread | None = None
         self._unobserve: Any = None
         self._secrets: dict[str, Any] = {}
+        self._publish_lock = threading.Lock()
         self.instance_id = ""
 
     def start(self) -> LocalService:
@@ -111,12 +112,24 @@ class LocalService:
         return None
 
     def _publish(self) -> None:
-        write_json_atomic(self.home / "service.json", {
-            "protocol_version": PROTOCOL_VERSION, "instance_id": self.control.instance_id,
-            "pid": os.getpid(), "url": f"http://127.0.0.1:{self.port}", "release_id": self.release_id,
-            "status": self.control.health()["status"],
-            "started_at": self.control.started_at,
-        }, mode=0o600)
+        # Startup, lifecycle requests and scheduler health callbacks share one
+        # discovery file. Serialize the snapshot and replacement together.
+        with self._publish_lock:
+            payload = {
+                "protocol_version": PROTOCOL_VERSION, "instance_id": self.control.instance_id,
+                "pid": os.getpid(), "url": f"http://127.0.0.1:{self.port}", "release_id": self.release_id,
+                "status": self.control.health()["status"],
+                "started_at": self.control.started_at,
+            }
+            for attempt in range(8):
+                try:
+                    write_json_atomic(self.home / "service.json", payload, mode=0o600)
+                    break
+                except PermissionError as exc:
+                    # Windows discovery readers can briefly deny replacement.
+                    if getattr(exc, "winerror", None) != 5 or attempt == 7:
+                        raise
+                    time.sleep(0.01 * (attempt + 1))
 
     def lifecycle(self, actor: Actor, operation: str, params: object) -> dict[str, Any]:
         if not actor.operator:

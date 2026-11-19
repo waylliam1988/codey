@@ -10,7 +10,7 @@ from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import browser_receipt_edit_ab as probe
 from tools.completion_artifact_audit import tool_receipts
 
-EDIT = "const read=await tools.read_file({path:'result.json'});return unwrap(await tools.edit({read,changes:CHANGES}));"
+EDIT = "const read=await tools.read_file({path:'result.json'});return unwrap(await tools.edit({base_result_ref:read.result_ref,changes:CHANGES}));"
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
@@ -48,6 +48,15 @@ def test_verified_browser_fields_are_bound_before_the_real_version_check(
         if defect == "failed_parent":
             assert any(item.result.call.name == "browser_read" and item.result.ok for item in receipts)
             assert not any(item.result.call.name == "codemode" and item.result.ok for item in receipts)
+    elif arm == "A":
+        # Production rejects a string for the declared numeric source field
+        # before attempting any versioned mutation.
+        assert row["true_stale_conflicts"] == 0
+        assert row["fresh_read_recovery"] is False
+        assert [item.ok for item in edits] == [False, False]
+        assert all("field must match its source as JSON number" in item.model_text for item in edits)
+        assert row["project_result"]["amount"] == 0
+        assert row["project_result"]["code"] == "unknown"
     else:
         assert row["true_stale_conflicts"] == 1
         assert row["fresh_read_recovery"] is True

@@ -62,7 +62,7 @@ def test_entry_cannot_replace_session_authorization(change: str) -> None:
     policy = build_task_policy_for_entry(frame.request, "project")
     session = start_task_session(frame, work, policy, "project")
     if change == "grant":
-        changed = replace(policy, grants=policy.grants | {"web.read"})
+        changed = replace(policy, grants=policy.grants - {"web.read"})
     elif change == "requirement":
         changed = replace(policy, required_checks=("must_check",))
     else:

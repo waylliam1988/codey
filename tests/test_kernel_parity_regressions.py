@@ -63,11 +63,11 @@ def test_done_summary_preserves_nested_executable_tool_json_as_answer(wire):
     assert plan.control.body == args["summary"]
 
 
-def test_research_done_keeps_bounded_followup_questions_for_synthesis():
+def test_ordinary_done_rejects_retired_followup_questions():
     plan = normalize_turn(json_call("done", summary="Report", open_questions=["Next question"]),
                           policy=TaskPolicy(grants=frozenset({"control"})))
-    assert not plan.protocol_error
-    assert plan.control_args["open_questions"] == ["Next question"]
+    assert plan.protocol_error == "done unexpected arg 'open_questions'"
+    assert plan.control is None and not plan.calls
 
 
 @pytest.mark.parametrize("verification", ["failed", "stale", "no-identity"])
@@ -119,12 +119,13 @@ def test_no_native_wrapper_synthesizes_child_call_ids():
     assert plan.protocol_error and not plan.calls
 
 
-def test_canonical_research_done_accepts_questions_in_native_schema():
+def test_canonical_done_does_not_advertise_retired_questions():
     from codey.toolchain.tool_spec import native_tools_for_policy
 
     schema = next(row["function"]["parameters"] for row in native_tools_for_policy(
         TaskPolicy(grants=frozenset({"control"}))) if row["function"]["name"] == "done")
-    assert "open_questions" in schema["properties"]
+    assert "open_questions" not in schema["properties"]
+    assert schema["required"] == ["summary"]
 
 
 def test_unrelated_successful_check_cannot_satisfy_selected_candidate():

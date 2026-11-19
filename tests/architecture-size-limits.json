@@ -8,7 +8,7 @@
   "research/source_connectors.py": 1140,
   "runs/trace.py": 1524,
   "runtime/effects/tool_result_delivery.py": 1252,
-  "toolchain/runtime.py": 1282,
-  "toolchain/tool_spec.py": 1200,
+  "toolchain/runtime.py": 1271,
+  "toolchain/tool_spec.py": 1134,
   "workspace/changes.py": 1415
 }

@@ -2,11 +2,14 @@
 import pytest
 from playwright.sync_api import expect
 
+from tests.test_ui_workflow import admit_run
 from tests.test_ui_workflow import page as page
 from tests.test_ui_workflow import ui_browser as ui_browser
 
 
 def stopped_history(page):
+    for run in ("old-task", "new-task"):
+        admit_run(page, run)
     page.evaluate("""() => {
       addToSession('a',{type:'user',runId:'old-task',entryId:'old-input',text:'Assess this project'});
       handleServerEvent({type:'task_done',session_id:'a',run_id:'old-task',task_status:'cancelled',task_revision:5,stop_reason:'stopped',turns:1});
@@ -64,8 +67,9 @@ def test_history_without_task_identity_does_not_offer_a_guessed_continue(page):
 
 
 def test_approved_task_remains_stoppable_and_continues_after_history_rehydration(page):
+    run_id = page.evaluate("window.approvedRun=Requests.begin('a','Assess this project').attempt.runId")
+    admit_run(page, run_id)
     page.evaluate("""() => {
-      window.approvedRun=Requests.begin('a','Assess this project').attempt.runId;
       handleServerEvent({type:'task_start',session_id:'a',run_id:approvedRun,task_status:'running',task_revision:1});
       handleServerEvent({type:'shell_request',session_id:'a',run_id:approvedRun,id:'approval',command:'python -c "print(1)"',cwd:'.'});
       applyRunState({busy:true,run_id:approvedRun,session_id:'a',active_runs:[{run_id:approvedRun,session_id:'a'}],

@@ -127,7 +127,10 @@ def test_native_completion_guidance_matches_frozen_phase_schema(kind):
     repair = _repair_prompt(invalid, snapshot=prepared.snapshot, native=True)
     for text in (prepared.prompt, repair):
         assert ("Call done with report_sections.coverage" in text) == structured
-        assert ("summary contains the complete response" in text) != structured
+        if kind == "evidence_followup":
+            assert "brief receipt of saved findings" in text
+        else:
+            assert ("summary is the complete user-facing" in text) != structured
         example = text.split("Native done arguments example (replace sample content with verified task facts): ", 1)[1]
         args = json.JSONDecoder().raw_decode(example)[0]
         assert set(done.required) <= set(args)

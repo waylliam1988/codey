@@ -41,7 +41,7 @@ def test_aggregated_leaf_keeps_its_original_semantics_in_the_frozen_model_contra
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
 
-    session = TaskSession(task_kind="hybrid", policy=TaskPolicy(grants=frozenset({
+    session = TaskSession(task_kind="hybrid", task_text="Use CodeMode only for project and browser actions.", policy=TaskPolicy(grants=frozenset({
         "control", "project.read", "project.write", "browser.observe", "browser.interact",
     })))
     snapshot = build_turn_snapshot(session)

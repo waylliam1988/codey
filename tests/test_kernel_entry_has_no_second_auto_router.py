@@ -26,7 +26,8 @@ def test_auto_submission_at_kernel_entry_executes_first_tool(tmp_path, monkeypat
     monkeypatch.setattr("codey.operations.task_entry._entry_executors", lambda *args: (tmp_path, DEFAULT_TOOL_FNS, None))
     result = run_entry_kernel(frame, RunWork([], evidence=ExecutionEvidence()),
                               SimpleNamespace(on_event=lambda _: None, on_shell_request=None),
-                              SimpleNamespace(state=SimpleNamespace(set_provider_session=lambda *args: None)), task_kind="project")
+                              SimpleNamespace(workspace_revisions=None, state=SimpleNamespace(set_provider_session=lambda *args: None,
+                                  memory=None, stop_flag_for=lambda _run_id: None)), task_kind="project")
     assert result.event["stop_reason"] == "done", result.event["summary"]
     assert frame.entry_session.read_files == {"a.py"}
     assert len(provider.requests) == 2

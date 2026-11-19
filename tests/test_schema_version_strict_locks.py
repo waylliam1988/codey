@@ -81,8 +81,6 @@ def test_strict_source_present_in_all_readers() -> None:
         "runs/details.py",
         "runs/receipt.py",
         "runs/work_checkpoint.py",
-        "ghost/inbox.py",
-        "ghost/sleep.py",
         "research/evidence_ledger.py",
         "runtime/effects/tool_result_delivery.py",
         "runtime/effects/effect_records.py",

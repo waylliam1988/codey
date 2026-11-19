@@ -54,7 +54,7 @@ def diagnostic_action(config: str, scenario: str, arm: str, url: str) -> JsonObj
     code += "page=unwrap(await tools.browser_snapshot({}));unwrap(await tools.browser_click({ref:button()}));"
     if config == WAIT_RECOVERY:
         args = ("condition:'invalid',value:'鱼丸',timeout_ms:5000" if scenario == "snapshot_restore"
-                else "condition:'text',value:'鱼丸'")
+                else "condition:'text',value:'鱼丸',timeout_ms:'invalid'")
         code += f"return await tools.browser_wait({{{args}}});"
     else:
         code += ("unwrap(await tools.browser_wait({condition:'text',value:'鱼丸',timeout_ms:5000}));"

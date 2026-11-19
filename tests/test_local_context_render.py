@@ -1,154 +1,57 @@
-"""Exercise the drawer with a small DOM to catch dropped response groups."""
-
+"""Exercise the current memory drawer through its production browser runtime."""
 from __future__ import annotations
 
-import shutil
-import subprocess
-import unittest
-from pathlib import Path
+from playwright.sync_api import expect
 
-from tools.frontend_source import frontend_source
-
-DRAWER = Path(__file__).resolve().parents[1] / "frontend" / "src" / "local_context_drawer.ts"
+from tests.test_ui_workflow import page as page
+from tests.test_ui_workflow import ui_browser as ui_browser
 
 
-class LocalContextRenderTests(unittest.TestCase):
-    def test_failed_accept_refreshes_to_show_retry_action(self) -> None:
-        if shutil.which("node") is None:
-            self.skipTest("Node.js is required for drawer behavior tests")
-        source = frontend_source("local_context_drawer")
-        script = r"""
-const vm = require('node:vm');
-class Element {
-  constructor() {
-    this.children = []; this.textContent = ''; this.dataset = {}; this.classes = new Set();
-    this.classList = { add: (x) => this.classes.add(x), remove: (x) => this.classes.delete(x), contains: (x) => this.classes.has(x) };
-    this.listeners = {};
-  }
-  set innerHTML(_value) { this.children = []; this.textContent = ''; }
-  append(...children) { for (const child of children) this.appendChild(child); }
-  appendChild(child) { child.parentElement = this; this.children.push(child); return child; }
-  addEventListener(name, callback) { this.listeners[name] = callback; }
-  setAttribute(name, value) { this[name] = value; }
-  closest() { return this; }
-}
-const ids = new Map();
-function element(id) { if (!ids.has(id)) ids.set(id, new Element()); return ids.get(id); }
-let summaryReads = 0;
-const context = {
-  Element,
-  window: { UiState: { setDrawerOpen: (id, open) => open ? element(id).classList.add('open') : element(id).classList.remove('open') } },
-  document: { createElement: () => new Element() },
-  URLSearchParams, setTimeout,
-  fetch: async (url) => {
-    if (url.startsWith('/api/ghost/summary')) {
-      summaryReads++;
-      const repair = summaryReads > 1;
-      return { ok: true, json: async () => ({ ok: true, available: true, enabled: true, scope: { session_id: 's1', project: '' },
-        counts: { review: repair ? 0 : 1, repair: repair ? 1 : 0 },
-        review: repair ? [] : [{ id: 'c1', summary: 'Preference' }],
-        repair: repair ? [{ id: 'c1', summary: 'Preference' }] : [], health: {} }) };
-    }
-    return { ok: false, json: async () => ({ ok: false, error: 'activation failed' }) };
-  },
-};
-vm.runInNewContext(process.argv[1], context);
-context.window.LocalContextDrawer.init({ $: element, getActiveId: () => 's1', currentProjectPath: () => '' });
-function allText(node) { return [node.textContent, ...node.children.flatMap(allText)].join(' '); }
-(async () => {
-  context.window.LocalContextDrawer.open();
-  await new Promise(setImmediate);
-  const row = element('local-context-body').children[0].children[1];
-  row.children[1].onclick({ stopPropagation() {} });
-  const menu = element('local-context-menu');
-  menu.listeners.click({ target: menu.children[0] });
-  await new Promise(setImmediate);
-  process.stdout.write(String(summaryReads) + '\n' + allText(element('local-context-body')));
-})().catch((error) => { console.error(error); process.exitCode = 1; });
-"""
-        result = subprocess.run(["node", "-e", script, source], capture_output=True, text=True, encoding="utf-8")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("2\n", result.stdout)
-        self.assertIn("Needs attention", result.stdout)
-
-    def test_observations_only_are_visible_instead_of_empty_state(self) -> None:
-        if shutil.which("node") is None:
-            self.skipTest("Node.js is required for drawer behavior tests")
-        source = frontend_source("local_context_drawer")
-        script = r"""
-const vm = require('node:vm');
-class Element {
-  constructor() {
-    this.children = [];
-    this.textContent = '';
-    this.dataset = {};
-    this.classes = new Set();
-    this.classList = {
-      add: (name) => this.classes.add(name),
-      remove: (name) => this.classes.delete(name),
-      contains: (name) => this.classes.has(name),
-    };
-    this.listeners = {};
-  }
-  set innerHTML(_value) { this.children = []; this.textContent = ''; }
-  append(...children) { for (const child of children) this.appendChild(child); }
-  appendChild(child) { child.parentElement = this; this.children.push(child); return child; }
-  addEventListener(name, callback) { this.listeners[name] = callback; }
-  setAttribute(name, value) { this[name] = value; }
-  querySelector(selector) {
-    for (const child of this.children) {
-      if (selector.startsWith('.') && child.className === selector.slice(1)) return child;
-      const nested = child.querySelector(selector);
-      if (nested) return nested;
-    }
-    return null;
-  }
-  closest() { return this; }
-  focus() {}
-}
-const ids = new Map();
-function element(id) { if (!ids.has(id)) ids.set(id, new Element()); return ids.get(id); }
-const context = { Element, window: {}, document: { createElement: () => new Element() } };
-vm.runInNewContext(process.argv[1], context);
-context.window.LocalContextDrawer.init({
-  $: element, getActiveId: () => 's1', currentProjectPath: () => '',
-});
-context.window.LocalContextDrawer.render({
-  ok: true, available: true, enabled: true,
-  counts: { active: 0, review: 0, observations: 1 },
-  observations: [{ id: 'r1', summary: 'Please keep answers concise.', kind: 'chat', scope_label: 'This chat' }],
-  health: { associations: 'available' },
-});
-function allText(node) { return [node.textContent, ...node.children.flatMap(allText)].join(' '); }
-process.stdout.write(allText(element('local-context-body')));
-const row = element('local-context-body').children[0].children[1];
-row.children[1].onclick({ stopPropagation() {} });
-const menu = element('local-context-menu');
-menu.listeners.click({ target: menu.children[0] });
-process.stdout.write('\n' + allText(row));
-context.window.LocalContextDrawer.render({
-  ok: true, available: true, enabled: true,
-  counts: { active: 0, review: 0, repair: 1 },
-  repair: [{ id: 'c1', summary: 'reply length = concise', kind: 'Preference', scope_label: 'This chat' }],
-  health: { associations: 'available' },
-});
-process.stdout.write('\n' + allText(element('local-context-body')));
-const repairRow = element('local-context-body').children[0].children[1];
-repairRow.children[1].onclick({ stopPropagation() {} });
-process.stdout.write('\n' + allText(element('local-context-menu')));
-"""
-        result = subprocess.run(
-            ["node", "-e", script, source], capture_output=True, text=True, encoding="utf-8",
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Recent experiences", result.stdout)
-        self.assertIn("Please keep answers concise.", result.stdout)
-        self.assertNotIn("No local context yet", result.stdout)
-        self.assertIn("Add to pending review", result.stdout)
-        self.assertIn("Chinese answers", result.stdout)
-        self.assertIn("Needs attention", result.stdout)
-        self.assertIn("Retry", result.stdout)
+def memory_summary(*, enabled=True):
+    item = {"item_id": "memory-1", "kind": "preference", "text": "Use concise answers",
+            "scope": "session:a", "source_refs": ["source-1"]}
+    return {"ok": True, "enabled": enabled, "scope": {"session_id": "a", "project": ""},
+            "items": [item], "pending": [{"proposal_id": "proposal-1", "version": "v1", "item": item}]}
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_failed_accept_preserves_proposal_and_can_retry(page):
+    reads = []
+    actions = []
+    def summary(route):
+        reads.append(route.request.url)
+        data = memory_summary()
+        if len(actions) > 1:
+            data["pending"] = []
+        route.fulfill(json=data)
+    def action(route):
+        actions.append(route.request.post_data_json)
+        route.fulfill(status=500 if len(actions) == 1 else 200,
+                      json={"ok": len(actions) > 1, "error": "activation failed"})
+    page.route("**/api/ghost/summary?*", summary)
+    page.route("**/api/ghost/action", action)
+    page.evaluate("LocalContextDrawer.open()")
+    expect(page.locator("#local-context-subtitle")).to_have_text("1 memories · 1 pending")
+    page.get_by_role("button", name="Confirm", exact=True).click()
+    expect(page.locator("#local-context-subtitle")).to_have_text("activation failed")
+    expect(page.get_by_role("button", name="Confirm", exact=True)).to_be_visible()
+    assert len(reads) == 1
+    page.get_by_role("button", name="Confirm", exact=True).click()
+    expect(page.locator("#local-context-subtitle")).to_have_text("1 memories · 0 pending")
+    assert actions == [{"session_id": "a", "project": "", "action": "accept",
+                        "proposal_id": "proposal-1", "version": "v1"}] * 2
+    assert len(reads) == 2
+    expect(page.locator(".local-context-row")).to_have_count(1)
+    expect(page.locator(".local-context-row")).to_contain_text("source-1")
+
+
+def test_disabled_memory_keeps_saved_items_without_proposal_form(page):
+    data = memory_summary(enabled=False)
+    data["pending"] = []
+    page.route("**/api/ghost/summary?*", lambda route: route.fulfill(json=data))
+    page.evaluate("LocalContextDrawer.open()")
+    expect(page.locator("#local-context-subtitle")).to_have_text("Memory disabled")
+    expect(page.locator(".local-context-row")).to_contain_text("Use concise answers")
+    expect(page.get_by_role("button", name="Propose memory", exact=True)).to_have_count(0)
+    expect(page.get_by_role("button", name="Delete memories in this scope", exact=True)).to_have_count(0)
+    page.evaluate("LocalContextDrawer.close()")
+    expect(page.locator("#local-context-drawer")).not_to_have_class("open")

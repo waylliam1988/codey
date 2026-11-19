@@ -79,6 +79,7 @@ def test_reread_does_not_publish_facts_from_replaced_document(
     assert script.count(nav) == 2
     install_http(monkeypatch, [action(script), done("已完成。")])
     row = probe.run_arm(tmp_path / "run", "reread", "B", TARGET, max_turns=2)
-    assert row["stop_reason"] == "done" and row["source_reads"] == 2
+    assert row["stop_reason"] == "max_turns" and row["source_reads"] == 2
+    assert "173" not in str(row["answer"]) and "QUARTZ_851" not in str(row["answer"])
     assert row["candidate_actions"] == []
     assert row["passed"] is False

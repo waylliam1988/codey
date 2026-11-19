@@ -277,7 +277,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
 ) -> Callable[[ToolCall], ToolResult]:
     """Build the production parent executor; every child re-enters execute_turn."""
     from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import _validate_tool_args
+    from codey.operations.kernel_tool_args import _validate_tool_args
     from codey.operations.task_effects import KernelEffectSink
 
     specs = {spec.name: spec for spec in snapshot.frozen_specs}

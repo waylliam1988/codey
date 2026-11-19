@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from codey.knowledge.model import KnowledgeReference
 from codey.knowledge.recall import KnowledgeAccess
 from codey.types.json_value import decode_json_value, require_json_integer, require_json_string
 
 if TYPE_CHECKING:
-    from codey.knowledge.store import KnowledgeStore
-    from codey.research.staging import StagedKnowledgeStore
+    from codey.knowledge.repository import KnowledgeRepository
+
+
+class ReferenceStore(Protocol):
+    @property
+    def owner_id(self) -> str: ...
+
+    @property
+    def repository(self) -> KnowledgeRepository: ...
 
 
 class KnowledgeReferenceError(ValueError):
@@ -21,7 +28,7 @@ class KnowledgeReferenceError(ValueError):
         self.reference: KnowledgeReference = reference
 
 
-def answer_references(raw: object, store: KnowledgeStore | StagedKnowledgeStore | None, *,
+def answer_references(raw: object, store: ReferenceStore | None, *,
                       project: str = "", session_id: str = "") -> tuple[KnowledgeReference, ...]:
     if raw is None or raw == ():
         return ()
@@ -44,7 +51,7 @@ def answer_references(raw: object, store: KnowledgeStore | StagedKnowledgeStore 
     return tuple({ref: None for ref in refs})
 
 
-def answer_scope(references: list[KnowledgeReference], store: KnowledgeStore | StagedKnowledgeStore, *,
+def answer_scope(references: list[KnowledgeReference], store: ReferenceStore, *,
                  project: str, session_id: str) -> tuple[str, str]:
     """A report inherits restricted premises instead of publishing them globally."""
     restricted = {(version.value.scope, version.value.scope_id) for ref in references

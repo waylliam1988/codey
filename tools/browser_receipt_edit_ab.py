@@ -44,10 +44,10 @@ def bind_browser_fields(directory: Path) -> Iterator[None]:
             return {"ok": False, "error": reason}
 
         ref = args.get("base_result_ref")
-        if (host._replay is not None or set(args) != {"base_result_ref", "changes"} or args["changes"] != {}
+        if (set(args) != {"base_result_ref", "changes"} or args["changes"] != {}
                 or not isinstance(ref, str) or ref not in host._complete_reads
-                or host._complete_reads[ref][0] != "result.json"):
-            return reject("Use a complete original result.json read and tools.edit({read, changes: {}}).")
+                or host._complete_reads[ref].call.args.get("path") != "result.json"):
+            return reject("Use a complete original result.json read and tools.edit({base_result_ref:read.result_ref, changes: {}}).")
         receipts = tool_receipts(directory / "state")
         committed = {child for row in receipts
                      if row.result.call.name == "codemode" and row.result.ok
@@ -79,10 +79,10 @@ def task_for(task: str, arm: str) -> str:
                   "根据上一条浏览器工具结果填写 inputs.changes，只包含数字 amount 和字符串 code。"
                   "文件内容只用于提供写入版本。")
     changes = "{}" if arm == "B" else "inputs.changes"
-    return (task + "\n先用独立的 CodeMode 调用完成导航、加载和读取，把页面正文返回。"
+    return (task + "\n必须手写 JavaScript，使用 content 写回。先用独立的 CodeMode 调用完成导航、加载和读取，把页面正文返回。"
             "再用以下程序编辑文件，确认成功后才提交 done。\n" + assignment + "\n"
             "const read = await tools.read_file({path: 'result.json'});\n"
-            f"return unwrap(await tools.edit({{read, changes: {changes}}}));\n"
+            f"return unwrap(await tools.edit({{base_result_ref:read.result_ref, changes: {changes}}}));\n"
             "如果文件版本冲突，重新运行这两行，保留文件的其他字段。")
 
 

@@ -19,7 +19,7 @@ Allowed JSON shapes for this turn (choose exactly one):
 - {"tool":"knowledge_read","args":{"id":"<note id>"}}
 - {"tool":"web_search","args":{"query":"..."}}
 - {"tool":"open_result","args":{"result_id":"r1"}}
-- {"tool":"done","args":{"summary":"<the full human-readable report>","open_questions":["<bounded follow-up research question>"]}}
+- {"tool":"done","args":{"summary":"<the complete user-facing answer>"}}
 
 Search results you may open:
 - r1: Helium article - https://example.com/helium - Helium supply.

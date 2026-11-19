@@ -2,16 +2,20 @@
 import pytest
 from playwright.sync_api import expect
 
+from tests.test_ui_workflow import admit_run
 from tests.test_ui_workflow import page as page
 from tests.test_ui_workflow import ui_browser as ui_browser
 
 
 def begin(page):
-    return page.evaluate("""() => {
+    run = page.evaluate("""() => {
       const run = Requests.begin('a', 'Read a public data endpoint').attempt.runId;
-      handleServerEvent({type:'task_start', session_id:'a', run_id:run, mode:'chat'});
       return run;
     }""")
+    admit_run(page, run)
+    page.evaluate("run => handleServerEvent({type:'task_start',session_id:'a',run_id:run,mode:'chat'})", run)
+    page.wait_for_function("run => ConversationUI.acceptsRun('a',run)", arg=run)
+    return run
 
 
 def emit(page, run, kind, **fields):

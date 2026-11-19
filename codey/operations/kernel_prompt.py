@@ -59,8 +59,11 @@ def _native_final_rule(*, structured_report: bool) -> str:
 
 
 def _done_guidance(spec: ToolSpec | None, *, native: bool) -> str:
-    if spec is not None and any(name == "paragraphs" for name, _ in spec.parameters):
+    if spec is not None and "report_sections" not in spec.required:
         rule = spec.description
+        if native and "summary" in spec.required:
+            rule += (" For the final answer of this phase, call done with a summary string in the user's "
+                     "requested final format, not the outer tool-call object.")
     else:
         rule = _native_final_rule(structured_report=spec is not None and "report_sections" in spec.required)
     if spec is not None and spec.json_examples:

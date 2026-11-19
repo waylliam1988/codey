@@ -82,7 +82,7 @@ def declaration(format: str, schema_json: str = "", *, strict_research: bool = F
         if format != "json_explanation":
             return PREFIX if format == "json" else ""
         schema_json = '{"type":"object","properties":{"explanation":{"type":"string"}},"required":["explanation"]}'
-    from codey.toolchain.tool_spec import _valid_custom_schema
+    from codey.toolchain.schema_validation import _valid_custom_schema
 
     loaded: object = json.loads(schema_json, object_pairs_hook=_unique, parse_constant=_constant)
     schema = decode_json_value(loaded)

@@ -467,8 +467,8 @@ def _guarded_slot_result(
     it replays without re-executing (settlement reconciliation). Only when
     no receipt exists does a pending unsafe intent block execution.
     """
-    from codey.operations.kernel_protocol import _policy_allows
     from codey.operations.kernel_result import _error_result
+    from codey.operations.kernel_tool_args import _policy_allows
 
     try:
         replayed_slot = replay_slot_typed(
@@ -486,7 +486,7 @@ def _guarded_slot_result(
         return _error_result(call, f"disallowed tool for this task policy: {name or '?'}")
     if controller_allowed is not None:
         try:
-            from codey.operations.kernel_protocol import _controller_allows as _allows_ctl
+            from codey.operations.kernel_tool_args import _controller_allows as _allows_ctl
 
             if not _allows_ctl(name, {str(n or "").strip().lower() for n in controller_allowed}):
                 return _error_result(call, f"{name} is not allowed by the current controller state")

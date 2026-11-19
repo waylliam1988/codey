@@ -112,7 +112,7 @@ def acquire(directory: Path, target: Target, index: int) -> JsonObject:
     with (patch.object(gate, "URL", url), patch.object(gate, "HTML", html),
           patch("codey.providers.api_generation.generate", scripted),
           patch("tools.completion_explanation_ab.service_state", return_value={})):
-        row = gate.run_case(directory, "chat", target, structured=True, max_turns=2)
+        row = gate.run_case(directory, "chat", target, structured=True, max_turns=2, fixture_html=html)
     if row["stop_reason"] != "done":
         raise ValueError(f"Chromium acquisition failed: {row['stop_reason']}")
     evidence = shared_evidence(tool_receipts(directory / "state"))

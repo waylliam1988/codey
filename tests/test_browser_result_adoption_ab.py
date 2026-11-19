@@ -233,7 +233,8 @@ return unwrap(await tools.browser_snapshot({}));''', 'inputs': {}}}
             candidates = [parse_json_object(line) for line in hint.splitlines()[1:]]
             assert len(candidates) == 1 and candidates[0]['name'] == 'Load record'
             action = decode_json_object(candidates[0]['call'])
-            assert decode_json_object(action['args']) == {'ref': ref, 'purpose': 'result'}
+            assert decode_json_object(action['args']) == {
+                'ref': {'name': 'Load record', 'role': 'button'}, 'purpose': 'result'}
             yield action
         else:
             yield {'tool': 'browser_click', 'args': {'ref': ref, 'purpose': 'result'}}
@@ -252,9 +253,9 @@ return unwrap(await tools.browser_snapshot({}));''', 'inputs': {}}}
     assert row['delivered_clicks'] == 1
     assert row['manual_wait_requests'] == 0
     assert row['manual_read_requests'] == row['manual_read_calls'] == 2 * int(reread)
-    outer_reads = [item.result for item in tool_receipts(directory / 'state')
-                   if item.result.call.name == 'browser_read' and not item.result.call.call_id]
-    assert len(outer_reads) == 2 * int(reread)
+    reads = [item.result for item in tool_receipts(directory / 'state')
+             if item.result.call.name == 'browser_read']
+    assert len(reads) == 1 + 2 * int(reread)  # Result follow-up plus optional manual reads.
     assert row['model_calls'] == 3 + 2 * int(reread)
     presentation = ab.jsonl(directory / 'presentation.jsonl')
     hints = [require_json_string(item['hint'], 'hint') for item in presentation]

@@ -193,9 +193,10 @@ def test_crash_after_entry_sink_initialization_keeps_delivery_pending(tmp_path):
     from codey.durable import DurableSession, SQLiteDurableStore
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
     deps = SimpleNamespace(runtime_mutations=RuntimeMutationLine(durable=durable),
-                           managed_outputs=ManagedOutputStore(state), state=SimpleNamespace(durable=durable))
+                           managed_outputs=ManagedOutputStore(state), state=SimpleNamespace(durable=durable, stop_flag_for=lambda _run_id: None))
     frame = SimpleNamespace(request=SimpleNamespace(session_id="s"), run_id="r", provider_id="local",
-                            provider=SimpleNamespace(), recovered_tool_result_batch_id=before.recovered_tool_result_batch_id)
+                            provider=SimpleNamespace(), conversation=None,
+                            recovered_tool_result_batch_id=before.recovered_tool_result_batch_id)
     _entry_provider_sink(frame, deps, "project")
     _, after, _, _, _ = _recover_formal(project, state, logdir, "s", "r")
     assert [row.effect_id for row in after.recovered_tool_outcomes] == [
@@ -219,9 +220,9 @@ def test_provider_change_after_acknowledged_delivery_can_resume(tmp_path):
                                 managed_outputs=ManagedOutputStore(state), durable=durable)
     _send_results(SimpleNamespace(send=lambda _: "ack"), sink)
     deps = SimpleNamespace(runtime_mutations=mutations, managed_outputs=ManagedOutputStore(state),
-                           state=SimpleNamespace(durable=durable))
+                           state=SimpleNamespace(durable=durable, stop_flag_for=lambda _run_id: None))
     frame = SimpleNamespace(request=SimpleNamespace(session_id="s"), run_id="r", provider_id="web",
-                            provider=SimpleNamespace(), recovered_tool_result_batch_id="")
+                            provider=SimpleNamespace(), conversation=None, recovered_tool_result_batch_id="")
     _entry_provider_sink(frame, deps, "project")
     current = RuntimeOperationStore(durable=durable).load("s", "r")
     assert current.leaf == LEAF_WRITER_RUNNING

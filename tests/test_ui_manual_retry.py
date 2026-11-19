@@ -24,6 +24,7 @@ def backend(page):
         body = route.request.post_data_json
         calls.append(body)
         run_id = body.get("run_id") or f"old-run-{len(calls)}"
+        workflow.admit_run(page, run_id, session_id=body["session_id"], text=body.get("task", "Retry task"))
         state.update(busy=True, run_id=run_id, session_id=body["session_id"])
         route.fulfill(json={"ok": True, "run_id": run_id})
 
@@ -210,11 +211,11 @@ def test_malformed_attempt_identity_is_rejected_before_admission():
 
 def test_admission_reserves_the_same_attempt_for_the_worker():
     from codey.app import task_submit
-    from tests.test_task_submit import _fake_reserved, _FakeState
+    from tests.test_task_submit import _FakeState
 
     state = _FakeState()
     run_id = "run_" + "b" * 32
-    with (mock.patch.object(state, "reserve_run", return_value=_fake_reserved(run_id)) as reserve,
+    with (mock.patch.object(state, "reserve_run", wraps=state.reserve_run) as reserve,
           mock.patch.object(task_submit, "submit_browser_task", return_value=True) as worker):
         assert task_submit.submit_task("a", None, "hello", 8, False, "deepseek",
                                        run_id=run_id, get_state=lambda: state) == run_id
@@ -246,6 +247,7 @@ def test_missing_ack_snapshot_cannot_withdraw_a_confirmed_attempt(page, confirma
     task = {"run_id": run_id, "session_id": "a", "task_revision": 1, "task_status": "running"}
     if confirmation == "event":
         page.evaluate("handleServerEvent", {**task, "type": "task_start"})
+        page.wait_for_function("run => ConversationUI.acceptsRun('a', run)", arg=run_id)
     else:
         page.evaluate("applyRunState", {"busy": True, "run_id": run_id, "session_id": "a", "task_states": [task]})
     state.clear()
@@ -273,6 +275,7 @@ def test_terminal_event_before_ack_is_not_revived_and_double_retry_is_blocked(pa
     }""")
     assert page.evaluate("pendingCalls.length") == 1
     second = page.evaluate("pendingCalls[0].run_id")
+    workflow.admit_run(page, second)
     finish(page, state, second, "Immediate reply", "done")
     page.evaluate("acceptPending()")
     page.wait_for_function("!Composer.isSending()")
@@ -403,6 +406,7 @@ def test_continuation_model_recovery_also_survives_storage(tmp_path):
 
 def test_orphan_local_update_warnings_are_folded_without_pause_spam(page):
     backend(page)
+    workflow.admit_run(page, "continuation")
     page.evaluate("handleServerEvent", {"type": "ghost_post_turn_warning", "session_id": "a", "run_id": "continuation", "stage": "observation_commit", "error_type": "GhostObservationFailed"})
     expect(page.locator(".info-line")).to_have_count(0)
     expect(page.locator(".process-title")).to_have_text("Activity")

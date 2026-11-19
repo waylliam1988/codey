@@ -19,7 +19,7 @@ from uuid import uuid4
 from playwright.sync_api import ElementHandle, Error, FilePayload, Page
 
 from codey.automation.browser_binding import BrowserBinding
-from codey.automation.browser_document import same_document
+from codey.automation.browser_document import normalize_element_ref, same_document
 from codey.automation.browser_observation import observe_element, observe_elements, render_controls, same_node
 from codey.automation.browser_query import QueryObservationError, bind_query_target, observe_query_target
 from codey.policies.network import check_fetch_url
@@ -74,12 +74,6 @@ class _ElementRef:
     role: str | None = None
     name: str | None = None
     query_target: JsonObject | None = None
-
-
-def normalize_element_ref(ref: str) -> str:
-    """Accept a ref copied from the human-readable snapshot rows."""
-    ref = ref.strip()
-    return ref[1:-1] if ref.startswith("[") and ref.endswith("]") else ref
 
 
 def _browser_call(fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:

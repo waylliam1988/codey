@@ -33,22 +33,15 @@ def test_retired_task_kind_is_rejected_instead_of_becoming_an_ordinary_writer():
         build_turn_snapshot(session)
 
 
-def test_archived_review_snapshot_and_replay_arguments_still_decode_without_authority():
+def test_archived_snapshot_requires_new_request_and_replay_arguments_remain_readable():
     source = Path(__file__).parent / "fixtures/research_live/retired_assessment_snapshot.json"
-    snapshot = restore_snapshot(json.loads(source.read_text(encoding="utf-8")))
-    assert snapshot.tool_names == ("submit_research_review",)
-    assert not snapshot.implementation_compatible
-    assert snapshot.frozen_specs[0].required == ("assessment",)
-    # A matching implementation id must not authorize metadata synthesized
-    # solely for inspecting a historical contract.
     from codey.operations.provider_receipts import runtime_implementation_id
 
     raw = json.loads(source.read_text(encoding="utf-8"))
-    raw["implementation_id"] = runtime_implementation_id()
-    assert not restore_snapshot(raw).implementation_compatible
-    raw["specs"][0]["namespace"] = "core"
-    with pytest.raises(ValueError, match="invalid captured tool specification"):
-        restore_snapshot(raw)
+    for implementation in (raw["implementation_id"], runtime_implementation_id()):
+        raw["implementation_id"] = implementation
+        with pytest.raises(ValueError, match="unsupported captured turn snapshot version; start a new request"):
+            restore_snapshot(raw)
     args = {"basis_digest": "a" * 64, "assessment": {"claims": [], "paragraphs": []}}
     assert validate_replay_args_shape("submit_research_review", args) == args
     with pytest.raises(ValueError, match="original basis"):

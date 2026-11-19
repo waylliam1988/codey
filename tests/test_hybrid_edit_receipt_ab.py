@@ -55,7 +55,7 @@ def test_original_unwrapped_read_is_rejected_before_version_check_then_bound_edi
     wrong = ("const r=await tools.read_file({path:'result.json'});"
              "return unwrap(await tools.edit({read:unwrap(r),changes:{amount:173,code:'QUARTZ_851'}}));")
     refused = experiment.offer(experiment.execute(wrong))
-    assert refused["ok"] is False and "Do not unwrap read" in str(refused["text"])
+    assert refused["ok"] is False and "use an original complete tools.read_file result" in str(refused["text"])
     # A hidden fresh read in a failed program must not replace what the model saw.
     assert experiment.seen is not None and "external_revision" not in experiment.seen.text
     assert not [r for r in experiment.session._memory_results.values() if r.call.name == "edit"]

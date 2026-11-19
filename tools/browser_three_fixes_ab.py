@@ -117,7 +117,8 @@ def run_arm(directory: Path, scenario: str, arm: str, target: Target, *, max_tur
           patch("codey.app.review_service.run_review", return_value=None)):
         row = decode_json_object(gate.run_case(directory, "hybrid" if stale_edit else "chat", target,
             max_turns=max_turns, structured=scenario == "legacy_structured", reread=scenario == "reread",
-            stale_edit=stale_edit, preserve_external_field=stale_edit))
+            stale_edit=stale_edit, preserve_external_field=stale_edit,
+            task_transform=(lambda task: task + "\n必须手写 JavaScript，使用 content 写回。") if stale_edit else None))
     stable = before == edit.production_source_digest()
     log = directory / "candidate.jsonl"
     actions: list[JsonValue] = [decode_json_object(json.loads(line)) for line in log.read_text(encoding="utf-8").splitlines()

@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 from codey.operations.kernel_contracts import StopSignal, ToolExecutor
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_facts import bind_source_identity, project_execution_record, project_result_observation
-from codey.operations.kernel_protocol import _validate_tool_args, frozen_custom_executor_map, frozen_spec_map
+from codey.operations.kernel_protocol import frozen_custom_executor_map, frozen_spec_map
 from codey.operations.kernel_provenance import (
     _with_trusted_workspace_state,
     sync_workspace_state_after_edit,
@@ -42,6 +42,7 @@ from codey.operations.kernel_result import (
     policy_denial_result,
     strict_exit_code_or_none,
 )
+from codey.operations.kernel_tool_args import _validate_tool_args
 from codey.operations.task_session import TaskSession, effect_coordinates, turn_effect_id
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult

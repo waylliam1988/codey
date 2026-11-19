@@ -19,6 +19,7 @@ from playwright.sync_api import expect, sync_playwright
 from codey.app import server
 from codey.app.context import AppContext
 from codey.app.shell_approval_state import restore_pending_shell_approvals
+from codey.policies.command_line import resolve_shell
 from tests.http_context import attach_public_events
 from tests.support.shell_approval import seed_requested_approval
 from tests.test_conversation_live_browser import open_live, seed, send
@@ -227,8 +228,11 @@ def test_real_shell_card_shows_flushed_output_before_process_exit(tmp_path, monk
         "print('LATE_OUTPUT', flush=True)\n"
     )
     command = f'"{sys.executable}" -c "import base64;exec(base64.b64decode(\'{base64.b64encode(script.encode()).decode()}\'))"'
-    ctx = AppContext(tmp_path / "state")
-    seed_requested_approval(ctx, continue_after=False, command=command)
+    shell = resolve_shell()
+    if shell.kind == "powershell":
+        command = "& " + command
+    ctx = AppContext(tmp_path / "state", start_scheduler=False)
+    seed_requested_approval(ctx, continue_after=False, command=command, shell=shell)
     restore_pending_shell_approvals(ctx)
     ctx.save_ui_state({"active_id": "session", "projects": [], "sessions": [{"id": "session", "title": "Shell", "provider": "local", "messages": []}]}, base_revision=0)
     monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)

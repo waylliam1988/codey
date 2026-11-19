@@ -4,6 +4,12 @@ from __future__ import annotations
 from codey.types.json_value import decode_json_object
 
 
+def normalize_element_ref(ref: str) -> str:
+    """Accept a ref copied from the human-readable snapshot rows."""
+    ref = ref.strip()
+    return ref[1:-1] if ref.startswith("[") and ref.endswith("]") else ref
+
+
 def _identity(value: object) -> tuple[str, str] | None:
     if not isinstance(value, dict):
         return None

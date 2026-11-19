@@ -44,7 +44,6 @@ def test_checkpoint_edit_scope_reaches_real_writer_gate_without_reediting(tmp_pa
     ]}}]} for index, name in enumerate(names)])
     monkeypatch.setattr(provider, "_generate", lambda *a, **k: next(bodies))
     monkeypatch.setattr("codey.operations.kernel_transport.provider_uses_native", lambda *a, **k: True)
-    monkeypatch.setattr("codey.operations.project_writer_phase._ghost_experiences", lambda *a, **k: "")
     policy = TaskPolicy(grants=frozenset({"control", "project.read", "project.write", "project.verify"}))
     durable = DurableSession(MemoryDurableStore())
     durable.admit_input(conversation_id="s", request_id="resume", task_id="resume",
@@ -58,7 +57,7 @@ def test_checkpoint_edit_scope_reaches_real_writer_gate_without_reediting(tmp_pa
                 window_action=None, trace=None, project_text=str(project), entry_policy=policy),
         work=RunWork([], ExecutionEvidence(workspace_revision=current.revision, workspace_fingerprint=current.fingerprint)),
         hooks=SimpleNamespace(on_event=lambda event: None, on_shell_request=None),
-                project=str(project), state=SimpleNamespace(durable=durable, run_registry=SimpleNamespace(stop_flag=threading.Event())),
+                project=str(project), state=SimpleNamespace(durable=durable, memory=None, stop_flag_for=lambda _run_id: threading.Event()),
         request=SimpleNamespace(session_id="s", max_turns=2, requested_capabilities=(), strict_research=False,
             project_changes_required=True), project_context=SimpleNamespace(research_context="", project_config_warnings=""))
     attempt = WriterAttempt("Finish the interrupted value fix", "local", provider, 2, False, "",

@@ -6,7 +6,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from codey.automation.browser_session import BrowserToolOutput
 from codey.operations.browser_completion import committed_results
 from codey.operations.browser_waits import wait_plan as upload_wait_plan
 from codey.operations.task_session import TaskSession
@@ -24,7 +23,7 @@ from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, spec_for
 from codey.types.json_value import JsonObject, decode_json_object
 
 if TYPE_CHECKING:
-    from codey.automation.browser_session import BrowserSession
+    from codey.automation.browser_session import BrowserSession, BrowserToolOutput
     from codey.policies.task_policy import TaskPolicy
     from codey.storage.managed_outputs import ManagedOutputStore
 
@@ -272,6 +271,8 @@ def verified_upload_document(session: TaskSession | None, browser: BrowserSessio
 
 def select_attachment(session: TaskSession | None, browser: BrowserSession, outputs: ManagedOutputStore | None,
                       session_id: str, args: JsonObject) -> BrowserToolOutput:
+    from codey.automation.browser_session import BrowserToolOutput
+
     if outputs is None or not session_id:
         raise ValueError("task-scoped attachment storage unavailable")
     identity = str(args.get("attachment_id") or "")

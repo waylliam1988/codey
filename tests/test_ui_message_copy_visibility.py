@@ -99,9 +99,6 @@ def test_keyboard_tab_reveals_copy_and_enter_copies_without_hover(page, kind):
         expect(message.locator('.msg-edit')).to_be_focused()
         expect_opacity(copy, 1)
         page.keyboard.press('Tab')
-        expect(message.get_by_role('button', name='Fork chat from here', exact=True)).to_be_focused()
-        expect_opacity(copy, 1)
-        page.keyboard.press('Tab')
     expect_opacity(copy, 0)
 
 

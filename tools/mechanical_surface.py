@@ -14,9 +14,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 from codey.codemode import catalog as catalog_module
-from codey.codemode.runtime import NodeWorkerRuntime, ToolInvoker
+from codey.codemode.runtime import DeliveryRecorder, NodeWorkerRuntime, ToolInvoker
 from codey.codemode.state import CodeModeStateStore
-from codey.codemode.types import CodeModeLimits, CodeModeResult, ToolCatalogEntry, ToolCatalogSnapshot
+from codey.codemode.types import (
+    CodeModeLimits,
+    CodeModeResult,
+    DeliveryReference,
+    ToolCatalogEntry,
+    ToolCatalogSnapshot,
+)
 from codey.operations import completion_output, kernel_control
 from codey.operations.completion_context import CompletionContext
 from codey.operations.task_session import TaskSession
@@ -173,7 +179,7 @@ def committed_facts(session: TaskSession, context: CompletionContext, scenario: 
                                     if row.get("name") != tool or identity == reads[-1]}
         requirement = ToolSuccessRequirement(tool, via="codemode", arguments_json=json.dumps(arguments),
                                              answer_pointer="/" + name, result_pointer=pointer)
-        observation = requirement.observe(selected_records, results=results)
+        observation = requirement.observe(selected_records, results=results, browser_document=context.browser_document)
         if not observation.evaluation.passed:
             raise ValueError(f"Required receipt fact {name} is unavailable: {observation.evaluation.reason_code}. "
                              + observation.evaluation.feedback)
@@ -240,11 +246,12 @@ def prototype(directory: Path, scenario: str, *, enabled: bool) -> Generator[Non
 
     def typed_execute(runtime: NodeWorkerRuntime, code: str, *, catalog: Sequence[ToolCatalogEntry], invoke: ToolInvoker,
                       inputs: Mapping[str, object] | None = None, state_store: CodeModeStateStore | None = None,
-                      replay_context: Mapping[str, object] | None = None, limits: CodeModeLimits | None = None) -> CodeModeResult:
+                      replay_context: Mapping[str, object] | None = None,
+                      delivery: Sequence[DeliveryReference] = (), on_delivery: DeliveryRecorder | None = None, limits: CodeModeLimits | None = None) -> CodeModeResult:
         expanded = PREFIX + code + SUFFIX
         append_json(directory / "mechanical-programs.jsonl", {"model_code": code, "typed_code": expanded})
         return execute(runtime, expanded, catalog=catalog, invoke=invoke, inputs=inputs, state_store=state_store,
-                       replay_context=replay_context, limits=limits)
+                       replay_context=replay_context, delivery=delivery, on_delivery=on_delivery, limits=limits)
 
     def source_observe(requirement: ToolSuccessRequirement, eligible: list[tuple[str, ExecutionRecord]],
                        results: Mapping[str, ToolResult] | None) -> ToolObservation:

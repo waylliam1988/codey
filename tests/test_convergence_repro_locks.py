@@ -113,7 +113,7 @@ class ControllerFailureTests(unittest.TestCase):
         call = ToolCall(name="web_search", args={"query": "hi"}, call_id="c0")
         orig_allows = None
         try:
-            import codey.operations.kernel_protocol as proto
+            import codey.operations.kernel_tool_args as proto
             orig_allows = proto._controller_allows
 
             def _boom(tool, allowed):
@@ -126,7 +126,7 @@ class ControllerFailureTests(unittest.TestCase):
             self.assertTrue(str(result.model_text).startswith("ERROR:"))
         finally:
             if orig_allows is not None:
-                import codey.operations.kernel_protocol as proto2
+                import codey.operations.kernel_tool_args as proto2
                 proto2._controller_allows = orig_allows  # type: ignore[assignment]
 
 
@@ -211,9 +211,10 @@ class SecondRoundWebPromptTests(unittest.TestCase):
             def send_tool_results(self, messages, tools, timeout=None):
                 return self.send("tool results")
 
+        from codey.research.browser_search import BrowserSearchProvider
         from codey.research.tools import ResearchTools
 
-        class Search:
+        class Search(BrowserSearchProvider):
             def search(self, query, limit=8):
                 return [
                     {"title": "A", "url": "https://example.com/a", "snippet": "a"},

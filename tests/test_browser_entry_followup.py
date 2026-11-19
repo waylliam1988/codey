@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -38,7 +39,7 @@ def test_identical_wait_fault_then_real_timeout_and_recovery(
     register_child = DurableCodeModeReplay.child
 
     def record_child(replay: DurableCodeModeReplay, call: ToolCall, effect_id: str) -> None:
-        if call.name == "browser_wait" and ("timeout_ms" not in call.args or call.args.get("condition") == "invalid"):
+        if call.name == "browser_wait" and (not isinstance(call.args.get("timeout_ms"), int) or call.args.get("condition") == "invalid"):
             registered_invalid.append(call)
         register_child(replay, call, effect_id)
 
@@ -58,9 +59,7 @@ def test_identical_wait_fault_then_real_timeout_and_recovery(
     assert not fault.ok and recovered.ok
     assert not registered_invalid
     error = first_feedback(directory).splitlines()[1]
-    field = "condition" if scenario == "snapshot_restore" else "timeout_ms"
-    if arm == "B" and field == "condition":
-        field = "args.condition"
+    field = "args.condition" if scenario == "snapshot_restore" else "args.timeout_ms"
     assert error.startswith("browser_wait") and f"'{field}'" in error
     timed, waited = [r for r in receipts if r.call.name == "browser_wait"]
     assert not timed.ok and "wait timed out" in timed.model_text and waited.ok
@@ -155,7 +154,7 @@ def test_real_ambiguous_controls_and_named_file_actions_with_original_receipts(
     feedback, = [text for results in request_results(directory).values() for text in results
                  if text.startswith(RESULT_DATA) and file.identity in text]
     assert feedback.startswith(RESULT_DATA)
-    wire = parse_json_object(feedback.removeprefix(RESULT_DATA))
+    wire = decode_json_object(json.JSONDecoder().raw_decode(feedback.removeprefix(RESULT_DATA))[0])
     assert decode_json_object(wire["value"])["file"] == projected
 
 

@@ -338,10 +338,14 @@ CASES = (
 )
 
 
-class FixtureSearchProvider:
+from codey.research.browser_search import BrowserSearchProvider
+
+
+class FixtureSearchProvider(BrowserSearchProvider):
     name = "fixture-search"
 
     def __init__(self, case: ResearchProbeCase) -> None:
+        super().__init__()
         self.case = case
         self.queries: list[str] = []
         self.fetches: list[str] = []
@@ -492,6 +496,8 @@ class ProbeResearchIteration(ResearchIteration):
         )
 
     def _send_provider(self, message: str) -> str:
+        if not self.sent_messages and (extension := self._arm_prompt_extension()):
+            message += "\n\n" + extension
         if self.arm == "thin_gate":
             state = _thin_gate_state(self.tools)
             codec = self.codec

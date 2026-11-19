@@ -120,8 +120,8 @@ def restore_provider_window(sink: KernelEffectSink, provider: ProviderTransport,
 def _restore_response_contract(sink: KernelEffectSink, provider: ProviderTransport,
                                response_ref: str) -> ProviderRequestContext | None:
     from codey.operations.provider_receipts import request_artifact_for_effect
-    from codey.providers.api_context import restore_declared_tools
     from codey.providers.base import tools_from_specs
+    from codey.providers.compat_transport import restore_declared_tools
 
     response = sink.durable.artifact(response_ref)
     effect = next(row for row in RuntimeEffectStore(durable=sink.durable).load_effects(sink.session_id, sink.run_id)
@@ -196,7 +196,7 @@ def _execute_provider(sink: KernelEffectSink, provider: ProviderTransport, inten
         if callable(gate_prompt):
             prompt = invocation.prompt if isinstance(invocation, (SendTextRequest, SendTurnRequest)) else ""
             gate_prompt(prompt if isinstance(prompt, str) else "")
-        from codey.providers.api_context import bind_result_recovery
+        from codey.providers.compat_transport import bind_result_recovery
 
         refs: list[str] = []
         if receipt_recovery:

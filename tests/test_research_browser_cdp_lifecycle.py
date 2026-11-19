@@ -128,7 +128,7 @@ def test_actions_do_not_touch_other_contexts_or_replacement_page(
 
             _search_browser_call(inspect_and_replace)
             stale = interaction.click(str(elements[0]["ref"]))
-            assert not stale.ok and stale.observation["reason"] == "stale_ref"
+            assert not stale.ok and stale.observation["reason"] == "unknown_ref"
             assert interaction.snapshot().ok
         finally:
             provider.close()

@@ -1,7 +1,6 @@
 """Deterministic counterexamples through real production receipts and Chromium."""
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 
 import pytest
@@ -12,7 +11,6 @@ from codey.codemode.types import ToolCatalogEntry
 from codey.policies.tool_requirement import ToolSuccessRequirement, argument_digest
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.storage.input_attachments import InputAttachmentStore
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import mechanical_surface as mechanical
 from tools import receipt_bound_edit_surface_probe as probe
@@ -124,20 +122,13 @@ def test_source_binding_requires_successful_parent_and_uses_original_body(tmp_pa
 def test_upload_delivers_actual_receipt_facts_without_model_copying(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, assembled: bool,
 ) -> None:
-    attachment = InputAttachmentStore(tmp_path / "inputs", "upload-test").put(
-        "fixture.txt", base64.b64encode(b"UPLOAD_BYTES_82\n").decode())
-    code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
-            "unwrap(await tools.browser_upload_named({name:'Attachment',attachment_id:inputs.attachment}));"
-            "unwrap(await tools.browser_wait({condition:'text',value:'UPLOAD_BYTES_82',timeout_ms:5000}));"
-            "return {page_text:unwrap(await tools.browser_read({})).text};")
-    install_http(monkeypatch, [
-        {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL, "attachment": str(attachment["id"])}}},
-        {"tool": "done", "args": {"summary": "页面显示已选择的附件，尚未核验服务器接收。"}},
-    ])
+    from tests.test_browser_entry_candidates import upload_replies
+
     directory = tmp_path / "run"
+    install_http(monkeypatch, upload_replies(directory, explanation=assembled))
     row = probe.run_arm(directory, "upload_bound" if assembled else "upload", "B",
                         Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10), max_turns=4, mechanical=True)
-    assert row["passed"] and row["model_calls"] == 2, row
+    assert row["passed"] and row["model_calls"] == 4, row
     assert "UPLOAD_BYTES_82" in str(row["answer"])
     receipts = tool_receipts(directory / "state")
     assert len([r for r in receipts if r.result.call.name == "browser_upload"]) == 1
@@ -150,25 +141,29 @@ def test_upload_delivers_actual_receipt_facts_without_model_copying(
 def test_result_encoding_recovery_uses_receipts_without_second_upload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    attachment = InputAttachmentStore(tmp_path / "inputs", "upload-test").put(
-        "fixture.txt", base64.b64encode(b"UPLOAD_BYTES_82\n").decode())
-    code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
-            "unwrap(await tools.browser_upload_named({name:'Attachment',attachment_id:inputs.attachment}));"
-            "unwrap(await tools.browser_wait({condition:'text',value:'UPLOAD_BYTES_82',timeout_ms:5000}));"
-            "unwrap(await tools.browser_read({})); return {body:undefined};")
-    install_http(monkeypatch, [
-        {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL, "attachment": str(attachment["id"])}}},
-        {"tool": "done", "args": {"summary": "已选择附件；服务器接收尚未核验。"}},
-    ])
+    from codey.operations import kernel_protocol
+    from codey.operations.browser_upload import lower_upload_action
+    from codey.types.json_value import JsonObject, decode_json_object
+    from tests.test_browser_entry_candidates import upload_replies
+
+    def missing_return(args: JsonObject, checks: tuple[str, ...] = ()) -> JsonObject:
+        converted = lower_upload_action(args, checks)
+        if decode_json_object(args["upload"])["action"] == "select":
+            converted["code"] = str(converted["code"]).removeprefix("return ")
+        return converted
+
+    monkeypatch.setattr(kernel_protocol, "lower_upload_action", missing_return)
     directory = tmp_path / "run"
+    install_http(monkeypatch, upload_replies(directory, explanation=True))
     row = probe.run_arm(directory, "upload_bound", "B", Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10),
                         max_turns=4, mechanical=True)
     # Production recovers a failed return directly from successful child
     # receipts, before the experiment provider can propose a replay repair.
-    assert row["passed"] and row["mechanical_repairs"] == 0 and row["model_calls"] == 2, row
+    assert row["passed"] and row["mechanical_repairs"] == 0 and row["model_calls"] == 4, row
     receipts = tool_receipts(directory / "state")
     assert len([r for r in receipts if r.result.call.name == "browser_upload"]) == 1
-    parent, = [r.result for r in receipts if r.result.call.name == "codemode"]
+    parent, = [r.result for r in receipts if r.result.call.name == "codemode"
+               and r.result.canonical.get("recovered_return") is True]
     assert parent.ok and parent.canonical.get("recovered_return") is True
     assert parent.audit["original_error_code"] == "result_encoding"
     assert [item["receipt_ref"] for item in parent.canonical["value"]["replayed"]] == parent.canonical["child_effect_ids"]

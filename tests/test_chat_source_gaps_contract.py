@@ -60,10 +60,11 @@ def test_chat_contract_removes_only_the_deprecated_input(format: str) -> None:
     for native in (False, True):
         snapshot = build_turn_snapshot(session, native=native)
         done = next(spec for spec in snapshot.model_specs if spec.name == "done")
-        assert snapshot.ignore_runtime_claims
+        assert snapshot.ignore_runtime_claims is (format != "json_explanation")
         assert "source_gaps" not in dict(done.parameters)
         assert "source_gaps" not in snapshot.contract_text
-        assert "report_sections" in dict(done.parameters)
+        assert "report_sections" not in dict(done.parameters)
+        assert done.required == (("paragraphs",) if format == "json_explanation" else ("summary",))
         assert "knowledge_refs" not in dict(done.parameters)
         assert "execution_claims" not in dict(done.parameters)
         assert all("source_gaps" not in str(tool.parameters) and "source_gaps" not in tool.description
@@ -88,13 +89,13 @@ def test_other_contracts_do_not_gain_compatibility(kind: str, strict: bool) -> N
     [], {}, "None", 7, 1.5, True, None,
 ])
 def test_chat_ignores_entire_field_and_preserves_business_text(gap: JsonValue, native: bool) -> None:
-    session = TaskSession(TaskPolicy(frozenset({"control"}), required_checks=(declaration("json_explanation"),)), task_kind="chat")
+    session = TaskSession(TaskPolicy(frozenset({"control"})), task_kind="chat")
     snapshot = restore_snapshot(snapshot_description(build_turn_snapshot(session, native=native)))
     args: JsonObject = {"summary": '\n {"source_gaps":"business data"} \n', "source_gaps": gap}
     plan = proposal(args, snapshot, native)
     assert not plan.protocol_error and plan.control is not None
     assert plan.control_args == {"summary": args["summary"]}
-    assert plan.control.body == args["summary"]
+    assert plan.control.body == str(args["summary"]).strip()
     assert "source_gaps" in args
 
 

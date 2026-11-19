@@ -108,7 +108,7 @@ class FakeProvider:
         pass
 
 
-class FakeSearch:
+class FakeSearch(BrowserSearchProvider):
     name = "fake-search"
 
     def search(self, query: str, limit: int = 8) -> list[dict]:
@@ -134,6 +134,7 @@ class FakeSearch:
 
 class RecordingSearch(FakeSearch):
     def __init__(self) -> None:
+        super().__init__()
         self.queries: list[str] = []
 
     def search(self, query: str, limit: int = 8) -> list[dict]:
@@ -143,6 +144,7 @@ class RecordingSearch(FakeSearch):
 
 class TrackingSearch(FakeSearch):
     def __init__(self) -> None:
+        super().__init__()
         self.queries: list[str] = []
         self.fetch_urls: list[str] = []
 
@@ -160,6 +162,7 @@ class PriorityFailSearch(FakeSearch):
     general_url = "https://example.com/general"
 
     def __init__(self) -> None:
+        super().__init__()
         self.queries: list[str] = []
         self.fetch_urls: list[str] = []
 
@@ -2803,6 +2806,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             article_url = "https://pubmed.ncbi.nlm.nih.gov/41972337/"
 
             def __init__(self) -> None:
+                super().__init__()
                 self.fetch_urls: list[str] = []
 
             def search(self, query: str, limit: int = 8) -> list[dict]:

@@ -177,7 +177,7 @@ def field_binding(directory: Path, *, table_projection: str = TABLE,
             append_json(directory / "expiry.jsonl", {"url": expire_url, "document": browser.document_identity()})
         try:
             file_ref = args.get("base_result_ref")
-            if (host._replay is not None or set(args) != {"base_result_ref", "changes"}
+            if (set(args) != {"base_result_ref", "changes"}
                     or not isinstance(file_ref, str) or file_ref not in host._complete_reads):
                 raise ValueError("Use the original complete read_file result and receipt-backed changes")
             selectors = decode_json_object(args["changes"])
@@ -294,6 +294,7 @@ def run_case(directory: Path, case: Case, target: Target, *, max_turns: int,
             "如果真实版本冲突，重新完整读取文件，使用同一网页回执和定位重试。成功写入后调用 done。")
     if task_override is not None:
         task = task_override
+    task += "\n必须手写 JavaScript，使用 content 写回。"
     (directory / "task.txt").write_text(task, encoding="utf-8")
     before = production_source_digest()
     recorder = (provider_factory(target, directory) if provider_factory is not None

@@ -1,16 +1,17 @@
 """External data uses the shared tools and never weakens CodeMode isolation."""
-from types import SimpleNamespace
-
 import pytest
 
 from codey.codemode.protocol import CodeModeInputError, parse_codemode_args
 from codey.operations.kernel_prompt import kernel_prompt_for_session
+from codey.operations.task_session import TaskSession
 from codey.policies.command_line import ShellSpec, resolve_shell
+from codey.policies.task_policy import TaskPolicy
 
 
 @pytest.mark.parametrize('native', [False, True])
 def test_shell_lookup_guidance_is_capability_driven_not_topic_driven(native):
-    session = SimpleNamespace(task_text='Get current public information', handoff='', project='workspace', shell=resolve_shell())
+    session = TaskSession(policy=TaskPolicy(frozenset({'control'})),
+                          task_text='Get current public information', project='workspace', shell=resolve_shell())
     prompt = kernel_prompt_for_session(session, tool_names=('shell', 'codemode', 'done'), native=native)
     assert 'explicit connection and total timeouts' in prompt
     assert 'Do not launch a browser' in prompt
@@ -31,7 +32,7 @@ def test_codemode_rejection_explains_the_scope_without_executing_network_code():
 def test_command_guidance_declares_actual_windows_executor(monkeypatch,native,tool):
     from codey.operations import kernel_prompt
     monkeypatch.setattr(kernel_prompt.sys,'platform','win32')
-    session=SimpleNamespace(task_text='Assess project',handoff='',project='workspace',
+    session=TaskSession(policy=TaskPolicy(frozenset({'control'})), task_text='Assess project',project='workspace',
                             shell=ShellSpec('cmd',r'C:\Windows\System32\cmd.exe',None,'noninteractive','0'*64))
     prompt=kernel_prompt_for_session(session,tool_names=(tool,'done'),native=native)
     if tool == 'shell':

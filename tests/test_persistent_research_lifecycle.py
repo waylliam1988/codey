@@ -403,6 +403,7 @@ def test_repeated_staged_update_receipts_restore_cumulative_proposals_after_comm
 @pytest.mark.parametrize("stop_reason", ["controller_failure", "provider_failure", "recovery_failure", "delivery_pending"])
 def test_initial_research_failure_is_not_replaced_by_a_successor_error(tmp_path, monkeypatch, stop_reason):
     from codey.operations.kernel_contracts import KernelResult
+    from codey.research.browser_search import BrowserSearchProvider
     from codey.research.pipeline import ResearchContinuationError
     from tests.support.kernel_runtime import run_research_iteration
 
@@ -411,10 +412,10 @@ def test_initial_research_failure_is_not_replaced_by_a_successor_error(tmp_path,
         monkeypatch.setattr("codey.operations.task_loop.run_task_kernel",
                             lambda *_args, **_kwargs: KernelResult(False, "Original failure", 2, stop_reason))
         with pytest.raises(ResearchContinuationError, match="Original failure"):
-            run_research_iteration(SimpleNamespace(state=SimpleNamespace(), knowledge_store=store),
+            run_research_iteration(SimpleNamespace(state=SimpleNamespace(memory=None), knowledge_store=store),
                 provider=SimpleNamespace(new_chat=lambda: None), session_id="s", project="", task="question",
                 max_turns=2, on_event=lambda _: None, stop_flag=None, provider_id="fake", run_id="run",
-                chat_handoff="", trace_recorder=None, search=None)
+                chat_handoff="", trace_recorder=None, search=BrowserSearchProvider())
     finally:
         store.close()
 

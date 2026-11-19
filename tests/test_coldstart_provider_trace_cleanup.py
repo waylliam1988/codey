@@ -195,16 +195,19 @@ class GhostSingleParserTests(unittest.TestCase):
         source = std_inspect.getsource(cli.main)
         self.assertNotIn("_main_ghost", source)
         self.assertIn("_add_ghost_subcommands", source)
-        # ghost parser exists and requires a subcommand; list parses to cmd_ghost
+        # ghost parser exists and requires a subcommand; propose parses to cmd_ghost
         # Exercise via main() with mocked func to avoid touching real stores.
         from unittest import mock
 
         with mock.patch.object(cli, "cmd_ghost", return_value=0) as func:
-            code = cli.main(["ghost", "list", "--status", ""])
+            code = cli.main(["ghost", "propose", "preference", "Concise answers", "--session-id", "s"])
             self.assertEqual(code, 0)
             self.assertEqual(func.call_count, 1)
             args = func.call_args.args[0]
-            self.assertEqual(args.ghost_cmd, "list")
+            self.assertEqual(args.ghost_cmd, "propose")
+            self.assertEqual(args.kind, "preference")
+            self.assertEqual(args.text, "Concise answers")
+            self.assertEqual(args.session_id, "s")
 
     def test_ghost_missing_subcommand_exits_2(self) -> None:
         import codey.app.cli as cli

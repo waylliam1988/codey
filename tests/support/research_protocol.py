@@ -311,7 +311,7 @@ _RESEARCH_DISCIPLINE_BASE = """- Start by calling knowledge_search to see what y
 - Evidence snippets must be exact short excerpts copied from open_url text. For PDF-specific evidence, include evidence.page when known. Do not paraphrase evidence.excerpt. If uncertain, omit the evidence field and a source excerpt from the opened URL will be attached.
 - The final report may cite or name only pages you opened in this run, or grounded source notes you read.
 - The final report must use these sections: 结论, 关键证据, 反证与限制, 来源质量, 搜索覆盖, 来源.
-- If there are concrete unresolved follow-up questions, put them in done.args.open_questions as short strings. If none, use an empty list.
+- Describe concrete unresolved follow-up questions in the complete final answer; done accepts summary, not a separate open_questions field.
 - Every cited number in the report must appear in 来源, and every 来源 URL must be a page you opened in this run.
 - Cite PDF page evidence as [1 p.4] when a claim depends on a specific page.
 - Every 来源 citation must also have at least one saved knowledge_write evidence snippet from that opened page before done.

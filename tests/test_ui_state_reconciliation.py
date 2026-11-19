@@ -3,8 +3,8 @@ import pytest
 from playwright.sync_api import expect
 
 from codey.app import api
+from tests.test_ui_workflow import admit_run, select_connection_models
 from tests.test_ui_workflow import page as page
-from tests.test_ui_workflow import select_connection_models
 from tests.test_ui_workflow import ui_browser as ui_browser
 
 
@@ -67,7 +67,7 @@ def test_history_restores_failed_checkpoint_and_live_checkpoint_through_same_lif
         {'session_id': 'a', 'run_id': 'new', 'task_revision': 2, 'task_status': 'running'},
     ]
     page.route('**/api/sessions/a/messages**', lambda route: route.fulfill(json={
-        'schema_version': 1, 'session_id': 'a', 'epoch': 'history', 'snapshot_revision': 10,
+        'schema_version': 1, 'path_generation': 0, 'display_version': None, 'session_id': 'a', 'epoch': 'history', 'snapshot_revision': 10,
         'items': rows, 'task_states': tasks, 'has_more': False,
     }))
     page.evaluate("ConversationUI.refreshHistory('a')")
@@ -94,7 +94,7 @@ def test_clear_history_keeps_session_and_draft_in_canonical_ui_store(page):
 @pytest.mark.parametrize('owner_loaded', [True, False])
 def test_inherited_fork_history_never_assigns_source_task_ownership_to_child(page, status, title, owner_loaded):
     page.route('**/api/sessions/a/messages**', lambda route: route.fulfill(json={
-        'schema_version': 1, 'session_id': 'a', 'epoch': 'history', 'snapshot_revision': 1, 'has_more': False,
+        'schema_version': 1, 'path_generation': 0, 'display_version': None, 'session_id': 'a', 'epoch': 'history', 'snapshot_revision': 1, 'has_more': False,
         'items': [{'id': 'source-user', 'type': 'user', 'text': 'Inherited', 'runId': 'source'},
                   {'id': 'source-tool', 'type': 'tool', 'kind': 'read', 'path': 'source.py', 'runId': 'source'}],
         'task_states': [{'session_id': 'b', 'run_id': 'source', 'task_revision': 2, 'task_status': status}],
@@ -172,6 +172,9 @@ def test_snapshot_registry_cannot_invent_or_settle_task_lifecycle(page):
     }""")
     expect(page.locator('#stop')).to_be_hidden()
     assert page.evaluate("activeSession().messages.some(message => message.runId === 'missing')") is False
+    admit_run(page, "actual")
+    page.evaluate("ConversationUI.refreshHistory('a')")
+    page.wait_for_function("ConversationUI.acceptsRun('a', 'actual')")
     page.evaluate("""() => {
       applyRunState({busy:true,run_id:'actual',session_id:'a',active_runs:[{run_id:'actual',session_id:'a'}],
         task_states:[{run_id:'actual',session_id:'a',task_revision:2,task_status:'running'}]});
@@ -181,4 +184,4 @@ def test_snapshot_registry_cannot_invent_or_settle_task_lifecycle(page):
     page.evaluate("""applyRunState({busy:true,run_id:'actual',session_id:'a',active_runs:[{run_id:'actual',session_id:'a'}],
       task_states:[{run_id:'actual',session_id:'a',task_revision:3,task_status:'cancelled'}]})""")
     expect(page.locator('#stop')).to_be_hidden()
-    assert page.evaluate("activeSession().terminalRuns.includes('actual')") is True
+    page.wait_for_function("activeSession().terminalRuns.includes('actual')")

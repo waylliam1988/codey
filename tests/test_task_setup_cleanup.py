@@ -67,7 +67,7 @@ class SetupCleanupTests(unittest.TestCase):
             finally:
                 state.close()
 
-    def test_ghost_deps_failure_releases_writer_and_run(self) -> None:
+    def test_review_setup_interrupt_releases_writer_and_run(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             project = str(Path(td) / "proj")
             Path(project).mkdir()
@@ -77,7 +77,7 @@ class SetupCleanupTests(unittest.TestCase):
             try:
                 deps = _deps(state)
                 with mock.patch.object(
-                    task_run_module, "ghost_task_deps", side_effect=RuntimeError("ghost boom")
+                    task_run_module, "review_flow_deps", side_effect=ValueError("invalid review configuration")
                 ):
                     setup, outcome = _setup_run_state(deps, _submission(project))
                 self.assertIsNone(setup)

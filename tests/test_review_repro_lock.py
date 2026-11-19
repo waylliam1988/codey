@@ -109,7 +109,9 @@ def test_issue2_unified_interleaves_web_and_project(tmp_path):
         "read_file": lambda call: ToolResult(call, (project / call.args["path"]).read_text(), ok=True),
         "edit": edit, "run": verify,
     }
-    research = ResearchTools(search=None, store=None, changes=None)
+    from codey.research.browser_search import BrowserSearchProvider
+
+    research = ResearchTools(search=BrowserSearchProvider(), store=None, changes=None)
     result = run_task_kernel(
         session,
         request=KernelRunRequest(

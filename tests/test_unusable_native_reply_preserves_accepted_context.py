@@ -28,8 +28,8 @@ def test_invalid_followup_retains_previous_call_and_its_actual_result(monkeypatc
     provider.send_turn("Inspect before editing", tools)
     prefix = copy.deepcopy(provider.context_ledger.view)
     results = [ProviderToolResult("call-1", "actual current file")]
-    if finish == "length" or protocol == "openai-responses":
-        with pytest.raises(OutputLengthError if finish == "length" else RuntimeError):
+    if finish == "length":
+        with pytest.raises(OutputLengthError):
             provider.send_tool_results(results, tools)
     else:
         turn = provider.send_tool_results(results, tools)

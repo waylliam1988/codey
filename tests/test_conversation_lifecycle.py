@@ -89,6 +89,7 @@ def _entry_frame(*, fresh_chat: bool, conversation, provider) -> object:
         recovered_tool_result_batch_id="", provider_session_changed=False,
         window_action=None,
         trace=None, entry_session=None, entry_policy=TaskPolicy(grants=frozenset({"control"})), entry_initial_turn=None,
+        entry_research_tools=None,
     )
 
 
@@ -109,7 +110,8 @@ def _entry_deps(root) -> object:
                                turn_budget=1, max_repair_rounds=0, task_kind="chat")
     outputs = ManagedOutputStore(root)
     return SimpleNamespace(runtime_mutations=mutations, managed_outputs=outputs,
-        state=SimpleNamespace(durable=durable, managed_outputs=outputs, set_provider_session=lambda *args: None),
+        state=SimpleNamespace(durable=durable, managed_outputs=outputs, set_provider_session=lambda *args: None,
+                              memory=None, stop_flag_for=lambda _run_id: None),
         workspace_revisions=None)
 
 

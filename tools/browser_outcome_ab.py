@@ -148,6 +148,7 @@ def run_arm(directory: Path, case: str, arm: str, target: Target, *, max_turns: 
           patch("codey.app.review_service.run_review", return_value=None)):
         row = decode_json_object(gate.run_case(directory, "hybrid" if stale else "chat", target,
             max_turns=max_turns, structured=not stale and not candidate, explanation_output=not stale and candidate,
+            task_transform=(lambda task: task + "\n必须手写 JavaScript，使用 content 写回。") if stale else None,
             stale_edit=stale, preserve_external_field=stale, explicit_wait=not (stale and candidate),
             fixture_html=DELAYED_HTML if case == "stale_edit_delayed" else gate.HTML))
     if not stale and candidate and row.get("passed") is True:

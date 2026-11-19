@@ -40,6 +40,7 @@ from codey.storage.execution_output_store import ExecutionOutputStore
 from codey.toolchain.constants import (
     EXACT_REPLACEMENT_CONTEXT_HINT,
     MAX_REPLACEMENTS,
+    SEARCH_EXCLUDED_DIRS,
     STALE_READ_REFERENCE_CODE,
     STALE_READ_REFERENCE_ERROR,
 )
@@ -58,20 +59,6 @@ from codey.workspace.file_index import IncrementalFileIndex
 from codey.workspace.paths import bounded_directory_entries as _bounded_directory_entries
 from codey.workspace.paths import safe_join
 
-SEARCH_EXCLUDED_DIRS = {
-    ".git",
-    ".hg",
-    ".svn",
-    ".venv",
-    "venv",
-    "node_modules",
-    "__pycache__",
-    "dist",
-    "build",
-    ".next",
-    ".turbo",
-    "target",
-}
 SEARCH_MAX_RESULTS = 80
 SEARCH_MAX_FILE_BYTES = 8 * 1024 * 1024
 SEARCH_MAX_SCAN_BYTES = 16 * 1024 * 1024

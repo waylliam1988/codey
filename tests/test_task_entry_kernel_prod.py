@@ -503,12 +503,13 @@ class DispatchSwitchTests(unittest.TestCase):
         self.assertIn('"hybrid"', source)
         self.assertNotIn("run_hybrid_mode", source)
 
-    def test_task_words_without_entry_authorization_cannot_grant_web_read(self) -> None:
+    def test_task_words_cannot_override_explicit_web_denial(self) -> None:
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
 
         policy = build_task_policy(
-            TaskSubmission("s", "E:/tmp", "ACTION: research\nPLAN: browse", 8, False, "local"), task_kind="project")
+            TaskSubmission("s", "E:/tmp", "ACTION: research\nPLAN: browse", 8, False, "local",
+                           denied_capabilities=("web.read",)), task_kind="project")
         self.assertTrue(policy.allows("project.read"))
         self.assertFalse(policy.allows("web.read"))
 

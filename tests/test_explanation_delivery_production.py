@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from codey.codemode.json_edit import JSON_FIELD_EDIT_PROGRAM
 from codey.storage.input_attachments import InputAttachmentStore
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tests.test_browser_structured_upload_production import action as upload_action
@@ -21,39 +20,45 @@ TARGET = Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10)
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
 @pytest.mark.parametrize(("amount", "code"), [(173, "QUARTZ_851"), (284, "TOPAZ_029")])
+@pytest.mark.parametrize("defect", ["stale", "fractional", "escaped", "repeated", "three_paragraphs"])
 def test_fact_and_paragraph_repairs_use_current_receipts_without_repeating_reads(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, amount: int, code: str,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, amount: int, code: str, defect: str,
 ) -> None:
     stale = ("已读取页面记录。\n\n上一次结果是 1173 克，校验码 OLD_000。" if amount == 173 else
              "已读取页面记录。\n\n上一次结果是 173 克，校验码 QUARTZ_851。")
     escaped = f"观察过程。\\n\\n净重为 {amount} 克，校验码 {code}。"
     fractional = f"已读取当前记录。\n\n净重为 {amount}.5 克，校验码 {code}。"
-    repeated = f"已读取 {URL}，token为 {TOKEN}。\n\n净重为 {amount} 克，校验码 {code}。"
+    repeated = f"已读取 {URL}，token为 {TOKEN}。\n\n净重为 {amount} 克。"
     three_paragraphs = f"已读取当前记录。\n\n净重为 {amount} 克。\n\n校验码 {code}。"
     corrected = f"已读取当前记录，路径示例 `C:\\new`。\n\n净重为 {amount} 克，校验码 {code}，代码示例 `\\n`。"
-    replies: list[JsonObject] = [{"tool": "done", "args": {"summary": draft}}
-                                for draft in (stale, fractional, escaped, repeated, three_paragraphs, corrected)]
+    draft = {"stale": stale, "fractional": fractional, "escaped": escaped,
+             "repeated": repeated, "three_paragraphs": three_paragraphs}[defect]
+    # Isolate each repair: four consecutive rejected answers deliberately stop
+    # at the production no-progress boundary, before a sixth scripted answer.
+    replies: list[JsonObject] = [{"tool": "done", "args": {"paragraphs": draft.split("\n\n")}}
+                                for draft in (draft, corrected)]
     install_http(monkeypatch, replies)
     acquisition: JsonObject = {"tool": "codemode", "args": {
         "code": ACQUISITION,
         "inputs": {"url": URL, "city": "福州", "wait_text": "鱼丸"}}}
     directory = tmp_path / "run"
-    row = run_case(directory, "chat", TARGET, max_turns=7, explanation_output=True, restore_snapshots=True,
+    row = run_case(directory, "chat", TARGET, max_turns=3, explanation_output=True, restore_snapshots=True,
         acquisition_action=acquisition,
         fixture_html=HTML.replace("amount:173,code:'QUARTZ_851'", f"amount:{amount},code:'{code}'"),
         expected_amount=amount, expected_code=code)
     assert row["passed"] is True and row["stop_reason"] == "done", row
     assert parse_json_object(str(row["answer"]))["explanation"] == corrected
     attempts = row["repair_attempts"]
-    assert isinstance(attempts, list) and len(attempts) == 5
-    first, numeric, second, third, fourth = [decode_json_object(item) for item in attempts]
-    assert "answer_text_missing" in str(first["reason"])
-    assert str(amount) in str(first["reason"]) and stale in str(first["reason"])
-    assert "answer_text_missing" in str(numeric["reason"]) and fractional in str(numeric["reason"])
-    assert "output_format_invalid" in str(second["reason"]) and escaped in str(second["reason"])
-    assert "answer_text_forbidden" in str(third["reason"]) and "Repair only /explanation" in str(third["reason"])
-    assert repeated not in str(third["reason"]) and TOKEN not in str(third["reason"])
-    assert "output_format_invalid" in str(fourth["reason"])
+    assert isinstance(attempts, list) and len(attempts) == 1
+    feedback = str(decode_json_object(attempts[0])["reason"])
+    if defect in {"escaped", "three_paragraphs"}:
+        assert "output_format_invalid" in feedback and draft in feedback
+    else:
+        assert "answer_text_missing" in feedback
+        if defect == "repeated":
+            assert repeated not in feedback and TOKEN not in feedback
+        else:
+            assert str(amount) in feedback and draft in feedback
     checks = decode_json_object(row["posthoc_output_checks"])
     assert checks["facts_mentioned"] is True and checks["schema_valid"] is True
     receipts = tool_receipts(directory / "state")
@@ -65,8 +70,9 @@ def test_fact_and_paragraph_repairs_use_current_receipts_without_repeating_reads
     last = next(item for item in reversed(requests) if item.get("phase") == "request")
     messages = decode_json_object(last["payload"])["messages"]
     assert isinstance(messages, list)
-    assert any(isinstance(message, dict) and isinstance(content := message.get("content"), str)
-               and escaped in content for message in messages)
+    if defect == "escaped":
+        assert any(isinstance(message, dict) and isinstance(content := message.get("content"), str)
+                   and escaped in content for message in messages)
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
@@ -75,15 +81,16 @@ def test_missing_one_fact_repairs_only_explanation_after_committed_edit(
 ) -> None:
     draft = "已读取并写入当前记录。\n\n净重为173克，其他字段已保留。"
     corrected = draft + "校验码为 QUARTZ_851。"
-    install_http(monkeypatch, [{"tool": "done", "args": {"summary": text}} for text in (draft, corrected)])
+    install_http(monkeypatch, [{"tool": "done", "args": {"paragraphs": text.split("\n\n")}} for text in (draft, corrected)])
     program = ACQUISITION.replace("const tabs=",
-        "await (async () => {\n" + JSON_FIELD_EDIT_PROGRAM + "\n})();\nconst tabs=")
+        "await (async () => {\n" + "const read=await tools.read_file({path:inputs.path});return unwrap(await tools.edit({path:inputs.path,base_result_ref:read.result_ref,declared_fields:true}));" + "\n})();\nconst tabs=")
     acquisition: JsonObject = {"tool": "codemode", "args": {"code": program, "inputs": {
         "url": URL, "city": "福州", "wait_text": "鱼丸", "path": "result.json",
         "changes": {"amount": 173, "code": "QUARTZ_851"}}}}
     directory = tmp_path / "run"
     row = run_case(directory, "hybrid", TARGET, max_turns=3, explanation_output=True, restore_snapshots=True,
-        acquisition_action=acquisition)
+        acquisition_action=acquisition,
+        task_transform=lambda task: task + "\n必须手写 JavaScript。")
     assert row["passed"] is True and row["stop_reason"] == "done", row
     assert parse_json_object(str(row["answer"]))["explanation"] == corrected
     attempts = row["repair_attempts"]
@@ -134,7 +141,7 @@ def test_upload_uncertainty_and_format_repair_never_repeat_attachment_selection(
     drafts = ([corrected.replace("\n", r"\n"), corrected] if format_retry else [corrected])
     replies: list[JsonObject] = [upload_action("observe"),
         upload_action("select", attachment_id=str(attachment["id"]), target={"name": "Attachment"}), upload_action("read")]
-    replies.extend({"tool": "done", "args": {"summary": draft}} for draft in drafts)
+    replies.extend({"tool": "done", "args": {"paragraphs": draft.split("\n\n")}} for draft in drafts)
     install_http(monkeypatch, replies)
     properties: JsonObject = {key: {"type": "string"} for key in ("explanation", "filename", "sha256", "page_text")}
     properties["explanation"] = {"type": "string", "pattern": TWO_PARAGRAPHS}

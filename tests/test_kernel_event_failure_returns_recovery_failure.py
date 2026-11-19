@@ -94,9 +94,14 @@ class KernelEventFailureReturnsRecoveryFailureTests(unittest.TestCase):
             window_action=None,
             entry_policy=TaskPolicy(frozenset({"control", "project.read"})),
             entry_session=None,
+            entry_research_tools=None,
+            conversation=None,
+            trace=None,
+            fresh_chat=False,
         )
         hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
-        deps = SimpleNamespace(knowledge_store=None, search_factory=None, runtime_mutations=None, state=None)
+        deps = SimpleNamespace(knowledge_store=None, search_factory=None, runtime_mutations=None,
+                               workspace_revisions=None, state=None)
         with (
             tempfile.TemporaryDirectory() as state_home,
             mock.patch("codey.operations.task_loop.run_task_kernel",

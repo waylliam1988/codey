@@ -26,3 +26,18 @@ EXACT_REPLACEMENT_CONTEXT_HINT = (
     "so it matches one location uniquely. Preserve those surrounding lines in new_string. "
     "Separate replacement objects do not scope one another."
 )
+
+SEARCH_EXCLUDED_DIRS = {
+    ".git",
+    ".hg",
+    ".svn",
+    ".venv",
+    "venv",
+    "node_modules",
+    "__pycache__",
+    "dist",
+    "build",
+    ".next",
+    ".turbo",
+    "target",
+}

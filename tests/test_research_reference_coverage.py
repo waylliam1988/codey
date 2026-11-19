@@ -17,22 +17,25 @@ from codey.protocols.text_turn import decode_text_turn
 from codey.research.finding_report import compile_finding_report
 from codey.research.ledger import ResearchLedger
 from codey.research.questions import question_plan, validate_question_coverage
-from codey.research.tool_contract import STRUCTURED_REPORT_EXAMPLE, validate_tool_args
+from codey.research.tool_contract import validate_tool_args
 from codey.reviews.research_coverage import coverage_rows
-from tests.support.research_tool_contract import openai_parameters_schema
 from tests.test_research_findings import URL, execute, report_args, setup
 
 
-def test_actual_report_example_is_accepted_by_schema_parser_and_coverage():
-    example = json.loads(STRUCTURED_REPORT_EXAMPLE)
-    jsonschema.validate(example["args"], openai_parameters_schema("done"))
-    assert validate_tool_args("done", example["args"]).ok
-    coverage_rows(example["args"]["report_sections"]["coverage"])
-    session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read"}), strict_research=True))
+def test_frozen_report_example_is_accepted_by_its_schema_parser_and_coverage():
+    from codey.research.report_proposal import parse_report_proposal
+    from codey.types.json_value import canonical_json_object
+
+    session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read"}), strict_research=True), task_kind="chat")
     snapshot = build_turn_snapshot(session)
     done = next(spec for spec in snapshot.frozen_specs if spec.name == "done")
-    assert set(json.loads(done.json_examples[0])["args"]) == {"report_sections"}
+    example = json.loads(done.json_examples[0])
+    jsonschema.validate(example["args"], canonical_json_object({"type": "object", "properties": dict(done.parameters), "required": list(done.required), "additionalProperties": False}))
+    coverage_rows(list(parse_report_proposal(example["args"]).coverage))
+    assert set(example["args"]) == {"report_sections"}
     assert not normalize_turn(decode_text_turn(done.json_examples[0]), snapshot=snapshot).protocol_error
+    # The ordinary done contract deliberately rejects report-only selections.
+    assert not validate_tool_args("done", example["args"]).ok
 
 
 def test_question_identity_is_append_only_and_plan_receipt_restores_both_projections(tmp_path):
@@ -79,16 +82,12 @@ def test_each_gap_requires_its_own_selected_real_investigation_record():
 def test_missing_evidence_is_a_research_completion_defect_not_a_json_repair():
     from codey.research.report_proposal import parse_report_proposal
 
-    args = json.loads(STRUCTURED_REPORT_EXAMPLE)["args"]
-    args["report_sections"]["coverage"][0]["findings"] = []
-    # The call is structurally valid. Resending the same prose is not the remedy.
-    assert validate_tool_args("done", args).ok
-    selections = {"report_sections": {"coverage": [
-        {key: value for key, value in row.items() if key != "answer"}
-        for row in args["report_sections"]["coverage"]]}}
-    state = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read"}), strict_research=True))
-    plan = normalize_turn(decode_text_turn(json.dumps({"tool": "done", "args": selections})),
-                          snapshot=build_turn_snapshot(state))
+    state = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read"}), strict_research=True), task_kind="chat")
+    snapshot = build_turn_snapshot(state)
+    done = next(spec for spec in snapshot.model_specs if spec.name == "done")
+    selections = json.loads(done.json_examples[0])["args"]
+    selections["report_sections"]["coverage"][0]["findings"] = []
+    plan = normalize_turn(decode_text_turn(json.dumps({"tool": "done", "args": selections})), snapshot=snapshot)
     assert not plan.protocol_error and plan.control is not None
     ledger = ResearchLedger()
     ledger.questions = ("What must be answered?",)

@@ -10,7 +10,7 @@ from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core.execution_record import HitTarget
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG
-from codey.types.json_value import ToolArgs, require_json_integer, require_json_string
+from codey.types.json_value import JsonValue, ToolArgs, require_json_integer, require_json_string
 
 
 class SourceReferenceView(Protocol):
@@ -52,3 +52,46 @@ def open_source(call: ToolCall, tools: ResearchTools, ledger: ResearchLedger, ur
             offset += len(f"[page {pages}]\n")
     observation = captured_source(ledger, url, target["text_hash"] if target is not None else "")
     return tools.read_source(observation, offset=offset, limit=limit, pages=pages)
+
+
+def lower_knowledge_sources(session: SourceReferenceView | None, args: ToolArgs) -> tuple[ToolArgs, str]:
+    import re
+
+    sources: dict[str, str] = dict(session.source_ids) if session is not None else {}
+
+    def lower(value: object) -> tuple[str, str]:
+        text = str(value or "").strip()
+        key = text.lower()
+        if key in sources:
+            return str(sources[key]), ""
+        if re.fullmatch(r"s[1-9][0-9]*", key):
+            return "", f"unknown source_id: {text}"
+        return text, ""
+
+    lowered = dict(args)
+    raw_sources = args.get("sources")
+    if isinstance(raw_sources, list):
+        rows: list[JsonValue] = []
+        for value in raw_sources:
+            resolved, error = lower(value)
+            if error:
+                return {}, error
+            rows.append(resolved)
+        lowered["sources"] = rows
+    raw_evidence = args.get("evidence")
+    if isinstance(raw_evidence, list):
+        evidence: list[JsonValue] = []
+        for value in raw_evidence:
+            if not isinstance(value, dict):
+                evidence.append(value)
+                continue
+            row = dict(value)
+            for key in ("source_url", "source"):
+                if key in row:
+                    resolved, error = lower(row[key])
+                    if error:
+                        return {}, error
+                    row[key] = resolved
+            evidence.append(row)
+        lowered["evidence"] = evidence
+    return lowered, ""

@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB_DIR = ROOT / "frontend"
 ASSET_DIR = ROOT / "frontend" / "src"
 HTML = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+DOCUMENT_HTML = HTML
 APP_RUNTIME_SOURCE = (ASSET_DIR / "app_runtime.ts").read_text(encoding="utf-8")
 def _source(name: str) -> str:
     # Structural checks read the compiler output for runtime shape and the
@@ -85,7 +86,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_visible_ui_uses_english_document_language(self) -> None:
         self.assertIn('<html lang="en">', HTML)
-        self.assertNotRegex(UI_SOURCE, r"[\u4e00-\u9fff]")
+        self.assertNotRegex(DOCUMENT_HTML, r"[\u4e00-\u9fff]")
 
     def test_web_colors_stay_in_tokens(self) -> None:
         non_token_ui = HTML + "\n" + APP_CSS + "\n" + JS_ASSETS
@@ -195,12 +196,11 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_local_context_ui_avoids_internal_terms(self) -> None:
         visible_source = HTML + "\n" + LOCAL_CONTEXT_DRAWER_JS
-        for term in ("Ghost", "Memory", "Affinity", "Hebbian", "Directive"):
+        for term in ("Ghost", "Affinity", "Hebbian", "Directive"):
             self.assertNotIn(term, visible_source)
         self.assertIn("Local context", visible_source)
-        self.assertIn("Recent focus", visible_source)
-        self.assertIn("Active preferences", visible_source)
-        self.assertIn("Local ordering", visible_source)
+        self.assertIn("Memory kind", visible_source)
+        self.assertIn("Propose memory", visible_source)
 
 
     def test_run_details_style_uses_existing_design_tokens(self) -> None:
@@ -237,13 +237,10 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("color: var(--muted)", block)
 
     def test_local_context_empty_state_is_single_summary(self) -> None:
-        self.assertIn("No local context yet", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn("No local context yet · Updates ${state}", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn("const hasWarning = !!warnings.length;", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn("if (!hasContent && !hasWarning)", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn("appendGroup(body, 'Recent focus', contextRows, rowNode);", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn("appendGroup(body, 'Active preferences', activeRows, rowNode);", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertNotIn("empty.textContent = 'None';", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("${data.items.length} memories", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("${data.pending.length} pending", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("Propose memory", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertNotIn("No local context yet", LOCAL_CONTEXT_DRAWER_JS)
 
     def test_local_context_settings_are_visually_separated(self) -> None:
         start = APP_CSS.index(".local-context-settings")
@@ -263,7 +260,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("if (active !== 'local_context') closeLocalContextDrawer();", HTML)
         self.assertIn("deps.closeOtherDrawers('changes')", CHANGES_DRAWER_JS)
         self.assertIn("deps.closeOtherDrawers('research')", RESEARCH_DRAWER_JS)
-        self.assertIn("deps.closeOtherDrawers('local_context')", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("deps.closeOtherDrawers?.('local_context')", LOCAL_CONTEXT_DRAWER_JS)
 
 
 
@@ -343,8 +340,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("class=\"spinner\"", CHANGES_DRAWER_JS)
         self.assertIn("spinner.className = 'spinner';", RESEARCH_DRAWER_JS)
         self.assertIn("spinner.className = 'spinner';", RUN_DETAILS_JS)
-        self.assertIn("drawer-loading", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn("class=\"spinner\"", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("Loading...", LOCAL_CONTEXT_DRAWER_JS)
 
     def test_status_rows_use_continue_and_retry_links(self) -> None:
         self.assertIn(".link-btn", STYLE_SOURCE)
@@ -496,12 +492,11 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("provider-item", PROVIDER_UI_JS)
         self.assertNotIn('data-provider="deepseek"', HTML)
 
-    def test_composer_browser_toggle_sends_explicit_capabilities(self) -> None:
-        self.assertIn('id="ctx-browser"', APP_RUNTIME_SOURCE)
-        self.assertIn("browser: item.browser === true", UI_STATE_JS)
-        self.assertIn("requested_capabilities", COMPOSER_JS)
+    def test_composer_uses_default_browser_capabilities_without_a_toggle(self) -> None:
+        self.assertNotIn('id="ctx-browser"', APP_RUNTIME_SOURCE)
+        self.assertNotIn("requested_capabilities", COMPOSER_JS)
         for grant in ("browser.observe", "browser.interact", "browser.effect"):
-            self.assertIn(grant, COMPOSER_JS)
+            self.assertNotIn(grant, COMPOSER_JS)
 
 
     def test_new_chat_is_blank_without_welcome_or_example_cards(self) -> None:

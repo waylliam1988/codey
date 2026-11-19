@@ -202,22 +202,20 @@
     },
     "codey/ghost/event_log.py": {
       "current_owners": [
-        "codey/ghost/sqlite.py",
-        "codey/ghost/record_store.py"
+        "codey/ghost/backend.py"
       ],
       "tests": [
-        "tests/test_ghost_sqlite_store.py",
-        "tests/test_ghost_graph_sqlite.py"
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
       ]
     },
     "codey/ghost/event_projection.py": {
       "current_owners": [
-        "codey/ghost/sqlite.py",
-        "codey/ghost/events.py"
+        "codey/ghost/backend.py"
       ],
       "tests": [
-        "tests/test_ghost_events.py",
-        "tests/test_ghost_corruption_contract.py"
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
       ]
     },
     "codey/storage/event_state.py": {
@@ -286,6 +284,233 @@
         "tests/test_kernel_legacy_parity.py"
       ],
       "disposition": "Legacy implementation retained offline only"
+    },
+    "codey/app/ghost_daemon.py": {
+      "current_owners": [
+        "codey/app/memory_routes.py",
+        "codey/memory/service.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/_common.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/_warnings.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/affinity.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/continuity.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/control_surface.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/directive.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/gate.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/graph_primitives.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/hebbian.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/inbox.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/numbers.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/observation_index.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/observations.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/schema.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/sleep.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/typed_fields.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/ghost/work_queue.py": {
+      "current_owners": [
+        "codey/memory/service.py",
+        "codey/memory/contracts.py",
+        "codey/memory/null.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/operations/ghost_context.py": {
+      "current_owners": [
+        "codey/operations/task_entry.py",
+        "codey/memory/context.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/operations/ghost_post_turn.py": {
+      "current_owners": [
+        "codey/operations/task_entry.py",
+        "codey/memory/context.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/operations/task_phases/ghost.py": {
+      "current_owners": [
+        "codey/operations/task_entry.py",
+        "codey/memory/context.py"
+      ],
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py"
+      ]
     }
   },
   "entry_chains": {

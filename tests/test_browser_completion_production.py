@@ -74,7 +74,12 @@ def test_research_requires_the_declared_wait_read_and_citation(
     if case == "other_tab":
         assert waits[0].audit["browser_document"] != reads[0].audit["browser_document"]
     if case in {"old_citation", "mixed_citation"}:
-        assert len(reads) == 2
+        initial = [r for r in reads if "required-source:navigation" in r.call.call_id]
+        assert len(initial) == 1
+        scripted = [r for r in reads if r not in initial]
+        assert len(scripted) == 2
+        assert scripted[0].audit["browser_document"] == scripted[1].audit["browser_document"]
+        assert initial[0].audit["browser_document"] != scripted[0].audit["browser_document"]
     decisions = [value for _, body in artifacts(directory / "state")
                  if isinstance(value := body.get("data"), dict) and value.get("purpose") == "done"]
     assert any("required_tools_satisfied" in json.dumps(decision) for decision in decisions)

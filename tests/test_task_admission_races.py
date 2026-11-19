@@ -31,6 +31,7 @@ def admission():
 def test_losing_http_claim_preserves_worker_and_its_terminal_event(admission, phase):
     state, registry, run, woken = admission
     state.durable.claim_task("task")
+    registry.claim_worker("task")
     if phase != "dispatching":
         assert registry.start("task")
         state.durable.start_task("task", state={})
@@ -69,6 +70,7 @@ def test_scheduler_claim_between_http_read_and_claim_does_not_release_queued_wor
 
     def competitor_claimed(task_id):
         claim(task_id)
+        registry.claim_worker(task_id)
         raise CommitConflict("scheduler won the claim")
 
     monkeypatch.setattr(state.durable, "claim_task", competitor_claimed)

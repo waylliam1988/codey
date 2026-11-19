@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import cast
 
 from codey.providers.attempt_gate import AttemptGateCallback, AttemptGateView
+from codey.providers.base import ProviderToolDefinition
 from codey.providers.request_codec import provider_options_payload
 from codey.providers.requests import (
     AcknowledgeToolResultsBoundRequest,
@@ -54,6 +55,21 @@ def provider_window_ref(provider: object) -> ProtocolWindowRef | None:
     if value is not None and not isinstance(value, ProtocolWindowRef):
         raise ValueError("provider window reference is invalid")
     return value
+
+
+def restore_declared_tools(provider: object, ref: ProtocolWindowRef,
+                           tools: list[ProviderToolDefinition]) -> None:
+    """Restore concrete transport state at the provider compatibility boundary."""
+    from codey.providers.api_context import restore_declared_tools as restore
+
+    restore(provider, ref, tools)
+
+
+def bind_result_recovery(provider: object, refs: tuple[str, ...]) -> None:
+    """Keep concrete receipt recovery outside the shared kernel."""
+    from codey.providers.api_context import bind_result_recovery as bind
+
+    bind(provider, refs)
 
 
 def bind_attempt_gate(provider: object, gate: AttemptGateCallback | None) -> bool:

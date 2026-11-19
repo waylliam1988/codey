@@ -103,7 +103,7 @@ def test_simplified_conflict_view_keeps_raw_diagnostics_out_of_the_model_context
         assert instruction not in text
     assert session._memory_results["child"] is child and child.model_text == STALE_READ_REFERENCE_ERROR
     assert projected.audit["runtime_error"] == parent.model_text
-    assert "readResult" in _result_context(parent, session, receipt_recovery=False)
+    assert "base.result_ref as base_result_ref" in _result_context(parent, session, receipt_recovery=False)
 
 
 def test_error_words_alone_do_not_authorize_a_simplified_retry() -> None:

@@ -57,7 +57,14 @@ def test_hybrid_shortcuts_preserve_existing_boundaries(guard: str) -> None:
         snapshot = replace(snapshot, allowed=("codemode", "done"))
     elif guard in {"copy", "upload"}:
         snapshot = copy_snapshot() if guard == "copy" else upload_snapshot()
-    assert offer_browser_tools(snapshot, session) == snapshot
+    offered = offer_browser_tools(snapshot, session)
+    if guard == "codemode":
+        assert offered.tool_names == snapshot.tool_names
+        assert offered.nested_tool_names == snapshot.nested_tool_names
+        assert offered.browser_followups
+        assert not set(DIRECT_TOOLS) & set(offered.tool_names)
+    else:
+        assert offered == snapshot
 
 
 @pytest.mark.parametrize("guard", ["none", "denied", "hidden", "allowed"])

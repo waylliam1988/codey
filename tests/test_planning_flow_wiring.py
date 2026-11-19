@@ -46,6 +46,8 @@ def _planning_request(*, requested=(), entry_policy=None, durable=None, knowledg
         entry_policy=entry_policy,
     )
     state = SimpleNamespace(
+        memory=None,
+        stop_flag_for=lambda _run_id: None,
         run_registry=SimpleNamespace(stop_flag=SimpleNamespace(is_set=lambda: False)),
         runtime_mutations=mock.Mock(spec=["mark_writer_running"]),
         managed_outputs="OUT",
@@ -149,9 +151,11 @@ def test_research_resource_construction_failure_closes_search_and_propagates(tmp
     import pytest
 
     from codey.operations.task_execution import build_research_tools
+    from codey.research.browser_search import BrowserSearchProvider
 
-    search = mock.Mock()
-    deps = SimpleNamespace(knowledge_store=SimpleNamespace(root=tmp_path), search_factory=lambda: search)
+    search = BrowserSearchProvider()
+    search.close = mock.Mock()
+    deps = SimpleNamespace(knowledge_store=None, search_factory=lambda: search)
     with (
         mock.patch("codey.research.tools.ResearchTools", side_effect=RuntimeError("broken adapter")),
         pytest.raises(RuntimeError, match="broken adapter"),

@@ -56,6 +56,7 @@ export interface ProcessToolRecord {
   reasoning?: string;
   text?: string;
   state?: string;
+  supersededRunIds?: string[];
   type: string;
 }
 (function () {
@@ -83,6 +84,8 @@ export interface ProcessToolRecord {
     warnings: Set<string>;
     touched: boolean;
     requestObserved?: boolean;
+    requestRunId?: string;
+    supersededRunIds?: Set<string>;
     activity?: string;
     elapsedMs?: number;
   }
@@ -385,7 +388,10 @@ export interface ProcessToolRecord {
       const block = pending ? ensure(chat, m.runId) : existing;
       if (block) {
         block._process.requestObserved = true;
-        if (pending && !existing) block._process.source = 'inferred';
+        const newAttempt = block._process.requestRunId !== m.runId;
+        block._process.requestRunId = m.runId;
+        block._process.supersededRunIds = new Set(m.supersededRunIds);
+        if (pending && (!existing || newAttempt)) block._process.source = 'inferred';
         if (pending && (!existing || block._process.source === 'inferred'))
           state(block, m.state as ProcessStatus, false);
         else if (!pending && ['sending', 'running'].includes(block._process.state))
@@ -495,6 +501,7 @@ export interface ProcessToolRecord {
       if (m.type === 'turn' || m.type === 'thinking') thinking(block, m.reasoning || m.text, step);
       if (m.type === 'tool' || m.type === 'tool_pending') tool(block, m);
       else if (m.type === 'run_state' && m.state) {
+        if (block._process.supersededRunIds?.has(m.runId)) return true;
         block._process.source = 'checkpoint';
         if (m.elapsedMs !== undefined) block._process.elapsedMs = m.elapsedMs;
         state(block, m.state as ProcessStatus);

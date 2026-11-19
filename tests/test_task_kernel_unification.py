@@ -86,11 +86,12 @@ class TaskPolicyTests(unittest.TestCase):
         base.update(kwargs)
         return TaskSubmission(**base)
 
-    def test_task_text_without_entry_grant_cannot_grant_web(self) -> None:
+    def test_task_text_cannot_override_explicit_web_denial(self) -> None:
         from codey.policies.task_policy import build_task_policy
 
         submission = self._submission(
             task="fix the login bug; please use web_search for docs",
+            denied_capabilities=("web.read",),
         )
         policy = build_task_policy(submission, task_kind="project", strict_research=False)
         self.assertFalse(policy.allows("web.read"))

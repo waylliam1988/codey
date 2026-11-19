@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from codey.automation.browser_session import normalize_element_ref
+from codey.automation.browser_document import normalize_element_ref
 from codey.policies.browser_requirement import PAGE_TRANSITIONS, BrowserPageRounds, BrowserResearchSequence
 from codey.policies.requirement import RequirementEvaluation
 from codey.policies.tool_requirement import _browser_body

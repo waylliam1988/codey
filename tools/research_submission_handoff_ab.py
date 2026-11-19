@@ -80,6 +80,7 @@ def narrow(snapshot: TurnSnapshot, step: Handoff) -> TurnSnapshot:
         declarations = render_declarations(build_codemode_catalog(specs, allow_writes=False))
         specs = tuple(replace(spec, declarations=declarations) if spec.name == "codemode" else spec for spec in specs)
     return replace(snapshot, tool_names=names, nested_tool_names=nested, frozen_specs=specs,
+        browser_references=None, browser_fill_text=None, browser_followups=False,
         contract_text=json_contract_text(tuple(spec for spec in specs if spec.name in names)),
         custom_executors=tuple(row for row in snapshot.custom_executors if row[0] in inventory))
 

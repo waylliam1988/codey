@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from tests.test_ui_workflow import model_settings_route
+from tests.test_ui_workflow import admit_run, model_settings_route
 from tests.test_ui_workflow import page as page
 from tests.test_ui_workflow import ui_browser as ui_browser
 
@@ -96,8 +96,9 @@ def test_bottom_transition_does_not_move_the_rail_or_resize_the_reading_area(pag
 
 @pytest.mark.parametrize('committed_run', ['finished-run', 'unrelated-run'])
 def test_final_stream_answer_binds_its_canonical_fork_target_without_remounting(page, committed_run):
+    admit_run(page, 'finished-run')
     page.route('**/api/sessions/a/messages?*', lambda route: route.fulfill(json={
-        'schema_version': 1, 'session_id': 'a', 'epoch': 'db', 'snapshot_revision': 2,
+        'schema_version': 1, 'path_generation': 0, 'display_version': None, 'session_id': 'a', 'epoch': 'db', 'snapshot_revision': 2,
         'has_more': False, 'items': [
             {'id': 'entry-final', 'type': 'asst', 'runId': committed_run,
              'finalAnswer': True, 'contentRole': 'final', 'text': 'Complete answer'},
@@ -163,7 +164,7 @@ def test_unloaded_question_jump_can_retry_after_a_failed_history_request(page):
 
     def history(route):
         if 'navigation=1' in route.request.url:
-            route.fulfill(json={'schema_version': 1, 'session_id': 'a', 'epoch': 'db',
+            route.fulfill(json={'schema_version': 1, 'path_generation': 0, 'display_version': None, 'session_id': 'a', 'epoch': 'db',
                                 'snapshot_revision': 1, 'has_more': False, 'items': [
                                     {'id': f'entry-{i}', 'text': f'Remote question {i}'} for i in range(4)]})
             return
@@ -171,7 +172,7 @@ def test_unloaded_question_jump_can_retry_after_a_failed_history_request(page):
         if len(attempts) == 1:
             route.fulfill(status=503, json={'error': 'Temporarily unavailable'})
             return
-        route.fulfill(json={'schema_version': 1, 'session_id': 'a', 'epoch': 'db',
+        route.fulfill(json={'schema_version': 1, 'path_generation': 0, 'display_version': None, 'session_id': 'a', 'epoch': 'db',
                             'snapshot_revision': 1, 'has_more': False, 'has_after': True,
                             'items': [{'id': 'entry-0', 'type': 'user', 'text': 'Remote question 0'},
                                       {'id': 'answer-0', 'type': 'asst', 'text': 'Loaded answer'}]})

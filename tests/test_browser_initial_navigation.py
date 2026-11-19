@@ -65,7 +65,6 @@ def test_ordinary_navigation_does_not_override_authorization_or_existing_work(st
     task = f"Navigate to {URL}"
     session = TaskSession(TaskPolicy(GRANTS), task_kind="hybrid", task_text=task,
                           required_source_urls=explicit_web_intent(task).urls)
-    snapshot = build_turn_snapshot(session)
     if state == "denied":
         session.controller_denied = ("browser_navigate",)
     elif state == "research":
@@ -81,7 +80,7 @@ def test_ordinary_navigation_does_not_override_authorization_or_existing_work(st
     else:
         session.task_text = f"打开 {URL}，把运单号原样写入 dispatch.json 的 carrier_label，保留前导零。browser_navigate"
         session.policy = replace(session.policy, grants=GRANTS | {"project.write", "browser.effect"})
-    assert initial_navigation(session, build_turn_snapshot(session) if state != "strict" else snapshot) is None
+    assert initial_navigation(session, build_turn_snapshot(session)) is None
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")

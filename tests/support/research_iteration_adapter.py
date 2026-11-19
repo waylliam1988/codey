@@ -22,6 +22,7 @@ from codey.research.run_result import ResearchRunResult
 from codey.research.source_gateway import _SearchProvider
 from codey.research.tools import ResearchTools
 from codey.runs.trace import RunTraceRecorder
+from codey.runtime.observe.events import RunEvent
 from codey.storage.managed_outputs import ManagedOutputStore
 from tests.support.kernel_runtime import run_research_iteration
 
@@ -97,6 +98,7 @@ class ResearchIteration:
         self.managed_outputs = managed_outputs
         self.controller_denied = controller_denied
         self._last_result: ResearchRunResult | None = None
+        self.events: list[RunEvent] = []
         if tools is not None:
             self.tools = tools
         else:
@@ -150,7 +152,7 @@ class ResearchIteration:
             project=self.project,
             task=str(question or ""),
             max_turns=self.max_turns,
-            on_event=lambda _event: None,
+            on_event=self.events.append,
             stop_flag=None,
             provider_id="local",
             run_id=self.run_id,

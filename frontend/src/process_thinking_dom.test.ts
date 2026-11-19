@@ -95,6 +95,28 @@ it('keeps Sending static without a meaningless disclosure arrow', async () => {
   expect(chat.querySelector('.process-summary')?.textContent).toBe('Sending…');
 });
 
+it('keeps the current retry active when rendering an earlier attempt checkpoint', async () => {
+  await import('./process');
+  const chat = document.createElement('div');
+  const render = vi.fn();
+  window.Process.append(
+    chat,
+    { type: 'request_activity', runId: 'retry', state: 'sending', supersededRunIds: ['first'] },
+    render,
+  );
+  window.Process.append(chat, { type: 'run_state', runId: 'first', state: 'error' }, render);
+  window.Process.append(
+    chat,
+    { type: 'request_activity', runId: 'retry', state: 'running', supersededRunIds: ['first'] },
+    render,
+  );
+  expect(chat.querySelectorAll('.process-block')).toHaveLength(1);
+  expect(chat.querySelector('.process-title')?.textContent).toBe('Working · Waiting for reply');
+  window.Process.append(chat, { type: 'run_state', runId: 'retry', state: 'done' }, render);
+  window.Process.append(chat, { type: 'run_state', runId: 'first', state: 'error' }, render);
+  expect(chat.querySelector('.process-title')?.textContent).toBe('Worked');
+});
+
 it('owns one progress indicator from initial request through approval and completion', async () => {
   await import('./process');
   const chat = document.createElement('div');

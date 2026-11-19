@@ -109,7 +109,7 @@ def acquire(directory: Path, page: Page, target: Target) -> list[EffectReceipt]:
             "unwrap(await tools.browser_navigate({url:inputs.url}));"
             "unwrap(await tools.browser_read({}));return unwrap(await tools.browser_eval({code:inputs.code}));",
             "inputs": {"url": page.url, "code": COLLECT}}},
-        {"tool": "done", "args": {"summary": "已读取页面。"}},
+        {"tool": "done", "args": {"paragraphs": ["已读取页面。"]}},
     ]
     remaining = iter(actions)
 

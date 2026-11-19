@@ -304,7 +304,12 @@ export interface RequestsDeps {
     const attempt = latest(request);
     runtime.Process.append(
       deps.$('chat'),
-      { type: 'request_activity', runId: attempt.runId, state: attempt.state },
+      {
+        type: 'request_activity',
+        runId: attempt.runId,
+        state: attempt.state,
+        supersededRunIds: request.attempts.slice(0, -1).map((previous) => previous.runId),
+      },
       () => {},
     );
     const focused = node.contains(document.activeElement);

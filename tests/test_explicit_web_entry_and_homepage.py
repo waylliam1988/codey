@@ -57,15 +57,22 @@ def test_chat_web_permission_does_not_imply_mandatory_reading(task: str) -> None
 
 
 @pytest.mark.parametrize("task", [
-    URL, f"解释这段代码：`open('{URL}')`", f"```python\nopen_url('{URL}')\n```", "查一下本地函数定义",
+    f"解释这段代码：`open('{URL}')`", f"```python\nopen_url('{URL}')\n```", "查一下本地函数定义",
     "不要上网看看", f"不要打开 {URL}", f"Don't open {URL}",
-    f"[查看帮助]({URL})",
 ])
 def test_examples_and_negations_do_not_create_required_urls(task: str) -> None:
     auth = derive_entry_auth({"intent": "chat", "task": task})
     assert "web.read" in auth.requested_capabilities
     assert not auth.sources_open_required
     assert not explicit_web_intent(task).urls
+
+
+@pytest.mark.parametrize("task", [URL, f"[查看帮助]({URL})", f"请上网查官方文档。\nSource: {URL}"])
+def test_original_standalone_sources_are_required_under_current_admission(task: str) -> None:
+    assert explicit_web_intent(task).urls == {URL}
+    legacy = explicit_web_intent(task, source_lines=False)
+    # An action in a Markdown label was already admitted before source lines.
+    assert legacy.urls == ({URL} if task.startswith("[") else set())
 
 
 def test_explicit_disabled_web_wins_over_request() -> None:
@@ -104,7 +111,7 @@ def test_newline_does_not_reassign_a_negated_or_unrelated_url() -> None:
     assert not explicit_web_intent(f"请上网查官方文档。\n额外参考链接：{other}").urls
     assert not explicit_web_intent(f"不要打开这个页面。\n{other}").urls
     assert not explicit_web_intent(f"不要打开这个页面。\nSource: {other}").urls
-    assert not explicit_web_intent(f"请上网查官方文档。\nSource: {other}").urls
+    assert explicit_web_intent(f"请上网查官方文档。\nSource: {other}").urls == {other}
     assert not explicit_web_intent(f"请打开这个页面。\n其他背景资料：{other}").urls
 
 

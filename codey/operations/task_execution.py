@@ -17,15 +17,22 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from codey.automation.browser_document import same_document
-from codey.knowledge.store import KnowledgeStore
 from codey.operations import browser_followups, browser_text_report, browser_upload
 from codey.operations.browser_detail import audit_browser_open, read_browser_source
+from codey.operations.research_resources import (
+    bind_browser_session as bind_browser_session,
+)
+from codey.operations.research_resources import (
+    build_research_tools as build_research_tools,
+)
+from codey.operations.research_resources import (
+    close_research_tools as close_research_tools,
+)
 from codey.operations.research_submission_handoff import traces_workflow_document
 from codey.policies.browser_requirement import PAGE_TRANSITIONS, browser_receipt_tools
 from codey.policies.tool_requirement import has_browser_field_bindings
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import ledger_observation, source_search_observation
-from codey.research.source_gateway import _SearchProvider
 from codey.runtime.core import cancellation
 from codey.runtime.core.execution_record import HitTarget
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -62,60 +69,6 @@ class _SerializableRecord(Protocol):
 
 def _record_payload(record: _SerializableRecord) -> JsonObject:
     return decode_json_object(record.to_dict())
-
-
-def close_research_tools(tools: ResearchTools | None) -> None:
-    """Release an owned search session without masking the task outcome."""
-    search = tools.search if tools is not None else None
-    close: object = getattr(search, "close", None)
-    if callable(close):
-        with contextlib.suppress(Exception):
-            close()
-
-
-def bind_browser_session(resources: ResearchTools) -> None:
-    """Attach the shared page resource once, for every production kernel entry."""
-    if resources.browser_session is None:
-        from codey.automation.browser_session import BrowserSession
-
-        resources.browser_session = BrowserSession.from_provider(resources.search)
-
-
-def build_research_tools(deps: object, *, session_id: str, project: str, browser_sources: bool = True,
-                         browser_actions: bool = False) -> ResearchTools:
-    """Build the execution resources; configuration errors propagate to entry."""
-    from codey.knowledge.changes import KnowledgeChanges
-    from codey.research.tools import ResearchTools
-
-    knowledge_store: object = getattr(deps, "knowledge_store", None)
-    if knowledge_store is not None and not isinstance(knowledge_store, KnowledgeStore):
-        raise TypeError("invalid knowledge store")
-    search_factory: object = getattr(deps, "search_factory", None)
-    if search_factory is None:
-        from codey.research.search_factory import default_research_search_provider
-        from codey.research.web_sources import WebSourceProvider
-
-        search_factory = default_research_search_provider if browser_sources or browser_actions else WebSourceProvider
-    if not callable(search_factory):
-        raise TypeError("invalid search factory")
-    search: object = search_factory()
-    if not isinstance(search, _SearchProvider):
-        raise TypeError("invalid search provider")
-    try:
-        resources = ResearchTools(
-            search=search, store=knowledge_store,
-            changes=KnowledgeChanges(root=knowledge_store.root) if knowledge_store is not None else None,
-            diagnostics=None, session_id=session_id, project=project,
-        )
-        if browser_actions:
-            bind_browser_session(resources)
-        return resources
-    except BaseException:
-        close: object = getattr(search, "close", None)
-        if callable(close):
-            with contextlib.suppress(Exception):
-                close()
-        raise
 
 
 def effective_project_profile(permission_profile: object) -> str:
@@ -985,46 +938,9 @@ class ExecutionDelegate:
             }
 
     def _lower_knowledge_sources(self, args: ToolArgs) -> tuple[ToolArgs, str]:
-        import re
+        from codey.operations.source_execution import lower_knowledge_sources
 
-        sources: dict[str, str] = dict(self.session.source_ids) if self.session is not None else {}
-
-        def lower(value: object) -> tuple[str, str]:
-            text = str(value or "").strip()
-            key = text.lower()
-            if key in sources:
-                return str(sources[key]), ""
-            if re.fullmatch(r"s[1-9][0-9]*", key):
-                return "", f"unknown source_id: {text}"
-            return text, ""
-
-        lowered = dict(args)
-        raw_sources = args.get("sources")
-        if isinstance(raw_sources, list):
-            rows: list[JsonValue] = []
-            for value in raw_sources:
-                resolved, error = lower(value)
-                if error:
-                    return {}, error
-                rows.append(resolved)
-            lowered["sources"] = rows
-        raw_evidence = args.get("evidence")
-        if isinstance(raw_evidence, list):
-            evidence: list[JsonValue] = []
-            for value in raw_evidence:
-                if not isinstance(value, dict):
-                    evidence.append(value)
-                    continue
-                row = dict(value)
-                for key in ("source_url", "source"):
-                    if key in row:
-                        resolved, error = lower(row[key])
-                        if error:
-                            return {}, error
-                        row[key] = resolved
-                evidence.append(row)
-            lowered["evidence"] = evidence
-        return lowered, ""
+        return lower_knowledge_sources(self.session, args)
 
     def _lower_finding_source(self, args: ToolArgs) -> tuple[ToolArgs, str]:
         # The selected passage owns the source identity. An explicitly supplied

@@ -2,11 +2,13 @@
 import pytest
 from playwright.sync_api import expect
 
+from tests.test_ui_workflow import admit_run
 from tests.test_ui_workflow import page as page
 from tests.test_ui_workflow import ui_browser as ui_browser
 
 
 def prepare(page, lines=1):
+    admit_run(page, "run")
     page.evaluate("""lines => {
         addToSession('a',{type:'user',text:'Inspect this project'});
         addToSession('a',{type:'asst',text:'Reading earlier results. '.repeat(300),runId:'run',

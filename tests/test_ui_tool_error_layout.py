@@ -27,6 +27,7 @@ def test_tool_errors_do_not_overlap_or_overflow(layout_browser, assets, width, c
         for name in ("tokens.css", "app.css"):
             page.add_style_tag(content=(ROOT / assets / name).read_text(encoding="utf-8"))
         page.add_style_tag(content="body { display:block; padding:16px; overflow:auto; }")
+        page.add_script_tag(content=frontend_source("failure_presentation").replace("export ", ""))
         page.add_script_tag(content=frontend_source("render"))
         page.evaluate("""compact => {
           const rows = [

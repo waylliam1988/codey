@@ -13,6 +13,7 @@ from playwright.sync_api import expect, sync_playwright
 from codey.app import server
 from codey.app.context import AppContext
 from codey.app.shell_approval_state import restore_pending_shell_approvals
+from codey.policies.command_line import resolve_shell
 from tests.http_context import attach_public_events
 from tests.support.shell_approval import seed_requested_approval
 from tests.test_ui_inplace_render import _goto_restored_ui
@@ -25,9 +26,15 @@ def test_response_loss_and_retries_preserve_original_task_and_single_execution(t
     ctx = AppContext(tmp_path, start_scheduler=False)
     script = "from pathlib import Path\nwith Path('executions').open('a') as f: f.write('executed\\n')\nprint('BROWSER_SHELL_RESULT')"
     command = f'"{sys.executable}" -c "import base64;exec(base64.b64decode(\'{base64.b64encode(script.encode()).decode()}\'))"'
+    shell = resolve_shell()
+    if shell.kind == "powershell":
+        command = "& " + command
+    if scope == 'session':
+        (tmp_path / 'approval_fixture.py').write_text(script, encoding='utf-8')
+        command = 'python approval_fixture.py'
     if scope == 'project':
         command = 'python -m unittest discover -v'
-    seed_requested_approval(ctx, command=command)
+    seed_requested_approval(ctx, command=command, shell=shell)
     original_task = ctx.durable.task("source")
     restore_pending_shell_approvals(ctx)
     approved_request = ctx.approvals.shell_snapshot()["approval"]

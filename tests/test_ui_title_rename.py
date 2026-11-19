@@ -7,6 +7,7 @@ import pytest
 from playwright.sync_api import expect
 
 from codey.storage.ui_state_store import UiStateStore
+from tests.test_ui_workflow import admit_run
 from tests.test_ui_workflow import page as page
 from tests.test_ui_workflow import ui_browser as ui_browser
 
@@ -155,6 +156,7 @@ def test_composition_finishing_during_pointer_down_does_not_swallow_chat_switch(
 
 
 def test_refresh_and_running_reply_preserve_editor_identity_caret_and_task(page):
+    admit_run(page, "rename-run")
     page.locator("#task").fill("draft during run")
     page.evaluate("handleServerEvent({type:'task_start',session_id:'a',run_id:'rename-run',task_revision:1,task_status:'running'});")
     editor = start_rename(page)

@@ -216,7 +216,7 @@ def test_mode_selection_trace_replaces_router() -> None:
     dispatch_src = (root / "codey" / "operations" / "task_phases" / "dispatch.py").read_text(encoding="utf-8")
     task_run_src = (root / "codey" / "operations" / "task_run.py").read_text(encoding="utf-8")
     assert "record_mode_selection" in dispatch_src
-    assert "record_mode_selection" in task_run_src
+    assert "dispatch_run_mode" in task_run_src
     assert "record_router" not in dispatch_src
     assert '"record_router"' not in task_run_src and "'record_router'" not in task_run_src
 
@@ -278,12 +278,10 @@ def test_connect_and_build_frame_has_no_work() -> None:
     assert "work" not in inspect.signature(dp.connect_and_build_frame).parameters
 
 
-def test_route_ghost_work_has_no_deps() -> None:
-    import inspect
-
+def test_retired_ghost_task_router_is_not_reintroduced() -> None:
     from codey.operations import task_run as tr
 
-    assert "deps" not in inspect.signature(tr._route_ghost_work).parameters
+    assert not hasattr(tr, "_route_ghost_work")
 
 
 def test_run_hybrid_mode_has_no_deps() -> None:

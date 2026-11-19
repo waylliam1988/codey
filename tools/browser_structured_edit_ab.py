@@ -34,12 +34,13 @@ DONE = object_schema({"summary": STRING}, ["summary"])
 OBSERVE_CODE = (
     "unwrap(await tools.browser_navigate({url:inputs.url}));"
     "const capture=await tools.browser_eval({code:inputs.projection});"
+    "unwrap(await tools.browser_read({}));"
     "const data=unwrap(capture).value;await store('source',capture.result_ref);return data;"
 )
 EDIT_CODE = (
     "const read=await tools.read_file({path:inputs.file});"
     "const ref=await load('source');"
-    "return unwrap(await tools.edit({read,changes:{[inputs.field]:{...inputs.selector,ref}}}));"
+    "return unwrap(await tools.edit({base_result_ref:read.result_ref,changes:{[inputs.field]:{...inputs.selector,ref}}}));"
 )
 
 

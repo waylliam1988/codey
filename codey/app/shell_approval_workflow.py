@@ -538,7 +538,14 @@ class ShellApprovalWorkflow:
                         pending,
                     )
                 else:
-                    self.ctx.record_shell_approval_fact(replace(first, kind="abandoned"))
+                    self._write_result(
+                        first,
+                        {"ok": False, "status": "spawn_error", "exit_code": None,
+                         "output": "Command was not executed because its approval, working directory, "
+                                   "or shell contract is no longer valid."},
+                        "execution_settled",
+                        pending,
+                    )
                 return
             if not ticket.session_id or not ticket.run_id:
                 ticket = replace(

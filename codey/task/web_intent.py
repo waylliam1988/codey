@@ -132,6 +132,16 @@ def _request_clauses(text: str, *, source_lines: bool) -> list[str]:
                 clauses[line][index] += " " + " ".join(tokens)
                 break
         else:
+            # A neighboring open request already names its target. Its source
+            # lines are background, rather than additional opening commands.
+            if any(0 <= line < len(lines) and clauses[line]
+                   and any(_NEGATED.search(clauses[line][index][:action.start()]) is None
+                           for action in _OPEN.finditer(clauses[line][index]))
+                   and _URL_TOKEN.search(clauses[line][index]) is not None
+                   for line, index in targets):
+                for row in rows:
+                    clauses[row].clear()
+                continue
             # A source address on its own line is task input even when the
             # surrounding question does not repeat an access verb.
             for row in rows:

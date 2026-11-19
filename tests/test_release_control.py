@@ -41,19 +41,21 @@ def running_service(tmp_path):
                                stdout=log, stderr=log,
                                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
     client = ControlClient(home, operator=True)
-    wait_for(lambda: client.call("get_health"))
-    yield home, client
     try:
-        client.lifecycle("drain")
-        client.lifecycle("shutdown")
-    except ControlError:
-        pass
-    try:
-        process.wait(timeout=20)
-    except subprocess.TimeoutExpired:
-        process.terminate()
-        process.wait(timeout=10)
-    log.close()
+        wait_for(lambda: client.call("get_health"))
+        yield home, client
+    finally:
+        try:
+            client.lifecycle("drain")
+            client.lifecycle("shutdown")
+        except ControlError:
+            pass
+        try:
+            process.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            process.wait(timeout=10)
+        log.close()
 
 
 def test_verification_mode_blocks_all_admissions(tmp_path):

@@ -42,7 +42,7 @@ class WriterRequestForwardsWorkspaceRevisionStoreTests(unittest.TestCase):
         ctx = SimpleNamespace(
             writer_attempt_index=0,
             frame=frame,
-            state=SimpleNamespace(durable=durable, run_registry=SimpleNamespace(stop_flag=None)),
+            state=SimpleNamespace(durable=durable, memory=None, stop_flag_for=lambda _run_id: None),
             request=SimpleNamespace(session_id="session-1", requested_capabilities=()),
             project="project",
             deps=deps,
@@ -68,7 +68,7 @@ class WriterRequestForwardsWorkspaceRevisionStoreTests(unittest.TestCase):
             checkpoint=CheckpointView(),
         )
 
-        with mock.patch.object(project_writer_phase, "_ghost_experiences", return_value=""), mock.patch.object(
+        with mock.patch.object(
             project_writer_phase, "_build_research_tools", return_value=None
         ), mock.patch.object(project_writer_phase, "managed_tool_fns", return_value=None):
             project_writer_phase._run_one_writer_attempt(ctx, spec, lambda _turn: None)
@@ -122,7 +122,7 @@ class WriterRequestForwardsWorkspaceRevisionStoreTests(unittest.TestCase):
             checkpoint=CheckpointView(),
         )
 
-        with mock.patch.object(project_writer_phase, "_ghost_experiences", return_value=""), self.assertRaises(
+        with self.assertRaises(
             RuntimeError
         ) as raised:
             project_writer_phase._run_one_writer_attempt(ctx, spec, lambda _turn: None)

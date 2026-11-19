@@ -124,5 +124,6 @@ def test_codemode_whole_file_update_reuses_child_receipt_in_same_runtime(tmp_pat
     else:
         assert not result.ok
         error = result.model_text.split("Current codemode contract:")[0]
-        assert "readResult.result_ref" in error and "not readResult.value.result_ref" in error
+        assert 'Undeclared result field "base_result_ref"' in error
+        assert "result_ref" in error
         assert (tmp_path / "a.py").read_text() == "before\n"

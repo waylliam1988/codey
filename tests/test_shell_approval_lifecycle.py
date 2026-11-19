@@ -596,3 +596,29 @@ def test_shutdown_between_result_and_resume_preserves_delivery_for_restart(tmp_p
         if closer.ident:
             closer.join(5)
         ctx.close()
+
+
+def test_invalid_shell_contract_settles_claim_without_spawning_or_replaying(tmp_path, monkeypatch):
+    from codey.policies.command_line import resolve_shell
+
+    ctx = AppContext(tmp_path, start_scheduler=False)
+    shell = resolve_shell()
+    invalid = "if (" if shell.kind == "powershell" else "if then"
+    seed(ctx, command=invalid, shell=shell, continue_after=False)
+    execute = Mock(side_effect=AssertionError("invalid command must never spawn"))
+    monkeypatch.setattr(shell_service, "execute_shell_ticket", execute)
+    try:
+        status, _ = api.shell_approval_response(ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=Mock())
+        assert status == 202
+        assert ctx.shell_approval_workflow.wait(5)
+        settled = ctx.shell_approval_workflow.status("approval")
+        assert settled["execution"] == "settled"
+        fact = ctx.shell_approval_records.latest("approval")
+        result = ctx.shell_approval_workflow._read_result(fact)
+        assert result["status"] == "spawn_error"
+        assert "not executed" in result["output"]
+        assert api.shell_approval_response(ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=Mock())[0] == 202
+        assert ctx.shell_approval_workflow.wait(5)
+        execute.assert_not_called()
+    finally:
+        ctx.close()

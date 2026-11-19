@@ -1,6 +1,7 @@
 """Unconfirmed HTTP admission remains cancellable without a second task."""
 from playwright.sync_api import expect
 
+from tests.test_ui_workflow import admit_run
 from tests.test_ui_workflow import page as page
 from tests.test_ui_workflow import ui_browser as ui_browser
 
@@ -38,6 +39,7 @@ def test_sending_is_stoppable_and_late_ack_does_not_revive_it(page):
     expect(page.locator('#stop')).to_be_hidden()
     assert page.evaluate('Requests.forRun("a",sentRun).attempt.state') == 'paused'
     # A task accepted just before Stop uses the same cancellation identity.
+    admit_run(page, page.evaluate("sentRun"))
     page.evaluate("handleServerEvent({type:'task_start',session_id:'a',run_id:sentRun,mode:'chat'})")
     page.wait_for_function('stopCalls.length === 2')
     assert len(set(page.evaluate('stopCalls'))) == 1
@@ -57,6 +59,7 @@ def test_model_selection_during_running_does_not_change_submitted_request(page):
     page.locator('#task').fill('Run with the original model')
     page.locator('#send').click()
     page.wait_for_function('!!window.submitted && !Composer.isSending()')
+    admit_run(page, page.evaluate("submitted.run_id"))
     page.evaluate("handleServerEvent({type:'task_start',session_id:'a',run_id:submitted.run_id,task_revision:1,task_status:'running'})")
     expect(page.locator('#provider-button')).to_be_enabled()
     page.locator('#provider-button').click()
@@ -67,8 +70,12 @@ def test_model_selection_during_running_does_not_change_submitted_request(page):
 
 
 def test_queued_message_captures_model_before_awaiting_metadata_save(page):
+    admit_run(page, "running")
     page.evaluate("""() => {
       handleServerEvent({type:'task_start',session_id:'a',run_id:'running',task_revision:1,task_status:'running'});
+    }""")
+    page.wait_for_function("ConversationUI.acceptsRun('a', 'running')")
+    page.evaluate("""() => {
       UiState.ensureSaved=()=>new Promise(resolve=>{window.saved=resolve});
       const real=fetch;
       window.fetch=(url,init)=>{
@@ -120,10 +127,16 @@ def test_stop_targets_sending_chat_not_another_chats_running_task(page):
 
 
 def test_confirmed_execution_clears_unknown_admission_and_allows_next_send(page):
+    run_id = page.evaluate("window.confirmedRun=Requests.begin('a','Delivery pending').attempt.runId")
+    admit_run(page, run_id)
     page.evaluate("""() => {
-      const run=Requests.begin('a','Delivery pending').attempt.runId;
+      const run=confirmedRun;
       Requests.fail('a',run,'Delivery unknown',{sendFailure:'admission_unconfirmed',runOwner:'old'});
       handleServerEvent({type:'task_start',session_id:'a',run_id:run,task_revision:1,task_status:'running'});
+    }""")
+    page.wait_for_function("ConversationUI.acceptsRun('a', confirmedRun)")
+    page.evaluate("""() => {
+      const run=confirmedRun;
       const attempt=Requests.forRun('a',run).attempt;
       if(attempt.sendFailure || attempt.error || attempt.runOwner) throw new Error('Stale admission metadata');
       handleServerEvent({type:'task_done',session_id:'a',run_id:run,task_revision:2,task_status:'completed',stop_reason:'done',summary:'Completed'});

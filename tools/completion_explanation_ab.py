@@ -102,7 +102,8 @@ def production_source_digest() -> str:
                              capture_output=True, text=True, encoding="utf-8").stdout.splitlines()
     digest = hashlib.sha256()
     for name in sorted(tracked):
-        digest.update(name.encode() + b"\0" + (ROOT / name).read_bytes())
+        path = ROOT / name
+        digest.update(name.encode() + b"\0" + (path.read_bytes() if path.is_file() else b"deleted"))
     return digest.hexdigest()
 
 

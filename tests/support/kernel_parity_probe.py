@@ -272,7 +272,14 @@ def research_loop(case, legacy):
 
     operations = []
 
-    class Search:
+    if legacy:
+        search_base = object
+    else:
+        from codey.research.browser_search import BrowserSearchProvider
+
+        search_base = BrowserSearchProvider
+
+    class Search(search_base):
         def search(self, query, limit=8):
             operations.append(["search", query])
             return [{"title": "Helium article", "url": "https://example.com/helium", "snippet": "Helium supply."}]

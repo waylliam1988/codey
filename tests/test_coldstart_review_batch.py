@@ -135,33 +135,29 @@ class ColdstartReviewBatchTests(unittest.TestCase):
                     last_key = (str(paths[-1]), "raw")
                     self.assertIn(last_key, http_plumbing._STATIC_CACHE)
 
-    def test_cli_ghost_export_uses_control_surface_shape(self) -> None:
+    def test_cli_memory_export_uses_current_store_shape(self) -> None:
         from codey.app import cli
-
         with tempfile.TemporaryDirectory() as td:
-            args = mock.Mock(ghost_cmd="export", state_home=td)
             stdout = io.StringIO()
             with mock.patch("sys.stdout", stdout):
-                code = cli.cmd_ghost(args)
+                code = cli.main(["ghost", "export", "--state-home", td])
             payload = json.loads(stdout.getvalue())
             self.assertEqual(code, 0)
-            self.assertTrue(payload["ok"])
-            self.assertIn("inbox", payload)
-            self.assertIn("hebbian", payload)
-            self.assertIn("generated_at", payload)
+            self.assertIsInstance(payload["enabled"], bool)
+            self.assertEqual(payload["items"], [])
+            self.assertEqual(payload["proposals"], [])
 
-    def test_cli_ghost_reset_and_delete_scope_via_control_surface(self) -> None:
+    def test_cli_memory_deletes_only_the_requested_scope(self) -> None:
         from codey.app import cli
-
         with tempfile.TemporaryDirectory() as td:
-            args = mock.Mock(ghost_cmd="reset", state_home=td, yes=True)
             stdout = io.StringIO()
             with mock.patch("sys.stdout", stdout):
-                code = cli.cmd_ghost(args)
-            payload = json.loads(stdout.getvalue())
+                code = cli.main(["ghost", "delete_scope", "--state-home", td, "--session-id", "s"])
             self.assertEqual(code, 0)
-            self.assertEqual(payload["action"], "reset_all")
-            self.assertTrue(payload["ok"])
+            self.assertEqual(json.loads(stdout.getvalue()), {"ok": True, "deleted": 0})
+            with self.assertRaises(SystemExit) as failure:
+                cli.main(["ghost", "reset", "--state-home", td])
+            self.assertEqual(failure.exception.code, 2)
 
     def test_provider_availability_ttl_caches_cdp_scan(self) -> None:
         from codey.app import provider_services

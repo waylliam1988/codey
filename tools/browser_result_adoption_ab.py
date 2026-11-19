@@ -88,6 +88,8 @@ def result_hint(session: TaskSession, snapshot: TurnSnapshot, context: Completio
 def intervention(directory: Path, arm: str, source: str, harness: str) -> Iterator[None]:
     original_request = KernelContext.request_snapshot
     original_invoke = CodeModeHost.invoke
+    original_leaf = CodeModeHost._invoke_one
+    proposals: dict[tuple[str, int], JsonObject] = {}
     latest: tuple[bool, str] = (False, '')
 
     def query(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
@@ -114,14 +116,18 @@ def intervention(directory: Path, arm: str, source: str, harness: str) -> Iterat
         if index is None:
             index = host._next_child
         # Retain the proposed purpose before the original host strips it.
-        proposed = decode_json_object(args)
-        result = original_invoke(host, name, args)
+        proposals[host.execution_id, index] = decode_json_object(args)
+        return original_invoke(host, name, args)
+
+    def invoke_leaf(host: CodeModeHost, index: int, name: str, args: JsonObject, *, query: bool) -> ToolResult:
+        result = original_leaf(host, index, name, args, query=query)
+        proposed = proposals.get((host.execution_id, index), args)
         plans = canonical_json_object(host._catalog[name].parameters).get('x-codey-click-plans') if name == 'browser_click' else None
         followups = plans.get('result', []) if isinstance(plans, dict) and proposed.get('purpose') == 'result' else []
         append_json(directory / 'invocations.jsonl', {'call_id': f'{host.execution_id}:child:{index}',
             'parent': host.execution_id, 'name': name, 'args': proposed,
             'followups': followups,
-            'ok': result.get('ok') if isinstance(result, dict) else None})
+            'ok': result.ok})
         return result
 
     class GuardedProvider(ExperimentProvider):
@@ -134,6 +140,7 @@ def intervention(directory: Path, arm: str, source: str, harness: str) -> Iterat
 
     with (patch.object(handoff, 'query_result_handoff', query),
           patch.object(KernelContext, 'request_snapshot', request), patch.object(CodeModeHost, 'invoke', invoke),
+          patch.object(CodeModeHost, '_invoke_one', invoke_leaf),
           patch.object(live, 'ExperimentProvider', GuardedProvider)):
         yield
 
@@ -145,7 +152,12 @@ def jsonl(path: Path) -> list[JsonObject]:
 def invocation_metrics(invocations: list[JsonObject], receipts: list[ToolResult]) -> JsonObject:
     by_id = {row.call.call_id: row for row in receipts}
     executed: list[JsonObject] = []
-    for row in invocations:
+    # Recursive follow-ups return before their parent invoke returns. Rebuild
+    # invocation order from the original child indices rather than log order.
+    parent_order = {str(row['parent']): index for index, row in reversed(list(enumerate(invocations)))}
+    ordered = sorted(invocations, key=lambda row: (parent_order[str(row['parent'])],
+                     int(str(row['call_id']).rsplit(':', 1)[1])))
+    for row in ordered:
         receipt = by_id.get(str(row['call_id']))
         if receipt is None:
             raise ValueError('A traced host invocation has no original committed receipt.')
@@ -175,7 +187,8 @@ def invocation_metrics(invocations: list[JsonObject], receipts: list[ToolResult]
     # using the traced parent only to group nested calls into model requests.
     parents = {str(row['call_id']): str(row['parent']) for row in executed}
     manual_rows = [row for row in receipts if row.call.call_id not in automatic
-                   and row.call.name in {'browser_wait', 'browser_read'}]
+                   and row.call.name in {'browser_wait', 'browser_read'}
+                   and 'required-source:navigation' not in row.call.call_id]
     manual = Counter(row.call.name for row in manual_rows)
     clicks = [row for row in receipts if row.call.name == 'browser_click']
     return {'result_invocations': len(result_rows),

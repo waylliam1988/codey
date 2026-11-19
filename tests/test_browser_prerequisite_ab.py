@@ -60,7 +60,9 @@ def test_research_wait_read_and_citation_use_the_same_document(
                  if isinstance(data := body.get("data"), dict) and data.get("purpose") == "done"]
         assert any(experiment.CHECK in json.dumps(data) for data in proof)
         if case == "old_citation":
-            assert sum(r.result.call.name == "browser_read" for r in receipts) == 2
+            reads = [r.result for r in receipts if r.result.call.name == "browser_read"]
+            assert sum("required-source:navigation" in r.call.call_id for r in reads) == 1
+            assert sum("required-source:navigation" not in r.call.call_id for r in reads) == 2
             assert "[e2]" in str(early["feedback"]) and row["model_calls"] == 1
 
 
