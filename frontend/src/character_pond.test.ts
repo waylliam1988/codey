@@ -81,18 +81,20 @@ function advance(frames: number) {
   }
 }
 
-it('animates without pointer input and resumes from blur on hover without clicking', () => {
+it('keeps animating on the first blur without waiting for the pointer to return', () => {
   dispose = mountCharacterPond(main);
   advance(25);
   expect(ctx.fillText).toHaveBeenCalled();
   expect(callbacks.size).toBe(1);
+  const paints = ctx.fillText.mock.calls.length;
   window.dispatchEvent(new Event('blur'));
-  expect(callbacks.size).toBe(0);
-  // No focus, pointerdown, or click is dispatched.
-  main.dispatchEvent(new MouseEvent('pointermove', { clientX: 100, clientY: 140, bubbles: true }));
-  expect(callbacks.size).toBe(1);
   advance(10);
+  expect(ctx.fillText.mock.calls.length).toBeGreaterThan(paints);
+  expect(callbacks.size).toBe(1);
+
+  main.dispatchEvent(new MouseEvent('pointermove', { clientX: 100, clientY: 140, bubbles: true }));
   main.dispatchEvent(new Event('pointerleave'));
+  window.dispatchEvent(new Event('blur'));
   expect(callbacks.size).toBe(1);
 });
 
@@ -121,6 +123,7 @@ it('pauses on hidden pages and restores without relying on reduced-motion prefer
   hidden.mockReturnValue(true);
   document.dispatchEvent(new Event('visibilitychange'));
   expect(callbacks.size).toBe(0);
+  window.dispatchEvent(new Event('blur'));
   hidden.mockReturnValue(false);
   document.dispatchEvent(new Event('visibilitychange'));
   expect(callbacks.size).toBe(1);

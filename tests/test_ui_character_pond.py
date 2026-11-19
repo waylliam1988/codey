@@ -20,7 +20,7 @@ def observe_paint(page):
     }""")
 
 
-def test_ambient_green_and_hover_wake_need_no_click(page):
+def test_ambient_green_keeps_rendering_on_first_blur_without_pointer_input(page):
     page.emulate_media(reduced_motion='reduce')
     field = page.locator('.character-pond')
     expect(field).to_have_css('opacity', '1')
@@ -30,8 +30,7 @@ def test_ambient_green_and_hover_wake_need_no_click(page):
     page.wait_for_function('pondGreens > 0')
     page.evaluate("window.dispatchEvent(new Event('blur'))")
     before = page.evaluate('pondPaints')
-    page.wait_for_timeout(100)
-    assert page.evaluate('pondPaints') == before
+    page.wait_for_function('before => pondPaints > before', arg=before, timeout=1000)
     box = field.bounding_box()
     page.mouse.move(box['x'] + 100, box['y'] + 120)
     page.mouse.move(box['x'] + 300, box['y'] + 200, steps=15)

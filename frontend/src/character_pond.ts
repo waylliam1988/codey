@@ -33,7 +33,6 @@ export function mountCharacterPond(main: HTMLElement): () => void {
   let lastFrame = 0;
   let clock = 0;
   let nextAmbient = 0.25;
-  let active = true;
   let inView = true;
   let showing = false;
   let disposed = false;
@@ -59,7 +58,7 @@ export function mountCharacterPond(main: HTMLElement): () => void {
   }
   function draw(time: number) {
     frame = 0;
-    if (disposed || document.hidden || !active || !inView || !showing) return;
+    if (disposed || document.hidden || !inView || !showing) return;
     if (time - lastFrame < 32) {
       frame = requestAnimationFrame(draw);
       return;
@@ -119,7 +118,7 @@ export function mountCharacterPond(main: HTMLElement): () => void {
     frame = requestAnimationFrame(draw);
   }
   function wake() {
-    if (!disposed && !frame && showing && active && inView && !document.hidden) {
+    if (!disposed && !frame && showing && inView && !document.hidden) {
       lastFrame = performance.now() - 34;
       frame = requestAnimationFrame(draw);
     }
@@ -177,7 +176,6 @@ export function mountCharacterPond(main: HTMLElement): () => void {
   }
   function move(event: PointerEvent) {
     if (document.hidden || !empty()) return;
-    active = true;
     const box = canvas.getBoundingClientRect();
     const x = event.clientX - box.left,
       y = event.clientY - box.top;
@@ -209,14 +207,6 @@ export function mountCharacterPond(main: HTMLElement): () => void {
     if (document.hidden) pause();
     else wake();
   };
-  const blur = () => {
-    active = false;
-    pause();
-  };
-  const focus = () => {
-    active = true;
-    wake();
-  };
   const classes = new MutationObserver(sync);
   classes.observe(main, { attributes: true, attributeFilter: ['class'] });
   const size = new ResizeObserver(resize);
@@ -230,8 +220,7 @@ export function mountCharacterPond(main: HTMLElement): () => void {
   main.addEventListener('pointermove', move, { passive: true });
   main.addEventListener('pointerleave', leave);
   document.addEventListener('visibilitychange', visibility);
-  window.addEventListener('blur', blur);
-  window.addEventListener('focus', focus);
+  window.addEventListener('blur', leave);
   sync();
   return () => {
     disposed = true;
@@ -243,8 +232,7 @@ export function mountCharacterPond(main: HTMLElement): () => void {
     main.removeEventListener('pointermove', move);
     main.removeEventListener('pointerleave', leave);
     document.removeEventListener('visibilitychange', visibility);
-    window.removeEventListener('blur', blur);
-    window.removeEventListener('focus', focus);
+    window.removeEventListener('blur', leave);
     canvas.remove();
   };
 }

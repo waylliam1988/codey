@@ -161,8 +161,9 @@ Do not add a glow, frame, click target, or visible controls.
 
 Occasional random ripples expand and decay; pointer movement alone creates a
 gentle wake, including after the preview loses focus. Leaving the canvas stops
-pointer ripples while ambient ripples continue. Pause rendering when hidden,
-unfocused or offscreen; cap frame rate, pixel ratio and concurrent ripples.
+pointer ripples while ambient ripples continue. Keep rendering while visible
+even when another window has focus. Pause when hidden or offscreen, and cap
+frame rate, pixel ratio and concurrent ripples.
 Fade out over 500ms after the first message, then stop rendering and release
 the field data. Re-entering an empty chat restores the effect. This explicitly
 approved ambient effect and its fade ignore the system reduced-motion setting;
