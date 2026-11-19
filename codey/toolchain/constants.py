@@ -26,7 +26,8 @@ EXACT_REPLACEMENT_CONTEXT_HINT = (
     "Include surrounding lines and the target text together in old_string of the same replacement "
     "so it matches one location uniquely. Preserve those surrounding lines in new_string. "
     "Separate replacement objects do not scope one another. "
-    "After a mismatch, reread the file instead of repeating the failed search. "
+    "Use the returned current context to refine the replacement; if insufficient, reread the file. "
+    "Do not repeat the failed search unchanged. "
     "For a difficult multiline change, use content with the complete read_file base_result_ref, "
     "preserving unrelated text."
 )

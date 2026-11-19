@@ -36,7 +36,7 @@ from codey.runtime.core.models import (
     normalized_managed_output,
 )
 from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES
-from codey.storage.atomic_io import write_text_atomic
+from codey.storage.atomic_io import write_bytes_atomic, write_text_atomic
 from codey.storage.execution_output_store import ExecutionOutputStore
 from codey.toolchain.constants import (
     EXACT_REPLACEMENT_CONTEXT_HINT,
@@ -45,7 +45,8 @@ from codey.toolchain.constants import (
     STALE_READ_REFERENCE_CODE,
     STALE_READ_REFERENCE_ERROR,
 )
-from codey.toolchain.indentation import align_replacement, valid_python
+from codey.toolchain.edit_text import TextEdit, count_matches, normalized_text
+from codey.toolchain.indentation import align_replacement, boundary_replacement, valid_python
 from codey.toolchain.line_prefix import strip_line_number_prefixes as _strip_line_number_prefixes
 from codey.toolchain.presentation import edit_preview
 from codey.utils.failure_output import failure_excerpt
@@ -111,7 +112,7 @@ def retry_replacement_without_line_numbers(content: str, block: EditBlock) -> Ed
     if not candidate.old_string:
         return None
     # Stripped search must match exactly once, otherwise refuse (atomicity).
-    if content.count(candidate.old_string) != 1:
+    if count_matches(content, candidate.old_string) != 1:
         return None
     # Never write line numbers into the file: the replacement must not start
     # with a stripped prefix shape that we just removed.
@@ -402,7 +403,12 @@ def _write_text_after_final_path_check(
 
         if path_hash(path) != expected_version:
             return ToolOutcome.error(STALE_READ_REFERENCE_ERROR, error_code=STALE_READ_REFERENCE_CODE)
-    write_text_atomic(path, content)
+    if tool == "edit":
+        # Edit coordinates already preserve source endings; text-mode encoding
+        # would normalize untouched mixed-ending lines a second time.
+        write_bytes_atomic(path, content.encode("utf-8"))
+    else:
+        write_text_atomic(path, content)
     return None
 
 
@@ -446,19 +452,6 @@ def write_file(root: Path, rel: str, content: str, *, expected_version: str | No
         changed=True,
         presentation={"preview": edit_preview(rel, before, content)},
     )
-
-
-def _replace_unique(content: str, search: str, replace: str) -> tuple[str, bool]:
-    count = content.count(search)
-    if count == 1:
-        return content.replace(search, replace, 1), True
-    if count == 0 and "\r\n" in content and "\r\n" not in search:
-        crlf_search = search.replace("\n", "\r\n")
-        crlf_replace = replace.replace("\n", "\r\n")
-        crlf_count = content.count(crlf_search)
-        if crlf_count == 1:
-            return content.replace(crlf_search, crlf_replace, 1), True
-    return content, False
 
 
 def _bounded_failure_output(lines: list[str]) -> str:
@@ -584,7 +577,7 @@ def _first_match_start_lines(
         line_number += content.count("\n", newline_offset, position)
         lines.append(line_number)
         newline_offset = position
-        offset = position + len(search)
+        offset = position + 1
     return lines
 
 
@@ -600,6 +593,15 @@ def _render_multiple_match_context(
     if match_count > len(positions):
         lines.append("Additional matches omitted.")
     lines.append(EXACT_REPLACEMENT_CONTEXT_HINT)
+    source_lines = content.split("\n")
+    for position in positions:
+        lines.append(f"Context for match at line {position}:")
+        for index in range(max(0, position - 3), position):
+            line = source_lines[index]
+            if len(line) > 80:
+                lines.append(f"Line {index + 1} omitted; use read_file offset={index + 1} limit=1.")
+            else:
+                lines.append(f"{index + 1:>4} | {line}")
     return _bounded_failure_output(lines)
 
 
@@ -614,6 +616,7 @@ def _search_not_found(
     *,
     original_content: str,
     search: str,
+    replacement: str,
     replacement_index: int,
     replacement_count: int,
 ) -> ToolOutcome:
@@ -621,6 +624,9 @@ def _search_not_found(
     note = _replacement_failure_note(replacement_index, replacement_count)
     if note:
         lines.append(note)
+    if len(replacement.strip()) >= 20 and replacement in original_content:
+        lines.append("new_string is already in the file, so this edit may already be applied. "
+                     "This is only a hint; no replacement was written. Verify its location before retrying.")
     context = _render_edit_failure_context(original_content, search)
     if context:
         lines.append("")
@@ -646,10 +652,7 @@ def _multiple_matches(
     if note:
         lines.append(note)
     original_search = search
-    original_count = original_content.count(original_search)
-    if original_count == 0 and "\r\n" in original_content and "\r\n" not in search:
-        original_search = search.replace("\n", "\r\n")
-        original_count = original_content.count(original_search)
+    original_count = count_matches(original_content, original_search)
     context = (
         _render_multiple_match_context(original_content, original_search, match_count)
         if original_count == match_count
@@ -718,7 +721,8 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
     if verify_error is not None:
         return verify_error
     try:
-        content = path.read_text(encoding="utf-8")
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            content = handle.read()
     except UnicodeDecodeError:
         return ToolOutcome.error(f"not utf-8 text: {rel}")
     except (OSError, ValueError):
@@ -726,28 +730,33 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
 
     updated = content
     aligned = 0
+    boundary_adjusted = 0
     for index, block in enumerate(blocks, start=1):
-        exact_count = updated.count(block.old_string)
-        crlf_count = 0
-        if exact_count == 0 and "\r\n" in updated and "\r\n" not in block.old_string:
-            crlf_count = updated.count(block.old_string.replace("\n", "\r\n"))
-        total = exact_count or crlf_count
+        view = normalized_text(updated)
+        old, new = normalized_text(block.old_string), normalized_text(block.new_string)
+        total = count_matches(view, old)
         if total == 0:
-            retried = retry_replacement_without_line_numbers(updated, block)
+            retried = retry_replacement_without_line_numbers(view, EditBlock(old, new))
             if retried is not None:
-                updated, replaced = _replace_unique(updated, retried.old_string, retried.new_string)
-                if replaced:
-                    continue
-            recovered = (align_replacement(updated, block.old_string, block.new_string)
+                start = view.find(retried.old_string)
+                updated = TextEdit(start, start + len(retried.old_string), retried.new_string).apply(updated)
+                continue
+            recovered = (align_replacement(view, old, new)
                          if Path(rel).suffix.lower() == ".py" else None)
             if recovered is not None:
-                updated = recovered
+                updated = recovered.apply(updated)
                 aligned += 1
+                continue
+            boundary = boundary_replacement(view, old, new) if Path(rel).suffix.lower() == ".py" else None
+            if boundary is not None:
+                updated = boundary.apply(updated)
+                boundary_adjusted += 1
                 continue
             return _search_not_found(
                 rel,
-                original_content=content,
-                search=block.old_string,
+                original_content=normalized_text(content),
+                search=old,
+                replacement=new,
                 replacement_index=index,
                 replacement_count=len(blocks),
             )
@@ -755,42 +764,40 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
             return _multiple_matches(
                 rel,
                 total,
-                original_content=content,
-                search=block.old_string,
+                original_content=normalized_text(content),
+                search=old,
                 replacement_index=index,
                 replacement_count=len(blocks),
             )
-        updated, replaced = _replace_unique(updated, block.old_string, block.new_string)
-        if not replaced:
-            return _search_not_found(
-                rel,
-                original_content=content,
-                search=block.old_string,
-                replacement_index=index,
-                replacement_count=len(blocks),
-            )
+        start = view.find(old)
+        updated = TextEdit(start, start + len(old), new).apply(updated)
 
     if updated == content:
         return ToolOutcome(f"edited {rel} (no changes)", True)
     if len(updated.encode("utf-8")) > WRITE_MAX_FILE_BYTES:
         return ToolOutcome.error(f"file too large to write: {rel}")
-    if aligned and not valid_python(updated):
-        return ToolOutcome.error("automatic indentation cannot safely apply this batch: resulting Python is invalid; no replacements written")
+    if (aligned or boundary_adjusted) and not valid_python(normalized_text(updated)):
+        return ToolOutcome.error("automatic edit assistance cannot safely apply this batch: resulting Python is invalid; no replacements written")
     syntax_hint = _python_syntax_regression_hint(rel, content, updated)
     from codey.workspace.paths import content_hash
 
     write_error = _write_text_after_final_path_check(root, rel, updated, tool="edit",
-        expected_version=content_hash(content) if aligned else None)
+        expected_version=content_hash(normalized_text(content)))
     if write_error is not None:
         return write_error
     count = len(blocks)
     label = "replacement" if count == 1 else "replacements"
+    assistance_audit: dict[str, object] = {
+        key: value for key, value in (("indentation_adjusted", aligned), ("boundary_adjusted", boundary_adjusted)) if value
+    }
     return ToolOutcome(
         f"edited {rel} ({count} {label})"
-        + (f"\nAutomatically aligned outer indentation for {aligned} replacement(s)." if aligned else "") + syntax_hint,
+        + (f"\nAutomatically aligned outer indentation for {aligned} replacement(s)." if aligned else "")
+        + (f"\nAutomatically adjusted fragment boundary for {boundary_adjusted} replacement(s)." if boundary_adjusted else "")
+        + syntax_hint,
         True,
         changed=True,
-        audit={"indentation_adjusted": aligned} if aligned else {},
+        audit=assistance_audit,
         presentation={"preview": edit_preview(rel, content, updated)},
     )
 

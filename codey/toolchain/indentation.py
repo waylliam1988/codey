@@ -1,9 +1,11 @@
-"""Recover only a unique, uniform outer-space offset in an existing edit."""
+"""Recover unique Python edits with a uniform margin or safe fragment boundary."""
 from __future__ import annotations
 
 import ast
 import io
 import tokenize
+
+from codey.toolchain.edit_text import TextEdit, count_matches
 
 
 def _lines(text: str) -> list[str]:
@@ -53,8 +55,8 @@ def _offset(window: list[str], search: list[str]) -> int | None:
     return delta
 
 
-def align_replacement(content: str, search: str, replacement: str) -> str | None:
-    """Prepare one file value; the caller still owns version checks and writing.
+def align_replacement(content: str, search: str, replacement: str) -> TextEdit | None:
+    """Prepare edit coordinates; the caller owns version checks and writing.
 
     Exact edits never enter here. Every physical line must match, including its
     relative indentation, and the replacement must retain the old block margin.
@@ -92,4 +94,36 @@ def align_replacement(content: str, search: str, replacement: str) -> str | None
     if not search.endswith("\n") and content[start:end].endswith("\n"):
         end -= 1
     updated = content[:start] + shifted + content[end:]
-    return updated if valid_python(updated) else None
+    return TextEdit(start, end, shifted) if valid_python(updated) else None
+
+
+def boundary_replacement(content: str, search: str, replacement: str) -> TextEdit | None:
+    """Recover symmetric fragment padding, or one extra newline at actual EOF.
+
+    Python tokenization excludes multiline literals. The old fragment still has
+    to match uniquely at a line boundary, with valid Python before and after.
+    """
+    padding = search.rsplit("\n", 1)[-1]
+    eof_only = False
+    if "\n" in search and padding and not padding.strip(" ") and replacement.endswith("\n" + padding):
+        old, new = search[:-len(padding)], replacement[:-len(padding)]
+    elif search.endswith("\n") and replacement.endswith("\n"):
+        old, new = search[:-1], replacement[:-1]
+        eof_only = True
+    else:
+        return None
+    if not old.strip() or count_matches(content, old) != 1:
+        return None
+    start = content.find(old)
+    end = start + len(old)
+    if ((start and content[start - 1] != "\n") or (eof_only and end != len(content))
+            or not valid_python(content)):
+        return None
+    protected = _literal_lines(content)
+    first_line = content.count("\n", 0, start) + 1
+    last_line = content.count("\n", 0, end) + 1
+    if (protected is None or protected.intersection(range(first_line, last_line + 1))
+            or _literal_lines(replacement) != set()):
+        return None
+    edit = TextEdit(start, end, new)
+    return edit if valid_python(content[:start] + new + content[end:]) else None

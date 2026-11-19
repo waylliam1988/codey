@@ -11,6 +11,9 @@ import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
+from codey.storage.atomic_io import filesystem_path
+from codey.types.json_value import decode_json_object, parse_json_object, require_json_string
+
 _RUN_ENV = "PYTEST_RAMDISK_RUN"
 _TEMP_ENV = ("TEMP", "TMP", "TMPDIR")
 _MIN_FREE_BYTES = 16 * 1024 * 1024
@@ -44,17 +47,17 @@ class TempRun:
         if os.getpid() != self.owner_pid or self.retained:
             return
         try:
-            shutil.rmtree(self.root)
+            shutil.rmtree(filesystem_path(self.root))
         except OSError as exc:
             warnings.warn(f"Could not remove pytest RAM-disk directory {self.root}: {exc}", RuntimeWarning, stacklevel=2)
 
 
 def _inherited_run(project: Path, base: Path) -> TempRun | None:
     try:
-        data = json.loads(os.environ.get(_RUN_ENV, "null"))
-        if not isinstance(data, dict) or data.get("project") != str(project):
+        data = parse_json_object(os.environ.get(_RUN_ENV, "null"))
+        if data.get("project") != str(project):
             return None
-        root = Path(data["root"]).resolve()
+        root = Path(require_json_string(data["root"], "root")).resolve()
         owner = data["owner_pid"]
         if root.parent == base and root.name.startswith("run-") and (root / "tmp").is_dir() and type(owner) is int:
             return TempRun(root, owner)
@@ -80,8 +83,8 @@ def bootstrap(project_root: Path) -> TempRun | None:
         if not config.exists():
             return None
         with config.open("rb") as stream:
-            settings = tomllib.load(stream)
-        configured = settings["ramdisk"]["root"]
+            settings: dict[str, object] = tomllib.load(stream)
+        configured = decode_json_object(settings["ramdisk"])["root"]
         if not isinstance(configured, str) or not configured.strip():
             raise ValueError("ramdisk.root must be a nonempty absolute path")
         base = Path(configured)
@@ -114,7 +117,8 @@ def bootstrap(project_root: Path) -> TempRun | None:
     for name in _TEMP_ENV:
         os.environ[name] = str(run.temp)
     tempfile.tempdir = str(run.temp)
-    os.environ[_RUN_ENV] = json.dumps({"project": str(project), "root": str(run.root), "owner_pid": run.owner_pid})
+    identity: dict[str, str | int] = {"project": str(project), "root": str(run.root), "owner_pid": run.owner_pid}
+    os.environ[_RUN_ENV] = json.dumps(identity)
     _RUNS[project] = run
     if allocated is not None:
         # Registered before the isolated-home and pytest cleanups; runs last.
