@@ -162,8 +162,7 @@ const renderApi = (function () {
   function renderInlineMd(text: string): string {
     return markdownHtml(text, true);
   }
-  function addCodeCopyButton(pre: HTMLElement, text: unknown): void {
-    const value = String(text || '');
+  function codeCopyButton(value: string): HTMLButtonElement {
     const btn = document.createElement('button');
     btn.className = 'code-copy';
     btn.type = 'button';
@@ -197,7 +196,7 @@ const renderApi = (function () {
         btn.setAttribute('aria-label', 'Copy code');
       }, 1200);
     };
-    pre.appendChild(btn);
+    return btn;
   }
   function renderMarkdown(container: HTMLElement, text: unknown): void {
     const value = String(text ?? '');
@@ -233,7 +232,20 @@ const renderApi = (function () {
       pre.classList.add('md-code');
       pre.dataset.scrollable = '';
       const code = pre.querySelector('code');
-      if (code) addCodeCopyButton(pre, code.textContent);
+      if (!code) return;
+      const copy = codeCopyButton(code.textContent || '');
+      const language = pre.querySelector(':scope > .code-language');
+      if (!language) {
+        pre.append(copy);
+        return;
+      }
+      const frame = document.createElement('div');
+      frame.className = 'md-code-frame';
+      const header = document.createElement('div');
+      header.className = 'md-code-header';
+      pre.before(frame);
+      header.append(language, copy);
+      frame.append(header, pre);
     });
     container.append(...content.childNodes);
   }
@@ -606,7 +618,6 @@ const renderApi = (function () {
     copyText,
     addMessageCopyButton,
     renderInlineMd,
-    addCodeCopyButton,
     renderMarkdown,
     updateMarkdown,
     FOLDABLE_TOOL_KINDS,

@@ -415,6 +415,7 @@
   /* Quiet process disclosure; answers and approval cards remain outside. */
   .process-block[hidden] { display: none; }
   .process-block { margin-bottom: 6px; }
+  .process-block:not(.process-sending) > .process-group:not([hidden]) { border-inline-start: 1px solid var(--border-2); padding-inline-start: 10px; }
   .process-summary, .thinking > summary { display: flex; align-items: center; gap: 7px; min-height: 26px; width: fit-content; max-width: 100%; list-style: none; color: var(--text-dim); cursor: pointer; user-select: none; font: calc(12px * var(--font-scale))/1.7 var(--font-mono); }
   .process-summary::-webkit-details-marker, .thinking > summary::-webkit-details-marker { display: none; }
   .process-summary::after, .thinking > summary::after {
@@ -429,6 +430,7 @@
   .process-summary:hover::after, .thinking > summary:hover::after { background: var(--text); color: var(--text); }
   .process-approval-status { display: flex; align-items: center; min-height: 26px; color: var(--text-dim); font: calc(12px * var(--font-scale))/1.7 var(--font-mono); }
   .process-body { padding-top: 10px; }
+  .process-running .process-body .tool-line.pending :is(.tl-path, .tl-result) { color: var(--text); }
   /* Chromium otherwise copies collapsed details as empty rich-text structure. */
   .process-group:not([open]) > .process-body,
   .thinking:not([open]) > .thinking-body { display: none; }
@@ -467,7 +469,10 @@
     font-family: var(--font-mono); font-size: calc(12px * var(--font-scale)); line-height: 1.55;
     color: var(--text); white-space: pre;
   }
-  .code-language { font-family: var(--font-mono); font-size: calc(11px * var(--font-scale)); color: var(--muted); margin-bottom: 6px; }
+  .md-code-frame { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; margin: 0 0 10px; min-width: 0; }
+  .md-code-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 6px 2px 12px; border-bottom: 1px solid var(--border); }
+  .md-code-frame > .md-code { border: 0; margin: 0; }
+  .code-language { font-family: var(--font-mono); font-size: calc(11px * var(--font-scale)); color: var(--text-dim); min-width: 0; overflow-wrap: anywhere; }
   .code-copy {
     position: absolute; top: 6px; right: 6px;
     display: inline-flex; align-items: center; justify-content: center;
@@ -479,8 +484,13 @@
   }
   .code-copy svg, .icon-action svg { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.5; }
   .code-copy svg.filled-icon, .icon-action svg.filled-icon { fill: currentColor; stroke: none; }
+  .md-code-header .code-copy { position: static; flex-shrink: 0; }
+  .md-code-frame:hover .code-copy,
+  .md-code-frame:focus-within .code-copy,
+  .md-code-frame .code-copy.copied,
   .md-code:hover .code-copy,
   .md-code:focus-within .code-copy { opacity: 1; }
+  @media (hover: none) { .md-code-header .code-copy { opacity: 1; } }
   .code-copy:hover,
   .code-copy:focus-visible { background: var(--hover); color: var(--text-dim); opacity: 1; }
   .code-copy.copied { color: var(--text); }
@@ -1246,13 +1256,32 @@
     margin-top: 3px;
     overflow-wrap: anywhere;
   }
-  .research-excerpt {
+  .research-card-meta:empty { display: none; }
+  .research-card-meta > a + span::before { content: ' · '; }
+  .research-stance {
+    flex-shrink: 0;
+    color: var(--text-dim);
+    font-size: calc(11.5px * var(--font-scale));
+    background: var(--panel-2);
+    border-radius: 4px;
+    padding: 2px 5px;
+  }
+  .research-card-head:has(.research-stance) { flex-wrap: wrap; }
+  .research-card-head:has(.research-stance) .research-card-title { flex-basis: 100%; }
+  .research-quote {
+    margin: 7px 0 0;
+    padding-inline-start: 9px;
+    border-inline-start: 1px solid var(--border-2);
     color: var(--text-dim);
     font-size: calc(12.5px * var(--font-scale));
-    margin-top: 6px;
+    line-height: 1.55;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
+  .research-source-section + .research-source-section { margin-top: 6px; }
+  .research-source-section h3 { margin: 0; padding: 6px 4px 0; color: var(--text-dim); font-size: calc(12px * var(--font-scale)); font-weight: 500; }
+  .research-source-link { color: inherit; text-decoration: none; }
+  .research-source-link:hover, .research-source-link:focus-visible { color: var(--text); text-decoration: underline; }
   .research-list {
     margin: 0;
     padding-left: 18px;

@@ -155,6 +155,9 @@ describe('render boundaries', () => {
     const body = document.createElement('div');
     window.Render.renderMarkdown(body, '```text\nhello\n```');
     const codeCopy = body.querySelector<HTMLButtonElement>('.code-copy')!;
+    expect(codeCopy.parentElement?.className).toBe('md-code-header');
+    expect(codeCopy.parentElement?.querySelector('.code-language')?.textContent).toBe('text');
+    expect(body.querySelector('pre code')?.textContent).toBe('hello');
     expect(codeCopy.textContent).toBe('');
     expect(codeCopy.querySelector('svg')).not.toBeNull();
     expect(codeCopy.getAttribute('aria-label')).toBe('Copy code');

@@ -244,6 +244,7 @@ export interface ProcessToolRecord {
     // label visible while the request is admitted, but do not add a disclosure
     // arrow that suggests there is content to inspect yet.
     block.classList.toggle('process-sending', state.state === 'sending');
+    block.classList.toggle('process-running', state.state === 'running');
     block.querySelector<HTMLElement>('.process-group')!.hidden = awaitingApproval;
     const spinning = state.state === 'running' || state.state === 'sending';
     let spinner = head.querySelector<HTMLElement>('.spinner');

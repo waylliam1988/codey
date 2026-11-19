@@ -185,17 +185,25 @@ export interface ResearchDrawerDeps {
   function renderResearchEvidence(panel: HTMLElement, run: ResearchRun) {
     let rendered = false;
     for (const item of run.evidenceItems) {
-      const title = item.claim || item.source_url || 'Evidence';
+      const url = safeResearchUrl(item.source_url);
       const locator = item.locator || (item.page ? `p.${item.page}` : '');
-      const meta = [
-        item.stance || 'supports',
-        locator,
-        item.source_url || '',
-        item.note_id ? `note ${item.note_id}` : '',
-      ]
-        .filter(Boolean)
-        .join(' · ');
-      panel.appendChild(researchCard(title, meta, item.excerpt || ''));
+      const card = researchCard(item.claim || item.source_url || 'Evidence');
+      const stance = document.createElement('span');
+      stance.className = 'research-stance';
+      stance.textContent = evidenceStance(item.stance);
+      card.querySelector('.research-card-head')?.prepend(stance);
+      const meta = researchMeta(
+        card,
+        [locator, item.note_id ? `note ${item.note_id}` : ''].filter(Boolean).join(' · '),
+      );
+      if (url) meta.prepend(researchLink(url, hostForUrl(url)));
+      if (item.excerpt) {
+        const quote = document.createElement('blockquote');
+        quote.className = 'research-quote';
+        quote.textContent = item.excerpt;
+        card.append(quote);
+      }
+      panel.append(card);
       rendered = true;
     }
     if (run.counterpoints.length) {
@@ -210,6 +218,21 @@ export interface ResearchDrawerDeps {
     if (!rendered) panel.appendChild(researchEmpty('No evidence items recorded'));
   }
 
+  function evidenceStance(stance: string | undefined): string {
+    switch (stance) {
+      case 'supports':
+        return 'Supports';
+      case 'contradicts':
+        return 'Contradicts';
+      case 'context':
+        return 'Context';
+      case 'cited_unreviewed':
+        return 'Cited, unreviewed';
+      default:
+        return 'Stance unknown';
+    }
+  }
+
   function renderResearchSources(panel: HTMLElement, run: ResearchRun) {
     const citations = run.citationMap;
     const opened = run.openedSources;
@@ -217,36 +240,44 @@ export interface ResearchDrawerDeps {
       panel.appendChild(researchEmpty('No sources recorded'));
       return;
     }
-    const openedByUrl = new Map(opened.map((item) => [String(item.final_url || item.url || ''), item]));
-    const citationUrls = new Set(citations.map((item) => String(item.url || '')));
-    for (const item of citations) {
-      const url = String(item.url || '');
-      const source = openedByUrl.get(url) || {};
-      panel.appendChild(
-        researchSourceCard({
-          ...source,
-          ...item,
-          quality: item.quality || source.quality || {},
-          final_url: url || source.final_url || '',
-        }),
-      );
+    const openedByUrl = new Map<string, Source>();
+    for (const item of opened) {
+      for (const url of sourceUrls(item)) openedByUrl.set(url, item);
     }
-    for (const source of opened) {
-      const url = String(source.final_url || source.url || '');
-      if (!url || citationUrls.has(url)) continue;
-      panel.appendChild(
-        researchSourceCard({
-          ...source,
-          title: source.title || url,
-          url,
-          quality: source.quality || {},
-          retrieved_at: source.retrieved_at || '',
-        }),
-      );
-    }
+    const citedUrls = new Set<string>();
+    const cited = citations.map((item) => {
+      const urls = sourceUrls(item);
+      const source = urls.map((url) => openedByUrl.get(url)).find((match) => match !== undefined);
+      for (const url of source ? [...urls, ...sourceUrls(source)] : urls) citedUrls.add(url);
+      return { ...source, ...item, quality: item.quality || source?.quality, url: urls[0] };
+    });
+    const openedOnly = opened.filter((item) => {
+      const urls = sourceUrls(item);
+      return urls.length && !urls.some((url) => citedUrls.has(url));
+    });
+    appendSourceSection(panel, 'Cited in report', cited);
+    appendSourceSection(panel, 'Opened only', openedOnly);
     if (!citations.length && !opened.length) {
-      for (const url of run.sourceUrls) panel.appendChild(researchSourceCard({ title: url, url }));
+      appendSourceSection(
+        panel,
+        'Recorded links',
+        run.sourceUrls.map((url) => ({ url })),
+      );
     }
+  }
+
+  function sourceUrls(item: Source): string[] {
+    return [item.final_url, item.url, item.requested_url].map(safeResearchUrl).filter(Boolean);
+  }
+
+  function appendSourceSection(panel: HTMLElement, label: string, items: Source[]) {
+    if (!items.length) return;
+    const section = document.createElement('section');
+    section.className = 'research-source-section';
+    const heading = document.createElement('h3');
+    heading.textContent = label;
+    section.append(heading, ...items.map(researchSourceCard));
+    panel.append(section);
   }
 
   function renderResearchGraph(panel: HTMLElement, run: ResearchRun, sessionId: string) {
@@ -308,24 +339,21 @@ export interface ResearchDrawerDeps {
 
   function researchSourceCard(item: Source) {
     const number = item.number ? `[${item.number}] ` : '';
-    const url = String(item.url || item.final_url || '');
+    const url = sourceUrls(item)[0];
+    const title = item.title || url || 'Source';
     const quality = formatSourceQuality(item.quality || {});
     const pdf = formatPdfSourceMeta(item);
-    const meta = [quality, pdf, item.retrieved_at || '', url].filter(Boolean).join(' · ');
-    const card = researchCard(number + (item.title || url || 'Source'), meta, '');
+    const card = researchCard(number + title);
     if (url) {
-      card.style.cursor = 'pointer';
-      card.onclick = () => window.open(url, '_blank', 'noopener,noreferrer');
-      const actions = document.createElement('div');
-      actions.className = 'research-card-meta';
+      card.querySelector('.research-card-title')?.replaceChildren(researchLink(url, number + title));
+      researchMeta(card, hostForUrl(url));
       const copy = document.createElement('button');
       copy.type = 'button';
       copy.className = 'drawer-btn research-copy icon-action';
       copy.title = 'Copy citation';
       copy.setAttribute('aria-label', 'Copy citation');
       copy.append(createIconSvg('copy'));
-      copy.onclick = (e) => {
-        e.stopPropagation();
+      copy.onclick = () => {
         void copyText(`${number}${item.title || 'Source'} - ${url}`).then((ok) => {
           copy.title = ok ? 'Copied' : 'Could not copy';
           copy.setAttribute('aria-label', ok ? 'Copied' : 'Could not copy');
@@ -340,13 +368,37 @@ export interface ResearchDrawerDeps {
           );
         });
       };
-      actions.appendChild(copy);
-      card.appendChild(actions);
+      card.querySelector('.research-card-head')?.append(copy);
     }
+    const details = [quality, pdf, item.retrieved_at].filter(Boolean).join(' · ');
+    if (details) researchMeta(card, details);
     return card;
   }
 
-  function researchCard(title: unknown, meta: unknown, bodyText: unknown) {
+  function researchLink(url: string, label: string): HTMLAnchorElement {
+    const link = document.createElement('a');
+    link.className = 'research-source-link';
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.title = url;
+    link.textContent = label;
+    return link;
+  }
+
+  function researchMeta(card: HTMLElement, text: string): HTMLElement {
+    const meta = document.createElement('div');
+    meta.className = 'research-card-meta';
+    if (text) {
+      const detail = document.createElement('span');
+      detail.textContent = text;
+      meta.append(detail);
+    }
+    card.append(meta);
+    return meta;
+  }
+
+  function researchCard(title: unknown, meta = '') {
     const card = document.createElement('div');
     card.className = 'research-card';
     const head = document.createElement('div');
@@ -356,23 +408,12 @@ export interface ResearchDrawerDeps {
     titleEl.textContent = String(title || '');
     head.appendChild(titleEl);
     card.appendChild(head);
-    if (meta) {
-      const metaEl = document.createElement('div');
-      metaEl.className = 'research-card-meta';
-      metaEl.textContent = String(meta);
-      card.appendChild(metaEl);
-    }
-    if (bodyText) {
-      const body = document.createElement('div');
-      body.className = 'research-excerpt';
-      body.textContent = String(bodyText);
-      card.appendChild(body);
-    }
+    if (meta) researchMeta(card, meta);
     return card;
   }
 
   function researchListCard(title: string, values: unknown[]) {
-    const card = researchCard(title, '', '');
+    const card = researchCard(title);
     const list = document.createElement('ul');
     list.className = 'research-list';
     for (const value of Array.isArray(values) ? values : []) {
@@ -535,9 +576,9 @@ export interface ResearchDrawerDeps {
 
   function researchNoteStateCard(id: string, note: ResearchNote | undefined) {
     const state = note && note.__state;
-    if (state === 'missing') return researchCard(id || 'Note', 'Note no longer exists', '');
-    if (state === 'error') return researchCard(id || 'Note', 'Could not load note', '');
-    const card = researchCard(id || 'Note', '', '');
+    if (state === 'missing') return researchCard(id || 'Note', 'Note no longer exists');
+    if (state === 'error') return researchCard(id || 'Note', 'Could not load note');
+    const card = researchCard(id || 'Note');
     const status = document.createElement('div');
     status.className = 'research-card-meta drawer-loading';
     const spinner = document.createElement('span');
