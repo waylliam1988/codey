@@ -17,7 +17,18 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from codey.control.protocol import MAX_FRAME_BYTES, PROTOCOL_VERSION, ControlError, fingerprint, validate_command
-from codey.launcher.releases import activate, ensure_frontend, prepare, release_path, runtime_digest, snapshot
+from codey.launcher.releases import (
+    ActivateArgs,
+    ActivationTarget,
+    PrepareArgs,
+    ReleaseSnapshot,
+    activate,
+    ensure_frontend,
+    prepare,
+    release_path,
+    runtime_digest,
+    snapshot,
+)
 from codey.launcher.startup import startup_stage
 from codey.storage.file_lock import acquire_lease
 from codey.storage.local_store import DEFAULT_STATE_HOME, read_json_strict, write_json_atomic
@@ -94,32 +105,41 @@ def _current_source() -> Path:
     return source
 
 
-def _materialize_current_release(home: Path) -> dict[str, Any]:
+def _publish_checkout_runtime(source: Path, publisher: Path) -> None:
+    # Wheels carry the published runtime. A checkout may start from a shortcut,
+    # so load its publisher by path, independently of the working directory.
+    with startup_stage("frontend.check"):
+        ensure_frontend(source)
+    spec = importlib.util.spec_from_file_location("_codey_publish_runtime", publisher)
+    if spec is None or spec.loader is None:
+        raise ControlError("RUNTIME_PUBLICATION_FAILED", "Runtime publisher could not be loaded")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    publish_runtime = getattr(module, "publish_runtime", None)
+    if not callable(publish_runtime):
+        raise ControlError("RUNTIME_PUBLICATION_FAILED", "Runtime publisher is incomplete")
+    publish_runtime(source, source / "pyproject.toml")
+
+
+def _materialize_current_release(home: Path) -> ReleaseSnapshot:
     source = _current_source()
+    publisher = source / "tools" / "publish_runtime.py"
+    checkout = publisher.is_file() and (source / "pyproject.toml").is_file()
     with acquire_lease(home / "release-preparation"):
-        publisher = source / "tools" / "publish_runtime.py"
-        if publisher.is_file() and (source / "pyproject.toml").is_file():
-            # Development publication only; wheels already carry this artifact.
-            with startup_stage("frontend.check"):
-                ensure_frontend(source)
-            # The desktop launcher can start from a shortcut or an IDE with a
-            # working directory outside the checkout. Load the publisher by
-            # its file path so source launches do not depend on ``tools`` being
-            # importable from the process working directory.
-            spec = importlib.util.spec_from_file_location("_codey_publish_runtime", publisher)
-            if spec is None or spec.loader is None:
-                raise ControlError("RUNTIME_PUBLICATION_FAILED", "Runtime publisher could not be loaded")
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            publish_runtime = getattr(module, "publish_runtime", None)
-            if not callable(publish_runtime):
-                raise ControlError("RUNTIME_PUBLICATION_FAILED", "Runtime publisher is incomplete")
-            publish_runtime(source, source / "pyproject.toml")
+        if checkout:
+            _publish_checkout_runtime(source, publisher)
+        try:
+            with startup_stage("release.snapshot"):
+                return snapshot(home, source)
+        except ControlError as exc:
+            if not checkout or exc.code not in {"REVISION_CONFLICT", "RUNTIME_NOT_FOUND"}:
+                raise
+        _publish_checkout_runtime(source, publisher)
         with startup_stage("release.snapshot"):
             return snapshot(home, source)
 
 
-def _launch_release(client: ControlClient, home: Path, release: dict[str, Any], *, port: int,
+def _launch_release(client: ControlClient, home: Path, release: ReleaseSnapshot, *, port: int,
                     allowed_roots: tuple[Path, ...]) -> ControlClient:
     args = [sys.executable, "-m", "codey", "serve", "--state-home", str(home), "--port", str(port),
             "--release-id", release["release_id"]]
@@ -137,7 +157,7 @@ def _launch_release(client: ControlClient, home: Path, release: dict[str, Any], 
         try:
             health = client.call("get_health")
             if health.get("release_id") == release["release_id"] and health.get("status") == "ready":
-                write_json_atomic(home / "active-release.json", release, mode=0o600)
+                write_json_atomic(home / "active-release.json", dict(release), mode=0o600)
                 return client
         except ControlError:
             if child.poll() not in (None, 0):
@@ -148,7 +168,7 @@ def _launch_release(client: ControlClient, home: Path, release: dict[str, Any], 
     raise ControlError("STARTUP_FAILED", "Codey service did not become ready within the startup deadline")
 
 
-def _activate_current_release(client: ControlClient, home: Path, current: dict[str, Any],
+def _activate_current_release(client: ControlClient, home: Path, current: ReleaseSnapshot,
                               health: dict[str, Any], *, allowed_roots: tuple[Path, ...]) -> ControlClient:
     digest = current["candidate_digest"]
     # Recovery snapshots may have a different identity for identical content.
@@ -174,8 +194,8 @@ def _activate_current_release(client: ControlClient, home: Path, current: dict[s
     )
     # This is a new preparation attempt, not a replay of old database evidence.
     # Static checks have their own environment-bound cache; state preflight runs again.
-    prepare_args = {"request_id": "auto-local-prepare-" + uuid.uuid4().hex,
-                    "source": str(_current_source())}
+    prepare_args: PrepareArgs = {"request_id": "auto-local-prepare-" + uuid.uuid4().hex,
+                                 "source": current["source"]}
     try:
         with startup_stage("release.prepare"):
             candidate = prepare(coordinator, prepare_args)
@@ -185,12 +205,12 @@ def _activate_current_release(client: ControlClient, home: Path, current: dict[s
         prepare_args["request_id"] = prepare_args["request_id"] + "-recovery-" + uuid.uuid4().hex
         candidate = prepare(coordinator, prepare_args)
     if candidate.get("candidate_digest") != digest:
-        raise ControlError("REVISION_CONFLICT", "Current source changed while the release was being prepared")
+        raise ControlError("REVISION_CONFLICT", "Runtime snapshot changed while the release was being prepared")
     # Interrupted validation can produce a recovery release with the same
     # digest but a different identity. Reuse it on subsequent desktop opens.
     if health.get("release_id") == candidate["release_id"] and health.get("status") == "ready":
         return client
-    activation_args = {
+    target: ActivationTarget = {
         "candidate_release": candidate["release_id"],
         "candidate_digest": candidate["candidate_digest"],
         "expected_instance_id": health["instance_id"],
@@ -198,9 +218,14 @@ def _activate_current_release(client: ControlClient, home: Path, current: dict[s
     # Each new preparation owns one activation attempt. Replaying that exact
     # activation request still observes its original journal; a user retry
     # after an aborted cutover gets a new attempt, not the old failed result.
-    activation_args["request_id"] = "auto-activate-" + fingerprint({
-        **activation_args, "preparation_request_id": prepare_args["request_id"],
-    })[:32]
+    activation_args: ActivateArgs = {
+        "candidate_release": target["candidate_release"],
+        "candidate_digest": target["candidate_digest"],
+        "expected_instance_id": target["expected_instance_id"],
+        "request_id": "auto-activate-" + fingerprint({
+            **target, "preparation_request_id": prepare_args["request_id"],
+        })[:32],
+    }
     activation = activate(coordinator, activation_args)
     upgrade_id = activation["upgrade_id"]
     deadline = time.monotonic() + 90
@@ -246,7 +271,7 @@ def ensure_service(home: Path, *, port: int = 0, allowed_roots: tuple[Path, ...]
                 return _launch_release(client, home, current, port=port, allowed_roots=allowed_roots)
         if health.get("release_id") == current["release_id"]:
             if health.get("status") == "ready":
-                write_json_atomic(home / "active-release.json", current, mode=0o600)
+                write_json_atomic(home / "active-release.json", dict(current), mode=0o600)
                 return client
             raise ControlError("STARTUP_FAILED", "Codey service has the requested release but is not ready")
         with startup_stage("service.activate"):

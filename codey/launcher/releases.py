@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 import shutil
 import sqlite3
@@ -12,20 +11,112 @@ import sys
 import time
 from contextlib import closing
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-if os.name == "nt" or TYPE_CHECKING:
-    # CREATE_NO_WINDOW is a Windows-only subprocess constant and is absent
-    # from Linux typeshed.
-    _windows_subprocess: Any = subprocess
+from tempfile import TemporaryDirectory
+from typing import Literal, NotRequired, Protocol, TypedDict, cast
 
 from codey.control.protocol import ControlError, fingerprint
 from codey.launcher.runtime import dependencies, runtime_files
 from codey.launcher.startup import startup_stage
-from codey.launcher.validation_cache import cached_checks, save_checks, validation_key
+from codey.launcher.validation_cache import Verification, cached_checks, save_checks, validation_key
 from codey.storage.atomic_io import filesystem_path
 from codey.storage.file_lock import acquire_lease
 from codey.storage.local_store import read_json_strict, write_json_atomic
+
+if sys.platform == "win32":
+    from subprocess import CREATE_NO_WINDOW
+else:
+    CREATE_NO_WINDOW = 0
+
+
+class ReleaseSnapshot(TypedDict):
+    release_id: str
+    candidate_digest: str
+    source: str
+    created_at: float
+
+
+class _Manifest(ReleaseSnapshot):
+    status: Literal["validating", "validated", "failed"]
+    verification: list[Verification]
+    validation_source: str
+    static_validation_key: NotRequired[str]
+    schema_digest: NotRequired[str]
+
+
+class PrepareArgs(TypedDict):
+    request_id: str
+    source: str
+    verification: NotRequired[list[list[str]]]
+
+
+class ActivationTarget(TypedDict):
+    candidate_release: str
+    candidate_digest: str
+    expected_instance_id: str
+
+
+class ActivateArgs(ActivationTarget):
+    request_id: str
+    timeout_seconds: NotRequired[int]
+
+
+class PreparedRelease(TypedDict):
+    release_id: str
+    candidate_digest: str
+    status: Literal["validated"]
+    verification: list[Verification]
+
+
+class _PreparationError(TypedDict):
+    code: str
+    message: str
+
+
+class _PreparationReceipt(TypedDict):
+    fingerprint: str
+    error: NotRequired[_PreparationError]
+    result: NotRequired[PreparedRelease]
+
+
+class Activation(TypedDict):
+    upgrade_id: str
+    phase: str
+
+
+class _UpgradeEvent(TypedDict):
+    phase: str
+    time: float
+
+
+class _UpgradeJournal(Activation):
+    request_fingerprint: str
+    candidate: _Manifest
+    previous: ReleaseSnapshot | None
+    old_instance_id: str
+    deadline: float
+    allowed_roots: list[str]
+    python: str
+    admission_may_have_opened: bool
+    attempts: int
+    events: list[_UpgradeEvent]
+
+
+class _ReleaseContext(Protocol):
+    @property
+    def state_home(self) -> Path: ...
+
+
+class _PreparationOwner(Protocol):
+    @property
+    def ctx(self) -> _ReleaseContext: ...
+
+
+class _ActivationOwner(_PreparationOwner, Protocol):
+    @property
+    def instance_id(self) -> str: ...
+
+    @property
+    def allowed_roots(self) -> tuple[Path, ...]: ...
 
 
 def release_path(home: Path, identity: str) -> Path:
@@ -49,20 +140,33 @@ def runtime_digest(root: Path) -> str:
     return fingerprint(rows)
 
 
-def snapshot(home: Path, source: Path, *, identity_suffix: str = "") -> dict[str, Any]:
-    digest = runtime_digest(source)
-    suffix = ("_" + identity_suffix) if identity_suffix else ""
-    identity = "release_" + digest[:32] + suffix
-    directory = release_path(home, identity)
-    target = directory / "source"
-    if not target.exists():
-        target.mkdir(parents=True)
-        for path in runtime_files(source):
-            destination = filesystem_path(target / path.relative_to(source))
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(path, destination)
-    if runtime_digest(target) != digest or runtime_digest(source) != digest:
-        raise ControlError("REVISION_CONFLICT", "Release changed while being snapshotted; candidate was not accepted")
+def snapshot(home: Path, source: Path, *, identity_suffix: str = "") -> ReleaseSnapshot:
+    conflict = "Release changed while being snapshotted; candidate was not accepted"
+    try:
+        digest = runtime_digest(source)
+        suffix = ("_" + identity_suffix) if identity_suffix else ""
+        identity = "release_" + digest[:32] + suffix
+        directory = release_path(home, identity)
+        target = directory / "source"
+        if target.exists():
+            if runtime_digest(target) != digest or runtime_digest(source) != digest:
+                raise ControlError("REVISION_CONFLICT", conflict)
+        else:
+            releases = filesystem_path(directory.parent)
+            releases.mkdir(parents=True, exist_ok=True)
+            # Publish the directory only after both sides match the initial digest.
+            with TemporaryDirectory(prefix=".snapshot-", dir=releases) as temporary:
+                staged = Path(temporary)
+                for path in runtime_files(source):
+                    destination = staged / path.relative_to(source)
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(filesystem_path(path), destination)
+                if runtime_digest(staged) != digest or runtime_digest(source) != digest:
+                    raise ControlError("REVISION_CONFLICT", conflict)
+                filesystem_path(directory).mkdir(exist_ok=True)
+                staged.rename(filesystem_path(target))
+    except FileNotFoundError as exc:
+        raise ControlError("REVISION_CONFLICT", conflict) from exc
     return {"release_id": identity, "candidate_digest": digest, "source": str(target), "created_at": time.time()}
 
 
@@ -87,7 +191,7 @@ def ensure_frontend(source: Path) -> None:
             return subprocess.run(argv, cwd=source, stdin=subprocess.DEVNULL,
                                   capture_output=True, text=True, encoding="utf-8",
                                   timeout=timeout, check=False,
-                                  creationflags=_windows_subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                                  creationflags=CREATE_NO_WINDOW)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ControlError("FRONTEND_BUILD_FAILED", "Frontend build process could not be started or completed",
                                details={"command": argv, "error": str(exc)[:1000]}) from exc
@@ -109,12 +213,12 @@ def ensure_frontend(source: Path) -> None:
                                     "stderr": (publish_result.stderr or "")[-4000:]})
 
 
-def _verification(directory: Path, manifest: dict[str, Any], commands: list[list[str]]) -> None:
+def _verification(directory: Path, manifest: _Manifest, commands: list[list[str]]) -> None:
     results = manifest.setdefault("verification", [])
     for argv in commands:
-        result: dict[str, Any] = {"argv": argv, "state": "started", "started_at": time.time()}
+        result: Verification = {"argv": argv, "state": "started", "started_at": time.time()}
         results.append(result)
-        write_json_atomic(directory / "manifest.json", manifest, mode=0o600)
+        write_json_atomic(directory / "manifest.json", dict(manifest), mode=0o600)
         with (directory / f"validation-{len(results)}.log").open("wb") as output:
             try:
                 started = time.perf_counter()
@@ -123,13 +227,16 @@ def _verification(directory: Path, manifest: dict[str, Any], commands: list[list
                     # copying long module paths successfully is not sufficient.
                     done = subprocess.run(argv, cwd=filesystem_path(Path(manifest["validation_source"])), stdin=subprocess.DEVNULL,
                                           stdout=output, stderr=subprocess.STDOUT, timeout=60,
-                                          creationflags=_windows_subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-                result.update(state="settled", exit_code=done.returncode)
+                                          creationflags=CREATE_NO_WINDOW)
+                result["state"] = "settled"
+                result["exit_code"] = done.returncode
             except subprocess.TimeoutExpired:
-                result.update(state="timeout", exit_code=None)
+                result["state"] = "timeout"
+                result["exit_code"] = None
             finally:
-                result.update(finished_at=time.time(), elapsed_seconds=time.perf_counter() - started)
-        write_json_atomic(directory / "manifest.json", manifest, mode=0o600)
+                result["finished_at"] = time.time()
+                result["elapsed_seconds"] = time.perf_counter() - started
+        write_json_atomic(directory / "manifest.json", dict(manifest), mode=0o600)
         if result["state"] != "settled" or result["exit_code"] != 0:
             raise ControlError("VALIDATION_FAILED", "Candidate validation failed; inspect release validation logs")
 
@@ -146,7 +253,7 @@ def _static_commands() -> list[list[str]]:
     return [[sys.executable, "-c", compile_candidate], [sys.executable, "-m", "codey", "--help"]]
 
 
-def _static_verification(home: Path, directory: Path, manifest: dict[str, Any]) -> None:
+def _static_verification(home: Path, directory: Path, manifest: _Manifest) -> None:
     commands = _static_commands()
     with startup_stage("validation.static"):
         key = validation_key(manifest["candidate_digest"], commands)
@@ -168,43 +275,51 @@ def _static_verification(home: Path, directory: Path, manifest: dict[str, Any]) 
         manifest["static_validation_key"] = key
 
 
-def prepare(service: Any, args: dict[str, Any]) -> dict[str, Any]:
+def prepare(service: _PreparationOwner, args: PrepareArgs) -> PreparedRelease:
     home = service.ctx.state_home
     receipt = home / "release-requests" / (fingerprint(args["request_id"]) + ".json")
     with acquire_lease(home / "release-preparation"):
-        old = read_json_strict(receipt)
+        old = cast(_PreparationReceipt | None, read_json_strict(receipt))
         if old:
             if old["fingerprint"] != fingerprint(args):
                 raise ControlError("REQUEST_CONFLICT", "Release request ID names different content")
-            if old.get("error"):
-                raise ControlError(old["error"]["code"], old["error"]["message"])
+            if error := old.get("error"):
+                raise ControlError(error["code"], error["message"])
             if "result" not in old:
                 raise ControlError("OUTCOME_UNKNOWN", "Validation already started; inspect its manifest rather than replaying commands")
-            return dict(old["result"])
+            return old["result"]
         source = Path(args["source"]).expanduser().resolve()
-        manifest = snapshot(home, source)
-        directory = release_path(home, manifest["release_id"])
+        candidate = snapshot(home, source)
+        directory = release_path(home, candidate["release_id"])
         previous = read_json_strict(directory / "manifest.json")
         if previous and previous.get("status") == "validating":
             # A digest normally names one immutable candidate. If validation
             # was interrupted, derive a fresh identity so recovery never
             # replays the old request or mutates its evidence directory.
             recovery_suffix = fingerprint(args["request_id"] + ":recovery")[:16]
-            manifest = snapshot(home, source, identity_suffix=recovery_suffix)
-            directory = release_path(home, manifest["release_id"])
+            candidate = snapshot(home, source, identity_suffix=recovery_suffix)
+            directory = release_path(home, candidate["release_id"])
             previous = read_json_strict(directory / "manifest.json")
             if previous and previous.get("status") == "validating":
                 raise ControlError("OUTCOME_UNKNOWN", "A recovery validation is already in progress; inspect its manifest")
-        current = read_json_strict(home / "active-release.json")
-        if not current or dependencies(Path(manifest["source"])) != dependencies(Path(current["source"])):
+        current = cast(ReleaseSnapshot | None, read_json_strict(home / "active-release.json"))
+        if not current or dependencies(Path(candidate["source"])) != dependencies(Path(current["source"])):
             raise ControlError("DEPENDENCY_MISMATCH", "Automatic activation requires the same runtime dependencies")
         commands = args.get("verification", [])
         if len(commands) > 8 or any(not isinstance(row, list) or not row or not all(isinstance(word, str) and word for word in row) for row in commands):
             raise ControlError("INVALID_ARGUMENT", "verification must contain at most eight non-empty argv arrays")
         check_dir = directory / "checks" / fingerprint(args["request_id"])[:32]
         validation_source = check_dir / "source"
-        manifest.update(status="validating", verification=[], validation_source=str(validation_source))
-        write_json_atomic(directory / "manifest.json", manifest, mode=0o600)
+        manifest: _Manifest = {
+            "release_id": candidate["release_id"],
+            "candidate_digest": candidate["candidate_digest"],
+            "source": candidate["source"],
+            "created_at": candidate["created_at"],
+            "status": "validating",
+            "verification": [],
+            "validation_source": str(validation_source),
+        }
+        write_json_atomic(directory / "manifest.json", dict(manifest), mode=0o600)
         write_json_atomic(receipt, {"fingerprint": fingerprint(args), "status": "validating"}, mode=0o600)
         try:
             validation_source.mkdir(parents=True)
@@ -236,25 +351,27 @@ def prepare(service: Any, args: dict[str, Any]) -> dict[str, Any]:
                 raise ControlError("SCHEMA_MISMATCH", "Automatic activation requires a backward-compatible unchanged schema")
             if runtime_digest(Path(manifest["source"])) != manifest["candidate_digest"]:
                 raise ControlError("REVISION_CONFLICT", "Validation modified runtime files")
-            manifest.update(status="validated", schema_digest=before)
+            manifest["status"] = "validated"
+            manifest["schema_digest"] = before
         except Exception as exc:
             manifest["status"] = "failed"
-            write_json_atomic(directory / "manifest.json", manifest, mode=0o600)
-            error = exc if isinstance(exc, ControlError) else ControlError("VALIDATION_FAILED", "Candidate validation did not complete; inspect its logs")
-            write_json_atomic(receipt, {"fingerprint": fingerprint(args), "error": error.payload()}, mode=0o600)
-            raise error from exc
-        write_json_atomic(directory / "manifest.json", manifest, mode=0o600)
-        result = {key: manifest[key] for key in ("release_id", "candidate_digest", "status", "verification")}
+            write_json_atomic(directory / "manifest.json", dict(manifest), mode=0o600)
+            failure = exc if isinstance(exc, ControlError) else ControlError("VALIDATION_FAILED", "Candidate validation did not complete; inspect its logs")
+            write_json_atomic(receipt, {"fingerprint": fingerprint(args), "error": failure.payload()}, mode=0o600)
+            raise failure from exc
+        write_json_atomic(directory / "manifest.json", dict(manifest), mode=0o600)
+        result: PreparedRelease = {"release_id": manifest["release_id"], "candidate_digest": manifest["candidate_digest"],
+                                   "status": "validated", "verification": manifest["verification"]}
         write_json_atomic(receipt, {"fingerprint": fingerprint(args), "result": result}, mode=0o600)
         return result
 
 
-def activate(service: Any, args: dict[str, Any]) -> dict[str, Any]:
+def activate(service: _ActivationOwner, args: ActivateArgs) -> Activation:
     home = service.ctx.state_home
     identity = "upgrade_" + fingerprint(args["request_id"])[:32]
     path = home / "upgrades" / (identity + ".json")
     with acquire_lease(home / "release-preparation"):
-        old = read_json_strict(path)
+        old = cast(_UpgradeJournal | None, read_json_strict(path))
         if old:
             if old["request_fingerprint"] != fingerprint(args):
                 raise ControlError("REQUEST_CONFLICT", "Upgrade request ID names different content")
@@ -262,7 +379,7 @@ def activate(service: Any, args: dict[str, Any]) -> dict[str, Any]:
         if args["expected_instance_id"] != service.instance_id:
             raise ControlError("RUN_MISMATCH", "Activation names an old service instance")
         directory = release_path(home, args["candidate_release"])
-        manifest = read_json_strict(directory / "manifest.json")
+        manifest = cast(_Manifest | None, read_json_strict(directory / "manifest.json"))
         if not manifest or manifest.get("status") != "validated" or manifest["candidate_digest"] != args["candidate_digest"]:
             raise ControlError("VALIDATION_FAILED", "Activation requires the validated candidate digest")
         if runtime_digest(Path(manifest["source"])) != args["candidate_digest"]:
@@ -279,31 +396,34 @@ def activate(service: Any, args: dict[str, Any]) -> dict[str, Any]:
         # Per-operation copy: an update cannot overwrite an in-flight runner.
         launcher = launcher.with_name(identity + ".py")
         launcher.write_bytes(Path(runner.__file__).read_bytes())
-        journal = {"upgrade_id": identity, "request_fingerprint": fingerprint(args), "phase": "accepted",
-                   "candidate": manifest, "previous": read_json_strict(home / "active-release.json"),
-                   "old_instance_id": service.instance_id, "deadline": time.time() + timeout,
-                   "allowed_roots": [str(root) for root in service.allowed_roots], "python": sys.executable,
-                   "admission_may_have_opened": False, "attempts": 0, "events": list[dict[str, Any]]()}
-        write_json_atomic(path, journal, mode=0o600)
+        journal: _UpgradeJournal = {
+            "upgrade_id": identity, "request_fingerprint": fingerprint(args), "phase": "accepted",
+            "candidate": manifest, "previous": cast(ReleaseSnapshot | None, read_json_strict(home / "active-release.json")),
+            "old_instance_id": service.instance_id, "deadline": time.time() + timeout,
+            "allowed_roots": [str(root) for root in service.allowed_roots], "python": sys.executable,
+            "admission_may_have_opened": False, "attempts": 0, "events": [],
+        }
+        write_json_atomic(path, dict(journal), mode=0o600)
         with (home / "launcher" / (identity + ".log")).open("ab") as output:
             subprocess.Popen([sys.executable, str(launcher), str(home), identity], cwd=home,
                              stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
-                             creationflags=_windows_subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                             creationflags=CREATE_NO_WINDOW)
         return {"upgrade_id": identity, "phase": "accepted"}
 
 
-def release_command(service: Any, name: str, args: dict[str, Any]) -> dict[str, Any]:
+def release_command(service: _ActivationOwner, name: str, args: dict[str, object]) -> dict[str, object]:
+    # The shared command catalogue validates the arguments before dispatch.
     if name == "prepare_release":
-        return prepare(service, args)
+        return dict(prepare(service, cast(PrepareArgs, args)))
     if name == "activate_release":
-        return activate(service, args)
-    return read_upgrade(service.ctx.state_home, args["upgrade_id"])
+        return dict(activate(service, cast(ActivateArgs, args)))
+    return read_upgrade(service.ctx.state_home, cast(str, args["upgrade_id"]))
 
 
-def read_upgrade(home: Path, identity: str) -> dict[str, Any]:
+def read_upgrade(home: Path, identity: str) -> dict[str, object]:
     if not re.fullmatch(r"upgrade_[a-f0-9]{32}", identity):
         raise ControlError("INVALID_ARGUMENT", "Invalid upgrade identity")
-    journal = read_json_strict(home / "upgrades" / (identity + ".json"))
+    journal: dict[str, object] | None = read_json_strict(home / "upgrades" / (identity + ".json"))
     if not journal:
         raise ControlError("NOT_FOUND", "Upgrade not found")
     return {key: value for key, value in journal.items() if key not in {"python", "request_fingerprint"}}

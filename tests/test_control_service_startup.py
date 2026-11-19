@@ -32,6 +32,36 @@ def test_source_materialization_does_not_require_tools_on_import_path(tmp_path, 
     assert (source / "published").read_text(encoding="utf-8") == "ok"
 
 
+@pytest.mark.parametrize("reason", ["REVISION_CONFLICT", "RUNTIME_NOT_FOUND"])
+@pytest.mark.parametrize("recovered", [True, False])
+def test_checkout_materialization_republishes_and_retries_once(tmp_path, monkeypatch, reason, recovered):
+    source = tmp_path / "checkout"
+    (source / "tools").mkdir(parents=True)
+    (source / "tools/publish_runtime.py").touch()
+    (source / "pyproject.toml").touch()
+    calls = []
+
+    def publish(root, publisher):
+        calls.append("publish")
+
+    def capture(home, root):
+        calls.append("capture")
+        if recovered and calls.count("capture") == 2:
+            return {"release_id": "release_retried"}
+        raise ControlError(reason, "checkout is changing")
+
+    monkeypatch.setattr("codey.control.client._current_source", lambda: source)
+    monkeypatch.setattr("codey.control.client._publish_checkout_runtime", publish)
+    monkeypatch.setattr("codey.control.client.snapshot", capture)
+
+    if recovered:
+        assert _materialize_current_release(tmp_path / "state")["release_id"] == "release_retried"
+    else:
+        with pytest.raises(ControlError, match="checkout is changing"):
+            _materialize_current_release(tmp_path / "state")
+    assert calls == ["publish", "capture", "publish", "capture"]
+
+
 def test_desktop_relaunch_uses_the_committed_immutable_runtime(tmp_path, monkeypatch):
     active = snapshot(tmp_path, Path.cwd())
     (tmp_path / "active-release.json").write_text(json.dumps(active))
@@ -110,6 +140,7 @@ def test_ensure_service_retries_interrupted_validation_with_fresh_request(tmp_pa
 
     ensure_service(tmp_path)
     assert len(prepare_calls) == 2
+    assert all(call["source"] == current["source"] for call in prepare_calls)
     assert prepare_calls[1]["request_id"].startswith(prepare_calls[0]["request_id"] + "-recovery-")
 
 
@@ -121,7 +152,8 @@ def test_local_service_rejects_source_runtime(tmp_path):
 
 
 def test_relaunch_reuses_ready_recovery_release(tmp_path, monkeypatch):
-    current = {"release_id": "release_original", "candidate_digest": "b" * 64}
+    current = {"release_id": "release_original", "candidate_digest": "b" * 64,
+               "source": str(tmp_path / "source")}
     candidate = {**current, "release_id": "release_original_recovery"}
     monkeypatch.setattr("codey.control.client.prepare", lambda service, args: candidate)
 
@@ -163,7 +195,8 @@ def test_changed_recovery_content_cannot_skip_preparation(tmp_path, monkeypatch)
 
 
 def test_new_preparation_attempts_have_new_activation_identities(tmp_path, monkeypatch):
-    current = {"release_id": "release_original", "candidate_digest": "b" * 64}
+    current = {"release_id": "release_original", "candidate_digest": "b" * 64,
+               "source": str(tmp_path / "source")}
     candidate = {**current, "release_id": "release_original_recovery"}
     monkeypatch.setattr("codey.control.client.prepare", lambda service, args: dict(candidate))
     activations = []

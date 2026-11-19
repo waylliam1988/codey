@@ -7,12 +7,22 @@ import os
 import platform
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Literal, NotRequired, TypedDict, cast
 
 from codey.control.protocol import fingerprint
 from codey.storage.local_store import read_json_strict, write_json_atomic
 
 VALIDATION_RULES = "compile-and-cli-v1"
+
+
+class Verification(TypedDict):
+    argv: list[str]
+    state: Literal["started", "settled", "timeout", "cached"]
+    started_at: NotRequired[float]
+    finished_at: NotRequired[float]
+    elapsed_seconds: NotRequired[float]
+    exit_code: NotRequired[int | None]
+    cache_key: NotRequired[str]
 
 
 def environment_digest() -> str:
@@ -38,7 +48,7 @@ def validation_key(digest: str, commands: list[list[str]]) -> str:
                         "rules": VALIDATION_RULES, "commands": commands})
 
 
-def cached_checks(home: Path, key: str, commands: list[list[str]]) -> list[dict[str, Any]] | None:
+def cached_checks(home: Path, key: str, commands: list[list[str]]) -> list[Verification] | None:
     try:
         value = read_json_strict(home / "validation-cache" / f"{key}.json")
     except (OSError, ValueError):
@@ -51,9 +61,9 @@ def cached_checks(home: Path, key: str, commands: list[list[str]]) -> list[dict[
                    or row.get("state") != "settled" or type(row.get("exit_code")) is not int or row.get("exit_code") != 0
                    for row, command in zip(rows, commands, strict=True))):
         return None
-    return [dict(row, state="cached", cache_key=key) for row in rows]
+    return [{**row, "state": "cached", "cache_key": key} for row in cast(list[Verification], rows)]
 
 
-def save_checks(home: Path, key: str, commands: list[list[str]], rows: list[dict[str, Any]]) -> None:
+def save_checks(home: Path, key: str, commands: list[list[str]], rows: list[Verification]) -> None:
     write_json_atomic(home / "validation-cache" / f"{key}.json",
                       {"key": key, "commands": commands, "verification": rows}, mode=0o600)
