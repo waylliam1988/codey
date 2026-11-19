@@ -13,6 +13,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from difflib import SequenceMatcher
 from pathlib import Path
 
 from codey.policies.action import (
@@ -44,8 +45,10 @@ from codey.toolchain.constants import (
     STALE_READ_REFERENCE_CODE,
     STALE_READ_REFERENCE_ERROR,
 )
+from codey.toolchain.indentation import align_replacement, valid_python
 from codey.toolchain.line_prefix import strip_line_number_prefixes as _strip_line_number_prefixes
 from codey.toolchain.presentation import edit_preview
+from codey.utils.failure_output import failure_excerpt
 from codey.utils.references import find_reference_hints
 from codey.utils.scan_report import render_scan_coverage
 from codey.utils.text_budget import clip_middle, prune_dependency_stack_frames
@@ -534,6 +537,22 @@ def _render_edit_failure_context(content: str, search: str) -> str:
         f'Current bounded context near {kind} "{value}"',
         '(navigation only; copy exact complete code after "|"):',
     ]
+    search_lines = search.splitlines()
+    search_position = _unique_anchor_position(search, value, kind)
+    if search_position is not None:
+        search_center = search.count("\n", 0, search_position)
+        excerpt_start = max(0, search_center - radius)
+        requested = search_lines[excerpt_start:excerpt_start + EDIT_FAILURE_MAX_LINES]
+        candidate_start = max(0, center - (search_center - excerpt_start))
+        candidate = lines[candidate_start:candidate_start + len(requested) + 2]
+        for tag, old_start, old_end, new_start, new_end in SequenceMatcher(
+                None, requested, candidate, autojunk=False).get_opcodes():
+            if tag != "equal" and old_start < len(requested):
+                rendered.extend([
+                    "Requested old text: " + repr("\n".join(requested[old_start:old_end]))[:240],
+                    "Current file near anchor: " + repr("\n".join(candidate[new_start:new_end]))[:240],
+                ])
+                break
     for index in range(start, end):
         line = lines[index]
         if len(line) > EDIT_FAILURE_MAX_LINE_CHARS:
@@ -598,7 +617,7 @@ def _search_not_found(
     replacement_index: int,
     replacement_count: int,
 ) -> ToolOutcome:
-    lines = [f"SEARCH text not found in {rel}; exact replacement was not applied.", EXACT_REPLACEMENT_CONTEXT_HINT]
+    lines = [f"SEARCH text not found in {rel}; exact replacement was not applied."]
     note = _replacement_failure_note(replacement_index, replacement_count)
     if note:
         lines.append(note)
@@ -606,6 +625,8 @@ def _search_not_found(
     if context:
         lines.append("")
         lines.extend(context.splitlines())
+    else:
+        lines.extend(["Use read_file to inspect the current file text.", EXACT_REPLACEMENT_CONTEXT_HINT])
     return ToolOutcome.error(_bounded_failure_output(lines))
 
 
@@ -704,6 +725,7 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
         return ToolOutcome.error(f"cannot read file: {rel}")
 
     updated = content
+    aligned = 0
     for index, block in enumerate(blocks, start=1):
         exact_count = updated.count(block.old_string)
         crlf_count = 0
@@ -716,6 +738,12 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
                 updated, replaced = _replace_unique(updated, retried.old_string, retried.new_string)
                 if replaced:
                     continue
+            recovered = (align_replacement(updated, block.old_string, block.new_string)
+                         if Path(rel).suffix.lower() == ".py" else None)
+            if recovered is not None:
+                updated = recovered
+                aligned += 1
+                continue
             return _search_not_found(
                 rel,
                 original_content=content,
@@ -746,16 +774,23 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
         return ToolOutcome(f"edited {rel} (no changes)", True)
     if len(updated.encode("utf-8")) > WRITE_MAX_FILE_BYTES:
         return ToolOutcome.error(f"file too large to write: {rel}")
+    if aligned and not valid_python(updated):
+        return ToolOutcome.error("automatic indentation cannot safely apply this batch: resulting Python is invalid; no replacements written")
     syntax_hint = _python_syntax_regression_hint(rel, content, updated)
-    write_error = _write_text_after_final_path_check(root, rel, updated, tool="edit")
+    from codey.workspace.paths import content_hash
+
+    write_error = _write_text_after_final_path_check(root, rel, updated, tool="edit",
+        expected_version=content_hash(content) if aligned else None)
     if write_error is not None:
         return write_error
     count = len(blocks)
     label = "replacement" if count == 1 else "replacements"
     return ToolOutcome(
-        f"edited {rel} ({count} {label}){syntax_hint}",
+        f"edited {rel} ({count} {label})"
+        + (f"\nAutomatically aligned outer indentation for {aligned} replacement(s)." if aligned else "") + syntax_hint,
         True,
         changed=True,
+        audit={"indentation_adjusted": aligned} if aligned else {},
         presentation={"preview": edit_preview(rel, content, updated)},
     )
 
@@ -1223,7 +1258,8 @@ def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutc
         capture_truncated=capture_truncated, execution_id=raw.execution_id,
         exit_code_scope="process", full_output_retained=raw.full_output_retained, output_ref=raw.output_ref)
     display = (f"exit {raw.exit_code}: {raw.command}\nExit code scope: process\n"
-               f"Full execution output recoverable: {str(receipt.full_output_recoverable).lower()}\n{output}")
+               f"Full execution output recoverable: {str(receipt.full_output_recoverable).lower()}\n"
+               + (failure_excerpt(raw.output) if raw.exit_code != 0 else "") + output)
     audit: dict[str, object] = dict(receipt.audit_facts())
     if raw.started_at:
         audit["command_started_at"] = raw.started_at

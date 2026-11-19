@@ -160,22 +160,45 @@ def test_admission_events_report_accepted_without_a_command_exit(runtime: Runtim
     assert runtime.session.executed[turn_effect_id("r", 0, 0)]["ok"] is False
 
 
-def test_wrong_indentation_is_rejected_and_exact_replacement_still_works(runtime: Runtime) -> None:
+def test_uniform_indent_is_recovered_but_internal_indent_is_rejected(runtime: Runtime) -> None:
     source = "class Checkout:\n    def check(self):\n        if True:\n            raise ValueError('stock')\n"
     path = runtime.project / "checkout.py"
     path.write_text(source, encoding="utf-8")
     assert runtime.execute(ToolCall("read_file", {"path": "checkout.py"})).ok
     wrong = "    if True:\n        raise ValueError('stock')\n"
+    inconsistent = "    if True:\n    raise ValueError('stock')\n"
     failed = runtime.execute(ToolCall("edit", {"path": "checkout.py", "replacements": [
-        {"old_string": wrong, "new_string": wrong.replace("stock", "inventory")}] }), turn=1)
+        {"old_string": inconsistent, "new_string": inconsistent.replace("stock", "inventory")}] }), turn=1)
     assert not failed.ok
     assert path.read_text(encoding="utf-8") == source
-    assert "base_result_ref" in failed.model_text
-    exact = "        if True:\n            raise ValueError('stock')\n"
-    edited = runtime.execute(ToolCall("edit", {"path": "checkout.py", "replacements": [
-        {"old_string": exact, "new_string": exact.replace("stock", "inventory")}] }), turn=2)
-    assert edited.ok, edited.model_text
+    assert "SEARCH text not found" in failed.model_text
+    recovered = runtime.execute(ToolCall("edit", {"path": "checkout.py", "replacements": [
+        {"old_string": wrong, "new_string": wrong.replace("stock", "inventory")}] }), turn=2)
+    assert recovered.ok, recovered.model_text
+    assert recovered.audit["indentation_adjusted"] == 1
     assert path.read_text(encoding="utf-8") == source.replace("stock", "inventory")
+    exact = "        if True:\n            raise ValueError('inventory')\n"
+    edited = runtime.execute(ToolCall("edit", {"path": "checkout.py", "replacements": [
+        {"old_string": exact, "new_string": exact.replace("inventory", "available")}] }), turn=3)
+    assert edited.ok, edited.model_text
+    assert path.read_text(encoding="utf-8") == source.replace("stock", "available")
+
+
+def test_background_failure_has_tail_details_in_first_observation(runtime: Runtime) -> None:
+    (runtime.project / "test_sample.py").write_text(
+        "def test_fail():\n    print('setup-noise ' * 2000)\n    assert 1 == 2\n", encoding="utf-8")
+    ref = runtime.accept()
+    child = runtime.app.durable.claim_task_checkpoint(ref)
+    run_tool_task(runtime.app.durable, child, stores=runtime.app.task_submission_stores, signal=threading.Event())
+    observed = runtime.execute(ToolCall("task_output", {"task_ref": ref}), turn=1)
+    value = decode_json_object(json.loads(observed.model_text))
+    result = decode_json_object(value["result"])
+    text = require_json_string(result["text"], "text")
+    assert "FAILED test_sample.py::test_fail" in text and "1 failed" in text
+    assert "setup-noise" not in text
+    assert result["exit_code"] == 1 and result["ok"] is False
+    assert len(runtime.app.durable.effects(ref)) == 1
+    assert runtime.app.durable.task("r").status == TaskStatus.RUNNING
 
 
 def test_guarded_full_read_update_reuses_existing_version_contract(runtime: Runtime) -> None:
@@ -656,8 +679,11 @@ def test_headless_entry_starts_child_without_dispatching_another_model(tmp_path:
             pass
 
     provider = Scripted()
+    def connect(provider_id: str, *, port: int) -> Scripted:
+        return provider
+
     rows: list[dict[str, object]] = []
     result = run_headless(HeadlessRequest(project, "后台运行测试，查看结果，再告诉我结果。不要修改文件。", provider_id="local",
         run_id="headless-background", state_home=tmp_path / "state", max_turns=4, project_changes_required=False),
-        emit_jsonl=rows.append, connect_provider=lambda _provider, *, port: provider)
+        emit_jsonl=rows.append, connect_provider=connect)
     assert result.stop_reason == "done", rows

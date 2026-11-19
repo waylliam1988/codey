@@ -23,6 +23,7 @@ from codey.operations.kernel_result import _error_result
 from codey.operations.task_session import TaskSession
 from codey.operations.task_state import TaskSubmissionStores
 from codey.runtime.core import cancellation
+from codey.runtime.core.execution_receipt import execution_receipt
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.tool_dispatch import ToolDispatch
 from codey.runtime.effects.effect_records import (
@@ -37,6 +38,7 @@ from codey.storage.execution_output_store import ExecutionOutputStore
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.toolchain.runtime import ToolOutcome, project_run_command_result, run_command_raw
 from codey.types.json_value import canonical_json_object, decode_json_object, require_json_integer, require_json_string
+from codey.utils.failure_output import failure_excerpt
 
 
 def owned_tool_task(durable: DurableSession, task_ref: str, *, owner_task_id: str) -> TaskCheckpoint:
@@ -277,6 +279,12 @@ def control_tool_task(call: ToolCall, *, durable: object, owner_task_id: str,
                 payload["output"] = {channel: ExecutionOutputStore.stream_since(snapshot, channel,
                     require_json_integer(call.args.get(f"{channel}_cursor", 0), f"{channel}_cursor"), limit=limit)
                     for channel in ("stdout", "stderr")}
+                if result is not None:
+                    receipt = execution_receipt(result[1])
+                    excerpt = failure_excerpt(result[1].model_text)
+                    if receipt is not None and receipt.status == "exit" and (receipt.exit_code == 0 or excerpt):
+                        payload["result"] = {"ok": result[1].ok, "exit_code": receipt.exit_code,
+                            "text": excerpt or f"exit {receipt.exit_code}", "text_truncated": True}
         return ToolResult(call, json.dumps(payload, ensure_ascii=False), ok=True, canonical={"value": payload})
     except (KeyError, ValueError) as exc:
         return _error_result(call, str(exc))
