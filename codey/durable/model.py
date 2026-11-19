@@ -74,9 +74,10 @@ def _validate_task_scheduler_state(state: Mapping[str, object]) -> None:
     waiting_on = state.get("waiting_on", ())
     if not isinstance(waiting_on, (list, tuple)):
         raise ValueError("waiting task dependencies must be a list")
-    if any(not isinstance(item, str) or not item for item in waiting_on):
+    dependencies: list[object] | tuple[object, ...] = waiting_on
+    if any(not isinstance(item, str) or not item for item in dependencies):
         raise ValueError("waiting task dependencies must be non-empty strings")
-    if len(waiting_on) != len(set(waiting_on)):
+    if len(waiting_on) != len(set(dependencies)):
         raise ValueError("waiting task dependencies must be unique")
     join_policy = state.get("join_policy", "allSettled")
     if join_policy not in {"failFast", "allSettled"}:
@@ -137,12 +138,14 @@ def valid_cancellation_cleanup(previous: Mapping[str, object], current: TaskChec
             or current.status not in {TaskStatus.RUNNING, TaskStatus.PENDING, TaskStatus.WAITING}
             or not isinstance(before, Mapping) or not isinstance(after, Mapping)):
         return False
-    if any(before.get(key) != after.get(key) for key in ("session_id", "run_id", "operation_id", "writer_attempt", "repair_rounds")):
+    before_map: Mapping[str, object] = before
+    after_map: Mapping[str, object] = after
+    if any(before_map.get(key) != after_map.get(key) for key in ("session_id", "run_id", "operation_id", "writer_attempt", "repair_rounds")):
         return False
-    if after.get("leaf") not in {"closing", "plan_ready", "completion_pending", "control_ready", "provider_request_ready", "provider_effect_pending", "provider_response_ready",
+    if after_map.get("leaf") not in {"closing", "plan_ready", "completion_pending", "control_ready", "provider_request_ready", "provider_effect_pending", "provider_response_ready",
             "tool_effect_pending", "tool_delivery_pending", "kernel_settled", "writer_settled", "repair_settled", "terminal"}:
         return False
-    return after.get("stop_reason") != "done"
+    return after_map.get("stop_reason") != "done"
 
 
 def kernel_cleanup_required(task: TaskCheckpoint) -> bool:
@@ -158,11 +161,12 @@ def kernel_cleanup_required(task: TaskCheckpoint) -> bool:
 
 def cancellation_receipts_only(current: TaskCheckpoint, effects: tuple[EffectRecord, ...]) -> bool:
     position = current.state.get("operation")
-    return (isinstance(position, Mapping) and position.get("leaf") == "provider_request_ready"
-            and bool(position.get("work_ref")) and all(
+    position_map: Mapping[str, object] = position if isinstance(position, Mapping) else dict[str, object]()
+    return (isinstance(position, Mapping) and position_map.get("leaf") == "provider_request_ready"
+            and bool(position_map.get("work_ref")) and all(
                 effect.category == "provider_send"
                   and effect.intent.get("display_ref") == "closing_acknowledgement"
-                and effect.intent.get("request_ref") == position.get("request_ref") for effect in effects))
+                and effect.intent.get("request_ref") == position_map.get("request_ref") for effect in effects))
 
 
 def valid_input_consumption(previous_phase: str, previous_status: str,
@@ -740,13 +744,15 @@ class TaskCheckpoint:
 
     @property
     def workflow_input(self) -> Mapping[str, object]:
-        value = self.state.get("workflow_input", {})
-        return value if isinstance(value, Mapping) else {}
+        value = self.state.get("workflow_input", dict[str, object]())
+        result: Mapping[str, object] = value if isinstance(value, Mapping) else dict[str, object]()
+        return result
 
     @property
     def workflow_checkpoint(self) -> Mapping[str, object]:
-        value = self.state.get("workflow_checkpoint", {})
-        return value if isinstance(value, Mapping) else {}
+        value = self.state.get("workflow_checkpoint", dict[str, object]())
+        result: Mapping[str, object] = value if isinstance(value, Mapping) else dict[str, object]()
+        return result
 
     @property
     def replay_digest(self) -> str | None:
@@ -796,9 +802,10 @@ class TaskCheckpoint:
         if pending_ids is not None:
             if not isinstance(pending_ids, list):
                 raise ValueError("pending effect IDs must be a list")
-            if any(not isinstance(effect_id, str) or not effect_id for effect_id in pending_ids):
+            identities: list[object] = pending_ids
+            if any(not isinstance(effect_id, str) or not effect_id for effect_id in identities):
                 raise ValueError("pending effect IDs must be non-empty strings")
-            if len(pending_ids) != len(set(pending_ids)):
+            if len(pending_ids) != len(set(identities)):
                 raise ValueError("pending effect IDs must be unique")
             expected_pending = pending_ids[-1] if pending_ids else None
             if self.pending_effect_id != expected_pending:
@@ -982,9 +989,12 @@ def _validate_mutation_tasks(mutation: DurableMutation) -> None:
         parent = mutation.task
         origin = ToolTaskInput.from_payload(child.state["tool_input"]).origin_effect_id
         admission = next((effect for effect in mutation.settlements if effect.effect_id == origin), None)
+        if (admission is None and mutation.effect is not None and mutation.effect.effect_id == origin
+                and mutation.expected_effect_status == "pending" and mutation.effect.status == "pending"):
+            admission = mutation.effect
         if (parent is None or parent.execution_kind != "model" or child.owner_task_id != parent.task_id
                 or child.submission_id != parent.submission_id or admission is None
-                or admission.task_id != parent.task_id or admission.status != "ok"):
+                or admission.task_id != parent.task_id or admission.status not in {"ok", "pending"}):
             raise ValueError("tool task must be atomically admitted by its original owner effect")
 
 

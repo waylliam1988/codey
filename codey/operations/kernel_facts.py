@@ -34,7 +34,9 @@ def project_result_observation(
     exit_code: int | None = None, research_ledger: ResearchLedger | None = None,
 ) -> None:
     """The shared live/recovery projection, applied only to staged views."""
-    if result.kind == "accepted":
+    if result.kind == "accepted" or "tool_task" in result.canonical:
+        # Managed commands project execution facts from the child's sole
+        # receipt. The caller carries only an observation and its reference.
         return
     from codey.research.source_acquisition import acquisition_observation, failure_event
 
@@ -225,7 +227,7 @@ def record_facts_for_result(
         from codey.research.questions import question_plan
 
         observation = result.canonical.get("research_observation")
-        if not isinstance(observation, dict) or set(observation) != {"questions"}:
+        if not isinstance(observation, dict) or len(observation) != 1 or "questions" not in observation:
             raise ValueError("research plan requires its committed question observation")
         planned = question_plan(observation["questions"], session.research_questions)
         session.research_questions = question_plan(list(planned), session.research_questions)
@@ -278,17 +280,19 @@ def project_execution_record(
         record: ExecutionRecord = {
             "name": canonical_tool_name(result.call.name),
             "ok": result.kind == "completed" and ok is True,
-            "call_id": str(result.call.call_id or getattr(call, "call_id", "") or ""),
+            "call_id": result.call.call_id or call.call_id,
             "excerpt": (result.model_text or "")[:500],
             "args_digest": _call_args_digest(call),
             "argument_digests": {key: argument_digest(value) for key, value in call.args.items()},
         }
         children = result.canonical.get("child_effect_ids")
         if children is not None:
-            if (not isinstance(children, list) or any(not isinstance(ref, str) or not ref for ref in children)
-                    or len(set(children)) != len(children)):
+            if not isinstance(children, list):
                 raise ValueError("invalid child effect references")
-            record["child_effect_ids"] = list(children)
+            refs = [require_json_string(ref, "child effect reference") for ref in children]
+            if any(not ref for ref in refs) or len(set(refs)) != len(refs):
+                raise ValueError("invalid child effect references")
+            record["child_effect_ids"] = refs
         if result.canonical.get("workspace_unconfirmed") is True:
             identity_reason = result.canonical["identity_reason"]
             if not isinstance(identity_reason, str):

@@ -17,7 +17,7 @@ from codey.durable.model import (
     TaskCheckpoint,
 )
 from codey.durable.session import DurableSession
-from codey.durable.tool_task import ToolTaskInput, execution_effect_id
+from codey.durable.tool_task import ToolTaskInput, execution_effect_id, tool_task_id
 from codey.operations.kernel_receipts import restore_result_receipt, result_receipt_fields
 from codey.operations.kernel_result import _error_result
 from codey.operations.task_session import TaskSession
@@ -40,6 +40,8 @@ from codey.toolchain.runtime import ToolOutcome, project_run_command_result, run
 from codey.types.json_value import canonical_json_object, decode_json_object, require_json_integer, require_json_string
 from codey.utils.failure_output import failure_excerpt
 
+COMMAND_YIELD_MS = 10_000
+
 
 def owned_tool_task(durable: DurableSession, task_ref: str, *, owner_task_id: str) -> TaskCheckpoint:
     owner = durable.task(owner_task_id)
@@ -49,11 +51,51 @@ def owned_tool_task(durable: DurableSession, task_ref: str, *, owner_task_id: st
         raise ValueError("tool task is outside the caller's ownership")
     request = ToolTaskInput.from_payload(child.state["tool_input"])
     origin = durable.effect(request.origin_effect_id)
-    if (origin.task_id != owner_task_id or origin.settlement is None or origin.status != "ok"
+    if (origin.task_id != owner_task_id
             or origin.intent.get("tool_name") != request.call_name
-            or origin.args_digest != compute_args_digest({**request.args, "run_in_background": True})):
+            or origin.args_digest != compute_args_digest(request.args)):
         raise ValueError("tool task has no committed original admission")
     return child
+
+
+def automatic_command_result(durable: DurableSession, call: ToolCall, *, origin_effect_id: str,
+                             owner_task_id: str, store: ManagedOutputStore | None,
+                             wait_ms: int = COMMAND_YIELD_MS) -> ToolResult:
+    """Observe the existing child; the original call never owns a second process."""
+    ref = tool_task_id(origin_effect_id)
+    child = wait_tool_task(durable, ref, owner_task_id=owner_task_id, wait_ms=wait_ms)
+    if child.status not in TASK_TERMINAL_STATUSES:
+        value: dict[str, object] = {"kind": "accepted", "task_ref": ref}
+        return ToolResult(call, json.dumps(value), ok=True, kind="accepted", canonical={"value": value})
+    observed = tool_execution_result(durable, child, store=store)
+    if observed is None:
+        return ToolResult(call, f"Command {child.status}: {child.state.get('failure_reason', '')}", ok=False,
+            canonical={"tool_task": {"task_ref": ref}})
+    identity, result = observed
+    # The execution receipt stays on its child. This is the caller's bounded
+    # observation, with a reference rather than a second execution contract.
+    text = result.model_text
+    if len(text) > 4000:
+        text = (failure_excerpt(text) or text[:1800] + "\n...\n" + text[-1800:])
+        text = text[:4000] + f"\nOutput excerpt; task_output can read task_ref={ref}."
+    return ToolResult(call, text, ok=result.ok, truncated=result.truncated or len(result.model_text) > 4000,
+        audit={"exit_code": result.audit.get("exit_code")},
+        canonical={"tool_task": {"task_ref": ref, "execution_ref": identity}})
+
+
+def recover_command_admission(durable: DurableSession, *, origin_effect_id: str, owner_task_id: str,
+                              store: ManagedOutputStore | None) -> ToolResult | None:
+    """Recover a reserved caller by following its original child, never by spawning."""
+    try:
+        child = durable.task(tool_task_id(origin_effect_id))
+    except KeyError:
+        return None
+    owned_tool_task(durable, child.task_id, owner_task_id=owner_task_id)
+    request = ToolTaskInput.from_payload(child.state["tool_input"])
+    origin = durable.effect(origin_effect_id)
+    call = ToolCall(request.call_name, request.args, require_json_string(origin.intent.get("call_id", ""), "call_id"))
+    return automatic_command_result(durable, call, origin_effect_id=origin_effect_id,
+        owner_task_id=owner_task_id, store=store, wait_ms=0)
 
 
 def tool_execution_result(durable: DurableSession, child: TaskCheckpoint, *, store: ManagedOutputStore | None,
@@ -70,8 +112,10 @@ def tool_execution_result(durable: DurableSession, child: TaskCheckpoint, *, sto
     if effect.status == "interrupted":
         return effect.effect_id, _error_result(ToolCall(request.call_name, request.args),
             "execution interrupted; external outcome and cleanup could not be confirmed; not automatically repeated")
-    projection = RuntimeEffectProjection(RuntimeEffectIntent.from_payload(dict(canonical_json_object(effect.intent))),
-        RuntimeEffectSettlement.from_payload(dict(canonical_json_object(effect.settlement))))
+    intent_payload: dict[str, object] = dict(canonical_json_object(effect.intent))
+    settlement_payload: dict[str, object] = dict(canonical_json_object(effect.settlement))
+    projection = RuntimeEffectProjection(RuntimeEffectIntent.from_payload(intent_payload),
+        RuntimeEffectSettlement.from_payload(settlement_payload))
     return effect.effect_id, restore_result_receipt(projection, store=store,
         session_id=child.conversation_id, run_id=child.task_id, project_path=project_path)
 
@@ -186,8 +230,9 @@ def _run_admitted_operation(durable: DurableSession, child: TaskCheckpoint, requ
                 session_id=child.conversation_id, run_id=task_id, phase="writer", turn=request.turn,
                 tool_index=request.tool_index, tool_name=call.name, args_digest=compute_args_digest(call.args),
                 replay_class=spec.replay_class))
+            intent_payload: object = intent.to_payload()
             durable.record_effect_intent(task_id, EffectRecord(identity, task_id, "tool_call", spec.replay_class,
-                intent.args_digest, "pending", intent.to_payload()))
+                intent.args_digest, "pending", canonical_json_object(intent_payload)))
             result, ok, code = execute_tool_operation(session, call, delegate=delegate, runnable={},
                 turn=request.turn, tool_index=request.tool_index, project_path=project,
                 workspace_revision_store=stores.workspace_revisions)
@@ -196,8 +241,9 @@ def _run_admitted_operation(durable: DurableSession, child: TaskCheckpoint, requ
             receipt = prepare_settlement(child.conversation_id, task_id, RuntimeEffectSettlement(effect_id=identity, effect_category="tool_call",
                 session_id=child.conversation_id, run_id=task_id, status="ok" if ok else "error",
                 replay_class=spec.replay_class, exit_code=code, **fields), (RuntimeEffectProjection(intent, None),))
+            receipt_payload: object = receipt.to_payload()
             durable.settle_effect(task_id, EffectRecord(identity, task_id, "tool_call", spec.replay_class,
-                intent.args_digest, receipt.status, intent.to_payload(), receipt.to_payload()))
+                intent.args_digest, receipt.status, canonical_json_object(intent_payload), canonical_json_object(receipt_payload)))
             if durable.task(task_id).state.get("cancel_requested"):
                 durable.cancel_task(task_id)
             else:
@@ -239,6 +285,9 @@ def terminal_tool_task_observations(results: Mapping[str, ToolResult]) -> set[st
     """Derive observed terminal states from committed control receipts."""
     observed: set[str] = set()
     for result in results.values():
+        forwarded = result.canonical.get("tool_task")
+        if result.kind == "completed" and result.call.name == "run" and isinstance(forwarded, dict):
+            observed.add(require_json_string(forwarded["task_ref"], "task_ref"))
         if result.ok and result.call.name in {"task_output", "task_cancel"}:
             value = decode_json_object(result.canonical["value"])
             if value["status"] in TASK_TERMINAL_STATUSES:
@@ -257,34 +306,58 @@ def control_tool_task(call: ToolCall, *, durable: object, owner_task_id: str,
         if call.name == "task_cancel":
             durable.request_cancel(task_ref, reason="cancelled by owning task")
         child = wait_tool_task(durable, task_ref, owner_task_id=owner_task_id, wait_ms=wait_ms)
-        payload: dict[str, object] = {"task_ref": task_ref, "status": "stopping"
-            if child.state.get("cancel_requested") and child.status not in TASK_TERMINAL_STATUSES else str(child.status)}
-        result = tool_execution_result(durable, child, store=store)
-        if result is not None:
-            payload["result"] = {"ok": result[1].ok, "text": result[1].model_text[:4000],
-                                 "text_truncated": len(result[1].model_text) > 4000,
-                                 "exit_code": result[1].audit.get("exit_code")}
-        if child.state.get("failure_reason"):
-            payload["failure_reason"] = child.state["failure_reason"]
-        if child.state.get("cleanup_unknown"):
-            payload["cleanup_unknown"] = True
-        if store is not None:
-            limit = require_json_integer(call.args.get("limit", 4000), "limit")
-            output_id = execution_effect_id(task_ref)
-            try:
-                snapshot = ExecutionOutputStore.read_existing(store.root.parent, output_id)
-            except KeyError:
-                snapshot = None
-            if snapshot is not None:
-                payload["output"] = {channel: ExecutionOutputStore.stream_since(snapshot, channel,
-                    require_json_integer(call.args.get(f"{channel}_cursor", 0), f"{channel}_cursor"), limit=limit)
-                    for channel in ("stdout", "stderr")}
-                if result is not None:
-                    receipt = execution_receipt(result[1])
-                    excerpt = failure_excerpt(result[1].model_text)
-                    if receipt is not None and receipt.status == "exit" and (receipt.exit_code == 0 or excerpt):
-                        payload["result"] = {"ok": result[1].ok, "exit_code": receipt.exit_code,
-                            "text": excerpt or f"exit {receipt.exit_code}", "text_truncated": True}
+        payload = tool_task_snapshot(durable, child, store=store, args=call.args)
         return ToolResult(call, json.dumps(payload, ensure_ascii=False), ok=True, canonical={"value": payload})
     except (KeyError, ValueError) as exc:
         return _error_result(call, str(exc))
+
+
+def tool_task_snapshot(durable: DurableSession, child: TaskCheckpoint, *, store: ManagedOutputStore | None,
+                       args: Mapping[str, object]) -> dict[str, object]:
+    """One bounded projection shared by explicit reads and automatic notifications."""
+    limit = require_json_integer(args.get("limit", 4000), "limit")
+    payload: dict[str, object] = {"task_ref": child.task_id, "status": "stopping"
+        if child.state.get("cancel_requested") and child.status not in TASK_TERMINAL_STATUSES else str(child.status)}
+    result = tool_execution_result(durable, child, store=store)
+    if result is not None:
+        payload["execution_ref"] = result[0]
+        payload["result"] = {"ok": result[1].ok, "text": result[1].model_text[:limit],
+                             "text_truncated": len(result[1].model_text) > limit,
+                             "exit_code": result[1].audit.get("exit_code")}
+    payload["outcome"] = _task_outcome(child, result[1] if result is not None else None)
+    if child.state.get("failure_reason"):
+        payload["failure_reason"] = require_json_string(child.state["failure_reason"], "failure_reason")[:limit]
+    if child.state.get("cleanup_unknown"):
+        payload["cleanup_unknown"] = True
+    if store is not None:
+        try:
+            snapshot = ExecutionOutputStore.read_existing(store.root.parent, execution_effect_id(child.task_id))
+        except KeyError:
+            snapshot = None
+        if snapshot is not None:
+            payload["output"] = {channel: ExecutionOutputStore.stream_since(snapshot, channel,
+                require_json_integer(args.get(f"{channel}_cursor", 0), f"{channel}_cursor"), limit=limit)
+                for channel in ("stdout", "stderr")}
+            if result is not None:
+                receipt = execution_receipt(result[1])
+                excerpt = failure_excerpt(result[1].model_text)
+                if receipt is not None and receipt.status == "exit" and (receipt.exit_code == 0 or excerpt):
+                    payload["result"] = {"ok": result[1].ok, "exit_code": receipt.exit_code,
+                        "text": excerpt[:limit] or f"exit {receipt.exit_code}", "text_truncated": True}
+    return payload
+
+
+def _task_outcome(child: TaskCheckpoint, result: ToolResult | None) -> str:
+    if child.status not in TASK_TERMINAL_STATUSES or child.status == "cancelled":
+        return str(child.status)
+    if child.state.get("cleanup_unknown"):
+        return "interrupted"
+    if result is None:
+        return "failed"
+    receipt = execution_receipt(result)
+    status = receipt.status if receipt is not None else ""
+    if status == "timeout":
+        return "timed_out"
+    if status in {"output_drain_timeout", "output_read_error"}:
+        return "incomplete"
+    return "succeeded" if result.ok else "failed"

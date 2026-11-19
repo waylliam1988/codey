@@ -17,6 +17,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
+from codey.durable.session import DurableSession
 from codey.operations.kernel_contracts import StopSignal, ToolExecutor
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_facts import bind_source_identity, project_execution_record, project_result_observation
@@ -52,7 +53,6 @@ if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
     from codey.agents.tools import AgentToolFns
     from codey.durable import DurableStore
-    from codey.durable.session import DurableSession
     from codey.operations.kernel_protocol import TurnSnapshot
     from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_execution import ProjectPolicyCheck
@@ -669,7 +669,7 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
                 # children re-enter this same admission and settlement path.
                 # Existing receipts need neither admission nor a new verdict,
                 # including when cancellation arrives before their delivery.
-                if (name not in {"codemode", "task_output", "task_cancel"}
+                if (name not in {"codemode", "task_output", "task_cancel"} and not _automatic_command(context, call)
                         and call.args.get("run_in_background") is not True
                         and identity not in session.executed and identity not in delivered_map):
                     if frozen_specs is None:
@@ -745,9 +745,11 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
                 settle(identity, call, verification_blocked, ok=False)
                 results.append(verification_blocked)
                 continue
-            if call.args.get("run_in_background") is True:
-                result = _admit_background(context, identity, call, base_index + offset)
-                results.append(settle(identity, call, result, ok=result.ok, committed=result.kind == "accepted"))
+            if call.args.get("run_in_background") is True or _automatic_command(context, call):
+                deferred = call.args.get("run_in_background") is not True
+                result = _admit_background(context, identity, call, base_index + offset, defer_result=deferred)
+                results.append(settle(identity, call, result, ok=result.ok,
+                    exit_code=result.audit.get("exit_code"), committed=not deferred and result.kind == "accepted"))
                 continue
             if name in {"task_output", "task_cancel"}:
                 from codey.operations.tool_tasks import control_tool_task
@@ -776,15 +778,31 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
     return results
 
 
-def _admit_background(context: ToolExecutionContext, identity: str, call: ToolCall, index: int) -> ToolResult:
+def _automatic_command(context: ToolExecutionContext, call: ToolCall) -> bool:
+    spec = context.frozen_specs.get(call.name) if context.frozen_specs is not None else None
+    return (call.name == "run" and call.args.get("run_in_background") is not False
+            and spec is not None and spec.supports_background and isinstance(context.durable, DurableSession)
+            and context.intent_sink is not None and context.snapshot is not None and context.project_path is not None
+            and call.name not in context.runnable and not dict(context.snapshot.custom_executors).get(call.name))
+
+
+def _admit_background(context: ToolExecutionContext, identity: str, call: ToolCall, index: int,
+                      *, defer_result: bool = False) -> ToolResult:
     spec = context.frozen_specs.get(call.name) if context.frozen_specs is not None else None
     if (spec is None or not spec.supports_background or context.snapshot is None
             or context.intent_sink is None or context.project_path is None or call.name in context.runnable
             or dict(context.snapshot.custom_executors).get(call.name) is not None):
         return _error_result(call, "background execution requires a captured durable production operation")
-    return context.intent_sink.admit_tool_task(identity, call, snapshot=context.snapshot,
+    result = context.intent_sink.admit_tool_task(identity, call, snapshot=context.snapshot,
         project=str(context.project_path.resolve()), permission_profile=context.permission_profile,
-        turn=context.active_turn, tool_index=index)
+        turn=context.active_turn, tool_index=index, defer_result=defer_result)
+    if defer_result:
+        from codey.operations.tool_tasks import COMMAND_YIELD_MS, automatic_command_result
+
+        assert isinstance(context.durable, DurableSession)
+        return automatic_command_result(context.durable, call, origin_effect_id=identity,
+            owner_task_id=context.run_id, store=context.managed_outputs, wait_ms=COMMAND_YIELD_MS)
+    return result
 
 
 def _structured_executor_result(value: object) -> ToolResult | None:

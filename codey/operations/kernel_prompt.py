@@ -438,15 +438,28 @@ def _browser_followup_context(result: ToolResult, session: TaskSession) -> str:
     return ""
 
 
+def _execution_result_context(result: ToolResult) -> str:
+    if result.call.name not in {"shell", "run"}:
+        return ""
+    text = "\nAvailable receipt views: " + ("output, value" if "value" in result.canonical else "output") + "."
+    forwarded = result.canonical.get("tool_task")
+    if forwarded is not None:
+        return text + "\nCommand execution reference: " + json.dumps(forwarded, ensure_ascii=False)
+    receipt = execution_receipt(result)
+    return text + ("\nExecution facts: " + json.dumps(receipt.facts(), ensure_ascii=False) if receipt is not None else "")
+
+
 def _result_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool = True) -> str:
     text = (result.model_text or "")
     if result.kind == "accepted":
         value = decode_json_object(result.canonical["value"])
         task_ref = require_json_string(value["task_ref"], "task_ref")
+        task_args: dict[str, object] = {"task_ref": task_ref, "wait_ms": 30000}
         return (text + '\n\nBackground admission only. The command result is not in this receipt. '
-                'Read its output and formal result with task_output('
-                + json.dumps({"task_ref": task_ref, "wait_ms": 30000})
-                + '). Use task_cancel to stop it. Read the terminal state before reporting its outcome.')
+                'Final status and bounded output will be delivered automatically; do not poll or repeat the command. '
+                'If intermediate output is useful now, inspect task_output('
+                + json.dumps(task_args)
+                + '). Use task_cancel to stop it. Wait for the final result before reporting its outcome.')
     if result.call.name == "codemode":
         if result.ok:
             text = f"Result data (JSON):\n{text}"
@@ -486,11 +499,7 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
             text += ("For read_tool_result only, copy the complete result_ref including its prefix. "
                      f'Read omitted detail with read_tool_result({{"result_ref":"{result_ref}","query":"literal keyword"}}). '
                      f"{instruction} do not repeat execution to recover output.")
-        if result.call.name in {"shell", "run"}:
-            text += "\nAvailable receipt views: " + ("output, value" if "value" in result.canonical else "output") + "."
-            receipt = execution_receipt(result)
-            if receipt is not None:
-                text += "\nExecution facts: " + json.dumps(receipt.facts(), ensure_ascii=False)
+        text += _execution_result_context(result)
         if not result.ok and "source_failure" in result.canonical:
             text += "\nSource acquisition failure: " + json.dumps(result.canonical["source_failure"], ensure_ascii=False)
     if result.ok and result.call.name == "web_search" and session.search_results:
@@ -614,6 +623,11 @@ def working_context(session: TaskSession) -> str:
     for identity, record in commands[-12:]:
         result = session._memory_results.get(identity)
         args: JsonObject = result.call.args if result is not None else {}
+        if result is not None and "tool_task" in result.canonical:
+            executions.append({"observation_ref": identity, **decode_json_object(result.canonical["tool_task"]),
+                "command": args.get("command", ""), "cwd": args.get("path", "."),
+                "status": "completed", "result_available": True})
+            continue
         if result is not None and result.kind == "accepted":
             value = decode_json_object(result.canonical["value"])
             executions.append({"admission_ref": identity, "task_ref": value["task_ref"],

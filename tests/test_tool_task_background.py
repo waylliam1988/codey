@@ -39,7 +39,7 @@ from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.effects.effect_records import RuntimeEffectStore
 from codey.storage.execution_output_store import ExecutionOutputObserver
 from codey.toolchain.tool_spec import validate_args_with_spec
-from codey.types.json_value import decode_json_object, require_json_string
+from codey.types.json_value import decode_json_object, parse_json_object, require_json_string
 
 
 @dataclass(frozen=True)
@@ -65,11 +65,11 @@ class Runtime:
         result = self.execute(ToolCall("run", {"command": command, "run_in_background": True}, "native-run"))
         assert result.ok, result.model_text
         assert result.kind == "accepted", result.model_text
-        value = decode_json_object(json.loads(result.model_text))
+        value = parse_json_object(result.model_text)
         return require_json_string(value["task_ref"], "task_ref")
 
 
-@pytest.fixture
+@pytest.fixture()
 def runtime(tmp_path: Path) -> Iterator[Runtime]:
     opened = open_runtime(tmp_path)
     try:
@@ -125,7 +125,7 @@ def test_admission_prompt_and_receipt_reader_point_to_task_output(runtime: Runti
     prompt = _result_context(accepted, runtime.session)
     assert 'task_output({"task_ref": "' + ref in prompt
     assert "Receipt display handle" not in prompt
-    observations = decode_json_object(json.loads(working_context(runtime.session).splitlines()[1]))
+    observations = parse_json_object(working_context(runtime.session).splitlines()[1])
     executions = observations["executions"]
     assert isinstance(executions, list)
     row = decode_json_object(executions[0])
@@ -133,7 +133,7 @@ def test_admission_prompt_and_receipt_reader_point_to_task_output(runtime: Runti
     assert row["task_ref"] == ref
     page = read_tool_result(ReceiptReader(runtime.session, runtime.app.managed_outputs, "s", "r"),
                            ToolCall("read_tool_result", {"result_ref": identity}))
-    payload = decode_json_object(json.loads(page.model_text))
+    payload = parse_json_object(page.model_text)
     next_read = decode_json_object(payload["next_read"])
     assert next_read["tool"] == "task_output"
     assert decode_json_object(next_read["args"])["task_ref"] == ref
@@ -191,7 +191,7 @@ def test_background_failure_has_tail_details_in_first_observation(runtime: Runti
     child = runtime.app.durable.claim_task_checkpoint(ref)
     run_tool_task(runtime.app.durable, child, stores=runtime.app.task_submission_stores, signal=threading.Event())
     observed = runtime.execute(ToolCall("task_output", {"task_ref": ref}), turn=1)
-    value = decode_json_object(json.loads(observed.model_text))
+    value = parse_json_object(observed.model_text)
     result = decode_json_object(value["result"])
     text = require_json_string(result["text"], "text")
     assert "FAILED test_sample.py::test_fail" in text and "1 failed" in text
@@ -235,7 +235,7 @@ def test_real_background_command_uses_original_runtime_and_one_result(runtime: R
     assert effects[0].status == "ok", effects[0].settlement
     result = runtime.execute(ToolCall("task_output", {"task_ref": ref}), turn=1)
     assert result.ok, result.model_text
-    value = decode_json_object(json.loads(result.model_text))
+    value = parse_json_object(result.model_text)
     result_value = decode_json_object(value["result"])
     assert result_value["ok"] is True
     assert result_value["exit_code"] == 0
@@ -277,7 +277,7 @@ def test_snapshot_and_argument_contracts_agree(runtime: Runtime) -> None:
     from codey.toolchain.tool_prompt import json_contract_text, model_tool_description
 
     example = spec.description.split("Background call example: ", 1)[1]
-    background_call = decode_json_object(json.loads(example))
+    background_call = parse_json_object(example)
     assert background_call["tool"] == "run"
     assert decode_json_object(background_call["args"])["run_in_background"] is True
     assert example in json_contract_text((spec,))
@@ -343,7 +343,9 @@ def test_coding_context_distinguishes_failed_check_from_unrun_check(runtime: Run
     assert result.ok, result.model_text
     before = prepare_coding_context(runtime.session)
     assert before is not None and not before.verification_failed
-    failed = runtime.execute(ToolCall("run", {"command": "python -m pytest -q"}), turn=1)
+    # This fixture deliberately has no scheduler; this test exercises inline
+    # verification projection, not automatic command scheduling.
+    failed = runtime.execute(ToolCall("run", {"command": "python -m pytest -q", "run_in_background": False}), turn=1)
     assert not failed.ok, failed.model_text
     after = prepare_coding_context(runtime.session)
     assert after is not None and after.verification_failed
@@ -353,7 +355,7 @@ def test_coding_context_distinguishes_failed_check_from_unrun_check(runtime: Run
         {"old_string": "    assert False", "new_string": "    assert True"}]}), turn=3).ok
     changed = prepare_coding_context(runtime.session)
     assert changed is not None and not changed.verification_failed and not changed.verification_fresh
-    assert runtime.execute(ToolCall("run", {"command": "python -m pytest -q"}), turn=4).ok
+    assert runtime.execute(ToolCall("run", {"command": "python -m pytest -q", "run_in_background": False}), turn=4).ok
     passed = prepare_coding_context(runtime.session)
     assert passed is not None and passed.verification_fresh and not passed.verification_failed
 
@@ -397,7 +399,7 @@ def crash_probe(root: Path, boundary: str) -> None:
     opened = open_runtime(root)
 
     def crash(_result: CommitResult, mutation: DurableMutation) -> None:
-        if boundary == "admission" and mutation.task_updates:
+        if boundary in {"admission", "auto_admission"} and mutation.task_updates:
             os._exit(73)
         if mutation.task is None or mutation.task.execution_kind != "tool":
             return
@@ -409,13 +411,16 @@ def crash_probe(root: Path, boundary: str) -> None:
             os._exit(73)
 
     opened.app.durable.subscribe_commits(crash)
+    if boundary == "auto_admission":
+        opened.execute(ToolCall("run", {"command": "python -m pytest -q"}))
+        raise AssertionError("automatic admission crash boundary was not reached")
     ref = opened.accept()
     child = opened.app.durable.claim_task_checkpoint(ref)
     run_tool_task(opened.app.durable, child, stores=opened.app.task_submission_stores, signal=threading.Event())
     raise AssertionError("crash boundary was not reached")
 
 
-@pytest.mark.parametrize("boundary", ["admission", "intent", "receipt", "cancel"])
+@pytest.mark.parametrize("boundary", ["admission", "auto_admission", "intent", "receipt", "cancel"])
 def test_process_restart_never_repeats_an_uncertain_or_settled_execution(tmp_path: Path, boundary: str) -> None:
     project = tmp_path / "project"
     project.mkdir()
@@ -443,6 +448,15 @@ def test_process_restart_never_repeats_an_uncertain_or_settled_execution(tmp_pat
             assert app.durable.effect(execution_effect_id(ref)).status == "interrupted"
         else:
             assert (project / "counter.txt").read_text() == "1"
+            if boundary == "auto_admission":
+                from codey.operations.tool_tasks import recover_command_admission
+
+                origin = turn_effect_id("r", 0, 0)
+                assert app.durable.effect(origin).settlement is None
+                recovered = recover_command_admission(app.durable, origin_effect_id=origin,
+                    owner_task_id="r", store=app.managed_outputs)
+                assert recovered is not None and recovered.ok, recovered
+                assert len(app.durable.owned_tasks("r")) == 1
             assert app.durable.task(ref).status == TaskStatus.COMPLETED
         assert len(app.durable.effects(ref)) == 1
     finally:
@@ -584,7 +598,8 @@ def test_real_kernel_and_scheduler_accept_observe_and_complete(
 
         def send(self, prompt: str) -> str:
             call = self.next_call()
-            return json.dumps({"tool": call.name, "args": call.args})
+            value: dict[str, object] = {"tool": call.name, "args": call.args}
+            return json.dumps(value)
 
         def send_turn(self, prompt: str, tools: Sequence[ProviderToolDefinition]) -> AssistantTurn:
             call = self.next_call()
@@ -666,14 +681,17 @@ def test_headless_entry_starts_child_without_dispatching_another_model(tmp_path:
         def send(self, text: str, timeout: float | None = None) -> str:
             self.turn += 1
             if self.turn == 1:
-                return json.dumps({"tool": "run", "args": {"command": "python -m pytest -q", "run_in_background": True}})
+                start: dict[str, object] = {"tool": "run", "args": {"command": "python -m pytest -q", "run_in_background": True}}
+                return json.dumps(start)
             if self.turn == 2:
                 accepted = re.search(r"tool_task:[0-9a-f]+", text)
                 assert accepted is not None, text
-                return json.dumps({"tool": "task_output", "args": {"task_ref": accepted.group(), "wait_ms": 5000}})
+                query: dict[str, object] = {"tool": "task_output", "args": {"task_ref": accepted.group(), "wait_ms": 5000}}
+                return json.dumps(query)
             assert self.turn == 3, text
             assert '"status": "completed"' in text, text
-            return json.dumps({"tool": "done", "args": {"summary": "Tests passed."}})
+            done: dict[str, object] = {"tool": "done", "args": {"summary": "Tests passed."}}
+            return json.dumps(done)
 
         def close(self) -> None:
             pass

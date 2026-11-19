@@ -13,6 +13,7 @@ from codey.types.json_value import (
     require_json_boolean,
     require_json_integer,
     require_json_string,
+    require_json_strings,
 )
 from codey.workspace.context_admission import ContextCandidate
 
@@ -32,6 +33,7 @@ class ProviderRequestContext:
     delivery_purpose: str = ""
     work_ref: str = ""
     source_response_ref: str = ""
+    tool_task_notifications: tuple[str, ...] = ()
 
     def to_payload(self) -> JsonObject:
         from codey.operations.provider_receipts import snapshot_description
@@ -41,7 +43,8 @@ class ProviderRequestContext:
                 "context": {"text": self.context_text, "memory_sources": encode_transport_value(self.memory_sources)},
                 "effect_scope": self.effect_scope, "close_reply": self.close_reply,
                 "delivery_purpose": self.delivery_purpose, "work_ref": self.work_ref,
-                "source_response_ref": self.source_response_ref}
+                "source_response_ref": self.source_response_ref,
+                "tool_task_notifications": list(self.tool_task_notifications)}
 
     @classmethod
     def from_payload(cls, value: object) -> ProviderRequestContext:
@@ -59,4 +62,5 @@ class ProviderRequestContext:
             require_json_boolean(row.get("close_reply"), "close_reply"),
             require_json_string(row.get("delivery_purpose", ""), "delivery_purpose"),
             require_json_string(row.get("work_ref", ""), "work_ref"),
-            require_json_string(row.get("source_response_ref", ""), "source_response_ref"))
+            require_json_string(row.get("source_response_ref", ""), "source_response_ref"),
+            tuple(require_json_strings(row.get("tool_task_notifications", []), "tool_task_notifications")))

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
-from time import monotonic
 from typing import TYPE_CHECKING
 
 from codey.durable.model import thaw_json
@@ -91,28 +90,27 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
 
     context.restore_facts()
     from codey.durable.model import TASK_TERMINAL_STATUSES
+    from codey.operations.tool_task_delivery import notified_tool_tasks
     from codey.operations.tool_tasks import terminal_tool_task_observations, wait_tool_task
 
     children = [child for child in context.durable.owned_tasks(context.sink.run_id) if child.execution_kind == "tool"]
     pending = [child for child in children if child.status not in TASK_TERMINAL_STATUSES]
-    wait_deadline = monotonic() + 30
     for child in pending:
-        wait_tool_task(context.durable, child.task_id, owner_task_id=context.sink.run_id,
-                       wait_ms=max(0, int((wait_deadline - monotonic()) * 1000)))
-    if any(context.durable.task(child.task_id).status not in TASK_TERMINAL_STATUSES for child in pending):
-        context.advance(state, operation_payload.LEAF_CONTROL_READY, data=RetryDecision(purpose="retry",
-            prompt="Owned tool work is still pending. Use task_output with wait_ms, or task_cancel. "
-            "Acceptance does not establish completion.", error="", error_source="", error_type=""))
-        return
+        # No remaining model work: wait on the existing task's commit events,
+        # rather than spending model turns polling it or executing it again.
+        while wait_tool_task(context.durable, child.task_id, owner_task_id=context.sink.run_id,
+                             wait_ms=30000).status not in TASK_TERMINAL_STATUSES:
+            pass
     if pending:
         context.restore_facts()
     observed = terminal_tool_task_observations(context.session._memory_results)
+    observed.update(notified_tool_tasks(context.durable, owner_task_id=context.sink.run_id,
+                                       store=context.sink.managed_outputs))
     unobserved = [child.task_id for child in children if child.task_id not in observed]
     if unobserved:
         context.advance(state, operation_payload.LEAF_CONTROL_READY, data=RetryDecision(purpose="retry",
-            prompt="Read the terminal state and formal result before reporting the background command's outcome. "
-            "Use task_output with wait_ms=30000 for these task_ref values: " + ", ".join(unobserved)
-            + ". Reading the admission receipt with read_tool_result does not observe the command's result.",
+            prompt="Owned commands have finished. Their formal results are supplied automatically below. "
+            "Use those results to continue or report the outcome; no polling or repeat execution is needed.",
             error="", error_source="", error_type=""))
         return
     plan = context.plan(state)

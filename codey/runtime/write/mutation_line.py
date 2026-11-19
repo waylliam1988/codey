@@ -738,6 +738,29 @@ class RuntimeMutationLine:
         self.settle_tool_effect(session_id, run_id, settlement, admitted_task=child,
                                messages=messages)
 
+    def reserve_tool_task(self, run_id: str, *, child: TaskCheckpoint) -> None:
+        """Create owned work while its caller waits, keeping the original result pending."""
+        from codey.durable.model import DurableMutation, EffectRecord
+        from codey.durable.tool_task import ToolTaskInput
+        from codey.runtime.effects.effect_records import compute_args_digest
+
+        request = ToolTaskInput.from_payload(child.state["tool_input"])
+
+        def reserve(parent: TaskCheckpoint, effects: tuple[EffectRecord, ...], revision: int) -> DurableMutation:
+            origin = next(effect for effect in effects if effect.effect_id == request.origin_effect_id)
+            if (origin.settlement is not None or origin.args_digest != compute_args_digest(request.args)
+                    or origin.intent.get("tool_name") != request.call_name):
+                raise RuntimeEffectError("tool task does not match its pending caller")
+            if parent.state.get("cancel_requested"):
+                from codey.runtime.core.cancellation import TaskCancelled
+
+                raise TaskCancelled("command cancelled before admission")
+            return DurableMutation(parent.conversation_id, revision,
+                task=replace(parent, revision=parent.revision + 1), task_updates=(child,),
+                effect=origin, expected_effect_status="pending")
+
+        self.durable.transact_task(run_id, reserve)
+
     def settle_effect(
         self,
         session_id: str,
@@ -799,11 +822,12 @@ class RuntimeMutationLine:
 
 
 def _operation_settled_entry(state: RuntimeOperationState) -> dict[str, object]:
+    payload: object = outcome_for_terminal(state).to_payload()
     return {
         "lane": state.lane,
         "operation_id": state.operation_id,
         "kind": "operation_settled",
-        "payload": outcome_for_terminal(state).to_payload(),
+        "payload": payload,
     }
 
 

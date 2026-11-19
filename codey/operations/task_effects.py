@@ -140,7 +140,7 @@ class KernelEffectSink:
                 session_id=self.session_id, run_id=self.run_id,
                 phase=self.phase, turn=turn, tool_index=index,
                 tool_name=name, tool_id=f"{turn}:{index}",
-                call_id=str(getattr(call, "call_id", "") or ""),
+                call_id=call.call_id,
                 args_digest=compute_args_digest(call.args), replay_class=replay_class,
                 delivery_batch_id="" if self.parent_effect_id else batch_id,
                 parent_effect_id=self.parent_effect_id,
@@ -171,7 +171,8 @@ class KernelEffectSink:
         return identity in self._old_pending
 
     def admit_tool_task(self, identity: str, call: ToolCall, *, snapshot: TurnSnapshot,
-                        project: str, permission_profile: str, turn: int, tool_index: int) -> ToolResult:
+                        project: str, permission_profile: str, turn: int, tool_index: int,
+                        defer_result: bool = False) -> ToolResult:
         import json
         import time
 
@@ -180,21 +181,22 @@ class KernelEffectSink:
         from codey.operations.kernel_receipts import result_receipt_fields, tool_history_messages
         from codey.operations.provider_receipts import snapshot_description
         from codey.runtime.core import cancellation
-        from codey.toolchain.execution_options import split_execution_options
 
         parent = self.durable.task(self.run_id)
-        business, _options = split_execution_options(call.args)
         deadline = cancellation.current_deadline()
-        request = ToolTaskInput(identity, call.name, business, snapshot_description(snapshot), project,
+        request = ToolTaskInput(identity, call.name, call.args, snapshot_description(snapshot), project,
             permission_profile, turn, tool_index,
             time.time() + max(0.0, deadline - time.monotonic()) if deadline is not None else None)
         child_id = tool_task_id(identity)
-        value = {"kind": "accepted", "task_ref": child_id}
+        value: dict[str, object] = {"kind": "accepted", "task_ref": child_id}
         result = ToolResult(call, json.dumps(value, ensure_ascii=False), ok=True, kind="accepted", canonical={"value": value})
         child = TaskCheckpoint(child_id, parent.conversation_id, parent.submission_id, "accepted", 0,
             parent.provider_snapshot, {"execution_kind": "tool", "owner_task_id": parent.task_id,
                 "tool_input": request.to_payload(),
                 **{key: parent.state[key] for key in ("controller_actor_id", "control_generation") if key in parent.state}})
+        if defer_result:
+            self.mutations.reserve_tool_task(self.run_id, child=child)
+            return result
         settlement = RuntimeEffectSettlement(effect_id=identity, effect_category=EFFECT_CATEGORY_TOOL_CALL,
             session_id=self.session_id, run_id=self.run_id, status=SETTLEMENT_STATUS_OK,
             replay_class=self._replay_classes[identity], **result_receipt_fields(result, store=self._managed_outputs,
@@ -206,9 +208,11 @@ class KernelEffectSink:
     def bind_request(self, snapshot: TurnSnapshot, *, logical_turn: int, window_ref: ProtocolWindowRef | None = None,
                      context_text: str = "", memory_sources: tuple[ContextCandidate, ...] = (),
                      effect_scope: str = "", close_reply: bool = False, delivery_purpose: str = "",
-                     work_ref: str = "", source_response_ref: str = "") -> None:
+                     work_ref: str = "", source_response_ref: str = "",
+                     tool_task_notifications: tuple[str, ...] = ()) -> None:
         self.request_context = ProviderRequestContext(logical_turn, snapshot, window_ref,
-            context_text, memory_sources, effect_scope, close_reply, delivery_purpose, work_ref, source_response_ref)
+            context_text, memory_sources, effect_scope, close_reply, delivery_purpose, work_ref, source_response_ref,
+            tool_task_notifications)
 
     def counters(self) -> RuntimeExecutionCounters:
         from codey.durable.checkpoint import operation_from_checkpoint

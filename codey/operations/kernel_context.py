@@ -448,6 +448,12 @@ class KernelContext:
                     part for part in (messages[-1].user_content, handoff) if part))
             else:
                 prompt = "\n\n".join(part for part in (prompt, handoff) if part)
+        from codey.operations.tool_task_delivery import append_tool_task_notifications
+
+        prompt, messages, notification_refs = append_tool_task_notifications(
+            self.durable, owner_task_id=self.sink.run_id, store=self.sink.managed_outputs,
+            results=self.session._memory_results, enabled=not acknowledge and not explanation_only,
+            native=self.native, prompt=prompt, messages=messages)
         scoped_contract = self.request_scoped_context
         if not self.native and not scoped_contract and state.leaf not in {operation_payload.LEAF_WRITER_RUNNING, operation_payload.LEAF_REPAIR_RUNNING}:
             prompt = kernel_prompt._text_request_prompt(prompt, snapshot)
@@ -457,7 +463,8 @@ class KernelContext:
             effect_scope=self.effect_scope, close_reply=acknowledge,
             delivery_purpose=self.decision(state)["purpose"] if state.work_ref else "", work_ref=state.work_ref,
             source_response_ref=self.response_reference(state) if state.response_ref or state.work_ref
-                or (state.leaf == operation_payload.LEAF_TOOL_DELIVERY_PENDING and not initial_source_batch) else "")
+                or (state.leaf == operation_payload.LEAF_TOOL_DELIVERY_PENDING and not initial_source_batch) else "",
+            tool_task_notifications=notification_refs)
         tools = tuple(tools_from_specs(snapshot.model_specs))
         options = ProviderRequestOptions()
         coding = ""

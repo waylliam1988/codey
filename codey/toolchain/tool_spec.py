@@ -449,10 +449,12 @@ def _execution_parameters(spec: ToolSpec) -> ToolSpec:
     example["args"] = args
     background_example = json.dumps(example, ensure_ascii=False, separators=(",", ":"))
     return replace(spec, parameters=(*spec.parameters, ("run_in_background", {
-        "type": "boolean", "description": "Set true for background execution; omitted or false waits for completion. "
-        "Returns an accepted task_ref, not a test result. Read task_output for the final result."})),
-        description=spec.description + " Set run_in_background=true to accept owned work and return a task_ref. "
-        "Acceptance is not completion. Use task_output to wait/read, or task_cancel to stop. "
+        "type": "boolean", "description": "Omit to wait briefly, returning a task_ref if still running. "
+        "True returns immediately; false waits for completion. Final results are delivered automatically."})),
+        description=spec.description + " Commands wait briefly by default; longer work returns its existing task_ref. "
+        "Final status and bounded output are delivered automatically; do not poll or repeat the command. "
+        "Set run_in_background=true to return immediately, or false to wait for completion. "
+        "Acceptance is not completion. Use task_output for useful intermediate output, or task_cancel to stop. "
         f"Background call example: {background_example}")
 
 

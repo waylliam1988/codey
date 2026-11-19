@@ -334,21 +334,36 @@ def _execute_kernel_action(context: KernelContext, view: SessionView, action: Ru
     elif action.kind == rules.ACTION_CLOSE_PROTOCOL:
         kernel_control.close_protocol(context, view)
     elif action.kind in {rules.ACTION_SETTLE_PROVIDER_UNKNOWN, rules.ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS}:
-        from codey.durable.effects import interrupted_effect
-        from codey.durable.model import thaw_json
-
-        task, effects = context.durable.task_facts(sink.run_id)
-        for identity in action.effect_ids or (action.effect_id,):
-            original = next(effect for effect in effects if effect.effect_id == identity)
-            receipt = thaw_json(interrupted_effect(task, original).settlement)
-            if not isinstance(receipt, dict):
-                raise RecoveryFailed("interrupted effect has no settlement")
-            sink.mutations.settle_effect(sink.session_id, sink.run_id,
-                RuntimeEffectSettlement.from_payload(receipt))
-        raise RecoveryFailed("external outcome is unknown; the original action was not replayed")
+        _recover_interrupted_effects(context, action)
     else:
         _execute_wait_action(context, state, action)
     return None
+
+
+def _recover_interrupted_effects(context: KernelContext, action: RuntimeAction) -> None:
+    sink = context.sink
+    from codey.durable.effects import interrupted_effect
+    from codey.durable.model import thaw_json
+
+    task, effects = context.durable.task_facts(sink.run_id)
+    unknown = False
+    for identity in action.effect_ids or (action.effect_id,):
+        original = next(effect for effect in effects if effect.effect_id == identity)
+        from codey.operations.tool_tasks import recover_command_admission
+
+        recovered = recover_command_admission(context.durable, origin_effect_id=identity,
+            owner_task_id=sink.run_id, store=sink.managed_outputs) if original.category == "tool_call" else None
+        if recovered is not None:
+            sink.settle(identity, recovered.ok, result=recovered)
+            continue
+        receipt = thaw_json(interrupted_effect(task, original).settlement)
+        if not isinstance(receipt, dict):
+            raise RecoveryFailed("interrupted effect has no settlement")
+        sink.mutations.settle_effect(sink.session_id, sink.run_id,
+            RuntimeEffectSettlement.from_payload(receipt))
+        unknown = True
+    if unknown:
+        raise RecoveryFailed("external outcome is unknown; the original action was not replayed")
 
 
 def _execute_wait_action(context: KernelContext, state: RuntimeOperationState, action: RuntimeAction) -> None:
