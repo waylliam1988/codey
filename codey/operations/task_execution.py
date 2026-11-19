@@ -569,6 +569,10 @@ class ExecutionDelegate:
 
         assert self.tool_fns is not None
         version = content_edit_version(self.session, project, canonical, args)
+        if "region" in args:
+            from codey.operations.region_edit import region_content
+
+            args = {**args, "content": region_content(self.session, project, canonical, args)}
         if self.change_tracker is not None:
             self.change_tracker.capture_before(path)
         content = str(args.get("content") or "")

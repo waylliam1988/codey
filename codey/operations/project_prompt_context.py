@@ -2,6 +2,7 @@
 
 import logging
 
+from codey.operations.coding_observations import verification_rows
 from codey.operations.completion_context import CompletionContextInput
 from codey.operations.project_completion_checks import project_completion_checks
 from codey.operations.project_verification import refresh_verification_candidates
@@ -20,8 +21,9 @@ def prepare_coding_context(session: TaskSession, *, completion_context: Completi
         refresh_verification_candidates(session)
         checks = project_completion_checks(session, completion_context)
         fresh = any(row.check_id == "relevant_verification" and row.status == "pass" for row in checks)
-        failed = any(row.check_id == "relevant_verification" and row.status == "fail"
-                     and row.reason_code == "relevant_verification_failed" for row in checks)
+        # A targeted failure may not cover the selected full-suite candidate.
+        # Still show that failure instead of suggesting an unchanged rerun.
+        failed = any(row["state"] == "current_fail" for row in verification_rows(session))
         return CodingContext(
             read_files=tuple(sorted(session.read_files)),
             edit_eligible_files=tuple(sorted(session.read_files)) if session.policy.allows("project.write") else (),

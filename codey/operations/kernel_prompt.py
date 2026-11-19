@@ -29,9 +29,7 @@ from codey.types.json_value import (
     parse_json_object,
     require_json_string,
 )
-from codey.utils.refs import strict_exit_code, strict_verification_success
 from codey.workspace.coding_context import CodingContext, render_coding_context
-from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
 
 if TYPE_CHECKING:
     from codey.operations.kernel_protocol import TurnSnapshot
@@ -441,12 +439,15 @@ def _browser_followup_context(result: ToolResult, session: TaskSession) -> str:
 def _result_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool = True) -> str:
     text = (result.model_text or "")
     if result.kind == "accepted":
+        from codey.operations.coding_observations import verification_retry_guidance
+
         value = decode_json_object(result.canonical["value"])
         task_ref = require_json_string(value["task_ref"], "task_ref")
         return (text + '\n\nBackground admission only. The command result is not in this receipt. '
                 'Read its output and formal result with task_output('
                 + json.dumps({"task_ref": task_ref, "wait_ms": 30000})
-                + '). Use task_cancel to stop it. Read the terminal state before reporting its outcome.')
+                + '). Use task_cancel to stop it. Read the terminal state before reporting its outcome.'
+                + verification_retry_guidance(result, session))
     if result.call.name == "codemode":
         if result.ok:
             text = f"Result data (JSON):\n{text}"
@@ -454,6 +455,9 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
         text += _browser_followup_context(result, session)
     text += _source_failure_context(result, session)
     result_ref = next((key for key, value in session._memory_results.items() if value is result), "")
+    from codey.operations.coding_observations import coding_result_guidance
+
+    text += coding_result_guidance(result, result_ref)
     if result_ref:
         source_result = result.call.name in SOURCE_TOOL_NAMES
         instruction = (
@@ -575,7 +579,7 @@ def _pending_execution_guidance(session: TaskSession) -> str:
             continue
         outcome = requirement.evaluate(session.executed, results=session._memory_results,
                                        browser_document=query_document(session._memory_results))
-        if outcome.reason_code in {"tool_execution_missing", "tool_parent_missing"}:
+        if not outcome.passed:
             pending.append(outcome.feedback)
     return "\n".join(pending)
 
@@ -609,6 +613,10 @@ def working_context(session: TaskSession) -> str:
     """Fresh execution facts; narrative checkpoints cannot amend these observations."""
     import json
 
+    from codey.durable.model import TASK_TERMINAL_STATUSES
+    from codey.operations.coding_observations import tool_task_observations, verification_rows
+
+    tool_tasks = tool_task_observations(session)
     executions: list[dict[str, object]] = []
     commands = [(identity, record) for identity, record in session.executed.items() if record.get("name") in {"run", "shell"}]
     for identity, record in commands[-12:]:
@@ -616,10 +624,16 @@ def working_context(session: TaskSession) -> str:
         args: JsonObject = result.call.args if result is not None else {}
         if result is not None and result.kind == "accepted":
             value = decode_json_object(result.canonical["value"])
+            task_ref = require_json_string(value["task_ref"], "task_ref")
+            observation = tool_tasks.get(task_ref, {})
+            observed = observation.get("status") in TASK_TERMINAL_STATUSES
             executions.append({"admission_ref": identity, "task_ref": value["task_ref"],
                 "command": args.get("command", ""), "cwd": args.get("path", "."),
-                "status": "accepted", "result_available": False,
-                "next_read": {"tool": "task_output", "args": {"task_ref": value["task_ref"], "wait_ms": 30000}}})
+                "status": observation.get("status", "accepted"), "terminal_observed": observed,
+                "result_available": observation.get("result") is not None,
+                **({"result": observation.get("result")} if observed else
+                   {"next_read": observation.get("next_read", {"tool": "task_output",
+                     "args": {"task_ref": task_ref, "wait_ms": 30000}})})})
             continue
         fingerprint = record.get("workspace_fingerprint")
         audit: Mapping[str, object] = result.audit if result is not None else {}
@@ -635,20 +649,7 @@ def working_context(session: TaskSession) -> str:
             "exit_code": receipt.exit_code if receipt is not None else record.get("exit_code"), "result_available": result is not None,
             "workspace_identity": fingerprint,
             "verification": "current" if fingerprint and fingerprint == session.workspace_fingerprint else "stale or unknown"})
-    verifications: dict[tuple[str, str], dict[str, object]] = {}
-    for row in session.verifications[-12:]:
-        revision = valid_workspace_revision(row.get("workspace_revision"))
-        fingerprint = valid_workspace_fingerprint(row.get("workspace_fingerprint"))
-        code = strict_exit_code(row.get("exit_code"))
-        state = "unknown"
-        if revision and fingerprint and code is not None:
-            if revision != session.workspace_revision or fingerprint != session.workspace_fingerprint:
-                state = "stale"
-            else:
-                state = "current_pass" if strict_verification_success(row.get("passed"), code) else "current_fail"
-        command, cwd = str(row.get("command", "")), str(row.get("cwd", "."))
-        verifications[command, cwd] = {"command": command, "cwd": cwd, "state": state,
-            "exit_code": code, "workspace_revision": revision, "workspace_fingerprint": fingerprint}
+    verifications = verification_rows(session)
     can_modify = session.policy.allows("project.write") if session.policy is not None else None
     finish_guidance = (
         "For read-only work, report diagnostic findings in done's summary using the requested final format. "
@@ -660,13 +661,14 @@ def working_context(session: TaskSession) -> str:
     )
     if pending := _pending_execution_guidance(session):
         finish_guidance = ("Outstanding declared executions (runtime receipts, not assistant narrative):\n" + pending
-                           + "\nExecute the outstanding requirements before delivering the final answer. ")
+                           + "\nResolve the outstanding requirements before delivering the final answer. ")
     operations = operation_receipts(session)
     return ("Current work observations (runtime records):\n" + json.dumps(dict[str, object](user_task=session.task_text,
         project=session.project, workspace_revision=session.workspace_revision,
         workspace_fingerprint=session.workspace_fingerprint, changed_files=list(session.edited_files),
         read_files=sorted(session.read_files),
-        executions=executions, verifications=list(verifications.values()), can_modify_project=can_modify,
+        executions=executions, verifications=verifications, can_modify_project=can_modify,
+        declared_requirements=list(session.policy.required_checks),
         **(dict[str, object](operation_receipts=operations) if operations else {})), ensure_ascii=False)
         + "\n" + finish_guidance + "Read stored results only when more detail is needed. "
           "Do not repeat an execution merely to recover its output. Stale results cannot prove current correctness.")

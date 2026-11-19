@@ -27,8 +27,8 @@ EXACT_REPLACEMENT_CONTEXT_HINT = (
     "so it matches one location uniquely. Preserve those surrounding lines in new_string. "
     "Separate replacement objects do not scope one another. "
     "After a mismatch, reread the file instead of repeating the failed search. "
-    "For a difficult multiline change, use content with the complete read_file base_result_ref, "
-    "preserving unrelated text."
+    "For a multiline Python change, prefer content + the complete read_file base_result_ref + region "
+    "(the observed qualified function/class name): provide only that replacement and preserve unrelated text."
 )
 
 SEARCH_EXCLUDED_DIRS = {
