@@ -268,6 +268,33 @@ def test_search_during_a_live_generation_keeps_the_stream_node_mounted(tmp_path)
 
 
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
+def test_completed_answer_stays_single_after_sending_the_next_message(tmp_path, protocol):
+    with streaming_peer(protocol) as (url, release, requests, peer_errors):
+        target = GateTarget(url, "live-fixture", 32768, 8192, 12000, api_protocol=protocol, request_timeout=30)
+        with gate_application(target, tmp_path / "gate") as (httpd, ctx, events), sync_playwright() as pw:
+            seed(ctx, tmp_path, url, target.model)
+            browser, page, errors = open_live(pw, httpd)
+            try:
+                send(page, "Give me an initial explanation without changing files.")
+                expect(page.locator('.msg.asst .body')).to_contain_text("第一段已经到达。")
+                release.set()
+                expect(page.locator('.msg.asst .body')).to_contain_text("完整回答")
+                expect(page.locator('.spinner:visible')).to_have_count(0)
+                expect(page.locator('.msg.asst')).to_have_count(1)
+                send(page, "What could be improved?")
+                expect(page.locator('.msg.asst').filter(has_text="排队补充已送达。")).to_have_count(1)
+                expect(page.locator('.spinner:visible')).to_have_count(0)
+                expect(page.locator('.msg.asst').filter(has_text="第一段已经到达。")).to_have_count(1)
+                expect(page.locator('.msg.asst')).to_have_count(2)
+                page.reload()
+                expect(page.locator('.msg.asst')).to_have_count(2)
+                assert len(requests) == 2 and not peer_errors and not errors
+            finally:
+                release.set()
+                browser.close()
+
+
+@pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
 def test_real_stream_and_queued_input_keep_one_answer_and_survive_reload(tmp_path, protocol):
     with streaming_peer(protocol) as (url, release, requests, peer_errors):
         target = GateTarget(url, "live-fixture", 32768, 8192, 12000, api_protocol=protocol, request_timeout=30)

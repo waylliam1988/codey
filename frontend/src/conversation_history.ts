@@ -19,6 +19,42 @@ export function reconcileHistory(current: Message[], items: HistoryResult['items
           entryId: item.id,
         }) as unknown as Message,
     );
+  for (const message of committed) {
+    if (
+      message.type !== 'asst' ||
+      !message.runId ||
+      message.contentRole === 'commentary' ||
+      message.finalAnswer === false
+    )
+      continue;
+    const streams = current.filter(
+      (row) =>
+        row.type === 'asst' &&
+        row.runId === message.runId &&
+        row.streamId &&
+        row.finalAnswer === true &&
+        row.contentRole !== 'commentary' &&
+        (!row.entryId || row.entryId === message.entryId),
+    );
+    const stream =
+      streams.find((row) => row.entryId === message.entryId) ||
+      (streams.length === 1 &&
+      committed.filter(
+        (row) =>
+          row.type === 'asst' &&
+          row.runId === message.runId &&
+          row.contentRole !== 'commentary' &&
+          row.finalAnswer !== false,
+      ).length === 1
+        ? streams[0]
+        : undefined);
+    if (!stream) continue;
+    // Keep the mounted final answer's identity across history refreshes. A
+    // terminal replay must not fill an earlier empty tool-stream placeholder.
+    message.streamId = stream.streamId;
+    message.streamSequence = stream.streamSequence;
+    message.streamState = 'complete';
+  }
   const ids = new Set(committed.map((message) => message.id));
   const turns = new Set(
     committed.filter((message) => message.runId).map((message) => `${message.type}:${message.runId}`),

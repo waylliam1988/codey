@@ -258,3 +258,31 @@ it('does not let empty tool-turn streams suppress the restored final answer', ()
   );
   expect(rows.find((row) => row.entryId === 'answer')?.text).toBe('The final answer.');
 });
+
+it('preserves confirmed stream identity while taking answer text from durable history', () => {
+  const rows = reconcileHistory(
+    [{ type: 'asst', runId: 'run', entryId: 'answer', streamId: 'stream', finalAnswer: true, text: 'old' }],
+    [
+      { id: 'answer', type: 'asst', runId: 'run', text: 'canonical' },
+      { id: 'other-answer', type: 'asst', runId: 'run', text: 'another part' },
+    ],
+  );
+  expect(rows[0]).toMatchObject({ entryId: 'answer', streamId: 'stream', streamState: 'complete', text: 'canonical' });
+  expect(rows[1].streamId).toBeUndefined();
+});
+
+it('does not guess a stream identity across runs, commentary, or ambiguous answer parts', () => {
+  const rows = reconcileHistory(
+    [
+      { type: 'asst', runId: 'other', streamId: 'other-stream', finalAnswer: true, text: 'same' },
+      { type: 'asst', runId: 'run', streamId: 'commentary', finalAnswer: true, contentRole: 'commentary', text: '' },
+      { type: 'asst', runId: 'run', streamId: 'final', finalAnswer: true, text: 'same' },
+    ],
+    [
+      { id: 'part-1', type: 'asst', runId: 'run', text: 'same' },
+      { id: 'part-2', type: 'asst', runId: 'run', text: 'same' },
+      { id: 'different-run', type: 'asst', runId: 'new', text: 'same' },
+    ],
+  );
+  expect(rows.filter((row) => row.entryId).every((row) => !row.streamId)).toBe(true);
+});
