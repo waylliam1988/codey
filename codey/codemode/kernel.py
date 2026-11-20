@@ -40,6 +40,13 @@ if TYPE_CHECKING:
     from codey.workspace.revision import WorkspaceRevisionStore
 
 
+def _settled_child_description(ref: str, receipt: ToolResult) -> str:
+    description = f"{ref} ({receipt.call.name}, ok={receipt.ok})"
+    if receipt.kind == "accepted":
+        description += f" admission={receipt.model_text}"
+    return description
+
+
 def _simplified_failure(result: ToolResult, spec: ToolSpec, children: Mapping[str, ToolResult]) -> ToolResult:
     from codey.operations.browser_copy import EXPIRED, captured_data, write_unconfirmed
     from codey.toolchain.constants import STALE_READ_REFERENCE_CODE
@@ -569,7 +576,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             detail = result.model_text
             if ordered_child_effect_ids:
                 detail += "\nSettled child receipts (the parent failure does not undo them): " + ", ".join(
-                    f"{ref} ({session.executed[ref]['name']}, ok={session.executed[ref]['ok']})"
+                    _settled_child_description(ref, session._memory_results[ref])
                     for ref in ordered_child_effect_ids)
                 detail += "\nContinue only the missing work. Do not resubmit the original program to repeat completed actions."
             if result.audit.get("error_code") == "syntax_error":
