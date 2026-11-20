@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Workspace } from './workspace';
+import { DocumentPane } from './document_pane';
 
 beforeEach(() => {
   localStorage.clear();
@@ -14,8 +15,8 @@ function create() {
   const workspace = new Workspace();
   const files = document.createElement('div'),
     changes = document.createElement('div');
-  const showFiles = vi.fn(),
-    showChanges = vi.fn();
+  const showFiles = vi.fn<(target: Record<string, string>) => void>(),
+    showChanges = vi.fn<(target: Record<string, string>) => void>();
   workspace.register('files', 'Files', files, showFiles);
   workspace.register('changes', 'Changes', changes, showChanges);
   document.body.append(workspace.element);
@@ -92,4 +93,42 @@ it('leaves file reading positions to the document tabs when reopening or changin
   expect(body.scrollTop).toBe(240);
   workspace.element.querySelector<HTMLButtonElement>('[aria-label="Expand workspace"]')!.click();
   expect(body.scrollTop).toBe(240);
+});
+
+it('uses the document owner for docked tabs, closes files individually and retains header focus during loads', async () => {
+  const workspace = new Workspace();
+  const pane = new DocumentPane({
+    docked: true,
+    read: async (_session, ref) => ({
+      title: ref.kind === 'workspace' ? ref.path : ref.note_id,
+      path: '',
+      content: 'file contents',
+      format: 'text',
+      version: '1',
+      workspace: 'root',
+    }),
+    markdown: () => {},
+    copy: async () => true,
+    visibility: (visible) => (visible ? workspace.reveal('files') : workspace.panelClosed('files')),
+  });
+  workspace.register('files', 'Files', pane.element, () => pane.show('one'));
+  workspace.register('changes', 'Changes', document.createElement('div'), () => {});
+  document.body.append(workspace.element);
+  workspace.setSession('one');
+  workspace.select('files');
+  expect(document.activeElement?.textContent).toBe('Files');
+  await pane.open('one', { kind: 'workspace', path: 'a.ts' });
+  await pane.open('one', { kind: 'workspace', path: 'b.ts' });
+  expect(pane.element.querySelector('.document-tabs')).toBeNull();
+  expect(workspace.element.querySelectorAll('.workspace-tabs [role="tab"]')).toHaveLength(2);
+  workspace.select('changes');
+  workspace.element.querySelector<HTMLButtonElement>('[aria-label="a.ts"]')!.click();
+  expect(workspace.element.querySelector('[aria-selected="true"]')?.textContent).toBe('a.ts');
+  const close = workspace.element.querySelector<HTMLButtonElement>('[aria-label="Close a.ts"]')!;
+  close.focus();
+  close.click();
+  expect(document.activeElement?.textContent).toBe('b.ts');
+  workspace.element.querySelector<HTMLButtonElement>('[aria-label="Close b.ts"]')!.click();
+  expect(workspace.element.hidden).toBe(false);
+  expect(workspace.element.querySelector('[aria-selected="true"]')?.textContent).toBe('Changes');
 });

@@ -407,7 +407,7 @@ Context menus (`.ctx-menu`):
 ### 5.4 Top bar
 
 - Title breadcrumb: `project-name / chat-title` — project in `--muted`, slash in `--faint`, chat in `--text`.
-- One right sidebar button directly opens or closes the workspace. It opens to the last view for the current conversation, or Files on the first open. The workspace shows Files, Changes, Research, and Local context as tabs. Commands and conversation search remain available via `Ctrl+K` and `Ctrl+F` respectively.
+- One right sidebar button directly opens or closes the workspace. It opens to the last view for the current conversation, or Files on the first open. The workspace shows only opened content tabs. The plus menu opens Files, Changes, Research, Local context, Review, Output and History. Docked documents share the header with inspection tabs, using DocumentPane as the sole owner of file identity and reading positions. Each tab can be closed independently. Commands and conversation search remain available via `Ctrl+K` and `Ctrl+F` respectively.
 - The chat title is a plain text button: click, or focus it with Tab and press Enter/Space, to rename in place. Only the chat name is editable; the project crumb and unused topbar space are not rename targets. Hover/focus uses a subtle gray background, without a permanent pencil icon. The topbar editor is transparent and borderless, with no outline, shadow, or native control frame; text stays aligned with the original title. It fits within the topbar and initially selects the full name; the caret and native text selection communicate editing. Sidebar inline rename retains its existing gray input style. Enter saves, Escape cancels, and leaving the editor saves; blank input keeps the original name, and names are limited to 80 characters. Respect IME composition. Commit updates the same session's title, sidebar, search, and durable state together; preserve drafts, message DOM, reading position, and ongoing work. Background rendering preserves the editor and caret, switching chats settles the original session's edit, and stale input events are ignored. Automatic naming must not replace active edits or confirmed custom titles. Remove `Rename chat` from the topbar menu; retain `Rename` in each sidebar chat menu for other chats.
 - **Status area:**
   - Idle: empty (no dot, no “Connected” label)
@@ -764,7 +764,8 @@ Research remains an explicit user action; existing evidence and handoff rules ap
 
 ### 5.9 Local context
 
-- Entry lives in the right workspace as the `Local context` tab.
+- Entry lives in the right workspace Open menu and opens a closable `Local context` tab.
+- Confirm, Reject, Submit for review, Export, Refresh and Clear local context use borderless neutral text actions with keyboard-visible focus. The proposal form uses dark fields. Clear opens an inline scope confirmation with Cancel and an explicit final action. Escape cancels confirmation.
 - Opening the tab loads the audit for the current scope. Switching tabs hides it, and switching scope clears the previous audit before any new load.
 - User-facing copy stays neutral: `Local context`, `Recent focus`, `Pending review`, `Active preferences`, `Follow-ups`, `Health`.
 - Do not expose internal terms such as Ghost, Memory, Affinity, Hebbian, Directive, Work Queue, or Router in the UI.

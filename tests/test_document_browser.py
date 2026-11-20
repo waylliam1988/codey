@@ -3,8 +3,10 @@
 import base64
 import os
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
+import pytest
 from playwright.sync_api import expect, sync_playwright
 
 from codey.app import server
@@ -15,7 +17,7 @@ from tests.http_context import attach_public_events
 from tests.test_ui_inplace_render import _goto_restored_ui
 
 
-def test_packaged_image_preview_and_local_failure_keep_the_answer_readable(tmp_path, monkeypatch):
+def test_packaged_image_preview_and_local_failure_keep_the_answer_readable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project = tmp_path / "images"
     project.mkdir()
     (project / "sample.png").write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jK1sAAAAASUVORK5CYII="))
@@ -30,7 +32,7 @@ def test_packaged_image_preview_and_local_failure_keep_the_answer_readable(tmp_p
         "sessions": [{"id": "images", "title": "Image preview", "projectId": "p"}]}, base_revision=0)
     monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
-    close_events = attach_public_events(httpd)
+    close_events: Callable[[], None] = attach_public_events(httpd)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
@@ -57,7 +59,7 @@ def test_packaged_image_preview_and_local_failure_keep_the_answer_readable(tmp_p
         ctx.close()
 
 
-def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, monkeypatch):
+def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project = Path(os.environ.get("UI_SMOKE_PROJECT", str(tmp_path / "project")))
     project.mkdir(exist_ok=True)
     actual = bool(os.environ.get("UI_SMOKE_PROJECT"))
@@ -120,21 +122,22 @@ def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, m
     )
     monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
-    close_events = attach_public_events(httpd)
+    close_events: Callable[[], None] = attach_public_events(httpd)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
-            errors = []
+            errors: list[str] = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             _goto_restored_ui(page, httpd.launch_url(f"http://127.0.0.1:{httpd.server_port}/"))
             expect(page.get_by_role("button", name="Collapse", exact=True)).to_have_count(0)
             expect(page.locator(".msg.asst .body")).to_contain_text("Full answer remains visible. " * 30)
             card = page.locator(".command-card")
             expect(card).to_be_visible()
-            assert card.bounding_box()["height"] <= 32
+            card_box = card.bounding_box()
+            assert card_box is not None and card_box["height"] <= 32
             assert card.evaluate("el => getComputedStyle(el).borderTopWidth") == "0px"
             card.locator("summary").focus()
             page.keyboard.press("Enter")
@@ -144,7 +147,8 @@ def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, m
             ).evaluate("el => getComputedStyle(el).color")
             output = card.locator(".shell-stdout")
             expect(output).to_be_visible()
-            assert output.bounding_box()["height"] <= 180
+            output_box = output.bounding_box()
+            assert output_box is not None and output_box["height"] <= 180
             assert output.evaluate("(el)=>el.scrollHeight > el.clientHeight")
             expect(card.get_by_role("button", name="Copy retained output", exact=True)).to_be_visible()
             copy_output = card.get_by_role("button", name="Copy retained output", exact=True)
@@ -178,15 +182,13 @@ def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, m
             page.get_by_role("button", name="Notes", exact=True).click()
             page.get_by_role("button", name="Open document", exact=True).click()
             expect(pane.locator(".document-body .md-h1")).to_have_text("Research preview")
-            expect(pane.get_by_role("tab")).to_have_count(2)
-            assert pane.locator(".document-tabs").bounding_box()["height"] <= 48
+            expect(page.locator(".workspace-document-tabs").get_by_role("tab")).to_have_count(2)
+            tabs_box = page.locator(".workspace-document-tabs").bounding_box()
+            assert tabs_box is not None and tabs_box["height"] <= 48
             page.set_viewport_size({"width": 970, "height": 900})
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-            assert (
-                pane.locator(".document-toolbar").bounding_box()["x"]
-                + pane.locator(".document-toolbar").bounding_box()["width"]
-                <= 970
-            )
+            toolbar_box = pane.locator(".document-toolbar").bounding_box()
+            assert toolbar_box is not None and toolbar_box["x"] + toolbar_box["width"] <= 970
             page.set_viewport_size({"width": 1440, "height": 1000})
             assert not errors
             if actual:
@@ -203,7 +205,7 @@ def test_shell_card_and_workspace_research_preview_share_packaged_ui(tmp_path, m
         ctx.close()
 
 
-def test_ui_state_does_not_persist_transcript_truncation(tmp_path):
+def test_ui_state_does_not_persist_transcript_truncation(tmp_path: Path) -> None:
     from codey.storage.ui_state_store import UiStateStore
 
     store = UiStateStore(tmp_path)

@@ -1,4 +1,5 @@
 import { iconButton } from './icon_button';
+import { DocumentTabsEvent } from './document_pane';
 
 export type PanelId = 'files' | 'changes' | 'research' | 'context' | 'review' | 'outputs' | 'history';
 type Target = Record<string, string>;
@@ -18,13 +19,18 @@ interface Panel {
   show(target: Target): void;
 }
 const KEY = 'codey:workspace:v1';
-const primary: PanelId[] = ['files', 'changes', 'research', 'context'];
-const ids: PanelId[] = [...primary, 'review', 'outputs', 'history'];
+const ids: PanelId[] = ['files', 'changes', 'research', 'context', 'review', 'outputs', 'history'];
+function isPanelId(value: unknown): value is PanelId {
+  return typeof value === 'string' && ids.some((id) => id === value);
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 const initial = (): Layout => ({
   open: false,
   selected: 'files',
   tabs: [],
-  width: 480,
+  width: 448,
   full: false,
   targets: {},
   scroll: {},
@@ -38,6 +44,8 @@ export class Workspace {
     else this.close();
   });
   private panels = new Map<PanelId, Panel>();
+  private documentTabs: HTMLElement | null = null;
+  private menu = document.createElement('div');
   private layouts = new Map<string, Layout>();
   private session = '';
   private suspended = false;
@@ -59,6 +67,26 @@ export class Workspace {
     this.toggleButton.setAttribute('aria-controls', this.element.id);
     this.toggleButton.setAttribute('aria-expanded', 'false');
     this.header.className = 'workspace-header';
+    this.header.addEventListener(
+      'keydown',
+      (event) => {
+        if (!(event.target instanceof Element) || event.target.getAttribute('role') !== 'tab') return;
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const tabs = Array.from(this.header.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+        const current = tabs.findIndex((tab) => tab === event.target);
+        const index =
+          event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? tabs.length - 1
+              : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        tabs[index]?.click();
+        this.header.querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
+      },
+      { capture: true },
+    );
     this.body.className = 'workspace-panels';
     this.notice.className = 'workspace-notice';
     this.notice.setAttribute('role', 'status');
@@ -67,27 +95,47 @@ export class Workspace {
     this.handle.setAttribute('role', 'separator');
     this.handle.setAttribute('aria-label', 'Resize workspace');
     this.handle.setAttribute('aria-orientation', 'vertical');
-    this.element.append(this.handle, this.header, this.notice, this.body);
+    this.menu.className = 'workspace-menu';
+    this.menu.hidden = true;
+    this.element.append(this.handle, this.header, this.menu, this.notice, this.body);
+    document.addEventListener('pointerdown', (event) => {
+      if (event.target instanceof Node && !this.header.contains(event.target) && !this.menu.contains(event.target))
+        this.hideMenu();
+    });
     try {
       const records: unknown = JSON.parse(localStorage.getItem(KEY) || '[]');
       if (!Array.isArray(records)) throw new Error('Invalid layouts');
-      for (const [session, layout] of records.slice(-40)) {
-        if (typeof session !== 'string' || !layout || !ids.includes(layout.selected) || !Array.isArray(layout.tabs))
+      const entries: unknown[] = records;
+      for (const entry of entries.slice(-40)) {
+        if (!Array.isArray(entry)) continue;
+        const pair: unknown[] = entry;
+        const [session, layout] = pair;
+        if (
+          typeof session !== 'string' ||
+          !isRecord(layout) ||
+          !isPanelId(layout.selected) ||
+          !Array.isArray(layout.tabs)
+        )
           continue;
         const clean = initial();
         clean.open = layout.open === true;
         clean.full = layout.full === true;
         clean.selected = layout.selected;
-        clean.tabs = [...new Set<PanelId>(layout.tabs.filter((id: PanelId) => ids.includes(id)))];
-        if (Number.isFinite(layout.width)) clean.width = Math.max(320, Math.min(900, layout.width));
+        const tabs: unknown[] = layout.tabs;
+        clean.tabs = [...new Set(tabs.filter(isPanelId))];
+        if (typeof layout.width === 'number' && Number.isFinite(layout.width))
+          clean.width = Math.max(320, Math.min(900, layout.width));
         for (const id of ids) {
-          const target = layout.targets?.[id];
-          if (target && typeof target === 'object') {
-            clean.targets[id] = Object.fromEntries(
-              Object.entries(target).filter(([, value]) => typeof value === 'string' && value.length <= 4096),
-            ) as Target;
+          const target = isRecord(layout.targets) ? layout.targets[id] : undefined;
+          if (isRecord(target)) {
+            const values: Target = {};
+            for (const [key, value] of Object.entries(target)) {
+              if (typeof value === 'string' && value.length <= 4096) values[key] = value;
+            }
+            clean.targets[id] = values;
           }
-          if (Number.isFinite(layout.scroll?.[id])) clean.scroll[id] = Math.max(0, layout.scroll[id]);
+          const scroll = isRecord(layout.scroll) ? layout.scroll[id] : undefined;
+          if (typeof scroll === 'number' && Number.isFinite(scroll)) clean.scroll[id] = Math.max(0, scroll);
         }
         this.layouts.set(session, clean);
       }
@@ -139,8 +187,15 @@ export class Workspace {
       if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
       event.preventDefault();
       event.stopPropagation();
-      if (this.drag) this.finishResize(true);
-      else this.close();
+      if (!this.menu.hidden) {
+        this.hideMenu();
+        this.header.querySelector<HTMLElement>('[aria-label="Open in workspace"]')?.focus();
+      } else if (this.drag) this.finishResize(true);
+      else if (this.layout.full) {
+        this.layout.full = false;
+        this.render();
+        this.save();
+      } else this.close();
     });
     window.addEventListener('blur', () => this.finishResize(true));
     window.addEventListener('resize', () => this.paintSize());
@@ -161,6 +216,26 @@ export class Workspace {
     wrapper.append(element);
     this.panels.set(id, { label, element, wrapper, show });
     this.body.append(wrapper);
+    if (id === 'files')
+      element.addEventListener('document-tabs', (event) => {
+        if (!(event instanceof DocumentTabsEvent)) return;
+        const restoreFocus = this.header.contains(document.activeElement);
+        this.documentTabs = event.strip;
+        event.strip.removeAttribute('role');
+        for (const tab of event.strip.querySelectorAll<HTMLElement>('[role="tab"]')) {
+          tab.dataset.documentSelected = tab.getAttribute('aria-selected') || 'false';
+        }
+        event.strip.addEventListener(
+          'click',
+          (click) => {
+            if (click.target instanceof Element && click.target.closest('[role="tab"]')) this.reveal('files');
+          },
+          { capture: true },
+        );
+        this.render();
+        if (restoreFocus)
+          this.header.querySelector<HTMLElement>('[aria-selected="true"]')?.focus({ preventScroll: true });
+      });
   }
   suspend(): void {
     this.captureScroll();
@@ -207,7 +282,7 @@ export class Workspace {
     this.panels.get(id)?.show(this.layout.targets[id] || {});
   }
   panelClosed(id: PanelId): void {
-    if (!this.suspended && this.layout.selected === id) this.close();
+    if (!this.suspended && this.layout.selected === id) this.closeTab(id);
   }
   close(): void {
     if (this.suspended) return;
@@ -220,6 +295,21 @@ export class Workspace {
       (this.returnFocus?.isConnected ? this.returnFocus : document.getElementById('task'))?.focus({
         preventScroll: true,
       });
+  }
+  private hideMenu(): void {
+    this.menu.hidden = true;
+    this.header.querySelector('[aria-label="Open in workspace"]')?.setAttribute('aria-expanded', 'false');
+  }
+  private closeTab(id: PanelId): void {
+    this.captureScroll();
+    this.layout.tabs = this.layout.tabs.filter((tab) => tab !== id);
+    if (this.layout.selected === id) {
+      const next = this.layout.tabs.at(-1);
+      if (next) this.select(next);
+      else this.close();
+    } else this.render();
+    this.save();
+    if (!this.element.hidden) this.header.querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
   }
   private captureScroll(): void {
     // DocumentPane owns scroll per file tab, including asynchronous reloads.
@@ -267,12 +357,26 @@ export class Workspace {
     this.element.classList.toggle('workspace-full', state.full);
     this.paintSize();
     this.header.replaceChildren();
+    this.menu.replaceChildren();
+    this.hideMenu();
     const tabs = document.createElement('div');
     tabs.className = 'workspace-tabs';
     tabs.setAttribute('role', 'tablist');
     tabs.setAttribute('aria-label', 'Workspace views');
-    const available = [...new Set([...primary, ...state.tabs])].filter((id) => this.panels.has(id));
+    const available = [...new Set(state.tabs)].filter((id) => this.panels.has(id));
     for (const id of available) {
+      if (id === 'files' && this.documentTabs?.childElementCount) {
+        this.documentTabs.classList.add('workspace-document-tabs');
+        for (const tab of this.documentTabs.querySelectorAll<HTMLElement>('[role="tab"]')) {
+          tab.setAttribute(
+            'aria-selected',
+            String(state.selected === 'files' && tab.dataset.documentSelected === 'true'),
+          );
+          tab.tabIndex = tab.getAttribute('aria-selected') === 'true' ? 0 : -1;
+        }
+        tabs.append(this.documentTabs);
+        continue;
+      }
       const tab = document.createElement('button');
       tab.type = 'button';
       tab.textContent = this.panels.get(id)!.label;
@@ -285,20 +389,13 @@ export class Workspace {
         this.select(id);
         this.header.querySelector<HTMLElement>(`#workspace-tab-${id}`)?.focus({ preventScroll: true });
       };
-      tab.onkeydown = (event) => {
-        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-        event.preventDefault();
-        const index = available.indexOf(id);
-        const next =
-          event.key === 'Home'
-            ? 0
-            : event.key === 'End'
-              ? available.length - 1
-              : (index + (event.key === 'ArrowRight' ? 1 : -1) + available.length) % available.length;
-        this.select(available[next]);
-        this.header.querySelector<HTMLElement>(`#workspace-tab-${available[next]}`)?.focus();
-      };
-      tabs.append(tab);
+      const group = document.createElement('div');
+      group.className = 'workspace-tab';
+      group.append(
+        tab,
+        iconButton(`Close ${this.panels.get(id)!.label}`, 'close', () => this.closeTab(id)),
+      );
+      tabs.append(group);
     }
     const modes = iconButton(state.full ? 'Dock workspace' : 'Expand workspace', state.full ? 'dock' : 'expand', () => {
       state.full = !state.full;
@@ -306,15 +403,32 @@ export class Workspace {
       this.save();
       this.header.querySelector<HTMLElement>('[title$="workspace"]')?.focus();
     });
+    const open = iconButton('Open in workspace', 'plus', () => {
+      this.menu.hidden = !this.menu.hidden;
+      open.setAttribute('aria-expanded', String(!this.menu.hidden));
+      if (!this.menu.hidden) this.menu.querySelector<HTMLElement>('button')?.focus();
+    });
+    open.setAttribute('aria-expanded', 'false');
+    for (const [id, panel] of this.panels) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.textContent = panel.label;
+      item.onclick = () => {
+        this.select(id);
+        this.header.querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
+      };
+      this.menu.append(item);
+    }
     this.header.append(
       tabs,
+      open,
       modes,
       iconButton('Close workspace', 'close', () => this.close()),
     );
     for (const [id, panel] of this.panels) {
       panel.wrapper.id = `workspace-panel-${id}`;
       panel.wrapper.setAttribute('role', 'tabpanel');
-      panel.wrapper.setAttribute('aria-labelledby', `workspace-tab-${id}`);
+      panel.wrapper.setAttribute('aria-label', panel.label);
       panel.wrapper.hidden = !state.open || id !== state.selected;
       panel.wrapper.inert = panel.wrapper.hidden;
     }

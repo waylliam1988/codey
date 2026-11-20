@@ -107,16 +107,17 @@ it('rejects without silently accepting the candidate', async () => {
   );
 });
 it('requires an explicit second action to delete the scope', async () => {
-  click('Delete memories in this scope');
+  click('Clear local context…');
   expect(actions).toEqual([]);
-  click('Confirm deletion');
+  click('Clear local context');
   await vi.waitFor(() => expect(actions).toEqual([{ action: 'delete_scope', session_id: 's', project: 'D:/project' }]));
 });
 it('submits a proposal that still requires a separate confirmation', async () => {
   const text = document.querySelector('textarea');
   if (!text) throw new Error('Missing text');
   text.value = 'Prefer concise replies';
-  click('Propose memory');
+  text.dispatchEvent(new Event('input'));
+  click('Submit for review');
   await vi.waitFor(() =>
     expect(actions).toEqual([
       { action: 'propose', session_id: 's', project: 'D:/project', kind: 'preference', text: 'Prefer concise replies' },
@@ -137,6 +138,6 @@ it('keeps storage failures visible', async () => {
 it('hides mutation forms when memory is disabled', async () => {
   enabled = false;
   element('local-context-refresh').click();
-  await vi.waitFor(() => expect(element('local-context-subtitle').textContent).toBe('Memory disabled'));
+  await vi.waitFor(() => expect(element('local-context-subtitle').textContent).toBe('Local context disabled'));
   expect(document.querySelector('form')).toBeNull();
 });

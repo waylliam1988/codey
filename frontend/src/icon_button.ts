@@ -11,8 +11,10 @@ export type Icon =
   | 'workspace'
   | 'branch'
   | 'chevron-down'
-  | 'trash';
+  | 'trash'
+  | 'plus';
 const paths: Record<Icon, string> = {
+  plus: 'M12 5v14M5 12h14',
   'arrow-left': 'M19 12H5m7-7-7 7 7 7',
   'arrow-down': 'M12 5v14m-7-7 7 7 7-7',
   'chevron-down': 'm6 9 6 6 6-6',

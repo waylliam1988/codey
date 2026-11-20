@@ -1,5 +1,14 @@
 import { iconButton } from './icon_button';
 
+export class DocumentTabsEvent extends Event {
+  constructor(readonly strip: HTMLElement) {
+    super('document-tabs');
+  }
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export type DocumentRef = { kind: 'workspace'; path: string; line?: number } | { kind: 'research'; note_id: string };
 interface DocumentData {
   title: string;
@@ -58,25 +67,39 @@ export class DocumentPane {
     try {
       const stored: unknown = JSON.parse(localStorage.getItem(this.storageKey) || '[]');
       if (!Array.isArray(stored)) throw new Error('Invalid document tabs');
-      for (const [session, state] of stored.slice(-40)) {
-        if (typeof session !== 'string' || !state || !Array.isArray(state.tabs)) continue;
+      const records: unknown[] = stored;
+      for (const entry of records.slice(-40)) {
+        if (!Array.isArray(entry)) continue;
+        const pair: unknown[] = entry;
+        const [session, state] = pair;
+        if (typeof session !== 'string' || !isRecord(state) || !Array.isArray(state.tabs)) continue;
         const tabs = new Map<string, Tab>();
-        for (const raw of state.tabs.slice(0, 24)) {
-          const ref = raw?.ref;
+        const entries: unknown[] = state.tabs;
+        for (const raw of entries.slice(0, 24)) {
+          if (!isRecord(raw)) continue;
+          const ref = raw.ref;
           if (
-            !ref ||
+            !isRecord(ref) ||
             !(
               (ref.kind === 'workspace' && typeof ref.path === 'string') ||
               (ref.kind === 'research' && typeof ref.note_id === 'string')
             )
           )
             continue;
-          const key = this.key(ref);
+          const documentRef: DocumentRef =
+            ref.kind === 'workspace'
+              ? {
+                  kind: 'workspace',
+                  path: String(ref.path),
+                  ...(typeof ref.line === 'number' ? { line: ref.line } : {}),
+                }
+              : { kind: 'research', note_id: String(ref.note_id) };
+          const key = this.key(documentRef);
           tabs.set(key, {
-            ref,
+            ref: documentRef,
             source: raw.source === true,
             wrap: raw.wrap === true,
-            scroll: Number.isFinite(raw.scroll) ? Math.max(0, raw.scroll) : 0,
+            scroll: typeof raw.scroll === 'number' && Number.isFinite(raw.scroll) ? Math.max(0, raw.scroll) : 0,
             workspace: typeof raw.workspace === 'string' ? raw.workspace : undefined,
             generation: 0,
             loading: false,
@@ -84,7 +107,10 @@ export class DocumentPane {
         }
         this.sessions.set(session, {
           tabs,
-          selected: tabs.has(state.selected) ? state.selected : tabs.keys().next().value || '',
+          selected:
+            typeof state.selected === 'string' && tabs.has(state.selected)
+              ? state.selected
+              : tabs.keys().next().value || '',
           visible: state.visible === true,
         });
       }
@@ -132,6 +158,7 @@ export class DocumentPane {
       empty.textContent = 'Open a file from the conversation to preview it here.';
       this.element.hidden = false;
       this.element.replaceChildren(empty);
+      this.element.dispatchEvent(new DocumentTabsEvent(document.createElement('div')));
       return;
     }
     state.visible = true;
@@ -264,7 +291,10 @@ export class DocumentPane {
     this.element.replaceChildren();
     if (!this.deps.docked) this.addResizeHandle();
     this.body = null;
-    if (this.element.hidden || !state) return;
+    if (this.element.hidden || !state) {
+      this.element.dispatchEvent(new DocumentTabsEvent(document.createElement('div')));
+      return;
+    }
     const strip = document.createElement('div');
     strip.className = 'document-tabs';
     strip.setAttribute('role', 'tablist');
@@ -296,7 +326,9 @@ export class DocumentPane {
         this.saveScroll();
         state.selected = keys[next];
         this.render();
-        this.element.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
+        (this.deps.docked ? this.element.closest('.workspace') : this.element)
+          ?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+          ?.focus();
         const selected = state.tabs.get(state.selected)!;
         if (!selected.data && !selected.loading) void this.load(this.session, state.selected);
       };
@@ -309,7 +341,10 @@ export class DocumentPane {
         if (state.selected === key) state.selected = state.tabs.keys().next().value || '';
         this.persist();
         this.render();
-        if (focused) this.element.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
+        if (focused)
+          (this.deps.docked ? this.element.closest('.workspace') : this.element)
+            ?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+            ?.focus();
         if (!state.tabs.size) this.deps.visibility?.(false);
       });
       group.append(select, close);
@@ -318,6 +353,7 @@ export class DocumentPane {
     const closePreview = iconButton('Close preview', 'close', () => this.close());
     if (!this.deps.docked) strip.append(closePreview);
     this.element.append(strip);
+    if (this.deps.docked) this.element.dispatchEvent(new DocumentTabsEvent(strip));
     const tab = state.tabs.get(state.selected);
     if (!tab) return;
     const toolbar = document.createElement('div');
@@ -374,7 +410,8 @@ export class DocumentPane {
         let content = tab.data.content;
         if (tab.data.format === 'json' && !tab.source) {
           try {
-            content = JSON.stringify(JSON.parse(content), null, 2);
+            const decoded: unknown = JSON.parse(content);
+            content = JSON.stringify(decoded, null, 2);
           } catch {
             const notice = document.createElement('div');
             notice.textContent = 'Invalid JSON · showing source';
@@ -429,7 +466,10 @@ export class DocumentPane {
       }
       const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
       const nodes: Text[] = [];
-      while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (node instanceof Text) nodes.push(node);
+      }
       for (const text of nodes) {
         if (text.parentElement?.closest('button,svg,script,style')) continue;
         const content = text.data;

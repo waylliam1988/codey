@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import re
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
+import pytest
 from playwright.sync_api import expect, sync_playwright
 
 from codey.app import server
@@ -12,7 +14,7 @@ from codey.app.context import AppContext
 from tests.http_context import attach_public_events
 
 
-def test_workspace_files_history_search_branches_and_layout_restore(tmp_path, monkeypatch):
+def test_workspace_files_history_search_branches_and_layout_restore(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project = tmp_path / 'project'
     project.mkdir()
     (project / 'long.py').write_text('\n'.join(f'line_{index} = {index}' for index in range(1, 301)), encoding='utf8')
@@ -28,7 +30,7 @@ def test_workspace_files_history_search_branches_and_layout_restore(tmp_path, mo
     ctx.save_ui_state({'active_id': 'chat', 'projects': [{'id': 'p', 'name': 'Codey', 'path': str(project), 'expanded': True}], 'sessions': [{'id': 'chat', 'title': 'Workspace test', 'projectId': 'p'}, {'id': 'other', 'title': 'Other chat', 'projectId': 'p'}]}, base_revision=0)
     monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(('127.0.0.1', 0), server.Handler)
-    close_events = attach_public_events(httpd)
+    close_events: Callable[[], None] = attach_public_events(httpd)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     output = Path('.e2e-artifacts/uiux-implementation')
@@ -51,16 +53,19 @@ def test_workspace_files_history_search_branches_and_layout_restore(tmp_path, mo
             expect(workspace_button).to_have_attribute('aria-expanded', 'true')
             expect(workspace_button).to_have_accessible_name('Hide right sidebar')
             view_tabs = page.get_by_role('tablist', name='Workspace views')
-            expect(view_tabs.get_by_role('tab')).to_have_text(['Files', 'Changes', 'Research', 'Local context'])
+            expect(view_tabs.get_by_role('tab')).to_have_text(['Files'])
             expect(view_tabs.get_by_role('tab', name='Files')).to_be_focused()
             expect(page.get_by_text('Open a file from the conversation to preview it here.')).to_be_visible()
             page.screenshot(path=str(output / 'workspace-open.png'))
-            view_tabs.get_by_role('tab', name='Local context').click()
+            page.get_by_role('button', name='Open in workspace', exact=True).click()
+            page.locator('.workspace-menu').get_by_role('button', name='Local context', exact=True).click()
             expect(page.locator('#local-context-drawer')).to_be_visible()
-            view_tabs.get_by_role('tab', name='Changes').click()
+            page.get_by_role('button', name='Open in workspace', exact=True).click()
+            page.locator('.workspace-menu').get_by_role('button', name='Changes', exact=True).click()
             expect(page.locator('#changes-drawer')).to_be_visible()
             expect(page.locator('#local-context-drawer')).to_be_hidden()
-            view_tabs.get_by_role('tab', name='Local context').click()
+            page.get_by_role('button', name='Open in workspace', exact=True).click()
+            page.locator('.workspace-menu').get_by_role('button', name='Local context', exact=True).click()
             workspace_button.click()
             expect(workspace_button).to_have_attribute('aria-expanded', 'false')
             expect(page.locator('#local-context-drawer')).to_be_hidden()
@@ -81,7 +86,8 @@ def test_workspace_files_history_search_branches_and_layout_restore(tmp_path, mo
             page.get_by_role('button', name='Close workspace', exact=True).click()
             expect(page.locator('.workspace')).to_be_hidden()
             expect(workspace_icon_pane).to_have_css('fill', 'none')
-            assert page.locator('main').bounding_box()['width'] > 1000
+            main_box = page.locator('main').bounding_box()
+            assert main_box is not None and main_box['width'] > 1000
             page.keyboard.press('Control+f')
             page.get_by_role('searchbox', name='Search conversation history').fill('unique needle 3')
             page.locator('.conversation-find').get_by_role('button', name='Search', exact=True).click()
@@ -97,7 +103,7 @@ def test_workspace_files_history_search_branches_and_layout_restore(tmp_path, mo
             expect(pane.locator('[data-line="300"]')).to_contain_text('line_300')
             expect(workspace_icon_pane).to_have_css('fill', re.compile(r'^rgb\('))
             expect(pane.locator('.document-body')).to_have_js_property('scrollTop', reading_top)
-            expect(page.get_by_role('tab', name='Files', exact=True)).to_have_attribute('aria-selected', 'true')
+            expect(page.get_by_role('tab', name='long.py', exact=True)).to_have_attribute('aria-selected', 'true')
             for width, height in [(1280, 800), (1920, 1080), (970, 900), (600, 800)]:
                 page.set_viewport_size({'width': width, 'height': height})
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')

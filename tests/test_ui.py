@@ -194,8 +194,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         for term in ("Ghost", "Affinity", "Hebbian", "Directive"):
             self.assertNotIn(term, visible_source)
         self.assertIn("Local context", visible_source)
-        self.assertIn("Memory kind", visible_source)
-        self.assertIn("Propose memory", visible_source)
+        self.assertIn("Item type", visible_source)
+        self.assertIn("Submit for review", visible_source)
 
 
     def test_run_details_style_uses_existing_design_tokens(self) -> None:
@@ -232,9 +232,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("color: var(--muted)", block)
 
     def test_local_context_empty_state_is_single_summary(self) -> None:
-        self.assertIn("${data.items.length} memories", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("${data.items.length} items", LOCAL_CONTEXT_DRAWER_JS)
         self.assertIn("${data.pending.length} pending", LOCAL_CONTEXT_DRAWER_JS)
-        self.assertIn("Propose memory", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("Submit for review", LOCAL_CONTEXT_DRAWER_JS)
         self.assertNotIn("No local context yet", LOCAL_CONTEXT_DRAWER_JS)
 
     def test_local_context_settings_are_visually_separated(self) -> None:
@@ -502,7 +502,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("highlight.js", UI_SOURCE)
 
     def test_code_blocks_have_quiet_copy_button(self) -> None:
-        self.assertIn("function addCodeCopyButton(pre, text)", RENDER_JS)
+        self.assertIn("function codeCopyButton(value)", RENDER_JS)
         self.assertIn("parser.renderer.rules.fence", _source("markdown"))
         self.assertIn("className = 'code-copy'", RENDER_JS)
         self.assertIn("aria-label', 'Copy code'", RENDER_JS)
