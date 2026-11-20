@@ -274,5 +274,9 @@ def ensure_service(home: Path, *, port: int = 0, allowed_roots: tuple[Path, ...]
                 write_json_atomic(home / "active-release.json", dict(current), mode=0o600)
                 return client
             raise ControlError("STARTUP_FAILED", "Codey service has the requested release but is not ready")
+        # Opening the desktop must not drain a healthy service's current work.
+        # Keep its committed release and retry the upgrade on an idle launch.
+        if health.get("status") == "ready" and health.get("active_runs"):
+            return client
         with startup_stage("service.activate"):
             return _activate_current_release(client, home, current, health, allowed_roots=allowed_roots)

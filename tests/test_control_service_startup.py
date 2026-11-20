@@ -114,6 +114,30 @@ def test_ensure_service_switches_a_stale_running_release(tmp_path, monkeypatch):
     assert [item[0] for item in calls] == ["get_health", "get_upgrade", "get_health"]
 
 
+def test_desktop_attaches_to_busy_release_and_upgrades_on_next_idle_launch(tmp_path, monkeypatch):
+    current = {"release_id": "new"}
+    old = {"release_id": "old"}
+    (tmp_path / "active-release.json").write_text(json.dumps(old))
+    health = {"release_id": "old", "instance_id": "busy-instance", "status": "ready",
+              "active_runs": [{"run_id": "running"}]}
+    upgrades = []
+    monkeypatch.setattr("codey.control.client._materialize_current_release", lambda home: current)
+    monkeypatch.setattr(ControlClient, "call", lambda self, operation, params=None: dict(health))
+
+    def upgrade(client, *args, **kwargs):
+        upgrades.append(True)
+        return client
+
+    monkeypatch.setattr("codey.control.client._activate_current_release", upgrade)
+    client = ensure_service(tmp_path)
+    assert client.home == tmp_path
+    assert upgrades == []
+    assert json.loads((tmp_path / "active-release.json").read_text()) == old
+    health["active_runs"] = []
+    ensure_service(tmp_path)
+    assert upgrades == [True]
+
+
 def test_ensure_service_retries_interrupted_validation_with_fresh_request(tmp_path, monkeypatch):
     current = {"release_id": "release_" + "b" * 32, "candidate_digest": "b" * 64,
                "source": str(tmp_path / "releases" / ("release_" + "b" * 32) / "source")}
