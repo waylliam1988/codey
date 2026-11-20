@@ -91,7 +91,7 @@ def pending_tool_task_notifications(durable: DurableSession, *, owner_task_id: s
         from codey.operations.tool_tasks import owned_tool_task
 
         owned_tool_task(durable, child.task_id, owner_task_id=owner_task_id)
-        value = tool_task_snapshot(durable, child, store=store, args={"limit": 300})
+        value = tool_task_snapshot(durable, child, store=store, args={"limit": 1600}, include_output=False)
         text = json.dumps(value, ensure_ascii=False)
         if sum(map(len, texts)) + len(texts) + len(text) > NOTIFICATION_MAX_CHARS:
             break

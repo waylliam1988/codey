@@ -8,6 +8,8 @@ _SUMMARY = re.compile(r"^(?:=+\s*)?\d+ (?:failed|error|errors)\b.*")
 
 
 def failure_excerpt(output: str, *, limit: int = 1600) -> str:
+    if limit <= 0:
+        return ""
     lines = [_ANSI.sub("", line).strip() for line in output.splitlines()]
     summaries = [line.strip("= ") for line in lines if _SUMMARY.match(line)]
     failed = [line for line in lines if line.startswith(("FAILED ", "ERROR ", "ERROR: "))]
@@ -19,8 +21,12 @@ def failure_excerpt(output: str, *, limit: int = 1600) -> str:
     if not selected:
         return ""
     rendered = "Failure excerpts (reported by command):\n"
-    for line in selected:
-        if len(rendered) + len(line) + 1 > limit:
-            return (rendered + "[Further failure excerpts omitted.]\n")[:limit]
+    if len(rendered) + len("\n".join(selected)) + 1 <= limit:
+        return rendered + "\n".join(selected) + "\n"
+    for index, line in enumerate(selected):
+        omitted = f"[{len(selected) - index} further failure excerpt lines omitted.]\n"
+        following = f"[{len(selected) - index - 1} further failure excerpt lines omitted.]\n"
+        if len(rendered) + len(line) + 1 + len(following) > limit:
+            return rendered + omitted if len(rendered) + len(omitted) <= limit else omitted[:limit]
         rendered += line + "\n"
     return rendered

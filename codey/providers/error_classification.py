@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from codey.providers.base import AssistantTurn
+
 
 class ProviderErrorKind:
     TRANSIENT = "transient"
@@ -24,8 +26,11 @@ class ContextOverflowError(RuntimeError):
 
 
 class OutputLengthError(RuntimeError):
-    def __init__(self, message: str = "model output truncated (finish_reason=length)") -> None:
+    def __init__(self, message: str = "model output truncated (finish_reason=length)", *,
+                 turn: AssistantTurn | None = None) -> None:
         super().__init__(message)
+        # Only a decoded, non-executable response can be continued by the task kernel.
+        self.turn = turn
 
 
 class RequestPrepError(RuntimeError):

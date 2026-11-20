@@ -162,8 +162,9 @@ def _parse_tool_calls(message: dict[str, object]) -> tuple[list[dict[str, object
             continue
         seen_ids.add(call_id)
         raw_args = function.get("arguments")
+        arguments: dict[str, object]
         if isinstance(raw_args, dict):
-            arguments = dict(raw_args)
+            arguments = dict(decode_json_object(raw_args))
         elif isinstance(raw_args, str):
             if not raw_args.strip():
                 dropped += 1
@@ -254,7 +255,8 @@ def _extract_reply(body: dict[str, object]) -> str:
     if kind == errors.ProviderErrorKind.CONTEXT_OVERFLOW:
         raise errors.ContextOverflowError("local model context overflow (finish_reason=length)")
     if kind == errors.ProviderErrorKind.OUTPUT_LENGTH:
-        raise errors.OutputLengthError()
+        turn, _ = decode_turn(decode_message(body))
+        raise errors.OutputLengthError(turn=turn)
     if kind == errors.ProviderErrorKind.FATAL:
         raise RuntimeError(
             "local model content filtered "

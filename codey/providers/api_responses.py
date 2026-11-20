@@ -144,7 +144,8 @@ def decode_exchange(body: dict[str, object], *, text_only: bool,
                     ) -> tuple[AssistantTurn, list[dict[str, object]]]:
     status = body.get("status")
     details = body.get("incomplete_details")
-    limited = status == "incomplete" and isinstance(details, dict) and details.get("reason") == "max_output_tokens"
+    limited = (status == "incomplete" and isinstance(details, dict)
+               and decode_json_object(details).get("reason") == "max_output_tokens")
     if status != "completed" and not limited:
         raise RuntimeError(f"Responses generation did not complete: {status}: {body.get('error')}")
     output = body.get("output")
@@ -195,4 +196,6 @@ def decode_exchange(body: dict[str, object], *, text_only: bool,
             raise RuntimeError(f"unsupported Responses output item: {kind}")
     turn = AssistantTurn(text="\n".join(text), tool_calls=tuple(calls), reasoning="\n".join(reasoning),
                          finish=TurnFinish.OUTPUT_LIMIT if limited else TurnFinish.COMPLETE)
+    if limited and text_only:
+        raise OutputLengthError("text-only output truncated; refusing incomplete text execution", turn=turn)
     return turn, decoded_output

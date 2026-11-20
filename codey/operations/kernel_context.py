@@ -638,15 +638,17 @@ class KernelContext:
         kernel_events._emit_turn_event(self.observation.on_event, turn, reply)
         if self.native and not isinstance(reply, AssistantTurn):
             raise RecoveryFailed("native provider did not return a structured turn")
-        if isinstance(reply, AssistantTurn) and self.native and reply.finish is TurnFinish.OUTPUT_LIMIT:
+        if isinstance(reply, AssistantTurn) and reply.finish is TurnFinish.OUTPUT_LIMIT:
             if state.counters.length_continuation_used:
-                self.close(state, KernelResult(False, "local provider emitted finish_reason=length twice", turn, "provider_failure"))
+                self.close(state, KernelResult(False, "provider output truncated twice", turn, "provider_failure"))
                 return None
             if not reply.tool_calls:
                 completion = ("submit_research_answer for the complete task" if snapshot.research_scope is not None else
                               "done(summary) if the verified task is complete")
-                self.retry(state, "Your previous response was truncated before a tool call. Continue with the next "
-                           "required tool call, or call " + completion + ". Do not output ordinary explanation.",
+                self.retry(state, "Your previous response was truncated. No operation from that response was executed. "
+                           "Use smaller complete tool calls for the remaining work; do not repeat completed work. "
+                           "Submit the next required tool call, or call " + completion + ". "
+                           "Do not output ordinary explanation or continue partial tool arguments.",
                            counters=replace(state.counters, length_continuation_used=True))
                 return
         decoded = decode_text_turn(reply) if isinstance(reply, str) else reply

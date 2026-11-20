@@ -313,7 +313,7 @@ def control_tool_task(call: ToolCall, *, durable: object, owner_task_id: str,
 
 
 def tool_task_snapshot(durable: DurableSession, child: TaskCheckpoint, *, store: ManagedOutputStore | None,
-                       args: Mapping[str, object]) -> dict[str, object]:
+                       args: Mapping[str, object], include_output: bool = True) -> dict[str, object]:
     """One bounded projection shared by explicit reads and automatic notifications."""
     limit = require_json_integer(args.get("limit", 4000), "limit")
     payload: dict[str, object] = {"task_ref": child.task_id, "status": "stopping"
@@ -321,15 +321,21 @@ def tool_task_snapshot(durable: DurableSession, child: TaskCheckpoint, *, store:
     result = tool_execution_result(durable, child, store=store)
     if result is not None:
         payload["execution_ref"] = result[0]
-        payload["result"] = {"ok": result[1].ok, "text": result[1].model_text[:limit],
-                             "text_truncated": len(result[1].model_text) > limit,
+        shown = result[1].model_text[:limit]
+        receipt = execution_receipt(result[1])
+        if receipt is not None and receipt.status == "exit":
+            excerpt = failure_excerpt(result[1].model_text, limit=limit) if receipt.exit_code != 0 else ""
+            if receipt.exit_code == 0 or excerpt:
+                shown = excerpt or f"exit {receipt.exit_code}"
+        payload["result"] = {"ok": result[1].ok, "text": shown,
+                             "text_truncated": shown != result[1].model_text,
                              "exit_code": result[1].audit.get("exit_code")}
     payload["outcome"] = _task_outcome(child, result[1] if result is not None else None)
     if child.state.get("failure_reason"):
         payload["failure_reason"] = require_json_string(child.state["failure_reason"], "failure_reason")[:limit]
     if child.state.get("cleanup_unknown"):
         payload["cleanup_unknown"] = True
-    if store is not None:
+    if store is not None and include_output:
         try:
             snapshot = ExecutionOutputStore.read_existing(store.root.parent, execution_effect_id(child.task_id))
         except KeyError:
@@ -338,12 +344,6 @@ def tool_task_snapshot(durable: DurableSession, child: TaskCheckpoint, *, store:
             payload["output"] = {channel: ExecutionOutputStore.stream_since(snapshot, channel,
                 require_json_integer(args.get(f"{channel}_cursor", 0), f"{channel}_cursor"), limit=limit)
                 for channel in ("stdout", "stderr")}
-            if result is not None:
-                receipt = execution_receipt(result[1])
-                excerpt = failure_excerpt(result[1].model_text)
-                if receipt is not None and receipt.status == "exit" and (receipt.exit_code == 0 or excerpt):
-                    payload["result"] = {"ok": result[1].ok, "exit_code": receipt.exit_code,
-                        "text": excerpt[:limit] or f"exit {receipt.exit_code}", "text_truncated": True}
     return payload
 
 

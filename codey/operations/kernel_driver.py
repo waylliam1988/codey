@@ -26,8 +26,9 @@ from codey.types.json_value import decode_json_object, require_json_string
 if TYPE_CHECKING:
     from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_session import TaskSession
-from codey.providers.base import AssistantTurn
+from codey.providers.base import AssistantTurn, TurnFinish
 from codey.providers.compat_transport import optional_callable, provider_window_ref
+from codey.providers.error_classification import OutputLengthError
 from codey.providers.request_codec import decode_provider_request
 from codey.providers.requests import ProviderRequest, SendTextRequest, SendTurnRequest
 from codey.runtime.core.operation_payload import (
@@ -204,9 +205,18 @@ def _execute_provider(sink: KernelEffectSink, provider: ProviderTransport, inten
                 if effect.category == "tool_call" and effect.settlement is not None:
                     refs.append(effect.effect_id)
         bind_result_recovery(provider, tuple(refs))
-        reply = provider.execute_request(invocation)
-        from codey.operations.provider_session import normalize_provider_reply
-        reply = normalize_provider_reply(provider, reply)
+        try:
+            reply = provider.execute_request(invocation)
+        except OutputLengthError as exc:
+            if (not isinstance(invocation, SendTextRequest) or exc.turn is None
+                    or exc.turn.finish is not TurnFinish.OUTPUT_LIMIT or exc.turn.tool_calls):
+                raise
+            reply = exc.turn
+        # Never let a text normalizer promote truncated prose or JSON into a tool call.
+        if not isinstance(reply, AssistantTurn) or reply.finish is not TurnFinish.OUTPUT_LIMIT:
+            from codey.operations.provider_session import normalize_provider_reply
+
+            reply = normalize_provider_reply(provider, reply)
     except Exception as exc:
         from codey.providers.error_classification import ContextOverflowError, RequestPrepError
 

@@ -469,10 +469,6 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
     result_ref = next((key for key, value in session._memory_results.items() if value is result), "")
     if result_ref:
         source_result = result.call.name in SOURCE_TOOL_NAMES
-        instruction = (
-            "For omitted detail, use read_tool_result with query (a literal keyword) or a bounded offset."
-            if result.truncated else "If more detail is needed, use read_tool_result."
-        )
         text += f"\n\n{render_result_metadata(result_ref, tool=result.call.name, ok=result.ok)}\n"
         from codey.operations.reference_handles import ReferenceHandleError, ReferenceHandleResolver
 
@@ -481,8 +477,7 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
         except ReferenceHandleError:
             receipt_handle = ""
         if receipt_handle and receipt_recovery:
-            text += (f"Receipt display handle: {receipt_handle}. You may pass this short handle to "
-                     "read_tool_result; the program resolves it to this task's committed receipt.\n")
+            text += f"Receipt display handle: {receipt_handle} (read_tool_result).\n"
         if source_result and receipt_recovery:
             text += ("result_ref identifies this tool receipt only; it is not a source URL, source offset or hit id. "
                      "Use read_tool_result only to recover an omitted receipt, copying the complete result_ref.")
@@ -496,9 +491,9 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
                 text += ("The original receipt has no further retained pages." if page["next_offset"] is None else
                          "To continue the original receipt, use read_tool_result(" + json.dumps(continuation) + ").")
         elif receipt_recovery:
-            text += ("For read_tool_result only, copy the complete result_ref including its prefix. "
-                     f'Read omitted detail with read_tool_result({{"result_ref":"{result_ref}","query":"literal keyword"}}). '
-                     f"{instruction} do not repeat execution to recover output.")
+            text += (f'Read omitted detail with read_tool_result({{"result_ref":"{receipt_handle or result_ref}"}}); '
+                     "query accepts a literal keyword. do not repeat execution to recover output."
+                     if result.truncated else "If more detail is needed, use read_tool_result.")
         text += _execution_result_context(result)
         if not result.ok and "source_failure" in result.canonical:
             text += "\nSource acquisition failure: " + json.dumps(result.canonical["source_failure"], ensure_ascii=False)
