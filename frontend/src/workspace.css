@@ -168,6 +168,19 @@ body:has(.workspace .document-pane:not([hidden])) {
 .workspace .changes-body {
   padding-inline: 14px;
 }
+.change-file:has(> .change-html-preview:not([hidden])) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.change-file > .change-html-preview {
+  display: block;
+  padding-inline: 8px;
+  color: var(--text-dim);
+}
+.change-file > .diff-pre {
+  grid-column: 1 / -1;
+}
 .workspace .research-tabs {
   margin-top: 0;
   padding-top: 0;
@@ -500,6 +513,19 @@ body.sidebar-collapsed .workspace-full {
 .document-body.wrap > pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.document-body.html-preview {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+.html-preview-frame {
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: white;
 }
 .document-body > pre.source-lines {
   counter-reset: line;

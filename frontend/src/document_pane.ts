@@ -1,4 +1,5 @@
 import { iconButton } from './icon_button';
+import { htmlPreview, isHtmlPath } from './html_preview';
 
 export class DocumentTabsEvent extends Event {
   constructor(readonly strip: HTMLElement) {
@@ -189,7 +190,11 @@ export class DocumentPane {
     );
   }
 
-  async open(session: string, ref: DocumentRef): Promise<void> {
+  async open(
+    session: string,
+    ref: DocumentRef,
+    { workspace, preview }: { workspace?: string; preview?: boolean } = {},
+  ): Promise<void> {
     this.saveScroll();
     this.session = session;
     let state = this.sessions.get(session);
@@ -198,14 +203,23 @@ export class DocumentPane {
       this.sessions.set(session, state);
     }
     const key = this.key(ref);
-    if (!state.tabs.has(key)) state.tabs.set(key, { ref, source: false, loading: false, generation: 0, scroll: 0 });
-    else state.tabs.get(key)!.ref = ref;
+    let tab = state.tabs.get(key);
+    if (!tab || (workspace && workspace !== (tab.data?.workspace || tab.workspace))) {
+      if (tab) tab.generation++;
+      tab = { ref, source: false, loading: false, generation: 0, scroll: 0, workspace };
+      state.tabs.set(key, tab);
+    } else {
+      tab.ref = ref;
+    }
     state.selected = key;
     state.visible = true;
     this.deps.visibility?.(true);
     if (ref.kind === 'workspace' && ref.line) {
-      state.tabs.get(key)!.source = true;
-      state.tabs.get(key)!.reveal = ref.line;
+      tab.source = true;
+      tab.reveal = ref.line;
+    } else if (preview) {
+      tab.source = false;
+      tab.reveal = undefined;
     }
     await this.load(session, key);
   }
@@ -289,6 +303,7 @@ export class DocumentPane {
     const state = this.sessions.get(this.session);
     this.element.hidden = !state?.visible || !state.tabs.size;
     this.element.replaceChildren();
+    this.element.onkeydown = null;
     if (!this.deps.docked) this.addResizeHandle();
     this.body = null;
     if (this.element.hidden || !state) {
@@ -356,6 +371,7 @@ export class DocumentPane {
     if (this.deps.docked) this.element.dispatchEvent(new DocumentTabsEvent(strip));
     const tab = state.tabs.get(state.selected);
     if (!tab) return;
+    const html = tab.ref.kind === 'workspace' && tab.data && isHtmlPath(tab.data.path);
     const toolbar = document.createElement('div');
     toolbar.className = 'document-toolbar';
     const path = document.createElement('span');
@@ -369,7 +385,7 @@ export class DocumentPane {
       }),
     );
     if (tab.data) {
-      if (tab.data.format === 'markdown' || tab.data.format === 'json')
+      if (html || tab.data.format === 'markdown' || tab.data.format === 'json')
         toolbar.append(
           button(tab.source ? 'View preview' : 'View source', () => {
             this.saveScroll();
@@ -397,6 +413,13 @@ export class DocumentPane {
     body.setAttribute('role', 'tabpanel');
     body.tabIndex = 0;
     this.body = body;
+    if (html && tab.data && !tab.source && !tab.loading && !tab.error) {
+      body.classList.add('html-preview');
+      body.removeAttribute('tabindex');
+      body.append(htmlPreview(tab.data.title, tab.data.content));
+      this.element.append(body);
+      return;
+    }
     if (tab.data && !tab.error) {
       if (tab.data.format === 'markdown' && !tab.source) {
         body.classList.add('md');

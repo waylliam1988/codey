@@ -2,6 +2,7 @@ import type { ComposerApi } from './composer';
 import type { ConversationUiApi } from './conversation_ui';
 import { decodeServerEvent, type ServerEvent } from './domain/protocol';
 import type { HistoryTask } from './history_repository';
+import { finishedHtmlPath } from './html_preview';
 import type { QueuedInput } from './input_outbox';
 import type { RequestsApi } from './requests';
 import { streamMessage } from './reply_stream';
@@ -51,6 +52,7 @@ export interface RunEventDeps {
   receiptSummary(receipt: unknown): string;
   receiptChangedCount(receipt: unknown, changes: Partial<ChangesData>): number;
   maybeAddChangesSummary(sessionId: string, eventKey: string, runId: string): Promise<void>;
+  previewHtml(sessionId: string, path: string, workspace: string): void;
 }
 
 type ServerEventData = ServerEvent & {
@@ -212,16 +214,23 @@ export class RunEventCoordinator {
       return;
     }
     // Terminal control releases the run even when its display was removed.
+    const runningAtCompletion =
+      data.type === 'task_done' && lifecycleSource === 'event' && this.projection.isActive(data.run_id || '');
     if (data.type === 'task_done') {
       this.replyStreamBuffer.flush();
       if (!this.applyLifecycle(data, lifecycleSource)) return;
     }
     this.deps.history.acceptRunEvent(data.session_id || '', data.run_id || '', () =>
-      this.handleDisplayEvent(raw, data, lifecycleSource),
+      this.handleDisplayEvent(raw, data, lifecycleSource, runningAtCompletion),
     );
   }
 
-  private handleDisplayEvent(raw: unknown, data: ServerEventData, lifecycleSource: 'event' | 'snapshot'): void {
+  private handleDisplayEvent(
+    raw: unknown,
+    data: ServerEventData,
+    lifecycleSource: 'event' | 'snapshot',
+    runningAtCompletion: boolean,
+  ): void {
     if (data.type === 'reply_stream') {
       this.replyStreamBuffer.enqueue(data);
       return;
@@ -471,6 +480,10 @@ export class RunEventCoordinator {
         }
         const changes: Partial<ChangesData> = data.changes || {};
         const changed = !!data.changed;
+        if (runningAtCompletion && changed && !requestFailed) {
+          const html = finishedHtmlPath(data.changes);
+          if (html) this.deps.previewHtml(sid, html, changes.project || project);
+        }
         const changedCount = this.deps.receiptChangedCount(data.receipt, changes);
         if (changed && changedCount > 0 && this.deps.receiptSummary(data.receipt)) {
           this.deps.state.addMessage(sid, {

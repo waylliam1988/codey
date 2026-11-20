@@ -225,6 +225,11 @@ runtime.UserQuestions = userQuestions;
 function openDocument(sessionId: string, ref: DocumentRef): void {
   void documentPane.open(sessionId, ref);
 }
+function previewHtml(sessionId: string, path: string, project: string): void {
+  if (sessionId === sessionState.activeId) {
+    void documentPane.open(sessionId, { kind: 'workspace', path }, { workspace: project || undefined, preview: true });
+  }
+}
 document.addEventListener('click', (event) => {
   const link = eventElement(event)?.closest<HTMLElement>('[data-document-path]');
   if (!link) return;
@@ -717,6 +722,7 @@ const runEvents = new RunEventCoordinator({
   receiptSummary,
   receiptChangedCount,
   maybeAddChangesSummary,
+  previewHtml,
 });
 const runProjection = runEvents.projection;
 
@@ -1092,6 +1098,7 @@ async function boot() {
     fetchChangeFile,
     restoreChanges,
     escapeHtml,
+    previewHtml: (project: string, path: string) => previewHtml(sessionState.activeId, path, project),
   });
   runtime.LocalContextDrawer.init({
     $,

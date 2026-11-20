@@ -2,6 +2,26 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { DocumentPane } from './document_pane';
 beforeEach(() => localStorage.clear());
 
+it('keeps HTML line links in source view and reads from the specified workspace', async () => {
+  const content = '<!doctype html>\n<script>document.body.id = "game";</script>\n<h1>Game</h1>';
+  const read = vi.fn().mockResolvedValue({
+    title: 'snake.html',
+    path: 'snake.html',
+    content,
+    format: 'text',
+    version: 'v1',
+    workspace: 'game workspace',
+  });
+  const pane = new DocumentPane({ read, markdown: vi.fn(), copy: vi.fn() });
+  const ref = { kind: 'workspace', path: 'snake.html', line: 2 } as const;
+  await pane.open('chat', ref, { workspace: 'game workspace' });
+  expect(read).toHaveBeenCalledExactlyOnceWith('chat', ref, 'game workspace');
+  expect(pane.element.querySelector('iframe')).toBeNull();
+  expect(pane.element.querySelector('pre')?.textContent).toBe(content);
+  expect(pane.element.querySelector('.selected-line')?.getAttribute('data-line')).toBe('2');
+  expect(pane.element.querySelector('[aria-label="View preview"]')).not.toBeNull();
+});
+
 it('restores tabs and reading preferences without storing file contents', async () => {
   const read = vi.fn().mockResolvedValue({
     title: 'private',

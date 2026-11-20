@@ -85,6 +85,7 @@ function setup() {
     receiptSummary: () => '',
     receiptChangedCount: () => 0,
     maybeAddChangesSummary: vi.fn(async () => {}),
+    previewHtml: vi.fn(),
   } satisfies RunEventDeps;
   return { coordinator: new RunEventCoordinator(deps), deps, approvals, state, session };
 }
@@ -98,10 +99,50 @@ const start = {
   event_id: 10,
 };
 
+const htmlDone = {
+  ...start,
+  type: 'task_done',
+  task_status: 'completed',
+  stop_reason: 'done',
+  task_revision: 5,
+  event_id: 11,
+  mode: 'chat',
+  changed: true,
+  changes: { changed_count: 1, files: [{ path: 'snake.html', status: 'A' }] },
+};
+
 describe('RunEventCoordinator ordering', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it('previews the HTML changed by a live run once', () => {
+    const { coordinator, deps } = setup();
+    coordinator.handleServerEvent(start);
+    coordinator.handleServerEvent(htmlDone);
+    coordinator.handleServerEvent(htmlDone);
+    expect(deps.previewHtml).toHaveBeenCalledExactlyOnceWith('session', 'snake.html', '');
+  });
+
+  it('does not auto-open a restored result or an ambiguous or incomplete file list', () => {
+    const { coordinator, deps } = setup();
+    coordinator.handleServerEvent(start);
+    coordinator.handleServerEvent(htmlDone, 'snapshot');
+    for (const [index, files, changedCount] of [
+      [1, [{ path: 'one.html' }, { path: 'two.html' }], 2],
+      [2, [{ path: 'only-visible.html' }], 4],
+      [3, [{ path: 'deleted.html', status: 'D' }], 1],
+    ] as const) {
+      const runId = `run-${index}`;
+      coordinator.handleServerEvent({ ...start, run_id: runId });
+      coordinator.handleServerEvent({
+        ...htmlDone,
+        run_id: runId,
+        changes: { files, changed_count: changedCount },
+      });
+    }
+    expect(deps.previewHtml).not.toHaveBeenCalled();
   });
 
   it('does not write request or terminal projections for an older snapshot', () => {

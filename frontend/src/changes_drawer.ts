@@ -1,5 +1,6 @@
 import { runtime } from './runtime';
 import { createIconSvg } from './icon_button';
+import { isHtmlPath, isPreviewableHtml } from './html_preview';
 import type { ChangeFilePreview, ChangesData, RestoreChangesResult } from './types/domain';
 export interface ChangesDrawerDeps {
   $(id: string): HTMLElement;
@@ -7,6 +8,7 @@ export interface ChangesDrawerDeps {
   fetchChangeFile(project: string, path: string): Promise<ChangeFilePreview>;
   restoreChanges(project: string): Promise<RestoreChangesResult>;
   escapeHtml(text: string): string;
+  previewHtml(project: string, path: string): void;
 }
 /* Codey changes drawer: per-file diff list with fold/unfold rendering.
    Zero-build asset module; index.html injects dependencies via init() at boot. */
@@ -307,13 +309,25 @@ export interface ChangesDrawerDeps {
     pre.hidden = true;
     btn.setAttribute('aria-expanded', 'false');
     btn.onclick = () => toggleFileNode(wrap, file.path || '', pre, btn);
-    wrap.append(btn, pre);
+    wrap.append(btn);
+    if (isHtmlPath(file.path)) {
+      const preview = document.createElement('button');
+      preview.type = 'button';
+      preview.className = 'change-html-preview';
+      preview.textContent = 'Preview';
+      preview.setAttribute('aria-label', `Preview ${file.path}`);
+      preview.onclick = () => deps.previewHtml(activeProject, file.path);
+      wrap.append(preview);
+    }
+    wrap.append(pre);
     return wrap as ChangeNode;
   }
 
   function updateFileNode(node: ChangeNode, file: ChangesData['files'][number], chunks: DiffChunk[]): void {
     const status = node.querySelector<HTMLElement>('.change-status');
     if (status) status.textContent = file.status || 'M';
+    const preview = node.querySelector<HTMLButtonElement>('.change-html-preview');
+    if (preview) preview.hidden = !isPreviewableHtml(file);
     const stats = node.querySelectorAll<HTMLElement>('.change-stat');
     stats[0].textContent = `+${file.additions || 0}`;
     stats[1].textContent = `-${file.deletions || 0}`;
