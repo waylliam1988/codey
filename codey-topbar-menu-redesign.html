@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codey — 顶栏菜单与操作入口整合方案</title>
+<style>
+:root {
+  --panel-radius: 10px;
+  --bg:        #181818;
+  --bg-2:      #1c1c1c;
+  --panel:     #202020;
+  --panel-2:   #262626;
+  --hover:     #2a2a2a;
+  --active:    #2f2f2f;
+  --border:    #2a2a2a;
+  --border-2:  #232323;
+  --text:      #e6e6e6;
+  --text-dim:  #a0a0a0;
+  --muted:     #6b6b6b;
+  --faint:     #4a4a4a;
+  --scrollbar-thumb: #333333;
+  --green-rgb: 120, 165, 139;
+  --green: rgb(var(--green-rgb));
+  --green-bright: #acd1b9;
+  --green-selection: #3b5547;
+  --ok-dot: var(--green);
+  --err-text:  #d28a8a;
+  --diff-del-bg: rgba(210, 138, 138, .17);
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Cascadia Code', 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 13px/1.6 var(--font-sans); min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--green-selection); color: var(--text); }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+
+.page { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+.page-title { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+.page-subtitle { font-size: 13px; color: var(--text-dim); margin-bottom: 32px; line-height: 1.6; }
+.section-nav {
+  display: flex; flex-wrap: wrap; gap: 6px 12px;
+  padding: 12px 0; border-bottom: 1px solid var(--border);
+  margin-bottom: 32px; position: sticky; top: 0;
+  background: var(--bg); z-index: 100;
+}
+.section-nav a {
+  font-size: 12px; color: var(--muted); text-decoration: none;
+  padding: 4px 10px; border-radius: 4px; transition: all .15s;
+}
+.section-nav a:hover { color: var(--text); background: var(--hover); }
+.section { margin-bottom: 48px; }
+.section-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+.section-desc { font-size: 12px; color: var(--text-dim); margin-bottom: 16px; line-height: 1.7; }
+.comparison {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;
+}
+@media (max-width: 800px) { .comparison { grid-template-columns: 1fr; } }
+.comparison-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); margin-bottom: 8px;
+}
+.demo-wrap {
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--panel-radius); overflow: hidden;
+}
+.single-demo { max-width: 560px; }
+.note-box {
+  font-size: 12px; color: var(--text-dim); background: var(--panel);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 14px; margin-top: 12px; line-height: 1.7;
+}
+.note-box strong { color: var(--text); }
+
+/* ═══════════════ Redundancy Map Table ═══════════════ */
+.map-table {
+  width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px;
+}
+.map-table th, .map-table td {
+  padding: 8px 10px; border: 1px solid var(--border); text-align: left;
+}
+.map-table th {
+  background: var(--panel); color: var(--text-dim); font-weight: 500;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+}
+.map-table td { color: var(--text-dim); }
+.map-table .has { color: var(--green-bright); }
+.map-table .dup { color: var(--err-text); }
+.map-table .row-label { color: var(--text); font-weight: 500; white-space: nowrap; }
+
+/* ═══════════════ Demo Components ═══════════════ */
+
+/* --- Current topbar --- */
+.topbar-demo {
+  display: flex; align-items: center; height: 44px;
+  padding: 0 12px; border-bottom: 1px solid var(--border); gap: 8px;
+}
+.topbar-title { font-size: 14px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icon-btn {
+  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+  color: var(--muted); cursor: pointer; border: 0; background: 0;
+  border-radius: 5px; transition: all .12s; flex: none;
+}
+.icon-btn:hover { color: var(--text); background: var(--hover); }
+.icon-btn svg {
+  width: 15px; height: 15px; stroke: currentColor; fill: none;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+.icon-btn .dot-fill { fill: currentColor; stroke: none; }
+
+.status-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex: none;
+}
+
+/* --- Current context menu --- */
+.ctx-menu-demo {
+  min-width: 200px; background: var(--panel);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 4px 0; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+.ctx-menu-demo button {
+  display: block; width: 100%; text-align: left; padding: 7px 14px;
+  font: inherit; font-size: 12px; color: var(--text-dim); border: 0;
+  background: 0; cursor: pointer; transition: all .1s;
+}
+.ctx-menu-demo button:hover { background: var(--hover); color: var(--text); }
+.ctx-menu-demo button.danger { color: var(--err-text); }
+.ctx-menu-demo button.danger:hover { background: var(--diff-del-bg); }
+.ctx-menu-demo .sep {
+  height: 1px; background: var(--border); margin: 4px 0;
+}
+
+/* --- Workspace chooser menu --- */
+.ws-chooser-demo {
+  min-width: 190px; background: var(--panel);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 4px 0; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+.ws-chooser-demo button {
+  display: block; width: 100%; text-align: left; padding: 7px 14px;
+  font: inherit; font-size: 12px; color: var(--text-dim); border: 0;
+  background: 0; cursor: pointer; transition: all .1s;
+}
+.ws-chooser-demo button:hover { background: var(--hover); color: var(--text); }
+
+/* --- Command palette demo --- */
+.palette-demo {
+  max-width: 400px; background: var(--panel);
+  border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.5); overflow: hidden;
+}
+.palette-input-wrap {
+  display: flex; align-items: center; padding: 0 14px;
+  border-bottom: 1px solid var(--border); gap: 8px;
+}
+.palette-input-wrap svg {
+  width: 14px; height: 14px; stroke: var(--muted); fill: none;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none;
+}
+.palette-input {
+  flex: 1; padding: 10px 0; font: inherit; font-size: 13px;
+  background: 0; border: 0; color: var(--text); outline: none;
+}
+.palette-items { max-height: 240px; overflow-y: auto; padding: 4px 0; }
+.palette-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 14px; cursor: pointer; transition: background .1s;
+}
+.palette-item:hover, .palette-item.focused { background: var(--hover); }
+.palette-item-icon {
+  width: 16px; height: 16px; color: var(--muted); flex: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.palette-item-icon svg {
+  width: 14px; height: 14px; stroke: currentColor; fill: none;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+.palette-item-label { font-size: 12px; color: var(--text-dim); flex: 1; }
+.palette-item:hover .palette-item-label, .palette-item.focused .palette-item-label { color: var(--text); }
+.palette-item-kbd {
+  font-size: 10px; color: var(--faint); font-family: var(--font-mono);
+}
+.palette-hint {
+  padding: 6px 14px; font-size: 11px; color: var(--faint);
+  border-top: 1px solid var(--border); display: flex; gap: 12px;
+}
+
+/* --- Proposed topbar --- */
+.topbar-new {
+  display: flex; align-items: center; height: 44px;
+  padding: 0 12px; border-bottom: 1px solid var(--border); gap: 6px;
+}
+.topbar-new-title {
+  font-size: 14px; flex: 1; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Quick action buttons in proposed topbar */
+.topbar-actions-new {
+  display: flex; align-items: center; gap: 2px;
+}
+.topbar-sep {
+  width: 1px; height: 16px; background: var(--border); margin: 0 4px; flex: none;
+}
+
+/* --- Proposed merged menu --- */
+.merged-menu {
+  min-width: 220px; background: var(--panel);
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 6px 0; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+.merged-menu-section {
+  padding: 0;
+}
+.merged-menu-section + .merged-menu-section {
+  border-top: 1px solid var(--border); margin-top: 2px; padding-top: 2px;
+}
+.merged-menu-label {
+  font-size: 10px; color: var(--faint); text-transform: uppercase;
+  letter-spacing: .06em; padding: 6px 14px 2px; user-select: none;
+}
+.mm-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 14px; cursor: pointer; transition: all .1s;
+  font: inherit; font-size: 12px; color: var(--text-dim);
+  border: 0; background: 0; width: 100%; text-align: left;
+}
+.mm-item:hover { background: var(--hover); color: var(--text); }
+.mm-item.danger { color: var(--err-text); }
+.mm-item.danger:hover { background: var(--diff-del-bg); }
+.mm-icon {
+  width: 16px; height: 16px; display: flex; align-items: center;
+  justify-content: center; color: var(--muted); flex: none;
+}
+.mm-icon svg {
+  width: 14px; height: 14px; stroke: currentColor; fill: none;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+.mm-label { flex: 1; }
+.mm-kbd { font-size: 10px; color: var(--faint); font-family: var(--font-mono); }
+
+/* --- Sidebar comparison --- */
+.sidebar-demo {
+  width: 240px; background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--panel-radius); overflow: hidden;
+}
+.sidebar-head-demo {
+  display: flex; align-items: center; height: 44px;
+  padding: 0 12px; border-bottom: 1px solid var(--border);
+}
+.sidebar-actions-demo {
+  padding: 4px 8px;
+}
+.sidebar-btn {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: 6px; width: 100%;
+  font: inherit; font-size: 12px; color: var(--text-dim);
+  border: 0; background: 0; cursor: pointer; transition: all .12s;
+}
+.sidebar-btn:hover { background: var(--hover); color: var(--text); }
+.sidebar-btn svg {
+  width: 14px; height: 14px; stroke: currentColor; fill: none;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none;
+}
+.sidebar-btn .kbd-hint {
+  margin-left: auto; font-size: 10px; color: var(--faint);
+  font-family: var(--font-mono);
+}
+.sidebar-footer-demo {
+  padding: 4px 8px; border-top: 1px solid var(--border);
+}
+
+/* Flow diagram */
+.flow-box {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 16px; font-size: 12px;
+}
+.flow-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.flow-node {
+  padding: 6px 12px; background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 6px; white-space: nowrap;
+}
+.flow-node.primary { border-color: var(--green); color: var(--green-bright); }
+.flow-node.removed { border-color: var(--err-text); color: var(--err-text); text-decoration: line-through; opacity: .6; }
+.flow-arrow { color: var(--faint); font-size: 14px; }
+.flow-label { color: var(--muted); font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1 class="page-title">Codey — 顶栏菜单与操作入口整合方案</h1>
+<p class="page-subtitle">
+  分析右上角 ⋯ 菜单、侧栏操作按钮、Workspace chooser、命令面板 (Ctrl+K) 四个操作面之间的重复和分散问题，提出整合方案。
+</p>
+
+<nav class="section-nav">
+  <a href="#redundancy">冗余分析</a>
+  <a href="#current">当前布局</a>
+  <a href="#proposal">整合方案</a>
+  <a href="#topbar-new">新顶栏</a>
+  <a href="#merged-menu">统一菜单</a>
+  <a href="#palette-new">命令面板</a>
+  <a href="#sidebar-new">侧栏精简</a>
+</nav>
+
+
+<!-- ═══════════════ 冗余分析 ═══════════════ -->
+<section class="section" id="redundancy">
+<h2 class="section-title">1. 冗余分析 — 当前操作入口地图</h2>
+<p class="section-desc">
+  下表列出每个操作在 4 个入口面的出现情况。<span style="color:var(--green-bright)">绿色</span> = 正常存在，<span style="color:var(--err-text)">红色</span> = 重复出现。
+</p>
+
+<table class="map-table">
+  <thead>
+    <tr>
+      <th>操作</th>
+      <th>① 侧栏</th>
+      <th>② 顶栏 ⋯ 菜单</th>
+      <th>③ Workspace 下拉</th>
+      <th>④ 命令面板 Ctrl+K</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="row-label">New chat</td>
+      <td class="has">✓ 按钮 + Ctrl+N</td>
+      <td>—</td>
+      <td>—</td>
+      <td class="dup">✓ 重复</td>
+    </tr>
+    <tr>
+      <td class="row-label">Add project</td>
+      <td class="has">✓ 按钮</td>
+      <td>—</td>
+      <td>—</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td class="row-label">Search chats</td>
+      <td class="has">✓ 搜索框</td>
+      <td>—</td>
+      <td>—</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td class="row-label">Settings</td>
+      <td class="has">✓ 底部按钮</td>
+      <td>—</td>
+      <td>—</td>
+      <td class="dup">✓ 重复</td>
+    </tr>
+    <tr>
+      <td class="row-label">Commands (Ctrl+K)</td>
+      <td>—</td>
+      <td class="has">✓ 菜单项</td>
+      <td>—</td>
+      <td class="dup">✓ 就是自身</td>
+    </tr>
+    <tr>
+      <td class="row-label">Search this conversation</td>
+      <td>—</td>
+      <td class="has">✓ 菜单项</td>
+      <td>—</td>
+      <td class="dup">✓ 重复</td>
+    </tr>
+    <tr>
+      <td class="row-label">Local context</td>
+      <td>—</td>
+      <td class="has">✓ 菜单项</td>
+      <td>—</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td class="row-label">Clear messages</td>
+      <td>—</td>
+      <td class="has">✓ 危险按钮</td>
+      <td>—</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td class="row-label">Files / Changes / Research / Review / Outputs / History</td>
+      <td>—</td>
+      <td>—</td>
+      <td class="has">✓ 6 项</td>
+      <td class="dup">✓ 重复 6 项</td>
+    </tr>
+    <tr>
+      <td class="row-label">Manage saved permissions</td>
+      <td>—</td>
+      <td>—</td>
+      <td>—</td>
+      <td class="has">✓ 仅此处</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="note-box">
+  <strong>发现的问题：</strong><br>
+  <strong>1. ⋯ 菜单中 "Commands" 是多余的</strong> — 点击 ⋯ 再点 Commands 打开命令面板，但用户可以直接 Ctrl+K。这个菜单项的唯一目的是暴露 Ctrl+K 的存在，但放在 ⋯ 里太深了。<br>
+  <strong>2. "Search this conversation" 存在 3 处</strong> — ⋯ 菜单、命令面板、以及（隐性地）Ctrl+F 也可能搜索。用户不知道该从哪里进入。<br>
+  <strong>3. Workspace 面板选项在两处完全重复</strong> — Workspace chooser 下拉菜单和命令面板各有一份完整的 6 项，完全相同。<br>
+  <strong>4. ⋯ 菜单太杂</strong> — 混合了会话操作（Search、Clear）和面板导航（Local context），还有元操作（Commands），没有分组。<br>
+  <strong>5. "Local context" 只能从 ⋯ 菜单进入</strong> — 作为重要功能，入口太深，需要两次点击。
+</div>
+</section>
+
+
+<!-- ═══════════════ 当前布局 ═══════════════ -->
+<section class="section" id="current">
+<h2 class="section-title">2. 当前布局 — 四个操作面</h2>
+<p class="section-desc">
+  展示当前四个操作入口的具体样式，直观感受分散程度。
+</p>
+
+<div class="comparison">
+  <div>
+    <div class="comparison-label">② 顶栏 ⋯ 弹出菜单 (top-menu)</div>
+    <div style="padding: 16px;">
+      <div class="ctx-menu-demo">
+        <button>Commands</button>
+        <button>Search this conversation</button>
+        <button>Local context</button>
+        <div class="sep"></div>
+        <button class="danger">Clear messages</button>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="comparison-label">③ Workspace chooser 下拉菜单</div>
+    <div style="padding: 16px;">
+      <div class="ws-chooser-demo">
+        <button>Files</button>
+        <button>Changes</button>
+        <button>Research</button>
+        <button>Recorded review</button>
+        <button>Command output</button>
+        <button>Branches and workflow</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="comparison">
+  <div>
+    <div class="comparison-label">① 侧栏操作</div>
+    <div class="sidebar-demo">
+      <div class="sidebar-head-demo">
+        <button class="icon-btn" title="Collapse sidebar">
+          <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+      </div>
+      <div class="sidebar-actions-demo">
+        <button class="sidebar-btn">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14m-7-7h14"/></svg>
+          New chat
+          <span class="kbd-hint">Ctrl+N</span>
+        </button>
+        <button class="sidebar-btn">
+          <svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+          Add project
+        </button>
+        <button class="sidebar-btn">
+          <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+          Search
+        </button>
+      </div>
+      <div style="padding:16px 10px; color:var(--muted); font-size:11px; text-align:center">... chat list ...</div>
+      <div class="sidebar-footer-demo">
+        <button class="sidebar-btn">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v4m0 14v4m-8.66-2.34 2.83-2.83m11.66-11.66 2.83-2.83M1 12h4m14 0h4m-2.34 8.66-2.83-2.83M4.17 4.17 7 7"/></svg>
+          Settings
+        </button>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="comparison-label">④ 命令面板 (Ctrl+K)</div>
+    <div style="padding: 16px;">
+      <div class="palette-demo">
+        <div class="palette-input-wrap">
+          <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+          <input class="palette-input" placeholder="Type a command..." value="">
+        </div>
+        <div class="palette-items">
+          <div class="palette-item focused">
+            <span class="palette-item-label">Files</span>
+          </div>
+          <div class="palette-item">
+            <span class="palette-item-label">Changes</span>
+          </div>
+          <div class="palette-item">
+            <span class="palette-item-label">Research</span>
+          </div>
+          <div class="palette-item">
+            <span class="palette-item-label">Recorded review</span>
+          </div>
+          <div class="palette-item">
+            <span class="palette-item-label">Command output</span>
+          </div>
+          <div class="palette-item">
+            <span class="palette-item-label">Branches and workflow</span>
+          </div>
+          <div class="palette-item">
+            <span class="palette-item-label">Search this conversation</span>
+          </div>
+          <div class="palette-item">
+            <span class="palette-item-label">New chat</span>
+          </div>
+          <div class="palette-item">
+            <span class="palette-item-label">Settings</span>
+          </div>
+          <div class="palette-item">
+            <span class="palette-item-label">Manage saved permissions…</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+
+<!-- ═══════════════ 整合方案 ═══════════════ -->
+<section class="section" id="proposal">
+<h2 class="section-title">3. 整合方案 — 设计原则</h2>
+<p class="section-desc">
+  核心思路：<strong>每个操作最多有 2 个入口</strong>：一个主入口（最自然的位置）和命令面板作为万能备用入口。消除三处或更多的重复。
+</p>
+
+<div class="flow-box" style="background:var(--panel); border:1px solid var(--border); border-radius:8px; margin-bottom:20px;">
+  <div style="font-size:13px; font-weight:500; margin-bottom:4px;">操作归属重组：</div>
+
+  <div class="flow-row">
+    <span class="flow-label" style="width:160px;">高频会话操作：</span>
+    <span class="flow-node primary">顶栏直出图标</span>
+    <span class="flow-arrow">←</span>
+    <span style="color:var(--text-dim); font-size:12px;">Search conversation、Local context</span>
+  </div>
+
+  <div class="flow-row">
+    <span class="flow-label" style="width:160px;">低频/危险操作：</span>
+    <span class="flow-node primary">顶栏 ⋯ 菜单</span>
+    <span class="flow-arrow">←</span>
+    <span style="color:var(--text-dim); font-size:12px;">Clear messages、Manage permissions</span>
+  </div>
+
+  <div class="flow-row">
+    <span class="flow-label" style="width:160px;">Workspace 面板：</span>
+    <span class="flow-node primary">顶栏 Workspace 按钮</span>
+    <span class="flow-arrow">←</span>
+    <span style="color:var(--text-dim); font-size:12px;">保留不变，合并到 ⋯ 菜单中也可选</span>
+  </div>
+
+  <div class="flow-row">
+    <span class="flow-label" style="width:160px;">被移除的项：</span>
+    <span class="flow-node removed">⋯ → Commands</span>
+    <span style="color:var(--muted); font-size:11px;">用户知道 Ctrl+K 后不需要菜单入口</span>
+  </div>
+
+  <div class="flow-row">
+    <span class="flow-label" style="width:160px;">命令面板角色：</span>
+    <span class="flow-node">万能备用入口</span>
+    <span class="flow-arrow">←</span>
+    <span style="color:var(--text-dim); font-size:12px;">所有操作都可通过此到达，但不是主入口</span>
+  </div>
+</div>
+
+<div class="note-box">
+  <strong>变更汇总：</strong><br>
+  <strong>1.</strong> 把 "Search this conversation" 和 "Local context" 从 ⋯ 菜单提升为顶栏独立图标按钮 — 一次点击即达<br>
+  <strong>2.</strong> 从 ⋯ 菜单中移除 "Commands" — 在 Ctrl+K 快捷键提示中展示，不占菜单位置<br>
+  <strong>3.</strong> ⋯ 菜单只保留低频/危险操作（Clear messages、Manage permissions），并可选加入 Workspace 面板列表作为分组<br>
+  <strong>4.</strong> 命令面板增加图标和快捷键提示，作为统一的 power-user 入口<br>
+  <strong>5.</strong> 侧栏不变 — 侧栏的 New chat / Add project / Search / Settings 是全局导航，不与会话级操作重复
+</div>
+</section>
+
+
+<!-- ═══════════════ 新顶栏 ═══════════════ -->
+<section class="section" id="topbar-new">
+<h2 class="section-title">4. 新顶栏设计</h2>
+<p class="section-desc">
+  核心改动：将 "Search this conversation" 和 "Local context" 提升为顶栏独立图标按钮。
+  顶栏右侧按钮顺序：状态指示 → 搜索 → Local context → Workspace → ⋯ 菜单。
+</p>
+
+<div class="comparison">
+  <div>
+    <div class="comparison-label">Before — 当前顶栏</div>
+    <div class="demo-wrap">
+      <div class="topbar-demo">
+        <button class="icon-btn" title="Show sidebar" style="display:none">
+          <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+        <div class="topbar-title">Research: scaling laws survey</div>
+        <div class="status-dot"></div>
+        <button class="icon-btn" title="More">
+          <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2" class="dot-fill"/><circle cx="12" cy="12" r="1.2" class="dot-fill"/><circle cx="19" cy="12" r="1.2" class="dot-fill"/></svg>
+        </button>
+      </div>
+      <div style="padding:12px; font-size:11px; color:var(--muted)">
+        2 个按钮。"Search conversation" 和 "Local context" 藏在 ⋯ 菜单中（需 2 次点击）。
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="comparison-label">After — 改进顶栏</div>
+    <div class="demo-wrap">
+      <div class="topbar-new">
+        <div class="topbar-new-title">Research: scaling laws survey</div>
+        <div class="topbar-actions-new">
+          <div class="status-dot"></div>
+          <button class="icon-btn" title="Search this conversation   Ctrl+F">
+            <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+          </button>
+          <button class="icon-btn" title="Local context">
+            <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </button>
+          <div class="topbar-sep"></div>
+          <button class="icon-btn" title="Open workspace">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+          </button>
+          <button class="icon-btn" title="More">
+            <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2" class="dot-fill"/><circle cx="12" cy="12" r="1.2" class="dot-fill"/><circle cx="19" cy="12" r="1.2" class="dot-fill"/></svg>
+          </button>
+        </div>
+      </div>
+      <div style="padding:12px; font-size:11px; color:var(--muted)">
+        5 个按钮。搜索和 Local context 一次点击即达。分隔线区分会话操作和面板操作。
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="note-box">
+  <strong>设计说明：</strong><br>
+  • 状态 dot 保持最左侧（靠近标题），视觉上是标题的附属<br>
+  • 搜索图标 (🔍) 和 Local context 图标 (👤) 紧随其后，作为会话级常用操作<br>
+  • <code>topbar-sep</code> (1px 分隔线) 将会话操作和面板操作在视觉上分组<br>
+  • Workspace 按钮在分隔线右侧，表示它打开的是独立面板而非修改当前会话<br>
+  • ⋯ 菜单在最右侧，只承载低频操作<br>
+  • 在侧栏隐藏状态下，hamburger 按钮出现在标题左侧（行为不变）
+</div>
+</section>
+
+
+<!-- ═══════════════ 统一菜单 ═══════════════ -->
+<section class="section" id="merged-menu">
+<h2 class="section-title">5. 精简后的 ⋯ 菜单</h2>
+<p class="section-desc">
+  ⋯ 菜单只保留无法或不适合放在顶栏图标的操作，按类型分组。
+  移除 "Commands"（由 Ctrl+K 提示替代）。移除 "Search this conversation" 和 "Local context"（已提升为图标）。
+</p>
+
+<div class="comparison">
+  <div>
+    <div class="comparison-label">Before — 当前 ⋯ 菜单</div>
+    <div style="padding: 16px;">
+      <div class="ctx-menu-demo">
+        <button>Commands</button>
+        <button>Search this conversation</button>
+        <button>Local context</button>
+        <div class="sep"></div>
+        <button class="danger">Clear messages</button>
+      </div>
+      <div style="font-size:11px; color:var(--muted); margin-top:8px">
+        4 项，其中 Commands 自引用，Search 和 Local context 是常用操作藏得太深。
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="comparison-label">After — 精简 ⋯ 菜单</div>
+    <div style="padding: 16px;">
+      <div class="merged-menu">
+        <div class="merged-menu-section">
+          <div class="merged-menu-label">Workspace</div>
+          <button class="mm-item">
+            <span class="mm-icon"><svg viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/></svg></span>
+            <span class="mm-label">Files</span>
+          </button>
+          <button class="mm-item">
+            <span class="mm-icon"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>
+            <span class="mm-label">Changes</span>
+          </button>
+          <button class="mm-item">
+            <span class="mm-icon"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/><path d="M12 7v3l2 1"/></svg></span>
+            <span class="mm-label">Research</span>
+          </button>
+          <button class="mm-item">
+            <span class="mm-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="m9 15 2 2 4-4"/></svg></span>
+            <span class="mm-label">Review</span>
+          </button>
+          <button class="mm-item">
+            <span class="mm-icon"><svg viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg></span>
+            <span class="mm-label">Command output</span>
+          </button>
+          <button class="mm-item">
+            <span class="mm-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span>
+            <span class="mm-label">History</span>
+          </button>
+        </div>
+        <div class="merged-menu-section">
+          <div class="merged-menu-label">Session</div>
+          <button class="mm-item">
+            <span class="mm-icon"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>
+            <span class="mm-label">Rename chat</span>
+          </button>
+          <button class="mm-item">
+            <span class="mm-icon"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+            <span class="mm-label">Manage permissions…</span>
+          </button>
+          <button class="mm-item danger">
+            <span class="mm-icon"><svg viewBox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span>
+            <span class="mm-label">Clear messages</span>
+          </button>
+        </div>
+      </div>
+      <div style="font-size:11px; color:var(--muted); margin-top:8px">
+        分为 Workspace 和 Session 两组。带图标、按类型分隔。
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="note-box">
+  <strong>设计说明：</strong><br>
+  <strong>"Commands" 被移除</strong> — 它的作用（暴露 Ctrl+K 的存在）可以通过在 ⋯ 菜单底部加一行提示文字完成（见下方命令面板部分），不需要占一个菜单项。<br><br>
+  <strong>"Search this conversation" 被移除</strong> — 已在顶栏有搜索图标 (🔍)，不需要在菜单重复。<br><br>
+  <strong>"Local context" 被移除</strong> — 已在顶栏有图标 (👤)，不需要在菜单重复。<br><br>
+  <strong>新增 Workspace 分组</strong> — 将 Workspace chooser 下拉菜单合并进来。用户点 ⋯ 可以看到所有面板选项。<strong>原有的 Workspace 顶栏图标按钮仍然保留</strong>，它只打开/关闭面板而不选择具体项。如果觉得 ⋯ 菜单太长，Workspace 分组也可以不合并进来——这取决于你们觉得 Workspace 按钮的下拉本身够不够用。<br><br>
+  <strong>新增 "Rename chat"</strong> — 目前重命名只能从侧栏右键菜单，但用户在聊天中想重命名时不应该需要去侧栏操作。<br><br>
+  <strong>"Manage permissions" 合并进来</strong> — 原来只在命令面板，现在在 ⋯ 菜单也可到达。<br><br>
+  <strong>分组用 label 标识</strong> — "Workspace" / "Session" 两个小标签，10px 灰色大写字母，低调但清晰。
+</div>
+</section>
+
+
+<!-- ═══════════════ 命令面板 ═══════════════ -->
+<section class="section" id="palette-new">
+<h2 class="section-title">6. 命令面板增强</h2>
+<p class="section-desc">
+  命令面板作为 power-user 万能入口。改进：(1) 每项增加图标提高可扫描性；(2) 显示快捷键提示；(3) 底部增加操作提示行。
+</p>
+
+<div class="comparison">
+  <div>
+    <div class="comparison-label">Before — 当前命令面板</div>
+    <div style="padding: 16px;">
+      <div class="palette-demo">
+        <div class="palette-input-wrap">
+          <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+          <input class="palette-input" placeholder="Type a command..." readonly>
+        </div>
+        <div class="palette-items">
+          <div class="palette-item focused"><span class="palette-item-label">Files</span></div>
+          <div class="palette-item"><span class="palette-item-label">Changes</span></div>
+          <div class="palette-item"><span class="palette-item-label">Research</span></div>
+          <div class="palette-item"><span class="palette-item-label">Search this conversation</span></div>
+          <div class="palette-item"><span class="palette-item-label">New chat</span></div>
+          <div class="palette-item"><span class="palette-item-label">Settings</span></div>
+          <div class="palette-item"><span class="palette-item-label">Manage saved permissions…</span></div>
+        </div>
+      </div>
+      <div style="font-size:11px; color:var(--muted); margin-top:8px">
+        纯文字列表，无图标、无快捷键提示、无分类。
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="comparison-label">After — 增强版命令面板</div>
+    <div style="padding: 16px;">
+      <div class="palette-demo">
+        <div class="palette-input-wrap">
+          <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+          <input class="palette-input" placeholder="Type a command..." readonly>
+        </div>
+        <div class="palette-items">
+          <div class="palette-item focused">
+            <span class="palette-item-icon"><svg viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/></svg></span>
+            <span class="palette-item-label">Files</span>
+          </div>
+          <div class="palette-item">
+            <span class="palette-item-icon"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>
+            <span class="palette-item-label">Changes</span>
+          </div>
+          <div class="palette-item">
+            <span class="palette-item-icon"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/><path d="M12 7v3l2 1"/></svg></span>
+            <span class="palette-item-label">Research</span>
+          </div>
+          <div class="palette-item">
+            <span class="palette-item-icon"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></span>
+            <span class="palette-item-label">Search this conversation</span>
+            <span class="palette-item-kbd">Ctrl+F</span>
+          </div>
+          <div class="palette-item">
+            <span class="palette-item-icon"><svg viewBox="0 0 24 24"><path d="M12 5v14m-7-7h14"/></svg></span>
+            <span class="palette-item-label">New chat</span>
+            <span class="palette-item-kbd">Ctrl+N</span>
+          </div>
+          <div class="palette-item">
+            <span class="palette-item-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v4m0 14v4m-8.66-2.34 2.83-2.83m11.66-11.66 2.83-2.83M1 12h4m14 0h4m-2.34 8.66-2.83-2.83M4.17 4.17 7 7"/></svg></span>
+            <span class="palette-item-label">Settings</span>
+          </div>
+          <div class="palette-item">
+            <span class="palette-item-icon"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+            <span class="palette-item-label">Manage saved permissions…</span>
+          </div>
+        </div>
+        <div class="palette-hint">
+          <span>↑↓ Navigate</span>
+          <span>↵ Select</span>
+          <span>Esc Close</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="note-box">
+  <strong>设计说明：</strong><br>
+  • 每项增加 16×16px 图标 (stroke icon)，图标使用 <code>var(--muted)</code> 色<br>
+  • 有快捷键的项在右侧显示 <code>Ctrl+F</code> / <code>Ctrl+N</code> 等，使用 mono 字体 + <code>var(--faint)</code> 色<br>
+  • 底部增加操作提示行：↑↓ Navigate / ↵ Select / Esc Close，帮助新用户<br>
+  • 保持轻量：不分组、不加 section label（命令面板追求快速搜索，分组反而增加视觉负担）
+</div>
+</section>
+
+
+<!-- ═══════════════ 侧栏精简 ═══════════════ -->
+<section class="section" id="sidebar-new">
+<h2 class="section-title">7. 侧栏 — 保持不变</h2>
+<p class="section-desc">
+  侧栏的 New chat / Add project / Search / Settings 四个操作属于<strong>全局导航</strong>，它们操作的对象（聊天列表、项目、全局设置）与顶栏的<strong>会话级操作</strong>不重叠。
+  因此侧栏操作不需要精简。
+</p>
+
+<div class="single-demo">
+<div class="demo-wrap" style="max-width:280px">
+  <div style="padding:16px;">
+
+    <table class="map-table" style="font-size:11px;">
+      <thead>
+        <tr>
+          <th>操作</th>
+          <th>归属</th>
+          <th>理由</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="row-label">New chat</td>
+          <td style="color:var(--green-bright)">侧栏（主）+ 命令面板</td>
+          <td>全局操作，自然放在导航区</td>
+        </tr>
+        <tr>
+          <td class="row-label">Add project</td>
+          <td style="color:var(--green-bright)">仅侧栏</td>
+          <td>低频全局操作</td>
+        </tr>
+        <tr>
+          <td class="row-label">Search chats</td>
+          <td style="color:var(--green-bright)">仅侧栏</td>
+          <td>搜索跨会话，属于全局</td>
+        </tr>
+        <tr>
+          <td class="row-label">Settings</td>
+          <td style="color:var(--green-bright)">侧栏（主）+ 命令面板</td>
+          <td>全局设置，自然放在底部</td>
+        </tr>
+      </tbody>
+    </table>
+
+  </div>
+</div>
+</div>
+
+<div class="note-box">
+  <strong>唯一需要注意的：</strong><br>
+  • 命令面板中保留 "New chat" 和 "Settings" 作为备用入口是合理的 — 侧栏可能被隐藏<br>
+  • 不建议在 ⋯ 菜单或其他位置再重复这些 — 侧栏隐藏时用 Ctrl+K 或 Ctrl+N 足够
+</div>
+</section>
+
+
+<!-- ═══════════════ 变更后的完整地图 ═══════════════ -->
+<section class="section" id="result-map">
+<h2 class="section-title">8. 变更后 — 操作入口地图</h2>
+<p class="section-desc">每个操作最多 2 个入口，角色清晰、无冗余。</p>
+
+<table class="map-table">
+  <thead>
+    <tr>
+      <th>操作</th>
+      <th>① 侧栏</th>
+      <th>② 顶栏图标</th>
+      <th>③ ⋯ 菜单</th>
+      <th>④ 命令面板</th>
+      <th>入口数</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="row-label">New chat</td>
+      <td class="has">✓ 主入口</td>
+      <td>—</td>
+      <td>—</td>
+      <td class="has">✓ 备用</td>
+      <td>2</td>
+    </tr>
+    <tr>
+      <td class="row-label">Add project</td>
+      <td class="has">✓ 唯一</td>
+      <td>—</td>
+      <td>—</td>
+      <td>—</td>
+      <td>1</td>
+    </tr>
+    <tr>
+      <td class="row-label">Search chats</td>
+      <td class="has">✓ 唯一</td>
+      <td>—</td>
+      <td>—</td>
+      <td>—</td>
+      <td>1</td>
+    </tr>
+    <tr>
+      <td class="row-label">Settings</td>
+      <td class="has">✓ 主入口</td>
+      <td>—</td>
+      <td>—</td>
+      <td class="has">✓ 备用</td>
+      <td>2</td>
+    </tr>
+    <tr>
+      <td class="row-label">Search conversation</td>
+      <td>—</td>
+      <td class="has" style="color:var(--green-bright)">✓ 新图标</td>
+      <td>—</td>
+      <td class="has">✓ 备用</td>
+      <td>2</td>
+    </tr>
+    <tr>
+      <td class="row-label">Local context</td>
+      <td>—</td>
+      <td class="has" style="color:var(--green-bright)">✓ 新图标</td>
+      <td>—</td>
+      <td class="has">✓ 备用</td>
+      <td>2</td>
+    </tr>
+    <tr>
+      <td class="row-label">Clear messages</td>
+      <td>—</td>
+      <td>—</td>
+      <td class="has">✓ 唯一</td>
+      <td>—</td>
+      <td>1</td>
+    </tr>
+    <tr>
+      <td class="row-label">Rename chat</td>
+      <td style="color:var(--muted)">✓ 右键菜单</td>
+      <td>—</td>
+      <td class="has" style="color:var(--green-bright)">✓ 新增</td>
+      <td>—</td>
+      <td>2</td>
+    </tr>
+    <tr>
+      <td class="row-label">Manage permissions</td>
+      <td>—</td>
+      <td>—</td>
+      <td class="has" style="color:var(--green-bright)">✓ 新增</td>
+      <td class="has">✓ 保留</td>
+      <td>2</td>
+    </tr>
+    <tr>
+      <td class="row-label">Workspace panels (×6)</td>
+      <td>—</td>
+      <td class="has">✓ Workspace 按钮</td>
+      <td class="has">✓ 分组列出</td>
+      <td class="has">✓ 备用</td>
+      <td>2~3</td>
+    </tr>
+    <tr>
+      <td class="row-label" style="text-decoration:line-through; color:var(--err-text)">Commands</td>
+      <td>—</td>
+      <td>—</td>
+      <td style="color:var(--err-text)">已移除</td>
+      <td style="color:var(--muted)">就是自身</td>
+      <td style="color:var(--err-text)">0 (移除)</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="note-box" style="font-size: 13px; line-height: 1.7;">
+  <strong>总结——整合带来的改善：</strong><br><br>
+  <strong>减少点击：</strong>Search conversation 和 Local context 从 2 次点击（⋯ → 选项）降为 1 次（顶栏图标）<br><br>
+  <strong>消除困惑：</strong>"Commands" 菜单项不再自引用；用户不会疑惑 "Commands 是什么"<br><br>
+  <strong>减少重复：</strong>Search conversation 从 3 处减为 2 处；Workspace panels 通过合并 chooser 和 ⋯ 菜单统一入口<br><br>
+  <strong>分层清晰：</strong><br>
+  &nbsp;&nbsp;• 侧栏 = 全局导航（跨会话操作）<br>
+  &nbsp;&nbsp;• 顶栏图标 = 高频会话操作（一次点击）<br>
+  &nbsp;&nbsp;• ⋯ 菜单 = 低频/危险/枚举型操作（需要浏览选项）<br>
+  &nbsp;&nbsp;• 命令面板 = Power user 万能入口（键盘驱动）
+</div>
+</section>
+
+</div>
+</body>
+</html>

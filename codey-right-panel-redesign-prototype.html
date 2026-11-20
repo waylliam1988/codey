@@ -1,0 +1,1559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codey — Right Panel / Workspace Redesign Prototype</title>
+<style>
+/* ═══════════════════════ Design Tokens ═══════════════════════ */
+:root {
+  --panel-radius: 10px;
+  --bg:        #181818;
+  --bg-2:      #1c1c1c;
+  --panel:     #202020;
+  --panel-2:   #262626;
+  --hover:     #2a2a2a;
+  --active:    #2f2f2f;
+  --border:    #2a2a2a;
+  --border-2:  #232323;
+  --text:      #e6e6e6;
+  --text-dim:  #a0a0a0;
+  --muted:     #6b6b6b;
+  --faint:     #4a4a4a;
+  --scrollbar-thumb: #333333;
+  --scrollbar-thumb-hover: #444444;
+  --green-rgb: 120, 165, 139;
+  --green: rgb(var(--green-rgb));
+  --green-bright: #acd1b9;
+  --green-selection: #3b5547;
+  --ok-dot: var(--green);
+  --ok-dot-ring: rgba(var(--green-rgb), .14);
+  --diff-add-bg: rgba(var(--green-rgb), .20);
+  --diff-add-mark: var(--green-bright);
+  --diff-add-edge: var(--green);
+  --diff-del-bg: rgba(210, 138, 138, .17);
+  --diff-del-mark: #e4aaaa;
+  --diff-del-edge: #bb8282;
+  --err-text:  #d28a8a;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Cascadia Code', 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.6 var(--font-sans);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--green-selection); color: var(--text); }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+
+/* ═══════════════════════ Page Layout ═══════════════════════ */
+.page { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+.page-title {
+  font-size: 22px; font-weight: 600; margin-bottom: 4px;
+}
+.page-subtitle {
+  font-size: 13px; color: var(--text-dim); margin-bottom: 32px;
+}
+
+/* Section Nav */
+.section-nav {
+  display: flex; flex-wrap: wrap; gap: 6px 12px;
+  padding: 12px 0; border-bottom: 1px solid var(--border);
+  margin-bottom: 32px; position: sticky; top: 0;
+  background: var(--bg); z-index: 100;
+}
+.section-nav a {
+  font-size: 12px; color: var(--muted); text-decoration: none;
+  padding: 4px 10px; border-radius: 4px; transition: all .15s;
+}
+.section-nav a:hover { color: var(--text); background: var(--hover); }
+
+/* Section */
+.section {
+  margin-bottom: 48px;
+}
+.section-title {
+  font-size: 16px; font-weight: 600; margin-bottom: 4px;
+}
+.section-desc {
+  font-size: 12px; color: var(--text-dim); margin-bottom: 16px;
+  line-height: 1.6;
+}
+.comparison {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  margin-bottom: 20px;
+}
+@media (max-width: 800px) { .comparison { grid-template-columns: 1fr; } }
+.comparison-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); margin-bottom: 8px;
+}
+.demo-wrap {
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--panel-radius); overflow: hidden;
+}
+.single-demo { max-width: 540px; }
+.note-box {
+  font-size: 12px; color: var(--text-dim); background: var(--panel);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 14px; margin-top: 12px; line-height: 1.6;
+}
+.note-box strong { color: var(--text); }
+
+/* ═══════════════════════ 1. WORKSPACE SHELL ═══════════════════════ */
+
+/* --- Before: flat tabs --- */
+.ws-old {
+  display: flex; flex-direction: column; height: 320px;
+}
+.ws-old-header {
+  display: flex; align-items: center; height: 44px;
+  padding: 0 8px; border-bottom: 1px solid var(--border); flex: none;
+}
+.ws-old-tabs { display: flex; gap: 4px; flex: 1; overflow-x: auto; }
+.ws-old-tabs button {
+  color: var(--muted); border: 0; border-bottom: 1px solid transparent;
+  background: transparent; padding: 11px 8px 10px;
+  font: inherit; cursor: pointer; white-space: nowrap;
+}
+.ws-old-tabs button.active { color: var(--text); border-color: var(--text-dim); }
+.ws-old-body {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 12px;
+}
+.ws-old-icon {
+  width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+  color: var(--muted); cursor: pointer; border: 0; background: 0;
+  border-radius: 4px; transition: all .15s;
+}
+.ws-old-icon:hover { color: var(--text); background: var(--hover); }
+
+/* --- After: improved workspace shell --- */
+.ws-new {
+  display: flex; flex-direction: column; height: 320px;
+}
+.ws-new-header {
+  display: flex; align-items: center; height: 44px;
+  padding: 0 8px; border-bottom: 1px solid var(--border); flex: none; gap: 2px;
+}
+.ws-new-tabs { display: flex; gap: 2px; flex: 1; overflow-x: auto; align-items: stretch; }
+.ws-new-tab {
+  position: relative;
+  color: var(--muted); border: 0; background: transparent;
+  padding: 0 10px; font: inherit; cursor: pointer; white-space: nowrap;
+  display: flex; align-items: center; gap: 6px;
+  height: 44px; transition: color .12s;
+}
+.ws-new-tab::after {
+  content: ''; position: absolute; bottom: 0; left: 8px; right: 8px;
+  height: 2px; background: transparent; border-radius: 1px; transition: background .12s;
+}
+.ws-new-tab.active { color: var(--text); }
+.ws-new-tab.active::after { background: var(--text-dim); }
+.ws-new-tab:hover { color: var(--text); }
+.ws-new-tab .tab-close {
+  width: 14px; height: 14px; border-radius: 3px; border: 0; background: 0;
+  display: none; align-items: center; justify-content: center;
+  color: var(--muted); cursor: pointer; font-size: 10px; padding: 0; line-height: 1;
+}
+.ws-new-tab:hover .tab-close, .ws-new-tab.active .tab-close { display: flex; }
+.ws-new-tab .tab-close:hover { background: var(--hover); color: var(--text); }
+.ws-new-tab .tab-badge {
+  font-size: 10px; min-width: 16px; height: 16px; line-height: 16px;
+  text-align: center; border-radius: 8px; background: var(--panel-2);
+  color: var(--text-dim); padding: 0 4px;
+}
+.ws-new-body {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 12px;
+}
+.ws-icon-btn {
+  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+  color: var(--muted); cursor: pointer; border: 0; background: 0;
+  border-radius: 5px; transition: all .12s; flex: none;
+}
+.ws-icon-btn:hover { color: var(--text); background: var(--hover); }
+.ws-icon-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ═══════════════════════ 2. EVIDENCE TAB ═══════════════════════ */
+
+/* Old evidence */
+.ev-old-card {
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+}
+.ev-old-title { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+.ev-old-meta { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.ev-old-excerpt { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+
+/* New evidence */
+.ev-new-card {
+  padding: 10px 14px; border-bottom: 1px solid var(--border-2);
+  border-left: 3px solid transparent; transition: background .12s;
+}
+.ev-new-card:hover { background: var(--hover); }
+.ev-new-card.supports { border-left-color: var(--green); }
+.ev-new-card.contradicts { border-left-color: var(--err-text); }
+.ev-new-card.neutral { border-left-color: var(--faint); }
+.ev-new-head { display: flex; align-items: flex-start; gap: 8px; }
+.ev-new-title { font-size: 13px; font-weight: 500; flex: 1; min-width: 0; }
+.ev-new-stance {
+  font-size: 10px; padding: 1px 7px; border-radius: 3px; flex: none;
+  text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+}
+.ev-new-stance.supports { background: rgba(var(--green-rgb), .15); color: var(--green-bright); }
+.ev-new-stance.contradicts { background: var(--diff-del-bg); color: var(--diff-del-mark); }
+.ev-new-stance.neutral { background: var(--hover); color: var(--text-dim); }
+.ev-new-locator { font-size: 11px; color: var(--muted); margin-top: 2px; display: flex; align-items: center; gap: 6px; }
+.ev-new-locator a { color: var(--text-dim); text-decoration: none; }
+.ev-new-locator a:hover { text-decoration: underline; }
+.ev-new-excerpt {
+  font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-top: 6px;
+  padding: 6px 8px; background: var(--panel); border-radius: 4px;
+  border-left: 2px solid var(--border);
+  font-style: italic;
+}
+.ev-summary-bar {
+  display: flex; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border);
+  font-size: 12px; color: var(--text-dim);
+}
+.ev-summary-bar span { display: flex; align-items: center; gap: 4px; }
+.ev-summary-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.ev-summary-dot.s { background: var(--green); }
+.ev-summary-dot.c { background: var(--err-text); }
+.ev-warnings {
+  margin: 8px 14px; padding: 8px 10px; border-radius: 4px;
+  background: rgba(210, 138, 138, .07); border: 1px solid rgba(210, 138, 138, .15);
+  font-size: 12px; color: var(--err-text);
+}
+.ev-warnings-title { font-weight: 500; margin-bottom: 4px; }
+.ev-warnings li { margin-left: 14px; color: var(--text-dim); }
+
+/* ═══════════════════════ 3. SOURCES TAB ═══════════════════════ */
+
+.src-old-card {
+  padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer;
+}
+.src-old-card:hover { background: var(--hover); }
+.src-old-title { font-size: 13px; font-weight: 500; }
+.src-old-meta { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.src-new-card {
+  padding: 10px 14px; border-bottom: 1px solid var(--border-2); cursor: pointer;
+  display: flex; gap: 10px; align-items: flex-start; transition: background .12s;
+}
+.src-new-card:hover { background: var(--hover); }
+.src-new-favicon {
+  width: 20px; height: 20px; border-radius: 4px; background: var(--panel-2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: var(--muted); flex: none; margin-top: 2px;
+  font-weight: 600;
+}
+.src-new-body { flex: 1; min-width: 0; }
+.src-new-head { display: flex; align-items: baseline; gap: 6px; }
+.src-new-num { font-size: 11px; color: var(--muted); font-family: var(--font-mono); flex: none; }
+.src-new-title { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.src-new-url {
+  font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; margin-top: 1px;
+}
+.src-new-tags { display: flex; gap: 4px; margin-top: 5px; flex-wrap: wrap; }
+.src-new-tag {
+  font-size: 10px; padding: 1px 6px; border-radius: 3px;
+  background: var(--panel-2); color: var(--text-dim); white-space: nowrap;
+}
+.src-new-tag.pdf { background: rgba(var(--green-rgb), .1); color: var(--green-bright); }
+.src-new-actions { display: flex; flex: none; align-items: flex-start; gap: 4px; padding-top: 2px; }
+.src-copy-btn {
+  width: 24px; height: 24px; border: 0; background: 0; color: var(--muted);
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 4px; cursor: pointer; opacity: 0; transition: all .12s;
+}
+.src-new-card:hover .src-copy-btn { opacity: 1; }
+.src-copy-btn:hover { background: var(--hover); color: var(--text); }
+.src-copy-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ═══════════════════════ 4. GRAPH TAB ═══════════════════════ */
+
+.graph-demo {
+  display: flex; flex-direction: column;
+}
+.graph-toolbar {
+  display: flex; align-items: center; gap: 6px; padding: 8px 14px;
+  border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-dim);
+}
+.graph-depth-btn {
+  width: 24px; height: 24px; border: 0; background: var(--panel-2);
+  color: var(--muted); border-radius: 4px; font: inherit; font-size: 11px;
+  cursor: pointer; transition: all .12s;
+}
+.graph-depth-btn.active { background: var(--active); color: var(--text); }
+.graph-depth-btn:hover { color: var(--text); }
+.graph-spacer { flex: 1; }
+.graph-reset-btn {
+  font: inherit; font-size: 11px; color: var(--text-dim); border: 0;
+  background: 0; cursor: pointer; padding: 4px 8px; border-radius: 4px;
+}
+.graph-reset-btn:hover { background: var(--hover); color: var(--text); }
+
+.graph-canvas-area {
+  height: 280px; background: var(--bg-2); position: relative; overflow: hidden;
+}
+.graph-node {
+  position: absolute; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--green); box-shadow: 0 0 0 3px var(--ok-dot-ring);
+  cursor: pointer; transition: transform .3s ease;
+}
+.graph-node:hover { transform: scale(1.4); }
+.graph-node.selected {
+  box-shadow: 0 0 0 3px var(--ok-dot-ring), 0 0 0 6px rgba(var(--green-rgb), .08);
+}
+.graph-node.virtual { background: var(--muted); box-shadow: 0 0 0 3px rgba(107,107,107,.14); }
+.graph-label {
+  position: absolute; font-size: 10px; color: var(--text-dim); white-space: nowrap;
+  pointer-events: none; transform: translateX(-50%);
+}
+.graph-edge {
+  position: absolute; height: 1px; background: var(--faint);
+  transform-origin: 0 0; pointer-events: none;
+}
+.graph-edge.highlight { background: rgba(var(--green-rgb), .3); height: 2px; }
+
+.graph-detail-panel {
+  padding: 10px 14px; border-top: 1px solid var(--border); min-height: 80px;
+}
+.graph-detail-empty { color: var(--muted); font-size: 12px; padding: 16px 0; text-align: center; }
+.graph-detail-title { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+.graph-detail-meta { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.graph-detail-excerpt {
+  font-size: 12px; color: var(--text-dim); line-height: 1.5;
+  padding: 6px 8px; background: var(--panel); border-radius: 4px; margin-bottom: 6px;
+}
+.graph-detail-actions { display: flex; gap: 6px; }
+.graph-detail-btn {
+  font: inherit; font-size: 11px; color: var(--text-dim); border: 0;
+  background: var(--panel-2); padding: 4px 10px; border-radius: 4px;
+  cursor: pointer; transition: all .12s;
+}
+.graph-detail-btn:hover { color: var(--text); background: var(--active); }
+
+/* ═══════════════════════ 5. NOTES TAB ═══════════════════════ */
+
+.notes-section { margin-bottom: 12px; }
+.notes-section-head {
+  display: flex; align-items: center; gap: 6px; padding: 8px 14px;
+  font-size: 12px; color: var(--text-dim); font-weight: 500;
+}
+.notes-count {
+  min-width: 18px; height: 18px; line-height: 18px; text-align: center;
+  border-radius: 9px; background: var(--panel-2); color: var(--muted);
+  font-size: 10px; font-weight: 600;
+}
+.note-card {
+  padding: 10px 14px; border-bottom: 1px solid var(--border-2);
+  transition: background .12s;
+}
+.note-card:hover { background: var(--hover); }
+.note-card-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 2px; }
+.note-card-title { font-size: 13px; font-weight: 500; flex: 1; min-width: 0; }
+.note-open-btn {
+  font: inherit; font-size: 11px; color: var(--text-dim); border: 0;
+  background: 0; padding: 2px 8px; cursor: pointer; border-radius: 4px;
+  flex: none; white-space: nowrap; transition: all .12s;
+}
+.note-open-btn:hover { background: var(--hover); color: var(--text); }
+.note-card-meta { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.note-card-body {
+  font-size: 12px; color: var(--text-dim); line-height: 1.6;
+  max-height: 80px; overflow: hidden; position: relative;
+  padding: 6px 8px; background: var(--panel); border-radius: 4px;
+  border-left: 2px solid var(--border);
+}
+.note-card-body.expanded { max-height: none; }
+.note-card-body::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 24px;
+  background: linear-gradient(transparent, var(--panel));
+}
+.note-card-body.expanded::after { display: none; }
+.note-source-chips { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
+.note-source-label { font-size: 10px; color: var(--muted); margin-right: 2px; }
+.note-source-chip {
+  font-size: 10px; padding: 1px 7px; border-radius: 3px;
+  background: var(--panel-2); color: var(--text-dim);
+  border: 0; cursor: pointer; font: inherit; font-size: 10px;
+  transition: all .12s;
+}
+.note-source-chip:hover { background: var(--active); color: var(--text); }
+.note-toggle-btn {
+  font: inherit; font-size: 11px; color: var(--muted); border: 0;
+  background: 0; padding: 4px 0; cursor: pointer; margin-top: 4px;
+}
+.note-toggle-btn:hover { color: var(--text); }
+
+/* ═══════════════════════ 6. LOCAL CONTEXT ═══════════════════════ */
+
+.lc-header {
+  display: flex; align-items: center; padding: 10px 14px;
+  border-bottom: 1px solid var(--border); gap: 8px;
+}
+.lc-header-title { font-size: 14px; font-weight: 600; }
+.lc-header-sub { font-size: 11px; color: var(--muted); }
+.lc-header-spacer { flex: 1; }
+.lc-header-btn {
+  font: inherit; font-size: 11px; color: var(--text-dim); border: 0;
+  background: 0; cursor: pointer; padding: 4px 8px; border-radius: 4px;
+}
+.lc-header-btn:hover { background: var(--hover); color: var(--text); }
+
+.lc-group { margin-bottom: 2px; }
+.lc-group-head {
+  display: flex; align-items: center; gap: 6px; padding: 8px 14px;
+  cursor: pointer; user-select: none; transition: background .12s;
+}
+.lc-group-head:hover { background: var(--hover); }
+.lc-group-chevron {
+  width: 12px; height: 12px; color: var(--muted); flex: none;
+  transition: transform .15s;
+}
+.lc-group-head.collapsed .lc-group-chevron { transform: rotate(-90deg); }
+.lc-group-title { font-size: 12px; font-weight: 500; color: var(--text-dim); }
+.lc-group-count {
+  font-size: 10px; min-width: 16px; height: 16px; line-height: 16px;
+  text-align: center; border-radius: 8px; background: var(--panel-2);
+  color: var(--muted);
+}
+.lc-row {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 14px 8px 30px; transition: background .12s;
+}
+.lc-row:hover { background: var(--hover); }
+.lc-row-main { flex: 1; min-width: 0; }
+.lc-row-summary { font-size: 13px; line-height: 1.4; }
+.lc-row-meta { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.lc-row-evidence {
+  font-size: 11px; color: var(--text-dim); margin-top: 3px;
+  padding: 4px 6px; background: var(--panel); border-radius: 3px;
+  font-style: italic;
+}
+.lc-row-more {
+  width: 24px; height: 24px; border: 0; background: 0; color: var(--muted);
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 4px; cursor: pointer; font-size: 14px; flex: none;
+  opacity: 0; transition: all .12s;
+}
+.lc-row:hover .lc-row-more { opacity: 1; }
+.lc-row-more:hover { background: var(--hover); color: var(--text); }
+
+/* LC Actions inline */
+.lc-row-actions {
+  display: flex; gap: 4px; flex: none;
+  opacity: 0; transition: opacity .12s;
+}
+.lc-row:hover .lc-row-actions { opacity: 1; }
+.lc-action-btn {
+  font: inherit; font-size: 11px; color: var(--text-dim); border: 0;
+  background: var(--panel-2); padding: 3px 8px; border-radius: 3px;
+  cursor: pointer; transition: all .12s;
+}
+.lc-action-btn:hover { background: var(--active); color: var(--text); }
+.lc-action-btn.reject:hover { color: var(--err-text); }
+
+/* LC Health */
+.lc-health {
+  margin: 8px 14px; padding: 8px 10px; border-radius: 4px;
+  border: 1px solid var(--border); font-size: 12px; color: var(--text-dim);
+}
+.lc-health-status { margin-bottom: 4px; }
+.lc-health-warning { color: var(--err-text); margin-top: 4px; font-size: 11px; }
+
+/* LC Settings */
+.lc-settings {
+  padding: 12px 14px; border-top: 1px solid var(--border);
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.lc-settings-btn {
+  font: inherit; font-size: 11px; color: var(--text-dim); border: 0;
+  background: var(--panel-2); padding: 5px 10px; border-radius: 4px;
+  cursor: pointer; transition: all .15s;
+}
+.lc-settings-btn:hover { background: var(--active); color: var(--text); }
+.lc-settings-btn.danger { color: var(--err-text); }
+.lc-settings-btn.danger:hover { background: rgba(210,138,138,.12); }
+.lc-settings-btn.arming { background: rgba(210,138,138,.2); color: var(--err-text); animation: pulse-arm 1s ease-in-out infinite; }
+@keyframes pulse-arm { 50% { opacity: .7; } }
+
+/* LC Preference Form */
+.lc-pref-form {
+  padding: 8px 14px 8px 30px; display: flex; flex-direction: column; gap: 6px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.lc-pref-form select, .lc-pref-form input {
+  font: inherit; font-size: 12px; padding: 5px 8px;
+  background: var(--bg-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; outline: none;
+}
+.lc-pref-form select:focus, .lc-pref-form input:focus {
+  border-color: var(--muted);
+}
+.lc-pref-actions { display: flex; gap: 6px; }
+
+/* ═══════════════════════ 7. DOCUMENT PANE ═══════════════════════ */
+
+.doc-pane { display: flex; flex-direction: column; height: 360px; }
+.doc-tabs-bar {
+  display: flex; align-items: center; height: 36px;
+  padding: 0 8px; border-bottom: 1px solid var(--border);
+  gap: 2px; flex: none; overflow-x: auto;
+}
+.doc-tab {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 10px; height: 36px; border: 0; background: 0;
+  color: var(--muted); font: inherit; font-size: 12px; cursor: pointer;
+  white-space: nowrap; transition: color .12s; position: relative;
+}
+.doc-tab::after {
+  content: ''; position: absolute; bottom: 0; left: 6px; right: 6px;
+  height: 2px; background: transparent; border-radius: 1px; transition: background .12s;
+}
+.doc-tab.active { color: var(--text); }
+.doc-tab.active::after { background: var(--text-dim); }
+.doc-tab .doc-tab-close {
+  width: 14px; height: 14px; border-radius: 3px; border: 0; background: 0;
+  display: none; align-items: center; justify-content: center;
+  color: var(--muted); cursor: pointer; font-size: 10px; padding: 0;
+}
+.doc-tab:hover .doc-tab-close, .doc-tab.active .doc-tab-close { display: flex; }
+.doc-tab-icon { font-size: 11px; opacity: .6; }
+.doc-breadcrumb {
+  display: flex; align-items: center; padding: 4px 14px;
+  font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border-2);
+  overflow: hidden; white-space: nowrap; gap: 4px;
+}
+.doc-breadcrumb-sep { color: var(--faint); }
+.doc-toolbar {
+  display: flex; align-items: center; padding: 4px 10px; gap: 4px;
+  border-bottom: 1px solid var(--border-2);
+}
+.doc-toolbar-group { display: flex; gap: 2px; }
+.doc-toolbar-btn {
+  width: 26px; height: 26px; border: 0; background: 0; color: var(--muted);
+  display: flex; align-items: center; justify-content: center; border-radius: 4px;
+  cursor: pointer; transition: all .12s;
+}
+.doc-toolbar-btn:hover { background: var(--hover); color: var(--text); }
+.doc-toolbar-btn.active { background: var(--active); color: var(--text); }
+.doc-toolbar-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.doc-toolbar-spacer { flex: 1; }
+.doc-toolbar-search {
+  font: inherit; font-size: 11px; padding: 3px 8px; border: 1px solid var(--border);
+  background: var(--bg-2); color: var(--text); border-radius: 4px;
+  width: 140px; outline: none;
+}
+.doc-toolbar-search:focus { border-color: var(--muted); }
+.doc-body {
+  flex: 1; overflow: auto; position: relative;
+}
+.doc-line-nums {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 40px;
+  background: var(--bg-2); border-right: 1px solid var(--border-2);
+  text-align: right; padding: 8px 6px 8px 0;
+  font: 12px/1.6 var(--font-mono); color: var(--faint); user-select: none;
+}
+.doc-content {
+  margin-left: 40px; padding: 8px 14px;
+  font: 12px/1.6 var(--font-mono); color: var(--text-dim);
+  white-space: pre-wrap; word-break: break-all;
+}
+
+/* ═══════════════════════ 8. HISTORY PANEL ═══════════════════════ */
+
+.hist-tabs {
+  display: flex; padding: 6px 14px; gap: 8px; border-bottom: 1px solid var(--border);
+}
+.hist-tab {
+  font: inherit; font-size: 12px; color: var(--muted); border: 0;
+  background: 0; padding: 4px 0; cursor: pointer; position: relative;
+}
+.hist-tab::after {
+  content: ''; position: absolute; bottom: -6px; left: 0; right: 0;
+  height: 2px; background: transparent; border-radius: 1px;
+}
+.hist-tab.active { color: var(--text); }
+.hist-tab.active::after { background: var(--text-dim); }
+.hist-tab:hover { color: var(--text); }
+
+.hist-timeline { padding: 12px 14px; position: relative; }
+.hist-line {
+  position: absolute; left: 25px; top: 0; bottom: 0; width: 2px;
+  background: var(--border);
+}
+.hist-entry {
+  display: flex; gap: 10px; padding: 8px 0; position: relative;
+  align-items: flex-start;
+}
+.hist-dot {
+  width: 10px; height: 10px; border-radius: 50%; background: var(--green);
+  box-shadow: 0 0 0 3px var(--ok-dot-ring); flex: none;
+  margin-top: 4px; z-index: 1;
+}
+.hist-dot.fork { background: var(--text-dim); box-shadow: 0 0 0 3px rgba(160,160,160,.14); }
+.hist-dot.current { box-shadow: 0 0 0 3px var(--ok-dot-ring), 0 0 0 6px rgba(var(--green-rgb), .08); }
+.hist-entry-body { flex: 1; min-width: 0; }
+.hist-entry-title { font-size: 13px; }
+.hist-entry-meta { font-size: 11px; color: var(--muted); }
+.hist-entry-actions { display: flex; gap: 4px; margin-top: 4px; }
+.hist-action-btn {
+  font: inherit; font-size: 11px; color: var(--text-dim); border: 0;
+  background: var(--panel-2); padding: 3px 8px; border-radius: 3px;
+  cursor: pointer; transition: all .12s;
+}
+.hist-action-btn:hover { background: var(--active); color: var(--text); }
+
+/* ═══════════════════════ 9. CHANGES / DIFF ═══════════════════════ */
+
+.diff-header {
+  display: flex; align-items: center; padding: 8px 14px; gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.diff-title { font-size: 14px; font-weight: 600; }
+.diff-scope { font-size: 11px; color: var(--muted); }
+.diff-spacer { flex: 1; }
+.diff-btn {
+  font: inherit; font-size: 11px; color: var(--text-dim); border: 0;
+  background: 0; cursor: pointer; padding: 4px 8px; border-radius: 4px;
+}
+.diff-btn:hover { background: var(--hover); color: var(--text); }
+
+.diff-file-entry {
+  border-bottom: 1px solid var(--border-2);
+}
+.diff-file-header {
+  display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+  cursor: pointer; user-select: none; transition: background .12s;
+}
+.diff-file-header:hover { background: var(--hover); }
+.diff-file-icon { font-size: 11px; color: var(--muted); flex: none; }
+.diff-file-path { font-size: 12px; font-family: var(--font-mono); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-file-stat { font-size: 11px; color: var(--muted); flex: none; display: flex; gap: 6px; }
+.diff-file-stat .add { color: var(--green-bright); }
+.diff-file-stat .del { color: var(--diff-del-mark); }
+.diff-lines { padding: 0; }
+.diff-line {
+  font: 12px/1.6 var(--font-mono); padding: 0 14px; white-space: pre-wrap;
+  word-break: break-all;
+}
+.diff-line.add { background: var(--diff-add-bg); border-left: 3px solid var(--diff-add-edge); }
+.diff-line.del { background: var(--diff-del-bg); border-left: 3px solid var(--diff-del-edge); }
+.diff-line.ctx { color: var(--muted); border-left: 3px solid transparent; }
+.diff-hunk {
+  font: 11px/1.4 var(--font-mono); color: var(--muted); padding: 4px 14px;
+  background: var(--panel); border-left: 3px solid transparent;
+}
+
+/* ═══════════════════════ EMPTY STATE ═══════════════════════ */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 40px 20px; color: var(--muted); font-size: 12px; text-align: center; gap: 8px;
+}
+.empty-state-icon {
+  width: 32px; height: 32px; color: var(--faint); margin-bottom: 4px;
+}
+.empty-state-icon svg { width: 32px; height: 32px; stroke: currentColor; fill: none; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Utility */
+.flex-row { display: flex; align-items: center; }
+.gap-4 { gap: 4px; }
+.gap-8 { gap: 8px; }
+.text-dim { color: var(--text-dim); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1 class="page-title">Codey — Right Panel / Workspace 重设计方案</h1>
+<p class="page-subtitle">右侧工作区面板的 UI/UX 改进原型。涵盖 Workspace Shell、Research（Evidence / Sources / Graph / Notes）、Local Context、Document Pane、History、Changes。</p>
+
+<nav class="section-nav">
+  <a href="#workspace-shell">Workspace Shell</a>
+  <a href="#evidence">Evidence</a>
+  <a href="#sources">Sources</a>
+  <a href="#graph">Graph</a>
+  <a href="#notes">Notes</a>
+  <a href="#local-context">Local Context</a>
+  <a href="#document-pane">Document Pane</a>
+  <a href="#history">History</a>
+  <a href="#changes">Changes / Diff</a>
+</nav>
+
+
+<!-- ═══════════════ 1. WORKSPACE SHELL ═══════════════ -->
+<section class="section" id="workspace-shell">
+<h2 class="section-title">1. Workspace Shell — 工作区外壳</h2>
+<p class="section-desc">
+  工作区外壳包括 tab 栏、resize handle、展开/收起按钮。<br>
+  改进点：(1) Tab 底部下划线改为 2px 宽、带 inset 效果更精致；(2) 新增 close 按钮让 tab 可关闭；(3) 新增 badge 显示 tab 内信息量（如来源数量）；(4) 图标按钮统一尺寸和圆角。
+</p>
+<div class="comparison">
+  <div>
+    <div class="comparison-label">Before — 当前实现</div>
+    <div class="demo-wrap ws-old">
+      <div class="ws-old-header">
+        <div class="ws-old-tabs">
+          <button class="active">Files</button>
+          <button>Research</button>
+          <button>Changes</button>
+          <button>History</button>
+        </div>
+        <button class="ws-old-icon" title="Expand">⛶</button>
+        <button class="ws-old-icon" title="Close">✕</button>
+      </div>
+      <div class="ws-old-body">Panel content area</div>
+    </div>
+  </div>
+  <div>
+    <div class="comparison-label">After — 改进方案</div>
+    <div class="demo-wrap ws-new">
+      <div class="ws-new-header">
+        <div class="ws-new-tabs">
+          <button class="ws-new-tab active">
+            Files
+            <span class="tab-close">✕</span>
+          </button>
+          <button class="ws-new-tab">
+            Research
+            <span class="tab-badge">3</span>
+            <span class="tab-close">✕</span>
+          </button>
+          <button class="ws-new-tab">
+            Changes
+            <span class="tab-badge">+12</span>
+            <span class="tab-close">✕</span>
+          </button>
+          <button class="ws-new-tab">
+            History
+            <span class="tab-close">✕</span>
+          </button>
+        </div>
+        <button class="ws-icon-btn" title="Expand workspace">
+          <svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+        </button>
+        <button class="ws-icon-btn" title="Close workspace">
+          <svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <div class="ws-new-body">Panel content area</div>
+    </div>
+  </div>
+</div>
+<div class="note-box">
+  <strong>设计说明：</strong><br>
+  • Tab 下划线使用 <code>::after</code> 伪元素，宽度 inset 8px，2px 高度，圆角 1px，使视觉更精致<br>
+  • Tab hover 时显示 close 按钮（×），允许用户关闭不需要的 tab<br>
+  • Tab badge 以 pill 形式显示数量，视觉轻量不干扰阅读<br>
+  • 图标按钮统一为 28×28px，5px 圆角，hover 时 <code>var(--hover)</code> 背景<br>
+  • 保持 DESIGN.md 的无边框按钮、单色调规范
+</div>
+</section>
+
+
+<!-- ═══════════════ 2. EVIDENCE TAB ═══════════════ -->
+<section class="section" id="evidence">
+<h2 class="section-title">2. Research — Evidence 标签页</h2>
+<p class="section-desc">
+  Evidence 显示搜索得到的证据条目。改进点：(1) 顶部增加证据汇总条（支持/反驳计数）；(2) 卡片左边框以颜色编码 stance（supports = green, contradicts = red-ish, neutral = gray）；(3) 摘录以引用样式展示；(4) 质量警告独立为醒目区域。
+</p>
+<div class="comparison">
+  <div>
+    <div class="comparison-label">Before — 当前实现</div>
+    <div class="demo-wrap">
+      <div class="ev-old-card">
+        <div class="ev-old-title">Neural scaling laws predict diminishing returns beyond 10B parameters</div>
+        <div class="ev-old-meta">supports · p.12 · arxiv.org/abs/2401.xxxxx · note scaling-review</div>
+        <div class="ev-old-excerpt">"The empirical evidence suggests that gains in benchmark performance plateau significantly when model size exceeds..."</div>
+      </div>
+      <div class="ev-old-card">
+        <div class="ev-old-title">Recent work on mixture-of-experts contradicts linear scaling assumptions</div>
+        <div class="ev-old-meta">contradicts · Section 4.2 · openreview.net/forum?id=... · note moe-survey</div>
+        <div class="ev-old-excerpt">"MoE architectures achieve near-linear scaling well past traditional limits, undermining the foundational assumption of..."</div>
+      </div>
+      <div class="ev-old-card">
+        <div class="ev-old-title">Counter-evidence / limitations</div>
+        <div class="ev-old-meta" style="color:var(--text-dim)">• Data quality may matter more than scale • Limited to English-language benchmarks</div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="comparison-label">After — 改进方案</div>
+    <div class="demo-wrap">
+      <div class="ev-summary-bar">
+        <span><span class="ev-summary-dot s"></span> 4 supporting</span>
+        <span><span class="ev-summary-dot c"></span> 1 contradicting</span>
+        <span style="color:var(--muted)">· 12 sources read · 3 queries</span>
+      </div>
+      <div class="ev-new-card supports">
+        <div>
+          <div class="ev-new-head">
+            <div class="ev-new-title">Neural scaling laws predict diminishing returns beyond 10B parameters</div>
+            <span class="ev-new-stance supports">supports</span>
+          </div>
+          <div class="ev-new-locator">
+            <span>p.12</span>
+            <span>·</span>
+            <a href="#">arxiv.org/abs/2401.xxxxx</a>
+            <span>·</span>
+            <span>note: scaling-review</span>
+          </div>
+          <div class="ev-new-excerpt">"The empirical evidence suggests that gains in benchmark performance plateau significantly when model size exceeds..."</div>
+        </div>
+      </div>
+      <div class="ev-new-card contradicts">
+        <div>
+          <div class="ev-new-head">
+            <div class="ev-new-title">Recent work on mixture-of-experts contradicts linear scaling assumptions</div>
+            <span class="ev-new-stance contradicts">contradicts</span>
+          </div>
+          <div class="ev-new-locator">
+            <span>Section 4.2</span>
+            <span>·</span>
+            <a href="#">openreview.net/forum?id=...</a>
+            <span>·</span>
+            <span>note: moe-survey</span>
+          </div>
+          <div class="ev-new-excerpt">"MoE architectures achieve near-linear scaling well past traditional limits, undermining the foundational assumption of..."</div>
+        </div>
+      </div>
+      <div class="ev-warnings">
+        <div class="ev-warnings-title">Quality warnings</div>
+        <ul>
+          <li>Data quality may matter more than scale</li>
+          <li>Limited to English-language benchmarks</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="note-box">
+  <strong>设计说明：</strong><br>
+  • 顶部汇总条以 dot + count 快速传达证据分布，降低认知负担<br>
+  • <code>border-left: 3px</code> 编码立场：<code>var(--green)</code> 支持、<code>var(--err-text)</code> 反驳、<code>var(--faint)</code> 中立。与 diff 颜色系统一致<br>
+  • 右上角 stance badge 使用半透明背景 + 对应色文字，仅作辅助标记<br>
+  • 摘录使用斜体 + 左边框引用样式，视觉上与元信息清晰区隔<br>
+  • 质量警告使用淡红色边框容器，突出但不过度
+</div>
+</section>
+
+
+<!-- ═══════════════ 3. SOURCES TAB ═══════════════ -->
+<section class="section" id="sources">
+<h2 class="section-title">3. Research — Sources 标签页</h2>
+<p class="section-desc">
+  Sources 展示引用来源和打开过的网页。改进点：(1) 新增 favicon 占位方块显示域名首字母；(2) 编号和标题分行更清晰；(3) 质量/PDF 信息用 tag 展示；(4) 复制按钮 hover 时才显示，不干扰浏览。
+</p>
+<div class="comparison">
+  <div>
+    <div class="comparison-label">Before — 当前实现</div>
+    <div class="demo-wrap">
+      <div class="src-old-card">
+        <div class="src-old-title">[1] Neural Scaling Laws: A Comprehensive Survey</div>
+        <div class="src-old-meta">primary · peer-reviewed · 2024 · arxiv.org/abs/2401.xxxxx</div>
+      </div>
+      <div class="src-old-card">
+        <div class="src-old-title">[2] Mixture of Experts at Scale</div>
+        <div class="src-old-meta">primary · preprint · 2024 · openreview.net/forum?id=AbCdEf · PDF · pages 1-8,12-15 / 42</div>
+      </div>
+      <div class="src-old-card">
+        <div class="src-old-title">[3] Scaling Transformer Models: Lessons from Practice</div>
+        <div class="src-old-meta">secondary · blog · 2024 · research.google/blog/scaling-lessons</div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="comparison-label">After — 改进方案</div>
+    <div class="demo-wrap">
+      <div class="src-new-card">
+        <div class="src-new-favicon">A</div>
+        <div class="src-new-body">
+          <div class="src-new-head">
+            <span class="src-new-num">[1]</span>
+            <span class="src-new-title">Neural Scaling Laws: A Comprehensive Survey</span>
+          </div>
+          <div class="src-new-url">arxiv.org/abs/2401.xxxxx</div>
+          <div class="src-new-tags">
+            <span class="src-new-tag">primary</span>
+            <span class="src-new-tag">peer-reviewed</span>
+            <span class="src-new-tag">2024</span>
+          </div>
+        </div>
+        <div class="src-new-actions">
+          <button class="src-copy-btn" title="Copy citation">
+            <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="src-new-card">
+        <div class="src-new-favicon">O</div>
+        <div class="src-new-body">
+          <div class="src-new-head">
+            <span class="src-new-num">[2]</span>
+            <span class="src-new-title">Mixture of Experts at Scale</span>
+          </div>
+          <div class="src-new-url">openreview.net/forum?id=AbCdEf</div>
+          <div class="src-new-tags">
+            <span class="src-new-tag">primary</span>
+            <span class="src-new-tag">preprint</span>
+            <span class="src-new-tag pdf">PDF · pages 1-8,12-15 / 42</span>
+          </div>
+        </div>
+        <div class="src-new-actions">
+          <button class="src-copy-btn" title="Copy citation">
+            <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="src-new-card">
+        <div class="src-new-favicon">G</div>
+        <div class="src-new-body">
+          <div class="src-new-head">
+            <span class="src-new-num">[3]</span>
+            <span class="src-new-title">Scaling Transformer Models: Lessons from Practice</span>
+          </div>
+          <div class="src-new-url">research.google/blog/scaling-lessons</div>
+          <div class="src-new-tags">
+            <span class="src-new-tag">secondary</span>
+            <span class="src-new-tag">blog</span>
+            <span class="src-new-tag">2024</span>
+          </div>
+        </div>
+        <div class="src-new-actions">
+          <button class="src-copy-btn" title="Copy citation">
+            <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="note-box">
+  <strong>设计说明：</strong><br>
+  • Favicon 方块 (20×20px, <code>var(--panel-2)</code>) 显示域名首字母，增加视觉锚点和可扫描性<br>
+  • 编号用 mono 字体，与标题 baseline 对齐<br>
+  • URL 单独一行，不与质量信息混杂<br>
+  • 质量标签用 pill/tag 形式，PDF 相关信息用绿色调 tag 突出<br>
+  • Copy citation 按钮仅 hover 时显示 (opacity 0→1)，减少视觉噪音
+</div>
+</section>
+
+
+<!-- ═══════════════ 4. GRAPH TAB ═══════════════ -->
+<section class="section" id="graph">
+<h2 class="section-title">4. Research — Graph 标签页</h2>
+<p class="section-desc">
+  知识图谱用 canvas 力导向布局渲染节点和边。改进点：(1) 工具栏按钮更紧凑统一；(2) 选中节点有双层光晕；(3) 底部 detail panel 结构化显示节点信息；(4) 边 hover 高亮使用绿色半透明。<br>
+  注意：这里用 HTML 元素模拟 canvas 效果，实际实现仍然使用 canvas 绘制。
+</p>
+<div class="single-demo">
+<div class="demo-wrap graph-demo">
+  <div class="graph-toolbar">
+    <span>Depth</span>
+    <button class="graph-depth-btn active">1</button>
+    <button class="graph-depth-btn">2</button>
+    <button class="graph-depth-btn">3</button>
+    <div class="graph-spacer"></div>
+    <button class="graph-reset-btn">Reset</button>
+  </div>
+  <div class="graph-canvas-area">
+    <!-- Simulated edges -->
+    <div class="graph-edge" style="left:155px;top:100px;width:120px;transform:rotate(25deg)"></div>
+    <div class="graph-edge" style="left:155px;top:100px;width:140px;transform:rotate(-15deg)"></div>
+    <div class="graph-edge highlight" style="left:265px;top:120px;width:100px;transform:rotate(40deg)"></div>
+    <div class="graph-edge" style="left:265px;top:120px;width:110px;transform:rotate(-30deg)"></div>
+    <div class="graph-edge" style="left:155px;top:100px;width:90px;transform:rotate(70deg)"></div>
+    <div class="graph-edge" style="left:350px;top:150px;width:80px;transform:rotate(-55deg)"></div>
+    <!-- Simulated nodes -->
+    <div class="graph-node selected" style="left:150px;top:95px"></div>
+    <div class="graph-label" style="left:155px;top:112px">scaling-review</div>
+    <div class="graph-node" style="left:260px;top:115px"></div>
+    <div class="graph-label" style="left:265px;top:132px">moe-survey</div>
+    <div class="graph-node" style="left:345px;top:145px"></div>
+    <div class="graph-label" style="left:350px;top:162px">benchmark-data</div>
+    <div class="graph-node virtual" style="left:120px;top:180px"></div>
+    <div class="graph-label" style="left:125px;top:197px">arxiv:2401...</div>
+    <div class="graph-node" style="left:380px;top:60px"></div>
+    <div class="graph-label" style="left:385px;top:77px">training-cost</div>
+    <div class="graph-node" style="left:200px;top:220px"></div>
+    <div class="graph-node virtual" style="left:430px;top:190px"></div>
+  </div>
+  <div class="graph-detail-panel">
+    <div class="graph-detail-title">scaling-review</div>
+    <div class="graph-detail-meta">note · synthesis · updated 2 min ago · research/scaling-review.md</div>
+    <div class="graph-detail-excerpt">"Comprehensive review of neural scaling laws across architectures. Key finding: diminishing returns observed beyond 10B parameters for most benchmark tasks..."</div>
+    <div class="graph-detail-actions">
+      <button class="graph-detail-btn">Open note</button>
+      <button class="graph-detail-btn">View in Notes tab</button>
+    </div>
+  </div>
+</div>
+</div>
+<div class="note-box">
+  <strong>设计说明：</strong><br>
+  • Depth 按钮：24×24px pill，active 状态使用 <code>var(--active)</code> 背景<br>
+  • 节点选中时使用双层 box-shadow：内层 <code>var(--ok-dot-ring)</code> + 外层更淡的光晕，明确选中状态<br>
+  • 虚拟节点（来源 URL 等）使用 <code>var(--muted)</code> 灰色，与笔记节点绿色区分<br>
+  • 高亮边使用 <code>rgba(green, .3)</code> + 2px 宽度，低调但可见<br>
+  • 底部 detail panel 展示 title / meta / excerpt / actions，替代原来的 hover popup
+</div>
+</section>
+
+
+<!-- ═══════════════ 5. NOTES TAB ═══════════════ -->
+<section class="section" id="notes">
+<h2 class="section-title">5. Research — Notes 标签页</h2>
+<p class="section-desc">
+  Notes 展示研究笔记（Synthesis / Created / Updated）。改进点：(1) Section header 增加计数 badge；(2) Note body 使用引用样式、可展开/折叠；(3) Source chips 更紧凑；(4) 卡片悬浮效果。
+</p>
+<div class="single-demo">
+<div class="demo-wrap">
+  <div class="notes-section">
+    <div class="notes-section-head">
+      <span class="notes-count">1</span>
+      <span>Synthesis</span>
+    </div>
+    <div class="note-card">
+      <div class="note-card-head">
+        <div class="note-card-title">Scaling Laws: State of Knowledge</div>
+        <button class="note-open-btn">Open document</button>
+      </div>
+      <div class="note-card-meta">synthesis · 2 min ago · research/scaling-review.md</div>
+      <div class="note-card-body">
+Current evidence suggests neural scaling laws face diminishing returns beyond approximately 10 billion parameters for standard Transformer architectures on established benchmarks.
+
+However, mixture-of-experts (MoE) approaches challenge this assumption by achieving near-linear scaling through sparse activation. The key limitation of existing studies...
+      </div>
+      <div class="note-source-chips">
+        <span class="note-source-label">Sources</span>
+        <button class="note-source-chip">[1]</button>
+        <button class="note-source-chip">[2]</button>
+        <button class="note-source-chip">research.google</button>
+      </div>
+      <button class="note-toggle-btn">Show more</button>
+    </div>
+  </div>
+  <div class="notes-section">
+    <div class="notes-section-head">
+      <span class="notes-count">2</span>
+      <span>Created notes</span>
+    </div>
+    <div class="note-card">
+      <div class="note-card-head">
+        <div class="note-card-title">MoE Architecture Survey</div>
+        <button class="note-open-btn">Open document</button>
+      </div>
+      <div class="note-card-meta">reference · 5 min ago · research/moe-survey.md</div>
+      <div class="note-card-body">
+Mixture-of-Experts models route tokens to specialized sub-networks, enabling efficient scaling without proportional compute increase. Key finding: GShard and Switch Transformer demonstrate...
+      </div>
+      <div class="note-source-chips">
+        <span class="note-source-label">Sources</span>
+        <button class="note-source-chip">[2]</button>
+      </div>
+    </div>
+    <div class="note-card">
+      <div class="note-card-head">
+        <div class="note-card-title">Benchmark Limitations Analysis</div>
+        <button class="note-open-btn">Open document</button>
+      </div>
+      <div class="note-card-meta">analysis · 4 min ago · research/benchmark-data.md</div>
+      <div class="note-card-body" style="max-height:none;">
+Existing scaling law studies are predominantly evaluated on English-language benchmarks (MMLU, ARC, HellaSwag). This creates a bias toward Western-centric knowledge tasks.
+      </div>
+      <div class="note-source-chips">
+        <span class="note-source-label">Sources</span>
+        <button class="note-source-chip">[1]</button>
+        <button class="note-source-chip">[3]</button>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<div class="note-box">
+  <strong>设计说明：</strong><br>
+  • Section header 左侧 count badge (18×18px pill) 快速传达每个分类下的笔记数量<br>
+  • Note body 使用 <code>var(--panel)</code> 背景 + 左边框引用样式，与正文区隔<br>
+  • 默认 max-height: 80px 加 fade gradient 裁剪，"Show more" 按钮展开全文<br>
+  • Source chips 紧凑排列，hover 时 background 加深，可点击打开来源<br>
+  • "Open document" 按钮为无边框文字按钮，hover 时显示背景
+</div>
+</section>
+
+
+<!-- ═══════════════ 6. LOCAL CONTEXT ═══════════════ -->
+<section class="section" id="local-context">
+<h2 class="section-title">6. Local Context 面板（原 Ghost）</h2>
+<p class="section-desc">
+  Local Context 管理本地偏好、待审核条目、跟进任务等。改进点：(1) 组头部可折叠/展开，带 chevron 和计数；(2) 行级操作 hover 时显示、不再需要点击 ⋯ 菜单；(3) 偏好表单内联展开更紧凑；(4) 危险按钮使用脉冲动画提示确认中。
+</p>
+<div class="single-demo">
+<div class="demo-wrap">
+  <div class="lc-header">
+    <div class="lc-header-title">Local context</div>
+    <div class="lc-header-sub">3 active · 2 pending · 1 needs attention · Updates On</div>
+    <div class="lc-header-spacer"></div>
+    <button class="lc-header-btn">Export</button>
+    <button class="lc-header-btn">Refresh</button>
+    <button class="lc-header-btn">Close</button>
+  </div>
+
+  <!-- Recent focus -->
+  <div class="lc-group">
+    <div class="lc-group-head">
+      <svg class="lc-group-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      <span class="lc-group-title">Recent focus</span>
+      <span class="lc-group-count">2</span>
+    </div>
+    <div class="lc-row">
+      <div class="lc-row-main">
+        <div class="lc-row-summary">Research into neural scaling laws and architectures</div>
+        <div class="lc-row-meta">session · topic · high confidence</div>
+      </div>
+    </div>
+    <div class="lc-row">
+      <div class="lc-row-main">
+        <div class="lc-row-summary">Comparing MoE vs dense transformer training costs</div>
+        <div class="lc-row-meta">session · subtopic · medium confidence</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pending review -->
+  <div class="lc-group">
+    <div class="lc-group-head">
+      <svg class="lc-group-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      <span class="lc-group-title">Pending review</span>
+      <span class="lc-group-count">2</span>
+    </div>
+    <div class="lc-row">
+      <div class="lc-row-main">
+        <div class="lc-row-summary">User prefers concise answers with bullet points</div>
+        <div class="lc-row-meta">project · format · pending review</div>
+        <div class="lc-row-evidence">"Please keep answers short and use bullet points"</div>
+      </div>
+      <div class="lc-row-actions">
+        <button class="lc-action-btn">Accept</button>
+        <button class="lc-action-btn reject">Reject</button>
+      </div>
+    </div>
+    <div class="lc-row">
+      <div class="lc-row-main">
+        <div class="lc-row-summary">Preferred language: Chinese for explanations</div>
+        <div class="lc-row-meta">device · language · pending review</div>
+        <div class="lc-row-evidence">"用中文解释"</div>
+      </div>
+      <div class="lc-row-actions">
+        <button class="lc-action-btn">Accept</button>
+        <button class="lc-action-btn reject">Reject</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Needs attention -->
+  <div class="lc-group">
+    <div class="lc-group-head">
+      <svg class="lc-group-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      <span class="lc-group-title">Needs attention</span>
+      <span class="lc-group-count">1</span>
+    </div>
+    <div class="lc-row">
+      <div class="lc-row-main">
+        <div class="lc-row-summary">Conflicting preference: reply_length (concise vs detailed)</div>
+        <div class="lc-row-meta">project · conflict · needs resolution</div>
+      </div>
+      <div class="lc-row-actions">
+        <button class="lc-action-btn">Retry</button>
+        <button class="lc-action-btn reject">Discard</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active preferences -->
+  <div class="lc-group">
+    <div class="lc-group-head">
+      <svg class="lc-group-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      <span class="lc-group-title">Active preferences</span>
+      <span class="lc-group-count">3</span>
+    </div>
+    <div class="lc-row">
+      <div class="lc-row-main">
+        <div class="lc-row-summary">Use markdown formatting for code explanations</div>
+        <div class="lc-row-meta">device · format · active</div>
+      </div>
+    </div>
+    <div class="lc-row">
+      <div class="lc-row-main">
+        <div class="lc-row-summary">Answer the question first, then explain</div>
+        <div class="lc-row-meta">device · reply_structure · active</div>
+      </div>
+    </div>
+    <div class="lc-row">
+      <div class="lc-row-main">
+        <div class="lc-row-summary">Direct, technical tone</div>
+        <div class="lc-row-meta">device · tone · active</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent experiences (with "Remember preference" action) -->
+  <div class="lc-group">
+    <div class="lc-group-head collapsed">
+      <svg class="lc-group-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      <span class="lc-group-title">Recent experiences</span>
+      <span class="lc-group-count">1</span>
+    </div>
+    <!-- collapsed — content hidden when chevron rotated -->
+  </div>
+
+  <!-- Follow-ups -->
+  <div class="lc-group">
+    <div class="lc-group-head collapsed">
+      <svg class="lc-group-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      <span class="lc-group-title">Follow-ups</span>
+      <span class="lc-group-count">0</span>
+    </div>
+  </div>
+
+  <!-- Health -->
+  <div class="lc-health">
+    <div class="lc-health-status">Updates are on · Local ordering is available</div>
+    <div class="lc-health-warning">Warning: 1 preference conflict needs resolution</div>
+  </div>
+
+  <!-- Preference form example (inline) -->
+  <div class="lc-pref-form">
+    <select>
+      <option value="">Choose a preference</option>
+      <option>Chinese answers</option>
+      <option>Concise answers</option>
+      <option>Detailed answers</option>
+      <option>Answer first</option>
+      <option>Bullet lists</option>
+      <option>Tables</option>
+      <option>Markdown</option>
+      <option>Direct tone</option>
+      <option>Technical tone</option>
+    </select>
+    <select>
+      <option>This chat</option>
+      <option>Current project</option>
+      <option>This device</option>
+    </select>
+    <input type="text" placeholder="Exact words from this request" value="Please use bullet points">
+    <div class="lc-pref-actions">
+      <button class="lc-action-btn">Add to pending review</button>
+      <button class="lc-action-btn">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div class="lc-settings">
+    <button class="lc-settings-btn">Disable updates</button>
+    <button class="lc-settings-btn danger">Delete chat data</button>
+    <button class="lc-settings-btn danger">Delete project data</button>
+    <button class="lc-settings-btn danger arming">Confirm reset</button>
+  </div>
+</div>
+</div>
+<div class="note-box">
+  <strong>设计说明：</strong><br>
+  • 组头部增加 chevron (▸/▾) 表示折叠状态，点击整行切换展开/折叠<br>
+  • 行级 Accept/Reject 按钮直接显示在行右侧 (hover 时 opacity 0→1)，省去点击 ⋯ 再选择的步骤，降低操作成本<br>
+  • Evidence quote 使用斜体 + 灰色背景引用样式<br>
+  • 偏好表单直接在行内下方展开，不弹出新层级<br>
+  • 危险按钮使用 <code>var(--err-text)</code> 文字色 + 红色调 hover 背景；确认中状态使用脉冲动画<br>
+  • Count badge 与 group title 对齐，折叠时也能看到每组数量
+</div>
+</section>
+
+
+<!-- ═══════════════ 7. DOCUMENT PANE ═══════════════ -->
+<section class="section" id="document-pane">
+<h2 class="section-title">7. Document Pane — 文件预览面板</h2>
+<p class="section-desc">
+  Document Pane 预览文件内容，支持多 tab。改进点：(1) Tab 栏增加文件类型图标和 close 按钮；(2) 新增面包屑路径导航；(3) 新增工具栏（source/rendered 切换、搜索、复制、刷新）；(4) 行号列使用固定定位。
+</p>
+<div class="single-demo">
+<div class="demo-wrap doc-pane">
+  <div class="doc-tabs-bar">
+    <button class="doc-tab active">
+      <span class="doc-tab-icon">📄</span>
+      scaling-review.md
+      <span class="doc-tab-close">✕</span>
+    </button>
+    <button class="doc-tab">
+      <span class="doc-tab-icon">📄</span>
+      moe-survey.md
+      <span class="doc-tab-close">✕</span>
+    </button>
+  </div>
+  <div class="doc-breadcrumb">
+    <span>research</span>
+    <span class="doc-breadcrumb-sep">/</span>
+    <span>notes</span>
+    <span class="doc-breadcrumb-sep">/</span>
+    <span style="color:var(--text)">scaling-review.md</span>
+  </div>
+  <div class="doc-toolbar">
+    <div class="doc-toolbar-group">
+      <button class="doc-toolbar-btn active" title="Source">
+        <svg viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg>
+      </button>
+      <button class="doc-toolbar-btn" title="Rendered">
+        <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+    </div>
+    <div class="doc-toolbar-spacer"></div>
+    <input class="doc-toolbar-search" type="search" placeholder="Search in file...">
+    <button class="doc-toolbar-btn" title="Copy">
+      <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+    </button>
+    <button class="doc-toolbar-btn" title="Reload">
+      <svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+    </button>
+  </div>
+  <div class="doc-body">
+    <div class="doc-line-nums">
+      1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14
+    </div>
+    <div class="doc-content"># Scaling Laws: State of Knowledge
+
+## Summary
+
+Current evidence suggests neural scaling laws face
+diminishing returns beyond approximately 10 billion
+parameters for standard Transformer architectures
+on established benchmarks.
+
+## Key Findings
+
+- Diminishing returns observed past 10B params
+- MoE challenges linear scaling assumptions
+- English-language benchmark bias exists</div>
+  </div>
+</div>
+</div>
+<div class="note-box">
+  <strong>设计说明：</strong><br>
+  • File tab 增加类型图标（📄 等）辅助识别，close 按钮 hover 显示<br>
+  • 面包屑导航以 <code>var(--muted)</code> 色显示路径层级，最后一段为 <code>var(--text)</code><br>
+  • 工具栏：Source/Rendered 切换为 icon toggle、文件内搜索为 inline input、Copy/Reload 为 icon 按钮<br>
+  • 行号列 40px 宽、<code>var(--faint)</code> 色，与内容区用 border-right 分隔<br>
+  • 整体高度自适应面板，内容区可滚动
+</div>
+</section>
+
+
+<!-- ═══════════════ 8. HISTORY PANEL ═══════════════ -->
+<section class="section" id="history">
+<h2 class="section-title">8. History — 历史面板</h2>
+<p class="section-desc">
+  History 包含 Branches 和 Workflow 两个子标签。改进点：(1) 时间线使用竖线 + 圆点可视化；(2) 分叉点使用灰色圆点区分；(3) 当前分支使用双层光晕高亮；(4) 分支操作按钮 hover 显示。
+</p>
+<div class="single-demo">
+<div class="demo-wrap">
+  <div class="hist-tabs">
+    <button class="hist-tab active">Branches</button>
+    <button class="hist-tab">Workflow</button>
+  </div>
+  <div class="hist-timeline">
+    <div class="hist-line"></div>
+    <div class="hist-entry">
+      <div class="hist-dot current"></div>
+      <div class="hist-entry-body">
+        <div class="hist-entry-title">Research: scaling laws survey</div>
+        <div class="hist-entry-meta">Current · 2 min ago · 5 messages</div>
+        <div class="hist-entry-actions">
+          <button class="hist-action-btn">Rename</button>
+        </div>
+      </div>
+    </div>
+    <div class="hist-entry">
+      <div class="hist-dot fork"></div>
+      <div class="hist-entry-body">
+        <div class="hist-entry-title">Branch: explore MoE alternatives</div>
+        <div class="hist-entry-meta">Branched · 8 min ago · 3 messages</div>
+        <div class="hist-entry-actions">
+          <button class="hist-action-btn">Switch</button>
+          <button class="hist-action-btn">Rename</button>
+        </div>
+      </div>
+    </div>
+    <div class="hist-entry">
+      <div class="hist-dot"></div>
+      <div class="hist-entry-body">
+        <div class="hist-entry-title">Initial research question</div>
+        <div class="hist-entry-meta">Root · 15 min ago · 2 messages</div>
+        <div class="hist-entry-actions">
+          <button class="hist-action-btn">Switch</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<div class="note-box">
+  <strong>设计说明：</strong><br>
+  • 时间线竖线 (2px, <code>var(--border)</code>) 贯穿整个列表<br>
+  • 节点圆点 (10×10px)：当前分支使用 green + 双层光晕，分叉使用 <code>var(--text-dim)</code> 灰色，普通使用 green<br>
+  • Branches/Workflow tab 使用与 Research 一致的下划线风格<br>
+  • 分支操作按钮 (Switch/Rename) 使用 pill 样式，视觉轻量
+</div>
+</section>
+
+
+<!-- ═══════════════ 9. CHANGES / DIFF ═══════════════ -->
+<section class="section" id="changes">
+<h2 class="section-title">9. Changes / Diff 面板</h2>
+<p class="section-desc">
+  Changes 显示文件修改差异。改进点：(1) 文件条目增加 +/- 统计；(2) 文件路径使用 mono 字体；(3) Diff 行增加左边框颜色编码；(4) Hunk header 使用淡背景。
+</p>
+<div class="single-demo">
+<div class="demo-wrap">
+  <div class="diff-header">
+    <div class="diff-title">Changes</div>
+    <div class="diff-scope">my-project</div>
+    <div class="diff-spacer"></div>
+    <button class="diff-btn">Copy diff</button>
+    <button class="diff-btn">Restore</button>
+    <button class="diff-btn">Refresh</button>
+    <button class="diff-btn">Close</button>
+  </div>
+  <div class="diff-file-entry">
+    <div class="diff-file-header">
+      <span class="diff-file-icon">M</span>
+      <span class="diff-file-path">src/research_drawer.ts</span>
+      <span class="diff-file-stat">
+        <span class="add">+12</span>
+        <span class="del">-3</span>
+      </span>
+    </div>
+    <div class="diff-lines">
+      <div class="diff-hunk">@@ -185,8 +185,17 @@ function renderResearchEvidence</div>
+      <div class="diff-line ctx"> for (const item of run.evidenceItems) {</div>
+      <div class="diff-line ctx">   const title = item.claim || item.source_url || 'Evidence';</div>
+      <div class="diff-line del">-  const meta = [item.stance || 'supports', locator].join(' · ');</div>
+      <div class="diff-line add">+  const stance = item.stance || 'supports';</div>
+      <div class="diff-line add">+  const stanceClass = stance === 'contradicts' ? 'contradicts' : 'supports';</div>
+      <div class="diff-line add">+  card.classList.add(stanceClass);</div>
+      <div class="diff-line ctx">   panel.appendChild(researchCard(title, meta, item.excerpt));</div>
+      <div class="diff-line ctx"> }</div>
+    </div>
+  </div>
+  <div class="diff-file-entry">
+    <div class="diff-file-header">
+      <span class="diff-file-icon">M</span>
+      <span class="diff-file-path">frontend/public/assets/app.css</span>
+      <span class="diff-file-stat">
+        <span class="add">+28</span>
+        <span class="del">-0</span>
+      </span>
+    </div>
+  </div>
+  <div class="diff-file-entry">
+    <div class="diff-file-header">
+      <span class="diff-file-icon" style="color:var(--green-bright)">A</span>
+      <span class="diff-file-path">research/scaling-review.md</span>
+      <span class="diff-file-stat">
+        <span class="add">+45</span>
+      </span>
+    </div>
+  </div>
+</div>
+</div>
+<div class="note-box">
+  <strong>设计说明：</strong><br>
+  • 文件条目使用 file icon (M=Modified, A=Added, D=Deleted) + mono 路径 + 颜色化统计<br>
+  • Add (+) 使用 <code>var(--green-bright)</code>，Del (-) 使用 <code>var(--diff-del-mark)</code><br>
+  • Diff 行使用 3px 左边框：add = <code>var(--diff-add-edge)</code>、del = <code>var(--diff-del-edge)</code>、ctx = transparent<br>
+  • Hunk header (@@ ... @@) 使用 <code>var(--panel)</code> 淡背景，视觉上划分代码块<br>
+  • 文件条目 header 可点击折叠/展开 diff 内容
+</div>
+</section>
+
+
+<!-- ═══════════════ EMPTY STATES ═══════════════ -->
+<section class="section" id="empty-states">
+<h2 class="section-title">10. Empty States — 空状态设计</h2>
+<p class="section-desc">
+  各面板在无内容时应展示统一的空状态。改进点：居中图标 + 说明文字，替代原来的纯文字 "No research yet"。
+</p>
+<div class="comparison">
+  <div>
+    <div class="comparison-label">Research — 无内容</div>
+    <div class="demo-wrap">
+      <div class="empty-state">
+        <div class="empty-state-icon">
+          <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+        </div>
+        <div>No research yet</div>
+        <div style="color:var(--faint)">Start a research task to see evidence and sources here</div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="comparison-label">Local Context — 无内容</div>
+    <div class="demo-wrap">
+      <div class="empty-state">
+        <div class="empty-state-icon">
+          <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <div>No local context yet</div>
+        <div style="color:var(--faint)">Context items will appear as the conversation progresses</div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+
+<!-- ═══════════════ SUMMARY ═══════════════ -->
+<section class="section" id="summary">
+<h2 class="section-title">设计改进总结</h2>
+<div class="note-box" style="font-size:13px; line-height:1.7">
+  <strong>核心原则：</strong>遵循 DESIGN.md 的单色调 + green accent 视觉规范，所有改进在现有设计语言内进行优化。<br><br>
+
+  <strong>1. 信息层级更清晰</strong><br>
+  • Evidence 卡片通过 stance 色彩编码（左边框 + badge）让用户快速区分支持/反驳证据<br>
+  • Source 卡片通过 favicon + 编号 + tag 分层展示，降低扫描成本<br>
+  • Local Context 组头部的 chevron + count 让结构一目了然<br><br>
+
+  <strong>2. 操作效率更高</strong><br>
+  • Tab 可关闭，减少不需要的面板占用<br>
+  • Local Context 行级操作从 ⋯ 菜单改为 hover 直接显示，减少一次点击<br>
+  • Document Pane 增加工具栏（搜索、source/rendered 切换、复制），常用操作触手可及<br><br>
+
+  <strong>3. 视觉一致性</strong><br>
+  • 所有引用文本统一使用斜体 + 左边框 + 淡背景样式<br>
+  • 所有 tag/badge 统一使用 <code>var(--panel-2)</code> 背景 + <code>var(--text-dim)</code> 文字<br>
+  • 所有 hover 效果统一使用 <code>var(--hover)</code> 背景，transition 0.12s<br>
+  • 下划线指示器统一为 2px + inset 8px + <code>var(--text-dim)</code> 色<br><br>
+
+  <strong>4. 空间利用更好</strong><br>
+  • Note 预览默认折叠 (80px)，按需展开，避免长笔记占据整个视口<br>
+  • Graph detail panel 固定在底部，不遮挡 canvas 操作<br>
+  • 面包屑路径单行显示，不额外占用纵向空间<br><br>
+
+  <strong>5. 保持的设计约束</strong><br>
+  • 无 emoji 用于交互控件（文件图标除外，实际实现应使用 SVG icon）<br>
+  • 无彩色按钮、无渐变<br>
+  • Green 仅用于：graph nodes、diff adds、stance supports、ok-dot<br>
+  • 所有按钮无边框，仅文字 + hover 背景<br>
+  • 英文 UI 标签
+</div>
+</section>
+
+</div>
+</body>
+</html>
