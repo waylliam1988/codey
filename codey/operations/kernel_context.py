@@ -117,7 +117,8 @@ class KernelContext:
         self.attempt_gate_bound = wiring._bind_attempt_gate(self.provider, self.transport, self.observation.trace_recorder)
 
     def restore_context(self, payload: ProviderRequestContext) -> None:
-        self.transport = replace(self.transport, context_text=payload.context_text, memory_sources=payload.memory_sources)
+        self.transport = replace(self.transport, context_text=payload.context_text, memory_sources=payload.memory_sources,
+                                 memory_traces=payload.memory_traces)
         self.attempt_gate_bound = wiring._bind_attempt_gate(self.provider, self.transport, self.observation.trace_recorder)
 
     @property
@@ -465,6 +466,7 @@ class KernelContext:
         self.snapshots[turn] = snapshot
         self.sink.bind_request(snapshot, logical_turn=turn, window_ref=self.window,
             context_text=prompt if explanation_only else self.transport.context_text, memory_sources=self.transport.memory_sources,
+            memory_traces=self.transport.memory_traces,
             effect_scope=self.effect_scope, close_reply=acknowledge,
             delivery_purpose=self.decision(state)["purpose"] if state.work_ref else "", work_ref=state.work_ref,
             source_response_ref=self.response_reference(state) if state.response_ref or state.work_ref

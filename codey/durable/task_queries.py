@@ -5,6 +5,7 @@ from __future__ import annotations
 from codey.durable.model import (
     ApprovalRecord,
     ArtifactRecord,
+    CommitRecord,
     EffectRecord,
     TaskCheckpoint,
 )
@@ -44,6 +45,19 @@ class TaskQueryFacade:
 
     def task_timeline(self, task_id: str) -> tuple[TaskTransition, ...]:
         return self._query_line(lambda: self._store.task_history(task_id))
+
+    def commit_record(self, sequence: int) -> CommitRecord:
+        """Read one canonical commit timestamp without projecting a new event."""
+        if type(sequence) is not int or sequence < 1:
+            raise ValueError("commit sequence must be positive")
+
+        def read() -> CommitRecord:
+            records = self._store.commits_after(sequence - 1, limit=1)
+            if not records or records[0].sequence != sequence:
+                raise KeyError(sequence)
+            return records[0]
+
+        return self._query_line(read)
 
     def task_at(self, task_id: str, commit_seq: int) -> TaskSnapshot:
         def read() -> TaskSnapshot:

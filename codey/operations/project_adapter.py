@@ -236,7 +236,7 @@ def run(request: AgentRequest) -> RunResult:
                                               task_forbids_verification(request.task))
     effect_scope = request.effect_scope or ("planning:1" if task_kind == "planning" else "writer:1")
     memory = retrieve_context(request.memory, task=request.task, project=str(request.project),
-                              session_id=request.session_id, run_id=request.run_id)
+                              session_id=request.session_id, run_id=request.run_id, context=task_kind)
     memory_sources = memory.sources if request.admit_hints else ()
     completion_context: object = request.completion_context
     if completion_context is None:
@@ -261,6 +261,7 @@ def run(request: AgentRequest) -> RunResult:
                 context_scope=request_scope(request.project, request.session_id),
                 memory_sources=memory_sources,
                 memory_spans=tuple(memory_spans),
+                memory_traces=memory.traces,
                 admit_hints=request.admit_hints,
                 attempt_validate_memory_sources=sources_still_valid,
                 stop_flag=request.stop_flag,

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from codey.toolchain.tool_spec import ToolSpec
     from codey.workspace.context_admission import ContextCandidate
 
+from codey.memory.contracts import MemoryTrace
 from codey.operations.provider_request_context import ProviderRequestContext
 from codey.providers.base import AssistantTurn
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -210,10 +211,10 @@ class KernelEffectSink:
                      context_text: str = "", memory_sources: tuple[ContextCandidate, ...] = (),
                      effect_scope: str = "", close_reply: bool = False, delivery_purpose: str = "",
                      work_ref: str = "", source_response_ref: str = "",
-                     tool_task_notifications: tuple[str, ...] = ()) -> None:
+                     tool_task_notifications: tuple[str, ...] = (), memory_traces: tuple[MemoryTrace, ...] = ()) -> None:
         self.request_context = ProviderRequestContext(logical_turn, snapshot, window_ref,
             context_text, memory_sources, effect_scope, close_reply, delivery_purpose, work_ref, source_response_ref,
-            tool_task_notifications)
+            tool_task_notifications, memory_traces)
 
     def counters(self) -> RuntimeExecutionCounters:
         from codey.durable.checkpoint import operation_from_checkpoint

@@ -48,6 +48,23 @@ class _Arguments(argparse.Namespace):
     text: str
     proposal_id: str
     version: str
+    scope_kind: str
+    request_id: str
+    control: str
+    enabled: str
+    item_id: str
+    expires_at: str
+    slot: str
+    context: str
+    supersedes: list[str]
+    query: str
+    run_id: str
+    rating: str
+    statement: str
+    due_at: str
+    prediction_id: str
+    feedback_id: str
+    as_of: str
 
 
 @runtime_checkable
@@ -59,7 +76,8 @@ def _safe_print(value: object, *, file: TextIO | None = None) -> None:
     if file is None:
         file = sys.stdout
     text = str(value)
-    encoding = getattr(file, "encoding", None) or "utf-8"
+    declared_encoding: object = getattr(file, "encoding", None)
+    encoding = declared_encoding if isinstance(declared_encoding, str) and declared_encoding else "utf-8"
     safe = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
     file.write(safe + "\n")
 
@@ -198,15 +216,36 @@ def cmd_ghost(args: _Arguments) -> int:
     try:
         action: str = args.ghost_cmd
         if action == "maintain":
-            return 0 if state.memory.maintain(as_of=state.memory.clock()) else 1
+            return 0 if state.memory.maintain(as_of=args.as_of or state.memory.clock()) else 1
         if action == "export":
             _safe_print(json.dumps(state.memory.export_state(), ensure_ascii=False, indent=2))
             return 0
         body: dict[str, object] = {"action": action, "session_id": args.session_id, "project": args.project}
+        if args.scope_kind:
+            body["scope_kind"] = args.scope_kind
+        if args.request_id:
+            body["request_id"] = args.request_id
         if action == "propose":
-            body.update(kind=args.kind, text=args.text)
+            body.update(kind=args.kind, text=args.text, expires_at=args.expires_at,
+                        slot=args.slot, context=args.context, supersedes=args.supersedes)
         elif action in {"accept", "reject"}:
             body.update(proposal_id=args.proposal_id, version=args.version)
+        elif action == "control":
+            body.update(control=args.control, enabled=args.enabled == "on")
+        elif action in {"revoke", "quarantine", "restore"}:
+            body["item_id"] = args.item_id
+        elif action == "explain":
+            body.update(query=args.query, context=args.context)
+        elif action == "explain_run":
+            body["run_id"] = args.run_id
+        elif action in {"feedback", "predict"}:
+            body.update(item_id=args.item_id, rating=args.rating)
+            if action == "feedback":
+                body["run_id"] = args.run_id
+            else:
+                body.update(statement=args.statement, due_at=args.due_at)
+        elif action == "review":
+            body.update(prediction_id=args.prediction_id, feedback_id=args.feedback_id)
         status, payload = memory_action(state, body)
         _safe_print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0 if status == 200 else 1
@@ -215,17 +254,46 @@ def cmd_ghost(args: _Arguments) -> int:
 
 
 def _add_ghost_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    for action in ("export", "propose", "accept", "reject", "delete_scope", "maintain"):
+    from codey.memory.contracts import MEMORY_CONTROLS
+
+    for action in ("export", "propose", "accept", "reject", "delete_scope", "reset", "maintain", "rebuild",
+                   "control", "revoke", "quarantine", "restore", "explain", "explain_run", "feedback", "predict", "review"):
         command = sub.add_parser(action)
         command.add_argument("--state-home", default="")
         command.add_argument("--project", default="")
         command.add_argument("--session-id", default="")
+        command.add_argument("--scope-kind", choices=("user", "project", "session"), default="")
+        command.add_argument("--request-id", default="")
         if action == "propose":
             command.add_argument("kind", choices=("preference", "goal", "hypothesis"))
             command.add_argument("text")
+            command.add_argument("--expires-at", default="")
+            command.add_argument("--slot", default="")
+            command.add_argument("--context", default="")
+            command.add_argument("--supersedes", action="append", default=list[str]())
         if action in {"accept", "reject"}:
             command.add_argument("proposal_id")
             command.add_argument("version")
+        if action == "control":
+            command.add_argument("control", choices=MEMORY_CONTROLS)
+            command.add_argument("enabled", choices=("on", "off"))
+        if action in {"revoke", "quarantine", "restore", "feedback", "predict"}:
+            command.add_argument("item_id")
+        if action == "explain":
+            command.add_argument("query", nargs="?", default="")
+            command.add_argument("--context", default="")
+        if action in {"feedback", "predict"}:
+            command.add_argument("--rating", choices=("helpful", "unhelpful", "correction"), default="helpful")
+        if action in {"feedback", "explain_run"}:
+            command.add_argument("--run-id", required=True)
+        if action == "predict":
+            command.add_argument("--statement", required=True)
+            command.add_argument("--due-at", required=True)
+        if action == "review":
+            command.add_argument("prediction_id")
+            command.add_argument("--feedback-id", default="")
+        if action == "maintain":
+            command.add_argument("--as-of", default="")
         command.set_defaults(func=cmd_ghost)
 
 

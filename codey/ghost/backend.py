@@ -1,230 +1,171 @@
-"""Built-in memory implementation. All executable authority stays with the host."""
+"""Built-in journaled memory. The host retains all executable authority."""
 
 from __future__ import annotations
 
-import hashlib
-import json
-import sqlite3
-from collections.abc import Generator
-from contextlib import contextmanager
-from dataclasses import replace
-from datetime import datetime
-
+from codey.ghost.projection import policy, project_event, record_from_payload, record_payload
 from codey.ghost.retrieval import relevance
+from codey.ghost.storage import GhostDatabase, load, rows
+from codey.memory.codec import digest, item_from_payload, timestamp, trace_for_item
 from codey.memory.contracts import (
     DeleteResult,
     DeleteScopeRequest,
+    MemoryChange,
+    MemoryControl,
     MemoryDecision,
     MemoryEvent,
+    MemoryFeedback,
     MemoryHost,
-    MemoryItem,
-    MemoryKind,
+    MemoryPolicy,
+    MemoryPrediction,
     MemoryProposal,
     MemoryQuery,
+    MemoryRebuildResult,
+    MemoryRecord,
     MemoryResult,
+    MemoryReview,
+    MemoryTrace,
 )
-from codey.types.json_value import JsonValue, decode_json_object, require_json_string, require_json_strings
-
-
-def _item(value: object) -> MemoryItem:
-    payload = decode_json_object(value)
-    kind = payload.get("kind")
-    if kind not in ("experience", "preference", "goal", "hypothesis"):
-        raise ValueError("unknown memory kind")
-    item_kind: MemoryKind
-    if kind == "experience":
-        item_kind = "experience"
-    elif kind == "preference":
-        item_kind = "preference"
-    elif kind == "goal":
-        item_kind = "goal"
-    else:
-        item_kind = "hypothesis"
-    confidence = payload.get("confidence")
-    if confidence is not None and (isinstance(confidence, bool) or not isinstance(confidence, (float, int))):
-        raise ValueError("confidence must be numeric or null")
-    return MemoryItem(
-        item_id=require_json_string(payload.get("item_id"), "item_id"),
-        kind=item_kind,
-        text=require_json_string(payload.get("text"), "text"),
-        scope=require_json_string(payload.get("scope"), "scope"),
-        source_refs=tuple(require_json_strings(payload.get("source_refs"), "source_refs")),
-        created_at=require_json_string(payload.get("created_at"), "created_at"),
-        expires_at=require_json_string(payload.get("expires_at", ""), "expires_at"),
-        confidence=float(confidence) if confidence is not None else None,
-    )
-
-
-def _payload(item: MemoryItem) -> str:
-    return json.dumps(item.to_payload(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def _texts(cursor: sqlite3.Cursor) -> tuple[str, ...]:
-    rows: list[object] = cursor.fetchall()
-    result: list[str] = []
-    for row in rows:
-        if not isinstance(row, tuple):
-            raise ValueError("invalid memory database row")
-        cells: tuple[object, ...] = row
-        if len(cells) != 1 or not isinstance(cells[0], str):
-            raise ValueError("invalid memory database payload")
-        result.append(cells[0])
-    return tuple(result)
+from codey.types.json_value import JsonObject, JsonValue, require_json_integer
 
 
 class GhostMemory:
     def __init__(self, host: MemoryHost) -> None:
         self._host = host
-        self._path = host.state_dir / "memory.sqlite3"
+        self.database = GhostDatabase(host)
 
-    @contextmanager
-    def _connect(self, *, write: bool = False) -> Generator[sqlite3.Connection, None, None]:
-        self._host.check_cancelled()
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self._path, timeout=0.05)
-        try:
-            connection.executescript("""
-                CREATE TABLE IF NOT EXISTS events (event_id TEXT PRIMARY KEY);
-                CREATE TABLE IF NOT EXISTS items (
-                    item_id TEXT PRIMARY KEY, scope TEXT NOT NULL, run_id TEXT NOT NULL,
-                    payload TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS item_scope ON items(scope);
-                CREATE TABLE IF NOT EXISTS proposals (
-                    proposal_id TEXT PRIMARY KEY, scope TEXT NOT NULL,
-                    payload TEXT NOT NULL, decision TEXT NOT NULL DEFAULT ''
-                );
-            """)
-            if write:
-                connection.execute("BEGIN IMMEDIATE")
-            yield connection
-            connection.commit()
-        finally:
-            connection.close()
+    def records(self, scopes: tuple[str, ...]) -> tuple[MemoryRecord, ...]:
+        with self.database.connect() as connection:
+            found = rows(connection, "items")
+        return tuple(record for raw in found if (record := record_from_payload(raw)).item.scope in scopes)
 
     def retrieve(self, query: MemoryQuery) -> MemoryResult:
         if not query.scopes or query.max_items <= 0:
             return MemoryResult()
-        placeholders = ",".join("?" for _ in query.scopes)
-        eligible = f"scope IN ({placeholders}) AND (? = '' OR run_id != ?)"
-        parameters = (*query.scopes, query.exclude_run_id, query.exclude_run_id)
-        with self._connect() as connection:
-            payloads = _texts(connection.execute(
-                f"SELECT payload FROM (SELECT payload FROM items WHERE {eligible} "
-                "AND json_extract(payload, '$.kind') = 'experience' ORDER BY rowid DESC LIMIT 200) "
-                f"UNION ALL SELECT payload FROM items WHERE {eligible} "
-                "AND json_extract(payload, '$.kind') IN ('preference', 'goal', 'hypothesis')",
-                (*parameters, *parameters),
-            ))
-        items: list[MemoryItem] = []
-        for payload in payloads:
+        now = timestamp(query.as_of)
+        with self.database.connect() as connection:
+            controls = policy(connection, ("user", *(query.control_scopes or query.scopes)))
+            found = rows(connection, "items")
+        traces: list[MemoryTrace] = []
+        candidates: list[tuple[float, MemoryRecord]] = []
+        experiences = 0
+        for raw in reversed(found):
             self._host.check_cancelled()
-            value: object = json.loads(payload)
-            item = _item(value)
-            if item.expires_at and datetime.fromisoformat(item.expires_at) <= datetime.fromisoformat(query.as_of):
+            record = record_from_payload(raw)
+            item = record.item
+            if item.scope not in query.scopes:
                 continue
-            items.append(item)
-        def rank(item: MemoryItem) -> tuple[float, str]:
-            return -relevance(query.text, item, query.as_of), item.item_id
+            reason = ""
+            if not controls.retrieve_projections:
+                reason = "retrieval_disabled"
+            elif record.state != "active":
+                reason = record.state
+            elif query.exclude_run_id and raw.get("run_id") == query.exclude_run_id:
+                reason = "current_run"
+            elif timestamp(item.created_at) > now:
+                reason = "future_created"
+            elif item.expires_at and timestamp(item.expires_at) <= now:
+                reason = "expired"
+            elif item.context and item.context != query.context:
+                reason = "context_mismatch"
+            elif item.kind == "experience":
+                experiences += 1
+                if experiences > 200:
+                    reason = "experience_window"
+            score = relevance(query.text, item, query.as_of)
+            if not reason and item.kind == "experience" and score <= 0:
+                reason = "unrelated"
+            if reason:
+                traces.append(trace_for_item(item, reason, score))
+            else:
+                candidates.append((score, record))
+        def rank(row: tuple[float, MemoryRecord]) -> tuple[float, str]:
+            return -row[0], row[1].item.item_id
 
-        ranked = sorted(items, key=rank)
-        return MemoryResult(tuple(item for item in ranked
-                                  if item.kind != "experience" or relevance(query.text, item, query.as_of) > 0)
-                            [:query.max_items])
+        candidates.sort(key=rank)
+        selected = []
+        for index, (score, record) in enumerate(candidates, 1):
+            reason = "candidate" if index <= query.max_items else "result_limit"
+            traces.append(trace_for_item(record.item, reason, score, index))
+            if index <= query.max_items:
+                selected.append(record.item)
+        return MemoryResult(tuple(selected), tuple(traces))
 
     def observe(self, event: MemoryEvent) -> None:
-        if not event.event_id or not event.provenance or not event.scope:
-            raise ValueError("memory events require identity, provenance and scope")
-        with self._connect(write=True) as connection:
-            cursor = connection.execute("INSERT OR IGNORE INTO events VALUES (?)", (event.event_id,))
-            if cursor.rowcount == 0:
-                return
-            if event.kind == "task.completed":
-                user = require_json_string(event.payload.get("user_text"), "user_text")
-                assistant = require_json_string(event.payload.get("assistant_text"), "assistant_text")
-                exchange: dict[str, str] = {"user": user, "assistant": assistant}
-                text = json.dumps(exchange, ensure_ascii=False)
-                item = MemoryItem(event.event_id, "experience", text, event.scope,
-                                  event.provenance, event.occurred_at)
-                connection.execute("INSERT INTO items VALUES (?, ?, ?, ?)",
-                                   (item.item_id, item.scope, event.run_id, _payload(item)))
-            elif event.kind == "memory.proposed":
-                value = dict(event.payload)
-                value["item_id"] = event.event_id
-                value["scope"] = event.scope
-                value["source_refs"] = list(event.provenance)
-                value["created_at"] = event.occurred_at
-                proposed = _item(value)
-                if proposed.kind == "experience" or not proposed.text.strip():
-                    raise ValueError("only explicit preference, goal or hypothesis proposals are reviewable")
-                connection.execute("INSERT INTO proposals (proposal_id, scope, payload) VALUES (?, ?, ?)",
-                                   (event.event_id, event.scope, _payload(proposed)))
+        self.database.append(event, project_event)
 
     def proposals(self, scope: str) -> tuple[MemoryProposal, ...]:
-        with self._connect() as connection:
-            payloads = _texts(connection.execute(
-                "SELECT payload FROM proposals WHERE scope = ? AND decision = '' ORDER BY rowid LIMIT 100", (scope,),
-            ))
-        result: list[MemoryProposal] = []
-        for payload in payloads:
-            value: object = json.loads(payload)
-            item = _item(value)
-            result.append(MemoryProposal(item.item_id, item, hashlib.sha256(payload.encode()).hexdigest()))
-        return tuple(result)
+        with self.database.connect() as connection:
+            found = rows(connection, "proposals")
+        return tuple(MemoryProposal(item.item_id, item, digest(item.to_payload()))
+                     for raw in found if not raw.get("decision")
+                     and (item := item_from_payload(raw.get("item"))).scope == scope)[:100]
+
+    def _command(self, kind: str, identity: str, scope: str, at: str, payload: JsonObject,
+                 provenance: tuple[str, ...]) -> None:
+        self.observe(MemoryEvent(identity, kind, at, "", "", "", scope, payload, provenance))
 
     def decide(self, decision: MemoryDecision) -> None:
         if not decision.source_ref:
             raise ValueError("a memory decision requires a committed user decision reference")
-        with self._connect(write=True) as connection:
-            payloads = _texts(connection.execute(
-                "SELECT payload FROM proposals WHERE proposal_id = ? AND decision = ''", (decision.proposal_id,),
-            ))
-            if not payloads or hashlib.sha256(payloads[0].encode()).hexdigest() != decision.version:
-                raise ValueError("proposal is missing, changed or already decided")
-            if decision.accepted:
-                value: object = json.loads(payloads[0])
-                item = _item(value)
-                item = replace(item, source_refs=(*item.source_refs, decision.source_ref))
-                connection.execute("INSERT INTO items VALUES (?, ?, '', ?)", (item.item_id, item.scope, _payload(item)))
-            connection.execute("UPDATE proposals SET decision = ? WHERE proposal_id = ?",
-                               (decision.source_ref, decision.proposal_id))
+        self._command("memory.decided", decision.source_ref, "user", decision.decided_at,
+                      {"proposal_id": decision.proposal_id, "version": decision.version, "accepted": decision.accepted},
+                      (decision.source_ref,))
 
     def delete_scope(self, request: DeleteScopeRequest) -> DeleteResult:
-        with self._connect(write=True) as connection:
-            deleted = connection.execute("DELETE FROM items WHERE scope = ?", (request.scope,)).rowcount
-            connection.execute("DELETE FROM proposals WHERE scope = ?", (request.scope,))
-            if request.source_refs:
-                for table in ("items", "proposals"):
-                    payloads = _texts(connection.execute(f"SELECT payload FROM {table}"))
-                    for payload in payloads:
-                        value: object = json.loads(payload)
-                        item = _item(value)
-                        if set(item.source_refs).intersection(request.source_refs):
-                            key = "item_id" if table == "items" else "proposal_id"
-                            count = connection.execute(f"DELETE FROM {table} WHERE {key} = ?", (item.item_id,)).rowcount
-                            if table == "items":
-                                deleted += count
-        return DeleteResult(deleted)
+        at = request.requested_at or self._host.clock()
+        payload: JsonObject = {"source_refs": list(request.source_refs)}
+        identity = "delete:" + digest({"scope": request.scope, "at": at, **payload})
+        self._command("memory.deleted", identity, request.scope, at, payload, (identity,))
+        with self.database.connect() as connection:
+            result = load(connection, "operations", identity)
+        if result is None:
+            raise ValueError("memory deletion has no committed result")
+        return DeleteResult(require_json_integer(result.get("deleted"), "deleted"))
+
+    def policy(self, scopes: tuple[str, ...]) -> MemoryPolicy:
+        with self.database.connect() as connection:
+            return policy(connection, ("user", *scopes))
+
+    def set_control(self, control: MemoryControl) -> None:
+        self._command("memory.controlled", control.source_ref, control.scope, control.occurred_at,
+                      {"name": control.name, "enabled": control.enabled}, (control.source_ref,))
+
+    def change(self, change: MemoryChange) -> None:
+        self._command("memory.changed", change.source_ref, change.scope, change.occurred_at,
+                      {"item_id": change.item_id, "state": change.state}, (change.source_ref,))
+
+    def feedback(self, feedback: MemoryFeedback) -> None:
+        self._command("memory.feedback", feedback.feedback_id, feedback.scope, feedback.occurred_at,
+                      {"item_id": feedback.item_id, "run_id": feedback.run_id, "rating": feedback.rating},
+                      (feedback.source_ref,))
+
+    def predict(self, prediction: MemoryPrediction) -> None:
+        self._command("memory.predicted", prediction.prediction_id, prediction.scope, prediction.created_at,
+                      {"item_id": prediction.item_id, "statement": prediction.statement,
+                       "expected_rating": prediction.expected_rating, "due_at": prediction.due_at}, prediction.source_refs)
+
+    def review(self, review: MemoryReview) -> None:
+        self._command("memory.reviewed", review.source_ref, "user", review.occurred_at,
+                      {"prediction_id": review.prediction_id, "feedback_id": review.feedback_id,
+                       "outcome": review.outcome}, (review.source_ref,))
+
+    def rebuild(self) -> MemoryRebuildResult:
+        return self.database.rebuild(project_event)
 
     def export_state(self) -> dict[str, JsonValue]:
-        result: dict[str, JsonValue] = {"enabled": True}
-        with self._connect() as connection:
-            for table in ("items", "proposals"):
-                payloads = _texts(connection.execute(f"SELECT payload FROM {table} ORDER BY rowid"))
-                decoded: list[JsonValue] = []
-                for payload in payloads:
-                    value: object = json.loads(payload)
-                    decoded.append(decode_json_object(value))
-                result[table] = decoded
-        return result
+        with self.database.connect() as connection:
+            found = rows(connection, "items")
+            proposals = rows(connection, "proposals")
+            controls, feedback, predictions, exposures, outcomes = (rows(connection, name) for name in
+                ("controls", "feedback", "predictions", "exposures", "outcomes"))
+        records = [record_from_payload(row) for row in found]
+        return {"enabled": True, "schema_version": 2,
+                "items": [record.item.to_payload() for record in records if record.state == "active"],
+                "records": [record_payload(record) for record in records],
+                "proposals": [item_from_payload(row.get("item")).to_payload() for row in proposals],
+                "controls": list(controls), "feedback": list(feedback), "predictions": list(predictions),
+                "exposures": list(exposures), "outcomes": list(outcomes)}
 
     def maintain(self, *, as_of: str) -> None:
-        now = datetime.fromisoformat(as_of)
-        with self._connect(write=True) as connection:
-            payloads = _texts(connection.execute("SELECT payload FROM items ORDER BY rowid"))
-            for payload in payloads:
-                self._host.check_cancelled()
-                value: object = json.loads(payload)
-                item = _item(value)
-                if item.expires_at and datetime.fromisoformat(item.expires_at) <= now:
-                    connection.execute("DELETE FROM items WHERE item_id = ?", (item.item_id,))
+        timestamp(as_of)
+        self._command("memory.maintained", "maintain:" + as_of, "user", as_of, {}, ("maintenance:" + as_of,))

@@ -10,6 +10,13 @@ from typing import Literal, Protocol
 from codey.types.json_value import JsonObject, JsonValue
 
 MemoryKind = Literal["experience", "preference", "goal", "hypothesis"]
+MemoryControlName = Literal["accept_events", "retrieve_projections", "run_maintenance", "admit_hints"]
+MemoryState = Literal["active", "superseded", "revoked", "quarantined", "expired"]
+FeedbackRating = Literal["helpful", "unhelpful", "correction"]
+PredictionOutcome = Literal["supported", "contradicted", "unjudged"]
+MEMORY_CONTROLS: tuple[MemoryControlName, ...] = (
+    "accept_events", "retrieve_projections", "run_maintenance", "admit_hints",
+)
 
 
 @dataclass(frozen=True)
@@ -22,6 +29,9 @@ class MemoryItem:
     created_at: str
     expires_at: str = ""
     confidence: float | None = None
+    slot: str = ""
+    context: str = ""
+    supersedes: tuple[str, ...] = ()
 
     def to_payload(self) -> JsonObject:
         return {
@@ -29,6 +39,7 @@ class MemoryItem:
             "scope": self.scope, "source_refs": list(self.source_refs),
             "created_at": self.created_at, "expires_at": self.expires_at,
             "confidence": self.confidence,
+            "slot": self.slot, "context": self.context, "supersedes": list(self.supersedes),
         }
 
 
@@ -39,11 +50,31 @@ class MemoryQuery:
     as_of: str
     exclude_run_id: str = ""
     max_items: int = 8
+    control_scopes: tuple[str, ...] = ()
+    context: str = ""
+
+
+@dataclass(frozen=True)
+class MemoryTrace:
+    item_id: str
+    reason: str
+    score: float = 0.0
+    rank: int = 0
+    chars: int = 0
+    scope: str = ""
+    source_refs: tuple[str, ...] = ()
+    family: str = ""
+
+    def to_payload(self) -> JsonObject:
+        return {"item_id": self.item_id, "reason": self.reason, "score": self.score,
+                "rank": self.rank, "chars": self.chars, "scope": self.scope,
+                "source_refs": list(self.source_refs), "family": self.family}
 
 
 @dataclass(frozen=True)
 class MemoryResult:
     items: tuple[MemoryItem, ...] = ()
+    traces: tuple[MemoryTrace, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -57,6 +88,7 @@ class MemoryEvent:
     scope: str
     payload: Mapping[str, JsonValue]
     provenance: tuple[str, ...]
+    control_scopes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -79,11 +111,91 @@ class MemoryDecision:
 class DeleteScopeRequest:
     scope: str
     source_refs: tuple[str, ...] = ()
+    requested_at: str = ""
 
 
 @dataclass(frozen=True)
 class DeleteResult:
     deleted: int = 0
+
+
+@dataclass(frozen=True)
+class MemoryPolicy:
+    accept_events: bool = True
+    retrieve_projections: bool = True
+    run_maintenance: bool = True
+    admit_hints: bool = True
+
+    def permits(self, name: MemoryControlName) -> bool:
+        return self.to_payload()[name] is True
+
+    def to_payload(self) -> JsonObject:
+        return {"accept_events": self.accept_events, "retrieve_projections": self.retrieve_projections,
+                "run_maintenance": self.run_maintenance, "admit_hints": self.admit_hints}
+
+
+@dataclass(frozen=True)
+class MemoryControl:
+    scope: str
+    name: MemoryControlName
+    enabled: bool
+    source_ref: str
+    occurred_at: str
+
+
+@dataclass(frozen=True)
+class MemoryChange:
+    item_id: str
+    scope: str
+    state: Literal["revoked", "quarantined", "active"]
+    source_ref: str
+    occurred_at: str
+
+
+@dataclass(frozen=True)
+class MemoryRecord:
+    item: MemoryItem
+    state: MemoryState = "active"
+    superseded_by: str = ""
+    control_scopes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class MemoryRebuildResult:
+    events: int
+    digest: str
+
+
+@dataclass(frozen=True)
+class MemoryFeedback:
+    feedback_id: str
+    item_id: str
+    run_id: str
+    scope: str
+    rating: FeedbackRating
+    source_ref: str
+    occurred_at: str
+
+
+@dataclass(frozen=True)
+class MemoryPrediction:
+    prediction_id: str
+    item_id: str
+    scope: str
+    statement: str
+    expected_rating: FeedbackRating
+    source_refs: tuple[str, ...]
+    created_at: str
+    due_at: str
+
+
+@dataclass(frozen=True)
+class MemoryReview:
+    prediction_id: str
+    feedback_id: str
+    outcome: PredictionOutcome
+    source_ref: str
+    occurred_at: str
 
 
 class MemoryReader(Protocol):
@@ -108,6 +220,23 @@ class MemoryMaintainer(Protocol):
     def maintain(self, *, as_of: str) -> None: ...
 
 
+class MemoryController(Protocol):
+    def policy(self, scopes: tuple[str, ...]) -> MemoryPolicy: ...
+    def set_control(self, control: MemoryControl) -> None: ...
+
+
+class MemoryLifecycle(Protocol):
+    def change(self, change: MemoryChange) -> None: ...
+    def records(self, scopes: tuple[str, ...]) -> tuple[MemoryRecord, ...]: ...
+    def rebuild(self) -> MemoryRebuildResult: ...
+
+
+class MemoryLearning(Protocol):
+    def feedback(self, feedback: MemoryFeedback) -> None: ...
+    def predict(self, prediction: MemoryPrediction) -> None: ...
+    def review(self, review: MemoryReview) -> None: ...
+
+
 @dataclass(frozen=True)
 class MemoryCapabilities:
     reader: MemoryReader
@@ -115,6 +244,9 @@ class MemoryCapabilities:
     reviewer: MemoryReviewer
     admin: MemoryAdmin
     maintainer: MemoryMaintainer
+    controller: MemoryController | None = None
+    lifecycle: MemoryLifecycle | None = None
+    learning: MemoryLearning | None = None
 
 
 @dataclass(frozen=True)

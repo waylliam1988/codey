@@ -9,12 +9,16 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 from codey.completion.contract import CompletionProof
+from codey.durable.session import DurableSession
 from codey.knowledge.changes import KnowledgeChanges
+from codey.knowledge.model import KnowledgeReference
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.kernel_contracts import KernelResult
 from codey.operations.research_continuation import ResearchContinuation
 from codey.policies.task_policy import TaskPolicy
 from codey.research.finding_report import ResearchReport
+from codey.research.ledger import ResearchLedger
+from codey.research.report_quality import ReportQualityReview
 from codey.research.source_gateway import _SearchProvider
 from codey.research.staging import StagedKnowledgeStore
 from codey.research.tools import ResearchTools
@@ -34,8 +38,10 @@ from codey.operations.task_loop import (
 )
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.run_result import ResearchRunResult
+from codey.runtime.core.operation_payload import RuntimeOperationState
 from codey.runtime.observe.events import RunEvent
 from codey.workspace.context_selection import assemble_context_candidates
+from codey.workspace.context_source import ContextCandidate
 
 
 def _proposal_knowledge_refs(proposal: Mapping[str, object]) -> list[object]:
@@ -77,9 +83,8 @@ def _persist_synthesis(tools: ResearchTools, task: str, summary: str, *, session
     """
     if not summary or tools.store is None or tools.changes is None:
         return ""
-    allows = getattr(policy, "allows", None)
     try:
-        permitted = bool(allows("knowledge.write")) if callable(allows) else False
+        permitted = policy is not None and policy.allows("knowledge.write")
     except Exception:
         permitted = False
     if not permitted:
@@ -141,23 +146,24 @@ def _persist_synthesis(tools: ResearchTools, task: str, summary: str, *, session
     publication_digest = hashlib.sha256(canonical_json(publication_payload).encode()).hexdigest()
     previous = tools.store.repository.read(answer_id)
     if previous is not None:
-        if previous.value.provenance.get("publication_digest") != publication_digest:
+        previous_provenance: Mapping[str, object] = previous.value.provenance
+        if previous_provenance.get("publication_digest") != publication_digest:
             raise ValueError("settled research projection changed its original publication inputs")
         if tools.store.exists(note_id) and publisher is None:
             tools.synthesis_id = note_id
             if note_id not in tools.created_ids:
                 tools.created_ids.append(note_id)
             return note_id
+    note_sources: list[str] = sorted(selected_sources)
     note = KnowledgeNote.create(
         type="synthesis", title=_synthesis_title(task),
         body=summary if accepted_report else _synthesis_body(summary, tools.ledger), tags=tags,
-        sources=sorted(selected_sources), session_id=session_id, project=project,
+        sources=note_sources, session_id=session_id, project=project,
         open_questions=clean_open_questions(open_questions)[:4],
         id=note_id,
     )
-    answer = KnowledgeObject(answer_id, "answer", summary, "model_inference", title=note.title,
-        status="active", scope=scope, scope_id=scope_id, references=tuple(dict.fromkeys(references)),
-        provenance={"run_id": run_id, "session_id": session_id, "summary_digest": summary_digest,
+    unique_references: dict[KnowledgeReference, None] = dict.fromkeys(references)
+    provenance: dict[str, object] = {"run_id": run_id, "session_id": session_id, "summary_digest": summary_digest,
                     "publication_digest": publication_digest, "publication_schema": 1,
                     "basis": "settled_kernel_projection", "projection": projection,
                     "questions": list(accepted_report.questions if accepted_report else tools.ledger.questions),
@@ -165,12 +171,15 @@ def _persist_synthesis(tools: ResearchTools, task: str, summary: str, *, session
                     "coverage_assessment": "model_reported_not_semantically_verified",
                     "accepted_report": accepted_report.to_payload() if accepted_report is not None else None,
                     "task": task, "project": project, "synthesis_id": note_id,
-                    "semantic_review": semantic_review})
+                    "semantic_review": semantic_review}
+    answer = KnowledgeObject(answer_id, "answer", summary, "model_inference", title=note.title,
+        status="active", scope=scope, scope_id=scope_id, references=tuple(unique_references), provenance=provenance)
     if publisher is not None:
         from codey.providers.response_record import json_value
 
+        answer_payload: dict[str, object] = answer.to_dict()
         return publisher({"schema": 1, "note": json_value(note), "commit_id": stable_identity("answer-commit", run_id, projection),
-                          "mutations": [{"value": answer.to_dict(), "expected_revision": 0}]})
+                          "mutations": [{"value": answer_payload, "expected_revision": 0}]})
     try:
         tools.store.publish_note(note, stable_identity("answer-commit", run_id, projection),
                                  [KnowledgeMutation(answer)], changes=tools.changes if isinstance(tools.changes, KnowledgeChanges) else None)
@@ -188,9 +197,8 @@ def _persist_synthesis(tools: ResearchTools, task: str, summary: str, *, session
 
 
 def _link_synthesis(tools: ResearchTools, note_id: str, note_ids: list[str], policy: TaskPolicy | None) -> None:
-    allows_link = getattr(policy, "allows", None)
     try:
-        can_link = bool(allows_link("knowledge.link")) if callable(allows_link) else False
+        can_link = policy is not None and policy.allows("knowledge.link")
     except Exception:
         can_link = False
     if can_link and tools.store is not None:
@@ -212,7 +220,8 @@ def _publication_proof(outcome: KernelResult, compiled: ResearchReport | None, h
     version = published_answer_version(history, synthesis_id) if isinstance(compiled, AnswerReport) else None
     if outcome.proof is None:
         raise ValueError("published research report has no completion proof")
-    return published_completion(outcome.proof, compiled, synthesis_id=synthesis_id, result_ref=history.state().work_ref,
+    position: RuntimeOperationState = history.state()
+    return published_completion(outcome.proof, compiled, synthesis_id=synthesis_id, result_ref=position.work_ref,
                                 answer_version=version)
 
 
@@ -224,6 +233,21 @@ def _research_tools(deps: ResearchFlowDeps, search: object, session_id: str, pro
         raise TypeError("research requires a search provider")
     return ResearchTools(search=search, store=store, changes=KnowledgeChanges(root=store.root),
                          session_id=session_id, project=project)
+
+
+def _result_context(ledger: ResearchLedger, compiled: ResearchReport | None,
+                    quality: ReportQualityReview | None, include_coverage: bool,
+                    ) -> tuple[dict[str, object], list[dict[str, object]]]:
+    question_answers: list[object] = list(compiled.coverage) if include_coverage and compiled else []
+    coverage: dict[str, object] = {**ledger.coverage_payload(), "question_answers": question_answers}
+    citations: list[dict[str, object]]
+    if compiled is not None:
+        citations = [dict(row) for row in compiled.source_versions]
+    elif quality is not None:
+        citations = quality.citation_payload()
+    else:
+        citations = []
+    return coverage, citations
 
 
 def run_research_iteration(
@@ -311,52 +335,52 @@ def run_research_iteration(
             session.record_evidence(item.source_url, item.excerpt)
         session.notes_saved = len(set(tools.created_ids + tools.updated_ids))
     intent_sink = None
-    active_provider = provider
     admitted = None
-    mutations = deps.runtime_mutations
-    if mutations is not None and session_id and run_id:
+    if deps.runtime_mutations is not None and session_id and run_id:
         from codey.operations.task_effects import KernelEffectSink, admitted_durable
 
         admitted = admitted_durable(deps.state, run_id)
         intent_sink = KernelEffectSink(
-            mutations, session_id=session_id, run_id=run_id,
+            deps.runtime_mutations, session_id=session_id, run_id=run_id,
             provider_id=provider_id, phase="research",
             managed_outputs=deps.managed_outputs,
             durable=admitted,
         )
     from codey.operations.research_continuation import ResearchContinuation
 
-    history = ResearchContinuation(mutations, deps.managed_outputs,
+    history = ResearchContinuation(deps.runtime_mutations, deps.managed_outputs,
                                    session_id=session_id, run_id=run_id)
     prerequisites = history.prerequisite_facts(before_attempt=writer_attempt, policy=policy)
     session.handoff += prerequisites.handoff
+    durable: DurableSession = history.durable
     if ((stop_flag is not None and stop_flag.is_set())
-            or history.durable.task(run_id).state.get("cancel_requested")):
+            or durable.task(run_id).state.get("cancel_requested")):
         from codey.operations.research_publication import settle_cancelled_publications
         from codey.runtime.core.cancellation import TaskCancelled
 
         if settle_cancelled_publications(history, tools.store):
             raise TaskCancelled("research publication settled after cancellation")
-    position = history.state()
+    position: RuntimeOperationState = history.state()
     if (position.writer_attempt < writer_attempt
             or (position.writer_attempt == writer_attempt and position.leaf in {"accepted", "writer_running"}
                 and not position.logical_turn)):
         provider.new_chat()
-    memory = retrieve_context(deps.state.memory, task=task, project=project, session_id=session_id, run_id=run_id)
-    topic_source = source_from_value(
+    memory = retrieve_context(deps.state.memory, task=task, project=project, session_id=session_id, run_id=run_id,
+                              context="research")
+    topic_source: ContextCandidate | None = source_from_value(
         key="research_topic_continuity",
         text=topic_continuity_context,
         budget=900,
         scope=request_scope(project, session_id),
         capability_id="research_topic_continuity",
     )
-    sources = (*memory.sources, *((topic_source,) if topic_source is not None else ()))
+    sources: tuple[ContextCandidate, ...] = memory.sources + ((topic_source,) if topic_source is not None else ())
     context_text, context_spans = assemble_context_candidates(sources)
     outcome = history.kernel(
         session,
         invocation=invocation,
         request=KernelRunRequestBuilder(
-                provider=active_provider,
+                provider=provider,
                 run_id=run_id,
                 effect_scope=f"research:{writer_attempt}",
                 provider_id=provider_id,
@@ -366,6 +390,7 @@ def run_research_iteration(
                 context_text=context_text,
                 memory_sources=sources,
                 memory_spans=context_spans,
+                memory_traces=memory.traces,
                 attempt_validate_memory_sources=lambda actual: memory.valid(deps.state.memory),
                 stop_flag=stop_flag,
                 task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
@@ -412,12 +437,13 @@ def run_research_iteration(
         # digest rejects changes to that original output on replay.
         from codey.operations.research_publication import publish_synthesis as publish_answer
 
-
+        open_questions: object = compiled.open_questions if compiled else session.last_done_args.get("open_questions", ())
+        knowledge_refs: list[object] = [*_proposal_knowledge_refs(session.last_done_args), *(compiled.knowledge_refs if compiled else ())]
         synthesis_id = publish_answer(history,
             tools, task, outcome.summary, session_id=session_id,
             project=project, run_id=run_id, on_event=on_event,
-            open_questions=compiled.open_questions if compiled else session.last_done_args.get("open_questions", ()),
-            knowledge_refs=[*_proposal_knowledge_refs(session.last_done_args), *(compiled.knowledge_refs if compiled else ())],
+            open_questions=open_questions,
+            knowledge_refs=knowledge_refs,
             finding_ids=compiled.finding_ids if compiled else (),
             accepted_report=compiled,
             policy=policy,
@@ -447,15 +473,15 @@ def run_research_iteration(
             synthesis_id=synthesis_id,
             stop_reason=outcome.stop_reason,
         )
+    coverage, citation_map = _result_context(ledger, compiled, quality, outcome.completed and policy.strict_research)
     result = ResearchRunResult(
         question=task, summary=outcome.summary, stop_reason=outcome.stop_reason,
         turns=outcome.turns,
         queries=[item.query for item in ledger.searches],
         search_results=ledger.search_results_payload(),
         opened_sources=ledger.opened_sources_payload(),
-        coverage={**ledger.coverage_payload(),
-                  "question_answers": list(compiled.coverage) if outcome.completed and policy.strict_research and compiled else []},
-        citation_map=[dict(row) for row in compiled.source_versions] if compiled else quality.citation_payload() if quality is not None else [],
+        coverage=coverage,
+        citation_map=citation_map,
         evidence_items=ledger.evidence_payload(),
         counterpoints=list(quality.counterpoints) if quality is not None else [],
         quality_warnings=["Interpretations remain unreviewed; question coverage is model reported."] if compiled else

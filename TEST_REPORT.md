@@ -2,6 +2,102 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Memory journal, scoped lifecycle and attributed feedback (2026-11-21)
+
+The current cold-start implementation now has a full canonical MemoryEvent journal,
+transactional projections, sequence/hash/head validation, deterministic rebuild and
+projection digest. It adds four independent scope controls, explicit conditioned
+replacement/revocation/quarantine/expiry, frozen request routing explanations,
+receipt-derived exposures/outcomes, explicit attributed feedback and bounded
+prediction reviews. Core still owns task settlement, execution, permissions,
+evidence, completion and physical admission. No second runtime, legacy migration,
+worktree copy, extra production model call, cast or checker exclusion was added.
+
+See [implementation and remaining roadmap gaps](docs/ghost_progress/memory-evolution-20261121.zh-CN.md).
+Automatic same-call extraction, autonomous adaptation, full family promotion,
+delayed regression/repair learning, general World Model consumers and R0
+plasticity mechanisms are **not completed** by this change.
+
+The regression selections below overlap; their counts must not be added:
+
+| Selection / log in repository root | Result |
+| --- | --- |
+| `.tmp-memory-evolution-integration-second.txt`: memory boundary/integrity/attempt gates/lifecycle/feedback/probe, typed production requests, context source, permissions, durable provider receipts and Research restart | 152 passed, 21 subtests |
+| `.tmp-memory-evolution-expanded-first.txt`: AppContext durable store, task entry/kernel/state/provider/trace, Research continuity/publication/authorization/changes and approval recovery/UI | 127 passed, 6 subtests |
+| `.tmp-memory-evolution-events-first.txt`: event identity/transport, headless terminal failure, context epoch/authority and setup | 64 passed, 232 subtests |
+| `.tmp-memory-evolution-delivery-first.txt`: CLI intents/authorization, frontend build/fingerprint/declarations, architecture size-check helper and retired-loop checks | 82 passed |
+| `.tmp-memory-evolution-focused-final.txt`: final lifecycle/feedback/integrity/probe after deletion, retries and scope-display fixes | 64 passed |
+| `.tmp-memory-evolution-frontend-second.txt`: TypeScript, Biome and Vitest | 427 tests passed, 67 files |
+| `.tmp-memory-evolution-architecture-first.txt`: full architecture module | 95 passed, 422 subtests, **3 failed** |
+
+The final focused group covers backwards deletion watermarks, dependent learning
+projection deletion, canonical terminal observation retries, expired proposal
+retries, idempotent reset, selected-parent controls excluding child denials and
+frozen explanations after retrieval is disabled. It also includes normal
+headless execution through the actual API transport with a deterministic HTTP
+fixture, followed by explicit correction and replay. No full pytest was run.
+
+The three architecture failures are pre-existing in this HEAD, separately from
+the previous report's historical two failures:
+
+- File sizes: `durable/model.py` 1076 > 1014, `toolchain/runtime.py` 1314 > 1271,
+  `toolchain/tool_spec.py` 1162 > 1134, and `research/browser_search.py` 1017 > 1000.
+- Runtime allowed imports: cancellation imports process_io/windows_process;
+  mutation_line imports durable.tool_task.
+- Runtime import cycle: cancellation ↔ process_io.
+
+The affected production files, architecture test and size baseline match HEAD
+after newline normalization, recorded in
+`.tmp-memory-evolution-architecture-baseline.txt`. None was edited or allowed by
+relaxing the baseline. Ghost dependency/authority boundary assertions passed.
+
+Final full-repository Ruff passed. Production-tree mypy passed with the probe
+and new tests (**701 source files**); Pyrefly: **0 errors**, 35 existing
+suppressions and 165 warnings; ty passed. The kernel precision gate passed.
+An additional strict audit using `--disallow-any-expr --disallow-any-explicit
+--disallow-any-generics --disallow-any-unimported` reports **zero diagnostics in
+all 31 edited Python files**. It still reports 12,556 diagnostics in 331
+unchanged imported files; this is not represented as a full strict-tree pass.
+Logs: `.tmp-memory-evolution-{ruff,mypy,pyrefly,ty}-final.txt`,
+`.tmp-memory-evolution-any-verified.txt`, `.tmp-memory-evolution-precision-second.txt`.
+The production frontend build, official publication and `--check` passed;
+generated assets are included, with source fingerprint regressions above.
+
+First failures remain available and are not replaced by successful reruns:
+
+- The old expiry fixture tried to create/confirm at its expiry time (1 failed,
+  51 passed). Its setup now occurs on the previous day; production still rejects
+  invalid/expired proposals.
+- `.tmp-memory-evolution-first.txt`: **5 failed / 68 passed**. A new empty-journal
+  initializer used noncanonical JSON key order. Production initialization was
+  corrected; `.tmp-memory-evolution-second.txt`: **73 passed**.
+- The first Pyrefly run had 3 diagnostics (empty-container inference and JSON
+  list invariance). After type fixes it passed. Strict-Any audit initially found
+  115 owned-file diagnostics; typed legacy boundaries and local inference were
+  corrected. Intermediate Ruff import/complexity errors were fixed without
+  suppressions or raising limits.
+
+Real-model evidence is retained outside the repository at
+`D:/codey-local-evidence/memory-continuity-20261121-first` and `...-second`.
+The first harness incorrectly interpreted KoboldCpp's integer idle flag:
+**zero generations sent**, 12 not-run error records. Only the harness was fixed.
+The second trial retained **12 requests / 12 responses** through ordinary
+headless/API execution. The frozen behavioral proxy scored memory **6/6**,
+control **3/6**. The control project-history cell selected knowledge_search and
+hit the one-turn budget: a model action/budget result, not an environment or
+demonstrated deterministic production defect. The original misleading
+`protocol_valid` field meant single-request completion; the tool now calls it
+`completed_single_request`, without rescoring or overwriting evidence.
+
+Each cell records raw wire data, events, answers, usage, source/scorer hashes and
+configuration. Manual review confirms Spanish preference delivery, recalled
+SQLite rationale, corrected Rust preference and current Python instruction
+override. Memory adds about 227–423 prompt tokens in this pilot. These are six
+synthetic pairs with manually seeded preferences, not statistical generalization,
+automatic extraction or plasticity evidence. Post-trial type/lifecycle fixes do
+not change the retained trial's frozen source identity. No rerun was used to hide
+negative results, and no production contract was changed for model errors.
+
 
 ## Memory integrity fixes (2026-11-19)
 

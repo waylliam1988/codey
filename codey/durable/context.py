@@ -30,7 +30,7 @@ def build_context(
     if token_budget <= 0:
         raise ValueError("token_budget must be positive")
     # Memory management is audit data, never model history or context edits.
-    entries = tuple(entry for entry in entries if entry.kind not in {"memory_proposal", "memory_decision"})
+    entries = tuple(entry for entry in entries if not entry.kind.startswith("memory_"))
     selected: list[EntryDraft] = []
     latest_compaction = max(
         (index for index, entry in enumerate(entries) if entry.kind == "compaction"),

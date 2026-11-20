@@ -8,9 +8,10 @@ execution and observation dependencies remain explicit at each call site.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from codey.memory.contracts import MemoryTrace
 from codey.operations.kernel_contracts import (
     KernelExecutionDeps,
     KernelObservationDeps,
@@ -19,6 +20,7 @@ from codey.operations.kernel_contracts import (
 )
 from codey.operations.provider_session import adapt_provider
 from codey.providers.attempt_gate import AttemptGateCallback
+from codey.utils.refs import digest_text
 from codey.workspace.context_admission import ContextCandidate
 from codey.workspace.context_selection import ContextSpan, replace_context_text, select_context_sources
 
@@ -42,6 +44,7 @@ class KernelRunRequestBuilder:
     context_scope: str = "request"
     memory_sources: tuple[ContextCandidate, ...] = ()
     memory_spans: tuple[ContextSpan, ...] = ()
+    memory_traces: tuple[MemoryTrace, ...] = ()
     admit_hints: bool = True
     attempt_gate: AttemptGateCallback | None = None
     attempt_admit_hints: Callable[[], bool] | None = None
@@ -60,9 +63,14 @@ class KernelRunRequestBuilder:
         selected = (select_context_sources(self.memory_sources)
                     if all(source.key in registered for source in self.memory_sources) else self.memory_sources)
 
-        if (selected and self.attempt_validate_memory_sources is not None
-                and not self.attempt_validate_memory_sources(self.memory_sources)):
+        stale = (bool(selected) and self.attempt_validate_memory_sources is not None
+                 and not self.attempt_validate_memory_sources(self.memory_sources))
+        if stale:
             selected = ()
+        selected_keys = {source.key for source in selected}
+        traces = tuple(replace(trace, reason="source_snapshot_changed" if stale else "combined_over_budget")
+                       if trace.reason == "selected" and "memory_" + digest_text(trace.item_id) not in selected_keys
+                       else trace for trace in self.memory_traces)
 
         def validate_selected(actual: tuple[ContextCandidate, ...]) -> bool:
             return (actual == selected and (not actual or self.attempt_validate_memory_sources is None
@@ -79,6 +87,7 @@ class KernelRunRequestBuilder:
                 context_text=replace_context_text(self.context_text, self.memory_sources, selected, spans=self.memory_spans),
                 context_scope=self.context_scope,
                 memory_sources=selected,
+                memory_traces=traces,
                 admit_hints=self.admit_hints,
                 attempt_gate=self.attempt_gate,
                 attempt_admit_hints=self.attempt_admit_hints,

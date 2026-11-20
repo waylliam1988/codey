@@ -225,12 +225,13 @@ def test_experience_window_does_not_forget_confirmed_memory(tmp_path: Path, kind
 
 def test_confirmed_window_still_checks_expiry_and_scope(tmp_path: Path) -> None:
     store = backend(tmp_path)
+    created = "2026-11-18T00:00:00+00:00"
     for identity, expires_at, scope in (("expired", NOW, SCOPE), ("valid", "", SCOPE),
                                        ("foreign", "", "project:other")):
-        store.observe(replace(event(identity), kind="memory.proposed", run_id="", scope=scope,
+        store.observe(replace(event(identity), kind="memory.proposed", run_id="", scope=scope, occurred_at=created,
                               payload={"kind": "preference", "text": "Python", "expires_at": expires_at}))
         proposal = next(row for row in store.proposals(scope) if row.proposal_id == identity)
-        store.decide(MemoryDecision(proposal.proposal_id, proposal.version, True, "decision:s:d", NOW))
+        store.decide(MemoryDecision(proposal.proposal_id, proposal.version, True, "decision:s:" + identity, created))
     assert [item.item_id for item in store.retrieve(MemoryQuery("Python", (SCOPE,), NOW)).items] == ["valid"]
     store.maintain(as_of=NOW)
     assert [item.item_id for item in store.retrieve(MemoryQuery("Python", (SCOPE,), NOW)).items] == ["valid"]

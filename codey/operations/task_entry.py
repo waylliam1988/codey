@@ -15,7 +15,7 @@ from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
 from threading import Event
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from codey.agents.handoff import ConversationContext
 from codey.agents.tools import AgentToolFns
@@ -63,6 +63,11 @@ class ProjectMode(Protocol):
 class PlanningMode(Protocol):
     def __call__(self, frame: RunFrame, work: RunWork, /, *,
                  config_result: ProjectConfigLoadResult | None = None) -> ModeOutcome: ...
+
+
+@runtime_checkable
+class _ResearchChangeRecorder(Protocol):
+    def record_research_changes(self, run_id: str, changes: object, session_id: str = "") -> None: ...
 
 
 _TASK_KINDS = frozenset({"project", "research", "hybrid", "planning", "planning_readonly", "readonly"})
@@ -162,7 +167,9 @@ def _entry_policy_with_recovery(frame: RunFrame, durable: DurableSession | None,
         return incoming
     recovered = durable is not None and bool(durable.task(frame.run_id).state.get("task_policy"))
     if not recovered:
-        if (getattr(frame, "recovered_tool_outcomes", ()) or getattr(frame, "settled_tool_outcomes", ())):
+        recovered_outcomes: object = getattr(frame, "recovered_tool_outcomes", ())
+        settled_outcomes: object = getattr(frame, "settled_tool_outcomes", ())
+        if recovered_outcomes or settled_outcomes:
             raise RuntimeError("durable task policy recovery requires the original authorization")
         return incoming
     # A resumed run must use the policy recorded at its original entry. Never
@@ -266,13 +273,16 @@ def _entry_project_receipt(frame: RunFrame, work: RunWork, hooks: RunHooks, deps
     if not isinstance(changes, dict) or changes.get("ok") is not True:
         raise RuntimeError("project change collection failed; cannot publish its receipt")
     checks_passed = session_checks_passed(session, result.proof)
-    receipt = build_task_receipt(changes, proof=result.proof, checks_passed=checks_passed).to_dict()
+    receipt: dict[str, object] = build_task_receipt(changes, proof=result.proof, checks_passed=checks_passed).to_dict()
     if work.ledger is not None:
         hooks.append_ledger(lambda ledger: ledger.append_changes_collected(
             changes, checks_passed=checks_passed, receipt=receipt))
-    files = changes.get("files", [])
+    value = changes.get("files", [])
+    files: list[object] = []
+    if isinstance(value, list):
+        files = value
     payload: dict[str, object] = {"changed_count": changes.get("changed_count", 0),
-               "files": files[:3] if isinstance(files, list) else [], "mode": changes.get("mode"),
+               "files": files[:3], "mode": changes.get("mode"),
                "project": frame.project_text}
     return receipt, payload
 
@@ -430,6 +440,7 @@ def _run_entry_kernel(  # noqa: PLR0915
                     context_scope=request_scope(request.project, request.session_id),
                     memory_sources=memory.sources,
                     memory_spans=memory.spans,
+                    memory_traces=memory.traces,
                     attempt_validate_memory_sources=lambda actual: actual == memory.sources and memory.valid(deps.state.memory),
                     window_ref=provider_window_ref(active_provider),
                     task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
@@ -534,10 +545,11 @@ def _run_entry_kernel(  # noqa: PLR0915
         from codey.providers.catalog import PROVIDER_LABELS
         from codey.providers.diagnostics import capture_provider_failure
 
-        event["provider_failure"] = capture_provider_failure(
+        failure_payload: dict[str, object] = capture_provider_failure(
             model=PROVIDER_LABELS.get(frame.provider_id, frame.provider_id), action="task", page=None,
             error=RuntimeError(summary),
         ).to_dict()
+        event["provider_failure"] = failure_payload
     if changes is not None:
         count = changes["changed_count"]
         event["changed"] = isinstance(count, int) and count > 0
@@ -564,9 +576,8 @@ def run_task_mode(
         tools = frame.entry_research_tools
         enriched = _enrich_hybrid_outcome(frame, work, outcome, session=session, research_tools=tools)
         changes = tools.changes if tools is not None else None
-        recorder = getattr(getattr(deps, "state", None), "record_research_changes", None)
-        if isinstance(changes, KnowledgeChanges) and changes.has_changes() and callable(recorder):
-            recorder(getattr(frame, "run_id", ""), changes, getattr(frame.request, "session_id", ""))
+        if isinstance(changes, KnowledgeChanges) and changes.has_changes() and isinstance(deps.state, _ResearchChangeRecorder):
+            deps.state.record_research_changes(frame.run_id, changes, frame.request.session_id)
         return enriched
     if kind == "project" and run_project is not None:
         return run_project(frame, work, hooks, config_result=config_result)
@@ -691,7 +702,8 @@ def _admit_api_selection(state: TaskState, request: TaskSubmission) -> TaskSubmi
     else:
         return request
     state.run_registry.bind_api_selection(request.run_id, selection)
-    return replace(request, model_selection=selection.to_payload())
+    selection_payload: dict[str, object] = selection.to_payload()
+    return replace(request, model_selection=selection_payload)
 
 
 __all__ = [

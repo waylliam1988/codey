@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NotRequired, Protocol, TypedDict
 
+from codey.memory.contracts import MemoryTrace
 from codey.operations.generation_boundary import GenerationBoundaryRequest, GenerationBoundaryResult
 from codey.providers.attempt_gate import AttemptGateCallback
 from codey.providers.transport import ProviderTransport
@@ -156,6 +157,7 @@ class KernelTransportDeps:
     # execution workspace. Unscoped standalone requests use "request".
     context_scope: str = "request"
     memory_sources: tuple[ContextCandidate, ...] = ()
+    memory_traces: tuple[MemoryTrace, ...] = ()
     admit_hints: bool = True
     attempt_gate: AttemptGateCallback | None = None
     attempt_admit_hints: Callable[[], bool] | None = None

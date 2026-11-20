@@ -73,16 +73,20 @@ class _RestorableChanges(Protocol):
     def restore_result(self) -> RestoreResult: ...
 
 
+@runtime_checkable
+class _Closable(Protocol):
+    def close(self) -> object: ...
+
+
 REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80
 SSE_REPLAY_LIMIT = 512
 def _close_if_discarded(store: object) -> None:
     """Best-effort close for a double-checked loser (e.g. KnowledgeStore index)."""
-    close = getattr(store, "close", None)
-    if not callable(close):
+    if not isinstance(store, _Closable):
         return
     with contextlib.suppress(Exception):
-        close()
+        store.close()
 MAX_CONVERSATION_STATES = 32
 MAX_CHANGE_TRACKERS = 32
 logger = logging.getLogger(__name__)
@@ -203,6 +207,11 @@ class AppContext:
 
         self.shell_approval_workflow = ShellApprovalWorkflow(self)
         self.durable_scheduler = self._durable_services.scheduler
+
+        def cancel_teach() -> object:
+            result: object = self.approvals.cancel_teach()
+            return result
+
         self.task_lifecycle = TaskLifecycleCoordinator(
             durable=self.durable,
             run_registry=self.run_registry,
@@ -216,7 +225,7 @@ class AppContext:
             flush_deferred_events=lambda: self._flush_deferred_durable_events(),
             pause_input=lambda session_id: self.input_queue.pause(session_id),
             is_closing=lambda: self._close_requested,
-            cancel_teach=self.approvals.cancel_teach,
+            cancel_teach=cancel_teach,
             invalidate_approval_generation=self.approvals.invalidate_generation,
         )
         self.memory = build_memory(self.state_home, self.durable, enabled=memory_enabled)
@@ -398,11 +407,12 @@ class AppContext:
 
     def load_ui_state(self) -> dict[str, object]:
         with self.ui_state_store_lock:
-            return self.ui_state_store.load()
+            loaded: dict[str, object] = self.ui_state_store.load()
+            return loaded
 
     def save_ui_state(self, state: object, *, base_revision: int) -> dict[str, object]:
         with self.ui_state_store_lock:
-            saved = self.ui_state_store.save(state, base_revision=base_revision)
+            saved: dict[str, object] = self.ui_state_store.save(state, base_revision=base_revision)
         return saved
 
     def change_tracker_for(
@@ -497,7 +507,7 @@ class AppContext:
     def finish_run(self, run_id: str, event: dict[str, object]) -> bool:
         finished = self.task_lifecycle.finish_run(run_id, decode_json_object(encode_transport_value(event)))
         if finished:
-            observe_terminal(self.memory, self.durable, run_id)
+            observe_terminal(self.memory, self.durable, run_id, self.managed_outputs)
         return finished
 
     def record_shell_result(self, event: Mapping[str, object]) -> None:
@@ -584,7 +594,8 @@ class AppContext:
 
     def pop_pending_teach(self, teach_id: str) -> dict[str, object] | None:
         with self.lock:
-            return self.approvals.pop_teach(teach_id)
+            pending: dict[str, object] | None = self.approvals.pop_teach(teach_id)
+            return pending
 
     def resume_pending_teach(self, teach_id: str) -> bool:
         with self.lock:
@@ -596,7 +607,8 @@ class AppContext:
 
     def pending_teach_requests(self) -> dict[str, dict[str, object]]:
         with self.lock:
-            return self.approvals.teach_snapshot()
+            pending: dict[str, dict[str, object]] = self.approvals.teach_snapshot()
+            return pending
 
     def record_research_changes(
         self, run_id: str, changes: object, session_id: str = ""
@@ -654,13 +666,14 @@ class AppContext:
     def emit(self, event: Mapping[str, object]) -> None:
         from codey.app.task_lifecycle_projection import version_task_event
         event = version_task_event(self.durable, decode_json_object(encode_transport_value(event)))
+        event_payload: dict[str, object] = dict(event)
         with self.lock:
-            payload = event_bus.stamp_run_scope(
-                dict(event),
+            payload: dict[str, object] = event_bus.stamp_run_scope(
+                event_payload,
                 self.run_registry.current(),
             )
         payload = self._event_with_run_fields(payload)
-        prepared = self.conversation_runtime.prepare(self, payload)
+        prepared: dict[str, object] | None = self.conversation_runtime.prepare(self, payload)
         if prepared is None:
             return
         payload = prepared
@@ -686,8 +699,9 @@ class AppContext:
         Output observation is auxiliary: it must reach SSE clients but must
         not look like a settled shell result to lifecycle hooks or stores.
         """
+        event_payload: dict[str, object] = dict(event)
         with self.lock:
-            payload = event_bus.stamp_run_scope(dict(event), self.run_registry.current())
+            payload: dict[str, object] = event_bus.stamp_run_scope(event_payload, self.run_registry.current())
         payload = self._event_with_run_fields(payload)
         payload["schema_version"] = SCHEMA_VERSION
         self.event_bus.emit(payload)
@@ -736,10 +750,11 @@ class AppContext:
         *,
         max_event_id: int | None = None,
     ) -> list[tuple[int, dict[str, object]]]:
-        return self.event_bus.replay_events_after(
+        replayed: list[tuple[int, dict[str, object]]] = self.event_bus.replay_events_after(
             last_event_id,
             max_event_id=max_event_id,
         )
+        return replayed
 
     def get_provider(self, provider_id: str) -> ChatProvider:
         """Thin seam for tests: connect via the single provider entry point."""
@@ -786,8 +801,8 @@ class AppContext:
 
     def _wait_background_workers(self) -> bool:
         try:
-            forks = getattr(self, 'fork_workspaces', None)
-            if forks is not None and not forks.close():
+            forks: object = getattr(self, 'fork_workspaces', None)
+            if forks is not None and (not isinstance(forks, _Closable) or not forks.close()):
                 return False
             return self.shell_approval_workflow.close()
         except Exception:

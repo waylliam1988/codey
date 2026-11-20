@@ -7,10 +7,12 @@ from pathlib import Path
 
 from codey.durable.model import EntryDraft
 from codey.durable.session import DurableSession
+from codey.memory.codec import unique_scopes
 from codey.memory.contracts import MemoryCapabilities, MemoryEvent, MemoryHost
 from codey.memory.null import null_capabilities
 from codey.memory.service import MemoryService, utc_now
 from codey.runtime.core.cancellation import DeadlineExceeded, TaskCancelled, check
+from codey.storage.managed_outputs import ManagedOutputStore
 from codey.workspace.context_admission import request_scope
 
 
@@ -45,6 +47,11 @@ def source_available(durable: DurableSession, ref: str) -> bool:
         return bool(separator and durable.has_conversation(session_id)
                     and any(entry.entry_id == entry_id and entry.kind == expected
                             for entry in durable.context(session_id)))
+    if prefix == "management":
+        session_id, separator, entry_id = identity.rpartition(":")
+        return bool(separator and durable.has_conversation(session_id)
+                    and any(entry.entry_id == entry_id and entry.kind == "memory_management"
+                            for entry in durable.context(session_id)))
     return False
 
 
@@ -58,11 +65,12 @@ def build_memory(state_home: Path | None, durable: DurableSession, *, enabled: b
                 raise
         else:
             backend = GhostMemory(MemoryHost(state_home / "memory" / "ghost", utc_now, check))
-            capabilities = MemoryCapabilities(backend, backend, backend, backend, backend)
+            capabilities = MemoryCapabilities(backend, backend, backend, backend, backend, backend, backend, backend)
     return MemoryService(capabilities, source_available=lambda ref: source_available(durable, ref))
 
 
-def observe_terminal(memory: MemoryService, durable: DurableSession, run_id: str) -> None:
+def observe_terminal(memory: MemoryService, durable: DurableSession, run_id: str,
+                     outputs: ManagedOutputStore | None = None) -> None:
     try:
         task = durable.task(run_id)
     except KeyError:
@@ -87,16 +95,31 @@ def observe_terminal(memory: MemoryService, durable: DurableSession, run_id: str
     if assistant is not None and isinstance(answer, str):
         provenance += (_message_source(assistant, answer),)
     try:
+        from codey.app.memory_observation import terminal_memory_facts
+
+        terminal_sequence = (assistant.commit_seq if assistant is not None else
+            next(point.commit_seq for point in durable.task_timeline(run_id)
+                 if point.task.phase in {"completed", "failed", "cancelled"}))
         memory.observe(MemoryEvent(
-            event_id=f"task:{run_id}:{task.revision}",
+            event_id=f"task:{run_id}:{answer_id or task.phase}",
             kind="task.completed" if task.phase == "completed" else "task.failed",
-            occurred_at=memory.clock(), session_id=task.conversation_id, project=project,
+            occurred_at=durable.commit_record(terminal_sequence).committed_at,
+            session_id=task.conversation_id, project=project,
             run_id=run_id, scope=request_scope(project, task.conversation_id),
             payload={"user_text": user_text if isinstance(user_text, str) else "",
-                     "assistant_text": answer if isinstance(answer, str) else ""},
+                     "assistant_text": answer if isinstance(answer, str) else "",
+                     **terminal_memory_facts(durable, outputs, run_id)},
             provenance=provenance,
+            control_scopes=unique_scopes(("user", request_scope(project, task.conversation_id),
+                                           request_scope("", task.conversation_id))),
         ))
     except (TaskCancelled, DeadlineExceeded):
         # The task is already settled. Cancelling an optional projection must
         # not reopen settlement or escape through its terminal notification.
         return
+    except Exception:
+        # Receipt inspection is an optional projection after terminal commit.
+        # Missing or invalid receipts cannot be relabeled as successful learning.
+        import logging
+
+        logging.getLogger(__name__).exception("terminal memory facts are unavailable")

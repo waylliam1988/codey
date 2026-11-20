@@ -17,6 +17,7 @@ from codey.durable.model import (
     ApprovalRecord,
     ApprovalStatus,
     ArtifactRecord,
+    CommitRecord,
     CommitResult,
     DurableMutation,
     EffectRecord,
@@ -261,6 +262,9 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
 
     def task_timeline(self, task_id: str) -> tuple[TaskTransition, ...]:
         return self.task_queries.task_timeline(task_id)
+
+    def commit_record(self, sequence: int) -> CommitRecord:
+        return self.task_queries.commit_record(sequence)
 
     def task_at(self, task_id: str, commit_seq: int) -> TaskSnapshot:
         return self.task_queries.task_at(task_id, commit_seq)
