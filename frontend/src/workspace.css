@@ -69,8 +69,13 @@ body:has(.workspace .document-pane:not([hidden])) {
   display: flex;
   flex: 1;
   overflow-x: auto;
+  overflow-y: hidden;
   gap: 4px;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+.workspace-tabs::-webkit-scrollbar,
+.workspace-document-tabs::-webkit-scrollbar {
+  display: none;
 }
 .workspace-tab,
 .workspace-document-tabs .document-tab {
@@ -114,6 +119,8 @@ body:has(.workspace .document-pane:not([hidden])) {
   flex: none;
   padding: 0;
   border: 0;
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
 .workspace-menu {
   position: absolute;
