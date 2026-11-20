@@ -334,6 +334,12 @@ class KernelContext:
                 from codey.operations.research_continuation import restore_note_proposals
                 restore_note_proposals(self.execution.research_tools, result.canonical)
             self.session.commit_projection(staged)
+        # The outer review/receipt reads this rebuildable projection too.
+        # Owned child results have no second parent tool event; project the
+        # same formal verification observations used by the completion gate.
+        from codey.operations.project_completion_checks import _evidence_with_session_facts
+
+        _evidence_with_session_facts(self.completion_context.execution_evidence, self.session)
         tools = self.execution.research_tools
         if tools is not None:
             from codey.operations.research_continuation import ResearchContinuation

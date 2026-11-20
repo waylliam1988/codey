@@ -15,7 +15,15 @@ import json
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
+from threading import Event
 from unittest import mock
+
+from codey.agents.request import AgentRequest
+from codey.providers.diagnostics import ProviderFailure
+from codey.runtime.core.run_result import RunResult
+from codey.runtime.observe.events import RunEvent
+from codey.types.json_value import JsonObject, decode_json_object, require_json_string
+from codey.workspace.changes import ChangeTracker
 
 COMMAND = "python -m unittest discover"
 TASK = (
@@ -95,23 +103,30 @@ def replay(
     project_changes_required: bool = False,
     mutate_after_check: bool = False,
     cancel_after_initial: bool = False,
-) -> dict[str, object]:
-    from codey.app import server
+) -> JsonObject:
+    from codey.app.context import AppContext
     from codey.operations import project_adapter
     from codey.operations.task_entry import run_task_submission
+    from codey.operations.task_run import TaskRunDeps
+    from codey.providers.diagnostics import capture_provider_failure
     from codey.task.model import TaskSubmission
-    from tests.test_project_completion_flow_enforcement import _runner
 
     project = run_dir / "project"
     state_dir = run_dir / "state"
     project.mkdir(parents=True, exist_ok=True)
     (project / "app.py").write_text(APP, encoding="utf-8")
+    counter = run_dir / "verification-executions.txt"
+    counted_tests = (TESTS if verification_passes else FAILING_TESTS) + (
+        "\nfrom pathlib import Path\n"
+        f"counter = Path({str(counter)!r})\n"
+        "counter.write_text(str(int(counter.read_text()) + 1) if counter.exists() else '1')\n"
+    )
     (project / "test_app.py").write_text(
-        TESTS if verification_passes else FAILING_TESTS,
+        counted_tests,
         encoding="utf-8",
     )
     baseline = _snapshot(project)
-    state = server.AppContext(state_dir)
+    state = AppContext(state_dir)
     command = verification_command or COMMAND
 
     def on_call(number: int) -> None:
@@ -129,15 +144,15 @@ def replay(
         on_call=on_call,
     )
     task_text = TASK.replace(COMMAND, command)
-    events: list[dict[str, object]] = []
+    events: list[JsonObject] = []
     calls: list[str] = []
     profiles: list[str] = []
     task_kinds: list[str] = []
     conversation_modes: list[str] = []
 
-    def observe(event, downstream, stop_flag):
-        call = getattr(event, "call", None)
-        outcome = getattr(event, "outcome", None)
+    def observe(event: RunEvent, downstream: Callable[[RunEvent], None], stop_flag: Event | None) -> None:
+        call = event.call
+        outcome = event.outcome
         if call is not None and outcome is not None:
             events.append({
                 "tool": call.name,
@@ -146,17 +161,19 @@ def replay(
                 "exit_code": outcome.exit_code,
                 "error_code": outcome.error_code,
                 "model_text": outcome.model_text,
-                "execution_disposition": (getattr(outcome, "audit", None) or {}).get(
+                "execution_disposition": str(outcome.audit.get(
                     "execution_disposition", ""
-                ),
-                "audit": getattr(outcome, "audit", None),
+                )),
+                "audit": decode_json_object(outcome.audit),
             })
         downstream(event)
 
-    def writer(request):
+    def writer(request: AgentRequest) -> RunResult:
+        from codey.operations.task_session import TaskSession
+
         calls.append(request.task)
         profiles.append(request.permission_profile)
-        task_kinds.append(str(getattr(request.task_session, "task_kind", "")))
+        task_kinds.append(request.task_session.task_kind if isinstance(request.task_session, TaskSession) else "")
         wrapped = replace(
             request,
             provider=provider,
@@ -164,11 +181,11 @@ def replay(
             on_event=lambda event: observe(event, request.on_event, request.stop_flag),
         )
         result = project_adapter.run(wrapped)
-        conversation_modes.append(str(getattr(request.conversation.snapshot, "mode", "")))
+        conversation_modes.append(request.conversation.snapshot.mode if request.conversation is not None else "")
         return result
 
-    def collect_changes(*_args: object, **_kwargs: object) -> dict[str, object]:
-        current = _snapshot(project)
+    def collect_changes(project: str | Path, tracker: ChangeTracker | None) -> dict[str, object]:
+        current = _snapshot(Path(project))
         changed = sorted(
             path for path in set(baseline) | set(current)
             if baseline.get(path) != current.get(path)
@@ -181,11 +198,18 @@ def replay(
             "mode": "git",
         }
 
-    runner = _runner(state, writer)
-    runner = replace(
-        runner,
+    def capture_failure(*, model: str, action: str, page: object, error: BaseException) -> ProviderFailure:
+        return capture_provider_failure(model=model, action=action, page=page, error=error)
+
+    def review(**kwargs: object) -> None:
+        return None
+
+    runner = TaskRunDeps.from_submission_stores(
+        state=state, stores=state.task_submission_stores, agent_run=writer,
         collect_changes=collect_changes,
-        run_review=mock.Mock(return_value=None),
+        run_review=review,
+        capture_provider_failure=capture_failure,
+        is_git_repository=lambda root: True,
     )
     with mock.patch.object(state, "get_provider", return_value=provider):
         run_task_submission(
@@ -203,15 +227,16 @@ def replay(
         )
 
     terminal = state.run_registry.last_terminal_event()
+    assert terminal is not None
     operation = (
-        state.runtime_operations.load("readonly-stagnation", terminal["run_id"])
-        if isinstance(terminal, dict) and state.runtime_operations is not None
+        state.runtime_operations.load("readonly-stagnation", require_json_string(terminal["run_id"], "run_id"))
+        if state.runtime_operations is not None
         else None
     )
     operation_payload = operation.to_payload() if operation is not None else None
-    receipt = terminal.get("receipt") if isinstance(terminal, dict) else None
-    verification = receipt.get("verification") if isinstance(receipt, dict) else None
-    report = {
+    receipt = decode_json_object(terminal["receipt"])
+    verification = decode_json_object(receipt["verification"])
+    report: dict[str, object] = {
         "task": task_text,
         "submit_on_recovery": submit_on_recovery,
         "terminal": terminal,
@@ -221,7 +246,7 @@ def replay(
         "task_kinds": task_kinds,
         "conversation_modes": conversation_modes,
         "recovery_prompt_seen": any(READONLY_FOLLOWUP_MARKER in request for request in provider.requests[5:]),
-        "events": events,
+        "events": list(events),
         "successful_verification_runs": sum(
             event["tool"] == "run" and event["ok"] is True and event["exit_code"] == 0
             for event in events
@@ -231,13 +256,7 @@ def replay(
             and event.get("execution_disposition") != "denied_before_execution"
             for event in events
         ),
-        "physical_verification_executions": sum(
-            event["tool"] == "run"
-            and isinstance(event.get("audit"), dict)
-            and isinstance(event["audit"].get("command_started_at"), str)
-            and isinstance(event["audit"].get("command_finished_at"), str)
-            for event in events
-        ),
+        "physical_verification_executions": int(counter.read_text()) if counter.exists() else 0,
         "denied_verification_requests": sum(
             event["tool"] == "run"
             and event.get("execution_disposition") == "denied_before_execution"
@@ -247,37 +266,43 @@ def replay(
             event["exit_code"] for event in events
             if event["tool"] == "run" and event.get("execution_disposition") != "denied_before_execution"
         ],
-        "final_files": _snapshot(project),
+        "final_files": dict(_snapshot(project)),
         "files_unchanged": _snapshot(project) == baseline,
         "recovery_attempted": bool(
             operation_payload.get("candidate_validation_attempted")
         ) if isinstance(operation_payload, dict) else None,
-        "operation": operation_payload,
+        "operation": decode_json_object(operation_payload) if operation_payload is not None else None,
         "proof": (
             operation_payload.get("completion_proof_status")
             if isinstance(operation_payload, dict) else None
         ),
         "proof_refs": verification.get("proof_refs", []) if isinstance(verification, dict) else [],
     }
-    return report
+    state.close()
+    return decode_json_object(report)
+
+
+class ReplayArguments(argparse.Namespace):
+    run_dir: Path
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path, required=True)
-    args = parser.parse_args()
+    args = parser.parse_args(namespace=ReplayArguments())
     run_dir = args.run_dir.resolve()
     run_dir.mkdir(parents=True, exist_ok=False)
     report = replay(run_dir)
+    terminal = decode_json_object(report["terminal"])
     (run_dir / "result.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps({
-        "stop_reason": (report.get("terminal") or {}).get("stop_reason"),
+    summary: JsonObject = {
+        "stop_reason": terminal.get("stop_reason"),
         "provider_calls": report["provider_calls"],
         "successful_verification_runs": report["successful_verification_runs"],
         "files_unchanged": report["files_unchanged"],
         "artifact": str(run_dir / "result.json"),
-    }, ensure_ascii=False), flush=True)
-    terminal = report.get("terminal") or {}
+    }
+    print(json.dumps(summary, ensure_ascii=False), flush=True)
     return 0 if (
         report["successful_verification_runs"] == 1
         and report["files_unchanged"] is True

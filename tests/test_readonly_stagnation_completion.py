@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 from pathlib import Path
-from threading import Event
-from types import SimpleNamespace
+from typing import TypedDict
 
 import pytest
 
+from codey.agents.request import AgentRequest
+from codey.types.json_value import decode_json_object
 from tests.manual.readonly_stagnation_replay import replay
+
+
+class ReplayOptions(TypedDict, total=False):
+    verification_passes: bool
+    verification_command: str
+    max_turns: int
+    project_changes_required: bool
+    mutate_after_check: bool
+    cancel_after_initial: bool
 
 
 def test_readonly_completion_from_repair_settled_preserves_phase_and_budget(
@@ -48,48 +58,88 @@ def test_readonly_completion_from_repair_settled_preserves_phase_and_budget(
         "s1", "run-1", provider_id="deepseek", turns_used=7, stop_reason="no_progress",
     )
     assert operation is not None and operation.leaf == LEAF_REPAIR_SETTLED
-    evidence = SimpleNamespace(
-        has_successful_checks=True,
-        successful_checks=(CheckEvidence(check.command, check.cwd, exit_code=0),),
+    from codey.agents.writer_failover import CheckpointView, WriterFailoverRunner
+    from codey.app.context import AppContext
+    from codey.operations.context import RunHooks, RunWork
+    from codey.operations.project_completion_context import (
+        AgentAccess,
+        ProjectCompletionDeps,
+        ProjectRun,
+        ReviewAccess,
+        RuntimeAccess,
+        VerificationAccess,
     )
-    ctx = SimpleNamespace(
+    from codey.policies.task_policy import TaskPolicy
+    from codey.providers.diagnostics import ProviderFailure, capture_provider_failure
+    from codey.runtime.observe.execution_evidence import ExecutionEvidence
+    from codey.task.model import TaskSubmission
+    from tests.manual.readonly_stagnation_replay import RepeatingReadProvider
+    from tests.support.task_entry_helpers import entry_frame
+
+    state = AppContext(tmp_path / "state", start_scheduler=False, memory_enabled=False)
+    provider = RepeatingReadProvider()
+    current = state.workspace_revisions.current_state(project)
+    evidence = ExecutionEvidence(workspace_revision=current.revision, workspace_fingerprint=current.fingerprint)
+    evidence.observe_check(CheckEvidence(check.command, check.cwd, exit_code=0,
+        workspace_revision=current.revision, workspace_fingerprint=current.fingerprint), succeeded=True)
+    request = TaskSubmission("s1", str(project), "Verify without edits", 12, False, "deepseek", run_id="run-1")
+    frame = entry_frame(request)
+    frame.entry_policy = TaskPolicy(frozenset({"project.read", "project.verify"}))
+
+    def capture_failure(*, model: str, action: str, page: object, error: BaseException) -> ProviderFailure:
+        return capture_provider_failure(model=model, action=action, page=page, error=error)
+
+    def collect_changes(*args: object, **kwargs: object) -> dict[str, object]:
+        return {"ok": True, "changed_count": 0, "files": []}
+
+    def covers(*args: object, **kwargs: object) -> bool:
+        return True
+
+    def submit(*args: object, **kwargs: object) -> RunResult:
+        return RunResult("submitted", stop_reason="done", turns=2)
+
+    def unused_writer(request: AgentRequest) -> RunResult:
+        raise AssertionError("the writer attempt is replaced in this unit test")
+
+    def unused_review(**kwargs: object) -> None:
+        raise AssertionError("the unit test does not request review")
+
+    deps = ProjectCompletionDeps(
+        state=state, agent=AgentAccess(run=unused_writer,
+            capture_provider_failure=capture_failure),
+        verification=VerificationAccess(collect_changes=collect_changes, workspace_revisions=state.workspace_revisions),
+        review=ReviewAccess(run=unused_review), runtime=RuntimeAccess(mutations=mutation_line),
+    )
+    failover = WriterFailoverRunner(
+        provider, "deepseek", 0, set(),
+        attempt=lambda spec, note: RunResult("unused"), select_next=lambda tried: None,
+        connect=lambda selected: provider, close=lambda active: None,
+        needs_canary=lambda selected: False, run_canary=lambda selected, active: True,
+        capture_failure=lambda model, action, error: capture_provider_failure(
+            model=model, action=action, page=None, error=error),
+        record_failure=lambda model, failure: None, record_success=lambda model: None,
+        clear_session=lambda model: None, on_switch=lambda model: None,
+        refresh_checkpoint=lambda: CheckpointView(), stopped=lambda: False,
+    )
+    hooks = RunHooks(lambda event: None, lambda request: None, lambda update: None,
+        lambda model, failure: None, lambda update: None, lambda: (), None)
+    ctx = ProjectRun(deps, frame, RunWork([], evidence, operation=operation), hooks,
+        str(project), state, request=request, failover=failover, verification_candidates=(check,),
         result=RunResult("stalled", stop_reason="no_progress", turns=7),
-        frame=SimpleNamespace(
-            entry_policy=SimpleNamespace(allows=lambda _grant: True),
-            provider_id="deepseek",
-        ),
-        work=SimpleNamespace(operation=operation, evidence=evidence),
-        task_changed=False,
-        task_changes={"ok": True, "changed_count": 0, "files": []},
-        request=SimpleNamespace(max_turns=12, project_changes_required=False, session_id="s1"),
-        state=SimpleNamespace(run_registry=SimpleNamespace(stop_flag=Event())),
-        failover=SimpleNamespace(provider=object()),
-        verification_candidates=(check,),
-        project=project,
-        writer_attempt_index=1,
-        deps=SimpleNamespace(
-            verification=SimpleNamespace(collect_changes=lambda *_a, **_k: {
-                "ok": True, "changed_count": 0, "files": [],
-            }),
-            runtime=SimpleNamespace(mutations=mutation_line),
-        ),
-        tracker=object(),
-        task_session=object(),
-        hooks=SimpleNamespace(append_ledger=lambda _fn: None, update_checkpoint=lambda _fn: None),
-    )
-    monkeypatch.setattr(validation, "check_covers_selected_candidate", lambda *_a, **_k: True)
-    monkeypatch.setattr(
-        validation,
-        "_run_one_writer_attempt",
-        lambda *_a, **_k: RunResult("submitted", stop_reason="done", turns=2),
-    )
+        task_changes=collect_changes(), writer_attempt_index=1)
+    monkeypatch.setattr(validation, "check_covers_selected_candidate", covers)
+    monkeypatch.setattr(validation, "_run_one_writer_attempt", submit)
+    try:
+        validation.submit_readonly_completion_candidate(ctx)
+        settled = ctx.work.operation
+        assert settled is not None
+        assert settled.leaf == LEAF_REPAIR_SETTLED
+        assert settled.turns_used == 9
+        assert settled.candidate_validation_attempted is True
+        assert settled.repair_rounds == 1
+    finally:
+        state.close()
 
-    validation.submit_readonly_completion_candidate(ctx)
-
-    assert ctx.work.operation.leaf == LEAF_REPAIR_SETTLED
-    assert ctx.work.operation.turns_used == 9
-    assert ctx.work.operation.candidate_validation_attempted is True
-    assert ctx.work.operation.repair_rounds == 1
 
 
 def test_fresh_readonly_verification_gets_one_bounded_completion_submission(
@@ -145,7 +195,7 @@ def test_failed_authorized_verification_has_real_failure_and_no_readonly_recover
     assert report["verification_exit_codes"] == [1]
     assert report["recovery_attempted"] is False
     assert report["proof"] in (None, "")
-    assert (report["terminal"] or {}).get("stop_reason") != "done"
+    assert decode_json_object(report["terminal"]).get("stop_reason") != "done"
 
 
 def test_readonly_stagnation_still_stops_when_bounded_submission_is_not_made(
@@ -156,7 +206,8 @@ def test_readonly_stagnation_still_stops_when_bounded_submission_is_not_made(
     assert report["successful_verification_runs"] == 1
     assert report["files_unchanged"] is True
     assert report["recovery_attempted"] is True
-    assert report["provider_calls"] <= 7
+    calls = report["provider_calls"]
+    assert isinstance(calls, int) and calls <= 7
     terminal = report["terminal"]
     assert isinstance(terminal, dict)
     assert terminal["stop_reason"] in {"no_progress", "max_turns"}
@@ -176,10 +227,10 @@ def test_readonly_stagnation_still_stops_when_bounded_submission_is_not_made(
     ],
 )
 def test_readonly_recovery_requires_current_green_unchanged_authorized_work(
-    tmp_path: Path, kwargs: dict[str, object]
+    tmp_path: Path, kwargs: ReplayOptions
 ) -> None:
     report = replay(tmp_path / "boundary", submit_on_recovery=True, **kwargs)
 
     assert report["recovery_attempted"] is False
     assert report["proof"] in (None, "")
-    assert (report["terminal"] or {}).get("stop_reason") != "done"
+    assert decode_json_object(report["terminal"]).get("stop_reason") != "done"

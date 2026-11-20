@@ -5,9 +5,43 @@ import hashlib
 import json
 import shutil
 import tempfile
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
+from threading import Event
+from typing import TypedDict
 from unittest import mock
+
+from codey.agents.request import AgentRequest
+from codey.providers.diagnostics import ProviderFailure
+from codey.runtime.core.run_result import RunResult
+from codey.runtime.observe.events import RunEvent
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
+from codey.workspace.changes import ChangeTracker
+
+
+class ReviewObservation(TypedDict):
+    source: str
+    facts: str
+
+
+class ToolObservation(TypedDict):
+    tool: str
+    command: JsonValue
+    ok: bool
+    exit_code: int | None
+    error_code: str
+    source_sha256: str
+
+
+class ScenarioOutcome(TypedDict):
+    terminal: JsonObject
+    calls: list[AgentRequest]
+    reviews: list[ReviewObservation]
+    events: list[ToolObservation]
+    ledger: list[JsonObject]
+    project: Path
+    proofs: list[JsonObject]
 
 COMMAND = 'python -m unittest discover -v'
 TASK = ('First run the existing failing tests before changing any file. Fix names.py so clean_name '
@@ -21,42 +55,45 @@ VISIBLE = ("import unittest\nfrom names import clean_name\nclass Names(unittest.
 VALIDATE_TASK = 'Validate the stopped candidate using the original authorized check; do not edit files.'
 
 
-def action(name, **args):
+def action(name: str, **args: JsonValue) -> JsonObject:
     return {'tool': name, 'args': args}
 
 
-def edit(old, new):
+def edit(old: str, new: str) -> JsonObject:
     return action('edit', path='names.py', replacements=[{'old_string': old, 'new_string': new}])
 
 
 class ScriptedProvider:
     name = 'offline scripted choices'
+    location = 'scripted:offline'
 
-    def __init__(self, steps):
+    def __init__(self, steps: Sequence[JsonObject]) -> None:
         self.steps = list(steps)
 
-    def new_chat(self, timeout=None):
+    def new_chat(self, timeout: float | None = None) -> None:
         pass
 
-    def close(self):
+    def close(self) -> None:
         pass
 
-    def send(self, text, timeout=None):
+    def send(self, text: str, timeout: float | None = None) -> str:
         # A withheld check must be rejected by the real gate, not by a fixture crash.
         step = self.steps.pop(0) if self.steps else action('done', summary='Candidate ready')
         return json.dumps(step)
 
 
-def scenario(tmp_path, *, kind='stagnant', source=GOOD, fault='', max_turns=20,
-             task=TASK, initial=INITIAL, visible=VISIBLE, repair_stagnates=False, denied_probe=False):
+def scenario(tmp_path: Path, *, kind: str = 'stagnant', source: str = GOOD, fault: str = '', max_turns: int = 20,
+             task: str = TASK, initial: str = INITIAL, visible: str = VISIBLE,
+             repair_stagnates: bool = False, denied_probe: bool = False) -> ScenarioOutcome:
     # Import application stores only after pytest's isolated-home conftest.
-    from codey.app import server
+    from codey.app.context import AppContext
     from codey.operations import project_adapter
     from codey.operations.task_entry import run_task_submission
+    from codey.operations.task_run import TaskRunDeps
+    from codey.providers.diagnostics import capture_provider_failure
     from codey.reviews.core import ReviewResult
     from codey.reviews.identity import ReviewIdentity, capture_snapshot
     from codey.task.model import TaskSubmission
-    from tests.test_project_completion_flow_enforcement import _changes, _runner
 
     project = tmp_path / 'project'
     project.mkdir()
@@ -66,24 +103,27 @@ def scenario(tmp_path, *, kind='stagnant', source=GOOD, fault='', max_turns=20,
         'cc-' + hashlib.sha256(str(tmp_path).encode()).hexdigest()[:12]
     )
     state_home.mkdir(parents=True, exist_ok=False)
-    state = server.AppContext(state_home)
-    calls, reviews, events = [], [], []
+    state = AppContext(state_home)
+    calls: list[AgentRequest] = []
+    reviews: list[ReviewObservation] = []
+    events: list[ToolObservation] = []
 
-    def observe(event, downstream, stop_flag):
-        call = getattr(event, 'call', None)
-        outcome = getattr(event, 'outcome', None)
+    def observe(event: RunEvent, downstream: Callable[[RunEvent], None], stop_flag: Event | None) -> None:
+        call = event.call
+        outcome = event.outcome
         if call is not None and outcome is not None:
             events.append({'tool': call.name, 'command': call.args.get('command'),
                            'ok': outcome.ok, 'exit_code': outcome.exit_code,
                            'error_code': outcome.error_code,
                            'source_sha256': hashlib.sha256((project / 'names.py').read_bytes()).hexdigest()})
-            if fault == 'cancel' and call.name == 'edit' and outcome.changed:
+            if fault == 'cancel' and call.name == 'edit' and outcome.changed and stop_flag is not None:
                 stop_flag.set()
-            if fault == 'cancel_repair' and len(calls) == 2 and call.name == 'edit' and outcome.changed:
+            if (fault == 'cancel_repair' and len(calls) == 2 and call.name == 'edit'
+                    and outcome.changed and stop_flag is not None):
                 stop_flag.set()
         downstream(event)
 
-    def writer(request):
+    def writer(request: AgentRequest) -> RunResult:
         calls.append(request)
         if (request.task == VALIDATE_TASK and fault != 'missing_verification'
                 and (fault in {'runtime_validation', 'missing_tests'} or repair_stagnates or denied_probe)):
@@ -124,9 +164,9 @@ def scenario(tmp_path, *, kind='stagnant', source=GOOD, fault='', max_turns=20,
             return replace(result, stop_reason='done')
         return project_adapter.run(wrapped)
 
-    first_identity = None
+    first_identity: ReviewIdentity | None = None
 
-    def reviewer(**kwargs):
+    def reviewer(**kwargs: object) -> tuple[str, ReviewResult] | None:
         nonlocal first_identity
         snapshot = capture_snapshot(project, ('names.py',))
         identity = ReviewIdentity('scope', 'prompt', 'snapshot', str(project), 'fixture-review', '', 1,
@@ -134,7 +174,7 @@ def scenario(tmp_path, *, kind='stagnant', source=GOOD, fault='', max_turns=20,
                                   snapshot_inventory_digest=snapshot.inventory_digest)
         first_identity = first_identity or identity
         reviews.append({'source': (project / 'names.py').read_text(encoding='utf-8'),
-                        'facts': kwargs['execution_evidence']})
+                        'facts': str(kwargs['execution_evidence'])})
         if len(reviews) == 2 and fault == 'missing_review':
             return None
         if len(reviews) == 2 and fault == 'stale_review':
@@ -143,8 +183,19 @@ def scenario(tmp_path, *, kind='stagnant', source=GOOD, fault='', max_turns=20,
             return 'fixture-review', ReviewResult('changes_requested', 'Not approved', [], identity=identity)
         return 'fixture-review', ReviewResult('approved', 'Scripted approval', [], identity=identity)
 
-    runner = replace(_runner(state, writer),
-                     collect_changes=lambda *a, **k: _changes('names.py'), run_review=reviewer)
+    def collect_changes(project: str | Path, tracker: ChangeTracker | None) -> dict[str, object]:
+        return {
+            'ok': True, 'changed_count': 1, 'files': [{'path': 'names.py', 'status': 'modified'}],
+            'diff': 'diff --git a/names.py b/names.py\n--- a/names.py\n+++ b/names.py\n'
+                    '@@ -1 +1 @@\n-before\n+after\n', 'mode': 'git'}
+
+    def capture_failure(*, model: str, action: str, page: object, error: BaseException) -> ProviderFailure:
+        return capture_provider_failure(model=model, action=action, page=page, error=error)
+
+    runner = TaskRunDeps.from_submission_stores(state=state, stores=state.task_submission_stores,
+        agent_run=writer, collect_changes=collect_changes,
+        run_review=reviewer, capture_provider_failure=capture_failure,
+        is_git_repository=lambda project: True)
     denials = (fault.removeprefix('deny_'),) if fault.startswith('deny_') else ()
     if denied_probe:
         # Arbitrary commands now enter the explicit approval workflow. This
@@ -154,20 +205,25 @@ def scenario(tmp_path, *, kind='stagnant', source=GOOD, fault='', max_turns=20,
     with mock.patch.object(state, 'get_provider', return_value=ScriptedProvider([])):
         run_task_submission(runner, TaskSubmission('s', str(project), task, max_turns, False, 'deepseek',
                                                   intent='project', denied_capabilities=denials))
-    rows = [json.loads(line) for path in (state_home / 'run_ledgers').rglob('*.jsonl')
+    rows = [parse_json_object(line) for path in (state_home / 'run_ledgers').rglob('*.jsonl')
             for line in path.read_text(encoding='utf-8').splitlines()]
     terminal = state.run_registry.last_terminal_event()
-    trace = json.loads(state.run_traces.path_for('s', terminal['run_id']).read_text(encoding='utf-8'))
+    assert terminal is not None
+    assert state.run_traces is not None
+    trace = parse_json_object(state.run_traces.path_for('s', str(terminal['run_id'])).read_text(encoding='utf-8'))
+    proofs = trace['completion_proofs']
+    assert isinstance(proofs, list)
     state.close()
     shutil.rmtree(state_home, ignore_errors=True)
-    return {'terminal': state.run_registry.last_terminal_event(), 'calls': calls, 'reviews': reviews,
-            'events': events, 'ledger': rows, 'project': project, 'proofs': trace['completion_proofs']}
+    return {'terminal': terminal, 'calls': calls, 'reviews': reviews,
+            'events': events, 'ledger': rows, 'project': project, 'proofs': [decode_json_object(proof) for proof in proofs]}
 
 
-def assert_complete(outcome):
+def assert_complete(outcome: ScenarioOutcome) -> None:
     event = outcome['terminal']
     assert event['stop_reason'] == 'done', event.get('summary', event)
-    assert event['receipt']['verification']['checks_passed'] is True
+    receipt = decode_json_object(event['receipt'])
+    assert decode_json_object(receipt['verification'])['checks_passed'] is True
     checks = [ev for ev in outcome['events'] if ev['tool'] == 'run' and ev['exit_code'] is not None]
     assert checks[0]['ok'] is False
     assert checks[-1]['exit_code'] == 0

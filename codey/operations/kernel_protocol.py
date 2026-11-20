@@ -634,8 +634,12 @@ def _lower_text_batches(items: list[tuple[str, ToolArgs, str]]) -> tuple[list[tu
     return expanded, ""
 
 
-def _drop_legacy_done_declarations(args: ToolArgs, *, runtime_owned: bool) -> ToolArgs:
+def _applicable_done_declarations(args: ToolArgs, *, runtime_owned: bool, spec: ToolSpec | None) -> ToolArgs:
     ignored = {"source_gaps", "execution_claims"} if runtime_owned else set()
+    # Ordinary completion still validates execution claims. Source-gap metadata
+    # is inapplicable there; use the captured contract, never the live registry.
+    if spec is not None and "execution_claims" in dict(spec.parameters) and "source_gaps" not in dict(spec.parameters):
+        ignored.add("source_gaps")
     return {key: value for key, value in args.items() if key not in ignored}
 
 
@@ -687,7 +691,8 @@ def _plan_from_tool_objects(
             if not _controller_allows(tool, controller_allowed):
                 return _disallowed_plan(tool, controller=True)
             if tool == "done":
-                args = _drop_legacy_done_declarations(args, runtime_owned=ignore_runtime_claims)
+                args = _applicable_done_declarations(args, runtime_owned=ignore_runtime_claims,
+                    spec=frozen_specs.get(tool) if frozen_specs is not None else None)
             validated, error = _validate_tool_args(tool, args, frozen_specs=frozen_specs)
             if error:
                 return _invalid_plan(error, tool=tool)

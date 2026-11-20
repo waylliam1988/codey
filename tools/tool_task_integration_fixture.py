@@ -91,9 +91,11 @@ def make_server(store: Store) -> ThreadingHTTPServer:
     return ThreadingHTTPServer(('127.0.0.1', 0), Handler)
 ''',
     "test_checkout.py": '''import json
+import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -109,6 +111,40 @@ def test_retry_does_not_debit_twice(tmp_path):
     assert store.place_order('mobile-1', 'coffee', 2) == first
     assert first['total'] == 2500
     assert store.remaining() == 18
+
+
+def test_identical_retry_after_stock_is_exhausted(tmp_path: Path) -> None:
+    store = Store(tmp_path / 'retry.sqlite3')
+    first = store.place_order('last-stock', 'coffee', 20)
+    assert store.place_order('last-stock', 'coffee', 20) == first
+    assert store.remaining() == 0
+
+
+class TrackedConnection(sqlite3.Connection):
+    was_closed: bool = False
+
+    def close(self) -> None:
+        self.was_closed = True
+        super().close()
+
+
+class TrackingStore(Store):
+    def __init__(self, path: Path) -> None:
+        self.opened: list[TrackedConnection] = []
+        super().__init__(path)
+
+    def connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.path, timeout=10, factory=TrackedConnection)
+        connection.row_factory = sqlite3.Row
+        self.opened.append(connection)
+        return connection
+
+
+def test_successful_order_closes_its_connection(tmp_path: Path) -> None:
+    store = TrackingStore(tmp_path / 'connections.sqlite3')
+    assert store.opened and all(connection.was_closed for connection in store.opened)
+    store.place_order('one', 'coffee', 1)
+    assert all(connection.was_closed for connection in store.opened)
 
 
 @pytest.mark.parametrize('quantity', [-1, 0, True])

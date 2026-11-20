@@ -280,12 +280,10 @@ def question_bound_spec(spec: ToolSpec, *, question_refs: tuple[str, ...]) -> To
 def done_spec_for_purpose(spec: ToolSpec, purpose: str, *, task: str = "", questions: tuple[str, ...] = ()) -> ToolSpec:
     """Select one complete done contract before freezing, never patch pieces later."""
     example: ToolArgs
-    if purpose == "ordinary":
-        return spec
-    if purpose == "chat":
-        removed = {"source_gaps", "execution_claims"}
+    if purpose in {"ordinary", "chat"}:
+        removed = {"source_gaps", "execution_claims"} if purpose == "chat" else {"source_gaps"}
         return replace(spec, parameters=tuple((key, value) for key, value in spec.parameters if key not in removed),
-            description=spec.description.replace(EXECUTION_CLAIMS_GUIDANCE, "")
+            description=spec.description.replace(EXECUTION_CLAIMS_GUIDANCE, "" if purpose == "chat" else EXECUTION_CLAIMS_GUIDANCE)
             .replace(SOURCE_GAPS_GUIDANCE, "The runtime checks required source coverage. "))
     if purpose == "evidence":
         schema = object_schema({"summary": {"type": "string"}}, "summary")

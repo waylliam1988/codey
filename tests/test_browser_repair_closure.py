@@ -359,7 +359,7 @@ def test_restore_rejects_obsolete_explanation_contract_even_with_supported_snaps
         frozen_specs=tuple(obsolete if spec.name == "done" else spec for spec in snapshot.frozen_specs)))
     payload = snapshot_description(snapshot)
     payload["implementation_id"] = "previous-build"
-    assert payload["schema_version"] == 9
+    assert payload["schema_version"] == 10
     with pytest.raises(ValueError, match="unsupported captured explanation contract"):
         restore_snapshot(payload)
 
@@ -628,5 +628,5 @@ def test_ordinary_hybrid_rejects_same_program_edit_then_copies_from_receipt_with
     # The source-acquisition boundary rejects the original program before an
     # edit executes. The next frozen input copies the source's numeric type.
     assert len(edits) == 1 and edits[0].ok
-    assert json.loads(str(edits[0].call.args["content"])) == {"amount": 173, "code": "QUARTZ_851"}
+    assert parse_json_object(str(edits[0].call.args["content"])) == {"amount": 173, "code": "QUARTZ_851"}
     assert sum(receipt.result.call.name == "browser_read" for receipt in receipts) == 1

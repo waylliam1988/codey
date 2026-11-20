@@ -29,9 +29,33 @@ _NAMED_PRESERVATION_TARGET = (
     r"(?:(?:the|existing|original)\s+)*(?:tests\b|test suite\b|测试(?:文件|脚本|用例)?|"
     r"[\w/-]+\.(?:py|js|ts|tsx|jsx|json|md|txt)(?![a-z0-9_]))"
 )
+_OTHER_FILES = r"\bother\b.*\bfiles?\b|(?:其他|其它|其余).{0,16}(?:文件|代码|源码|项目)"
+_ALL_FILES = r"\b(?:any|all)\s+(?:(?:project|source|code)\s+)?files?\b|(?:任何|所有|全部).{0,16}(?:文件|代码|源码|项目)"
+
+
+def _named_edit_scope(task: str) -> str:
+    # Recognize an explicit allowance, not an arbitrary inferred task intent.
+    # In that context 'other files' excludes the named editable target.
+    match = re.search(
+        r"(?:^|[;；。！？\n，]|[.!?]\s+)\s*(?:please\s+)?"
+        r"(?:(?:change|modify|edit)\s+only\s+|only\s+(?:change|modify|edit)\s+|"
+        r"(?:只|仅)(?:允许)?(?:修改|改动|编辑)\s*)(?P<target>" + _NAMED_PRESERVATION_TARGET + ")",
+        task,
+    )
+    return re.sub(r"^(?:(?:the|existing|original)\s+)+", "", match.group("target")) if match is not None else ""
+
+
+def _constraint_fragment(text: str, *, preceding: bool = False) -> str:
+    pattern = r"[!?;。！？；\n]|\.(?=\s|$)"
+    boundaries = list(re.finditer(pattern + (r"|[，,]" if preceding else ""), text))
+    if not boundaries:
+        return text
+    return text[boundaries[-1].end():] if preceding else text[:boundaries[0].start()]
+
 
 def _explicit_readonly_task(task: str) -> bool:
     lowered = (task or "").lower()
+    named_edit_scope = _named_edit_scope(lowered)
     for marker in _READONLY_MUST_NOT_CHANGE_MARKERS:
         for match in re.finditer(re.escape(marker.lower()), lowered):
             suffix = lowered[match.end():].lstrip()
@@ -41,9 +65,16 @@ def _explicit_readonly_task(task: str) -> bool:
             preceding = re.search(_NAMED_PRESERVATION_TARGET + r"\s*$", lowered[:match.start()])
             preservation = (marker.endswith((" modify", " change", " edit"))
                             or marker in {"不要修改", "不要改", "不要改动", "不修改", "不改动"})
+            clause = _constraint_fragment(suffix)
+            prefix = _constraint_fragment(lowered[:match.start()], preceding=True)
+            targets = clause + " " + (preceding.group() if preceding is not None else prefix)
+            if (preservation and named_edit_scope and not re.search(_ALL_FILES, clause)
+                    and named_edit_scope not in targets
+                    and re.search(_OTHER_FILES, clause + " " + prefix)):
+                continue
             if preservation and (scoped or preceding):
-                remainder = re.split(r"[.!?;。！？；\n]", suffix[scoped.end():] if scoped else suffix, maxsplit=1)[0]
-                if not re.search(r"\b(?:any|all|other)\b.*\bfiles?\b|(?:任何|所有|全部|其他|其它|其余).{0,16}(?:文件|代码|源码|项目)", remainder):
+                remainder = _constraint_fragment(suffix[scoped.end():] if scoped else suffix)
+                if not re.search(_ALL_FILES + "|" + _OTHER_FILES, remainder):
                     continue
             return True
     return False
