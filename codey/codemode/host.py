@@ -73,6 +73,7 @@ class CodeModeHost:
             or (entry.namespace == "project" and entry.name == "run" and entry.grant == "project.verify")
             or entry.namespace == "browser"
             and entry.grant in {"browser.interact", "browser.effect"}
+            or entry.namespace == "task_control" and entry.grant == "control"
         ) for entry in catalog):
             raise ValueError("CodeMode only permits authorized project actions and browser actions")
         self._allow_writes = bool(allow_writes)

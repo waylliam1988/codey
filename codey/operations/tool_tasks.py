@@ -22,9 +22,11 @@ from codey.operations.kernel_receipts import restore_result_receipt, result_rece
 from codey.operations.kernel_result import _error_result
 from codey.operations.task_session import TaskSession
 from codey.operations.task_state import TaskSubmissionStores
+from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core import cancellation
 from codey.runtime.core.execution_receipt import execution_receipt
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.core.process_io import ProcessOptions
 from codey.runtime.core.tool_dispatch import ToolDispatch
 from codey.runtime.effects.effect_records import (
     RuntimeEffectIntent,
@@ -37,7 +39,13 @@ from codey.runtime.effects.effect_records import (
 from codey.storage.execution_output_store import ExecutionOutputStore
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.toolchain.runtime import ToolOutcome, project_run_command_result, run_command_raw
-from codey.types.json_value import canonical_json_object, decode_json_object, require_json_integer, require_json_string
+from codey.types.json_value import (
+    canonical_json_object,
+    decode_json_object,
+    require_json_boolean,
+    require_json_integer,
+    require_json_string,
+)
 from codey.utils.failure_output import failure_excerpt
 
 COMMAND_YIELD_MS = 10_000
@@ -156,6 +164,8 @@ def run_tool_task(durable: DurableSession, captured: TaskCheckpoint, *, stores: 
                 return
             durable.fail_task(task_id, f"{type(exc).__name__}: {exc}",
                 state={"tool_worker_active": False, "cleanup_unknown": uncertain})
+        finally:
+            durable.tool_resources.release_browser(task_id)
 
 
 def _resume_tool_task(durable: DurableSession, captured: TaskCheckpoint, *, stores: TaskSubmissionStores,
@@ -205,27 +215,49 @@ def _run_admitted_operation(durable: DurableSession, child: TaskCheckpoint, requ
     _args, error = _validate_tool_args(call.name, call.args, frozen_specs=specs)
     if error:
         raise ValueError(error)
-    project = Path(request.project)
+    project = Path(request.project) if request.project else None
     task_id = child.task_id
     identity = execution_effect_id(task_id)
 
     def run(root: Path, rel: str, command: str, *, permission_profile: str, phase: str = "writer") -> ToolOutcome:
         raw = run_command_raw(root, rel, command, permission_profile=permission_profile, phase=phase,
             execution_store=stores.execution_outputs, session_id=child.conversation_id, run_id=task_id,
-            execution_id=identity)
+            execution_id=identity, process_options=ProcessOptions(
+                stdin=require_json_boolean(request.args.get("stdin", request.args.get("tty", False)), "stdin"),
+                tty=require_json_boolean(request.args.get("tty", False), "tty"),
+                cols=require_json_integer(request.args.get("cols", 100), "cols"),
+                rows=require_json_integer(request.args.get("rows", 30), "rows")),
+            on_process_started=lambda endpoint: durable.tool_resources.register_process(task_id, child.attempt_token, endpoint))
         return raw if isinstance(raw, ToolOutcome) else project_run_command_result(root, raw)
 
     session = TaskSession(snapshot.policy, project=request.project)
+    from codey.automation.browser_session import BrowserSession
+
+    browser: BrowserSession | None = None
+    document = None
+    if spec.executor == "browser":
+        if request.resource_binding is None:
+            raise ValueError("background browser operation has no original binding")
+        browser = durable.tool_resources.browser(task_id, request.resource_binding)
+        document = decode_json_object(request.resource_binding["browser_document"])
+    elif spec.executor != "project" or project is None:
+        raise ValueError("background command requires a project")
     delegate = ExecutionDelegate(session=session, project_path=project, tool_fns=AgentToolFns(run_command=run),
         permission_profile=request.permission_profile, managed_outputs=stores.managed_outputs,
-        session_id=child.conversation_id, run_id=task_id, frozen_specs=specs, custom_executors={})
+        session_id=child.conversation_id, run_id=task_id, frozen_specs=specs, custom_executors={},
+        browser_session=browser, browser_wait_document=document)
     try:
-        with ToolDispatch.for_resource(str(project.resolve()).casefold()).admit(parallel=False):
+        from contextlib import nullcontext
+
+        admission = (ToolDispatch.for_resource(str(project.resolve()).casefold()).admit(parallel=False)
+                     if spec.executor == "project" and project is not None else nullcontext())
+        with admission:
             cancellation.check()
             durable.start_task(task_id, state={"tool_worker_active": True})
-            state = stores.workspace_revisions.current_state(project)
-            if not state.identity_reason:
-                session.set_workspace_state(state.revision, state.fingerprint)
+            if project is not None and spec.executor == "project":
+                state = stores.workspace_revisions.current_state(project)
+                if not state.identity_reason:
+                    session.set_workspace_state(state.revision, state.fingerprint)
             intent = prepare_intent(child.conversation_id, task_id, RuntimeEffectIntent(effect_id=identity, effect_category="tool_call",
                 session_id=child.conversation_id, run_id=task_id, phase="writer", turn=request.turn,
                 tool_index=request.tool_index, tool_name=call.name, args_digest=compute_args_digest(call.args),
@@ -296,20 +328,63 @@ def terminal_tool_task_observations(results: Mapping[str, ToolResult]) -> set[st
 
 
 def control_tool_task(call: ToolCall, *, durable: object, owner_task_id: str,
-                      store: ManagedOutputStore | None) -> ToolResult:
+                      store: ManagedOutputStore | None, caller_policy: TaskPolicy | None = None) -> ToolResult:
     if not isinstance(durable, DurableSession):
         return _error_result(call, "task controls require durable execution")
     try:
         task_ref = require_json_string(call.args.get("task_ref"), "task_ref")
-        owned_tool_task(durable, task_ref, owner_task_id=owner_task_id)
+        child = owned_tool_task(durable, task_ref, owner_task_id=owner_task_id)
+        if call.name in {"task_input", "task_signal", "task_resize"}:
+            return _control_process(call, durable, child, caller_policy=caller_policy)
         wait_ms = require_json_integer(call.args.get("wait_ms", 0), "wait_ms")
         if call.name == "task_cancel":
             durable.request_cancel(task_ref, reason="cancelled by owning task")
         child = wait_tool_task(durable, task_ref, owner_task_id=owner_task_id, wait_ms=wait_ms)
         payload = tool_task_snapshot(durable, child, store=store, args=call.args)
         return ToolResult(call, json.dumps(payload, ensure_ascii=False), ok=True, canonical={"value": payload})
-    except (KeyError, ValueError) as exc:
+    except (KeyError, ValueError, OSError) as exc:
         return _error_result(call, str(exc))
+
+
+def _control_process(call: ToolCall, durable: DurableSession, child: TaskCheckpoint, *,
+                     caller_policy: TaskPolicy | None) -> ToolResult:
+    from codey.operations.provider_receipts import restore_snapshot
+
+    request = ToolTaskInput.from_payload(child.state["tool_input"])
+    snapshot = restore_snapshot(request.snapshot)
+    target = next((spec for spec in snapshot.frozen_specs if spec.name == request.call_name), None)
+    if (caller_policy is None or snapshot.policy is None or target is None
+            or not caller_policy.allows(target.grant) or not snapshot.policy.allows(target.grant)
+            or request.call_name != "run"):
+        raise ValueError("process control requires the original execution capability")
+    if child.status in TASK_TERMINAL_STATUSES or child.state.get("cancel_requested"):
+        raise ValueError("process task is stopped or cancelling")
+    process = durable.tool_resources.process(child.task_id, child.attempt_token)
+
+    def valid() -> bool:
+        current = durable.task(child.task_id)
+        return (current.attempt_token == child.attempt_token and current.status not in TASK_TERMINAL_STATUSES
+                and not current.state.get("cancel_requested"))
+
+    payload: dict[str, object] = {"task_ref": child.task_id}
+    if call.name == "task_input":
+        data = require_json_string(call.args.get("data", ""), "data")
+        eof = require_json_boolean(call.args.get("eof", False), "eof")
+        if not data and not eof:
+            raise ValueError("task_input requires nonempty data or eof=true")
+        delivery = process.write_input(data.encode("utf-8"), eof=eof, valid=valid)
+        payload.update(bytes_written=delivery.bytes_written, eof=delivery.eof,
+                       delivery="complete" if delivery.complete else "incomplete")
+        return ToolResult(call, json.dumps(payload), ok=delivery.complete, canonical={"value": payload})
+    if call.name == "task_signal":
+        if call.args.get("signal") != "interrupt":
+            raise ValueError("unsupported terminal signal")
+        process.interrupt(valid)
+    elif call.name == "task_resize":
+        process.resize(require_json_integer(call.args.get("cols"), "cols"),
+                       require_json_integer(call.args.get("rows"), "rows"), valid)
+    payload["delivery"] = "complete"
+    return ToolResult(call, json.dumps(payload), ok=True, canonical={"value": payload})
 
 
 def tool_task_snapshot(durable: DurableSession, child: TaskCheckpoint, *, store: ManagedOutputStore | None,
@@ -318,6 +393,10 @@ def tool_task_snapshot(durable: DurableSession, child: TaskCheckpoint, *, store:
     limit = require_json_integer(args.get("limit", 4000), "limit")
     payload: dict[str, object] = {"task_ref": child.task_id, "status": "stopping"
         if child.state.get("cancel_requested") and child.status not in TASK_TERMINAL_STATUSES else str(child.status)}
+    request = ToolTaskInput.from_payload(child.state["tool_input"])
+    if request.args.get("tty") is True:
+        payload["output_mode"] = "terminal"
+        payload["streams_merged"] = True
     result = tool_execution_result(durable, child, store=store)
     if result is not None:
         payload["execution_ref"] = result[0]

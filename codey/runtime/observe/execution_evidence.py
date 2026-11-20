@@ -48,7 +48,8 @@ def check_failure_summary(outcome: object) -> str:
     and the whole field is capped so evidence stays bounded in memory.
     """
 
-    raw_lines = str(getattr(outcome, "model_text", "") or "").splitlines()
+    model_text: object = getattr(outcome, "model_text", "")
+    raw_lines = str(model_text or "").splitlines()
     kept: list[str] = []
     for line in reversed(raw_lines):
         text = line.strip()
@@ -147,8 +148,10 @@ class ExecutionEvidence:
         if not isinstance(checks, (list, tuple)):
             return
         for item in checks or ():
-            command = str(getattr(item, "command", "") or "").strip()
-            cwd = str(getattr(item, "cwd", ".") or ".").strip() or "."
+            raw_command: object = getattr(item, "command", "")
+            raw_cwd: object = getattr(item, "cwd", ".")
+            command = str(raw_command or "").strip()
+            cwd = str(raw_cwd or ".").strip() or "."
             revision = valid_workspace_revision(
                 getattr(item, "workspace_revision", 0)
             )
@@ -273,6 +276,12 @@ class ExecutionEvidence:
         self.environment_failures_after_edit.clear()
         self.denied_checks_after_edit.clear()
 
+    def remove_check_keys(self, keys: set[tuple[str, str]]) -> None:
+        """Withdraw a rebuildable session projection without discarding other evidence."""
+        for checks in (self.checks_after_edit, self.failed_checks_after_edit,
+                       self.environment_failures_after_edit):
+            checks[:] = [item for item in checks if (item.command, item.cwd) not in keys]
+
     def render_for_review(self) -> str:
         all_reads = self._unique(item.path for item in self.reads if item.ok)
         current_reads = self._unique(
@@ -370,16 +379,15 @@ class ExecutionEvidence:
         cwd = str(args.get("path") or ".").strip() or "."
         if not command:
             return
-        audit = getattr(outcome, "audit", {})
+        audit = outcome.audit
         if (
-            isinstance(audit, dict)
-            and audit.get("execution_disposition") == "denied_before_execution"
-            and getattr(outcome, "exit_code", None) is None
+            audit.get("execution_disposition") == "denied_before_execution"
+            and outcome.exit_code is None
         ):
             item = CheckEvidence(
                 command,
                 cwd,
-                error_code=_text(getattr(outcome, "error_code", ""), 80),
+                error_code=_text(outcome.error_code, 80),
                 result_summary=check_failure_summary(outcome),
                 workspace_revision=self.workspace_revision,
                 workspace_fingerprint=self.workspace_fingerprint,
@@ -389,20 +397,14 @@ class ExecutionEvidence:
         from codey.utils.refs import strict_run_success
 
         ok = strict_run_success(
-            getattr(outcome, "ok", None), getattr(outcome, "exit_code", None)
+            outcome.ok, outcome.exit_code
         )
-        handle = ""
-        managed = getattr(outcome, "managed_output", None)
-        if callable(managed):
-            try:
-                handle = str((managed() or {}).get("handle") or "")[:80]
-            except Exception:
-                handle = ""
+        handle = str(outcome.managed_output().get("handle") or "")[:80]
         item = CheckEvidence(
             command,
             cwd,
-            exit_code=getattr(outcome, "exit_code", None),
-            error_code=_text(getattr(outcome, "error_code", ""), 80),
+            exit_code=outcome.exit_code,
+            error_code=_text(outcome.error_code, 80),
             result_summary="" if ok else check_failure_summary(outcome),
             managed_output_handle=handle,
             workspace_revision=self.workspace_revision,

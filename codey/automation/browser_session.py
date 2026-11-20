@@ -128,6 +128,17 @@ class BrowserSession:
     def document_identity(self) -> JsonObject | None:
         return _browser_call(self._document_identity_on_browser_thread)
 
+    def capture_wait_binding(self) -> JsonObject:
+        def capture() -> JsonObject:
+            document = self._document_identity_on_browser_thread()
+            if document is None:
+                raise ValueError("background browser wait requires an identified original page")
+            binding = self.provider._binding_on_browser_thread()
+            return {"browser_resource": binding.payload() if binding is not None else None,
+                    "browser_document": document}
+
+        return _browser_call(capture)
+
     def _document_identity_on_browser_thread(self) -> JsonObject | None:
         """Chromium's main-frame loader changes even on a same-URL reload."""
         try:
@@ -172,8 +183,30 @@ class BrowserSession:
     def scroll(self, direction: str, amount: int) -> BrowserToolOutput:
         return _browser_call(self._scroll_on_browser_thread, direction, amount)
 
-    def wait(self, condition: str, value: str, timeout_ms: int) -> BrowserToolOutput:
-        return _browser_call(self._wait_on_browser_thread, condition, value, timeout_ms)
+    def wait(self, condition: str, value: str, timeout_ms: int, *,
+             expected_document: JsonObject | None = None) -> BrowserToolOutput:
+        """Coordinate outside the page worker so allowed page operations can advance."""
+        if condition not in {"text", "selector", "url_contains"} or not value:
+            return BrowserToolOutput("ERROR: wait requires a supported condition and non-empty value", False,
+                {"action": "wait", "matched": False, "reason": "invalid_condition"})
+        expected = expected_document if expected_document is not None else self.document_identity()
+        deadline = time.monotonic() + max(100, min(timeout_ms, 30_000)) / 1000
+        try:
+            with cancellation.deadline_scope(deadline):
+                while True:
+                    cancellation.check()
+                    observation = _browser_call(self._check_wait_on_browser_thread, condition, value, expected)
+                    if observation.ok or observation.observation.get("reason"):
+                        return observation
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    cancellation.wait(min(0.1, remaining))
+        except cancellation.DeadlineExceeded:
+            # An enclosing operation's deadline remains its own failure.
+            cancellation.check()
+        return BrowserToolOutput(f"ERROR: wait timed out: {condition}", False,
+            {"action": "wait", "condition": condition, "matched": False, "reason": "timeout"})
 
     def navigate(self, url: str) -> BrowserToolOutput:
         return _browser_call(self._navigate_on_browser_thread, url)
@@ -410,28 +443,24 @@ class BrowserSession:
         self._invalidate_refs()
         return self._action_observation(page, "scroll", normalized)
 
-    def _wait_on_browser_thread(self, condition: str, value: str, timeout_ms: int) -> BrowserToolOutput:
+    def _check_wait_on_browser_thread(self, condition: str, value: str,
+                                      expected: JsonObject | None) -> BrowserToolOutput:
         page = self._page_on_browser_thread()
-        if condition not in {"text", "selector", "url_contains"} or not value:
-            return BrowserToolOutput("ERROR: wait requires a supported condition and non-empty value", False,
-                                     {"action": "wait", "matched": False, "reason": "invalid_condition"})
-        timeout = max(100, min(timeout_ms, 30_000))
-        deadline = time.monotonic() + timeout / 1000
-        while time.monotonic() < deadline:
-            cancellation.check()
-            matched = (
-                any(item.is_visible() for item in page.get_by_text(value, exact=False).all()) if condition == "text" else
-                any(item.is_visible() for item in page.locator(value).all()) if condition == "selector" else
-                value in page.url
-            )
-            if matched:
-                return BrowserToolOutput(f"Wait condition satisfied: {condition}", True,
-                                         {"action": "wait", "condition": condition, "matched": True,
-                                          "page_url": page.url})
-            page.wait_for_timeout(100)
-        return BrowserToolOutput(f"ERROR: wait timed out: {condition}", False,
-                                 {"action": "wait", "condition": condition, "matched": False,
-                                  "page_url": page.url})
+        cancellation.check()
+        if expected is not None:
+            actual = self._document_identity_on_browser_thread()
+            valid = (actual is not None and actual.get("target_id") == expected.get("target_id")
+                     and (condition == "url_contains" or same_document(expected, actual)))
+            if not valid:
+                return BrowserToolOutput("ERROR: wait page/document binding changed", False,
+                    {"action": "wait", "matched": False, "reason": "stale_document"})
+        matched = (
+            any(item.is_visible() for item in page.get_by_text(value, exact=False).all()[:200])
+            if condition == "text" else
+            any(item.is_visible() for item in page.locator(value).all()[:200]) if condition == "selector" else
+            value in page.url)
+        return BrowserToolOutput(f"Wait condition {'satisfied' if matched else 'pending'}: {condition}", matched,
+            {"action": "wait", "condition": condition, "matched": matched, "page_url": page.url})
 
     def _navigate_on_browser_thread(self, url: str) -> BrowserToolOutput:
         cancellation.check()

@@ -272,6 +272,7 @@ def _browser_specs() -> dict[str, ToolSpec]:
         ),
         "browser_wait": ToolSpec(
             name="browser_wait", grant="browser.observe", executor="browser",
+            supports_background=True,
             namespace="browser.observe", effect="read",
             parameters=(("condition", {"type": "string", "enum": ["text", "selector", "url_contains"]}),
                         ("value", {"type": "string"}),
@@ -449,10 +450,10 @@ def _execution_parameters(spec: ToolSpec) -> ToolSpec:
     example["args"] = args
     background_example = json.dumps(example, ensure_ascii=False, separators=(",", ":"))
     return replace(spec, parameters=(*spec.parameters, ("run_in_background", {
-        "type": "boolean", "description": "Omit to wait briefly, returning a task_ref if still running. "
+        "type": "boolean", "description": "Omit to use this tool's normal waiting behavior. "
         "True returns immediately; false waits for completion. Final results are delivered automatically."})),
-        description=spec.description + " Commands wait briefly by default; longer work returns its existing task_ref. "
-        "Final status and bounded output are delivered automatically; do not poll or repeat the command. "
+        description=spec.description + " Background work uses the original tool and arguments. "
+        "Final status and bounded output are delivered automatically; do not poll or repeat the operation. "
         "Set run_in_background=true to return immediately, or false to wait for completion. "
         "Acceptance is not completion. Use task_output for useful intermediate output, or task_cancel to stop. "
         f"Background call example: {background_example}")

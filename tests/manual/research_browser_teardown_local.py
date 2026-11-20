@@ -12,9 +12,16 @@ import json
 import os
 import subprocess
 import sys
+from functools import partial
 from pathlib import Path
 
 from codey.research.browser_search import BrowserSearchProvider, _search_browser_call
+
+
+class Options(argparse.Namespace):
+    directory: Path
+    cycles: int
+    worker: bool
 
 
 def _burst(provider: BrowserSearchProvider) -> None:
@@ -30,7 +37,7 @@ def main() -> None:
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--cycles", type=int, default=12)
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
-    args = parser.parse_args()
+    args = parser.parse_args(namespace=Options())
     if not 1 <= args.cycles <= 100:
         parser.error("cycles must be 1..100")
     args.directory.mkdir(parents=True, exist_ok=True)
@@ -38,7 +45,7 @@ def main() -> None:
         for cycle in range(args.cycles):
             provider = BrowserSearchProvider(profile_dir=args.directory / "profile")
             try:
-                _search_browser_call(_burst, provider)
+                _search_browser_call(partial(_burst, provider))
             finally:
                 provider.close()
                 _search_browser_call(gc.collect)
@@ -54,11 +61,12 @@ def main() -> None:
     text = log.read_text(encoding="utf-8")
     failures = {key: text.count(key) for key in (
         "TargetClosedError", "Future exception was never retrieved", "Task was destroyed but it is pending")}
-    result = {"cycles": args.cycles, "closed": text.count(" closed\n"),
+    closed = text.count(" closed\n")
+    result: dict[str, object] = {"cycles": args.cycles, "closed": closed,
               "exit_code": process.returncode, "warnings": failures}
     (args.directory / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(json.dumps(result))
-    if process.returncode or result["closed"] != args.cycles or any(failures.values()):
+    if process.returncode or closed != args.cycles or any(failures.values()):
         raise SystemExit(1)
 
 

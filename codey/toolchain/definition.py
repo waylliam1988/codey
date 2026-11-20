@@ -242,6 +242,10 @@ TOOL_DEFINITIONS = (
             ("command", {"type": "string"}),
             ("path", {"type": "string"}),
             ("output_tail_lines", {"type": "integer", "minimum": 1, "maximum": 2000}),
+            ("stdin", {"type": "boolean", "description": "Keep input open for task_input; requires managed execution."}),
+            ("tty", {"type": "boolean", "description": "Use a native terminal with merged output and task controls."}),
+            ("cols", {"type": "integer", "minimum": 1, "maximum": 1000}),
+            ("rows", {"type": "integer", "minimum": 1, "maximum": 1000}),
         ),
         required=("command",),
         category="coding",
@@ -414,9 +418,11 @@ def _clip_activity(value: object, limit: int = 80) -> str:
 
 
 def openai_parameters_schema(definition: ToolDefinition) -> dict[str, object]:
+    from codey.types.json_value import canonical_json_object
+
     properties: dict[str, object] = {}
     for name, schema in definition.parameters:
-        properties[name] = dict(schema) if isinstance(schema, dict) else {"type": "string"}
+        properties[name] = canonical_json_object(schema) if isinstance(schema, dict) else {"type": "string"}
     return {
         "type": "object",
         "properties": properties,

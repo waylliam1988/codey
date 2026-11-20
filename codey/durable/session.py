@@ -34,6 +34,7 @@ from codey.durable.task_operations import TaskLifecycleOperations
 from codey.durable.task_queries import TaskQueryFacade
 from codey.durable.timeline import TaskSnapshot, TaskTransition
 from codey.durable.workflow import WorkflowDefinition
+from codey.runtime.core.tool_resources import ToolResources
 
 
 class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecutionPort):
@@ -54,6 +55,9 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
         before_admit: Callable[[TaskCheckpoint], InputReceipt | None] | None = None,
     ) -> None:
         super().__init__(store, on_commit=on_commit, before_admit=before_admit)
+        self.tool_resources = ToolResources()
+        self.subscribe_commits(self.tool_resources.observe_commit)
+        self.subscribe_close(self.tool_resources.close)
         self.conversation_queries = ConversationQueryFacade(self, self._query_line)
         self.task_queries = TaskQueryFacade(self.store, self._query_line)
         self.conversation_operations = ConversationOperations(self)
@@ -263,6 +267,9 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
 
     def effects(self, task_id: str) -> tuple[EffectRecord, ...]:
         return self.task_queries.effects(task_id)
+
+    def settled_effects(self, task_id: str) -> tuple[EffectRecord, ...]:
+        return self.task_queries.settled_effects(task_id)
 
     def artifact(self, handle: str) -> ArtifactRecord:
         return self.task_queries.artifact(handle)

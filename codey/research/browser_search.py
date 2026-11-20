@@ -88,19 +88,19 @@ class SearchUnavailableError(RuntimeError):
 
 def load_profiles() -> JsonObject:
     try:
-        return decode_json_object(json.loads(_PROFILES_PATH.read_text(encoding="utf-8")))
+        loaded: object = json.loads(_PROFILES_PATH.read_text(encoding="utf-8"))
+        return decode_json_object(loaded)
     except (OSError, json.JSONDecodeError):
         return {"default_engine": "bing", "engines": {}}
 
 
 def _search_browser_call(
-    fn: Callable[..., T], *args: object,
+    fn: Callable[[], T], *,
     timeout: float | None = None,
     on_abandoned: Callable[[], None] | None = None,
-    **kwargs: object,
 ) -> T:
     return _search_browser_worker().call(
-        fn, *args, timeout=timeout, on_abandoned=on_abandoned, **kwargs,
+        fn, timeout=timeout, on_abandoned=on_abandoned,
     )
 
 
@@ -144,11 +144,7 @@ class BrowserSearchProvider:
         if not self._profile:
             raise ValueError(f"unknown search engine: {self.engine}")
         if engine is None:
-            self._engine_order = tuple(
-                dict.fromkeys(
-                    [self.engine, *[name for name in self._profiles if name != self.engine]]
-                )
-            )
+            self._engine_order = (self.engine, *(name for name in self._profiles if name != self.engine))
         else:
             self._engine_order = (self.engine,)
         self._reuse_url_contains = _search_host(self._profile)
@@ -174,14 +170,15 @@ class BrowserSearchProvider:
         self._last_worker_health: dict[str, object] = {}
         self.last_search_errors: list[dict[str, str]] = []
         self.last_search_failure: dict[str, str] = {}
+        self._lease_lock = threading.Lock()
+        self._leases = 0
+        self._close_requested = False
 
     def _ensure_session_on_browser_thread(self, *, reuse_url_contains: str = "") -> Session:
         if self._session is None and self._resume_binding is not None:
             self._reattach_on_browser_thread()
-        if self._session is not None:
-            connected: object = getattr(self._session.browser, "is_connected", None)
-            if callable(connected) and not connected():
-                self._close_on_browser_thread()
+        if self._session is not None and not self._session.browser.is_connected():
+            self._close_on_browser_thread()
         if self._session is not None:
             return self._session
         if self.headless:
@@ -224,7 +221,8 @@ class BrowserSearchProvider:
 
     def _prepare_page_on_browser_thread(self, page: Page) -> Page:
         page.set_default_navigation_timeout(_NAV_TIMEOUT_MS)
-        if not self.headless and not getattr(page, _PAGE_GUARD_ATTRIBUTE, False):
+        guarded: object = getattr(page, _PAGE_GUARD_ATTRIBUTE, False)
+        if not self.headless and not guarded:
             page.route("**/*", self._guard_request)
             with contextlib.suppress(Exception):
                 setattr(page, _PAGE_GUARD_ATTRIBUTE, True)
@@ -347,7 +345,7 @@ class BrowserSearchProvider:
         self.last_search_errors = []
         self.last_search_failure = {}
         try:
-            results = _search_browser_call(self._search_on_browser_thread, query, limit)
+            results = _search_browser_call(lambda: self._search_on_browser_thread(query, limit))
         except (TimeoutError, cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             self._record_worker_health()
             raise
@@ -397,19 +395,22 @@ class BrowserSearchProvider:
         if time.monotonic() >= deadline and not isinstance(last_error, SearchUnavailableError):
             last_error = SearchUnavailableError(
                 "search_timeout",
-                engine=self._engine_order[-1] if self._engine_order else self.engine,
+                engine=self._engine_order[-1],
                 detail="search time budget exhausted",
             )
         if last_error is not None:
+            observed_engine: object = getattr(last_error, "engine", "")
+            observed_kind: object = getattr(last_error, "failure_kind", "")
+            observed_detail: object = getattr(last_error, "detail", "")
             if not self.last_search_failure:
                 self._record_search_error(
-                    getattr(last_error, "engine", "") or self.engine,
+                    str(observed_engine or self.engine),
                     last_error,
                 )
             raise SearchUnavailableError(
-                getattr(last_error, "failure_kind", "") or _search_failure_kind(last_error),
-                engine=getattr(last_error, "engine", "") or self.engine,
-                detail=getattr(last_error, "detail", "") or _search_failure_detail(last_error),
+                str(observed_kind or _search_failure_kind(last_error)),
+                engine=str(observed_engine or self.engine),
+                detail=str(observed_detail or _search_failure_detail(last_error)),
             )
         raise SearchUnavailableError("search_unavailable", engine=self.engine)
 
@@ -512,8 +513,7 @@ class BrowserSearchProvider:
         cancellation.check()
         try:
             page = _search_browser_call(
-                self._fetch_on_browser_thread,
-                url,
+                lambda: self._fetch_on_browser_thread(url),
                 timeout=_FETCH_TOTAL_TIMEOUT_SECONDS,
                 # An abandoned navigation cannot supply a later caller's capture.
                 on_abandoned=self._abandon_fetch_on_browser_thread,
@@ -618,12 +618,31 @@ class BrowserSearchProvider:
             self._discard_fetch_page_on_browser_thread(self._fetch_page)
 
     def close(self) -> None:
+        with self._lease_lock:
+            self._close_requested = True
+            if self._leases:
+                return
         if self._session is None and self._resume_binding is None:
             return
         try:
             _search_browser_call(self._close_on_browser_thread, timeout=_CLOSE_TIMEOUT_SECONDS)
         except TimeoutError:
             self._record_worker_health()
+
+    def retain(self) -> None:
+        with self._lease_lock:
+            if self._close_requested:
+                raise ValueError("browser provider is closing")
+            self._leases += 1
+
+    def release(self) -> None:
+        with self._lease_lock:
+            if self._leases <= 0:
+                raise ValueError("browser lease already released")
+            self._leases -= 1
+            closing = self._leases == 0 and self._close_requested
+        if closing:
+            self.close()
 
     def worker_health(self) -> dict[str, object]:
         """Last passive research-browser worker health snapshot."""
@@ -859,9 +878,9 @@ def _element_text(element: ElementHandle | None) -> str:
 def _element_raw_text(element: ElementHandle | None) -> str:
     if element is None:
         return ""
-    for getter in ("inner_text", "text_content"):
+    for getter in (element.inner_text, element.text_content):
         try:
-            text: object = getattr(element, getter)()
+            text = getter()
         except Exception:
             text = ""
         text = str(text or "").strip()

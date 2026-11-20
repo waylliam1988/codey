@@ -7,12 +7,13 @@ import logging
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, Protocol, SupportsIndex, SupportsInt, TypeAlias, TypedDict, cast
+from typing import Protocol, SupportsIndex, SupportsInt, TypedDict, runtime_checkable
 
 from codey.runtime.core.output_capture import (
     DRAIN_TIMEOUT_SECONDS,
@@ -20,11 +21,11 @@ from codey.runtime.core.output_capture import (
     READER_CLEANUP_TIMEOUT_SECONDS,
     BoundedByteCapture,
 )
+from codey.runtime.core.process_io import ChildProcess, Process, ProcessIO, ProcessOptions, ReadPipe, start_terminal
 
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 0.2
-_INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
 
 
 class ProcessTreeOwner(Protocol):
@@ -43,10 +44,6 @@ class ProcessOutputObserver(Protocol):
     def close(self) -> None: ...
 
 
-class _PopenWithHandle(Protocol):
-    _handle: int
-
-
 class _ProcessGroupArgs(TypedDict, total=False):
     creationflags: int
     start_new_session: bool
@@ -57,8 +54,10 @@ def _safe_capture_limit(value: object) -> int:
     default_limit: int = _default
     if isinstance(value, bool):
         return default_limit
+    if not isinstance(value, (str, bytes, bytearray, SupportsInt, SupportsIndex)):
+        return default_limit
     try:
-        parsed = int(cast(_INT_INPUT, value))
+        parsed = int(value)
     except (TypeError, ValueError, OverflowError):
         return default_limit
     return max(1, parsed)
@@ -77,116 +76,28 @@ def _safe_timeout(value: object) -> float:
     if not _math.isfinite(number) or number < 0:
         return 0.0
     return number
-_context = threading.local()
+class _CancellationContext(threading.local):
+    def __init__(self) -> None:
+        self.event: threading.Event | None = None
+        self.deadline: float | None = None
 
 
-if os.name == "nt" or TYPE_CHECKING:
-    import ctypes
-    from ctypes import wintypes
-
-    # The Windows-only ctypes entry points are not present in Linux typeshed
-    # stubs. Keep the dynamic platform API behind this adapter boundary so
-    # Linux mypy checks do not model unavailable Windows symbols.
-    _windows_ctypes: Any = ctypes
-    _windows_subprocess: Any = subprocess
-
-    _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
-    _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
-
-    class _IoCounters(ctypes.Structure):
-        _fields_ = [
-            ("ReadOperationCount", ctypes.c_ulonglong),
-            ("WriteOperationCount", ctypes.c_ulonglong),
-            ("OtherOperationCount", ctypes.c_ulonglong),
-            ("ReadTransferCount", ctypes.c_ulonglong),
-            ("WriteTransferCount", ctypes.c_ulonglong),
-            ("OtherTransferCount", ctypes.c_ulonglong),
-        ]
-
-    class _BasicLimitInformation(ctypes.Structure):
-        _fields_ = [
-            ("PerProcessUserTimeLimit", ctypes.c_longlong),
-            ("PerJobUserTimeLimit", ctypes.c_longlong),
-            ("LimitFlags", wintypes.DWORD),
-            ("MinimumWorkingSetSize", ctypes.c_size_t),
-            ("MaximumWorkingSetSize", ctypes.c_size_t),
-            ("ActiveProcessLimit", wintypes.DWORD),
-            ("Affinity", ctypes.c_size_t),
-            ("PriorityClass", wintypes.DWORD),
-            ("SchedulingClass", wintypes.DWORD),
-        ]
-
-    class _ExtendedLimitInformation(ctypes.Structure):
-        _fields_ = [
-            ("BasicLimitInformation", _BasicLimitInformation),
-            ("IoInfo", _IoCounters),
-            ("ProcessMemoryLimit", ctypes.c_size_t),
-            ("JobMemoryLimit", ctypes.c_size_t),
-            ("PeakProcessMemoryUsed", ctypes.c_size_t),
-            ("PeakJobMemoryUsed", ctypes.c_size_t),
-        ]
+_context = _CancellationContext()
 
 
 class _WindowsJob:
-    """Own a Windows process tree and terminate it when the handle closes."""
+    """Keep the existing job attachment boundary, backed by typed native calls."""
 
-    _kernel32: Any
+    def __init__(self, proc: ChildProcess) -> None:
+        from codey.runtime.core.windows_process import WindowsJob
 
-    def __init__(self, proc: subprocess.Popen[bytes] | subprocess.Popen[str]) -> None:
-        if os.name != "nt":
-            raise OSError("Windows Job Objects are unavailable")
-        kernel32 = _windows_ctypes.WinDLL("kernel32", use_last_error=True)
-        kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
-        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
-        kernel32.SetInformationJobObject.argtypes = [
-            wintypes.HANDLE,
-            ctypes.c_int,
-            ctypes.c_void_p,
-            wintypes.DWORD,
-        ]
-        kernel32.SetInformationJobObject.restype = wintypes.BOOL
-        kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
-        kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
-        kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
-        kernel32.TerminateJobObject.restype = wintypes.BOOL
-        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-        kernel32.CloseHandle.restype = wintypes.BOOL
-
-        handle = kernel32.CreateJobObjectW(None, None)
-        if not handle:
-            raise _windows_ctypes.WinError(_windows_ctypes.get_last_error())
-        self._kernel32 = kernel32
-        self._handle = handle
-        try:
-            limits = _ExtendedLimitInformation()
-            limits.BasicLimitInformation.LimitFlags = (
-                _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-            )
-            if not kernel32.SetInformationJobObject(
-                handle,
-                _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
-                ctypes.byref(limits),
-                ctypes.sizeof(limits),
-            ):
-                raise _windows_ctypes.WinError(_windows_ctypes.get_last_error())
-            if not kernel32.AssignProcessToJobObject(
-                handle,
-                wintypes.HANDLE(cast(_PopenWithHandle, proc)._handle),
-            ):
-                raise _windows_ctypes.WinError(_windows_ctypes.get_last_error())
-        except Exception:
-            self.close()
-            raise
+        self._job = WindowsJob(proc.pid)
 
     def terminate(self) -> None:
-        if self._handle and not self._kernel32.TerminateJobObject(self._handle, 1):
-            # Closing a KILL_ON_JOB_CLOSE job is the reliable fallback.
-            self.close()
+        self._job.terminate()
 
     def close(self) -> None:
-        if self._handle:
-            self._kernel32.CloseHandle(self._handle)
-            self._handle = None
+        self._job.close()
 
 
 class TaskCancelled(RuntimeError):
@@ -231,11 +142,11 @@ class CapturedProcess:
 
 
 def current_event() -> threading.Event | None:
-    return getattr(_context, "event", None)
+    return _context.event
 
 
 def current_deadline() -> float | None:
-    return getattr(_context, "deadline", None)
+    return _context.deadline
 
 
 def set_event(event: threading.Event | None) -> threading.Event | None:
@@ -264,6 +175,17 @@ def deadline_scope(deadline: float | None) -> Generator[None, None, None]:
         yield
     finally:
         _context.deadline = previous
+
+
+@contextmanager
+def cleanup_scope() -> Generator[None, None, None]:
+    """Allow bounded resource cleanup after its owning operation was cancelled."""
+    event, deadline = _context.event, _context.deadline
+    _context.event, _context.deadline = None, None
+    try:
+        yield
+    finally:
+        _context.event, _context.deadline = event, deadline
 
 
 class _LinkedEvent(threading.Event):
@@ -333,31 +255,33 @@ def start_process(
     cwd: str | Path,
     env: dict[str, str] | None = None,
     shell: bool = False,
+    stdin: bool = False,
 ) -> tuple[subprocess.Popen[bytes], ProcessTreeOwner | None]:
     """Check cancellation once, then spawn. Callers holding a spawn gate must
     keep the gate across their final Stop check and this call so Stop cannot
     land between check and Popen."""
     check()
-    group_args: _ProcessGroupArgs
-    if os.name == "nt":
-        # CREATE_SUSPENDED prevents fast commands from exiting (or spawning
-        # descendants) before their Job Object owns the process tree.
-        group_args = {"creationflags": _windows_subprocess.CREATE_NEW_PROCESS_GROUP | 0x4}
-    else:
-        group_args = {"start_new_session": True}
+    # CREATE_SUSPENDED keeps Windows descendants inside their Job before execution.
+    group_args: _ProcessGroupArgs = {"creationflags": 0x200 | 0x4} if os.name == "nt" else {"start_new_session": True}
     process_env = os.environ.copy() if env is None else dict(env)
     process_env.update(PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
     proc = subprocess.Popen(
         args,
         cwd=cwd,
         env=process_env,
+        stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=False,
         shell=shell,
         **group_args,
     )
-    job = attach_process_tree(proc)
+    try:
+        job = attach_process_tree(proc)
+    except BaseException:
+        if proc.stdin is not None:
+            proc.stdin.close()
+        raise
     if os.name == "nt":
         try:
             check()
@@ -367,28 +291,23 @@ def start_process(
             if job is not None:
                 job.close()
             _close_pipes(proc)
+            if proc.stdin is not None:
+                proc.stdin.close()
             raise
     return proc, job
 
 
 def _resume_windows_process(proc: subprocess.Popen[bytes]) -> None:
     """Resume a suspended Windows child only after Job attachment succeeds."""
-    ntdll = _windows_ctypes.WinDLL("ntdll", use_last_error=True)
-    ntdll.NtResumeProcess.argtypes = [_windows_ctypes.c_void_p]
-    ntdll.NtResumeProcess.restype = _windows_ctypes.c_long
-    status = ntdll.NtResumeProcess(cast(_PopenWithHandle, proc)._handle)
-    if status < 0:
-        ntdll.RtlNtStatusToDosError.argtypes = [_windows_ctypes.c_long]
-        ntdll.RtlNtStatusToDosError.restype = _windows_ctypes.c_ulong
-        raise _windows_ctypes.WinError(ntdll.RtlNtStatusToDosError(status))
+    from codey.runtime.core.windows_process import resume_process
+
+    resume_process(proc.pid)
 
 
-def _pump_stream(stream: BinaryIO, state: _StreamPump) -> None:
+def _pump_stream(stream: ReadPipe, state: _StreamPump) -> None:
     """Drain one pipe into its bounded capture; a read failure is sticky."""
     try:
-        read_chunk = getattr(stream, "read1", None)
-        if not callable(read_chunk):
-            read_chunk = stream.read
+        read_chunk = stream.read1 if isinstance(stream, _BufferedReadPipe) else stream.read
         while True:
             chunk = read_chunk(READ_CHUNK_BYTES)
             if not chunk:
@@ -413,19 +332,18 @@ def _wait_readers(states: list[_StreamPump], *, timeout: float) -> None:
         state.finished.wait(timeout=max(0.0, remaining))
 
 
-def _close_pipes(proc: subprocess.Popen[bytes] | subprocess.Popen[str]) -> None:
+def _close_pipes(proc: Process | subprocess.Popen[str]) -> None:
     """Close owned pipes when no reader thread exists (spawn failure path)."""
-    for stream in (getattr(proc, "stdout", None), getattr(proc, "stderr", None)):
+    for stream in (proc.stdout, proc.stderr):
         try:
-            close = getattr(stream, "close", None)
-            if callable(close):
-                close()
+            if stream is not None:
+                stream.close()
         except Exception:
             pass
 
 
 def _close_owned_pipes(
-    proc: subprocess.Popen[bytes],
+    proc: Process,
     owned: list[tuple[object, _StreamPump]],
 ) -> int:
     """Close only pipes whose pump finished; never block on live reads.
@@ -441,32 +359,28 @@ def _close_owned_pipes(
     """
     by_stream = {id(stream): state for stream, state in owned}
     abandoned = 0
-    for stream in (getattr(proc, "stdout", None), getattr(proc, "stderr", None)):
+    for stream in (proc.stdout, proc.stderr):
         if stream is None:
             continue
         state = by_stream.get(id(stream))
         if state is not None and not state.finished.is_set():
             abandoned += 1
             continue
-        try:
-            close = getattr(stream, "close", None)
-            if callable(close):
-                close()
-        except Exception:
-            pass
+        with suppress(Exception):
+            stream.close()
     if abandoned:
         logger.warning(
             "process pipes incomplete: %d reader(s) still hold stdout/stderr; "
             "args=%r pid=%r",
             abandoned,
-            getattr(proc, "args", "?"),
-            getattr(proc, "pid", "?"),
+            proc.args,
+            proc.pid,
         )
     return abandoned
 
 
 def wait_process(
-    proc: subprocess.Popen[bytes],
+    proc: Process,
     job: ProcessTreeOwner | None,
     args: str | Sequence[str],
     timeout: float,
@@ -560,10 +474,9 @@ def wait_process(
             with suppress(Exception):
                 observer.close()
         _close_owned_pipes(proc, owned)
-        close = getattr(job, "close", None)
-        if callable(close):
+        if job is not None:
             with suppress(Exception):
-                close()
+                job.close()
 
 
 def run_process(
@@ -575,13 +488,64 @@ def run_process(
     shell: bool = False,
     capture_limit_bytes: int,
     observer: ProcessOutputObserver | None = None,
+    options: ProcessOptions | None = None,
+    on_started: Callable[[ProcessIO], Callable[[], None]] | None = None,
 ) -> CapturedProcess:
-    """Run a captured process and terminate its process group when cancelled."""
-    proc, job = start_process(args, cwd=cwd, env=env, shell=shell)
-    return wait_process(proc, job, args, timeout, capture_limit_bytes=capture_limit_bytes, observer=observer)
+    """One execution/collection owner for ordinary pipes and terminal backends."""
+    check()
+    options = options if options is not None else ProcessOptions()
+    endpoint: ProcessIO | None = None
+    unregister: Callable[[], None] | None = None
+    proc: Process
+    job: ProcessTreeOwner | None
+    if options.tty:
+        if shell:
+            raise ValueError("terminal arguments must contain the explicit shell executable")
+        process_env = os.environ.copy() if env is None else dict(env)
+        process_env.update(PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+        proc, job, endpoint = start_terminal(args, cwd=cwd, env=process_env, options=options)
+    else:
+        pipe, job = start_process(args, cwd=cwd, env=env, shell=shell, stdin=options.stdin)
+        proc = pipe
+        try:
+            endpoint = ProcessIO(proc, pipe.stdin)
+        except BaseException:
+            _terminate_process_tree(proc, job)
+            _close_pipes(proc)
+            if pipe.stdin is not None:
+                pipe.stdin.close()
+            if job is not None:
+                job.close()
+            raise
+    try:
+        check()
+        if on_started is not None:
+            unregister = on_started(endpoint)
+    except BaseException:
+        endpoint.close()
+        _terminate_process_tree(proc, job)
+        _close_pipes(proc)
+        if job is not None:
+            job.close()
+        _close_terminal_process(proc)
+        raise
+    try:
+        return wait_process(proc, job, args, timeout, capture_limit_bytes=capture_limit_bytes, observer=observer)
+    finally:
+        if unregister is not None:
+            unregister()
+        endpoint.close()
+        _close_terminal_process(proc)
 
 
-def attach_process_tree(proc: subprocess.Popen[bytes] | subprocess.Popen[str]) -> ProcessTreeOwner | None:
+def _close_terminal_process(proc: Process) -> None:
+    from codey.runtime.core.windows_process import ConPTYProcess
+
+    if isinstance(proc, ConPTYProcess):
+        proc.close()
+
+
+def attach_process_tree(proc: Process | subprocess.Popen[str]) -> ProcessTreeOwner | None:
     """Attach a process to the platform process-tree owner, when available."""
     if os.name != "nt":
         return None
@@ -597,7 +561,7 @@ def attach_process_tree(proc: subprocess.Popen[bytes] | subprocess.Popen[str]) -
 
 
 def terminate_process_tree(
-    proc: subprocess.Popen[Any],
+    proc: ChildProcess,
     job: ProcessTreeOwner | None = None,
 ) -> None:
     """Terminate a process tree started in its own process group.
@@ -610,7 +574,7 @@ def terminate_process_tree(
     _terminate_process_tree(proc, job)
 
 
-def terminate_direct_child(proc: subprocess.Popen[bytes]) -> None:
+def terminate_direct_child(proc: ChildProcess) -> None:
     """Terminate one direct child without group signalling."""
     with suppress(Exception):
         proc.terminate()
@@ -625,11 +589,8 @@ def terminate_direct_child(proc: subprocess.Popen[bytes]) -> None:
 
 def _process_group_exists(pgid: int) -> bool:
     """Check a process group without touching its (possibly reaped) leader."""
-    killpg = getattr(os, "killpg", None)
-    if not callable(killpg):
-        return False
     try:
-        killpg(pgid, 0)
+        _kill_process_group(pgid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
@@ -640,7 +601,7 @@ def _process_group_exists(pgid: int) -> bool:
 
 
 def _terminate_process_tree(
-    proc: subprocess.Popen[bytes],
+    proc: ChildProcess,
     job: ProcessTreeOwner | None = None,
 ) -> None:
     if os.name == "nt":
@@ -657,12 +618,6 @@ def _terminate_process_tree(
             with suppress(Exception):
                 proc.wait(timeout=1)
     else:
-        killpg = getattr(os, "killpg", None)
-        sigterm = getattr(signal, "SIGTERM", None)
-        sigkill = getattr(signal, "SIGKILL", sigterm)
-        if not callable(killpg) or not isinstance(sigterm, int) or not isinstance(sigkill, int):
-            terminate_direct_child(proc)
-            return
         # Processes from start_process() run in a new session, so the known
         # group id is proc.pid: no getpgid() on a possibly reaped parent.
         pgid = proc.pid
@@ -673,7 +628,7 @@ def _terminate_process_tree(
             terminate_direct_child(proc)
             return
         try:
-            killpg(pgid, sigterm)
+            _kill_process_group(pgid, signal.SIGTERM)
         except ProcessLookupError:
             with suppress(Exception):
                 proc.terminate()
@@ -686,6 +641,19 @@ def _terminate_process_tree(
         # pipes are judged by group existence, never by the parent's wait.
         if _process_group_exists(pgid):
             with suppress(Exception):
-                killpg(pgid, sigkill)
+                _kill_process_group(pgid, 9)
             with suppress(Exception):
                 proc.wait(timeout=1)
+
+
+@runtime_checkable
+class _BufferedReadPipe(ReadPipe, Protocol):
+    def read1(self, size: int = -1, /) -> bytes: ...
+
+
+if sys.platform != "win32":
+    def _kill_process_group(pgid: int, sig: int) -> None:
+        os.killpg(pgid, sig)
+else:
+    def _kill_process_group(pgid: int, sig: int) -> None:
+        raise ProcessLookupError("POSIX process groups are unavailable on Windows")

@@ -43,6 +43,7 @@ from codey.runtime.effects.tool_result_delivery import (
     new_batch_id,
 )
 from codey.toolchain.tool_spec import spec_for_tool
+from codey.types.json_value import JsonObject
 
 
 def _runtime_name(name: str) -> str:
@@ -172,7 +173,7 @@ class KernelEffectSink:
 
     def admit_tool_task(self, identity: str, call: ToolCall, *, snapshot: TurnSnapshot,
                         project: str, permission_profile: str, turn: int, tool_index: int,
-                        defer_result: bool = False) -> ToolResult:
+                        defer_result: bool = False, resource_binding: JsonObject | None = None) -> ToolResult:
         import json
         import time
 
@@ -186,7 +187,7 @@ class KernelEffectSink:
         deadline = cancellation.current_deadline()
         request = ToolTaskInput(identity, call.name, call.args, snapshot_description(snapshot), project,
             permission_profile, turn, tool_index,
-            time.time() + max(0.0, deadline - time.monotonic()) if deadline is not None else None)
+            time.time() + max(0.0, deadline - time.monotonic()) if deadline is not None else None, resource_binding)
         child_id = tool_task_id(identity)
         value: dict[str, object] = {"kind": "accepted", "task_ref": child_id}
         result = ToolResult(call, json.dumps(value, ensure_ascii=False), ok=True, kind="accepted", canonical={"value": value})

@@ -266,13 +266,28 @@ def _validate_tool_args(
     if name in _CONTROLLER_ALIASES or (isinstance(args, dict) and name == "source_search" and "source_id" in args):
         return _validate_research_args(name, args)
     if executor == "project":
-        from codey.toolchain.execution_options import split_execution_options
-
-        business, _options = split_execution_options(args)
-        normalized, error = _validate_coding_args(name, business)
-        if "run_in_background" in args:
-            normalized["run_in_background"] = args["run_in_background"]
-        return normalized, error
+        return _validate_project_args(name, args)
     if executor in {"source", "knowledge"}:
         return dict(args), ""
     return {}, "unsupported tool executor"
+
+
+def _validate_project_args(name: str, args: ToolArgs) -> tuple[ToolArgs, str]:
+    from codey.toolchain.execution_options import split_execution_options
+
+    business, _options = split_execution_options(args)
+    process_keys = {key: business.pop(key) for key in ("stdin", "tty", "cols", "rows") if key in business}
+    if process_keys:
+        if name != "run":
+            return {}, "process input options require run"
+        if args.get("run_in_background") is False:
+            return {}, "process input options require managed execution; omit run_in_background or set it true"
+        if ("cols" in process_keys or "rows" in process_keys) and process_keys.get("tty") is not True:
+            return {}, "terminal dimensions require tty=true"
+        if process_keys.get("tty") is True and process_keys.get("stdin") is False:
+            return {}, "tty=true conflicts with stdin=false"
+    normalized, error = _validate_coding_args(name, business)
+    normalized.update(process_keys)
+    if "run_in_background" in args:
+        normalized["run_in_background"] = args["run_in_background"]
+    return normalized, error

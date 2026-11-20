@@ -32,6 +32,7 @@ __all__ = [
 def project_result_observation(
     session: TaskSession, call: ToolCall, result: ToolResult, *, ok: bool,
     exit_code: int | None = None, research_ledger: ResearchLedger | None = None,
+    include_verification: bool = True,
 ) -> None:
     """The shared live/recovery projection, applied only to staged views."""
     if result.kind == "accepted" or "tool_task" in result.canonical:
@@ -81,7 +82,8 @@ def project_result_observation(
         research_ledger.investigations[ref] = {"tool": call.name, "ok": ok,
             "question_ref": require_json_string(call.args.get("question_ref", ""), "question_ref"), "args": dict(call.args or {}),
             "passage_refs": [require_json_string(row.get("ref"), "passage ref") for row in passages if isinstance(row, dict)] if ok else []}
-    record_facts_for_result(session, call, result, ok=ok, exit_code=exit_code)
+    record_facts_for_result(session, call, result, ok=ok, exit_code=exit_code,
+                            include_verification=include_verification)
 
 
 def _record_run_verification(
@@ -165,7 +167,7 @@ def _record_read_fact(session: TaskSession, args: ToolArgs) -> None:
 
 
 def _record_run_fact(session: TaskSession, args: ToolArgs, result: ToolResult, *,
-                     ok: bool, exit_code: int | None) -> None:
+                     ok: bool, exit_code: int | None, include_verification: bool = True) -> None:
     text = (result.model_text or "")
     if denied_before_execution(result):
         if text:
@@ -183,7 +185,8 @@ def _record_run_fact(session: TaskSession, args: ToolArgs, result: ToolResult, *
     elif session.project:
         # A recovered observation cannot borrow the resumed version.
         sess_rev, sess_fp = 0, ""
-    _record_run_verification(session, args, effective_exit, sess_rev, sess_fp, ok=ok)
+    if include_verification:
+        _record_run_verification(session, args, effective_exit, sess_rev, sess_fp, ok=ok)
     if text:
         session.transcript_notes.append(f"run: {text[:500]}")
 
@@ -195,6 +198,7 @@ def record_facts_for_result(
     *,
     ok: bool,
     exit_code: int | None = None,
+    include_verification: bool = True,
 ) -> None:
     # Effect intents use executor names (read/ls/search); live turns use the
     # model contract. Both observations must project through the same name.
@@ -209,7 +213,8 @@ def record_facts_for_result(
             session.transcript_notes.append(f"edit: {text[:500]}")
         return
     if name == "run":
-        _record_run_fact(session, args, result, ok=ok, exit_code=exit_code)
+        _record_run_fact(session, args, result, ok=ok, exit_code=exit_code,
+                         include_verification=include_verification)
         return
     if name == "source_search":
         if not ok:

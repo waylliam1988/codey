@@ -10,7 +10,7 @@ import re
 import shutil
 import subprocess
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
@@ -36,6 +36,7 @@ from codey.runtime.core.models import (
     normalized_managed_output,
 )
 from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES
+from codey.runtime.core.process_io import ProcessIO, ProcessOptions
 from codey.storage.atomic_io import write_bytes_atomic, write_text_atomic
 from codey.storage.execution_output_store import ExecutionOutputStore
 from codey.toolchain.constants import (
@@ -1130,6 +1131,8 @@ def run_command_raw(
     session_id: str = "",
     run_id: str = "",
     execution_id: str = "",
+    process_options: ProcessOptions | None = None,
+    on_process_started: Callable[[ProcessIO], Callable[[], None]] | None = None,
 ) -> RunCommandRawResult | ToolOutcome:
     command = command.strip()
     decision = evaluate_action(ActionSubject(
@@ -1203,6 +1206,8 @@ def run_command_raw(
             shell=False,
             capture_limit_bytes=capture_limit_bytes,
             observer=observer,
+            options=process_options,
+            on_started=on_process_started,
         )
     except FileNotFoundError:
         mark_unavailable()

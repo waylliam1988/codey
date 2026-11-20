@@ -117,6 +117,7 @@ class ExecutionDelegate:
         tool_fns: AgentToolFns | None = None,
         research_tools: ResearchTools | None = None,
         browser_session: BrowserSession | None = None,
+        browser_wait_document: JsonObject | None = None,
         permission_profile: str = "coding_writer",
         approval_available: bool = False,
         change_tracker: ChangeTracker | None = None,
@@ -134,6 +135,7 @@ class ExecutionDelegate:
         self.tool_fns: AgentToolFns | None = tool_fns
         self.research_tools = research_tools
         self.browser_session = browser_session or (research_tools.browser_session if research_tools is not None else None)
+        self._browser_wait_document = browser_wait_document
         self.permission_profile = (permission_profile or "coding_writer")
         self.approval_available = approval_available
         self.change_tracker = change_tracker
@@ -340,6 +342,10 @@ class ExecutionDelegate:
         if call.name == "browser_scroll":
             return browser.scroll(str(args.get("direction") or ""), require_json_integer(args.get("amount"), "amount"))
         if call.name == "browser_wait":
+            if self._browser_wait_document is not None:
+                return browser.wait(str(args.get("condition") or ""), str(args.get("value") or ""),
+                    require_json_integer(args.get("timeout_ms"), "timeout_ms"),
+                    expected_document=self._browser_wait_document)
             return browser.wait(str(args.get("condition") or ""), str(args.get("value") or ""),
                                 require_json_integer(args.get("timeout_ms"), "timeout_ms"))
         if call.name == "browser_navigate":

@@ -143,6 +143,9 @@ def _evidence_with_session_facts(
     latest_edit = max(revisions)
     latest = latest_verification_observations(observations, latest_edit)
     gap_keys, gaps = _projection_gaps_for_latest(latest)
+    # These keys belong to the authoritative session history. Remove their
+    # previous projection before replay, including keys whose latest result is unknown.
+    evidence.remove_check_keys(set(latest))
     for row in observations:
         if row.edit_revision != latest_edit or row.key in gap_keys:
             continue
@@ -196,7 +199,7 @@ def _projection_gaps_for_latest(
 
 
 def _normalized_scope_and_change(session: TaskSession | ProjectCompletionFacts, context: CompletionContext) -> tuple[tuple[str, ...], bool]:
-    scope = tuple(dict.fromkeys((*tuple(context.scope_files or ()), *_session_scope_files(session))))
+    scope = tuple({name: None for name in (*tuple(context.scope_files or ()), *_session_scope_files(session))})
     provided_changed = context.task_changed
     if provided_changed is None:
         task_changed = bool(scope)

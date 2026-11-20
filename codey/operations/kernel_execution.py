@@ -48,6 +48,7 @@ from codey.operations.task_session import TaskSession, effect_coordinates, turn_
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
+from codey.types.json_value import JsonObject
 
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
@@ -419,7 +420,8 @@ def execute_turn(
             # on disposable views. A committed result is the sole replay input.
             if identity not in session.executed and identity not in session.restored_effect_ids:
                 project_result_observation(staged, call, result, ok=ok,
-                                           exit_code=strict_exit_code_or_none(exit_code), research_ledger=staged_ledger)
+                    exit_code=strict_exit_code_or_none(exit_code), research_ledger=staged_ledger,
+                    include_verification=not isinstance(durable, DurableSession))
             project_execution_record(staged, identity, call, result, ok=ok, exit_code=exit_code)
             if intent_sink is not None and not committed:
                 # 统一 sink 协议：生产 sink 一律接收 result/exit_code，无旧签名回退
@@ -429,6 +431,12 @@ def execute_turn(
                     result=result,
                     exit_code=exit_code if isinstance(exit_code, int) else None,
                 )
+            if isinstance(durable, DurableSession) and intent_sink is not None:
+                from codey.operations.verification_history import rebuild_verifications
+
+                rebuild_verifications(staged, durable=durable, owner_task_id=run_ref_str,
+                    store=managed_outputs, project_path=project_path, workspace_store=workspace_revision_store,
+                    ignored_paths=ignores)
             # The staged projection admits successful acquisition data and
             # failed investigation records from the settled receipt alike.
             # Provider-owned mutations never enter this formal projection.
@@ -751,10 +759,12 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
                 results.append(settle(identity, call, result, ok=result.ok,
                     exit_code=result.audit.get("exit_code"), committed=not deferred and result.kind == "accepted"))
                 continue
-            if name in {"task_output", "task_cancel"}:
+            spec = frozen_specs.get(name) if frozen_specs is not None else None
+            if spec is not None and spec.executor == "task_control":
                 from codey.operations.tool_tasks import control_tool_task
 
-                result = control_tool_task(call, durable=durable, owner_task_id=run_id, store=managed_outputs)
+                result = control_tool_task(call, durable=durable, owner_task_id=run_id, store=managed_outputs,
+                                           caller_policy=session.policy)
                 results.append(settle(identity, call, result, ok=result.ok))
                 continue
             result, ok, exit_code = execute_tool_operation(session, call, delegate=delegate, runnable=runnable,
@@ -790,12 +800,35 @@ def _admit_background(context: ToolExecutionContext, identity: str, call: ToolCa
                       *, defer_result: bool = False) -> ToolResult:
     spec = context.frozen_specs.get(call.name) if context.frozen_specs is not None else None
     if (spec is None or not spec.supports_background or context.snapshot is None
-            or context.intent_sink is None or context.project_path is None or call.name in context.runnable
+            or context.intent_sink is None or call.name in context.runnable
             or dict(context.snapshot.custom_executors).get(call.name) is not None):
         return _error_result(call, "background execution requires a captured durable production operation")
-    result = context.intent_sink.admit_tool_task(identity, call, snapshot=context.snapshot,
-        project=str(context.project_path.resolve()), permission_profile=context.permission_profile,
-        turn=context.active_turn, tool_index=index, defer_result=defer_result)
+    resource_binding: JsonObject | None = None
+    if spec.executor == "browser":
+        from codey.durable.tool_task import tool_task_id
+        from codey.operations.task_execution import ExecutionDelegate
+
+        if not isinstance(context.delegate, ExecutionDelegate) or context.delegate.browser_session is None:
+            return _error_result(call, "original browser session is unavailable")
+        browser = context.delegate.browser_session
+        if not isinstance(context.durable, DurableSession):
+            return _error_result(call, "background browser wait requires durable execution")
+        try:
+            resource_binding = browser.capture_wait_binding()
+            context.durable.tool_resources.bind_browser(tool_task_id(identity), browser, resource_binding)
+        except ValueError as exc:
+            return _error_result(call, str(exc))
+    elif spec.executor != "project" or context.project_path is None:
+        return _error_result(call, "background operation has no supported captured executor resources")
+    try:
+        result = context.intent_sink.admit_tool_task(identity, call, snapshot=context.snapshot,
+            project=str(context.project_path.resolve()) if context.project_path is not None else "",
+            permission_profile=context.permission_profile, turn=context.active_turn, tool_index=index,
+            defer_result=defer_result, resource_binding=resource_binding)
+    except Exception:
+        if resource_binding is not None and isinstance(context.durable, DurableSession):
+            context.durable.tool_resources.release_browser(tool_task_id(identity))
+        raise
     if defer_result:
         from codey.operations.tool_tasks import COMMAND_YIELD_MS, automatic_command_result
 

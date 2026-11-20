@@ -49,7 +49,7 @@ from codey.runtime.core import operation_payload
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
 from codey.runtime.core.operation_reducer import RuntimeAction, RuntimeDecisionInputs
-from codey.runtime.effects.effect_records import RuntimeEffectProjection, RuntimeEffectStore
+from codey.runtime.effects.effect_records import RuntimeEffectProjection
 from codey.runtime.log.session_view import (
     SessionView,
     driver_for_state,
@@ -279,14 +279,9 @@ class KernelContext:
     def restore_facts(self) -> None:
         from codey.operations.kernel_facts import project_execution_record, project_result_observation
         from codey.operations.kernel_receipts import restore_result_receipt
+        from codey.operations.verification_history import rebuild_verifications, settled_projections
 
-        effects = list(RuntimeEffectStore(durable=self.durable).load_effects(self.sink.session_id, self.sink.run_id))
-        for child in self.durable.owned_tasks(self.sink.run_id):
-            if child.execution_kind == "tool":
-                from codey.operations.tool_tasks import owned_tool_task
-
-                owned_tool_task(self.durable, child.task_id, owner_task_id=self.sink.run_id)
-                effects.extend(RuntimeEffectStore(durable=self.durable).load_effects(self.sink.session_id, child.task_id))
+        effects = settled_projections(self.durable, self.sink.run_id)
         for effect in effects:
             identity = effect.intent.effect_id
             if effect.intent.tool_name == "_publish_research_answer":
@@ -318,7 +313,8 @@ class KernelContext:
             ledger = self.execution.research_tools.ledger if self.execution.research_tools is not None else None
             staged_ledger = ledger.clone() if ledger is not None else None
             code = effect.settlement.exit_code
-            project_result_observation(staged, result.call, result, ok=result.ok, exit_code=code, research_ledger=staged_ledger)
+            project_result_observation(staged, result.call, result, ok=result.ok, exit_code=code,
+                                       research_ledger=staged_ledger, include_verification=False)
             project_execution_record(staged, identity, result.call, result, ok=result.ok, exit_code=code)
             staged._memory_results[identity] = result
             staged.restored_effect_ids.add(identity)
@@ -334,6 +330,9 @@ class KernelContext:
                 from codey.operations.research_continuation import restore_note_proposals
                 restore_note_proposals(self.execution.research_tools, result.canonical)
             self.session.commit_projection(staged)
+        rebuild_verifications(self.session, durable=self.durable, owner_task_id=self.sink.run_id,
+            store=self.sink.managed_outputs, project_path=self.execution.project_path,
+            workspace_store=self.execution.workspace_revision_store, ignored_paths=self.execution.workspace_ignored_paths)
         # The outer review/receipt reads this rebuildable projection too.
         # Owned child results have no second parent tool event; project the
         # same formal verification observations used by the completion gate.
