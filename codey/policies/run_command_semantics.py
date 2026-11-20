@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codey.policies.command_line import split_run_command
+from codey.policies.html_check import html_check_process_args, html_check_target
 
 _WINDOWS_DRIVE_ABSOLUTE_RE = re.compile(r"^[A-Za-z]:[\\/]")
 _PATH_SUFFIXES = frozenset({
@@ -225,17 +226,20 @@ def canonical_run_command(
             f"invalid command: {exc}",
         ) from exc
     cwd = _resolve_inside_project(root, root, rel or ".", subject="path")
-    refs = tuple(_resolved_path_refs(
-        root,
-        cwd,
-        _referenced_path_args(argv, platform=platform),
-    ))
+    html_target = html_check_target(argv)
+    if html_target is None:
+        refs = tuple(_resolved_path_refs(root, cwd, _referenced_path_args(argv, platform=platform)))
+    else:
+        target = _resolve_inside_project(root, cwd, Path(html_target), subject="command_path")
+        refs = (RunCommandPathRef(html_target, target),)
     argv_list = list(argv)
     if command_has_forbidden_tokens(argv_list) or not is_allowed_run_command(argv_list):
         raise RunCommandPolicyError(
             "command_not_allowed",
             f"command not allowed for run verification; use shell with user approval: {command}",
         )
+    if html_target is not None:
+        return CanonicalRunCommand(html_check_process_args(refs[0].resolved), cwd, refs)
     return CanonicalRunCommand(argv=argv, cwd=cwd, referenced_paths=refs)
 
 
@@ -253,6 +257,8 @@ def strip_python_flags(argv: list[str]) -> list[str]:
 def is_allowed_run_command(argv: list[str]) -> bool:
     if not argv:
         return False
+    if html_check_target(argv) is not None:
+        return True
     exe = Path(argv[0]).name.lower()
     if exe in {"python", "python.exe", "py", "py.exe"}:
         args = strip_python_flags(argv)
@@ -418,9 +424,10 @@ def _project_root(project: str | Path) -> Path:
         ) from None
 
 
-def _resolve_inside_project(root: Path, cwd: Path, raw: str, *, subject: str) -> Path:
+def _resolve_inside_project(root: Path, cwd: Path, raw: str | Path, *, subject: str) -> Path:
     try:
-        candidate = _resolve_path(cwd, raw)
+        # A Path has already been parsed and should be resolved as a literal filename.
+        candidate = (cwd / raw).resolve() if isinstance(raw, Path) else _resolve_path(cwd, raw)
     except (OSError, RuntimeError, ValueError):
         raise RunCommandPolicyError(
             "path_resolution_failed",

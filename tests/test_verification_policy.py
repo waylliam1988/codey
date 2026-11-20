@@ -7,7 +7,7 @@ from codey.completion.discovery import is_manifest_file, read_manifest_text
 from codey.completion.verification_policy import (
     MAX_MANIFEST_BYTES,
     VerificationCandidate,
-    _bounded_directories,
+    _bounded_entries,
     check_covers_changes,
     check_covers_selected_candidate,
     check_matches_candidate,
@@ -89,7 +89,7 @@ class VerificationPolicyTests(unittest.TestCase):
             candidates = discover_verification_candidates(root)
             selected = select_verification_candidate(candidates, ("src/app.ts",))
 
-        self.assertIsNotNone(selected)
+        assert selected is not None
         self.assertEqual(selected.command, "npm test")
 
     def test_package_test_beats_make_test_in_same_directory(self) -> None:
@@ -108,7 +108,7 @@ class VerificationPolicyTests(unittest.TestCase):
             candidates = discover_verification_candidates(root)
             selected = select_verification_candidate(candidates, ("src/app.ts",))
 
-        self.assertIsNotNone(selected)
+        assert selected is not None
         self.assertEqual(selected.command, "npm test")
 
     def test_configured_command_beats_manifest_candidate_but_not_successful_history(self) -> None:
@@ -131,7 +131,7 @@ class VerificationPolicyTests(unittest.TestCase):
             )
             selected = select_verification_candidate(candidates, ("app.py",))
 
-        self.assertIsNotNone(selected)
+        assert selected is not None
         self.assertEqual(selected.command, "python -m unittest discover")
         self.assertTrue(selected.previously_passed)
 
@@ -154,7 +154,7 @@ class VerificationPolicyTests(unittest.TestCase):
             )
             selected = select_verification_candidate(candidates, ("app.py",))
 
-        self.assertIsNotNone(selected)
+        assert selected is not None
         self.assertEqual(selected.command, "python -m unittest discover")
         self.assertEqual(selected.source, "project config: configured unittest")
 
@@ -205,7 +205,7 @@ class VerificationPolicyTests(unittest.TestCase):
             candidates = discover_verification_candidates(root)
             selected = select_verification_candidate(candidates, ("app.py",))
 
-        self.assertIsNotNone(selected)
+        assert selected is not None
         self.assertEqual(selected.command, "python -m pytest")
 
     def test_mypy_beats_ruff_when_only_static_checks_exist(self) -> None:
@@ -221,7 +221,7 @@ class VerificationPolicyTests(unittest.TestCase):
             candidates = discover_verification_candidates(root)
             selected = select_verification_candidate(candidates, ("app.py",))
 
-        self.assertIsNotNone(selected)
+        assert selected is not None
         self.assertEqual(selected.command, "mypy .")
 
     def test_build_only_script_can_be_selected(self) -> None:
@@ -236,7 +236,7 @@ class VerificationPolicyTests(unittest.TestCase):
             candidates = discover_verification_candidates(root)
             selected = select_verification_candidate(candidates, ("src/app.ts",))
 
-        self.assertIsNotNone(selected)
+        assert selected is not None
         self.assertEqual(selected.command, "npm run build")
 
     def test_package_manager_field_beats_lockfiles(self) -> None:
@@ -300,7 +300,7 @@ class VerificationPolicyTests(unittest.TestCase):
             candidates = discover_verification_candidates(root)
             selected = select_verification_candidate(candidates, ("frontend/src/app.ts",))
 
-        self.assertIsNotNone(selected)
+        assert selected is not None
         self.assertEqual(selected.command, "pnpm test")
         self.assertEqual(selected.cwd, "frontend")
 
@@ -343,7 +343,7 @@ class VerificationPolicyTests(unittest.TestCase):
         )
 
     @mock.patch("codey.completion.verification_policy.shutil.which", return_value="bun")
-    def test_bun_test_covers_bun_run_test_candidate(self, _which) -> None:
+    def test_bun_test_covers_bun_run_test_candidate(self, _which: mock.Mock) -> None:
         candidate = VerificationCandidate("bun run test", ".")
 
         self.assertTrue(
@@ -549,7 +549,7 @@ class VerificationPolicyTests(unittest.TestCase):
             candidates = discover_verification_candidates(root)
             selected = select_verification_candidate(candidates, ("app.py",))
 
-        self.assertIsNotNone(selected)
+        assert selected is not None
         self.assertEqual(selected.command, "make test")
 
     def test_historical_cargo_and_go_commands_require_current_manifests(self) -> None:
@@ -613,7 +613,7 @@ class VerificationPolicyTests(unittest.TestCase):
         self.assertIsNone(select_verification_candidate((root,), ("README.md",)))
 
     @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
-    def test_successful_check_must_cover_all_code_changes(self, _which) -> None:
+    def test_successful_check_must_cover_all_code_changes(self, _which: mock.Mock) -> None:
         self.assertTrue(
             check_covers_changes("python -m pytest", "pkg", ("pkg/app.py",), root=_ROOT)
         )
@@ -625,7 +625,7 @@ class VerificationPolicyTests(unittest.TestCase):
         )
 
     @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
-    def test_full_pytest_can_cover_unittest_fallback(self, _which) -> None:
+    def test_full_pytest_can_cover_unittest_fallback(self, _which: mock.Mock) -> None:
         candidate = VerificationCandidate("python -m unittest discover", ".")
         self.assertTrue(
             check_covers_selected_candidate(
@@ -645,11 +645,11 @@ class VerificationPolicyTests(unittest.TestCase):
             )
         )
 
-        self.assertIsNotNone(preferred)
+        assert preferred is not None
         self.assertEqual(preferred.command, "python -m pytest")
 
     @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
-    def test_unittest_cannot_substitute_for_pytest_suite(self, _which) -> None:
+    def test_unittest_cannot_substitute_for_pytest_suite(self, _which: mock.Mock) -> None:
         candidate = VerificationCandidate("python -m pytest", ".", "pytest.ini")
         for command in ("python -m unittest", "python -m unittest discover"):
             with self.subTest(command=command):
@@ -657,13 +657,13 @@ class VerificationPolicyTests(unittest.TestCase):
                     candidate, command, ".", ("src/app.py",), root=_ROOT))
 
     @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
-    def test_unittest_default_discovery_can_cover_unittest_candidate(self, _which) -> None:
+    def test_unittest_default_discovery_can_cover_unittest_candidate(self, _which: mock.Mock) -> None:
         self.assertTrue(check_covers_selected_candidate(
             VerificationCandidate("python -m unittest discover", "."),
             "python -m unittest", ".", ("src/app.py",), root=_ROOT))
 
     @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
-    def test_pytest_output_flags_can_cover_unittest_fallback(self, _which) -> None:
+    def test_pytest_output_flags_can_cover_unittest_fallback(self, _which: mock.Mock) -> None:
         candidate = VerificationCandidate("python -m unittest discover", ".")
         self.assertTrue(
             check_covers_selected_candidate(
@@ -676,7 +676,7 @@ class VerificationPolicyTests(unittest.TestCase):
         )
 
     @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
-    def test_pytest_filter_flags_do_not_cover_unittest_fallback(self, _which) -> None:
+    def test_pytest_filter_flags_do_not_cover_unittest_fallback(self, _which: mock.Mock) -> None:
         candidate = VerificationCandidate("python -m unittest discover", ".")
         for command in (
             "python -m pytest --ignore=src",
@@ -697,7 +697,7 @@ class VerificationPolicyTests(unittest.TestCase):
                 )
 
     @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
-    def test_scoped_pytest_does_not_cover_unrelated_changed_file(self, _which) -> None:
+    def test_scoped_pytest_does_not_cover_unrelated_changed_file(self, _which: mock.Mock) -> None:
         candidate = VerificationCandidate("python -m unittest discover", ".")
         self.assertFalse(
             check_covers_selected_candidate(
@@ -710,7 +710,7 @@ class VerificationPolicyTests(unittest.TestCase):
         )
 
     @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
-    def test_py_compile_does_not_substitute_for_pytest_candidate(self, _which) -> None:
+    def test_py_compile_does_not_substitute_for_pytest_candidate(self, _which: mock.Mock) -> None:
         candidate = VerificationCandidate("python -m pytest", ".")
         self.assertFalse(
             check_covers_selected_candidate(
@@ -740,7 +740,7 @@ class VerificationPolicyTests(unittest.TestCase):
         self.assertFalse(any("\n" in line or "\r" in line for line in lines))
 
     @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
-    def test_unittest_explicit_current_directory_covers_default_discovery(self, _which) -> None:
+    def test_unittest_explicit_current_directory_covers_default_discovery(self, _which: mock.Mock) -> None:
         candidate = VerificationCandidate("python -m unittest discover", ".")
         for args in ("discover .", "discover -v .", "discover -s .", "discover --start-directory .",
                      "discover --start-directory=.", "-q"):
@@ -750,7 +750,7 @@ class VerificationPolicyTests(unittest.TestCase):
                 ))
 
     @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
-    def test_unittest_narrow_or_different_discovery_does_not_cover_default(self, _which) -> None:
+    def test_unittest_narrow_or_different_discovery_does_not_cover_default(self, _which: mock.Mock) -> None:
         candidate = VerificationCandidate("python -m unittest discover", ".")
         for args in ("discover tests", "discover -s tests", "discover ..", "discover -p test_one.py",
                      "discover . -p test_one.py", "test_app", "discover --start-directory=tests"):
@@ -803,17 +803,17 @@ class VerificationPolicyTests(unittest.TestCase):
 
         self.assertEqual(lines, ())
 
-    def test_directory_scan_has_entry_budget_and_skips_dot_directories(self) -> None:
+    def test_workspace_scan_has_entry_budget_and_skips_dot_directories(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             for name in ("one", "two", "three", ".hidden", "NODE_MODULES"):
                 (root / name).mkdir()
             with mock.patch("codey.completion.verification_policy.MAX_SCAN_ENTRIES", 2):
-                directories = tuple(_bounded_directories(root))
+                entries = tuple(path for path, _ in _bounded_entries(root, ()))
 
-        self.assertLessEqual(len(directories), 3)
-        self.assertFalse(any(item.name == ".hidden" for item in directories))
-        self.assertFalse(any(item.name == "NODE_MODULES" for item in directories))
+        self.assertLessEqual(len(entries), 3)
+        self.assertFalse(any(item.name == ".hidden" for item in entries))
+        self.assertFalse(any(item.name == "NODE_MODULES" for item in entries))
 
     def test_directory_scan_skips_coverage_output(self) -> None:
         # Coverage output is never a trustworthy verification root: the
@@ -823,7 +823,7 @@ class VerificationPolicyTests(unittest.TestCase):
             root = Path(td)
             for name in ("src", "coverage", "tests"):
                 (root / name).mkdir()
-            directories = tuple(_bounded_directories(root))
+            directories = tuple(path for path, is_directory in _bounded_entries(root, ()) if is_directory)
 
         self.assertTrue(any(item.name == "src" for item in directories))
         self.assertTrue(any(item.name == "tests" for item in directories))

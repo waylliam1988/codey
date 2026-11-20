@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.events import RunEvent, run_event_ui_payload
@@ -33,7 +34,7 @@ class RunCommandProjectionCharacterizationTests(unittest.TestCase):
             stderr_bytes=0,
             capture_truncated=False,
         )
-        outcome = project_run_command_result(root=None, raw=raw)
+        outcome = project_run_command_result(root=Path.cwd(), raw=raw)
 
         self.assertEqual(outcome.model_text, "exit 0: pytest -q\nExit code scope: process\nFull execution output recoverable: true\n1 passed")
         self.assertTrue(outcome.ok)
@@ -69,15 +70,19 @@ class RunCommandProjectionCharacterizationTests(unittest.TestCase):
             stderr_bytes=0,
             capture_truncated=False,
         )
-        outcome = project_run_command_result(root=None, raw=raw)
+        outcome = project_run_command_result(root=Path.cwd(), raw=raw)
 
-        self.assertEqual(outcome.model_text, "exit 1: pytest -q\nExit code scope: process\nFull execution output recoverable: true\n1 failed")
+        self.assertEqual(
+            outcome.model_text,
+            "exit 1: pytest -q\nExit code scope: process\nFull execution output recoverable: true\n"
+            "Failure excerpts (reported by command):\n1 failed\n1 failed",
+        )
         self.assertFalse(outcome.ok)
         self.assertEqual(outcome.audit.get("exit_code"), 1)
 
     def test_timing_fields_are_audit_only(self) -> None:
         plain = project_run_command_result(
-            root=None,
+            root=Path.cwd(),
             raw=RunCommandRawResult(
                 command="pytest -q", output="1 passed", ok=True, exit_code=0,
                 started_at="", finished_at="", duration_ms=None,
@@ -85,7 +90,7 @@ class RunCommandProjectionCharacterizationTests(unittest.TestCase):
             ),
         )
         timed = project_run_command_result(
-            root=None,
+            root=Path.cwd(),
             raw=RunCommandRawResult(
                 command="pytest -q",
                 output="1 passed",
@@ -169,7 +174,7 @@ class RunEventUiPayloadCharacterizationTests(unittest.TestCase):
         )
         payload = run_event_ui_payload("run-1", "session-1", _run_tool_event(outcome))
 
-        self.assertIsNotNone(payload)
+        assert payload is not None
         self.assertEqual(payload["type"], "tool")
         self.assertEqual(payload["output_handle"], "out_0001_abc123def456")
         self.assertEqual(payload["output_bytes"], 90000)

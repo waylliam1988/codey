@@ -19,10 +19,12 @@ from codey.completion.discovery import (
 )
 from codey.completion.edit_scope import is_document_path
 from codey.policies.command_line import split_run_command
+from codey.policies.html_check import html_check_command, html_check_target
 from codey.policies.run_command_semantics import (
     RunCommandPolicyError,
     canonical_run_command,
 )
+from codey.utils.object_fields import object_fields
 from codey.workspace.config import path_matches_ignored_prefix
 
 MAX_SCAN_DIRS = 160
@@ -32,6 +34,7 @@ NODE_SCRIPTS = ("test", "typecheck", "check", "lint", "build")
 MAKE_TARGETS = ("test", "typecheck", "check", "lint", "build")
 MAKEFILE_NAMES = ("Makefile", "makefile", "GNUmakefile")
 NODE_PACKAGE_MANAGERS = {"npm", "pnpm", "yarn", "bun"}
+_BUILTIN_HTML_SOURCE = "built-in static HTML check"
 PYTEST_FULL_SUITE_FLAGS = frozenset({
     "-q",
     "-qq",
@@ -109,14 +112,14 @@ def _candidate(
     return VerificationCandidate(text, contained, source, previously_passed, priority)
 
 
-def _bounded_directories(root: Path, ignored_paths: Sequence[str] = ()) -> Iterable[Path]:
+def _bounded_entries(root: Path, ignored_paths: Sequence[str]) -> Iterable[tuple[Path, bool]]:
     pending = [root]
     seen_dirs = 0
     seen_entries = 0
     while pending and seen_dirs < MAX_SCAN_DIRS:
         current = pending.pop()
         seen_dirs += 1
-        yield current
+        yield current, True
         try:
             children = current.iterdir()
         except OSError:
@@ -135,8 +138,12 @@ def _bounded_directories(root: Path, ignored_paths: Sequence[str] = ()) -> Itera
             if path_matches_ignored_prefix(rel, ignored_paths):
                 continue
             try:
-                if child.is_dir() and not child.is_symlink():
+                if child.is_symlink():
+                    continue
+                if child.is_dir():
                     pending.append(child)
+                else:
+                    yield child, False
             except OSError:
                 continue
 
@@ -153,7 +160,7 @@ def _executable_name(value: str) -> str:
 
 
 def _package_manager_from_package(package: object) -> str | None:
-    if not isinstance(package, dict):
+    if not object_fields(package):
         return None
     value = package.get("packageManager")
     if not isinstance(value, str):
@@ -204,11 +211,12 @@ def node_package_manager_for_directory(
         directory_path = root_path / directory_path
     directory_path = directory_path.resolve()
 
-    package_data = package
+    package_data: object = package
     if package_data is None:
         package_text = read_manifest_text(directory_path / "package.json", max_bytes=MAX_MANIFEST_BYTES)
         try:
-            package_data = json.loads(package_text) if package_text else dict[str, object]()
+            if package_text:
+                package_data = json.loads(package_text)
         except ValueError:
             package_data = dict[str, object]()
     return _package_manager(root_path, directory_path, package_data)
@@ -241,16 +249,15 @@ def _node_script_from_argv(argv: list[str]) -> str:
 
 def _package_script_exists(root: Path, cwd: str, script: str) -> bool:
     package_text = read_manifest_text(root / cwd / "package.json", max_bytes=MAX_MANIFEST_BYTES)
+    if not package_text:
+        return False
     try:
-        package = json.loads(package_text) if package_text else dict[str, object]()
+        package: object = json.loads(package_text)
     except ValueError:
         return False
-    scripts = package.get("scripts") if isinstance(package, dict) else None
-    return (
-        isinstance(scripts, dict)
-        and isinstance(scripts.get(script), str)
-        and bool(scripts[script].strip())
-    )
+    scripts = package.get("scripts") if object_fields(package) else None
+    value = scripts.get(script) if object_fields(scripts) else None
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _bun_builtin_test_is_current(root: Path, cwd: str) -> bool:
@@ -263,15 +270,15 @@ def _bun_builtin_test_is_current(root: Path, cwd: str) -> bool:
 
 
 def _pyproject_tool(pyproject: object, *names: str) -> bool:
-    tool = pyproject.get("tool") if isinstance(pyproject, dict) else None
-    if not isinstance(tool, dict):
+    tool = pyproject.get("tool") if object_fields(pyproject) else None
+    if not object_fields(tool):
         return False
     current: object = tool
     for name in names:
-        if not isinstance(current, dict):
+        if not object_fields(current):
             return False
         current = current.get(name)
-    return isinstance(current, dict)
+    return object_fields(current)
 
 
 def _make_targets(text: str) -> tuple[str, ...]:
@@ -287,7 +294,7 @@ def _make_targets(text: str) -> tuple[str, ...]:
         remainder = stripped[match.end():].lstrip()
         if remainder.startswith("=") or remainder.startswith(":="):
             continue
-        target = match.group(1)
+        target: str = match[1]
         if target.startswith(".") or "%" in target or target not in MAKE_TARGETS:
             continue
         if target not in seen:
@@ -306,6 +313,9 @@ def _historical_candidate_is_current(
         return False
     if not argv:
         return False
+    html_target = html_check_target(argv)
+    if html_target is not None:
+        return is_manifest_file(root / candidate.cwd / html_target)
     executable = _executable_name(argv[0])
     script = _node_script_from_argv(argv)
     if executable == "bun" and len(argv) >= 2 and argv[1] == "test":
@@ -344,7 +354,8 @@ def _configured_command_candidates(
 ) -> list[VerificationCandidate]:
     found: list[VerificationCandidate] = []
     for item in configured_commands:
-        label = str(getattr(item, "label", "") or "").strip()
+        label_value: object = getattr(item, "label", "")
+        label = str(label_value or "").strip()
         source = f"project config: {label}" if label else "project config"
         candidate = _candidate(
             root,
@@ -363,14 +374,15 @@ def _node_candidates(root: Path, directory: Path, cwd: str) -> list[Verification
     package_text = read_manifest_text(directory / "package.json", max_bytes=MAX_MANIFEST_BYTES)
     if package_text:
         try:
-            package = json.loads(package_text)
+            package: object = json.loads(package_text)
         except ValueError:
             package = dict[str, object]()
-        scripts = package.get("scripts") if isinstance(package, dict) else None
-        if isinstance(scripts, dict):
+        scripts = package.get("scripts") if object_fields(package) else None
+        if object_fields(scripts):
             manager = _package_manager(root, directory, package)
             for name in NODE_SCRIPTS:
-                if isinstance(scripts.get(name), str) and scripts[name].strip():
+                value = scripts.get(name)
+                if isinstance(value, str) and value.strip():
                     command = _node_script_command(manager, name)
                     candidate = _candidate(
                         root, command, cwd, f"package.json script {name}"
@@ -389,7 +401,7 @@ def _python_candidates(root: Path, directory: Path, cwd: str) -> list[Verificati
     pyproject_text = read_manifest_text(directory / "pyproject.toml", max_bytes=MAX_MANIFEST_BYTES)
     if pyproject_text:
         try:
-            pyproject = tomllib.loads(pyproject_text)
+            pyproject: object = tomllib.loads(pyproject_text)
         except tomllib.TOMLDecodeError:
             pyproject = dict[str, object]()
         if _pyproject_tool(pyproject, "pytest") or _pyproject_tool(
@@ -507,6 +519,13 @@ def _directory_candidates(root: Path, directory: Path, cwd: str) -> list[Verific
     return found
 
 
+def _html_candidate(root: Path, path: str) -> VerificationCandidate | None:
+    command = html_check_command(path)
+    if command is None or not is_manifest_file(root / path):
+        return None
+    return _candidate(root, command, ".", _BUILTIN_HTML_SOURCE)
+
+
 def discover_verification_candidates(
     project: str | Path,
     verified_commands: Sequence[object] = (),
@@ -517,9 +536,12 @@ def discover_verification_candidates(
     found: list[VerificationCandidate] = []
     found.extend(_verified_history_candidates(root, verified_commands))
     found.extend(_configured_command_candidates(root, configured_commands))
-    for directory in _bounded_directories(root, ignored_paths):
-        cwd = directory.relative_to(root).as_posix() or "."
-        found.extend(_directory_candidates(root, directory, cwd))
+    for entry, is_directory in _bounded_entries(root, ignored_paths):
+        path = entry.relative_to(root).as_posix()
+        if is_directory:
+            found.extend(_directory_candidates(root, entry, path))
+        elif (candidate := _html_candidate(root, path)) is not None:
+            found.append(candidate)
     unique: dict[tuple[str, str], VerificationCandidate] = {}
     for item in found:
         key = (item.command, item.cwd)
@@ -746,6 +768,9 @@ def _compatible(candidate: VerificationCandidate, path: str) -> bool:
         return False
     if not argv:
         return False
+    html_target = html_check_target(argv)
+    if html_target is not None:
+        return PurePosixPath(candidate.cwd, html_target) == item
     exe = _executable_name(argv[0])
     if exe in {"python", "py", "pytest", "mypy", "ruff"}:
         return suffix in PYTHON_SUFFIXES
@@ -763,29 +788,26 @@ def _compatible(candidate: VerificationCandidate, path: str) -> bool:
 def select_verification_candidate(
     candidates: Sequence[VerificationCandidate],
     changed_paths: Sequence[str],
+    *,
+    root: str | Path | None = None,
 ) -> VerificationCandidate | None:
-    code_paths = tuple(
-        dict.fromkeys(
-            path.replace("\\", "/")
-            for path in changed_paths
-            if path and not is_document_path(path)
-        )
-    )
+    code_paths = tuple({
+        path.replace("\\", "/"): None
+        for path in changed_paths if path and not is_document_path(path)
+    })
     if not code_paths:
         return None
-    scored: list[tuple[int, int, int, VerificationCandidate]] = []
+    scored: dict[tuple[int, int, int], list[VerificationCandidate]] = {}
     for item in candidates:
         if not all(_covers(item.cwd, path) and _compatible(item, path) for path in code_paths):
             continue
         depth = 0 if item.cwd == "." else len(PurePosixPath(item.cwd).parts)
-        scored.append((depth, _effective_source_priority(item), _command_priority(item), item))
+        score = depth, _effective_source_priority(item), _command_priority(item)
+        scored.setdefault(score, []).append(item)
     if not scored:
-        return None
-    scored.sort(key=lambda row: (row[0], row[1], row[2]), reverse=True)
-    best = scored[0]
-    if len(scored) > 1 and best[:3] == scored[1][:3]:
-        return None
-    return best[3]
+        return _html_candidate(Path(root).resolve(), code_paths[0]) if root and len(code_paths) == 1 else None
+    best = scored[max(scored)]
+    return best[0] if len(best) == 1 else None
 
 
 def _effective_source_priority(candidate: VerificationCandidate) -> int:
@@ -843,7 +865,12 @@ def check_covers_selected_candidate(
     root: str | Path,
 ) -> bool:
     if check_matches_candidate(candidate, command, cwd):
-        return True
+        try:
+            html_target = html_check_target(split_run_command(command))
+        except ValueError:
+            html_target = None
+        # A single-file check still needs coverage when it is inferred from an observed run.
+        return html_target is None or check_covers_changes(command, cwd, changed_paths, root=root)
     selected_family = _command_family(candidate.command)
     actual_family = _command_family(command)
     return (
@@ -908,6 +935,8 @@ def render_verification_guidance(candidates: Sequence[VerificationCandidate]) ->
     """Prefer checks within each directory and runtime, preserving ties."""
     scopes: dict[tuple[str, str], list[VerificationCandidate]] = {}
     for item in candidates:
+        if item.source == _BUILTIN_HTML_SOURCE:
+            continue
         runtime = _command_family(item.command).split(":", 1)[0] or item.command
         scopes.setdefault((item.cwd, runtime), []).append(item)
     lines: list[str] = []
