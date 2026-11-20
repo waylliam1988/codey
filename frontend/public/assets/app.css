@@ -107,8 +107,17 @@
   #search-empty { flex: 1; }
   .group-label {
     font-size: calc(10.5px * var(--font-scale)); text-transform: uppercase; letter-spacing: 1px;
-    color: var(--muted); padding: 14px 10px 6px;
+    color: var(--muted); padding: 14px 42px 6px 10px; position: relative;
   }
+  .group-action {
+    position: absolute; right: 4px; bottom: 0;
+    display: grid; place-items: center; width: 28px; height: 28px;
+    padding: 0; border: 0; border-radius: 4px; background: transparent;
+    color: var(--text-dim); cursor: pointer; opacity: 0; pointer-events: none;
+  }
+  .group-label:hover .group-action,
+  .group-label:has(:focus-visible) .group-action { opacity: 1; pointer-events: auto; }
+  .group-action:hover { color: var(--text); }
   .project-node { margin-bottom: 1px; position: relative; }
   .project-row {
     display: flex; align-items: center; gap: 4px;
@@ -1526,9 +1535,14 @@
     .status { max-width: 160px; }
   }
   @media (hover: none) {
+    .group-action { opacity: 1; pointer-events: auto; }
     .project-more, .project-new { opacity: 1; pointer-events: auto; }
     .session-more { visibility: visible !important; }
     .msg > .msg-copy { opacity: 1; pointer-events: auto; }
+  }
+  @media (pointer: coarse) {
+    .group-label { min-height: 44px; padding-right: 54px; }
+    .group-action { width: 44px; height: 44px; }
   }
   @media (prefers-reduced-motion: reduce) {
     aside, .changes-drawer, .tg-chevron, .msg-copy, .conversation-tick span { transition: none; }

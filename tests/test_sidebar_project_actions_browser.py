@@ -3,14 +3,15 @@
 import threading
 from pathlib import Path
 
+import pytest
 from playwright.sync_api import expect, sync_playwright
 
 from codey.app import server
 from codey.app.context import AppContext
-from tests.test_ui_inplace_render import _goto_restored_ui
+from codey.app.public_event_feed import PublicEventFeed
 
 
-def test_project_actions_preview_search_and_quiet_copy(tmp_path, monkeypatch):
+def test_project_actions_preview_search_and_quiet_copy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = AppContext(tmp_path / "state")
     for index in range(8):
         session_id = f"chat-{index}"
@@ -35,13 +36,17 @@ def test_project_actions_preview_search_and_quiet_copy(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(server.CodeyHTTPServer, "app_context", ctx)
     httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+    feed = PublicEventFeed()
+    httpd.public_feed = feed
+    detach = ctx.event_bus.observe(feed.publish)
     worker = threading.Thread(target=httpd.serve_forever, daemon=True)
     worker.start()
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
-            _goto_restored_ui(page, httpd.launch_url(f"http://127.0.0.1:{httpd.server_port}/"))
+            page.goto(httpd.launch_url(f"http://127.0.0.1:{httpd.server_port}/"))
+            expect(page.locator(".project-main")).to_have_text("Project")
             expect(page.locator(".topbar-actions button")).to_have_count(1)
             expect(page.locator("#btn-settings")).to_be_visible()
             children = page.locator(".project-children")
@@ -122,13 +127,15 @@ def test_project_actions_preview_search_and_quiet_copy(tmp_path, monkeypatch):
             expect(children.locator(".session-item.active")).to_contain_text("New chat")
             browser.close()
     finally:
+        detach()
+        feed.close()
         httpd.shutdown()
         httpd.server_close()
         worker.join(5)
         ctx.close()
 
 
-def test_local_context_more_uses_transparent_pointer_hover():
+def test_local_context_more_uses_transparent_pointer_hover() -> None:
     assets = Path(__file__).resolve().parents[1] / "codey" / "web" / "assets"
     css = (assets / "tokens.css").read_text(encoding="utf-8") + (assets / "app.css").read_text(encoding="utf-8")
     with sync_playwright() as pw:
@@ -138,14 +145,14 @@ def test_local_context_more_uses_transparent_pointer_hover():
             f'<style>{css}</style><div class="local-context-row"><button class="local-context-more" aria-label="More">⋯</button></div>'
         )
         action = page.get_by_role("button", name="More", exact=True)
-        resting_color = action.evaluate("el => getComputedStyle(el).color")
+        resting_color: str = action.evaluate("el => getComputedStyle(el).color")
         action.hover()
         assert action.evaluate("el => getComputedStyle(el).backgroundColor") == "rgba(0, 0, 0, 0)"
         assert action.evaluate("el => getComputedStyle(el).color") != resting_color
         browser.close()
 
 
-def test_progress_spinner_keeps_essential_motion_with_reduced_motion_enabled():
+def test_progress_spinner_keeps_essential_motion_with_reduced_motion_enabled() -> None:
     assets = Path(__file__).resolve().parents[1] / "codey" / "web" / "assets"
     css = (assets / "tokens.css").read_text(encoding="utf-8") + (assets / "app.css").read_text(encoding="utf-8")
     with sync_playwright() as pw:
@@ -155,12 +162,12 @@ def test_progress_spinner_keeps_essential_motion_with_reduced_motion_enabled():
         spinner = page.locator(".spinner")
         assert spinner.evaluate("el => getComputedStyle(el).animationName") == "spin"
         assert spinner.evaluate("el => getComputedStyle(el).display") == "inline-block"
-        before = spinner.evaluate("el => getComputedStyle(el).transform")
+        before: str = spinner.evaluate("el => getComputedStyle(el).transform")
         page.wait_for_function("getComputedStyle(document.querySelector('.spinner')).transform !== " + repr(before))
         browser.close()
 
 
-def test_process_and_thinking_use_the_command_disclosure_language():
+def test_process_and_thinking_use_the_command_disclosure_language() -> None:
     assets = Path(__file__).resolve().parents[1] / "codey" / "web" / "assets"
     css = (assets / "tokens.css").read_text(encoding="utf-8") + (assets / "app.css").read_text(encoding="utf-8")
     with sync_playwright() as pw:
@@ -169,7 +176,7 @@ def test_process_and_thinking_use_the_command_disclosure_language():
         page.set_content(
             f'<style>{css}</style><details class="process-group"><summary class="process-summary">Worked</summary></details><details class="thinking"><summary>Thinking</summary></details><div class="command-card"><details><summary>Ran</summary></details></div>'
         )
-        command_font = page.locator(".command-card summary").evaluate("el => getComputedStyle(el).font")
+        command_font: str = page.locator(".command-card summary").evaluate("el => getComputedStyle(el).font")
         for selector in (".process-summary", ".thinking > summary"):
             summary = page.locator(selector)
             assert summary.evaluate("el => getComputedStyle(el).listStyleType") == "none"
@@ -178,7 +185,7 @@ def test_process_and_thinking_use_the_command_disclosure_language():
         browser.close()
 
 
-def test_approval_command_and_composer_share_one_radius_and_quiet_title():
+def test_approval_command_and_composer_share_one_radius_and_quiet_title() -> None:
     assets = Path(__file__).resolve().parents[1] / "codey" / "web" / "assets"
     css = (assets / "tokens.css").read_text(encoding="utf-8") + (assets / "app.css").read_text(encoding="utf-8")
     with sync_playwright() as pw:

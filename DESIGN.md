@@ -373,6 +373,15 @@ CHATS
 
 Uppercase, muted, no background. Never use colored section headers.
 
+Group labels reserve a right-aligned action target. CHATS uses the existing
+square-and-pencil New chat icon and creates a projectless conversation. PROJECTS
+uses the shared plus icon and invokes the existing Add project folder picker.
+On hover-capable devices these controls appear on hover anywhere within the
+label row or keyboard-visible focus, without moving the label. Pointer hover
+brightens only the gray icon. Keep the buttons in keyboard navigation and show
+them at rest on devices without hover. Targets are 28px on desktop and 44px for
+coarse pointers. Project row new-chat actions retain their project scope.
+
 ### 5.3 Project / session lists
 
 - **Project row:** name only; full path in `title` tooltip, not inline.

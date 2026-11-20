@@ -1,4 +1,5 @@
 import type { Project, Session } from './types/domain';
+import { createIconSvg } from './icon_button';
 
 export type RenameCommit = (value: string | undefined) => void;
 
@@ -50,6 +51,27 @@ export function createSidebar(deps: SidebarDeps): Sidebar {
     isEditingSession,
   };
 
+  function appendGroupLabel(list: HTMLElement, text: string, hasMatches: boolean, actionId: string): void {
+    deps.search.appendGroupLabel(list, text, hasMatches);
+    const label = list.lastElementChild;
+    if (!(label instanceof HTMLElement)) return;
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.className = 'group-action';
+    action.setAttribute('aria-label', actionId === 'btn-new-chat' ? 'New chat' : 'Add project');
+    if (actionId === 'btn-new-chat') {
+      const icon = document.createElement('span');
+      icon.className = 'new-chat-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      action.append(icon);
+    } else action.append(createIconSvg('plus'));
+    action.onclick = () => {
+      const source = document.getElementById(actionId);
+      if (source instanceof HTMLButtonElement) source.click();
+    };
+    label.append(action);
+  }
+
   function render(): void {
     const state = deps.read();
     const list = document.getElementById('session-list');
@@ -63,10 +85,11 @@ export function createSidebar(deps: SidebarDeps): Sidebar {
     list.innerHTML = '';
     deps.search.update();
 
-    deps.search.appendGroupLabel(
+    appendGroupLabel(
       list,
       'PROJECTS',
       state.projects.some((project) => deps.search.matchesProject(project)),
+      'btn-add-project',
     );
 
     if (!state.projects.length && !deps.search.isSearching()) {
@@ -128,7 +151,7 @@ export function createSidebar(deps: SidebarDeps): Sidebar {
       more.textContent = '⋯';
       more.onclick = (event) => {
         event.stopPropagation();
-        deps.openProjectMenu(event.currentTarget as HTMLElement, project.id);
+        deps.openProjectMenu(more, project.id);
       };
       row.appendChild(more);
 
@@ -195,7 +218,7 @@ export function createSidebar(deps: SidebarDeps): Sidebar {
     const loose = state.sessions.filter(
       (session) => !deps.sessionProject(session) && deps.search.matchesSession(session),
     );
-    deps.search.appendGroupLabel(list, 'CHATS', loose.length > 0);
+    appendGroupLabel(list, 'CHATS', loose.length > 0, 'btn-new-chat');
     if (!loose.length && !deps.search.isSearching()) {
       const empty = document.createElement('div');
       empty.className = 'project-empty';
@@ -231,7 +254,7 @@ export function createSidebar(deps: SidebarDeps): Sidebar {
     more.setAttribute('aria-label', 'More');
     more.onclick = (event) => {
       event.stopPropagation();
-      deps.openSessionMenu(event.currentTarget as HTMLElement, session.id);
+      deps.openSessionMenu(more, session.id);
     };
     item.appendChild(more);
     return item;
