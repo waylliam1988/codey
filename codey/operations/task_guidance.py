@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from codey.policies.capabilities import BROWSER_CAPABILITIES
 from codey.policies.output_requirement import guidance
 from codey.policies.task_policy import TaskPolicy
+from codey.research.answer_contract import whole_research_policy
 from codey.research.completion_guidance import render_completion_guidance
 
 if TYPE_CHECKING:
@@ -62,7 +63,8 @@ def task_working_context(session: TaskSession, research_ledger: ResearchLedger |
 def task_guidance_for_policy(policy: TaskPolicy, *, task_kind: str) -> str:
     # Whole Research gets its answer rules from the current task/evidence view.
     return "\n".join(part for part in (
-        render_completion_guidance(policy) if policy.strict_research and task_kind != "research" else "",
+        render_completion_guidance(policy)
+        if policy.strict_research and not whole_research_policy(policy, task_kind=task_kind) else "",
         ("Web reading: decide from the user's meaning whether external information is needed, and carry out "
          "explicit requests to search or inspect a website. Use conversation context to resolve places and subjects; "
          "ask when the intended location remains ambiguous. Use web_search/open_url for reading; open_url handles "

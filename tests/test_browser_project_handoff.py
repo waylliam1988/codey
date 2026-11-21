@@ -37,23 +37,23 @@ def project_session(*, declared: bool) -> TaskSession:
 
 
 @pytest.mark.parametrize("declared", [False, True])
-def test_project_continuation_does_not_depend_on_a_tool_checklist(declared: bool) -> None:
+@pytest.mark.parametrize("kind", ["chat", "hybrid", "research", "project"])
+def test_project_continuation_does_not_depend_on_a_tool_checklist(declared: bool, kind: str) -> None:
     session = project_session(declared=declared)
+    session.task_kind = kind
     _, hint = browser_task_handoff(session, build_turn_snapshot(session), CompletionContext(browser_document=DOCUMENT))
     assert EDIT_HANDOFF in hint
     assert "frozen edit contract" in hint and "outer read Result.result_ref" in hint
 
 
 @pytest.mark.parametrize("declared", [False, True])
-@pytest.mark.parametrize("state", ["readonly", "chat", "research", "no_read", "failed_read", "truncated",
+@pytest.mark.parametrize("state", ["readonly", "no_read", "failed_read", "truncated",
                                   "uncommitted", "old_document", "no_document", "edited", "denied", "no_codemode"])
 def test_project_continuation_requires_authorized_unfinished_work(declared: bool, state: str) -> None:
     session = project_session(declared=declared)
     document: JsonObject | None = DOCUMENT
     if state == "readonly":
         session.project_changes_required = False
-    elif state in {"chat", "research"}:
-        session.task_kind = state
     elif state == "no_read":
         session._memory_results.clear()
         session.executed.clear()

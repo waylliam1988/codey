@@ -299,8 +299,15 @@ def query_restart_probe(state: Path, port: int, stage: str, *, readable: bool = 
     result = dispatch()
     assert not initial
     reads = [row for row in session._memory_results.values() if row.call.name == "browser_read" and row.ok]
+    # Inspect before durable owner cleanup releases its page. Use an independent
+    # CDP observer so an unknown dispatch never acquires a production binding.
+    with sync_playwright() as observer:
+        observed = observer.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+        page = next(item for item in observed.contexts[0].pages if item.url == URL)
+        click_count = page.locator("button").get_attribute("data-count")
     saved_result: JsonObject = {"ok": result.ok, "text": result.model_text,
-                               "linked": len([row for row in reads if "query_click" in row.audit])}
+                               "linked": len([row for row in reads if "query_click" in row.audit]),
+                               "click_count": click_count}
     (state / "result.json").write_text(json.dumps(saved_result), encoding="utf8")
     sink.durable.close()
 
@@ -321,7 +328,4 @@ def test_query_restart_uses_committed_click_or_preserves_uncertainty(tmp_path: P
         projected = parse_json_object((state / "result.json").read_text(encoding="utf8"))
         assert projected["linked"] == (1 if stage == "after" else 0), projected
         assert projected["ok"] is (stage == "after"), projected
-        with sync_playwright() as observer:
-            browser = observer.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
-            page = next(item for item in browser.contexts[0].pages if item.url == URL)
-            assert page.locator("button").get_attribute("data-count") == "1"
+        assert projected["click_count"] == "1"

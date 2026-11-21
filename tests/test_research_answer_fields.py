@@ -267,14 +267,14 @@ def test_reloaded_query_cannot_fall_back_to_an_old_field(context: str, allow_mis
     scope = answer_scope(session)
     assert scope.fields[0].value is None
     args: JsonObject = {'markdown': 'Checked the latest quantity.\n{{field:/quantity}}', 'state': 'answered'}
-    with pytest.raises(ValueError, match='not established|lacks this field'):
+    with pytest.raises(ValueError, match='not established|complete formal read.*lacks'):
         submit_answer(scope, args)
     if allow_missing:
         submitted = submit_answer(scope, {**args, 'state': 'partial'})
         assert 'Not established' in submitted['markdown'] and '173' not in submitted['markdown']
         assert [row['label'] for row in submitted['citations']] == ['e2']
     else:
-        with pytest.raises(ValueError, match='lacks this field'):
+        with pytest.raises(ValueError, match='complete formal read.*lacks'):
             submit_answer(scope, {**args, 'state': 'partial'})
 
 

@@ -17,9 +17,11 @@ from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import evaluate
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_facts import project_execution_record
+from codey.operations.kernel_prompt import working_context
 from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.research_submission_handoff import research_browser_handoff, research_submission_handoff
+from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_session import TaskSession
 from codey.operations.work_status import work_status
 from codey.policies.browser_requirement import require_browser_research_sequence
@@ -77,6 +79,52 @@ def test_pending_file_work_never_offers_done(tmp_path: Path) -> None:
     _, handoff = browser_task_handoff(session, build_turn_snapshot(session), context)
     assert "deliver done" not in handoff
     assert "ledger.data" in handoff
+
+
+@pytest.mark.parametrize("kind", ["chat", "hybrid", "project", "research"])
+def test_frozen_report_obligation_excludes_legacy_finding_completion_guidance(kind: str) -> None:
+    policy = TaskPolicy(GRANTS, strict_research=True, required_checks=("research_submission", "output_json"))
+    text = task_guidance_for_policy(policy, task_kind=kind)
+    assert "research_plan" not in text
+    assert "[fN]" not in text
+    assert "report_sections.coverage" not in text
+    assert "Final answer must be JSON" in text
+
+
+def test_legacy_strict_guidance_retains_its_finding_contract() -> None:
+    policy = TaskPolicy(GRANTS, strict_research=True)
+    text = task_guidance_for_policy(policy, task_kind="hybrid")
+    assert "research_plan" in text and "[fN]" in text and "report_sections.coverage" in text
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_missing_source_fields_remain_visible_alongside_pending_execution(tmp_path: Path, strict: bool) -> None:
+    session, context = declared_session(tmp_path)
+    session.policy = replace(session.policy, strict_research=strict,
+        required_checks=(*session.policy.required_checks, require_tool_success("run"),
+                         *(("research_submission",) if strict else ())))
+    assert context.browser_document is not None
+    record(session, "browser_read", {}, context.browser_document, body="The requested record has not been loaded.")
+    status = work_status(session, context)
+    assert status.tools[0].observation.evaluation.reason_code == "observation_selector_unavailable"
+    snapshot, hint = browser_task_handoff(session, build_turn_snapshot(session), context)
+    assert snapshot.input_binding is None
+    assert "Amount: " in hint
+    assert "rereading the unchanged view cannot load it" in hint.lower()
+    assert "Outstanding declared calls: run" in hint
+    pending = working_context(session)
+    assert "Outstanding declared evidence" in pending and "Amount: " in pending
+    assert "rereading the unchanged view cannot load it" in pending.lower()
+    assert "Outstanding declared executions" in pending
+    assert not evaluate(session, "Finished.", context=context).complete
+
+    record(session, "browser_read", {}, context.browser_document, body="Amount: 173.25 units.")
+    snapshot, _ = browser_task_handoff(session, build_turn_snapshot(session), context)
+    assert snapshot.input_binding is not None and snapshot.input_binding.kind == "declared_fields"
+    assert snapshot.input_binding.model_spec.required == ("path",)
+    pending = working_context(session)
+    assert "Outstanding declared evidence" not in pending
+    assert "Outstanding declared executions" in pending
 
 
 def test_complete_source_offers_frozen_path_only_input(tmp_path: Path) -> None:

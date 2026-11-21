@@ -406,12 +406,8 @@ class ToolSuccessRequirement:
                     if self.report_allow_missing and self.browser_text.prefix not in value:
                         observed.append((identity, None, "null"))
                         continue
-                    if self.report_label and self.browser_text.prefix not in value:
-                        return ToolObservation(RequirementEvaluation("report_field_not_observed",
-                            f"{self.report_label}: the complete formal read of the selected record lacks this field. "
-                            "Select its current observed query/detail action to investigate the missing information; "
-                            "rereading the unchanged view cannot load it. If a click is already delivered, continue "
-                            "its wait/read recovery without clicking again."))
+                    if self.browser_text.prefix not in value:
+                        return self._unobserved_browser_field(self.browser_text)
                     selected = self.browser_text.select(value)
                 elif self._binds_browser_body:
                     selected = value
@@ -439,6 +435,16 @@ class ToolSuccessRequirement:
                 "Report the conflict; do not choose an arbitrary result or repeat execution merely to restate it."
                 + (" " + self._evidence_guidance if self.binds_browser_fields else "")))
         return ToolObservation(RequirementEvaluation(), observed[0][1], tuple(item[0] for item in observed))
+
+    def _unobserved_browser_field(self, selector: BrowserTextSelector) -> ToolObservation:
+        label = self.report_label or f"{self.file_path}{self.answer_pointer}"
+        reason = "report_field_not_observed" if self.report_label else "observation_selector_unavailable"
+        return ToolObservation(RequirementEvaluation(reason,
+            f"{label}: the complete formal read of the selected record lacks the field between "
+            f"{selector.prefix!r} and {selector.suffix!r}. "
+            "Inspect its current observed query/detail controls and complete the task's required interaction; "
+            "rereading the unchanged view cannot load it. If a click is already delivered, continue "
+            "its wait/read recovery without clicking again."))
 
     @property
     def _binds_browser_body(self) -> bool:

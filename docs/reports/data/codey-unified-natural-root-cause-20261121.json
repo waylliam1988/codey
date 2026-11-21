@@ -1,0 +1,1516 @@
+{
+  "date": "2026-11-21",
+  "historical_code_commit": "development before 06640d73",
+  "analysis_base_commit": "06640d73",
+  "runs": [
+    {
+      "directory": ".e2e-artifacts\\unified-natural-first",
+      "sha256": {
+        "task.txt": "cc2d1d0f91ec6dc63bbd43f1e3ca64cc0540d95294672631ad4591911d5f42f6",
+        "request.json": "640811f319dafa945acd57b3b3721aa39ab63fea54afe2abcefedca7bc67e27b",
+        "provider.jsonl": "9ac3b9e1130141f3564b090dde5c3b0b8f6031ad6809a346cc6248b73f2cd967",
+        "receipts.json": "4b8e82b6ea63727da14801f7a02aedc330c57489b3f101598bddcbefd7355752",
+        "snapshots.jsonl": "ee036f3e86fe7df8a0cee13cd695433bfe5c2f32206a91237b6f583890dbd55a",
+        "summary.json": "88047dad3199b65690a0df1a21c1371b4a1e0abdf9a3e7478e0dad65574412c6"
+      },
+      "wire_requests": [
+        {
+          "exchange": 1,
+          "messages": [
+            {
+              "role": "system",
+              "chars": 47223
+            },
+            {
+              "role": "user",
+              "chars": 6911
+            },
+            {
+              "role": "user",
+              "chars": 7569
+            },
+            {
+              "role": "user",
+              "chars": 425
+            }
+          ],
+          "schema_chars": 26537,
+          "estimated_input_tokens": 23279,
+          "legacy_research_plan_instruction": true,
+          "legacy_finding_only_instruction": true,
+          "legacy_report_sections_instruction": true,
+          "direct_fill_contract": true,
+          "direct_click_contract": true,
+          "handoff": "Next step from committed receipts (reuse completed work):\nOutstanding declared calls: browser_read; browser_read; run."
+        },
+        {
+          "exchange": 2,
+          "messages": [
+            {
+              "role": "system",
+              "chars": 47223
+            },
+            {
+              "role": "user",
+              "chars": 7569
+            },
+            {
+              "role": "assistant",
+              "chars": 33
+            },
+            {
+              "role": "user",
+              "chars": 6938
+            },
+            {
+              "role": "user",
+              "chars": 2673
+            },
+            {
+              "role": "user",
+              "chars": 425
+            }
+          ],
+          "schema_chars": 26537,
+          "estimated_input_tokens": 24123,
+          "legacy_research_plan_instruction": true,
+          "legacy_finding_only_instruction": true,
+          "legacy_report_sections_instruction": true,
+          "direct_fill_contract": true,
+          "direct_click_contract": true,
+          "handoff": "Next step from committed receipts (reuse completed work):\nOutstanding declared calls: run."
+        }
+      ],
+      "raw_responses": [
+        {
+          "exchange": 1,
+          "raw_content": "{\"tool\":\"browser_read\",\"args\":{}}",
+          "usage": {
+            "prompt_tokens": 15904,
+            "completion_tokens": 12,
+            "total_tokens": 15916
+          },
+          "command_matches_committed_receipt": null
+        },
+        {
+          "exchange": 2,
+          "raw_content": "{\"tool\":\"run\",\"args\":{\"command\":\"python -c \\\"import json; data = json.load(open('result.json')); print(f'Amount: {data.get(\\\"amount\\\")}, Code: {data.get(\\\"code\\\")}\\\")\\\"\",\"path\":\".\"}}",
+          "usage": {
+            "prompt_tokens": 16849,
+            "completion_tokens": 62,
+            "total_tokens": 16911
+          },
+          "command_matches_committed_receipt": true
+        },
+        {
+          "exchange": 3,
+          "error": "ContextOverflowError: model context overflow before send: estimated input 24729 exceeds limit 24576"
+        }
+      ],
+      "admitted_provider_snapshots": [
+        {
+          "artifact": "artifact_cc63c632d49d00298f8aad5a_bd341a306e9fc0b975faebfa",
+          "logical_turn": 1,
+          "browser_followups": true,
+          "bound_control_count": 4,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        },
+        {
+          "artifact": "artifact_cc63c632d49d00298f8aad5a_75502024f8a550c76e03173f",
+          "logical_turn": 2,
+          "browser_followups": true,
+          "bound_control_count": 4,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        },
+        {
+          "artifact": "artifact_cc63c632d49d00298f8aad5a_c9bc5d84bb6c5a1b4ec72446",
+          "logical_turn": 3,
+          "browser_followups": true,
+          "bound_control_count": 4,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        }
+      ],
+      "historical_summary": {
+        "mode": "hybrid",
+        "passed": false,
+        "stop_reason": "provider_failure",
+        "successful_tools": [
+          "browser_read",
+          "browser_snapshot",
+          "codemode",
+          "open_url"
+        ],
+        "answer": "provider failed [ContextOverflowError]: model context overflow before send: estimated input 24729 exceeds limit 24576",
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "navigations": [
+          "https://example.com/production-browser-record"
+        ],
+        "source_reads": 1,
+        "failed_edits": 0,
+        "changed_after_read": false,
+        "downloads": [],
+        "failed_stale_refs": 0,
+        "stale_ref_injected": false,
+        "posthoc_output_checks": {},
+        "explanation_output": false,
+        "source_failure_receipts": [],
+        "first_tool_rejection": {
+          "identity": "task_turn_effect:12a3518378451bf1",
+          "tool": "run",
+          "ok": false,
+          "args": {
+            "command": "python -c \"import json; data = json.load(open('result.json')); print(f'Amount: {data.get(\"amount\")}, Code: {data.get(\"code\")}\")\"",
+            "path": "."
+          },
+          "model_text": "ERROR: project guard denied run: command_not_allowed; command not allowed for run verification; use shell with user approval: python -c \"import json; data = json.load(open('result.json')); print(f'Amount: {data.get(\"amount\")}, Code: {data.get(\"code\")}\")\" Submit this command on its own in an interactive task to request approval.",
+          "canonical": {
+            "tool_task": {
+              "execution_ref": "tool_execution:d196cd2e302d31e0",
+              "task_ref": "tool_task:1991233db4135095"
+            }
+          },
+          "audit": {
+            "exit_code": null
+          }
+        },
+        "first_edit_rejection": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "facts_match": false,
+        "assembled_upload": false,
+        "source_attempt_only": false,
+        "fixed_source_attempt": false,
+        "final_file_correct": false,
+        "version_check_reached": false,
+        "conflict_injected": false,
+        "conflict_recovery_covered": false,
+        "conflict_coverage": "not_reached",
+        "first_rejection": null,
+        "repair_attempts": [],
+        "seconds": 33.063,
+        "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+        "restored_snapshots": 4,
+        "scope": "controlled_fixture_production_entry_and_kernel"
+      },
+      "current_replay": {
+        "scope": "Replay committed receipts through current projections; no model, browser, or action execution",
+        "observations": [
+          {
+            "tool": "browser_read",
+            "file": "result.json",
+            "pointer": "/amount",
+            "observation_reason": "observation_selector_unavailable",
+            "outcome_reason": "file_field_mismatch"
+          },
+          {
+            "tool": "browser_read",
+            "file": "result.json",
+            "pointer": "/code",
+            "observation_reason": "observation_selector_unavailable",
+            "outcome_reason": "file_field_mismatch"
+          },
+          {
+            "tool": "run",
+            "file": "",
+            "pointer": null,
+            "observation_reason": "tool_execution_missing",
+            "outcome_reason": "tool_execution_missing"
+          }
+        ],
+        "handoff": "Next step from committed receipts (reuse completed work):\nRequired observations are incomplete; successful calls alone do not establish the selected fields.\nresult.json/amount: the complete formal read of the selected record lacks the field between '鱼丸净重为 ' and ' 克。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nresult.json/code: the complete formal read of the selected record lacks the field between '记录校验码 ' and '。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nObtain the missing source evidence before copying its fields or verifying the requested changes.\nOutstanding declared calls: run.",
+        "working_context": "Current work observations (runtime records):\n{\"user_task\": \"请打开 https://example.com/production-browser-record，在网页中查询福州的鱼丸净重和记录校验码。先给出带来源引用的调查报告，再把项目 result.json 中 amount 更新为实际克数（数值）、code 更新为实际校验码（字符串），保留其它字段；运行本地检查，确认文件里的两项与网页记录一致。最后说明修改内容和检查结果。\", \"project\": \"C:\\\\Users\\\\ADMINI~1\\\\AppData\\\\Local\\\\Temp\\\\codey-root-cause-133i2wa8\", \"workspace_revision\": 0, \"workspace_fingerprint\": \"\", \"changed_files\": [], \"read_files\": [], \"executions\": [], \"verifications\": [], \"can_modify_project\": true, \"operation_receipts\": [{\"result_ref\": \"task_turn_effect:7223a0654a81b261\", \"tool\": \"browser_snapshot\", \"ok\": true, \"page_id\": \"6daedb6960514ffaaf521609c91f49de\", \"page_url\": \"https://example.com/production-browser-record\", \"generation\": 1}, {\"result_ref\": \"task_turn_effect:c58efa4019bb26fa\", \"tool\": \"browser_read\", \"ok\": true}]}\nOutstanding declared evidence (successful calls alone do not establish selected values):\nresult.json/amount: the complete formal read of the selected record lacks the field between '鱼丸净重为 ' and ' 克。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nresult.json/code: the complete formal read of the selected record lacks the field between '记录校验码 ' and '。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nOutstanding declared executions (runtime receipts, not assistant narrative):\nRequired execution: call run and receive a successful tool result. Displayed examples and failed calls do not satisfy this requirement.\nResolve the outstanding evidence and executions before delivering the final answer. This obligation list does not replace the task's prerequisites or ordering. Obtain source evidence before copying its fields; verify requested changes after editing. Read stored results only when more detail is needed. Do not repeat an execution merely to recover its output. Stale results cannot prove current correctness.",
+        "fixed_copy_offered": false,
+        "bound_controls": true,
+        "legacy_research_plan_instruction": false
+      }
+    },
+    {
+      "directory": ".e2e-artifacts\\unified-natural-second",
+      "sha256": {
+        "task.txt": "cc2d1d0f91ec6dc63bbd43f1e3ca64cc0540d95294672631ad4591911d5f42f6",
+        "request.json": "640811f319dafa945acd57b3b3721aa39ab63fea54afe2abcefedca7bc67e27b",
+        "provider.jsonl": "d1505adf2ec0a6b614f726d68a21f611a566afa1a1b2c04c650ff5af8399ddbc",
+        "receipts.json": "2c6bfdb07868495902b2ef4d471dbc37d9b6ace8452b911119e6229d5b1a887b",
+        "snapshots.jsonl": "b1dc77b0ac64c668e336bd3a345799e333cc4e7bc473082fee61bd83052b4bff",
+        "summary.json": "fe0bd2b9a56d3aec3133135bafd55d7e19aa3c3b2050d0cbc4c80e824819717d"
+      },
+      "wire_requests": [
+        {
+          "exchange": 1,
+          "messages": [
+            {
+              "role": "system",
+              "chars": 40314
+            },
+            {
+              "role": "user",
+              "chars": 6911
+            },
+            {
+              "role": "user",
+              "chars": 7569
+            },
+            {
+              "role": "user",
+              "chars": 425
+            }
+          ],
+          "schema_chars": 26537,
+          "estimated_input_tokens": 21536,
+          "legacy_research_plan_instruction": true,
+          "legacy_finding_only_instruction": true,
+          "legacy_report_sections_instruction": true,
+          "direct_fill_contract": true,
+          "direct_click_contract": true,
+          "handoff": "Next step from committed receipts (reuse completed work):\nOutstanding declared calls: browser_read; browser_read; run."
+        },
+        {
+          "exchange": 2,
+          "messages": [
+            {
+              "role": "system",
+              "chars": 40314
+            },
+            {
+              "role": "user",
+              "chars": 7569
+            },
+            {
+              "role": "assistant",
+              "chars": 33
+            },
+            {
+              "role": "user",
+              "chars": 6938
+            },
+            {
+              "role": "user",
+              "chars": 2673
+            },
+            {
+              "role": "user",
+              "chars": 425
+            }
+          ],
+          "schema_chars": 26537,
+          "estimated_input_tokens": 22380,
+          "legacy_research_plan_instruction": true,
+          "legacy_finding_only_instruction": true,
+          "legacy_report_sections_instruction": true,
+          "direct_fill_contract": true,
+          "direct_click_contract": true,
+          "handoff": "Next step from committed receipts (reuse completed work):\nOutstanding declared calls: run."
+        },
+        {
+          "exchange": 3,
+          "messages": [
+            {
+              "role": "system",
+              "chars": 40314
+            },
+            {
+              "role": "user",
+              "chars": 7569
+            },
+            {
+              "role": "assistant",
+              "chars": 33
+            },
+            {
+              "role": "user",
+              "chars": 2673
+            },
+            {
+              "role": "assistant",
+              "chars": 171
+            },
+            {
+              "role": "user",
+              "chars": 8059
+            },
+            {
+              "role": "user",
+              "chars": 882
+            },
+            {
+              "role": "user",
+              "chars": 425
+            }
+          ],
+          "schema_chars": 26537,
+          "estimated_input_tokens": 22982,
+          "legacy_research_plan_instruction": true,
+          "legacy_finding_only_instruction": true,
+          "legacy_report_sections_instruction": true,
+          "direct_fill_contract": true,
+          "direct_click_contract": true,
+          "handoff": "Next step from committed receipts (reuse completed work):\nOutstanding declared calls: run."
+        },
+        {
+          "exchange": 4,
+          "messages": [
+            {
+              "role": "system",
+              "chars": 40314
+            },
+            {
+              "role": "user",
+              "chars": 7569
+            },
+            {
+              "role": "assistant",
+              "chars": 33
+            },
+            {
+              "role": "user",
+              "chars": 2673
+            },
+            {
+              "role": "assistant",
+              "chars": 171
+            },
+            {
+              "role": "user",
+              "chars": 882
+            },
+            {
+              "role": "assistant",
+              "chars": 185
+            },
+            {
+              "role": "user",
+              "chars": 8235
+            },
+            {
+              "role": "user",
+              "chars": 483
+            },
+            {
+              "role": "user",
+              "chars": 425
+            }
+          ],
+          "schema_chars": 26537,
+          "estimated_input_tokens": 23244,
+          "legacy_research_plan_instruction": true,
+          "legacy_finding_only_instruction": true,
+          "legacy_report_sections_instruction": true,
+          "direct_fill_contract": true,
+          "direct_click_contract": true,
+          "handoff": "Next step from committed receipts (reuse completed work):\nOutstanding declared calls: run."
+        }
+      ],
+      "raw_responses": [
+        {
+          "exchange": 1,
+          "raw_content": "{\"tool\":\"browser_read\",\"args\":{}}",
+          "usage": {
+            "prompt_tokens": 14447,
+            "completion_tokens": 12,
+            "total_tokens": 14459
+          },
+          "command_matches_committed_receipt": null
+        },
+        {
+          "exchange": 2,
+          "raw_content": "{\"tool\":\"run\",\"args\":{\"command\":\"python -c \\\"import json; data = json.load(open('result.json')); print(f'Amount: {data.get(\\\"amount\\\")}, Code: {data.get(\\\"code\\\")}\\\")\\\"\"}}",
+          "usage": {
+            "prompt_tokens": 15400,
+            "completion_tokens": 58,
+            "total_tokens": 15458
+          },
+          "command_matches_committed_receipt": true
+        },
+        {
+          "exchange": 3,
+          "raw_content": "{\"tool\":\"shell\",\"args\":{\"command\":\"python -c \\\"import json; data = json.load(open('result.json')); print(f'Amount: {data.get(\\\"amount\\\")}, Code: {data.get(\\\"code\\\")}\\\")\\\"\", \"path\":\".\"}}",
+          "usage": {
+            "prompt_tokens": 16090,
+            "completion_tokens": 62,
+            "total_tokens": 16152
+          },
+          "command_matches_committed_receipt": true
+        },
+        {
+          "exchange": 4,
+          "raw_content": "{\"tool\":\"run\",\"args\":{\"command\":\"python -c \\\"import json; data = json.load(open('result.json')); print(f'Amount: {data.get(\\\"amount\\\")}, Code: {data.get(\\\"code\\\")}\\\")\\\"\", \"path\":\".\"}}",
+          "usage": {
+            "prompt_tokens": 16360,
+            "completion_tokens": 62,
+            "total_tokens": 16422
+          },
+          "command_matches_committed_receipt": true
+        }
+      ],
+      "admitted_provider_snapshots": [
+        {
+          "artifact": "artifact_68659c37532aee867e25bdd7_d5768864b4c65976b2be010f",
+          "logical_turn": 1,
+          "browser_followups": true,
+          "bound_control_count": 4,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        },
+        {
+          "artifact": "artifact_68659c37532aee867e25bdd7_1d991084bdabe564c0b26924",
+          "logical_turn": 2,
+          "browser_followups": true,
+          "bound_control_count": 4,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        },
+        {
+          "artifact": "artifact_68659c37532aee867e25bdd7_a981940b0a14f2c4ce0c5221",
+          "logical_turn": 3,
+          "browser_followups": true,
+          "bound_control_count": 4,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        },
+        {
+          "artifact": "artifact_68659c37532aee867e25bdd7_16127862a3ff68e51f1a3ced",
+          "logical_turn": 4,
+          "browser_followups": true,
+          "bound_control_count": 4,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        }
+      ],
+      "historical_summary": {
+        "mode": "hybrid",
+        "passed": false,
+        "stop_reason": "no_progress",
+        "successful_tools": [
+          "browser_read",
+          "browser_snapshot",
+          "codemode",
+          "open_url"
+        ],
+        "answer": "stopped after repeated tool results without progress",
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "navigations": [
+          "https://example.com/production-browser-record"
+        ],
+        "source_reads": 1,
+        "failed_edits": 0,
+        "changed_after_read": false,
+        "downloads": [],
+        "failed_stale_refs": 0,
+        "stale_ref_injected": false,
+        "posthoc_output_checks": {},
+        "explanation_output": false,
+        "source_failure_receipts": [],
+        "first_tool_rejection": {
+          "identity": "task_turn_effect:426d21f9d48ddb16",
+          "tool": "run",
+          "ok": false,
+          "args": {
+            "command": "python -c \"import json; data = json.load(open('result.json')); print(f'Amount: {data.get(\"amount\")}, Code: {data.get(\"code\")}\")\"",
+            "path": "."
+          },
+          "model_text": "ERROR: project guard denied run: command_not_allowed; command not allowed for run verification; use shell with user approval: python -c \"import json; data = json.load(open('result.json')); print(f'Amount: {data.get(\"amount\")}, Code: {data.get(\"code\")}\")\" Submit this command on its own in an interactive task to request approval.",
+          "canonical": {
+            "tool_task": {
+              "execution_ref": "tool_execution:bd7bb5359636c19a",
+              "task_ref": "tool_task:6b46a0d8a3af1a8d"
+            }
+          },
+          "audit": {
+            "exit_code": null
+          }
+        },
+        "first_edit_rejection": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "facts_match": false,
+        "assembled_upload": false,
+        "source_attempt_only": false,
+        "fixed_source_attempt": false,
+        "final_file_correct": false,
+        "version_check_reached": false,
+        "conflict_injected": false,
+        "conflict_recovery_covered": false,
+        "conflict_coverage": "not_reached",
+        "first_rejection": null,
+        "repair_attempts": [],
+        "seconds": 55.688,
+        "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+        "restored_snapshots": 5,
+        "scope": "controlled_fixture_production_entry_and_kernel"
+      },
+      "current_replay": {
+        "scope": "Replay committed receipts through current projections; no model, browser, or action execution",
+        "observations": [
+          {
+            "tool": "browser_read",
+            "file": "result.json",
+            "pointer": "/amount",
+            "observation_reason": "observation_selector_unavailable",
+            "outcome_reason": "file_field_mismatch"
+          },
+          {
+            "tool": "browser_read",
+            "file": "result.json",
+            "pointer": "/code",
+            "observation_reason": "observation_selector_unavailable",
+            "outcome_reason": "file_field_mismatch"
+          },
+          {
+            "tool": "run",
+            "file": "",
+            "pointer": null,
+            "observation_reason": "tool_execution_missing",
+            "outcome_reason": "tool_execution_missing"
+          }
+        ],
+        "handoff": "Next step from committed receipts (reuse completed work):\nRequired observations are incomplete; successful calls alone do not establish the selected fields.\nresult.json/amount: the complete formal read of the selected record lacks the field between '鱼丸净重为 ' and ' 克。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nresult.json/code: the complete formal read of the selected record lacks the field between '记录校验码 ' and '。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nObtain the missing source evidence before copying its fields or verifying the requested changes.\nOutstanding declared calls: run.",
+        "working_context": "Current work observations (runtime records):\n{\"user_task\": \"请打开 https://example.com/production-browser-record，在网页中查询福州的鱼丸净重和记录校验码。先给出带来源引用的调查报告，再把项目 result.json 中 amount 更新为实际克数（数值）、code 更新为实际校验码（字符串），保留其它字段；运行本地检查，确认文件里的两项与网页记录一致。最后说明修改内容和检查结果。\", \"project\": \"C:\\\\Users\\\\ADMINI~1\\\\AppData\\\\Local\\\\Temp\\\\codey-root-cause-ub1l_sv0\", \"workspace_revision\": 0, \"workspace_fingerprint\": \"\", \"changed_files\": [], \"read_files\": [], \"executions\": [], \"verifications\": [], \"can_modify_project\": true, \"operation_receipts\": [{\"result_ref\": \"task_turn_effect:2534c53d73e8222f\", \"tool\": \"browser_snapshot\", \"ok\": true, \"page_id\": \"c995441414b64615b5903951db91ebf5\", \"page_url\": \"https://example.com/production-browser-record\", \"generation\": 1}, {\"result_ref\": \"task_turn_effect:b57821ec1fc23931\", \"tool\": \"browser_read\", \"ok\": true}]}\nOutstanding declared evidence (successful calls alone do not establish selected values):\nresult.json/amount: the complete formal read of the selected record lacks the field between '鱼丸净重为 ' and ' 克。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nresult.json/code: the complete formal read of the selected record lacks the field between '记录校验码 ' and '。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nOutstanding declared executions (runtime receipts, not assistant narrative):\nRequired execution: call run and receive a successful tool result. Displayed examples and failed calls do not satisfy this requirement.\nResolve the outstanding evidence and executions before delivering the final answer. This obligation list does not replace the task's prerequisites or ordering. Obtain source evidence before copying its fields; verify requested changes after editing. Read stored results only when more detail is needed. Do not repeat an execution merely to recover its output. Stale results cannot prove current correctness.",
+        "fixed_copy_offered": false,
+        "bound_controls": true,
+        "legacy_research_plan_instruction": false
+      }
+    },
+    {
+      "directory": ".e2e-artifacts\\unified-natural-guidance-third",
+      "sha256": {
+        "task.txt": "cc2d1d0f91ec6dc63bbd43f1e3ca64cc0540d95294672631ad4591911d5f42f6",
+        "request.json": "640811f319dafa945acd57b3b3721aa39ab63fea54afe2abcefedca7bc67e27b",
+        "provider.jsonl": "24652edf589ab788f9ba51de5d6901db7bbb0751e15acb9de530381456ab26bd",
+        "receipts.json": "abbfdb1797ad2ca1ed8e4a2519859a3113e9b0ec272233fb4d5a468c96b4f61a",
+        "snapshots.jsonl": "4daea5ce4e6351cc90450a281462646e4355e052277a9c795f1cfb7c02d570bf",
+        "summary.json": "b5bd971f6437ed1ca6cb507cb60c215ecc2890a20322b9fd1ded3f906407b78d"
+      },
+      "wire_requests": [
+        {
+          "exchange": 1,
+          "messages": [
+            {
+              "role": "system",
+              "chars": 40314
+            },
+            {
+              "role": "user",
+              "chars": 7088
+            },
+            {
+              "role": "user",
+              "chars": 3854
+            },
+            {
+              "role": "user",
+              "chars": 425
+            }
+          ],
+          "schema_chars": 26537,
+          "estimated_input_tokens": 20649,
+          "legacy_research_plan_instruction": false,
+          "legacy_finding_only_instruction": false,
+          "legacy_report_sections_instruction": false,
+          "direct_fill_contract": true,
+          "direct_click_contract": true,
+          "handoff": "Next step from committed receipts (reuse completed work):\nOutstanding declared calls: browser_read; browser_read; run."
+        },
+        {
+          "exchange": 2,
+          "messages": [
+            {
+              "role": "system",
+              "chars": 40314
+            },
+            {
+              "role": "user",
+              "chars": 3854
+            },
+            {
+              "role": "assistant",
+              "chars": 33
+            },
+            {
+              "role": "user",
+              "chars": 7602
+            },
+            {
+              "role": "user",
+              "chars": 3267
+            },
+            {
+              "role": "user",
+              "chars": 425
+            }
+          ],
+          "schema_chars": 26537,
+          "estimated_input_tokens": 21785,
+          "legacy_research_plan_instruction": false,
+          "legacy_finding_only_instruction": false,
+          "legacy_report_sections_instruction": false,
+          "direct_fill_contract": true,
+          "direct_click_contract": true,
+          "handoff": "Next step from committed receipts (reuse completed work):\nRequired observations are incomplete; successful calls alone do not establish the selected fields.\nThe committed result does not contain the required result selector. Read the complete current document at https://example.com/production-browser-record with a single value between '鱼丸净重为 ' and ' 克。'.\nThe committed result does not contain the required result selector. Read the complete current document at https://example.com/production-browser-record with a single value between '记录校验码 ' and '。'.\nObtain the missing source evidence before copying its fields or verifying the requested changes.\nOutstanding declared calls: run."
+        },
+        {
+          "exchange": 3,
+          "messages": [
+            {
+              "role": "system",
+              "chars": 40314
+            },
+            {
+              "role": "user",
+              "chars": 3854
+            },
+            {
+              "role": "assistant",
+              "chars": 33
+            },
+            {
+              "role": "user",
+              "chars": 3267
+            },
+            {
+              "role": "assistant",
+              "chars": 33
+            },
+            {
+              "role": "user",
+              "chars": 7894
+            },
+            {
+              "role": "user",
+              "chars": 3564
+            },
+            {
+              "role": "user",
+              "chars": 425
+            }
+          ],
+          "schema_chars": 26537,
+          "estimated_input_tokens": 22853,
+          "legacy_research_plan_instruction": false,
+          "legacy_finding_only_instruction": false,
+          "legacy_report_sections_instruction": false,
+          "direct_fill_contract": true,
+          "direct_click_contract": true,
+          "handoff": "Next step from committed receipts (reuse completed work):\nRequired observations are incomplete; successful calls alone do not establish the selected fields.\nThe committed result does not contain the required result selector. Read the complete current document at https://example.com/production-browser-record with a single value between '鱼丸净重为 ' and ' 克。'.\nThe committed result does not contain the required result selector. Read the complete current document at https://example.com/production-browser-record with a single value between '记录校验码 ' and '。'.\nObtain the missing source evidence before copying its fields or verifying the requested changes.\nOutstanding declared calls: run."
+        }
+      ],
+      "raw_responses": [
+        {
+          "exchange": 1,
+          "raw_content": "{\"tool\":\"browser_read\",\"args\":{}}",
+          "usage": {
+            "prompt_tokens": 13788,
+            "completion_tokens": 12,
+            "total_tokens": 13800
+          },
+          "command_matches_committed_receipt": null
+        },
+        {
+          "exchange": 2,
+          "raw_content": "{\"tool\":\"browser_read\",\"args\":{}}",
+          "usage": {
+            "prompt_tokens": 14973,
+            "completion_tokens": 12,
+            "total_tokens": 14985
+          },
+          "command_matches_committed_receipt": null
+        },
+        {
+          "exchange": 3,
+          "raw_content": "{\"tool\":\"browser_read\",\"args\":{}}",
+          "usage": {
+            "prompt_tokens": 16113,
+            "completion_tokens": 12,
+            "total_tokens": 16125
+          },
+          "command_matches_committed_receipt": null
+        }
+      ],
+      "admitted_provider_snapshots": [
+        {
+          "artifact": "artifact_63c767d1d3919f696dcd98c5_d4fea187de4366ba9a961df6",
+          "logical_turn": 1,
+          "browser_followups": true,
+          "bound_control_count": 4,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        },
+        {
+          "artifact": "artifact_63c767d1d3919f696dcd98c5_aa201c115249616180cc5300",
+          "logical_turn": 2,
+          "browser_followups": true,
+          "bound_control_count": 4,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        },
+        {
+          "artifact": "artifact_63c767d1d3919f696dcd98c5_2c92c68e64c2439637d05cc1",
+          "logical_turn": 3,
+          "browser_followups": true,
+          "bound_control_count": 4,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        }
+      ],
+      "historical_summary": {
+        "mode": "hybrid",
+        "passed": false,
+        "stop_reason": "no_progress",
+        "successful_tools": [
+          "browser_read",
+          "browser_snapshot",
+          "codemode",
+          "open_url"
+        ],
+        "answer": "stopped after repeated tool results without progress",
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "navigations": [
+          "https://example.com/production-browser-record"
+        ],
+        "source_reads": 3,
+        "failed_edits": 0,
+        "changed_after_read": false,
+        "downloads": [],
+        "failed_stale_refs": 0,
+        "stale_ref_injected": false,
+        "posthoc_output_checks": {},
+        "explanation_output": false,
+        "source_failure_receipts": [],
+        "first_tool_rejection": null,
+        "first_edit_rejection": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "facts_match": false,
+        "assembled_upload": false,
+        "source_attempt_only": false,
+        "fixed_source_attempt": false,
+        "final_file_correct": false,
+        "version_check_reached": false,
+        "conflict_injected": false,
+        "conflict_recovery_covered": false,
+        "conflict_coverage": "not_reached",
+        "first_rejection": null,
+        "repair_attempts": [],
+        "seconds": 24.437,
+        "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+        "restored_snapshots": 4,
+        "scope": "controlled_fixture_production_entry_and_kernel"
+      },
+      "current_replay": {
+        "scope": "Replay committed receipts through current projections; no model, browser, or action execution",
+        "observations": [
+          {
+            "tool": "browser_read",
+            "file": "result.json",
+            "pointer": "/amount",
+            "observation_reason": "observation_selector_unavailable",
+            "outcome_reason": "file_field_mismatch"
+          },
+          {
+            "tool": "browser_read",
+            "file": "result.json",
+            "pointer": "/code",
+            "observation_reason": "observation_selector_unavailable",
+            "outcome_reason": "file_field_mismatch"
+          },
+          {
+            "tool": "run",
+            "file": "",
+            "pointer": null,
+            "observation_reason": "tool_execution_missing",
+            "outcome_reason": "tool_execution_missing"
+          }
+        ],
+        "handoff": "Next step from committed receipts (reuse completed work):\nRequired observations are incomplete; successful calls alone do not establish the selected fields.\nresult.json/amount: the complete formal read of the selected record lacks the field between '鱼丸净重为 ' and ' 克。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nresult.json/code: the complete formal read of the selected record lacks the field between '记录校验码 ' and '。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nObtain the missing source evidence before copying its fields or verifying the requested changes.\nOutstanding declared calls: run.",
+        "working_context": "Current work observations (runtime records):\n{\"user_task\": \"请打开 https://example.com/production-browser-record，在网页中查询福州的鱼丸净重和记录校验码。先给出带来源引用的调查报告，再把项目 result.json 中 amount 更新为实际克数（数值）、code 更新为实际校验码（字符串），保留其它字段；运行本地检查，确认文件里的两项与网页记录一致。最后说明修改内容和检查结果。\", \"project\": \"C:\\\\Users\\\\ADMINI~1\\\\AppData\\\\Local\\\\Temp\\\\codey-root-cause-p3bcbcer\", \"workspace_revision\": 0, \"workspace_fingerprint\": \"\", \"changed_files\": [], \"read_files\": [], \"executions\": [], \"verifications\": [], \"can_modify_project\": true, \"operation_receipts\": [{\"result_ref\": \"task_turn_effect:34b3fdb637867b56\", \"tool\": \"browser_snapshot\", \"ok\": true, \"page_id\": \"1ea317f00ed7402796e2b2d17a5303ad\", \"page_url\": \"https://example.com/production-browser-record\", \"generation\": 1}, {\"result_ref\": \"task_turn_effect:343489a1ec727784\", \"tool\": \"browser_read\", \"ok\": true}]}\nOutstanding declared evidence (successful calls alone do not establish selected values):\nresult.json/amount: the complete formal read of the selected record lacks the field between '鱼丸净重为 ' and ' 克。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nresult.json/code: the complete formal read of the selected record lacks the field between '记录校验码 ' and '。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nOutstanding declared executions (runtime receipts, not assistant narrative):\nRequired execution: call run and receive a successful tool result. Displayed examples and failed calls do not satisfy this requirement.\nResolve the outstanding evidence and executions before delivering the final answer. This obligation list does not replace the task's prerequisites or ordering. Obtain source evidence before copying its fields; verify requested changes after editing. Read stored results only when more detail is needed. Do not repeat an execution merely to recover its output. Stale results cannot prove current correctness.",
+        "fixed_copy_offered": false,
+        "bound_controls": true,
+        "legacy_research_plan_instruction": false
+      }
+    },
+    {
+      "directory": ".e2e-artifacts\\unified-natural-feedback-fourth",
+      "sha256": {
+        "task.txt": "cc2d1d0f91ec6dc63bbd43f1e3ca64cc0540d95294672631ad4591911d5f42f6",
+        "request.json": "640811f319dafa945acd57b3b3721aa39ab63fea54afe2abcefedca7bc67e27b",
+        "provider.jsonl": "a956218cd908fa5e94de8ba7ef911c56e1d5e5356e30b1bd182b97caf0542a74",
+        "receipts.json": "88202e7450389073648f0ae9a5e2599eb797b6590bac6eb16325816db6e6f646",
+        "snapshots.jsonl": "0f94a518d86828eebaa43c04abca1d6890220dcb60915f07f55a5982e489ba8f",
+        "summary.json": "cb2e16b555a7d3c4aeee4f018e578f6e8a30e2405150db73ef3f0bdf99d9ee7f"
+      },
+      "wire_requests": [
+        {
+          "exchange": 1,
+          "messages": [
+            {
+              "role": "system",
+              "chars": 40314
+            },
+            {
+              "role": "user",
+              "chars": 7088
+            },
+            {
+              "role": "user",
+              "chars": 3854
+            },
+            {
+              "role": "user",
+              "chars": 425
+            }
+          ],
+          "schema_chars": 26537,
+          "estimated_input_tokens": 20649,
+          "legacy_research_plan_instruction": false,
+          "legacy_finding_only_instruction": false,
+          "legacy_report_sections_instruction": false,
+          "direct_fill_contract": true,
+          "direct_click_contract": true,
+          "handoff": "Next step from committed receipts (reuse completed work):\nOutstanding declared calls: browser_read; browser_read; run."
+        },
+        {
+          "exchange": 2,
+          "messages": [
+            {
+              "role": "system",
+              "chars": 40314
+            },
+            {
+              "role": "user",
+              "chars": 3854
+            },
+            {
+              "role": "assistant",
+              "chars": 33
+            },
+            {
+              "role": "user",
+              "chars": 7886
+            },
+            {
+              "role": "user",
+              "chars": 3551
+            },
+            {
+              "role": "user",
+              "chars": 425
+            }
+          ],
+          "schema_chars": 26537,
+          "estimated_input_tokens": 21927,
+          "legacy_research_plan_instruction": false,
+          "legacy_finding_only_instruction": false,
+          "legacy_report_sections_instruction": false,
+          "direct_fill_contract": true,
+          "direct_click_contract": true,
+          "handoff": "Next step from committed receipts (reuse completed work):\nRequired observations are incomplete; successful calls alone do not establish the selected fields.\nresult.json/amount: the complete formal read of the selected record lacks the field between '鱼丸净重为 ' and ' 克。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nresult.json/code: the complete formal read of the selected record lacks the field between '记录校验码 ' and '。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nObtain the missing source evidence before copying its fields or verifying the requested changes.\nOutstanding declared calls: run."
+        },
+        {
+          "exchange": 3,
+          "messages": [
+            {
+              "role": "system",
+              "chars": 37109
+            },
+            {
+              "role": "user",
+              "chars": 3854
+            },
+            {
+              "role": "assistant",
+              "chars": 33
+            },
+            {
+              "role": "user",
+              "chars": 3551
+            },
+            {
+              "role": "assistant",
+              "chars": 113
+            },
+            {
+              "role": "user",
+              "chars": 8314
+            },
+            {
+              "role": "user",
+              "chars": 843
+            },
+            {
+              "role": "user",
+              "chars": 425
+            }
+          ],
+          "schema_chars": 25311,
+          "estimated_input_tokens": 21142,
+          "legacy_research_plan_instruction": false,
+          "legacy_finding_only_instruction": false,
+          "legacy_report_sections_instruction": false,
+          "direct_fill_contract": true,
+          "direct_click_contract": true,
+          "handoff": "Next step from committed receipts (reuse completed work):\nRequired observations are incomplete; successful calls alone do not establish the selected fields.\nresult.json/amount: the complete formal read of the selected record lacks the field between '鱼丸净重为 ' and ' 克。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nresult.json/code: the complete formal read of the selected record lacks the field between '记录校验码 ' and '。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nObtain the missing source evidence before copying its fields or verifying the requested changes.\nOutstanding declared calls: run."
+        },
+        {
+          "exchange": 4,
+          "messages": [
+            {
+              "role": "system",
+              "chars": 37109
+            },
+            {
+              "role": "user",
+              "chars": 3854
+            },
+            {
+              "role": "assistant",
+              "chars": 33
+            },
+            {
+              "role": "user",
+              "chars": 3551
+            },
+            {
+              "role": "assistant",
+              "chars": 113
+            },
+            {
+              "role": "user",
+              "chars": 843
+            },
+            {
+              "role": "assistant",
+              "chars": 98
+            },
+            {
+              "role": "user",
+              "chars": 10265
+            },
+            {
+              "role": "user",
+              "chars": 3273
+            },
+            {
+              "role": "user",
+              "chars": 425
+            }
+          ],
+          "schema_chars": 25311,
+          "estimated_input_tokens": 22557,
+          "legacy_research_plan_instruction": false,
+          "legacy_finding_only_instruction": false,
+          "legacy_report_sections_instruction": false,
+          "direct_fill_contract": true,
+          "direct_click_contract": true,
+          "handoff": "Next step from committed receipts (reuse completed work):\nRequired observations are incomplete; successful calls alone do not establish the selected fields.\nresult.json/amount: the complete formal read of the selected record lacks the field between '鱼丸净重为 ' and ' 克。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nresult.json/code: the complete formal read of the selected record lacks the field between '记录校验码 ' and '。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nObtain the missing source evidence before copying its fields or verifying the requested changes.\nOutstanding declared calls: run."
+        },
+        {
+          "exchange": 5,
+          "messages": [
+            {
+              "role": "system",
+              "chars": 40314
+            },
+            {
+              "role": "user",
+              "chars": 3854
+            },
+            {
+              "role": "assistant",
+              "chars": 33
+            },
+            {
+              "role": "user",
+              "chars": 3551
+            },
+            {
+              "role": "assistant",
+              "chars": 113
+            },
+            {
+              "role": "user",
+              "chars": 843
+            },
+            {
+              "role": "assistant",
+              "chars": 98
+            },
+            {
+              "role": "user",
+              "chars": 3273
+            },
+            {
+              "role": "assistant",
+              "chars": 37
+            },
+            {
+              "role": "user",
+              "chars": 9050
+            },
+            {
+              "role": "user",
+              "chars": 1575
+            },
+            {
+              "role": "user",
+              "chars": 425
+            }
+          ],
+          "schema_chars": 26537,
+          "estimated_input_tokens": 23912,
+          "legacy_research_plan_instruction": false,
+          "legacy_finding_only_instruction": false,
+          "legacy_report_sections_instruction": false,
+          "direct_fill_contract": true,
+          "direct_click_contract": true,
+          "handoff": "Next step from committed receipts (reuse completed work):\nRequired observations are incomplete; successful calls alone do not establish the selected fields.\nresult.json/amount: the complete formal read of the selected record lacks the field between '鱼丸净重为 ' and ' 克。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nresult.json/code: the complete formal read of the selected record lacks the field between '记录校验码 ' and '。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nObtain the missing source evidence before copying its fields or verifying the requested changes.\nOutstanding declared calls: run."
+        },
+        {
+          "exchange": 6,
+          "messages": [
+            {
+              "role": "system",
+              "chars": 37109
+            },
+            {
+              "role": "user",
+              "chars": 3854
+            },
+            {
+              "role": "assistant",
+              "chars": 33
+            },
+            {
+              "role": "user",
+              "chars": 3551
+            },
+            {
+              "role": "assistant",
+              "chars": 113
+            },
+            {
+              "role": "user",
+              "chars": 843
+            },
+            {
+              "role": "assistant",
+              "chars": 98
+            },
+            {
+              "role": "user",
+              "chars": 3273
+            },
+            {
+              "role": "assistant",
+              "chars": 37
+            },
+            {
+              "role": "user",
+              "chars": 1575
+            },
+            {
+              "role": "assistant",
+              "chars": 98
+            },
+            {
+              "role": "user",
+              "chars": 9478
+            },
+            {
+              "role": "user",
+              "chars": 813
+            },
+            {
+              "role": "user",
+              "chars": 425
+            }
+          ],
+          "schema_chars": 25311,
+          "estimated_input_tokens": 23107,
+          "legacy_research_plan_instruction": false,
+          "legacy_finding_only_instruction": false,
+          "legacy_report_sections_instruction": false,
+          "direct_fill_contract": true,
+          "direct_click_contract": true,
+          "handoff": "Next step from committed receipts (reuse completed work):\nRequired observations are incomplete; successful calls alone do not establish the selected fields.\nresult.json/amount: the complete formal read of the selected record lacks the field between '鱼丸净重为 ' and ' 克。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nresult.json/code: the complete formal read of the selected record lacks the field between '记录校验码 ' and '。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nObtain the missing source evidence before copying its fields or verifying the requested changes.\nOutstanding declared calls: run."
+        },
+        {
+          "exchange": 7,
+          "messages": [
+            {
+              "role": "system",
+              "chars": 37109
+            },
+            {
+              "role": "user",
+              "chars": 3854
+            },
+            {
+              "role": "assistant",
+              "chars": 33
+            },
+            {
+              "role": "user",
+              "chars": 3551
+            },
+            {
+              "role": "assistant",
+              "chars": 113
+            },
+            {
+              "role": "user",
+              "chars": 843
+            },
+            {
+              "role": "assistant",
+              "chars": 98
+            },
+            {
+              "role": "user",
+              "chars": 3273
+            },
+            {
+              "role": "assistant",
+              "chars": 37
+            },
+            {
+              "role": "user",
+              "chars": 1575
+            },
+            {
+              "role": "assistant",
+              "chars": 98
+            },
+            {
+              "role": "user",
+              "chars": 813
+            },
+            {
+              "role": "assistant",
+              "chars": 33
+            },
+            {
+              "role": "user",
+              "chars": 10143
+            },
+            {
+              "role": "user",
+              "chars": 3655
+            },
+            {
+              "role": "user",
+              "chars": 425
+            }
+          ],
+          "schema_chars": 25311,
+          "estimated_input_tokens": 24294,
+          "legacy_research_plan_instruction": false,
+          "legacy_finding_only_instruction": false,
+          "legacy_report_sections_instruction": false,
+          "direct_fill_contract": true,
+          "direct_click_contract": true,
+          "handoff": "Next step from committed receipts (reuse completed work):\nRequired observations are incomplete; successful calls alone do not establish the selected fields.\nresult.json/amount: the complete formal read of the selected record lacks the field between '鱼丸净重为 ' and ' 克。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nresult.json/code: the complete formal read of the selected record lacks the field between '记录校验码 ' and '。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nObtain the missing source evidence before copying its fields or verifying the requested changes.\nOutstanding declared calls: run.\n\nIf the current evidence answers the question, submit it. If information is still missing, inspect the current query controls: {\"tool\": \"browser_snapshot\", \"args\": {}}"
+        }
+      ],
+      "raw_responses": [
+        {
+          "exchange": 1,
+          "raw_content": "{\"tool\":\"browser_read\",\"args\":{}}",
+          "usage": {
+            "prompt_tokens": 13779,
+            "completion_tokens": 12,
+            "total_tokens": 13791
+          },
+          "command_matches_committed_receipt": null
+        },
+        {
+          "exchange": 2,
+          "raw_content": "{\"tool\":\"browser_click\",\"args\":{\"ref\":{\"context\": \"\", \"name\": \"Locality\", \"role\": \"textbox\"},\"purpose\":\"action\"}}",
+          "usage": {
+            "prompt_tokens": 15064,
+            "completion_tokens": 33,
+            "total_tokens": 15097
+          },
+          "command_matches_committed_receipt": null
+        },
+        {
+          "exchange": 3,
+          "raw_content": "{\"tool\":\"browser_click\",\"args\":{\"ref\":\"b967e4e13875345b5a6e9af9ef1a52c4ag1e1\",\"purpose\":\"action\"}}",
+          "usage": {
+            "prompt_tokens": 14715,
+            "completion_tokens": 51,
+            "total_tokens": 14766
+          },
+          "command_matches_committed_receipt": null
+        },
+        {
+          "exchange": 4,
+          "raw_content": "{\"tool\":\"browser_snapshot\",\"args\":{}}",
+          "usage": {
+            "prompt_tokens": 16047,
+            "completion_tokens": 12,
+            "total_tokens": 16059
+          },
+          "command_matches_committed_receipt": null
+        },
+        {
+          "exchange": 5,
+          "raw_content": "{\"tool\":\"browser_click\",\"args\":{\"ref\":\"b967e4e13875345b5a6e9af9ef1a52c4ag3e2\",\"purpose\":\"action\"}}",
+          "usage": {
+            "prompt_tokens": 17185,
+            "completion_tokens": 51,
+            "total_tokens": 17236
+          },
+          "command_matches_committed_receipt": null
+        },
+        {
+          "exchange": 6,
+          "raw_content": "{\"tool\":\"browser_read\",\"args\":{}}",
+          "usage": {
+            "prompt_tokens": 16842,
+            "completion_tokens": 12,
+            "total_tokens": 16854
+          },
+          "command_matches_committed_receipt": null
+        },
+        {
+          "exchange": 7,
+          "raw_content": "{\"tool\":\"browser_snapshot\",\"args\":{}}",
+          "usage": {
+            "prompt_tokens": 18106,
+            "completion_tokens": 12,
+            "total_tokens": 18118
+          },
+          "command_matches_committed_receipt": null
+        },
+        {
+          "exchange": 8,
+          "error": "ContextOverflowError: model context overflow before send: estimated input 25564 exceeds limit 24576"
+        }
+      ],
+      "admitted_provider_snapshots": [
+        {
+          "artifact": "artifact_321b6c84a0e56e7f80ca1e97_22bfc4f6dfdfd77bd28e3d36",
+          "logical_turn": 1,
+          "browser_followups": true,
+          "bound_control_count": 4,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        },
+        {
+          "artifact": "artifact_321b6c84a0e56e7f80ca1e97_3292dccf0f0d9c70a2b7a580",
+          "logical_turn": 2,
+          "browser_followups": true,
+          "bound_control_count": 4,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        },
+        {
+          "artifact": "artifact_321b6c84a0e56e7f80ca1e97_1034d2b756be6189b8e6f9fd",
+          "logical_turn": 3,
+          "browser_followups": true,
+          "bound_control_count": 0,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        },
+        {
+          "artifact": "artifact_321b6c84a0e56e7f80ca1e97_bcc155adecceaf56bae0c273",
+          "logical_turn": 4,
+          "browser_followups": true,
+          "bound_control_count": 0,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        },
+        {
+          "artifact": "artifact_321b6c84a0e56e7f80ca1e97_277e8c1775be878f1cefabd1",
+          "logical_turn": 5,
+          "browser_followups": true,
+          "bound_control_count": 4,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        },
+        {
+          "artifact": "artifact_321b6c84a0e56e7f80ca1e97_866a2cef27f3b85860887c67",
+          "logical_turn": 6,
+          "browser_followups": true,
+          "bound_control_count": 0,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        },
+        {
+          "artifact": "artifact_321b6c84a0e56e7f80ca1e97_f5e50656b9e8b838dad70eb0",
+          "logical_turn": 7,
+          "browser_followups": true,
+          "bound_control_count": 0,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        },
+        {
+          "artifact": "artifact_321b6c84a0e56e7f80ca1e97_295e377729572f429971890f",
+          "logical_turn": 8,
+          "browser_followups": true,
+          "bound_control_count": 4,
+          "input_binding": null,
+          "browser_copy": null,
+          "browser_fill_text": null,
+          "report_field_slots": []
+        }
+      ],
+      "historical_summary": {
+        "mode": "hybrid",
+        "passed": false,
+        "stop_reason": "provider_failure",
+        "successful_tools": [
+          "browser_click",
+          "browser_read",
+          "browser_snapshot",
+          "codemode",
+          "open_url"
+        ],
+        "answer": "provider failed [ContextOverflowError]: model context overflow before send: estimated input 25564 exceeds limit 24576",
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "navigations": [
+          "https://example.com/production-browser-record"
+        ],
+        "source_reads": 2,
+        "failed_edits": 0,
+        "changed_after_read": false,
+        "downloads": [],
+        "failed_stale_refs": 1,
+        "stale_ref_injected": false,
+        "posthoc_output_checks": {},
+        "explanation_output": false,
+        "source_failure_receipts": [],
+        "first_tool_rejection": {
+          "identity": "task_turn_effect:bf00cbb516b3a89b",
+          "tool": "codemode",
+          "ok": false,
+          "args": {
+            "code": "return unwrap(await tools.browser_click(inputs));",
+            "inputs": {
+              "purpose": "action",
+              "ref": "b967e4e13875345b5a6e9af9ef1a52c4ag1e1"
+            },
+            "language": "javascript"
+          },
+          "model_text": "ERROR: Previously observed browser reference is stale or unavailable. Take a fresh browser_snapshot. The action was not delivered.\nSettled child receipts (the parent failure does not undo them): task_turn_effect:fbdf1248c9a17b18 (browser_click, ok=False)\nContinue only the missing work. Do not resubmit the original program to repeat completed actions.\nCurrent codemode contract:\nWrite an async JavaScript function body using tools.* and return its JSON result explicitly. Use return null for an intentional empty result. Normal authorization applies. Returning modified data does not persist it; invoke the declared action tool to change external state. Calls return Result<T>; use unwrap(await tools.NAME(...)) to obtain T. Access only fields declared for that tool's output schema. Await all tool/store/load calls. console.log/error fail; only return delivers data. No direct filesystem, process, network, shell or recursive CodeMode access. Preserve argument strings exactly, including whether quote characters are present. Put task data (paths, search queries, file contents) in inputs, not JS string literals. Read it as inputs.name; inputs is immutable JSON data, never executable source. Example inputs={\"path\": \"app.py\"}; JavaScript: const result = await tools.read_file({path:inputs.path}); const file = unwrap(result); return file.text;\nMultiline data arguments: {\"code\": \"return inputs.text;\", \"inputs\": {\"text\": \"first\\nsecond\\n\"}}\nArguments (JSON Schema; only declared fields): {\"additionalProperties\":false,\"properties\":{\"code\":{\"type\":\"string\"},\"inputs\":{\"additionalProperties\":true,\"description\":\"Named JSON data fields exposed as read-only inputs in JavaScript.\",\"type\":\"object\"},\"language\":{\"enum\":[\"javascript\",\"js\"],\"type\":\"string\"},\"repair_of\":{\"description\":\"Optional kernel-issued token for a return-only receipt replay.\",\"pattern\":\"^cmr_[A-Za-z0-9_-]{6,64}$\",\"type\":\"string\"}},\"required\":[\"code\"],\"type\":\"object\"}",
+          "canonical": {
+            "child_effect_ids": [
+              "task_turn_effect:fbdf1248c9a17b18"
+            ]
+          },
+          "audit": {
+            "catalog_digest": "sha256:184587b26acecb6c31d8b1284f64617ff67a214aed53600b48d78716017e038f",
+            "child_calls": 1,
+            "codemode_execution_id": "run_6a31374433a74ff290805a0120bfb8e5:turn:3:codemode:9f28e08bb1c4ea0d",
+            "error_code": "execution_error"
+          }
+        },
+        "first_edit_rejection": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "facts_match": false,
+        "assembled_upload": false,
+        "source_attempt_only": false,
+        "fixed_source_attempt": false,
+        "final_file_correct": false,
+        "version_check_reached": false,
+        "conflict_injected": false,
+        "conflict_recovery_covered": false,
+        "conflict_coverage": "not_reached",
+        "first_rejection": null,
+        "repair_attempts": [],
+        "seconds": 85.125,
+        "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+        "restored_snapshots": 9,
+        "scope": "controlled_fixture_production_entry_and_kernel"
+      },
+      "current_replay": {
+        "scope": "Replay committed receipts through current projections; no model, browser, or action execution",
+        "observations": [
+          {
+            "tool": "browser_read",
+            "file": "result.json",
+            "pointer": "/amount",
+            "observation_reason": "observation_selector_unavailable",
+            "outcome_reason": "file_field_mismatch"
+          },
+          {
+            "tool": "browser_read",
+            "file": "result.json",
+            "pointer": "/code",
+            "observation_reason": "observation_selector_unavailable",
+            "outcome_reason": "file_field_mismatch"
+          },
+          {
+            "tool": "run",
+            "file": "",
+            "pointer": null,
+            "observation_reason": "tool_execution_missing",
+            "outcome_reason": "tool_execution_missing"
+          }
+        ],
+        "handoff": "Next step from committed receipts (reuse completed work):\nRequired observations are incomplete; successful calls alone do not establish the selected fields.\nresult.json/amount: the complete formal read of the selected record lacks the field between '鱼丸净重为 ' and ' 克。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nresult.json/code: the complete formal read of the selected record lacks the field between '记录校验码 ' and '。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nObtain the missing source evidence before copying its fields or verifying the requested changes.\nOutstanding declared calls: run.",
+        "working_context": "Current work observations (runtime records):\n{\"user_task\": \"请打开 https://example.com/production-browser-record，在网页中查询福州的鱼丸净重和记录校验码。先给出带来源引用的调查报告，再把项目 result.json 中 amount 更新为实际克数（数值）、code 更新为实际校验码（字符串），保留其它字段；运行本地检查，确认文件里的两项与网页记录一致。最后说明修改内容和检查结果。\", \"project\": \"C:\\\\Users\\\\ADMINI~1\\\\AppData\\\\Local\\\\Temp\\\\codey-root-cause-6elelmx9\", \"workspace_revision\": 0, \"workspace_fingerprint\": \"\", \"changed_files\": [], \"read_files\": [], \"executions\": [], \"verifications\": [], \"can_modify_project\": true, \"operation_receipts\": [{\"result_ref\": \"task_turn_effect:df5daaa6cfa2b8f7\", \"tool\": \"browser_snapshot\", \"ok\": true, \"page_id\": \"741880b682214ac294ee028d01aaec03\", \"page_url\": \"https://example.com/production-browser-record\", \"generation\": 1}, {\"result_ref\": \"task_turn_effect:ec8737acf3de03c8\", \"tool\": \"browser_read\", \"ok\": true}]}\nOutstanding declared evidence (successful calls alone do not establish selected values):\nresult.json/amount: the complete formal read of the selected record lacks the field between '鱼丸净重为 ' and ' 克。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nresult.json/code: the complete formal read of the selected record lacks the field between '记录校验码 ' and '。'. Inspect its current observed query/detail controls and complete the task's required interaction; rereading the unchanged view cannot load it. If a click is already delivered, continue its wait/read recovery without clicking again.\nOutstanding declared executions (runtime receipts, not assistant narrative):\nRequired execution: call run and receive a successful tool result. Displayed examples and failed calls do not satisfy this requirement.\nResolve the outstanding evidence and executions before delivering the final answer. This obligation list does not replace the task's prerequisites or ordering. Obtain source evidence before copying its fields; verify requested changes after editing. Read stored results only when more detail is needed. Do not repeat an execution merely to recover its output. Stale results cannot prove current correctness.",
+        "fixed_copy_offered": false,
+        "bound_controls": true,
+        "legacy_research_plan_instruction": false
+      }
+    }
+  ],
+  "context_budget": {
+    "source": "ExperimentProvider configuration",
+    "window_tokens": 32768,
+    "output_reserve_tokens": 8192,
+    "input_limit_tokens": 24576,
+    "keep_recent_tokens": 12000,
+    "count_method": "estimated"
+  }
+}

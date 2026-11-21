@@ -1,0 +1,576 @@
+{
+  "created_at": "2026-11-21T13:42:10+08:00",
+  "analysis_base_commit": "06640d73",
+  "scope": "Source evidence projection, report guidance selection, and complete-read missing-field feedback",
+  "modified_python_sha256": {
+    "codey/operations/browser_task_handoff.py": "66b0ec0b65f36169d3df1cfe38b1150e3b0180fdee547030c38ebdbcd89e5e42",
+    "codey/operations/kernel_prompt.py": "e5a72de687e1dbe647fa220000be9c14cf028dcb3cd83c9d90472e3620f06c54",
+    "codey/operations/task_guidance.py": "b9212aea7461e9611ab011175fc56f26bc090e066b63e889059d090e94ce504c",
+    "codey/policies/tool_requirement.py": "210b8a4f9f678c910587964855c72fb341764fda3a154df62ddc847bed5edb1b",
+    "codey/research/answer_contract.py": "8beae58b1d4a309d03363be3390afb44864d4d59e43ff232d02cf0cd7013fe30",
+    "tests/test_browser_followups_production.py": "c24bbf58535aeb3c023782c1d84148ebc0e7b78cd785f9be6760e81172221437",
+    "tests/test_browser_project_handoff.py": "f2e851bfc99d624a4416d3c4d197ad6cdbc54f8c0bd8dddec0ab320ce91122f5",
+    "tests/test_declared_work_continuation.py": "1cfdaf3177a3e2be76a0e323fa33718a19577972a8c2f24aa15074aa0f4a080d",
+    "tests/test_kernel_prompt_task_guidance_ownership.py": "0a7b4d910681d5e7b407b11a1a54d278ca0683ba644f952005b92b1e12fc6c50",
+    "tests/test_research_answer_fields.py": "7fd56d41a19a4a4b8c96abed81f0be40189076b1057f9908fc60fb206cebc9b5"
+  },
+  "report_and_probe_sha256": {
+    "docs/reports/codey-unified-natural-root-cause-20261121.zh-CN.md": "940988a08affec1aeb495e6a6cfd0142e73740d4b5e007fd0d40f084056e2e6d",
+    "docs/reports/data/codey-unified-natural-root-cause-20261121.json": "19413c10e13636f568fd08936205af7b165d020221f7219d5b4481e1397d3d53",
+    ".e2e-artifacts/unified-natural-root-cause-audit.py": "acb7c422daf43aace3b6d0a803662541b8f1807132f656dbc8330ac5270baaec",
+    ".e2e-artifacts/unified-natural-owned-precision-final.json": "6675c61ef7cef9916ba59cc69b10c481163c529da1e3ea13464e73341afabfa5"
+  },
+  "logs": [
+    {
+      "path": ".e2e-artifacts/unified-natural-feedback-fourth.log",
+      "sha256": "3d3c1c6edfb7934713aaed1a47443bd4b8abd675761c1591f722cabd9e7c54f6",
+      "tail": [
+        "{'mode': 'hybrid', 'passed': False, 'stop_reason': 'provider_failure', 'successful_tools': ['browser_click', 'browser_read', 'browser_snapshot', 'codemode', 'open_url'], 'answer': 'provider failed [ContextOverflowError]: model context overflow before send: estimated input 25564 exceeds limit 24576', 'project_result': {'amount': 0, 'code': 'unknown'}, 'navigations': ['https://example.com/production-browser-record'], 'source_reads': 2, 'failed_edits': 0, 'changed_after_read': False, 'downloads': [], 'failed_stale_refs': 1, 'stale_ref_injected': False, 'posthoc_output_checks': {}, 'explanation_output': False, 'source_failure_receipts': [], 'first_tool_rejection': {'identity': 'task_turn_effect:bf00cbb516b3a89b', 'tool': 'codemode', 'ok': False, 'args': {'code': 'return unwrap(await tools.browser_click(inputs));', 'inputs': {'purpose': 'action', 'ref': 'b967e4e13875345b5a6e9af9ef1a52c4ag1e1'}, 'language': 'javascript'}, 'model_text': 'ERROR: Previously observed browser reference is stale or unavailable. Take a fresh browser_snapshot. The action was not delivered.\\nSettled child receipts (the parent failure does not undo them): task_turn_effect:fbdf1248c9a17b18 (browser_click, ok=False)\\nContinue only the missing work. Do not resubmit the original program to repeat completed actions.\\nCurrent codemode contract:\\nWrite an async JavaScript function body using tools.* and return its JSON result explicitly. Use return null for an intentional empty result. Normal authorization applies. Returning modified data does not persist it; invoke the declared action tool to change external state. Calls return Result<T>; use unwrap(await tools.NAME(...)) to obtain T. Access only fields declared for that tool\\'s output schema. Await all tool/store/load calls. console.log/error fail; only return delivers data. No direct filesystem, process, network, shell or recursive CodeMode access. Preserve argument strings exactly, including whether quote characters are present. Put task data (paths, search queries, file contents) in inputs, not JS string literals. Read it as inputs.name; inputs is immutable JSON data, never executable source. Example inputs={\"path\": \"app.py\"}; JavaScript: const result = await tools.read_file({path:inputs.path}); const file = unwrap(result); return file.text;\\nMultiline data arguments: {\"code\": \"return inputs.text;\", \"inputs\": {\"text\": \"first\\\\nsecond\\\\n\"}}\\nArguments (JSON Schema; only declared fields): {\"additionalProperties\":false,\"properties\":{\"code\":{\"type\":\"string\"},\"inputs\":{\"additionalProperties\":true,\"description\":\"Named JSON data fields exposed as read-only inputs in JavaScript.\",\"type\":\"object\"},\"language\":{\"enum\":[\"javascript\",\"js\"],\"type\":\"string\"},\"repair_of\":{\"description\":\"Optional kernel-issued token for a return-only receipt replay.\",\"pattern\":\"^cmr_[A-Za-z0-9_-]{6,64}$\",\"type\":\"string\"}},\"required\":[\"code\"],\"type\":\"object\"}', 'canonical': {'child_effect_ids': ['task_turn_effect:fbdf1248c9a17b18']}, 'audit': {'catalog_digest': 'sha256:184587b26acecb6c31d8b1284f64617ff67a214aed53600b48d78716017e038f', 'child_calls': 1, 'codemode_execution_id': 'run_6a31374433a74ff290805a0120bfb8e5:turn:3:codemode:9f28e08bb1c4ea0d', 'error_code': 'execution_error'}}, 'first_edit_rejection': None, 'true_stale_conflicts': 0, 'fresh_read_recovery': False, 'facts_match': False, 'assembled_upload': False, 'source_attempt_only': False, 'fixed_source_attempt': False, 'final_file_correct': False, 'version_check_reached': False, 'conflict_injected': False, 'conflict_recovery_covered': False, 'conflict_coverage': 'not_reached', 'first_rejection': None, 'repair_attempts': [], 'seconds': 85.125, 'model': 'koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M', 'restored_snapshots': 9, 'scope': 'controlled_fixture_production_entry_and_kernel'}"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-field-feedback-first.log",
+      "sha256": "3556524fc304e12a9ed2fc28d6be744c8eff9a8b5cea7c8d5fa2a47c09126475",
+      "tail": [
+        "RAM disk: R:\\codey-pytest\\run-0egpmkrb (retained after failure)",
+        "=========================== short test summary info ===========================",
+        "FAILED tests/test_declared_work_continuation.py::test_missing_source_fields_remain_visible_alongside_pending_execution[False]",
+        "FAILED tests/test_declared_work_continuation.py::test_missing_source_fields_remain_visible_alongside_pending_execution[True]",
+        "2 failed in 2.19s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-field-feedback-second.log",
+      "sha256": "a977e830cdd92fd1bb6e637d089175d75e3510df0e6313cddefd822dff59980d",
+      "tail": [
+        "..                                                                       [100%]",
+        "RAM disk: R:\\codey-pytest\\run-72kmaif0 (cleaned at process exit)",
+        "2 passed in 1.95s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-first.log",
+      "sha256": "dcb3e65447253a2f10d4dc5c156b37565ed4a4c0b3ae6e2d69ff169d821f58cf",
+      "tail": [
+        "  \"seconds\": 33.063,",
+        "  \"model\": \"koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M\",",
+        "  \"restored_snapshots\": 4,",
+        "  \"scope\": \"controlled_fixture_production_entry_and_kernel\"",
+        "}"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-guidance-final-first-stack.log",
+      "sha256": "45d029ccaffd4ff64b491b5254717799f4a091e2138ef9344aacfdb27b019784",
+      "tail": [
+        "    Queue.get (queue.py:180)",
+        "    BrowserWorker._loop (codey\\automation\\browser_worker.py:172)",
+        "    Thread.run (threading.py:1012)",
+        "    Thread._bootstrap_inner (threading.py:1075)",
+        "    Thread._bootstrap (threading.py:1032)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-guidance-final-first.log",
+      "sha256": "d3ae565d07f7d601b7dc3cc005dfbf14176658f7dd549b50a2572e82967a5d32",
+      "tail": [
+        "RAM disk: R:\\codey-pytest\\run-e7ma7yhi (retained after failure)",
+        "=========================== short test summary info ===========================",
+        "FAILED tests/test_kernel_prompt_task_guidance_ownership.py::test_note_reader_description_does_not_advertise_a_hidden_write_tool[False]",
+        "FAILED tests/test_kernel_prompt_task_guidance_ownership.py::test_note_reader_description_does_not_advertise_a_hidden_write_tool[True]",
+        "2 failed, 122 passed in 326.65s (0:05:26)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-guidance-final-second.log",
+      "sha256": "4e63dd248faadae772bdba0a9dc54906e7ff1da4c6b38cb577d96f560768808c",
+      "tail": [
+        "RAM disk: R:\\codey-pytest\\run-yjfqhvgs (retained after failure)",
+        "=========================== short test summary info ===========================",
+        "FAILED tests/test_research_answer_fields.py::test_reloaded_query_cannot_fall_back_to_an_old_field[False-]",
+        "FAILED tests/test_research_answer_fields.py::test_reloaded_query_cannot_fall_back_to_an_old_field[False-Record A]",
+        "2 failed, 140 passed in 214.29s (0:03:34)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-guidance-frozen-final.log",
+      "sha256": "c39cf57f911445a2d120af2975bf1ccf1e32f9535e6bcd9acb0238b8e855fd37",
+      "tail": [
+        "........................................................................ [ 40%]",
+        "........................................................................ [ 81%]",
+        "................................                                         [100%]",
+        "RAM disk: R:\\codey-pytest\\run-rx_tbh18 (cleaned at process exit)",
+        "176 passed in 234.78s (0:03:54)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-guidance-regression-first.log",
+      "sha256": "be96aeec735cfa19f912d6e7a3680d46b89a43be4324b96cef08c650a0e86ba7",
+      "tail": [
+        "RAM disk: R:\\codey-pytest\\run-4ri53ii6 (retained after failure)",
+        "=========================== short test summary info ===========================",
+        "FAILED tests/test_declared_work_continuation.py::test_missing_source_fields_remain_visible_alongside_pending_execution[False]",
+        "FAILED tests/test_declared_work_continuation.py::test_missing_source_fields_remain_visible_alongside_pending_execution[True]",
+        "2 failed in 2.07s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-guidance-regression-second.log",
+      "sha256": "e679fd86aa86e4b8b4a5d683936f457420215bd246b04dc6b3db719c97411a9c",
+      "tail": [
+        "..                                                                       [100%]",
+        "RAM disk: R:\\codey-pytest\\run-tcyki7y1 (cleaned at process exit)",
+        "2 passed in 2.08s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-guidance-third.log",
+      "sha256": "3f410697d24eba329ca6c29668078b44ad271dcba4e671ca90fe12b09ebd553a",
+      "tail": [
+        "{'mode': 'hybrid', 'passed': False, 'stop_reason': 'no_progress', 'successful_tools': ['browser_read', 'browser_snapshot', 'codemode', 'open_url'], 'answer': 'stopped after repeated tool results without progress', 'project_result': {'amount': 0, 'code': 'unknown'}, 'navigations': ['https://example.com/production-browser-record'], 'source_reads': 3, 'failed_edits': 0, 'changed_after_read': False, 'downloads': [], 'failed_stale_refs': 0, 'stale_ref_injected': False, 'posthoc_output_checks': {}, 'explanation_output': False, 'source_failure_receipts': [], 'first_tool_rejection': None, 'first_edit_rejection': None, 'true_stale_conflicts': 0, 'fresh_read_recovery': False, 'facts_match': False, 'assembled_upload': False, 'source_attempt_only': False, 'fixed_source_attempt': False, 'final_file_correct': False, 'version_check_reached': False, 'conflict_injected': False, 'conflict_recovery_covered': False, 'conflict_coverage': 'not_reached', 'first_rejection': None, 'repair_attempts': [], 'seconds': 24.437, 'model': 'koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M', 'restored_snapshots': 4, 'scope': 'controlled_fixture_production_entry_and_kernel'}"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-manifest-first-stack.log",
+      "sha256": "c5c0f4a0028b619f63bae06559c78b71199452c5d9b8e5cdba688b4a35b219ec",
+      "tail": [
+        "Python v3.12.8 (C:\\Program Files\\Python312\\python.exe)",
+        "",
+        "Thread 39336 (active+gil): \"MainThread\"",
+        "    findall (re\\__init__.py:217)",
+        "    <module> (<stdin>:11)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-mechanisms-audit-first-stack.log",
+      "sha256": "dba3aadfab295741a18419dacf5c156eec204e67aae9ee91f1fffa96fbf98564",
+      "tail": [
+        "    Queue.get (queue.py:180)",
+        "    BrowserWorker._loop (codey\\automation\\browser_worker.py:172)",
+        "    Thread.run (threading.py:1012)",
+        "    Thread._bootstrap_inner (threading.py:1075)",
+        "    Thread._bootstrap (threading.py:1032)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-mechanisms-audit-first.log",
+      "sha256": "06b9bd9812e1e4936907caca8bb1b02b24b6cf641bb58761315123d0dfaa777f",
+      "tail": [
+        "FAILED tests/test_browser_project_handoff.py::test_project_continuation_requires_authorized_unfinished_work[research-False]",
+        "FAILED tests/test_browser_project_handoff.py::test_project_continuation_requires_authorized_unfinished_work[research-True]",
+        "FAILED tests/test_browser_followups_production.py::test_query_restart_uses_committed_click_or_preserves_uncertainty[False-after]",
+        "FAILED tests/test_browser_followups_production.py::test_query_restart_uses_committed_click_or_preserves_uncertainty[True-after]",
+        "6 failed, 76 passed in 144.99s (0:02:24)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-mechanisms-audit-second.log",
+      "sha256": "d7335afbb9fcb024a2fe3b864eca7f6aa8a5018264d73d06ebafaa01193f61ac",
+      "tail": [
+        "........................................................................ [ 36%]",
+        "........................................................................ [ 73%]",
+        "...................................................                      [100%]",
+        "RAM disk: R:\\codey-pytest\\run-7_es6w8m (cleaned at process exit)",
+        "195 passed in 273.64s (0:04:33)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-mypy-final.log",
+      "sha256": "e063c917338fa6fd92b5b7004652f9a676f29686f8fa891fe922c202a8345596",
+      "tail": [
+        "Success: no issues found in 714 source files"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-mypy-first.log",
+      "sha256": "e063c917338fa6fd92b5b7004652f9a676f29686f8fa891fe922c202a8345596",
+      "tail": [
+        "Success: no issues found in 714 source files"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-mypy-frozen-final.log",
+      "sha256": "e063c917338fa6fd92b5b7004652f9a676f29686f8fa891fe922c202a8345596",
+      "tail": [
+        "Success: no issues found in 714 source files"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-owned-mypy-complete-final.log",
+      "sha256": "a7667192301049ff3379b1da5b9c1c5809c83c8eee6f1c5511d9d40710e73c7e",
+      "tail": [
+        "tools\\research_submission_handoff_ab.py:131: error: Argument \"connect_provider\" to \"run_headless\" has incompatible type \"Callable[[str], ExperimentProvider]\"; expected \"HeadlessConnector\"  [arg-type]",
+        "tools\\research_submission_handoff_ab.py:131: note: \"HeadlessConnector.__call__\" has type \"Callable[[Arg(str, 'provider_id'), NamedArg(int, 'port')], ChatProvider]\"",
+        "tools\\research_natural_handoff_ab.py:295: error: Argument \"connect_provider\" to \"run_headless\" has incompatible type \"Callable[[str, KwArg(object)], ExperimentProvider]\"; expected \"HeadlessConnector\"  [arg-type]",
+        "tools\\research_natural_handoff_ab.py:295: note: \"HeadlessConnector.__call__\" has type \"Callable[[Arg(str, 'provider_id'), NamedArg(int, 'port')], ChatProvider]\"",
+        "Found 2 errors in 2 files (checked 10 source files)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-owned-mypy-final-second.log",
+      "sha256": "f645b10e21546f038559fbaaffb91f957d61ada15bed410cfd1fd85e15524598",
+      "tail": [
+        "Success: no issues found in 9 source files"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-owned-mypy-final.log",
+      "sha256": "52d16f96b28c01e29d6db0366c93aefb9ec5d3675c45fc447b002c9c4942de39",
+      "tail": [
+        "tests\\support\\kernel_runtime.py:205: error: Function is missing a type annotation  [no-untyped-def]",
+        "tests\\test_kernel_prompt_task_guidance_ownership.py:72: error: Return statement in function which does not return  [misc]",
+        "tests\\test_kernel_prompt_task_guidance_ownership.py:76: error: Call to untyped function \"run_task_kernel\" in typed context  [no-untyped-call]",
+        "tests\\test_kernel_prompt_task_guidance_ownership.py:77: error: Argument \"provider\" to \"KernelTransportDeps\" has incompatible type \"Provider\"; expected \"ProviderTransport\"  [arg-type]",
+        "Found 16 errors in 2 files (checked 9 source files)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-owned-mypy-first.log",
+      "sha256": "e2702f9afc4c0f80ff1e8624f77af7a7d2689ca184512114aae5967a76229ba8",
+      "tail": [
+        "Success: no issues found in 7 source files"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-owned-pyrefly-complete-final.log",
+      "sha256": "84b38fe8768bc849473325f09922854fcffa8e87dccaca984d6426d799bdca95",
+      "tail": [
+        " INFO 0 errors (5 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-owned-pyrefly-first.log",
+      "sha256": "84b38fe8768bc849473325f09922854fcffa8e87dccaca984d6426d799bdca95",
+      "tail": [
+        " INFO 0 errors (5 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-owned-ty-complete-final.log",
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-owned-ty-first.log",
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-precision-final.log",
+      "sha256": "a4235b3bf75e4945e89304625234e20fe199890bf1400658fd27a5d77cdb5c44",
+      "tail": [
+        "kernel Any counts are zero; typed contract escape checks passed"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-prompt-ownership-final-third.log",
+      "sha256": "bd23bc34d97f7cbeed392ced86d114fd6a04725dead9661bd9ffed8290857ff7",
+      "tail": [
+        "..........................                                               [100%]",
+        "RAM disk: R:\\codey-pytest\\run-mnb2_ni0 (cleaned at process exit)",
+        "26 passed in 2.53s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-pyrefly-first.log",
+      "sha256": "0b2b274e3fc203612dc5f5cff8bf19984eb84ce401d6836948b2de77b44a622c",
+      "tail": [
+        " INFO 0 errors (35 suppressed, 163 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-pyrefly-frozen-final.log",
+      "sha256": "0b2b274e3fc203612dc5f5cff8bf19984eb84ce401d6836948b2de77b44a622c",
+      "tail": [
+        " INFO 0 errors (35 suppressed, 163 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-report-field-repaired.log",
+      "sha256": "39be8ffab2f25f17025d2225293ed346c74613730000407152e7d8047d8f9e64",
+      "tail": [
+        "....                                                                     [100%]",
+        "RAM disk: R:\\codey-pytest\\run-6izljhw_ (cleaned at process exit)",
+        "4 passed in 2.27s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-report-guidance-first.log",
+      "sha256": "5906cb589f4c49527a797b16cebe4070f7d32d6d1efbfdb60cf4e0db34dc2df0",
+      "tail": [
+        "FAILED tests/test_declared_work_continuation.py::test_frozen_report_obligation_excludes_legacy_finding_completion_guidance[chat]",
+        "FAILED tests/test_declared_work_continuation.py::test_frozen_report_obligation_excludes_legacy_finding_completion_guidance[hybrid]",
+        "FAILED tests/test_declared_work_continuation.py::test_frozen_report_obligation_excludes_legacy_finding_completion_guidance[project]",
+        "FAILED tests/test_declared_work_continuation.py::test_frozen_report_obligation_excludes_legacy_finding_completion_guidance[research]",
+        "4 failed, 1 passed in 1.72s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-repository-mypy-first.log",
+      "sha256": "cf20abb97a526648a3b83c7e54feb99e702cdaaf6b46c8a985b3baf2aa96ef8f",
+      "tail": [
+        "disk-cleanup is not a valid Python package name"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-repository-pyrefly-first.log",
+      "sha256": "0460248966895d1cc0ab0deaec024172c25e87bd847445d34936871b9c38d9d5",
+      "tail": [
+        "Broken symlink when walking project files: `D:\\codey\\artifacts\\recovery_debug\\test_real_process_restart_delicurrent` points to \"E:\\\\codey\\\\artifacts\\\\recovery_debug\\\\test_real_process_restart_deli0\": D:\\codey\\artifacts\\recovery_debug\\test_real_process_restart_delicurrent: 系统找不到指定的路径。 (os error 3)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-repository-ty-first.log",
+      "sha256": "0b7eeb38f6266108b032605d307a16e24401ce379dde282d661041bb68e7b5e5",
+      "tail": [
+        "info: └── type `list[dict[str, JsonValue]]` is not assignable to any element of the union `None | int | float* | ... omitted 3 union elements`",
+        "info:     ├── element `None` of union `None | int | float* | ... omitted 3 union elements` is not assignable to `dict[str, JsonValue]`",
+        "info:     └── ... omitted 5 union elements without additional context",
+        "",
+        "Found 5136 diagnostics"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-root-cause-audit-final.log",
+      "sha256": "44c8d7fa853b6df5c8eb8c6726faa584d2559ad9fc3eec616fee4e9497fa0acf",
+      "tail": [
+        "D:\\codey\\docs\\reports\\data\\codey-unified-natural-root-cause-20261121.json"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-root-cause-audit.log",
+      "sha256": "44c8d7fa853b6df5c8eb8c6726faa584d2559ad9fc3eec616fee4e9497fa0acf",
+      "tail": [
+        "D:\\codey\\docs\\reports\\data\\codey-unified-natural-root-cause-20261121.json"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-ruff-complete-final.log",
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-ruff-final.log",
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-ruff-first.log",
+      "sha256": "86062635ed9b9474c3f9119ef9a354b604b789d71abf0da74befed316229aac6",
+      "tail": [
+        "   |",
+        "help: Organize imports",
+        "",
+        "Found 2 errors.",
+        "[*] 1 fixable with the `--fix` option."
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-ruff-second.log",
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-second.log",
+      "sha256": "dd4c080ca6c8d634903708f94a5615d76abaee151e4b25d324ac74d04010bfc0",
+      "tail": [
+        "  \"seconds\": 55.688,",
+        "  \"model\": \"koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M\",",
+        "  \"restored_snapshots\": 5,",
+        "  \"scope\": \"controlled_fixture_production_entry_and_kernel\"",
+        "}"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-source-tree-mypy-final.log",
+      "sha256": "0e9ea04669e749a991613911340d68832ebfcb396780d9c765decae564b35767",
+      "tail": [
+        "tests\\test_browser_receipt_edit_ab.py:59: note: Possible overload variants:",
+        "tests\\test_browser_receipt_edit_ab.py:59: note:     def __getitem__(self, SupportsIndex, /) -> JsonValue",
+        "tests\\test_browser_receipt_edit_ab.py:59: note:     def __getitem__(self, slice[Any, Any, Any], /) -> list[JsonValue]",
+        "tests\\test_browser_receipt_edit_ab.py:59: error: Invalid index type \"str\" for \"str\"; expected type \"SupportsIndex | slice[Any, Any, Any]\"  [index]",
+        "Found 18521 errors in 1276 files (checked 2521 source files)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-source-tree-mypy-first.log",
+      "sha256": "d8ca9c66ecf23e706ef4883d6b2765c02ecdaee053a61b6f77884a7079a895be",
+      "tail": [
+        "mypy: can't read file 'run.py': No such file or directory"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-source-tree-mypy-second.log",
+      "sha256": "40d131dfcd1c22bb8dad9af555ad5b2c33f2bc2dcecadad2b2560c8f59c02bdf",
+      "tail": [
+        "tests\\test_browser_receipt_edit_ab.py:59: note: Possible overload variants:",
+        "tests\\test_browser_receipt_edit_ab.py:59: note:     def __getitem__(self, SupportsIndex, /) -> JsonValue",
+        "tests\\test_browser_receipt_edit_ab.py:59: note:     def __getitem__(self, slice[Any, Any, Any], /) -> list[JsonValue]",
+        "tests\\test_browser_receipt_edit_ab.py:59: error: Invalid index type \"str\" for \"str\"; expected type \"SupportsIndex | slice[Any, Any, Any]\"  [index]",
+        "Found 18524 errors in 1277 files (checked 2521 source files)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-source-tree-pyrefly-final.log",
+      "sha256": "8ef5f4f0459eaf88f9b7f8fc1b4c3fba2aef6674423aed78462333d9305becee",
+      "tail": [
+        "    |",
+        "106 |             choices = reasoning_choices(model) if case == \"reasoning\" else [{}]",
+        "    |                                                                             ^^",
+        "  Consider adding a type annotation or initializing with a non-empty value",
+        " INFO 21,719 errors (154 suppressed, 650 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-source-tree-pyrefly-second.log",
+      "sha256": "12a522a08cf636bd8789f03e1bc33ac6b9bb0ff29577701ae27795b1e5022727",
+      "tail": [
+        "    |",
+        "106 |             choices = reasoning_choices(model) if case == \"reasoning\" else [{}]",
+        "    |                                                                             ^^",
+        "  Consider adding a type annotation or initializing with a non-empty value",
+        " INFO 21,720 errors (154 suppressed, 650 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-source-tree-ty-final.log",
+      "sha256": "c037623c6f5bf3ab102f48bd9f3aa05f44b25a3d970be6941ab7d97fb2e3a8b2",
+      "tail": [
+        "info: └── type `list[dict[str, JsonValue]]` is not assignable to any element of the union `None | int | float* | ... omitted 3 union elements`",
+        "info:     ├── element `None` of union `None | int | float* | ... omitted 3 union elements` is not assignable to `dict[str, JsonValue]`",
+        "info:     └── ... omitted 5 union elements without additional context",
+        "",
+        "Found 5135 diagnostics"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-source-tree-ty-second.log",
+      "sha256": "31594161b7a01c9c112a04a23145e8d5849d9208479d98dde08eb1cdbfe41ca9",
+      "tail": [
+        "info: └── type `list[dict[str, JsonValue]]` is not assignable to any element of the union `None | int | float* | ... omitted 3 union elements`",
+        "info:     ├── element `None` of union `None | int | float* | ... omitted 3 union elements` is not assignable to `dict[str, JsonValue]`",
+        "info:     └── ... omitted 5 union elements without additional context",
+        "",
+        "Found 5136 diagnostics"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-ty-first.log",
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-ty-frozen-final.log",
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "tail": [
+        "All checks passed!"
+      ]
+    }
+  ],
+  "natural_runs": [
+    {
+      "directory": "unified-natural-first",
+      "passed": false,
+      "stop_reason": "provider_failure",
+      "project_result": {
+        "amount": 0,
+        "code": "unknown"
+      },
+      "summary_sha256": "88047dad3199b65690a0df1a21c1371b4a1e0abdf9a3e7478e0dad65574412c6"
+    },
+    {
+      "directory": "unified-natural-second",
+      "passed": false,
+      "stop_reason": "no_progress",
+      "project_result": {
+        "amount": 0,
+        "code": "unknown"
+      },
+      "summary_sha256": "fe0bd2b9a56d3aec3133135bafd55d7e19aa3c3b2050d0cbc4c80e824819717d"
+    },
+    {
+      "directory": "unified-natural-guidance-third",
+      "passed": false,
+      "stop_reason": "no_progress",
+      "project_result": {
+        "amount": 0,
+        "code": "unknown"
+      },
+      "summary_sha256": "b5bd971f6437ed1ca6cb507cb60c215ecc2890a20322b9fd1ded3f906407b78d"
+    },
+    {
+      "directory": "unified-natural-feedback-fourth",
+      "passed": false,
+      "stop_reason": "provider_failure",
+      "project_result": {
+        "amount": 0,
+        "code": "unknown"
+      },
+      "summary_sha256": "cb2e16b555a7d3c4aeee4f018e578f6e8a30e2405150db73ef3f0bdf99d9ee7f"
+    }
+  ],
+  "final_frozen_regression": {
+    "log": ".e2e-artifacts/unified-natural-guidance-frozen-final.log",
+    "passed": 176,
+    "failed": 0,
+    "full_pytest_run": false
+  },
+  "production_typecheck": {
+    "mypy_files": 714,
+    "mypy_errors": 0,
+    "pyrefly_errors": 0,
+    "ty_passed": true,
+    "target_python": "3.11"
+  },
+  "modified_python_typecheck": {
+    "files": 10,
+    "pyrefly_errors": 0,
+    "ty_passed": true,
+    "mypy_own_errors": 0,
+    "mypy_dependency_errors": 2,
+    "dependency_files": [
+      "tools/research_submission_handoff_ab.py",
+      "tools/research_natural_handoff_ab.py"
+    ],
+    "ast_issues": 0
+  },
+  "source_tree_typecheck": {
+    "paths": [
+      "codey",
+      "tests",
+      "tools"
+    ],
+    "mypy_errors": 18521,
+    "mypy_error_files": 1276,
+    "mypy_checked_files": 2521,
+    "pyrefly_errors": 21719,
+    "ty_diagnostics": 5135,
+    "changed_file_mypy_diagnostics": [],
+    "passed": false
+  },
+  "root_scan_limitations": [
+    "mypy . stopped at disk-cleanup package name",
+    "pyrefly check . stopped at a broken historical artifact symlink",
+    "initial explicit-source mypy named nonexistent run.py; repeated with actual source directories"
+  ],
+  "notes": [
+    "First failures and reruns remain separate files.",
+    "Base snapshot serialization precedes task handoffs; actual admitted provider_request snapshots were audited separately.",
+    "Duplicate final-first launch reported a Windows log lock; only one completed process in that log is counted.",
+    "Manifest generation first used a slow regex over large logs; its process was interrupted after saving the stack, then replaced with line-based tail collection.",
+    "All four natural attempts failed; no natural task closure is claimed.",
+    "No worktree was created."
+  ]
+}

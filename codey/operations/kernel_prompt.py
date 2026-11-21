@@ -573,15 +573,26 @@ def _pending_execution_guidance(session: TaskSession) -> str:
     from codey.policies.tool_requirement import parse_tool_success_check
 
     pending: list[str] = []
+    evidence: list[str] = []
+    document = query_document(session._memory_results)
     for declaration in session.policy.required_checks:
         requirement = parse_tool_success_check(declaration)
         if requirement is None:
             continue
-        outcome = requirement.evaluate(session.executed, results=session._memory_results,
-                                       browser_document=query_document(session._memory_results))
+        outcome = requirement.observe(session.executed, results=session._memory_results,
+                                      browser_document=document).evaluation
         if outcome.reason_code in {"tool_execution_missing", "tool_parent_missing"}:
             pending.append(outcome.feedback)
-    return "\n".join(pending)
+        elif not outcome.passed:
+            evidence.append(requirement.feedback_reason(outcome))
+    sections: list[str] = []
+    if evidence:
+        sections.append("Outstanding declared evidence (successful calls alone do not establish selected values):\n"
+                        + "\n".join(dict.fromkeys(evidence)))
+    if pending:
+        sections.append("Outstanding declared executions (runtime receipts, not assistant narrative):\n"
+                        + "\n".join(dict.fromkeys(pending)))
+    return "\n".join(sections)
 
 
 def operation_receipts(session: TaskSession) -> list[JsonObject]:
@@ -668,8 +679,9 @@ def working_context(session: TaskSession) -> str:
         "Do not change correct files merely to make progress. "
     )
     if pending := _pending_execution_guidance(session):
-        finish_guidance = ("Outstanding declared executions (runtime receipts, not assistant narrative):\n" + pending
-                           + "\nExecute the outstanding requirements before delivering the final answer. ")
+        finish_guidance = (pending + "\nResolve the outstanding evidence and executions before delivering the final answer. "
+                           "This obligation list does not replace the task's prerequisites or ordering. "
+                           "Obtain source evidence before copying its fields; verify requested changes after editing. ")
     operations = operation_receipts(session)
     return ("Current work observations (runtime records):\n" + json.dumps(dict[str, object](user_task=session.task_text,
         project=session.project, workspace_revision=session.workspace_revision,

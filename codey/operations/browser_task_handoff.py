@@ -34,6 +34,7 @@ from codey.operations.kernel_protocol import (
 from codey.operations.task_session import TaskSession
 from codey.operations.work_status import WorkStatus, work_status
 from codey.policies.browser_requirement import BrowserPageRounds, parse_browser_requirement
+from codey.policies.requirement import RequirementEvaluation
 from codey.policies.tool_requirement import (
     ToolObservation,
     ToolSuccessRequirement,
@@ -502,6 +503,20 @@ def _project_edit_handoff(session: TaskSession, snapshot: TurnSnapshot, context:
             + guidance)
 
 
+def _incomplete_observation_feedback(
+    outstanding: Sequence[tuple[ToolSuccessRequirement, RequirementEvaluation]],
+) -> list[str]:
+    incomplete = [(rule, outcome) for rule, outcome in outstanding
+                  if outcome.reason_code != "tool_execution_missing"]
+    if not incomplete:
+        return []
+    lines = ["Required observations are incomplete; successful calls alone do not establish the selected fields."]
+    lines.extend(rule.feedback_reason(outcome) for rule, outcome in incomplete)
+    if any(rule.file_path for rule, _ in incomplete):
+        lines.append("Obtain the missing source evidence before copying its fields or verifying the requested changes.")
+    return lines
+
+
 def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                           generation: int | None = None, *,
                           delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
@@ -552,14 +567,13 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
         lines.append(query)
     outstanding = [(rule, outcome) for rule, outcome in pending
                    if rule.tool != "browser_download" or download_outcome is None]
+    lines.extend(_incomplete_observation_feedback(outstanding))
     missing_execution = [rule for rule, outcome in outstanding if outcome.reason_code == "tool_execution_missing"]
     if missing_execution:
         lines.append("Outstanding declared calls: " + "; ".join(
             rule.tool + (f" via {rule.via}" if rule.via else "")
             + (f" matching {rule.arguments_json}" if rule.arguments_json != "{}" else "")
             for rule in missing_execution) + ".")
-    elif outstanding:
-        lines.append("Execution exists but its observation is incomplete. Recover the missing evidence, not the click.")
     elif status.ready and not metadata and not recovery and not download and not query:
         lines.append("All required work checks passed. Prepare the final answer using the committed facts and submit it.")
         facts = [{"path": rule.file_path, "field": rule.answer_pointer, "value": observation.value,

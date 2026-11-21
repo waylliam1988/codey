@@ -104,10 +104,14 @@ class AnswerSessionView(ResearchPolicyView, Protocol):
 
 
 def whole_research(session: ResearchPolicyView) -> bool:
+    return whole_research_policy(session.policy, task_kind=session.task_kind)
+
+
+def whole_research_policy(policy: TaskPolicy, *, task_kind: str) -> bool:
     # New entries freeze the report obligation independently of their UI kind.
     # Historical Research policies retain their original submission contract.
-    return ("research_submission" in session.policy.required_checks
-            or session.task_kind == "research" and session.policy.strict_research)
+    return ("research_submission" in policy.required_checks
+            or task_kind == "research" and policy.strict_research)
 
 
 def digest(value: object) -> str:
