@@ -128,8 +128,8 @@ def _call_handoff(session: TaskSession, snapshot: TurnSnapshot, call: ToolCall) 
 
 
 def observation_recovery_handoff(session: TaskSession, snapshot: TurnSnapshot,
-                                  context: CompletionContext) -> tuple[TurnSnapshot, str]:
-    """Offer current fill choices after a proven observation-only repeat.
+                                  context: CompletionContext, *, repeated: bool = True) -> tuple[TurnSnapshot, str]:
+    """Offer current fill choices after repeated observation or a missing-field query.
 
     The caller owns repeat accounting. This supplies choices, never selects a
     business target or replays a delivered/uncertain action.
@@ -137,21 +137,37 @@ def observation_recovery_handoff(session: TaskSession, snapshot: TurnSnapshot,
     references = snapshot.browser_references
     if (references is None or snapshot.input_binding is not None or snapshot.browser_copy is not None
             or "browser_fill" not in snapshot.inventory_names
-            or not same_document(parse_json_object(references.document_json), context.browser_document)
-            or _action_receipts(session, snapshot, context)):
+            or not same_document(parse_json_object(references.document_json), context.browser_document)):
         return snapshot, ""
     records, results = tool_facts(session, context)
     missing = [rule for check in session.policy.required_checks
                if (rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_fill"
                and rule.observe(records, results=results, browser_document=context.browser_document
                                 ).evaluation.reason_code == "tool_execution_missing"]
-    if not missing:
+    fields = [rule for check in session.policy.required_checks
+              if (rule := parse_tool_success_check(check)) is not None and rule.file_path
+              and rule.observe(records, results=results, browser_document=context.browser_document
+                               ).evaluation.reason_code == "observation_selector_unavailable"]
+    actions = [(ref, row) for ref, row in _action_receipts(session, snapshot, context)
+               if same_document(row.audit.get("browser_document"), context.browser_document)]
+    if (not missing and not fields or actions and not fields
+            or any(delivery(row) == "uncertain" for _, row in actions)):
         return snapshot, ""
     choices = [choice for choice in references.choices() if isinstance(choice, dict) and choice.get("role") == "textbox"]
     if not choices:
         return snapshot, ""
-    lines = ["The same observation-only program returned no new page information; only observed control refs changed. "
-             "The declared browser_fill still has no successful verified receipt. "
+    fills = [(ref, row) for ref, row in committed_results(records, results, frozenset({"browser_fill"}))
+             if fields and same_document(row.audit.get("browser_document"), context.browser_document)]
+    if not repeated and (not fields or not fills):
+        return snapshot, ""
+    status = ("The declared fields are still absent from the formal source. "
+              + ("The last verified input was " + json.dumps(fills[-1][1].call.args.get("value"), ensure_ascii=False)
+                 + ". Check it against the user's original query and the page's validation feedback; "
+                 "preserve the original spelling. Do not repeat an unchanged input. " if fills else "")
+              if fields else "The declared browser_fill still has no successful verified receipt. ")
+    introduction = ("Repeated observation returned no new page information. " if repeated else
+                    "The complete source read did not establish the declared fields after the input. ")
+    lines = [introduction + status +
              "Use the existing current control choices below; do not repeat the search loop or click a textbox to fill it. "
              "Select the task's intended textbox and supply its value from the task. Another snapshot is unnecessary."]
     for choice in choices:
@@ -568,6 +584,9 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
     outstanding = [(rule, outcome) for rule, outcome in pending
                    if rule.tool != "browser_download" or download_outcome is None]
     lines.extend(_incomplete_observation_feedback(outstanding))
+    if not any((metadata, recovery, download, query)):
+        snapshot, input_recovery = observation_recovery_handoff(session, snapshot, context, repeated=False)
+        lines.append(input_recovery)
     missing_execution = [rule for rule, outcome in outstanding if outcome.reason_code == "tool_execution_missing"]
     if missing_execution:
         lines.append("Outstanding declared calls: " + "; ".join(

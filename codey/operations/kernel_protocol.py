@@ -347,6 +347,7 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
     """Select completion once; bind investigation tools on their separate route."""
     from codey.operations.browser_waits import wait_spec
     from codey.operations.chat_knowledge import chat_knowledge_spec, hybrid_knowledge_spec, read_knowledge_versions
+    from codey.operations.execution_claims import execution_claim_spec
     from codey.policies.output_requirement import explanation_spec, has_explanation
     from codey.research.answer_contract import answer_spec
     from codey.research.questions import requires_question_ref
@@ -377,6 +378,7 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
                 elif hybrid:
                     spec = hybrid_knowledge_spec(spec, versions,
                         knowledge_required="knowledge_versions" in session.policy.required_checks)
+            spec = execution_claim_spec(spec, session._memory_results)
         elif bind_questions:
             bound = question_bound_spec(spec, question_refs=question_refs)
             if bound is None:
@@ -770,6 +772,8 @@ def _lower_bound_inputs(
                 from codey.operations.declared_field_input import lower
 
                 converted = lower(args, next(spec for spec in snapshot.frozen_specs if spec.name == "edit"))
+                lowered.append(("codemode", converted, call_id))
+                continue
             else:
                 if snapshot.browser_copy is None:
                     raise ValueError("browser copy input has no captured observation")

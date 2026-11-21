@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from codey.policies.tool_requirement import require_tool_success
-from codey.types.json_value import decode_json_object, parse_json_object
+from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tools.browser_production_live_gate import URL, run_case, select_target
 from tools.completion_artifact_audit import tool_receipts
 
@@ -61,6 +61,36 @@ def has_image_request(directory: Path) -> bool:
     return False
 
 
+def fixed_copy_exchanges(directory: Path) -> list[int]:
+    """Inspect actual request argument schemas, not examples in prompt text."""
+    exchanges: list[int] = []
+    for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines():
+        row = parse_json_object(line)
+        if row.get("phase") != "request":
+            continue
+        payload = decode_json_object(row["payload"])
+        format_value = payload.get("response_format")
+        if not isinstance(format_value, dict):
+            continue
+        schema = decode_json_object(decode_json_object(format_value["json_schema"])["schema"])
+        variants = schema.get("oneOf")
+        for variant in variants if isinstance(variants, list) else []:
+            clauses = decode_json_object(variant).get("allOf")
+            if not isinstance(clauses, list):
+                continue
+            properties: JsonObject = {key: value for clause in clauses if isinstance(clause, dict)
+                          for key, value in decode_json_object(clause.get("properties", {})).items()}
+            names = decode_json_object(properties.get("tool", {})).get("enum", [])
+            args = decode_json_object(properties.get("args", {}))
+            if (names in (["edit"], ["codemode"]) and args.get("required") == ["path"]
+                    and set(decode_json_object(args.get("properties", {}))) == {"path"}):
+                exchange = row.get("exchange")
+                if type(exchange) is not int:
+                    raise ValueError("request exchange requires an integer")
+                exchanges.append(exchange)
+    return exchanges
+
+
 class Options(argparse.Namespace):
     directory: Path
     base_url: str
@@ -92,6 +122,7 @@ def main() -> None:
         additional_required_tools=(require_tool_success("run"),),
         requested_capabilities=("web.read", "browser.observe", "browser.interact", "browser.effect", "knowledge.write"),
         project_files=PROJECT)
+    summary["fixed_copy_offered_exchanges"] = fixed_copy_exchanges(directory)
     result = summary.get("project_result")
     if isinstance(result, dict):
         summary["preserved_other_fields"] = result.get("keep") == "preserved"

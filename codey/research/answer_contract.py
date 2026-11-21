@@ -276,6 +276,19 @@ def submitted_answer(session: TaskSession) -> AnswerSubmission | None:
 def answer_spec(spec: ToolSpec, scope: AnswerScope) -> ToolSpec:
     from codey.toolchain.tool_spec import freeze_spec_parameters
 
+    if spec.name == "done":
+        # Whole-answer citations are resolved from the original submission.
+        # Asking for a second citation list makes the model copy transient eN
+        # labels into saved-object identities that this report already owns.
+        return freeze_spec_parameters(replace(spec,
+            parameters=tuple((key, value) for key, value in spec.parameters if key != "knowledge_refs"),
+            required=tuple(key for key in spec.required if key != "knowledge_refs"),
+            description="Propose completion after submitting the research report and completing remaining project work. "
+                "Supply summary for the changes and verification results. Research citations and saved evidence versions "
+                "come from submit_research_answer; do not copy [eN] labels into knowledge_refs. "
+                "A summary cannot replace the research submission or verification receipts.",
+            json_examples=(canonical_json({"tool": "done", "args": {
+                "summary": "Describe the completed changes and actual verification results."}}),)))
     if spec.name != "submit_research_answer":
         if spec.name == "knowledge_read":
             return freeze_spec_parameters(replace(spec, description=spec.description + " " + KNOWLEDGE_READ_GUIDANCE))

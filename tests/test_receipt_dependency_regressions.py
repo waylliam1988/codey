@@ -149,7 +149,7 @@ def test_ordered_source_binding_reaches_real_content_host_and_keeps_receipt_orde
         # change the content generated from its frozen source references.
         if source_changed:
             record(session, "browser_read", {}, document, body="Amount: 999.75 units.")
-        plan = normalize_turn(decode_text_turn('{"tool":"codemode","args":{"path":"ledger.data"}}'), snapshot=snapshot)
+        plan = normalize_turn(decode_text_turn('{"tool":"edit","args":{"path":"ledger.data"}}'), snapshot=snapshot)
         assert not plan.protocol_error
         executor = build_execute_turn_executor(session=session, snapshot=snapshot, run_id="ordered-content",
             effect_scope="task", turn=1, project_path=tmp_path, research_tools=research,

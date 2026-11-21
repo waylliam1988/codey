@@ -186,8 +186,10 @@ def next_browser_step(checks: tuple[str, ...], *, records: Mapping[str, Executio
     page_ready = all(bool(post_wait_passages(page, records=records, results=results, document=document)[1]) for page in pages)
     if needs_read and (not read or not page_ready):
         if not narrow_tools:
-            return BrowserNextStep(None, "The declared checklist still needs browser_read, but does not fix the remaining "
-                "action order. Complete the task's remaining control actions before reading their final result.")
+            return BrowserNextStep(ToolCall("browser_read", {}),
+                "The latest page action has no subsequent complete formal read. A snapshot is not source evidence. "
+                "If the requested control actions are complete, read their current result now. "
+                "If more controls are needed, finish them first. Do not repeat the delivered click.")
         return BrowserNextStep(ToolCall("browser_read", {}),
             "The declared waits are settled. Use browser_read on the same document for complete text; do not click again.",
             "evidence")

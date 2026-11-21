@@ -286,10 +286,15 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
 def _completion_followup(feedback: str, *, native: bool, structured_report: bool = False,
                          whole_submission: bool = False, done_spec: ToolSpec | None = None) -> str:
     """Render completion feedback for its transport without changing the verdict."""
-    final_rule = ("Repair the complete answer with submit_research_answer under its frozen contract." if whole_submission else
+    final_rule = ("If the research report was rejected or is missing, use submit_research_answer under its frozen contract. "
+                  "Keep a settled valid report when repairing other completion defects. "
+                  "Finish remaining project work and verification, then propose done with summary; "
+                  "the submission supplies its evidence citations and saved versions. Do not use [eN] labels as knowledge_refs."
+                  if whole_submission else
                   _done_guidance(done_spec, native=native) if done_spec is not None else
                   _native_final_rule(structured_report=structured_report))
     rule = (_NATIVE_ARGUMENTS_RULE + " " + final_rule if native else
+            _TEXT_ACTION_RULE + " " + final_rule if whole_submission else
             _TEXT_ACTION_RULE + " " + final_rule if done_spec is not None and "paragraphs" in done_spec.required else
             r'Preserve the requested answer format. Encode any needed line breaks once as \n inside JSON strings. '
             "Fenced examples are answer text and do not execute tools.")

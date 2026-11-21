@@ -160,8 +160,8 @@ def test_complete_source_offers_frozen_path_only_input(tmp_path: Path) -> None:
     restored = restore_snapshot(snapshot_description(snapshot))
     assert restored == snapshot
     args: JsonObject = {"path": "ledger.data"}
-    reply: JsonObject = {"tool": "codemode", "args": args}
-    native = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("chosen", "codemode", args),)), snapshot=restored)
+    reply: JsonObject = {"tool": "edit", "args": args}
+    native = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("chosen", "edit", args),)), snapshot=restored)
     text = normalize_turn(decode_text_turn(json.dumps(reply)), snapshot=restored)
     assert not native.protocol_error and native.calls[0].call_id == "chosen"
     assert native.calls[0].args == text.calls[0].args
@@ -169,7 +169,7 @@ def test_complete_source_offers_frozen_path_only_input(tmp_path: Path) -> None:
     invalid_args: tuple[JsonObject, ...] = ({"path": "other.data"},
         {"path": "ledger.data", "base_result_ref": "invented"}, {"code": "return null;"})
     for invalid in invalid_args:
-        reply = {"tool": "codemode", "args": invalid}
+        reply = {"tool": "edit", "args": invalid}
         assert normalize_turn(decode_text_turn(json.dumps(reply)), snapshot=restored).protocol_error
 
 
@@ -190,7 +190,7 @@ def test_fixed_copy_keeps_report_and_other_authorized_actions_available(tmp_path
     assert snapshot.tool_names == original.tool_names
     assert "submit_research_answer" in snapshot.tool_names
     assert "Report submission is still pending" in hint
-    assert '{"tool":"codemode","args":{"path":"ledger.data"}}' in hint
+    assert '{"tool":"edit","args":{"path":"ledger.data"}}' in hint
     assert snapshot.browser_followups
     assert restore_snapshot(snapshot_description(snapshot)) == snapshot
     proposal = AssistantTurn(tool_calls=(ProviderToolCall("report", "submit_research_answer", {
@@ -319,7 +319,7 @@ def test_fixed_program_preserves_values_and_retries_with_a_new_full_read(
             snapshot, _ = browser_task_handoff(session, build_turn_snapshot(session), context)
             snapshot = restore_snapshot(snapshot_description(snapshot))
             assert snapshot.input_binding is not None
-            reply: JsonObject = {"tool": "codemode", "args": {"path": path}}
+            reply: JsonObject = {"tool": "edit", "args": {"path": path}}
             plan = normalize_turn(decode_text_turn(json.dumps(reply)), snapshot=snapshot)
             assert not plan.protocol_error
             executor = build_execute_turn_executor(session=session, snapshot=snapshot, run_id="declared",
@@ -537,3 +537,47 @@ def test_settled_wait_uses_declared_predicate_instead_of_the_generated_default_t
     expected = (ToolCall("browser_wait", {**arguments, "timeout_ms": 5000})
                 if declaration == "explicit_timeout" else ToolCall("browser_read", {}))
     assert step is not None and step.call == expected
+
+
+def test_fixed_copy_is_presented_as_edit_while_programming_keeps_its_original_contract(tmp_path: Path) -> None:
+    session, context = declared_session(tmp_path)
+    offered, _ = browser_task_handoff(session, build_turn_snapshot(session), context)
+    assert offered.input_binding is not None and offered.input_binding.model_spec.name == "edit"
+    code = next(spec for spec in offered.model_specs if spec.name == "codemode")
+    assert code.required == ("code",)
+    plan = normalize_turn(decode_text_turn('{"tool":"edit","args":{"path":"ledger.data"}}'), snapshot=offered)
+    assert not plan.protocol_error and plan.calls[0].name == "codemode"
+    free = normalize_turn(decode_text_turn('{"tool":"codemode","args":{"code":"return 7;"}}'), snapshot=offered)
+    assert not free.protocol_error and free.calls[0].args["code"] == "return 7;"
+
+
+def test_a_delivered_click_offers_a_formal_read_without_assuming_more_controls_are_finished(tmp_path: Path) -> None:
+    session, context = declared_session(tmp_path)
+    assert context.browser_document is not None
+    record(session, "browser_click", {"ref":"observed", "purpose":"controls"}, context.browser_document)
+    step = next_browser_step(session.policy.required_checks, records=session.executed, results=session._memory_results,
+        document=context.browser_document, names={"browser_wait","browser_read","browser_snapshot"})
+    assert step is not None and step.call == ToolCall("browser_read", {}) and step.kind == "advice"
+    assert "If more controls are needed" in step.feedback
+    record(session, "browser_read", {}, context.browser_document, body="The requested record is not loaded.")
+    assert next_browser_step(session.policy.required_checks, records=session.executed, results=session._memory_results,
+        document=context.browser_document, names={"browser_wait","browser_read","browser_snapshot"}) is None
+
+
+@pytest.mark.parametrize("repeated", [False, True])
+def test_repeated_missing_field_reads_reuse_observed_fill_choices_without_replaying_input(tmp_path: Path, repeated: bool) -> None:
+    from codey.operations.browser_references import BrowserReferences, ObservedControl
+    from codey.operations.browser_task_handoff import observation_recovery_handoff
+    session, context = declared_session(tmp_path)
+    assert context.browser_document is not None
+    record(session, "browser_fill", {"ref":"current", "value":"Fuzhou"}, context.browser_document)
+    record(session, "browser_read", {}, context.browser_document, body="Enter the locality in its original spelling.")
+    original = build_turn_snapshot(session)
+    refs = BrowserReferences("snapshot", json.dumps(context.browser_document), 1,
+        (ObservedControl("current", "textbox", "Locality", "", "", False),))
+    snapshot = replace(original, browser_references=refs)
+    offered, feedback = observation_recovery_handoff(session, snapshot, context, repeated=repeated)
+    assert "Fuzhou" in feedback and "original spelling" in feedback
+    assert "Locality" in feedback and "Do not repeat an unchanged input" in feedback
+    assert len(session.executed) == 3
+    assert set(offered.inventory_names) == set(snapshot.inventory_names)

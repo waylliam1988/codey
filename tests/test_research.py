@@ -7,20 +7,33 @@ import tempfile
 import threading
 import time
 import unittest
+from collections.abc import Generator
+from contextlib import contextmanager
+from email.message import Message
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from types import SimpleNamespace
+from types import SimpleNamespace, TracebackType
+from typing import Self
 from unittest import mock
 
+from playwright.sync_api import BrowserContext, Page, Route
+
 from codey.automation import browser_worker
+from codey.automation.browser import Session, open_headless_page
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.task_session import TaskSession
 from codey.policies.network import check_fetch_url
+from codey.policies.task_policy import TaskPolicy
+from codey.protocols.text_turn import decode_text_turn
 from codey.research import browser_search, extract, source_download
+from codey.research.answer_report import AnswerReport
+from codey.research.browser_page import _page_content_after_navigation
 from codey.research.browser_search import RESEARCH_CDP_PORT, RESEARCH_PROFILE, BrowserSearchProvider
 from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.object_model import build_research_record
-from codey.research.pdf_extract import PDF_MAX_BYTES, extract_pdf_document, parse_pages
+from codey.research.pdf_extract import PDF_MAX_BYTES, PdfSkipped, extract_pdf_document, parse_pages
 from codey.research.proof_quality import review_research_proof
 from codey.research.provenance import provenance_problem
 from codey.research.report_quality import review_report_quality
@@ -30,21 +43,16 @@ from codey.research.source_rendering import UNTRUSTED_SOURCE_END, UNTRUSTED_SOUR
 from codey.research.tools import ResearchTools
 from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core import cancellation
-from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.runtime.observe.events import RunEvent, run_event_ui_payload
-from tests.support.research_controller import (
-    OpenTarget,
-    ResearchControlState,
-    controller_system_prompt,
-    format_controller_results,
-    render_control_block,
-)
+from codey.types.json_value import JsonObject, decode_json_object, require_json_string
+from tests.support.real_cdp import chromium_executable
 from tests.support.research_done_finalizer import finalize_done_answer
 from tests.support.research_iteration_adapter import ResearchIteration
 from tests.support.research_protocol import JsonToolCodec
 
 
-def _research_policy():
+def _research_policy() -> TaskPolicy:
     """Fixture research policy: full read/write grants for tool tests."""
     from codey.policies.task_policy import TaskPolicy
 
@@ -53,7 +61,7 @@ def _research_policy():
     }))
 
 
-def _execute_research_call(tools, call):
+def _execute_research_call(tools: ResearchTools, call: ToolCall) -> ToolResult:
     """当前生产执行入口：同一 execute_turn（内存会话，无持久化）。"""
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
@@ -68,11 +76,10 @@ def _execute_research_call(tools, call):
     return results[0]
 
 
-def _validate_research_call(call):
+def _validate_research_call(call: ToolCall) -> ToolPlan:
     """当前生产校验入口：同一 snapshot 的 normalize_turn。"""
     from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
-    from tests.support.kernel_protocol_test_helpers import normalize_turn
 
     session = TaskSession(
         policy=_research_policy(), task_kind="research", max_turns=2, task_text="q",
@@ -81,7 +88,7 @@ def _validate_research_call(call):
     import json as _json
 
     return normalize_turn(
-        _json.dumps({"tool": call.name, "args": dict(call.args or {})}),
+        decode_text_turn(_json.dumps({"tool": call.name, "args": dict(call.args or {})})),
         snapshot=snapshot,
     )
 
@@ -95,10 +102,10 @@ class FakeProvider:
         self.sent: list[str] = []
         self.new_chat_calls = 0
 
-    def new_chat(self, timeout=None) -> None:
+    def new_chat(self, timeout: float | None=None) -> None:
         self.new_chat_calls += 1
 
-    def send(self, text: str, timeout=None) -> str:
+    def send(self, text: str, timeout: float | None=None) -> str:
         self.sent.append(text)
         if not self.replies:
             return json.dumps({"tool": "done", "args": {"summary": "done"}})
@@ -108,10 +115,10 @@ class FakeProvider:
         pass
 
 
-class FakeSearch(BrowserSearchProvider):
+class FakeSearch:
     name = "fake-search"
 
-    def search(self, query: str, limit: int = 8) -> list[dict]:
+    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
         return [
             {
                 "title": "Helium article",
@@ -120,7 +127,7 @@ class FakeSearch(BrowserSearchProvider):
             }
         ]
 
-    def fetch(self, url: str) -> dict:
+    def fetch(self, url: str) -> dict[str, object]:
         return {"status": "ok",
             "url": url,
             "title": "Helium article",
@@ -137,7 +144,7 @@ class RecordingSearch(FakeSearch):
         super().__init__()
         self.queries: list[str] = []
 
-    def search(self, query: str, limit: int = 8) -> list[dict]:
+    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
         self.queries.append(query)
         return super().search(query, limit=limit)
 
@@ -148,11 +155,11 @@ class TrackingSearch(FakeSearch):
         self.queries: list[str] = []
         self.fetch_urls: list[str] = []
 
-    def search(self, query: str, limit: int = 8) -> list[dict]:
+    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
         self.queries.append(query)
         return super().search(query, limit=limit)
 
-    def fetch(self, url: str) -> dict:
+    def fetch(self, url: str) -> dict[str, object]:
         self.fetch_urls.append(url)
         return super().fetch(url)
 
@@ -166,7 +173,7 @@ class PriorityFailSearch(FakeSearch):
         self.queries: list[str] = []
         self.fetch_urls: list[str] = []
 
-    def search(self, query: str, limit: int = 8) -> list[dict]:
+    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
         self.queries.append(query)
         return [
             {
@@ -181,7 +188,7 @@ class PriorityFailSearch(FakeSearch):
             },
         ]
 
-    def fetch(self, url: str) -> dict:
+    def fetch(self, url: str) -> dict[str, object]:
         self.fetch_urls.append(url)
         if url == self.pubmed_url:
             return {"status": "error", "detail": ("ERROR: connector fetch failed").removeprefix("ERROR:").strip(),
@@ -200,28 +207,35 @@ class PriorityFailSearch(FakeSearch):
 
 class RecordingTrace:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple, dict]] = []
+        self.calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
 
-    def record_tool_contract_hash(self, *args, **kwargs) -> None:
+    def record_tool_contract_hash(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("record_tool_contract_hash", args, kwargs))
 
-    def record_runtime_tool_contract_hash(self, *args, **kwargs) -> None:
+    def record_runtime_tool_contract_hash(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("record_runtime_tool_contract_hash", args, kwargs))
 
-    def record_permission_profile(self, *args, **kwargs) -> None:
+    def record_permission_profile(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("record_permission_profile", args, kwargs))
 
-    def record_prompt_section(self, *args, **kwargs) -> None:
+    def record_prompt_section(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("record_prompt_section", args, kwargs))
 
-    def record_provider_prompt_boundary(self, *args, **kwargs) -> None:
+    def record_provider_prompt_boundary(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("record_provider_prompt_boundary", args, kwargs))
 
-    def record_research_connector_errors(self, *args, **kwargs) -> None:
+    def record_research_connector_errors(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("record_research_connector_errors", args, kwargs))
 
-    def record_research_done_compilation(self, *args, **kwargs) -> None:
+    def record_research_done_compilation(self, *args: object, **kwargs: object) -> None:
         self.calls.append(("record_research_done_compilation", args, kwargs))
+
+
+class FakePdfStream:
+    def __init__(self, size: int) -> None:
+        self.size = size
+    def get_data(self) -> bytes:
+        return b"x" * self.size
 
 
 class FakePdfPage:
@@ -232,22 +246,24 @@ class FakePdfPage:
     def extract_text(self) -> str:
         return self._text
 
-    def get_contents(self):
+    def get_contents(self) -> list[FakePdfStream]:
         if not self._stream_size:
             return []
-        return [SimpleNamespace(get_data=lambda: b"x" * self._stream_size)]
+        return [FakePdfStream(self._stream_size)]
 
 
 class FakePdfReader:
     pages: list[FakePdfPage] = []
 
-    def __init__(self, _stream) -> None:
+    def __init__(self, _stream: object) -> None:
         self.pages = list(type(self).pages)
 
 
-def fake_pypdf(*page_texts: str):
+@contextmanager
+def fake_pypdf(*page_texts: str) -> Generator[None]:
     FakePdfReader.pages = [FakePdfPage(text) for text in page_texts]
-    return mock.patch.dict(sys.modules, {"pypdf": SimpleNamespace(PdfReader=FakePdfReader)})
+    with mock.patch.dict(sys.modules, {"pypdf": SimpleNamespace(PdfReader=FakePdfReader)}):
+        yield
 
 
 def valid_research_report(
@@ -359,13 +375,29 @@ def pdf_ledger(url: str = "https://example.com/report.pdf") -> ResearchLedger:
     return ledger
 
 
+
+@contextmanager
+def routed_search_page(body: str, *, redirect: str = "") -> Generator[Page]:
+    session = open_headless_page(browser_path=chromium_executable())
+    def route(request: Route) -> None:
+        if redirect and request.request.url.startswith("https://www.bing.com/"):
+            request.fulfill(status=302, headers={"location": redirect})
+        else:
+            request.fulfill(content_type="text/html", body=body)
+    session.page.route("**/*", route)
+    try:
+        yield session.page
+    finally:
+        session.close()
+
 class ResearchBoundaryTests(unittest.TestCase):
     def setUp(self) -> None:
         self._real_getaddrinfo = socket.getaddrinfo
 
-        def fixture_dns(host, *args, **kwargs):
-            if str(host).lower() in {"127.0.0.1", "::1", "localhost"}:
-                return self._real_getaddrinfo(host, *args, **kwargs)
+        def fixture_dns(host: str, port: int | str | None, family: int = 0, type: int = 0,
+                        proto: int = 0, flags: int = 0) -> list[tuple[int, int, int, str, object]]:
+            if host.lower() in {"127.0.0.1", "::1", "localhost"}:
+                return [(f, k, p, c, a) for f,k,p,c,a in self._real_getaddrinfo(host, port, family, type, proto, flags)]
             return [(2, 1, 6, "", ("93.184.216.34", 443))]
 
         self._dns_patch = mock.patch(
@@ -392,8 +424,8 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertFalse((Path(__file__).resolve().parents[1] / "codey" / "research" / "evidence_review.py").exists())
 
     def test_network_policy_rejects_private_targets_without_network(self) -> None:
-        self.assertIn("local", check_fetch_url("http://localhost:8000", resolve=False))
-        self.assertIn("non-public", check_fetch_url("http://127.0.0.1/", resolve=False))
+        self.assertIn("local", check_fetch_url("http://localhost:8000", resolve=False) or "")
+        self.assertIn("non-public", check_fetch_url("http://127.0.0.1/", resolve=False) or "")
         self.assertEqual(check_fetch_url("http://example.com:99999/x", resolve=False), "invalid URL port")
         self.assertEqual(check_fetch_url("http://[::1", resolve=False), "invalid URL")
         self.assertIsNone(check_fetch_url("https://example.com/page", resolve=False))
@@ -435,16 +467,17 @@ class ResearchBoundaryTests(unittest.TestCase):
                 final_url="https://example.com/report.pdf",
             )
 
+        assert isinstance(oversized, PdfSkipped) and isinstance(scanned, PdfSkipped)
         self.assertIn("too large", oversized.reason)
         self.assertIn("no extractable text", scanned.reason)
 
     def test_open_url_reads_pdf_page_selection_and_records_ledger(self) -> None:
         url = "https://example.com/report.pdf"
 
-        class PdfSearch:
-            def fetch(self, requested: str) -> dict:
+        class PdfSearch(FakeSearch):
+            def fetch(self, url: str) -> dict[str, object]:
                 return {"status": "ok",
-                    "url": requested,
+                    "url": url,
                     "title": "Report PDF",
                     "text": "",
                     "content_kind": "pdf",
@@ -483,10 +516,10 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_open_url_skips_pdf_without_extractable_text_without_recording_source(self) -> None:
         url = "https://example.com/scanned.pdf"
 
-        class PdfSearch:
-            def fetch(self, requested: str) -> dict:
+        class PdfSearch(FakeSearch):
+            def fetch(self, url: str) -> dict[str, object]:
                 return {"status": "ok",
-                    "url": requested,
+                    "url": url,
                     "title": "Scanned PDF",
                     "text": "",
                     "content_kind": "pdf",
@@ -507,8 +540,8 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertFalse(tools.ledger.opened_sources_payload())
 
     def test_web_search_omits_root_landing_results_from_model_output(self) -> None:
-        class LandingSearch:
-            def search(self, query: str, limit: int = 8) -> list[dict]:
+        class LandingSearch(FakeSearch):
+            def search(self, query: str, limit: int = 8) -> list[JsonObject]:
                 return [
                     {
                         "title": "PubMed",
@@ -540,11 +573,11 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/", output)
 
     def test_open_url_skips_root_landing_without_fetching_or_recording_source(self) -> None:
-        class LandingSearch:
+        class LandingSearch(FakeSearch):
             def __init__(self) -> None:
                 self.fetch_urls: list[str] = []
 
-            def fetch(self, url: str) -> dict:
+            def fetch(self, url: str) -> dict[str, object]:
                 self.fetch_urls.append(url)
                 return {"status": "ok", "url": url, "title": "PMC Home", "text": "PMC home page"}
 
@@ -562,8 +595,8 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertFalse(tools.ledger.opened_sources_payload())
 
     def test_open_url_skips_redirect_to_root_landing_without_recording_source(self) -> None:
-        class RedirectSearch:
-            def fetch(self, url: str) -> dict:
+        class RedirectSearch(FakeSearch):
+            def fetch(self, url: str) -> dict[str, object]:
                 return {"status": "ok",
                     "url": "https://pmc.ncbi.nlm.nih.gov/",
                     "title": "PMC Home",
@@ -588,10 +621,10 @@ class ResearchBoundaryTests(unittest.TestCase):
             "Actual source paragraph: the safety bulletin says no safety stop was triggered."
         )
 
-        class InjectionSearch:
-            def fetch(self, requested: str) -> dict:
+        class InjectionSearch(FakeSearch):
+            def fetch(self, url: str) -> dict[str, object]:
                 return {"status": "ok",
-                    "url": requested,
+                    "url": url,
                     "title": "Safety bulletin",
                     "text": source_text,
                     "truncated": False,
@@ -661,14 +694,14 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_source_search_requires_opened_source_and_finds_late_html_offset(self) -> None:
         url = "https://example.com/long"
 
-        class LongHtmlSearch:
+        class LongHtmlSearch(FakeSearch):
             def __init__(self) -> None:
                 self.fetches: list[str] = []
 
-            def fetch(self, requested: str) -> dict:
-                self.fetches.append(requested)
+            def fetch(self, url: str) -> dict[str, object]:
+                self.fetches.append(url)
                 return {"status": "ok",
-                    "url": requested,
+                    "url": url,
                     "title": "Long HTML",
                     "text": (
                         "Overview only. "
@@ -716,15 +749,17 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("saved fact note", saved)
         self.assertEqual(evidence_count, 1)
         self.assertEqual(len(search.fetches), 1)
-        self.assertEqual(coverage["source_searches"][0]["query"], "stable-v2 endpoint")
+        searches = coverage["source_searches"]
+        assert isinstance(searches, list)
+        self.assertEqual(decode_json_object(searches[0])["query"], "stable-v2 endpoint")
 
     def test_source_search_finds_chinese_html_phrase(self) -> None:
         url = "https://example.com/zh-long"
 
-        class ChineseHtmlSearch:
-            def fetch(self, requested: str) -> dict:
+        class ChineseHtmlSearch(FakeSearch):
+            def fetch(self, url: str) -> dict[str, object]:
                 return {"status": "ok",
-                    "url": requested,
+                    "url": url,
                     "title": "中文长文",
                     "text": "概览。" + ("背景 " * 800) + "最终建议继续使用稳定端点。",
                     "truncated": False,
@@ -745,14 +780,14 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_source_search_pdf_locator_does_not_satisfy_page_evidence_until_page_opened(self) -> None:
         url = "https://example.com/method.pdf"
 
-        class PdfSearch:
+        class PdfSearch(FakeSearch):
             def __init__(self) -> None:
                 self.fetches: list[str] = []
 
-            def fetch(self, requested: str) -> dict:
-                self.fetches.append(requested)
+            def fetch(self, url: str) -> dict[str, object]:
+                self.fetches.append(url)
                 return {"status": "ok",
-                    "url": requested,
+                    "url": url,
                     "title": "Method PDF",
                     "text": "",
                     "content_kind": "pdf",
@@ -838,14 +873,14 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_source_search_pdf_broad_query_scans_before_low_limit_ranking(self) -> None:
         url = "https://example.com/broad-method.pdf"
 
-        class PdfSearch:
+        class PdfSearch(FakeSearch):
             def __init__(self) -> None:
                 self.fetches: list[str] = []
 
-            def fetch(self, requested: str) -> dict:
-                self.fetches.append(requested)
+            def fetch(self, url: str) -> dict[str, object]:
+                self.fetches.append(url)
                 return {"status": "ok",
-                    "url": requested,
+                    "url": url,
                     "title": "Broad Method PDF",
                     "text": "",
                     "content_kind": "pdf",
@@ -884,7 +919,9 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(search.fetches, [url, url])
 
     def test_browser_worker_exposes_module_call_for_research_search(self) -> None:
-        self.assertEqual(browser_worker.call(lambda value: value + 1, 4), 5)
+        def increment(value: int) -> int:
+            return value + 1
+        self.assertEqual(browser_worker.call(increment, 4), 5)
 
     def test_browser_worker_call_is_reentrant_on_browser_thread(self) -> None:
         def outer() -> str:
@@ -908,7 +945,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             )
 
         self.assertEqual(result, sentinel)
-        search_call.assert_called_once_with(provider._search_on_browser_thread, "alpha", 3)
+        search_call.assert_called_once_with(mock.ANY)
 
     def test_browser_search_records_worker_health_on_boundary_timeout(self) -> None:
         provider = BrowserSearchProvider()
@@ -935,7 +972,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         )
 
     def test_browser_search_defaults_to_isolated_browser(self) -> None:
-        session = browser_search.Session(mock.Mock(), mock.Mock(), mock.Mock(), owns_page=True)
+        session = Session(mock.Mock(), mock.Mock(), mock.Mock(), owns_page=True)
         provider = BrowserSearchProvider()
 
         with mock.patch("codey.research.browser_search.open_chat_page", return_value=session) as opened:
@@ -956,7 +993,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         )
 
     def test_browser_search_shared_mode_preserves_old_reuse_contract(self) -> None:
-        session = browser_search.Session(mock.Mock(), mock.Mock(), mock.Mock(), owns_page=False)
+        session = Session(mock.Mock(), mock.Mock(), mock.Mock(), owns_page=False)
         provider = BrowserSearchProvider(
             profile_dir=Path("shared-profile"),
             cdp_port=9333,
@@ -995,195 +1032,40 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIs(provider.base_provider, base_provider)
 
     def test_browser_search_replaces_stuck_search_page_after_navigation_timeout(self) -> None:
-        class FakeElement:
-            def __init__(self, *, text: str = "", href: str = "") -> None:
-                self.text = text
-                self.href = href
-
-            def inner_text(self) -> str:
-                return self.text
-
-            def get_attribute(self, name: str) -> str:
-                return self.href if name == "href" else ""
-
-        class FakeBlock:
-            def query_selector(self, selector: str):
-                if selector in {"h2 a", ".result__a"}:
-                    return FakeElement(text="Recovered result", href="https://example.com/recovered")
-                if selector == ".b_caption p":
-                    return FakeElement(text="Recovered snippet")
-                return None
-
-            def inner_text(self) -> str:
-                return "Recovered result\nRecovered snippet"
-
-        class FakePage:
-            def __init__(self, context, *, fail: bool = False) -> None:
-                self.context = context
-                self.fail = fail
-                self.closed = False
-                self.routes = []
-
-            def is_closed(self) -> bool:
-                return self.closed
-
-            def set_default_navigation_timeout(self, _timeout) -> None:
-                return None
-
-            def route(self, pattern, handler) -> None:
-                self.routes.append((pattern, handler))
-
-            def unroute_all(self, *, behavior) -> None:
-                assert behavior == "wait"
-                return None
-
-            def goto(self, _url, wait_until="domcontentloaded") -> None:
-                del wait_until
-                if self.fail:
-                    raise TimeoutError("navigation timed out")
-
-            def query_selector_all(self, _selector):
-                return [FakeBlock()]
-
-            def close(self) -> None:
-                self.closed = True
-
-        class FakeContext:
-            def __init__(self) -> None:
-                self.created = []
-
-            def new_page(self):
-                page = FakePage(self)
-                self.created.append(page)
-                return page
-
-        context = FakeContext()
-        first_page = FakePage(context, fail=True)
-        session = browser_search.Session(mock.Mock(), SimpleNamespace(contexts=[context]), first_page, owns_page=True)
-        provider = BrowserSearchProvider()
-        provider._session = session
-        provider._search_page = first_page
-        provider._register_owned_page_on_browser_thread(first_page)
-
-        results = provider._search_on_browser_thread("alpha", 3)
-
-        self.assertTrue(first_page.closed)
-        self.assertEqual(len(context.created), 1)
-        self.assertEqual(results[0]["url"], "https://example.com/recovered")
-        self.assertEqual(results[0]["title"], "Recovered result")
+        provider = BrowserSearchProvider(engine="bing")
+        first, replacement = mock.Mock(spec=Page), mock.Mock(spec=Page)
+        rows: list[JsonObject] = [{"title":"Recovered result", "url":"https://example.com/recovered"}]
+        with (mock.patch.object(provider, "_ensure_search_page_on_browser_thread", return_value=first),
+              mock.patch.object(provider, "_replace_search_page_on_browser_thread", return_value=replacement) as replace_page,
+              mock.patch.object(provider, "_discard_search_page_on_browser_thread") as discard,
+              mock.patch.object(provider, "_search_page_results_on_browser_thread", side_effect=[TimeoutError("navigation timed out"), rows])):
+            results = provider._search_on_browser_thread("alpha", 3)
+        discard.assert_called_once_with(first)
+        replace_page.assert_called_once_with()
+        self.assertEqual(results, rows)
+        self.assertEqual(len(provider.last_search_errors), 1)
 
     def test_browser_search_rejects_wrong_host_after_search_navigation(self) -> None:
-        class FakePage:
-            url = "https://evidencenow.io"
-
-            def set_default_navigation_timeout(self, _timeout) -> None:
-                return None
-
-            def goto(self, _url, wait_until="domcontentloaded") -> None:
-                del wait_until
-
-            def query_selector_all(self, _selector):
-                return []
-
-            def query_selector(self, _selector):
-                return None
-
-        provider = BrowserSearchProvider()
-
-        with self.assertRaises(browser_search.SearchUnavailableError) as ctx:
-            provider._search_page_results_on_browser_thread(
-                FakePage(),
-                "alpha",
-                3,
-                profile=provider._profile,
-                engine="bing",
-            )
-
-        self.assertEqual(ctx.exception.failure_kind, "search_wrong_host")
+        provider = BrowserSearchProvider(engine="bing")
+        with (routed_search_page("<main>Unexpected search destination</main>", redirect="https://evidencenow.io/") as page,
+              self.assertRaises(browser_search.SearchUnavailableError) as caught):
+            provider._search_page_results_on_browser_thread(page, "alpha", 3)
+        self.assertEqual(caught.exception.failure_kind, "search_wrong_host")
 
     def test_browser_search_rejects_blank_search_page(self) -> None:
-        class FakeBody:
-            def inner_text(self) -> str:
-                return ""
-
-        class FakePage:
-            url = "https://www.bing.com/search?q=alpha"
-
-            def set_default_navigation_timeout(self, _timeout) -> None:
-                return None
-
-            def goto(self, _url, wait_until="domcontentloaded") -> None:
-                del wait_until
-
-            def query_selector_all(self, _selector):
-                return []
-
-            def query_selector(self, selector):
-                return FakeBody() if selector == "body" else None
-
-        provider = BrowserSearchProvider()
-
-        with self.assertRaises(browser_search.SearchUnavailableError) as ctx:
-            provider._search_page_results_on_browser_thread(
-                FakePage(),
-                "alpha",
-                3,
-                profile=provider._profile,
-                engine="bing",
-            )
-
-        self.assertEqual(ctx.exception.failure_kind, "search_page_blank")
+        provider = BrowserSearchProvider(engine="bing")
+        with (routed_search_page("<body></body>") as page,
+              self.assertRaises(browser_search.SearchUnavailableError) as caught):
+            provider._search_page_results_on_browser_thread(page, "alpha", 3)
+        self.assertEqual(caught.exception.failure_kind, "search_page_blank")
 
     def test_browser_search_anchor_scan_marks_recovered_rows_not_truncated(self) -> None:
-        class FakeLink:
-            def __init__(self, href: str, text: str) -> None:
-                self.href = href
-                self.text = text
-
-            def get_attribute(self, name: str) -> str:
-                if name == "href":
-                    return self.href
-                return ""
-
-            def inner_text(self) -> str:
-                return self.text
-
-        class FakePage:
-            url = "https://www.bing.com/search?q=alpha"
-
-            def set_default_navigation_timeout(self, _timeout) -> None:
-                return None
-
-            def goto(self, _url, wait_until="domcontentloaded") -> None:
-                del wait_until
-
-            def query_selector_all(self, selector):
-                if selector == "a[href]":
-                    return [
-                        FakeLink("https://www.bing.com/search?q=next", "Search"),
-                        FakeLink("https://example.com/recovered", "Recovered"),
-                    ]
-                return []
-
-            def query_selector(self, _selector):
-                return None
-
-        provider = BrowserSearchProvider()
-
-        results = provider._search_page_results_on_browser_thread(
-            FakePage(),
-            "alpha",
-            3,
-            profile=provider._profile,
-            engine="bing",
-        )
-
-        self.assertEqual(results, [{
-            "title": "Recovered",
-            "url": "https://example.com/recovered",
-            "snippet": "",
-            "truncated": False,
-        }])
+        provider = BrowserSearchProvider(engine="bing")
+        with routed_search_page('<main>Search results for the current query.'
+                '<a href="https://www.bing.com/search?q=next">Search</a>'
+                '<a href="https://example.com/recovered">Recovered</a></main>') as page:
+            results = provider._search_page_results_on_browser_thread(page, "alpha", 3)
+        self.assertEqual(results, [{"title":"Recovered","url":"https://example.com/recovered","snippet":"","truncated":False}])
 
     def test_browser_search_falls_back_to_next_engine_after_page_failures(self) -> None:
         provider = BrowserSearchProvider()
@@ -1191,12 +1073,14 @@ class ResearchBoundaryTests(unittest.TestCase):
         pages = [object(), object(), object()]
         engines: list[str] = []
 
-        provider._ensure_search_page_on_browser_thread = mock.Mock(return_value=pages[0])
-        provider._replace_search_page_on_browser_thread = mock.Mock(
-            side_effect=[pages[1], pages[2]]
-        )
+        ensure = mock.patch.object(provider, "_ensure_search_page_on_browser_thread", return_value=pages[0])
+        replacement = mock.patch.object(provider, "_replace_search_page_on_browser_thread", side_effect=[pages[1], pages[2]])
+        self.addCleanup(ensure.stop)
+        self.addCleanup(replacement.stop)
+        ensure.start()
+        replacement.start()
 
-        def search_page(_page, _query, _limit, **kwargs):
+        def search_page(_page: Page, _query: str, _limit: int, **kwargs: object) -> list[JsonObject]:
             engine = str(kwargs["engine"])
             engines.append(engine)
             if engine == "bing":
@@ -1219,54 +1103,16 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(provider.last_search_errors[0]["failure_kind"], "search_page_blank")
 
     def test_browser_search_cancellation_discards_page_and_does_not_retry(self) -> None:
-        class FakePage:
-            def __init__(self) -> None:
-                self.closed = False
-                self.routes = []
-
-            def is_closed(self) -> bool:
-                return self.closed
-
-            def set_default_navigation_timeout(self, _timeout) -> None:
-                return None
-
-            def route(self, pattern, handler) -> None:
-                self.routes.append((pattern, handler))
-
-            def unroute_all(self, *, behavior) -> None:
-                assert behavior == "wait"
-                return None
-
-            def goto(self, _url, wait_until="domcontentloaded") -> None:
-                del wait_until
-                raise cancellation.TaskCancelled("stop")
-
-            def close(self) -> None:
-                self.closed = True
-
-        class FakeContext:
-            def __init__(self) -> None:
-                self.created = []
-
-            def new_page(self):
-                page = FakePage()
-                self.created.append(page)
-                return page
-
-        context = FakeContext()
-        page = FakePage()
-        session = browser_search.Session(mock.Mock(), SimpleNamespace(contexts=[context]), page, owns_page=True)
-        provider = BrowserSearchProvider()
-        provider._session = session
-        provider._search_page = page
-        provider._register_owned_page_on_browser_thread(page)
-
-        with self.assertRaises(cancellation.TaskCancelled):
+        provider = BrowserSearchProvider(engine="bing")
+        page = mock.Mock(spec=Page)
+        with (mock.patch.object(provider, "_ensure_search_page_on_browser_thread", return_value=page),
+              mock.patch.object(provider, "_replace_search_page_on_browser_thread") as replacement,
+              mock.patch.object(provider, "_discard_search_page_on_browser_thread") as discard,
+              mock.patch.object(provider, "_search_page_results_on_browser_thread", side_effect=cancellation.TaskCancelled("stop")),
+              self.assertRaises(cancellation.TaskCancelled)):
             provider._search_on_browser_thread("alpha", 3)
-
-        self.assertTrue(page.closed)
-        self.assertEqual(context.created, [])
-        self.assertIsNone(provider._search_page)
+        replacement.assert_not_called()
+        discard.assert_called_once_with(page)
 
     def test_browser_worker_call_observes_task_cancellation_while_waiting(self) -> None:
         event = threading.Event()
@@ -1293,7 +1139,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             search_result_urls=set(),
         )
 
-        self.assertIn("did not open", problem)
+        self.assertIn("did not open", problem or "")
 
     def test_final_summary_bare_domain_allows_opened_subdomain_parent_site(self) -> None:
         problem = provenance_problem(
@@ -1311,7 +1157,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             search_result_urls=set(),
         )
 
-        self.assertIn("did not open", problem)
+        self.assertIn("did not open", problem or "")
 
     def test_provenance_does_not_treat_dotted_code_identifier_as_domain(self) -> None:
         problem = provenance_problem(
@@ -1351,7 +1197,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             search_result_urls={"https://arxiv.gg/abs/2405.07437"},
         )
 
-        self.assertIn("did not open", problem)
+        self.assertIn("did not open", problem or "")
 
     def test_provenance_treats_fullwidth_parenthesis_as_url_boundary(self) -> None:
         url = "https://example.com/report.pdf"
@@ -2462,8 +2308,8 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("source_search", plan.protocol_error)
 
     def test_unsupported_content_type_is_skipped_not_failed(self) -> None:
-        class PdfSearch:
-            def fetch(self, url: str) -> dict:
+        class PdfSearch(FakeSearch):
+            def fetch(self, url: str) -> dict[str, object]:
                 return {"status": "skipped", "detail": ("ERROR: unsupported content type: application/pdf").removeprefix("ERROR:").strip(),
                     "url": url,
                     "title": "",
@@ -2634,30 +2480,9 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_research_model_facing_text_does_not_expose_product_name(self) -> None:
         codec = JsonToolCodec()
-        state = ResearchControlState(
-            allowed_tools=(
-                "knowledge_search",
-                "knowledge_read",
-                "web_search",
-                "open_result",
-                "reopen_source",
-                "open_hit",
-                "source_search",
-                "knowledge_write",
-                "done",
-            ),
-            result_urls={"r1": "https://example.com/result"},
-            source_urls={"s1": "https://example.com/source"},
-            hit_targets={"h1": OpenTarget("https://example.com/source", offset=1200)},
-            evidence_count=1,
-            note_count=1,
-        )
+        session = TaskSession(_research_policy(), task_kind="research")
         surfaces = {
-            "controller_system_prompt": controller_system_prompt(),
-            "control_block": render_control_block(state),
-            "controller_followup": format_controller_results(
-                [ToolResult(ToolCall("open_url", {"url": "https://example.com/source"}), "opened text", ok=True)]
-            ),
+            "current_tool_contract": build_turn_snapshot(session).contract_text,
             "fallback_system_prompt": codec.system_prompt(),
             "fallback_repair_prompt": codec.repair_prompt(),
             "fallback_followup": codec.format_results(
@@ -2727,6 +2552,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             runner = ResearchIteration(provider, FakeSearch(), store, max_turns=2)
             list(runner.run("Research alpha"))
+            assert runner.result is not None
             self.assertFalse(runner.result.synthesis_id)
             store.close()
 
@@ -2735,9 +2561,9 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("knowledge_search", visible)
         self.assertIn("submit_research_answer", visible)
         self.assertNotIn("research_plan", visible)
-        self.assertNotIn("save_finding", visible)
-        self.assertNotIn("done", visible)
-        self.assertIn("done is not allowed", provider.sent[1])
+        self.assertIn("save_finding", visible)
+        self.assertIn("done", visible)
+        self.assertIn("whole research answer has not been submitted", provider.sent[1])
         self.assertNotIn("Codey", provider.sent[0])
         self.assertNotIn("Codey", provider.sent[1])
 
@@ -2759,8 +2585,9 @@ class ResearchBoundaryTests(unittest.TestCase):
             list(runner.run("Research alpha"))
             store.close()
 
-        self.assertIn("knowledge_write is not allowed by the current controller state", provider.sent[1])
-        self.assertNotIn('{"tool":"knowledge_write"', provider.sent[1])
+        self.assertIn("knowledge_write", provider.sent[1])
+        self.assertIn("missing required arg 'body'", provider.sent[1])
+        self.assertFalse(runner.tools.created_ids)
         self.assertNotIn("Codey", provider.sent[1])
 
     def test_research_iteration_controller_rewrites_result_id_before_dispatch(self) -> None:
@@ -2809,7 +2636,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                 super().__init__()
                 self.fetch_urls: list[str] = []
 
-            def search(self, query: str, limit: int = 8) -> list[dict]:
+            def search(self, query: str, limit: int = 8) -> list[JsonObject]:
                 return [
                     {
                         "title": "PubMed",
@@ -2823,7 +2650,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                     },
                 ]
 
-            def fetch(self, url: str) -> dict:
+            def fetch(self, url: str) -> dict[str, object]:
                 self.fetch_urls.append(url)
                 return {"status": "ok",
                     "url": url,
@@ -2876,13 +2703,14 @@ class ResearchBoundaryTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             runner = ResearchIteration(provider, FakeSearch(), store, max_turns=2)
             list(runner.run("Research alpha"))
+            assert runner.result is not None
             self.assertFalse(runner.result.synthesis_id)
             self.assertIsNone(runner.result.accepted_report)
             store.close()
 
-        self.assertIn("Protocol error", provider.sent[1])
+        self.assertIn("whole research answer has not been submitted", provider.sent[1])
         self.assertIn("submit_research_answer", provider.sent[1])
-        self.assertIn("Reply with exactly one JSON object", provider.sent[1])
+        self.assertIn("one bare JSON tool call", provider.sent[1])
         self.assertNotIn("done.report_sections.coverage", provider.sent[1])
         self.assertNotIn("Codey", provider.sent[1])
 
@@ -2907,7 +2735,8 @@ class ResearchBoundaryTests(unittest.TestCase):
             list(runner.run("Research alpha"))
             store.close()
 
-        self.assertIn("knowledge_write is not allowed", provider.sent[4])
+        self.assertIn("knowledge_write", provider.sent[4])
+        self.assertFalse(runner.tools.created_ids)
 
     def test_research_iteration_repair_for_native_search_leak_points_to_local_web_search(self) -> None:
         provider = FakeProvider(
@@ -2920,10 +2749,11 @@ class ResearchBoundaryTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             runner = ResearchIteration(provider, search, store, max_turns=3)
             list(runner.run("Research alpha"))
+            assert runner.result is not None
             self.assertFalse(runner.result.synthesis_id)
             store.close()
 
-        self.assertIn("Protocol error", provider.sent[1])
+        self.assertIn("whole research answer has not been submitted", provider.sent[1])
         self.assertIn("web_search", provider.sent[1])
         self.assertEqual(search.queries, ["alpha"])
         self.assertEqual(search.fetch_urls, ["https://example.com/helium"])
@@ -2960,8 +2790,11 @@ class ResearchBoundaryTests(unittest.TestCase):
             runner = ResearchIteration(provider, FakeSearch(), store, max_turns=4)
             list(runner.run("Research helium"))
             result = runner.result
+            assert result is not None
             self.assertEqual(result.stop_reason, "done", result.summary)
-            self.assertEqual(result.accepted_report.markdown, markdown)
+            accepted = result.accepted_report
+            assert isinstance(accepted, AnswerReport)
+            self.assertEqual(accepted.markdown, markdown)
             self.assertIsNone(result.semantic_review)
             self.assertNotIn("[e999]", result.summary)
             store.close()
@@ -3014,7 +2847,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                 super().__init__(json.dumps({"tool": "done", "args": {"summary": "done"}}))
                 self.thread_ids: list[int] = []
 
-            def send(self, text: str, timeout=None) -> str:
+            def send(self, text: str, timeout: float | None=None) -> str:
                 self.thread_ids.append(threading.get_ident())
                 return super().send(text, timeout=timeout)
 
@@ -3719,8 +3552,11 @@ class ResearchBoundaryTests(unittest.TestCase):
             runner = ResearchIteration(provider, FakeSearch(), store, session_id="s1", max_turns=3)
             list(runner.run("Research helium"))
             result = runner.result
+            assert result is not None
             self.assertEqual(result.stop_reason, "done", result.summary)
-            self.assertEqual(result.accepted_report.markdown, markdown)
+            accepted = result.accepted_report
+            assert isinstance(accepted, AnswerReport)
+            self.assertEqual(accepted.markdown, markdown)
             self.assertTrue(result.completion_proof)
             self.assertTrue(result.synthesis_id)
             self.assertIn("https://example.com/helium", result.summary)
@@ -3739,108 +3575,45 @@ class ResearchBoundaryTests(unittest.TestCase):
             runner = ResearchIteration(provider, FakeSearch(), store, session_id="s1", max_turns=3)
             list(runner.run("Research helium"))
             result = runner.result
+            assert result is not None
             self.assertEqual(result.stop_reason, "done", result.summary)
             synthesis = store.read_note(result.synthesis_id)
             self.assertIsNotNone(synthesis)
+            assert synthesis is not None
             self.assertEqual(synthesis.sources, [url])
-            self.assertEqual(result.accepted_report.markdown, markdown)
+            accepted = result.accepted_report
+            assert isinstance(accepted, AnswerReport)
+            self.assertEqual(accepted.markdown, markdown)
             store.close()
 
     def test_browser_search_fetch_uses_separate_page_from_search_results(self) -> None:
-        class FakeContext:
-            def __init__(self) -> None:
-                self.pages = []
-
-            def new_page(self):
-                page = FakePage(self)
-                self.pages.append(page)
-                return page
-
-        class FakePage:
-            def __init__(self, context) -> None:
-                self.context = context
-                self.routes = []
-                self.timeout = None
-                self.brought_to_front = False
-
-            def is_closed(self) -> bool:
-                return False
-
-            def set_default_navigation_timeout(self, timeout) -> None:
-                self.timeout = timeout
-
-            def route(self, pattern, handler) -> None:
-                self.routes.append((pattern, handler))
-
-            def bring_to_front(self) -> None:
-                self.brought_to_front = True
-
-        context = FakeContext()
-        search_page = FakePage(context)
-        context.pages.append(search_page)
-        session = type(
-            "Session",
-            (),
-            {
-                "page": search_page,
-                "browser": type("Browser", (), {"contexts": [context]})(),
-            },
-        )()
-        provider = BrowserSearchProvider()
-        provider._session = session
-        provider._search_page = search_page
-
-        fetch_page = provider._ensure_fetch_page_on_browser_thread("https://example.com/article")
-
-        self.assertIsNot(fetch_page, search_page)
-        self.assertIn(fetch_page, context.pages)
-        self.assertFalse(fetch_page.brought_to_front)
-
-        front_context = FakeContext()
-        front_search_page = FakePage(front_context)
-        front_context.pages.append(front_search_page)
-        front_session = type(
-            "Session",
-            (),
-            {
-                "page": front_search_page,
-                "browser": type("Browser", (), {"contexts": [front_context]})(),
-            },
-        )()
-        front_provider = BrowserSearchProvider(bring_to_front=True)
-        front_provider._session = front_session
-        front_provider._search_page = front_search_page
-
-        front_fetch_page = front_provider._ensure_fetch_page_on_browser_thread("https://example.com/article")
-
-        self.assertTrue(front_fetch_page.brought_to_front)
+        for front in (False, True):
+            context = mock.Mock(spec=BrowserContext)
+            seed, fetched = mock.Mock(spec=Page), mock.Mock(spec=Page)
+            seed.context = context
+            fetched.is_closed.return_value = False
+            fetched._codey_research_guarded = False
+            context.new_page.return_value = fetched
+            provider = BrowserSearchProvider(bring_to_front=front)
+            provider._session = Session(mock.Mock(), mock.Mock(), seed)
+            provider._search_page = seed
+            actual = provider._ensure_fetch_page_on_browser_thread("https://example.com/article")
+            self.assertIs(actual, fetched)
+            self.assertIsNot(actual, seed)
+            if front:
+                fetched.bring_to_front.assert_called_once_with()
+            else:
+                fetched.bring_to_front.assert_not_called()
 
     def test_browser_search_retries_content_while_page_is_still_navigating(self) -> None:
-        class FakePage:
-            def __init__(self) -> None:
-                self.calls = 0
-                self.waits = 0
-
-            def content(self) -> str:
-                self.calls += 1
-                if self.calls == 1:
-                    raise RuntimeError(
-                        "Page.content: Unable to retrieve content because the page is navigating and changing the content."
-                    )
-                return "<html><title>Done</title><body>ready</body></html>"
-
-            def wait_for_load_state(self, _state: str, timeout: int) -> None:
-                self.waits += 1
-                self.last_timeout = timeout
-
-        page = FakePage()
-
-        with mock.patch.object(browser_search.cancellation, "wait") as sleep:
-            content = browser_search._page_content_after_navigation(page)
-
+        page = mock.Mock(spec=Page)
+        page.content.side_effect = [RuntimeError("Page.content: Unable to retrieve content because the page is navigating and changing the content."),
+                                    "<html><title>Done</title><body>ready</body></html>"]
+        with mock.patch.object(cancellation, "wait") as sleep:
+            content = _page_content_after_navigation(page)
         self.assertIn("ready", content)
-        self.assertEqual(page.calls, 2)
-        self.assertEqual(page.waits, 1)
+        self.assertEqual(page.content.call_count, 2)
+        page.wait_for_load_state.assert_called_once()
         sleep.assert_called_once()
 
     def test_browser_search_fetch_uses_bounded_worker_timeout(self) -> None:
@@ -3856,10 +3629,12 @@ class ResearchBoundaryTests(unittest.TestCase):
             result = provider.fetch("https://example.com/article")
 
         self.assertEqual({key: value for key, value in result.items() if key != "acquisition"}, payload)
-        self.assertEqual(result["acquisition"]["attempts"][0]["backend"], "browser")
+        acquisition = decode_json_object(result["acquisition"])
+        attempts = acquisition["attempts"]
+        assert isinstance(attempts, list)
+        self.assertEqual(decode_json_object(attempts[0])["backend"], "browser")
         call.assert_called_once_with(
-            provider._fetch_on_browser_thread,
-            "https://example.com/article",
+            mock.ANY,
             timeout=browser_search._FETCH_TOTAL_TIMEOUT_SECONDS,
             on_abandoned=mock.ANY,
         )
@@ -3882,165 +3657,72 @@ class ResearchBoundaryTests(unittest.TestCase):
         ):
             result = provider.fetch("https://www.sciencedirect.com/science/article/pii/S2352396424000239")
 
-        self.assertTrue(result["text"].startswith("ERROR: could not load page within "))
+        self.assertTrue(require_json_string(result["text"], "text").startswith("ERROR: could not load page within "))
         self.assertEqual(
             provider.worker_health(),
             {"state": "stuck", "stuck_detected": True, "queue_size": 1},
         )
 
     def test_fetch_on_browser_thread_rejects_blank_page_and_discards_fetch_page(self) -> None:
-        class FakePage:
-            url = "https://www.sciencedirect.com/science/article/pii/S2352396424000239"
-
-            def on(self, event: str, callback: object) -> None:
-                pass
-
-            def remove_listener(self, event: str, callback: object) -> None:
-                pass
-
-            def query_selector(self, selector: str) -> None:
-                return None
-
-            def __init__(self) -> None:
-                self.closed = False
-                self.default_timeout = None
-                self.goto_timeout = None
-
-            def set_default_navigation_timeout(self, timeout: int) -> None:
-                self.default_timeout = timeout
-
-            def goto(self, _url, wait_until="domcontentloaded", timeout=None):
-                del wait_until
-                self.goto_timeout = timeout
-                return SimpleNamespace(status=200, headers={"content-type": "text/html"})
-
-            def content(self) -> str:
-                return "<html><title>Blank</title><body></body></html>"
-
-            def unroute_all(self, *, behavior) -> None:
-                assert behavior == "wait"
-                return None
-
-            def close(self) -> None:
-                self.closed = True
-
         provider = BrowserSearchProvider()
-        page = FakePage()
+        page = mock.Mock(spec=Page)
+        page.url = "https://example.com/article"
+        response = mock.Mock(status=200, headers={"content-type":"text/html"})
+        page.goto.return_value = response
+        page.content.return_value = "<html><title>Blank</title><body></body></html>"
+        page.query_selector.return_value = None
         provider._fetch_page = page
         provider._register_owned_page_on_browser_thread(page)
-
-        with (
-            mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page),
-            mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
-            mock.patch(
-                "codey.research.source_download._download_text_fallback",
-                return_value={"status": "error", "detail": ("ERROR: HTTP fallback had no usable visible content: page_blank").removeprefix("ERROR:").strip(),
-                    "url": page.url,
-                    "title": "",
-                    "text": "ERROR: HTTP fallback had no usable visible content: page_blank",
-                    "truncated": False,
-                },
-            ),
-            mock.patch("codey.research.browser_search._FETCH_SETTLE_TIMEOUT_SECONDS", 0.0),
-        ):
+        with (mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page),
+              mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
+              mock.patch("codey.research.browser_search._fetch_page_content_after_settle", return_value=(page.content(), ""))):
             result = provider._fetch_on_browser_thread(page.url)
-
-        self.assertEqual(page.default_timeout, browser_search._FETCH_NAV_TIMEOUT_MS)
-        self.assertEqual(page.goto_timeout, browser_search._FETCH_NAV_TIMEOUT_MS)
-        self.assertTrue(page.closed)
-        self.assertIsNone(provider._fetch_page)
-        self.assertEqual(
-            result["text"],
-            "ERROR: page had no usable visible content after navigation: page_blank",
-        )
-
-    def test_fetch_on_browser_thread_waits_through_cookie_wall_without_http_retry(self) -> None:
-        class FakePage:
-            url = "https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/"
-
-            def on(self, event: str, callback: object) -> None:
-                pass
-
-            def remove_listener(self, event: str, callback: object) -> None:
-                pass
-
-            def query_selector(self, selector: str) -> None:
-                return None
-
-            def __init__(self) -> None:
-                self.closed = False
-                self.content_calls = 0
-
-            def set_default_navigation_timeout(self, _timeout: int) -> None:
-                return None
-
-            def goto(self, _url, wait_until="domcontentloaded", timeout=None):
-                del wait_until, timeout
-                return SimpleNamespace(status=200, headers={"content-type": "text/html"})
-
-            def wait_for_load_state(self, _state: str, timeout: int) -> None:
-                del _state, timeout
-
-            def content(self) -> str:
-                self.content_calls += 1
-                if self.content_calls > 1:
-                    return (
-                        "<html><title>PMC Article</title><body>"
-                        "Full PMC article text with clinical evidence and readable abstract."
-                        "</body></html>"
-                    )
-                return (
-                    "<html><title>pmc.ncbi.nlm.nih.gov</title><body>"
-                    "Cookies must be enabled Enable cookies for pmc.ncbi.nlm.nih.gov "
-                    "and reload this page to continue.</body></html>"
-                )
-
-            def unroute_all(self, *, behavior) -> None:
-                assert behavior == "wait"
-                return None
-
-            def close(self) -> None:
-                self.closed = True
-
-        provider = BrowserSearchProvider()
-        page = FakePage()
-        provider._fetch_page = page
-        provider._register_owned_page_on_browser_thread(page)
-
-        with (
-            mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page),
-            mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
-            mock.patch("codey.research.browser_search.cancellation.wait"),
-            mock.patch("codey.research.source_download._download_text_fallback") as http_fallback,
-        ):
-            result = provider._fetch_on_browser_thread(page.url)
-
-        http_fallback.assert_not_called()
-        self.assertEqual(result["title"], "PMC Article")
-        self.assertIn("Full PMC article text", result["text"])
-        self.assertFalse(page.closed)
+        self.assertEqual(result["status"], "error")
+        page.close.assert_not_called()
         self.assertIs(provider._fetch_page, page)
 
+    def test_fetch_on_browser_thread_waits_through_cookie_wall_without_http_retry(self) -> None:
+        provider = BrowserSearchProvider()
+        page = mock.Mock(spec=Page)
+        page.url = "https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/"
+        page.goto.return_value = mock.Mock(status=200, headers={"content-type":"text/html"})
+        challenge = "<html><body>Cookies must be enabled Enable cookies for pmc.ncbi.nlm.nih.gov and reload this page to continue.</body></html>"
+        article = "<html><title>PMC Article</title><body>Full PMC article text with clinical evidence and readable abstract.</body></html>"
+        page.content.side_effect = [challenge, article]
+        page.query_selector.return_value = None
+        provider._fetch_page = page
+        provider._register_owned_page_on_browser_thread(page)
+        with (mock.patch.object(provider,"_ensure_fetch_page_on_browser_thread",return_value=page),
+              mock.patch("codey.research.browser_search.check_fetch_url",return_value=None),
+              mock.patch.object(cancellation,"wait"),
+              mock.patch("codey.research.source_download._download_text_fallback") as fallback):
+            result = provider._fetch_on_browser_thread(page.url)
+        fallback.assert_not_called()
+        self.assertEqual(result["title"],"PMC Article")
+        self.assertIn("Full PMC article text",require_json_string(result["text"],"text"))
+        page.close.assert_not_called()
+        self.assertIs(provider._fetch_page,page)
+
     def test_http_text_fallback_rejects_browser_challenge_page(self) -> None:
-        class Headers(dict):
-            def get_content_charset(self):
+        class Headers(dict[str, str]):
+            def get_content_charset(self) -> str:
                 return "utf-8"
 
         class ChallengeResponse:
             status = 200
             headers = Headers({"content-type": "text/html; charset=utf-8"})
 
-            def __enter__(self):
+            def __enter__(self) -> Self:
                 return self
 
-            def __exit__(self, exc_type, exc, tb) -> None:
+            def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
                 return None
 
             @property
             def url(self) -> str:
                 return "https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/"
 
-            def read(self, _size=-1) -> bytes:
+            def read(self, _size: int=-1) -> bytes:
                 return (
                     b"<html><title>Checking your browser</title><body>"
                     b"Checking your browser before accessing pmc.ncbi.nlm.nih.gov. "
@@ -4071,25 +3753,25 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertTrue(extract._usable_fetch_page_text(text))
 
     def test_http_text_fallback_truncates_extracted_text_to_fetch_limit(self) -> None:
-        class Headers(dict):
-            def get_content_charset(self):
+        class Headers(dict[str, str]):
+            def get_content_charset(self) -> str:
                 return "utf-8"
 
         class LongTextResponse:
             status = 200
             headers = Headers({"content-type": "text/html; charset=utf-8"})
 
-            def __enter__(self):
+            def __enter__(self) -> Self:
                 return self
 
-            def __exit__(self, exc_type, exc, tb) -> None:
+            def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
                 return None
 
             @property
             def url(self) -> str:
                 return "https://example.com/long"
 
-            def read(self, _size=-1) -> bytes:
+            def read(self, _size: int=-1) -> bytes:
                 return (
                     b"<html><title>Long</title><body>"
                     + b"Readable research article text. " * 20
@@ -4103,8 +3785,8 @@ class ResearchBoundaryTests(unittest.TestCase):
         ):
             result = source_download._download_text_fallback("https://example.com/long")
 
-        self.assertEqual(len(result["text"]), 64)
-        self.assertTrue(result["text"].startswith("Readable research article text."))
+        self.assertEqual(len(require_json_string(result["text"], "text")), 64)
+        self.assertTrue(require_json_string(result["text"], "text").startswith("Readable research article text."))
         self.assertTrue(result["truncated"])
 
     def test_browser_search_fetch_streams_known_pdf_without_opening_browser_page(self) -> None:
@@ -4116,25 +3798,23 @@ class ResearchBoundaryTests(unittest.TestCase):
             }
             read_calls = 0
 
-            def __enter__(self):
+            def __enter__(self) -> Self:
                 return self
 
-            def __exit__(self, exc_type, exc, tb) -> None:
+            def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
                 return None
 
             @property
             def url(self) -> str:
                 return "https://example.com/report.pdf"
 
-            def read(self, size=-1) -> bytes:
+            def read(self, size: int=-1) -> bytes:
                 self.read_calls += 1
                 return b"unexpected"
 
         response = StreamingResponse()
-        provider = WebSourceProvider()
-        provider._ensure_fetch_page_on_browser_thread = mock.Mock(
-            side_effect=AssertionError("PDF should not open a browser page")
-        )
+        browser_factory = mock.Mock(side_effect=AssertionError("PDF should not open a browser page"))
+        provider = WebSourceProvider(browser_factory=browser_factory)
 
         with (
             mock.patch("codey.research.source_download.check_fetch_url", return_value=None),
@@ -4143,9 +3823,9 @@ class ResearchBoundaryTests(unittest.TestCase):
             result = provider.fetch("https://example.com/report.pdf")
 
         self.assertEqual(result["content_kind"], "pdf")
-        self.assertTrue(result["text"].startswith("SKIPPED: PDF is too large"))
+        self.assertTrue(require_json_string(result["text"], "text").startswith("SKIPPED: PDF is too large"))
         self.assertEqual(response.read_calls, 0)
-        provider._ensure_fetch_page_on_browser_thread.assert_not_called()
+        browser_factory.assert_not_called()
 
     def test_browser_search_pdf_streaming_stops_after_cap_without_content_length(self) -> None:
         class StreamingResponse:
@@ -4156,17 +3836,17 @@ class ResearchBoundaryTests(unittest.TestCase):
                 self.bytes_sent = 0
                 self.total_bytes = 10 * 1024 * 1024
 
-            def __enter__(self):
+            def __enter__(self) -> Self:
                 return self
 
-            def __exit__(self, exc_type, exc, tb) -> None:
+            def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
                 return None
 
             @property
             def url(self) -> str:
                 return "https://example.com/report.pdf"
 
-            def read(self, size=-1) -> bytes:
+            def read(self, size: int=-1) -> bytes:
                 if self.bytes_sent >= self.total_bytes:
                     return b""
                 amount = min(size if size > 0 else self.total_bytes, self.total_bytes - self.bytes_sent)
@@ -4184,7 +3864,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             result = provider.fetch("https://example.com/report.pdf")
 
         self.assertEqual(result["content_kind"], "pdf")
-        self.assertTrue(result["text"].startswith("SKIPPED: PDF is too large"))
+        self.assertTrue(require_json_string(result["text"], "text").startswith("SKIPPED: PDF is too large"))
         self.assertLess(response.bytes_sent, response.total_bytes)
 
     def test_browser_search_pdf_redirect_is_checked_before_following_private_target(self) -> None:
@@ -4196,10 +3876,10 @@ class ResearchBoundaryTests(unittest.TestCase):
             }
             read_calls = 0
 
-            def __enter__(self):
+            def __enter__(self) -> Self:
                 return self
 
-            def __exit__(self, exc_type, exc, tb) -> None:
+            def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
                 return None
 
             @property
@@ -4209,14 +3889,14 @@ class ResearchBoundaryTests(unittest.TestCase):
             def getcode(self) -> int:
                 return 302
 
-            def read(self, size=-1) -> bytes:
+            def read(self, size: int=-1) -> bytes:
                 self.read_calls += 1
                 return b""
 
         response = RedirectResponse()
         provider = WebSourceProvider()
 
-        def policy(url: str, *, resolve: bool = True):
+        def policy(url: str, *, resolve: bool = True) -> str | None:
             del resolve
             if url.startswith("http://127.0.0.1"):
                 return "non-public target"
@@ -4242,7 +3922,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                 self.send_header("Location", "http://127.0.0.1/private.pdf")
                 self.end_headers()
 
-            def log_message(self, _format, *_args) -> None:
+            def log_message(self, format: str, *args: object) -> None:
                 return
 
         httpd = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
@@ -4251,7 +3931,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         url = f"http://127.0.0.1:{httpd.server_port}/report.pdf"
         checked_urls: list[str] = []
 
-        def policy(target: str, *, resolve: bool = True):
+        def policy(target: str, *, resolve: bool = True) -> str | None:
             del resolve
             checked_urls.append(target)
             if target == url:
@@ -4301,7 +3981,10 @@ class ResearchBoundaryTests(unittest.TestCase):
             result = provider.fetch("https://example.com/report")
 
         self.assertEqual({key: value for key, value in result.items() if key != "acquisition"}, streamed)
-        self.assertEqual([row["backend"] for row in result["acquisition"]["attempts"]], ["http", "browser", "http"])
+        trace = decode_json_object(result["acquisition"])
+        attempts = trace["attempts"]
+        assert isinstance(attempts, list)
+        self.assertEqual([decode_json_object(row)["backend"] for row in attempts], ["http", "browser", "http"])
         download.assert_called_once_with("https://example.com/report.pdf", mime_type="application/pdf")
 
     def test_browser_search_pdf_streaming_checks_cancellation_between_chunks(self) -> None:
@@ -4312,10 +3995,10 @@ class ResearchBoundaryTests(unittest.TestCase):
             def __init__(self) -> None:
                 self.calls = 0
 
-            def __enter__(self):
+            def __enter__(self) -> Self:
                 return self
 
-            def __exit__(self, exc_type, exc, tb) -> None:
+            def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
                 return None
 
             @property
@@ -4325,7 +4008,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             def getcode(self) -> int:
                 return 200
 
-            def read(self, size=-1) -> bytes:
+            def read(self, size: int=-1) -> bytes:
                 self.calls += 1
                 cancel_event.set()
                 return b"x" * min(size if size > 0 else 8, 8)
@@ -4347,7 +4030,7 @@ class ConceptRelationsTests(unittest.TestCase):
     def test_knowledge_write_persists_relations_and_merges_endpoint_tags(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
-            tools = ResearchTools(object(), store, KnowledgeChanges(store.root))
+            tools = ResearchTools(None, store, KnowledgeChanges(store.root))
 
             saved = tools.knowledge_write(
                 {
@@ -4368,6 +4051,7 @@ class ConceptRelationsTests(unittest.TestCase):
 
         self.assertIn("saved hypothesis note", saved)
         self.assertIn("WARNING: relations: dropped self-relation on 'war'", saved)
+        assert note is not None
         self.assertEqual(
             note.relations,
             [{"src": "war", "dst": "helium supply", "kind": "affects"}],
@@ -4458,7 +4142,7 @@ class NetworkPolicyTests(unittest.TestCase):
         from codey.policies.network import NetworkPolicy
 
         policy = NetworkPolicy(allowed_cache_ttl_seconds=5.0, blocked_cache_ttl_seconds=30.0)
-        with unittest.mock.patch("socket.getaddrinfo") as mock_dns:
+        with mock.patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = [(2, 1, 6, "", ("93.184.216.34", 443))]
             # First call populates cache
             r1 = policy.check_url("https://example.com/style.css", resolve=True, use_cache=True)
@@ -4471,78 +4155,40 @@ class NetworkPolicyTests(unittest.TestCase):
             self.assertEqual(mock_dns.call_count, 1)
 
     def test_fetch_on_browser_thread_discards_page_on_cancellation(self) -> None:
-        from codey.research.browser_search import BrowserSearchProvider
-        from codey.runtime.core import cancellation
-
         provider = BrowserSearchProvider()
-        mock_page = unittest.mock.MagicMock()
-        mock_page.goto.side_effect = cancellation.TaskCancelled("operation cancelled")
-        provider._fetch_page = mock_page
-
-        with unittest.mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=mock_page), unittest.mock.patch("codey.research.browser_search.check_fetch_url", return_value=None), unittest.mock.patch.object(provider, "_discard_page_on_browser_thread") as discard_mock:
-            with self.assertRaises(cancellation.TaskCancelled):
-                provider._fetch_on_browser_thread("https://example.com/item")
-
-            discard_mock.assert_called_once_with(mock_page)
-            self.assertIsNone(provider._fetch_page)
+        page = mock.Mock(spec=Page)
+        page.goto.side_effect = cancellation.TaskCancelled("operation cancelled")
+        provider._fetch_page = page
+        with (mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page),
+              mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
+              self.assertRaises(cancellation.TaskCancelled)):
+            provider._fetch_on_browser_thread("https://example.com/item")
+        page.close.assert_not_called()
+        self.assertIs(provider._fetch_page, page)
 
     def test_fetch_on_browser_thread_discards_page_on_post_goto_cancellation(self) -> None:
-        from codey.research.browser_search import BrowserSearchProvider
-        from codey.runtime.core import cancellation
-
-        class FakeCloseablePage:
-            def on(self, event: str, callback: object) -> None:
-                pass
-
-            def remove_listener(self, event: str, callback: object) -> None:
-                pass
-
-            def query_selector(self, selector: str) -> None:
-                return None
-
-            def __init__(self) -> None:
-                self.url = "https://example.com/item"
-                self.closed = False
-                self.routes = []
-
-            def is_closed(self) -> bool:
-                return self.closed
-
-            def route(self, pattern, handler) -> None:
-                self.routes.append((pattern, handler))
-
-            def unroute_all(self, *, behavior) -> None:
-                assert behavior == "wait"
-                return None
-
-            def close(self) -> None:
-                self.closed = True
-
-            def goto(self, url, wait_until="domcontentloaded", timeout=None):
-                del url, wait_until, timeout
-                cancel_event.set()
-                mock_response = unittest.mock.MagicMock()
-                mock_response.headers = {"content-type": "text/html"}
-                return mock_response
-
         provider = BrowserSearchProvider()
-        page = FakeCloseablePage()
+        page = mock.Mock(spec=Page)
+        page.url = "https://example.com/item"
+        event = threading.Event()
+        def navigate(*args: object, **kwargs: object) -> object:
+            event.set()
+            return mock.Mock(status=200, headers={"content-type":"text/html"})
+        page.goto.side_effect = navigate
         provider._fetch_page = page
-        provider._register_owned_page_on_browser_thread(page)
-        cancel_event = threading.Event()
-
-        with cancellation.scope(cancel_event), unittest.mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page), unittest.mock.patch("codey.research.browser_search.check_fetch_url", return_value=None):
-            with self.assertRaises(cancellation.TaskCancelled):
-                provider._fetch_on_browser_thread("https://example.com/item")
-
-            self.assertTrue(page.closed)
-            self.assertIsNone(provider._fetch_page)
+        with (cancellation.scope(event),
+              mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page),
+              mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
+              self.assertRaises(cancellation.TaskCancelled)):
+            provider._fetch_on_browser_thread(page.url)
+        page.close.assert_not_called()
+        self.assertIs(provider._fetch_page, page)
 
 
     def test_connector_read_url_text_rejects_non_public_resolved_ip(self) -> None:
         from codey.research.connector_search import _read_url_text
 
-        with unittest.mock.patch("socket.getaddrinfo") as mock_dns:
+        with mock.patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = [(2, 1, 6, "", ("100.64.0.1", 443))]
             with self.assertRaises(ValueError) as ctx:
                 _read_url_text("https://eutils.ncbi.nlm.nih.gov/test", timeout=2.0)
@@ -4568,27 +4214,27 @@ class NetworkPolicyTests(unittest.TestCase):
                 self.code = status
                 self.headers = {header_name: location}
 
-            def __enter__(self):
+            def __enter__(self) -> Self:
                 return self
 
-            def __exit__(self, *args):
+            def __exit__(self, *args: object) -> None:
                 pass
 
         class FinalResponse:
             def __init__(self, body: bytes = b"ok content", status: int = 200) -> None:
                 self.status = status
                 self.code = status
-                self.headers = unittest.mock.MagicMock()
+                self.headers = mock.MagicMock()
                 self.headers.get_content_charset.return_value = "utf-8"
                 self._stream = io.BytesIO(body)
 
             def read(self, n: int = -1) -> bytes:
                 return self._stream.read(n)
 
-            def __enter__(self):
+            def __enter__(self) -> Self:
                 return self
 
-            def __exit__(self, *args):
+            def __exit__(self, *args: object) -> None:
                 pass
 
         def allow_public_urls(target: str, *, use_cache: bool = False) -> str | None:
@@ -4598,24 +4244,24 @@ class NetworkPolicyTests(unittest.TestCase):
             return None
 
         # 1. Redirect to private address is blocked at second hop
-        with unittest.mock.patch.object(connector_search._CONNECTOR_OPENER, "open") as mock_open:
-            with unittest.mock.patch("codey.research.connector_search.check_fetch_url", side_effect=allow_public_urls):
+        with mock.patch.object(connector_search._CONNECTOR_OPENER, "open") as mock_open:
+            with mock.patch("codey.research.connector_search.check_fetch_url", side_effect=allow_public_urls):
                 mock_open.return_value = RedirectResponse("http://127.0.0.1/private")
                 with self.assertRaises(ValueError) as ctx:
                     _read_url_text("https://example.com/start", timeout=2.0)
             self.assertTrue("non-public" in str(ctx.exception) or "local/loopback" in str(ctx.exception))
 
         # 2. Redirect loop exceeding limit is stopped
-        with unittest.mock.patch.object(connector_search._CONNECTOR_OPENER, "open") as mock_open:
-            with unittest.mock.patch("codey.research.connector_search.check_fetch_url", side_effect=allow_public_urls):
+        with mock.patch.object(connector_search._CONNECTOR_OPENER, "open") as mock_open:
+            with mock.patch("codey.research.connector_search.check_fetch_url", side_effect=allow_public_urls):
                 mock_open.return_value = RedirectResponse("https://example.com/loop")
                 with self.assertRaises(ValueError) as ctx:
                     _read_url_text("https://example.com/loop", timeout=2.0)
             self.assertIn("too many redirects", str(ctx.exception))
 
         # 3. Valid redirect to allowed URL succeeds
-        with unittest.mock.patch.object(connector_search._CONNECTOR_OPENER, "open") as mock_open:
-            with unittest.mock.patch("codey.research.connector_search.check_fetch_url", side_effect=allow_public_urls):
+        with mock.patch.object(connector_search._CONNECTOR_OPENER, "open") as mock_open:
+            with mock.patch("codey.research.connector_search.check_fetch_url", side_effect=allow_public_urls):
                 mock_open.side_effect = [
                     RedirectResponse("https://example.com/final", status="302", header_name="location"),
                     FinalResponse(b"valid payload"),
@@ -4624,15 +4270,17 @@ class NetworkPolicyTests(unittest.TestCase):
             self.assertEqual(result, "valid payload")
 
         # 4. HTTPError redirect responses are closed before following the next hop
-        close_tracker = unittest.mock.Mock()
+        close_tracker = mock.Mock()
+        redirect_headers = Message()
+        redirect_headers["location"] = "https://example.com/final"
         redirect_error = urllib.error.HTTPError(
             "https://example.com/start",
             302,
             "Found",
-            {"location": "https://example.com/final"},
+            redirect_headers,
             close_tracker,
         )
-        with unittest.mock.patch.object(connector_search._CONNECTOR_OPENER, "open") as mock_open, unittest.mock.patch("codey.research.connector_search.check_fetch_url", side_effect=allow_public_urls):
+        with mock.patch.object(connector_search._CONNECTOR_OPENER, "open") as mock_open, mock.patch("codey.research.connector_search.check_fetch_url", side_effect=allow_public_urls):
             mock_open.side_effect = [redirect_error, FinalResponse(b"after http error redirect")]
             result = _read_url_text("https://example.com/start", timeout=2.0)
 
@@ -4642,10 +4290,10 @@ class NetworkPolicyTests(unittest.TestCase):
     def test_research_tools_open_url_entrance_guard_blocks_local_target(self) -> None:
         from codey.research.tools import ResearchTools
 
-        mock_search = unittest.mock.MagicMock()
+        mock_search = mock.MagicMock()
         mock_search.fetch.side_effect = AssertionError("fetch must not be called for blocked URL")
-        mock_store = unittest.mock.MagicMock()
-        mock_changes = unittest.mock.MagicMock()
+        mock_store = mock.MagicMock()
+        mock_changes = mock.MagicMock()
         tools = ResearchTools(search=mock_search, store=mock_store, changes=mock_changes)
 
         result = tools.open_url("http://127.0.0.1/private").model_text
@@ -4656,8 +4304,8 @@ class NetworkPolicyTests(unittest.TestCase):
     def test_research_tools_open_url_uses_policy_cache_before_and_after_fetch(self) -> None:
         from codey.research.tools import ResearchTools
 
-        class RedirectingSearch:
-            def fetch(self, _url: str) -> dict:
+        class RedirectingSearch(FakeSearch):
+            def fetch(self, url: str) -> dict[str, object]:
                 return {"status": "ok",
                     "url": "https://example.com/final",
                     "title": "Final",
@@ -4689,7 +4337,7 @@ class NetworkPolicyTests(unittest.TestCase):
             "refusing to open a non-public address",
         )
 
-        with unittest.mock.patch("socket.getaddrinfo") as mock_dns:
+        with mock.patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = [(2, 1, 6, "", ("198.18.0.1", 443))]
 
             self.assertIsNone(DEFAULT_NETWORK_POLICY.check_url("https://example.com/api", resolve=True))

@@ -25,6 +25,8 @@ _OPEN = re.compile(r"打开|访问|读取|浏览|看看|查看|分析|了解|导
 _NAVIGATION = re.compile(r"\bbrowser_navigate\b|导航到|导航至|\bnavigate to\b", re.IGNORECASE)
 _NEGATED = re.compile(r"(?:不要|勿|禁止|不允许|无需|不需要|不用|不必|do not|don't|never|without)"
                       r"(?:\s|直接|使用|调用|用|再|去|帮我|请|directly\b|call\b)*$", re.IGNORECASE)
+_DEFERRED_OPEN = re.compile(r"^(?:\s*(?:if|when|once|after)\b|\s*(?:如果|若|如需|必要时)|"
+                            r"\s*(?:需要|待|等).{0,80}(?:时|后)\s*$)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,7 @@ class WebIntent:
     urls: frozenset[str]
     original_urls: frozenset[str] = frozenset()
     browser_navigation_requested: bool = False
+    deferred_urls: frozenset[str] = frozenset()
 
 
 def explicit_browser_checks(task: str) -> tuple[str, ...]:
@@ -177,15 +180,21 @@ def explicit_web_intent(task: str, *, source_lines: bool = True) -> WebIntent:
     requested = False
     browser_navigation_requested = False
     navigation_urls: set[str] = set()
+    deferred_urls: set[str] = set()
+    deferred_next = False
     direct: dict[str, set[str | None] | None] = {}
     for clause in _request_clauses(text, source_lines=source_lines):
         targets = list(_URL_TOKEN.finditer(clause))
+        deferred = deferred_next or _DEFERRED_OPEN.search(clause) is not None
+        deferred_next = not targets and _DEFERRED_OPEN.search(clause) is not None
         if source_lines and _URL_LINE.fullmatch(clause):
             for target in targets:
                 key, original = url_tokens[target[0]]
                 if key not in direct:
                     direct[key] = {original}
                     requested = True
+                    if deferred:
+                        deferred_urls.add(key)
             continue
         actions = list(_ACTION.finditer(clause))
         if targets:
@@ -202,7 +211,12 @@ def explicit_web_intent(task: str, *, source_lines: bool = True) -> WebIntent:
             if not positive:
                 direct[key] = None
                 navigation_urls.discard(key)
+                deferred_urls.discard(key)
                 continue
+            if deferred:
+                deferred_urls.add(key)
+            else:
+                deferred_urls.discard(key)
             start = targets[index - 1].end() if index else 0
             if _NAVIGATION.fullmatch(action[0]) or any(allowed_step and step.start() >= start
                     and _NAVIGATION.fullmatch(step[0]) for step, allowed_step in preceding):
@@ -223,7 +237,8 @@ def explicit_web_intent(task: str, *, source_lines: bool = True) -> WebIntent:
     originals = {url for candidates in allowed.values() for url in candidates if url is not None}
     unambiguous = all(None not in candidates for candidates in allowed.values())
     return WebIntent(requested, frozenset(allowed), frozenset(originals) if unambiguous else frozenset(),
-                     browser_navigation_requested or bool(navigation_urls & allowed.keys()))
+                     browser_navigation_requested or bool(navigation_urls & allowed.keys()),
+                     frozenset(deferred_urls & allowed.keys()))
 
 
 def source_requirements(task: str) -> dict[str, object]:

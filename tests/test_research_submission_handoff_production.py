@@ -48,6 +48,10 @@ def install_http(monkeypatch: pytest.MonkeyPatch, replies: Iterator[JsonObject],
         return {}
 
     monkeypatch.setattr("tools.completion_explanation_ab.service_state", empty_service_state)
+    def empty_model_metadata(_url: str, _key: str) -> JsonObject:
+        return {}
+
+    monkeypatch.setattr("codey.providers.local_selection._metadata_json", empty_model_metadata)
 
 
 def requests(directory: Path) -> list[JsonObject]:

@@ -190,7 +190,7 @@ def schema_typescript(schema: Mapping[str, object]) -> str:
     if isinstance(values, (list, tuple)):
         from codey.toolchain.tool_spec import thaw_schema_value
 
-        return " | ".join(json.dumps(thaw_schema_value(value), ensure_ascii=False) for value in values)
+        return " | ".join(json.dumps(thaw_schema_value(value), ensure_ascii=False, sort_keys=True) for value in values)
     kind = schema.get("type")
     if kind == "object":
         properties = schema.get("properties", {})

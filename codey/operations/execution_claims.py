@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
+from dataclasses import replace
 
 from codey.completion.contract import CompletionCheck
 from codey.operations.task_session import TaskSession
 from codey.runtime.core.execution_receipt import ExecutionReceipt, execution_receipt
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.runtime.core.models import ToolResult
+from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 
 
 def observed_claim(ref: str, receipt: ExecutionReceipt) -> JsonObject:
@@ -14,6 +18,21 @@ def observed_claim(ref: str, receipt: ExecutionReceipt) -> JsonObject:
     if receipt.exit_code is not None:
         claim["exit_code"] = receipt.exit_code
     return claim
+
+
+def execution_claim_spec(spec: ToolSpec, results: Mapping[str, ToolResult]) -> ToolSpec:
+    """Offer exact factual choices without changing the receipt validator."""
+    if "execution_claims" not in dict(spec.parameters):
+        return spec
+    choices: list[JsonValue] = [observed_claim(ref, receipt) for ref, result in results.items()
+               if (receipt := execution_receipt(result)) is not None]
+    schema: JsonObject = {"type": "array", "maxItems": 64 if choices else 0,
+        "items": {"type": "object", **({"enum": choices} if choices else {})},
+        "description": "Optional: select exact execution facts from the observed receipt choices. "
+            "status is the original process/shell status, not a success label. The runtime validates all receipts "
+            "even if this list is omitted. Do not invent or combine fields from different choices."}
+    parameters = tuple((key, schema if key == "execution_claims" else value) for key, value in spec.parameters)
+    return freeze_spec_parameters(replace(spec, parameters=parameters))
 
 
 def validate_execution_claims(session: TaskSession) -> CompletionCheck | None:

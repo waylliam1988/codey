@@ -352,6 +352,12 @@ class KernelContext:
         # same formal verification observations used by the completion gate.
         from codey.operations.project_completion_checks import _evidence_with_session_facts
 
+        if self.execution.workspace_revision_store is not None and self.execution.project_path is not None:
+            current = self.execution.workspace_revision_store.current_state(
+                self.execution.project_path, ignored_paths=self.execution.workspace_ignored_paths)
+            self.session.set_workspace_state(current.revision, current.fingerprint)
+            if self.completion_context.execution_evidence is not None:
+                self.completion_context.execution_evidence.set_workspace_state(current.revision, current.fingerprint)
         _evidence_with_session_facts(self.completion_context.execution_evidence, self.session)
         tools = self.execution.research_tools
         if tools is not None:
@@ -585,12 +591,13 @@ class KernelContext:
         from codey.operations.browser_upload import upload_scope
         from codey.operations.source_gaps import task_source_coverage
         from codey.policies.tool_requirement import parse_tool_success_check
-        from codey.task.web_intent import source_url_key
+        from codey.task.web_intent import explicit_web_intent, source_url_key
 
         coverage = task_source_coverage(self.session, self.completion_context.research_ledger)
         attempted = {source_url_key(url) for result in self.session._memory_results.values()
                      if result.call.name == "open_url" and isinstance(url := result.call.args.get("url"), str)}
-        urls: list[str] = sorted(set(coverage.missing) - attempted) if "open_url" in snapshot.inventory_names else []
+        deferred = explicit_web_intent(self.session.task_text).deferred_urls
+        urls: list[str] = sorted(set(coverage.missing) - attempted - deferred) if "open_url" in snapshot.inventory_names else []
         upload = upload_scope(self.session)
         navigation = initial_navigation(self.session, snapshot)
         # A requested browser navigation owns initial access to its page.
@@ -602,6 +609,8 @@ class KernelContext:
         navigation_url = navigation.args.get("url") if navigation is not None else None
         if navigation is not None and navigation.name == "codemode":
             navigation_url = decode_json_object(navigation.args["inputs"]).get("url")
+        if isinstance(navigation_url, str) and source_url_key(navigation_url) in deferred:
+            navigation = None
         calls = [ToolCall("open_url", {"url": url}, call_id=f"required-source:{index}")
                  for index, url in enumerate(urls) if requires_open or not isinstance(navigation_url, str)
                  or source_url_key(url) != source_url_key(navigation_url)]

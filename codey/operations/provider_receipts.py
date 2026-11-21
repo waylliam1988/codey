@@ -234,7 +234,9 @@ def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSp
     else:
         raise ValueError("unknown captured input binding")
     execution = next((spec for spec in specs if spec.name == model.name), None)
-    if execution is None or model.name != "codemode" or model.name not in names:
+    if (execution is None or model.name not in names
+            or model.name != "codemode" and not (binding.kind == "declared_fields" and model.name == "edit")
+            or binding.kind == "declared_fields" and "codemode" not in names):
         raise ValueError("captured input binding has no visible executor")
     if replace(model, parameters=execution.parameters, required=execution.required, description=execution.description,
                declarations=execution.declarations, json_examples=execution.json_examples) != execution:

@@ -13,10 +13,13 @@ protocol-text tests only).
 from __future__ import annotations
 
 from collections.abc import Generator, Mapping
-from types import SimpleNamespace
+from unittest import mock
 
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.provider_session import ProviderAdapter
+from codey.operations.research_flow import ResearchFlowDeps
+from codey.operations.research_iteration import run_research_iteration
+from codey.operations.task_state import TaskState
 from codey.providers.requests import ProviderRequest
 from codey.research.run_result import ResearchRunResult
 from codey.research.source_gateway import _SearchProvider
@@ -24,7 +27,7 @@ from codey.research.tools import ResearchTools
 from codey.runs.trace import RunTraceRecorder
 from codey.runtime.observe.events import RunEvent
 from codey.storage.managed_outputs import ManagedOutputStore
-from tests.support.kernel_runtime import run_research_iteration
+from tests.support.kernel_fixture import runtime
 
 
 def render_research_repair_prompt(codec: object, plan: object, state: object | None = None) -> str:
@@ -119,7 +122,10 @@ class ResearchIteration:
         return str(question or "")
 
     def _send_provider(self, message: str) -> str:
-        return ProviderAdapter(self.provider).send(message)
+        reply = ProviderAdapter(self.provider).send(message)
+        if not isinstance(reply, str):
+            raise TypeError("text research fixture requires a text reply")
+        return reply
 
     def run(self, question: str) -> Generator[ResearchRunResult, None, None]:
         from codey.operations.provider_session import ProviderAdapter
@@ -136,35 +142,34 @@ class ResearchIteration:
 
         intro = self._intro(question)
         extension = intro.removeprefix(str(question)).strip()
-        deps = SimpleNamespace(
-            state=SimpleNamespace(
-                memory=None,
-            ),
-            knowledge_store=self.store,
-            managed_outputs=self.managed_outputs,
-            runtime_mutations=None,
-        )
-        tools = self.tools or self._build_tools()
-        iteration = run_research_iteration(
-            deps,
-            provider=ProbeProvider(self.provider),
-            session_id=self.session_id or "research-session",
-            project=self.project,
-            task=str(question or ""),
-            max_turns=self.max_turns,
-            on_event=self.events.append,
-            stop_flag=None,
-            provider_id="local",
-            run_id=self.run_id,
-            chat_handoff=self.chat_handoff,
-            trace_recorder=self.trace_recorder,
-            search=self.search,
-            tools=tools,
-            iteration_context="\n\n".join(x for x in (self.iteration_context, extension) if x),
-            topic_continuity_context=self.topic_continuity_context,
-            topic_continuity_payload=self.topic_continuity_payload,
-            controller_denied=self.controller_denied,
-        )
+        tools = self.tools
+        with runtime(session_id=self.session_id or "research-session", run_id=self.run_id,
+                     task=str(question or ""), provider_id="local", max_turns=self.max_turns,
+                     task_kind="research") as sink:
+            state = mock.Mock(spec=TaskState, durable=sink.durable, memory=None)
+            deps = ResearchFlowDeps(state=state, knowledge_store=self.store, evidence_ledgers=None,
+                search_factory=lambda: self.search, managed_outputs=sink.managed_outputs,
+                runtime_mutations=sink.mutations)
+            iteration = run_research_iteration(
+                deps,
+                provider=ProbeProvider(self.provider),
+                session_id=self.session_id or "research-session",
+                project=self.project,
+                task=str(question or ""),
+                max_turns=self.max_turns,
+                on_event=self.events.append,
+                stop_flag=None,
+                provider_id="local",
+                run_id=self.run_id,
+                chat_handoff=self.chat_handoff,
+                trace_recorder=self.trace_recorder,
+                search=self.search,
+                tools=tools,
+                iteration_context="\n\n".join(x for x in (self.iteration_context, extension) if x),
+                topic_continuity_context=self.topic_continuity_context,
+                topic_continuity_payload=self.topic_continuity_payload,
+                controller_denied=self.controller_denied,
+            )
         self.tools = iteration.tools or tools
         self.changes = self.tools.changes
         self._last_result = iteration.result

@@ -94,7 +94,7 @@ def test_content_menu_and_pinned_sources_survive_snapshot_restore(tmp_path: Path
     for name in ("read_tool_result", "done", "browser_navigate"):
         reply: JsonObject = {"tool": name, "args": {}}
         assert normalize_turn(decode_text_turn(json.dumps(reply)), snapshot=restored).protocol_error
-    plan = normalize_turn(decode_text_turn('{"tool":"codemode","args":{"path":"ledger.data"}}'), snapshot=restored)
+    plan = normalize_turn(decode_text_turn('{"tool":"edit","args":{"path":"ledger.data"}}'), snapshot=restored)
     assert not plan.protocol_error
     assert "declared_fields:true" not in str(plan.calls[0].args["code"])
 
@@ -160,6 +160,14 @@ def test_settled_content_recovery_uses_original_arguments_after_source_and_file_
     document = context.browser_document
     assert document is not None
     snapshot, _ = browser_task_handoff(session, build_turn_snapshot(session), context)
+    from codey.operations.declared_field_input import model_spec
+    from codey.operations.kernel_protocol import refresh_snapshot_contract
+
+    binding = snapshot.input_binding
+    assert binding is not None
+    original = next(spec for spec in snapshot.frozen_specs if spec.name == "codemode")
+    snapshot = refresh_snapshot_contract(replace(snapshot, input_binding=replace(binding,
+        model_spec=model_spec(original, ("ledger.data",)))))
     snapshot = restore_snapshot(snapshot_description(snapshot))
     plan = normalize_turn(decode_text_turn('{"tool":"codemode","args":{"path":"ledger.data"}}'), snapshot=snapshot)
     call = plan.calls[0]
@@ -228,7 +236,7 @@ def test_content_restart_restores_settled_formal_arguments_from_durable_receipts
     session.task_text += " using content for the whole file."
     snapshot, _ = browser_task_handoff(session, build_turn_snapshot(session), context)
     snapshot = restore_snapshot(snapshot_description(snapshot))
-    call, = normalize_turn(decode_text_turn('{"tool":"codemode","args":{"path":"ledger.data"}}'), snapshot=snapshot).calls
+    call, = normalize_turn(decode_text_turn('{"tool":"edit","args":{"path":"ledger.data"}}'), snapshot=snapshot).calls
     original_delivery = DurableCodeModeReplay.record_delivery
 
     def interrupted(replay: DurableCodeModeReplay, call_id: str, child_index: int | None) -> None:

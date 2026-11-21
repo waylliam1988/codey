@@ -522,6 +522,16 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             receipt = session._memory_results.get(identity)
             return receipt.call.args if receipt is not None and receipt.call.name == "browser_wait" else None
 
+        from codey.operations.declared_field_input import lower as lower_declared_fields
+
+        binding = snapshot.input_binding
+        from codey.types.json_value import canonical_json_object
+
+        original_args = canonical_json_object(repair_context.parent.call.args if repair_context is not None else call.args)
+        inputs = original_args.get("inputs")
+        declared_copy = (binding is not None and binding.kind == "declared_fields" and bool(binding.source_refs)
+            and (binding.model_spec.name == "codemode" or isinstance(inputs, dict) and set(inputs) == {"path"}
+                 and original_args.get("code") == lower_declared_fields(inputs, specs["edit"])["code"]))
         result = CodeModeKernelExecutor(
             execution_id=parent_id,
             catalog=catalog,
@@ -540,8 +550,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             browser_references=snapshot.browser_references,
             browser_stage=browser_stage,
             original_browser_wait=original_browser_wait,
-            bound_edit=bound_edit if snapshot.input_binding is not None
-                and snapshot.input_binding.kind == "declared_fields" and snapshot.input_binding.source_refs else None,
+            bound_edit=bound_edit if declared_copy else None,
         ).execute(call)
         if repair_context is not None:
             try:
@@ -627,6 +636,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             result = (_simplified_failure(result, snapshot.input_binding.model_spec,
                                          {ref: session._memory_results[ref] for ref in ordered_child_effect_ids})
                       if snapshot.input_binding is not None
+                      and (snapshot.input_binding.kind != "declared_fields" or declared_copy)
                       else replace(result, model_text=tool_repair_text(detail, specs["codemode"])))
         return result
 
