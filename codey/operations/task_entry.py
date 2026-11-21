@@ -441,6 +441,7 @@ def _run_entry_kernel(  # noqa: PLR0915
                     memory_sources=memory.sources,
                     memory_spans=memory.spans,
                     memory_traces=memory.traces,
+                    collect_memory_candidates=memory.collect_candidates,
                     attempt_validate_memory_sources=lambda actual: actual == memory.sources and memory.valid(deps.state.memory),
                     window_ref=provider_window_ref(active_provider),
                     task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),

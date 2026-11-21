@@ -76,10 +76,25 @@ beforeEach(async () => {
       enabled,
       scope: { session_id: 's', project: 'D:/project' },
       items: [memory],
-      pending: [{ proposal_id: 'p', version: 'exact-content-version', item: memory }],
+      pending: [
+        {
+          proposal_id: 'p',
+          version: 'exact-content-version',
+          item: memory,
+          relations: [{ target_id: 'old', relation: 'suspected_conflict', source_refs: ['record:old'] }],
+        },
+      ],
       controls: { accept_events: true, retrieve_projections: true, run_maintenance: true, admit_hints: true },
       records: [{ item: memory, state: 'active', superseded_by: '' }],
-      exposures: [],
+      exposures: [{ id: 'exposure-1', item_id: 'p', run_id: 'run-1', at: '2026-11-21', source_ref: 'request-1' }],
+      behaviors: [
+        { id: 'behavior-1', run_id: 'run-1', request_ref: 'request-1', kind: 'code_fence_language', value: 'python' },
+        { id: 'unrelated', run_id: 'run-1', request_ref: 'request-2', kind: 'code_fence_language', value: 'rust' },
+      ],
+      family_options: ['code_examples', 'repair'],
+      family_states: ['observed', 'shadow_candidate', 'enabled'],
+      families: [{ family: 'code_examples', consumer: 'chat', state: 'observed', scope: 'project:1' }],
+      predictions: [{ statement: 'Use Python examples', status: 'unjudged', due_at: '2026-11-28' }],
     });
   });
   drawer().init({
@@ -226,4 +241,63 @@ it('supports user-wide proposals through an explicit scope selection', async () 
   text.dispatchEvent(new Event('input'));
   click('Submit for review');
   await vi.waitFor(() => expect(actions).toEqual([expect.objectContaining({ action: 'propose', scope_kind: 'user' })]));
+});
+
+it('submits a relation as an explicit versioned replacement', async () => {
+  expect(element('local-context-body').textContent).toContain('record:old');
+  click('Confirm and replace this item');
+  await vi.waitFor(() =>
+    expect(actions).toEqual([
+      expect.objectContaining({
+        action: 'accept',
+        version: 'exact-content-version',
+        supersedes: ['old'],
+      }),
+    ]),
+  );
+});
+it('binds feedback to the selected request exposure and observable behavior', async () => {
+  const behavior = document.querySelector<HTMLSelectElement>('[aria-label="Observed behavior"]');
+  if (!behavior) throw new Error('Missing observed behavior');
+  expect(Array.from(behavior.options).map((option) => option.value)).toEqual(['', 'behavior-1']);
+  behavior.value = 'behavior-1';
+  click('Helpful');
+  await vi.waitFor(() =>
+    expect(actions).toEqual([
+      expect.objectContaining({
+        action: 'feedback',
+        run_id: 'run-1',
+        exposure_id: 'exposure-1',
+        behavior_id: 'behavior-1',
+      }),
+    ]),
+  );
+});
+it('sends category transitions with the selected consumer and registered evidence', async () => {
+  const state = document.querySelector<HTMLSelectElement>('[aria-label="Category state"]');
+  const refs = document.querySelector<HTMLInputElement>('[aria-label="Evaluation references"]');
+  if (!state || !refs) throw new Error('Missing category management');
+  state.value = 'shadow_candidate';
+  refs.value = 'report:1, report:2';
+  click('Apply category state');
+  await vi.waitFor(() =>
+    expect(actions).toEqual([
+      expect.objectContaining({
+        action: 'family',
+        family: 'code_examples',
+        consumer: 'chat',
+        state: 'shadow_candidate',
+        evaluation_refs: ['report:1', 'report:2'],
+      }),
+    ]),
+  );
+  expect(element('local-context-body').textContent).toContain('Prediction: Use Python examples');
+});
+it('keeps shadow consumption confined to an explicit recall preview action', async () => {
+  const shadow = document.querySelector<HTMLInputElement>('[aria-label="Include categories under evaluation"]');
+  if (!shadow) throw new Error('Missing shadow preview');
+  shadow.click();
+  expect(actions).toEqual([]);
+  click('Explain recall');
+  await vi.waitFor(() => expect(actions).toEqual([expect.objectContaining({ action: 'explain', shadow: true })]));
 });

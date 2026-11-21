@@ -266,6 +266,9 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
     def commit_record(self, sequence: int) -> CommitRecord:
         return self.task_queries.commit_record(sequence)
 
+    def commits_after(self, sequence: int, *, limit: int = 100) -> tuple[CommitRecord, ...]:
+        return self.task_queries.commits_after(sequence, limit=limit)
+
     def task_at(self, task_id: str, commit_seq: int) -> TaskSnapshot:
         return self.task_queries.task_at(task_id, commit_seq)
 

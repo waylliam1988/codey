@@ -30,6 +30,7 @@ class MemoryContext:
     items: tuple[MemoryItem, ...]
     sources: tuple[ContextCandidate, ...]
     traces: tuple[MemoryTrace, ...] = ()
+    collect_candidates: bool = False
 
     @property
     def text(self) -> str:
@@ -44,21 +45,24 @@ class MemoryContext:
 
 
 def retrieve_context(service: MemoryService | None, *, task: str, project: str, session_id: str,
-                     run_id: str = "", budget: int = MEMORY_TOTAL_BUDGET_CHARS, context: str = "") -> MemoryContext:
+                     run_id: str = "", budget: int = MEMORY_TOTAL_BUDGET_CHARS, context: str = "", shadow: bool = False) -> MemoryContext:
     scope = request_scope(project, session_id)
     scopes = (scope, "user")
     controls = unique_scopes(("user", scope, request_scope("", session_id)))
     query = MemoryQuery(task, scopes, service.clock() if service is not None else utc_now(), exclude_run_id=run_id,
-                        control_scopes=controls, context=context or ("project" if project else "chat"))
+                        control_scopes=controls, context=context or ("project" if project else "chat"), shadow=shadow)
     result = service.retrieve(query) if service is not None else None
     candidates = result.items if result is not None else ()
     traces = {trace.item_id: trace for trace in result.traces} if result is not None else {}
     try:
-        admitted = service is not None and service.policy(controls).admit_hints
+        policy = service.policy(controls) if service is not None else None
+        admitted = policy is not None and policy.admit_hints
+        collect = service is not None and service.has_governance and policy is not None and policy.accept_events
     except (TaskCancelled, DeadlineExceeded):
         raise
     except Exception:
         admitted = False
+        collect = False
     selected: list[MemoryItem] = []
     sources: list[ContextCandidate] = []
     used = 0
@@ -74,6 +78,10 @@ def retrieve_context(service: MemoryService | None, *, task: str, project: str, 
         cost = len(text) + (2 if sources else 0)
         if used + cost > budget:
             traces[item.item_id] = replace(trace, reason="over_budget", chars=len(text))
+            if cost <= budget:
+                for previous in selected:
+                    earlier = traces[previous.item_id]
+                    traces[previous.item_id] = replace(earlier, displaced_item_ids=(*earlier.displaced_item_ids, item.item_id))
             continue
         sources.append(ContextCandidate(
             key="memory_" + digest_text(item.item_id), text=text, budget=len(text),
@@ -82,4 +90,4 @@ def retrieve_context(service: MemoryService | None, *, task: str, project: str, 
         selected.append(item)
         traces[item.item_id] = replace(trace, reason="selected", chars=len(text))
         used += cost
-    return MemoryContext(query, tuple(selected), tuple(sources), tuple(traces.values()))
+    return MemoryContext(query, tuple(selected), tuple(sources), tuple(traces.values()), collect)

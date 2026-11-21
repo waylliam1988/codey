@@ -13,6 +13,13 @@ if TYPE_CHECKING:
 
 def learning_action(ctx: AppContext, payload: JsonObject, scope: str, ref: str, at: str) -> dict[str, object]:
     action = payload.get("action")
+    if action == "repair":
+        from codey.memory.contracts import MemoryEvent
+
+        fields: JsonObject = {key: payload[key] for key in ("repair_id", "failure_id", "action_ids", "verification_id", "statement", "workspace_revision", "regression_id") if key in payload}
+        if not ctx.memory.observe(MemoryEvent(ref, "memory.repair_reviewed", at, "", "", "", scope, fields, (ref,))):
+            raise ValueError("repair attribution was not accepted")
+        return {"ok": True}
     ratings: dict[str, FeedbackRating] = {"helpful": "helpful", "unhelpful": "unhelpful", "correction": "correction"}
     if action in {"feedback", "predict"}:
         rating = ratings.get(require_json_string(payload.get("rating", "helpful"), "rating"))
@@ -24,11 +31,20 @@ def learning_action(ctx: AppContext, payload: JsonObject, scope: str, ref: str, 
             task = ctx.durable.task(run_id)
             if task.phase != "completed":
                 raise ValueError("feedback requires a completed, delivered run")
-            ctx.memory.feedback(MemoryFeedback(ref, item_id, run_id, scope, rating, ref, at))
+            ctx.memory.feedback(MemoryFeedback(ref, item_id, run_id, scope, rating, ref, at,
+                require_json_string(payload.get("exposure_id", ""), "exposure_id"),
+                require_json_string(payload.get("behavior_id", ""), "behavior_id")))
             return {"ok": True, "feedback_id": ref}
         statement = require_json_string(payload.get("statement"), "statement")
         due = require_json_string(payload.get("due_at"), "due_at")
-        ctx.memory.predict(MemoryPrediction(ref, item_id, scope, statement, rating, (ref,), at, due))
+        target = require_json_string(payload.get("target_kind", "feedback"), "target_kind")
+        if target not in {"feedback", "behavior", "verification"}:
+            raise ValueError("unknown prediction target")
+        ctx.memory.predict(MemoryPrediction(ref, item_id, scope, statement, rating, (ref,), at, due,
+            "feedback" if target == "feedback" else "behavior" if target == "behavior" else "verification",
+            require_json_string(payload.get("target_key", ""), "target_key"),
+            require_json_string(payload.get("expected_value", ""), "expected_value"),
+            require_json_string(payload.get("workspace_revision", ""), "workspace_revision")))
         return {"ok": True, "prediction_id": ref}
     if action == "review":
         identity = require_json_string(payload.get("prediction_id"), "prediction_id")

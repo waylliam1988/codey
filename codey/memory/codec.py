@@ -7,7 +7,16 @@ import json
 import math
 from datetime import UTC, datetime
 
-from codey.memory.contracts import MemoryEvent, MemoryItem, MemoryKind, MemoryState, MemoryTrace
+from codey.memory.contracts import (
+    MEMORY_POLICY_VERSION,
+    MemoryEvent,
+    MemoryItem,
+    MemoryKind,
+    MemoryRecord,
+    MemoryState,
+    MemoryTrace,
+)
+from codey.memory.slots import family_for, validate_slot
 from codey.types.json_value import (
     JsonObject,
     decode_json_object,
@@ -59,12 +68,14 @@ def item_from_payload(value: object) -> MemoryItem:
         require_json_string(row.get("slot", ""), "slot"),
         require_json_string(row.get("context", ""), "context"),
         tuple(require_json_strings(row.get("supersedes", []), "supersedes")),
+        require_json_string(row.get("value", ""), "value"),
     )
     if not result.item_id or not result.scope or not result.text.strip() or not result.source_refs:
         raise ValueError("memory items require identity, scope, text and sources")
     created = timestamp(result.created_at)
     if result.expires_at and timestamp(result.expires_at) <= created:
         raise ValueError("memory expiry must follow its creation")
+    validate_slot(result)
     return result
 
 
@@ -100,9 +111,28 @@ def memory_state(value: str) -> MemoryState:
     return state
 
 
+def record_payload(record: MemoryRecord) -> JsonObject:
+    return {"item": record.item.to_payload(), "state": record.state,
+            "superseded_by": record.superseded_by, "control_scopes": list(record.control_scopes),
+            "state_changed_at": record.state_changed_at}
+
+
+def record_from_payload(value: JsonObject) -> MemoryRecord:
+    return MemoryRecord(item_from_payload(value.get("item")),
+                        memory_state(require_json_string(value.get("state"), "state")),
+                        require_json_string(value.get("superseded_by"), "superseded_by"),
+                        tuple(require_json_strings(value.get("control_scopes"), "control_scopes")),
+                        require_json_string(value.get("state_changed_at", ""), "state_changed_at"))
+
+
+def record_recency(value: JsonObject) -> tuple[datetime, str]:
+    item = record_from_payload(value).item
+    return timestamp(item.created_at), item.item_id
+
+
 def trace_for_item(item: MemoryItem, reason: str, score: float = 0.0, rank: int = 0) -> MemoryTrace:
     return MemoryTrace(item.item_id, reason, score, rank, scope=item.scope, source_refs=item.source_refs,
-                       family=item.kind + (":" + item.slot if item.slot else ""))
+                       family=family_for(item), item_version=digest(item.to_payload()))
 
 
 def trace_from_payload(value: object) -> MemoryTrace:
@@ -115,4 +145,11 @@ def trace_from_payload(value: object) -> MemoryTrace:
         require_json_integer(row.get("rank"), "rank"), require_json_integer(row.get("chars"), "chars"),
         require_json_string(row.get("scope"), "scope"),
         tuple(require_json_strings(row.get("source_refs"), "source_refs")),
-        require_json_string(row.get("family"), "family"))
+        require_json_string(row.get("family"), "family"),
+        require_json_string(row.get("item_version", ""), "item_version"),
+        require_json_string(row.get("family_state", ""), "family_state"),
+        require_json_string(row.get("policy_version", MEMORY_POLICY_VERSION), "policy_version"),
+        require_json_string(row.get("budget_unit", "characters"), "budget_unit"),
+        tuple(require_json_strings(row.get("displaced_item_ids", []), "displaced_item_ids")),
+        tuple(require_json_strings(row.get("conflict_refs", []), "conflict_refs")),
+        require_json_string(row.get("consumer", ""), "consumer"))

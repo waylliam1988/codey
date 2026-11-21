@@ -158,6 +158,7 @@ class KernelTransportDeps:
     context_scope: str = "request"
     memory_sources: tuple[ContextCandidate, ...] = ()
     memory_traces: tuple[MemoryTrace, ...] = ()
+    collect_memory_candidates: bool = False
     admit_hints: bool = True
     attempt_gate: AttemptGateCallback | None = None
     attempt_admit_hints: Callable[[], bool] | None = None

@@ -7,23 +7,43 @@ import logging
 from typing import TYPE_CHECKING
 
 from codey.app.memory_commands import command_ref, command_time, control_scopes, record_command, selected_scope
+from codey.durable.model import thaw_json
+from codey.memory.calibration import prediction_calibration
 from codey.memory.codec import item_from_payload, unique_scopes
 from codey.memory.context import retrieve_context
 from codey.memory.contracts import (
     MEMORY_CONTROLS,
+    MEMORY_FAMILY_STATES,
     DeleteScopeRequest,
     MemoryChange,
     MemoryControl,
     MemoryDecision,
     MemoryEvent,
+    MemoryFamilyChange,
+    MemoryFamilyState,
+    MemoryRetentionPolicy,
 )
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_boolean, require_json_string
+from codey.memory.slots import FAMILIES
+from codey.types.json_value import (
+    JsonObject,
+    JsonValue,
+    decode_json_object,
+    require_json_boolean,
+    require_json_integer,
+    require_json_string,
+    require_json_strings,
+)
 from codey.workspace.context_admission import MEMORY_TOTAL_BUDGET_CHARS, request_scope
 
 if TYPE_CHECKING:
     from codey.app.context import AppContext
 
 _LOG = logging.getLogger(__name__)
+
+
+def _scoped_values(state: JsonObject, key: str, scopes: tuple[str, ...]) -> list[JsonValue]:
+    values = state.get(key, [])
+    return [row for row in values if isinstance(row, dict) and row.get("scope") in scopes] if isinstance(values, list) else []
 
 
 def memory_summary(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, dict[str, object]]:
@@ -36,7 +56,7 @@ def memory_summary(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, d
         scope = selected_scope(selector, session_id, project)
         scopes = unique_scopes((scope, "user"))
         policy_scopes = control_scopes(project, session_id) if scope == request_scope("", session_id) else scopes
-        pending = [{"proposal_id": proposal.proposal_id, "version": proposal.version,
+        pending = [{"proposal_id": proposal.proposal_id, "version": proposal.version, "relations": [edge.to_payload() for edge in proposal.relations],
                     "item": proposal.item.to_payload()} for value in scopes for proposal in ctx.memory.proposals(value)]
         state = ctx.memory.export_state()
         values = state.get("items", [])
@@ -47,6 +67,10 @@ def memory_summary(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, d
         exposures: list[JsonValue] = [row for row in exposure_rows if isinstance(row, dict) and row.get("scope") in scopes] if isinstance(exposure_rows, list) else []
         return 200, {"ok": True, "enabled": state.get("enabled", False), "items": visible,
                      "pending": pending, "records": records, "selected_scope": scope, "exposures": exposures,
+                     "families": _scoped_values(state, "families", scopes), "learning": _scoped_values(state, "learning", scopes),
+                     "behaviors": _scoped_values(state, "behaviors", scopes), "predictions": _scoped_values(state, "predictions", scopes),
+                     "family_options": list(FAMILIES), "family_states": list(MEMORY_FAMILY_STATES),
+                     "calibration": prediction_calibration(tuple(decode_json_object(row) for row in _scoped_values(state, "predictions", scopes))), "repairs": _scoped_values(state, "repairs", scopes),
                      "controls": ctx.memory.policy(policy_scopes).to_payload(),
                      "scope": {"session_id": session_id, "project": project}}
     except Exception:
@@ -56,7 +80,7 @@ def memory_summary(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, d
 
 def _propose(ctx: AppContext, payload: JsonObject, session_id: str, project: str, scope: str) -> dict[str, object]:
     fields: JsonObject = {key: payload[key] for key in
-                         ("kind", "text", "slot", "context", "supersedes", "expires_at", "confidence") if key in payload}
+                         ("kind", "text", "slot", "value", "context", "supersedes", "expires_at", "confidence") if key in payload}
 
     def validate(at: str) -> None:
         checked = item_from_payload({**fields, "item_id": "proposal-validation", "scope": scope,
@@ -80,21 +104,25 @@ def _decide(ctx: AppContext, payload: JsonObject, session_id: str, scope: str, a
     with ctx.durable.control_line():
         proposal_id = require_json_string(payload.get("proposal_id"), "proposal_id")
         version = require_json_string(payload.get("version"), "version")
+        replacements = tuple(require_json_strings(payload.get("supersedes", []), "supersedes"))
         prior = next((row for identity in ctx.durable.conversation_ids() for row in ctx.durable.entries(identity)
                       if row.kind == "memory_decision" and row.payload.get("proposal_id") == proposal_id
                       and row.payload.get("version") == version), None)
         if prior is not None and prior.payload.get("accepted") != accepted:
             raise ValueError("this proposal already has a different committed decision")
+        if prior is not None and tuple(require_json_strings(thaw_json(prior.payload.get("supersedes", [])), "supersedes")) != replacements:
+            raise ValueError("this proposal already has different committed replacement targets")
         if prior is None and not any(row.proposal_id == proposal_id and row.version == version
                                      for row in ctx.memory.proposals(scope)):
             raise ValueError("proposal is missing, changed or already decided")
         entry = prior if prior is not None else ctx.durable.append_message(session_id, "memory_decision", {
             "proposal_id": proposal_id, "version": version,
             "accepted": accepted, "occurred_at": ctx.memory.clock(),
+            "supersedes": list(replacements),
         })
         decided_at = require_json_string(entry.payload.get("occurred_at"), "occurred_at")
         ctx.memory.decide(MemoryDecision(proposal_id, version, accepted,
-                                        f"decision:{entry.conversation_id}:{entry.entry_id}", decided_at))
+                                        f"decision:{entry.conversation_id}:{entry.entry_id}", decided_at, replacements))
         return {"ok": True}
 
 
@@ -116,6 +144,27 @@ def _manage(ctx: AppContext, payload: JsonObject, session_id: str, scope: str) -
             "restore": MemoryChange(require_json_string(payload.get("item_id"), "item_id"), scope, "active", ref, at),
         }
         ctx.memory.change(states[require_json_string(action, "action")])
+    elif action == "family":
+        values: dict[str, MemoryFamilyState] = {value: value for value in MEMORY_FAMILY_STATES}
+        state = values.get(require_json_string(payload.get("state"), "state"))
+        if state is None:
+            raise ValueError("invalid family state")
+        ctx.memory.family_change(MemoryFamilyChange(require_json_string(payload.get("family"), "family"),
+            require_json_string(payload.get("consumer"), "consumer"), scope, state, ref, at,
+            tuple(require_json_strings(payload.get("evaluation_refs", []), "evaluation_refs"))))
+    elif action == "compact":
+        defaults = MemoryRetentionPolicy()
+        policy = MemoryRetentionPolicy(
+            require_json_integer(payload.get("max_experiences_per_scope", defaults.max_experiences_per_scope), "max_experiences_per_scope"),
+            require_json_integer(payload.get("experience_days", defaults.experience_days), "experience_days"),
+            require_json_integer(payload.get("archived_days", defaults.archived_days), "archived_days"),
+            require_json_integer(payload.get("keep_events", defaults.keep_events), "keep_events"))
+        result = ctx.memory.compact(policy, as_of=at)
+        return {"ok": True, "events": result.events, "digest": result.digest}
+    elif action == "evaluate":
+        report = decode_json_object(payload.get("report"))
+        if not ctx.memory.observe(MemoryEvent(ref, "memory.evaluated", at, session_id, "", "", scope, report, (ref,))):
+            raise ValueError("evaluation report was not accepted")
     else:
         from codey.app.memory_learning import learning_action
 
@@ -143,8 +192,9 @@ def memory_action(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[s
         if action == "explain":
             view = retrieve_context(ctx.memory, task=require_json_string(payload.get("query", ""), "query"),
                                     project=project, session_id=session_id,
-                                    context=require_json_string(payload.get("context", ""), "context"))
-            return 200, {"ok": True, "budget_chars": MEMORY_TOTAL_BUDGET_CHARS, "used_chars": len(view.text),
+                                    context=require_json_string(payload.get("context", ""), "context"),
+                                    shadow=require_json_boolean(payload.get("shadow", False), "shadow"))
+            return 200, {"ok": True, "preview_only": True, "budget_chars": MEMORY_TOTAL_BUDGET_CHARS, "used_chars": len(view.text),
                          "items": [item.to_payload() for item in view.items],
                          "trace": [trace.to_payload() for trace in view.traces]}
         if action == "explain_run":
@@ -160,7 +210,7 @@ def memory_action(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[s
             return 200, _propose(ctx, payload, session_id, project, scope)
         if action in {"accept", "reject"}:
             return 200, _decide(ctx, payload, session_id, scope, action == "accept")
-        if action in {"control", "revoke", "quarantine", "restore", "feedback", "predict", "review"}:
+        if action in {"control", "revoke", "quarantine", "restore", "feedback", "predict", "review", "family", "compact", "evaluate", "repair"}:
             return 200, _manage(ctx, payload, session_id, scope)
         raise ValueError("unsupported memory action")
     except ValueError as exc:

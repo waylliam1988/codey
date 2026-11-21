@@ -1,5 +1,7 @@
 # 冷启动记忆的控制、重建、纠正和反馈
 
+> 本文保留 37dba3a5 的实现与首轮六组试验记录。后续交付已实现同次候选通道、默认类别消费、维护/恢复、精确行为与延迟复盘；当前状态见[后续报告](memory-completion-20261121.zh-CN.md)。下表“仍未完成”是当时状态，不能代替当前报告。
+
 本轮扩展现行 `Core → Memory 协议 → Ghost`，不恢复退役的 Ghost runtime、daemon、队列或旧数据库兼容层。
 Core 继续拥有执行、权限、Evidence、CompletionProof、最终发送与任务结算。实现边界见[说明](../memory-boundary.zh-CN.md)。
 

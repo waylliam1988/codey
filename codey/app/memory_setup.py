@@ -22,6 +22,14 @@ def _message_source(entry: EntryDraft, text: str) -> str:
 
 
 def source_available(durable: DurableSession, ref: str) -> bool:
+    if ref.startswith(("request:", "response:")):
+        prefix, _, artifact_id = ref.partition(":")
+        try:
+            artifact = durable.artifact(artifact_id)
+        except KeyError:
+            return False
+        return (artifact.metadata.get("kind") == "provider_" + prefix and artifact.owner_task_id is not None
+                and source_available(durable, "run:" + artifact.owner_task_id))
     if ref.startswith("run:"):
         try:
             task = durable.task(ref.removeprefix("run:"))
@@ -65,18 +73,18 @@ def build_memory(state_home: Path | None, durable: DurableSession, *, enabled: b
                 raise
         else:
             backend = GhostMemory(MemoryHost(state_home / "memory" / "ghost", utc_now, check))
-            capabilities = MemoryCapabilities(backend, backend, backend, backend, backend, backend, backend, backend)
+            capabilities = MemoryCapabilities(backend, backend, backend, backend, backend, backend, backend, backend, backend)
     return MemoryService(capabilities, source_available=lambda ref: source_available(durable, ref))
 
 
 def observe_terminal(memory: MemoryService, durable: DurableSession, run_id: str,
-                     outputs: ManagedOutputStore | None = None) -> None:
+                     outputs: ManagedOutputStore | None = None) -> bool:
     try:
         task = durable.task(run_id)
     except KeyError:
-        return
+        return True
     if task.phase not in {"completed", "failed", "cancelled"}:
-        return
+        return True
     project = str(task.state.get("project") or "")
     entries = durable.context(task.conversation_id)
     user = next((entry for entry in entries if entry.entry_id == task.state.get("input_entry_id")
@@ -88,7 +96,7 @@ def observe_terminal(memory: MemoryService, durable: DurableSession, run_id: str
     answer = assistant.payload.get("text") if assistant is not None else None
     if task.phase == "completed" and (user is None or not isinstance(user_text, str)
                                       or assistant is None or not isinstance(answer, str)):
-        return
+        return True
     provenance: tuple[str, ...] = ("run:" + run_id, "conversation:" + task.conversation_id)
     if user is not None and isinstance(user_text, str):
         provenance += (_message_source(user, user_text),)
@@ -100,14 +108,21 @@ def observe_terminal(memory: MemoryService, durable: DurableSession, run_id: str
         terminal_sequence = (assistant.commit_seq if assistant is not None else
             next(point.commit_seq for point in durable.task_timeline(run_id)
                  if point.task.phase in {"completed", "failed", "cancelled"}))
-        memory.observe(MemoryEvent(
+        at = durable.commit_record(terminal_sequence).committed_at
+        from codey.app.memory_candidates import delivered_candidates
+
+        candidates, rejections = delivered_candidates(durable, outputs, run_id=run_id,
+            user_text=user_text if isinstance(user_text, str) else "", answer=answer if isinstance(answer, str) else "",
+            scope=request_scope(project, task.conversation_id), at=at)
+        return memory.observe(MemoryEvent(
             event_id=f"task:{run_id}:{answer_id or task.phase}",
             kind="task.completed" if task.phase == "completed" else "task.failed",
-            occurred_at=durable.commit_record(terminal_sequence).committed_at,
+            occurred_at=at,
             session_id=task.conversation_id, project=project,
             run_id=run_id, scope=request_scope(project, task.conversation_id),
             payload={"user_text": user_text if isinstance(user_text, str) else "",
                      "assistant_text": answer if isinstance(answer, str) else "",
+                     "candidates": candidates, "candidate_rejections": rejections, "commit_sequence": terminal_sequence,
                      **terminal_memory_facts(durable, outputs, run_id)},
             provenance=provenance,
             control_scopes=unique_scopes(("user", request_scope(project, task.conversation_id),
@@ -116,10 +131,11 @@ def observe_terminal(memory: MemoryService, durable: DurableSession, run_id: str
     except (TaskCancelled, DeadlineExceeded):
         # The task is already settled. Cancelling an optional projection must
         # not reopen settlement or escape through its terminal notification.
-        return
+        return False
     except Exception:
         # Receipt inspection is an optional projection after terminal commit.
         # Missing or invalid receipts cannot be relabeled as successful learning.
         import logging
 
         logging.getLogger(__name__).exception("terminal memory facts are unavailable")
+        return False

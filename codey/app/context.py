@@ -33,6 +33,7 @@ from codey.app.event_bus import EventBus, EventSubscriber
 from codey.app.event_payloads import SCHEMA_VERSION
 from codey.app.knowledge_indexer import KnowledgeIndexer
 from codey.app.lifecycle import AppLifecycle, ResourceSlot, release_optional_resource
+from codey.app.memory_maintenance import MemoryMaintenance
 from codey.app.memory_setup import build_memory, observe_terminal
 from codey.app.provider_registry import ProviderRegistry
 from codey.app.run_registry import RunRegistry, RunSnapshot
@@ -286,6 +287,7 @@ class AppContext:
             ),
         )
         if start_scheduler:
+            self.durable_scheduler.set_idle_callback(MemoryMaintenance(self.memory, self.durable, self.managed_outputs))
             self.durable_scheduler.start()
 
     def _delete_session_memory(self, session_id: str) -> None:

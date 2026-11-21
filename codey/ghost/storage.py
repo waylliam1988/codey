@@ -7,11 +7,31 @@ import sqlite3
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 
-from codey.memory.codec import canonical, event_from_text, event_payload
+from codey.memory.codec import canonical, event_from_text, event_payload, timestamp
 from codey.memory.contracts import MemoryEvent, MemoryHost, MemoryRebuildResult
-from codey.types.json_value import JsonObject, parse_json_object
+from codey.types.json_value import (
+    JsonObject,
+    JsonValue,
+    decode_json_object,
+    parse_json_object,
+    require_json_integer,
+    require_json_string,
+)
 
 ProjectEvent = Callable[[sqlite3.Connection, MemoryEvent], None]
+
+
+def journal_rows(connection: sqlite3.Connection) -> Generator[tuple[object, ...], None, None]:
+    cursor = connection.execute("SELECT sequence, event_id, event_json, previous, digest FROM events ORDER BY sequence")
+    while True:
+        batch: list[object] = cursor.fetchmany(256)
+        if not batch:
+            return
+        for row in batch:
+            if not isinstance(row, tuple):
+                raise ValueError("invalid memory journal row")
+            cells: tuple[object, ...] = row
+            yield cells
 
 
 def texts(cursor: sqlite3.Cursor) -> tuple[str, ...]:
@@ -29,8 +49,17 @@ def texts(cursor: sqlite3.Cursor) -> tuple[str, ...]:
 
 def rows(connection: sqlite3.Connection, collection: str) -> tuple[JsonObject, ...]:
     return tuple(parse_json_object(text) for text in texts(connection.execute(
-        "SELECT payload FROM projections WHERE collection = ? ORDER BY rowid", (collection,),
+        "SELECT payload FROM projections WHERE collection = ? ORDER BY identity", (collection,),
     )))
+
+
+def scoped_rows(connection: sqlite3.Connection, collection: str, scopes: tuple[str, ...]) -> tuple[JsonObject, ...]:
+    if not scopes:
+        return rows(connection, collection)
+    placeholders = ",".join("?" for _ in scopes)
+    return tuple(parse_json_object(value) for value in texts(connection.execute(
+        "SELECT payload FROM projections WHERE collection = ? AND scope IN (" + placeholders + ") ORDER BY identity",
+        (collection, *scopes))))
 
 
 def load(connection: sqlite3.Connection, collection: str, identity: str) -> JsonObject | None:
@@ -59,6 +88,7 @@ class GhostDatabase:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.path, timeout=0.05)
         try:
+            connection.execute("PRAGMA secure_delete = ON")
             legacy = texts(connection.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'events' "
                 "AND sql NOT LIKE '%event_json%'",
@@ -77,6 +107,7 @@ class GhostDatabase:
                     PRIMARY KEY (collection, identity)
                 );
                 CREATE INDEX IF NOT EXISTS projection_scope ON projections(collection, scope);
+                CREATE TABLE IF NOT EXISTS recovery_base (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL);
             """)
             if write:
                 connection.execute("BEGIN IMMEDIATE")
@@ -88,6 +119,21 @@ class GhostDatabase:
     def append(self, event: MemoryEvent, project: ProjectEvent) -> None:
         value = canonical(event_payload(event))
         with self.connect(write=True) as connection:
+            base_rows = texts(connection.execute("SELECT payload FROM recovery_base WHERE id = 1"))
+            if base_rows:
+                base = self._base(base_rows[0])
+                identities = decode_json_object(base.get("identities"))
+                retired = identities.get(event.event_id)
+                if retired is not None:
+                    if retired != hashlib.sha256(value.encode()).hexdigest():
+                        raise ValueError("memory event identity already names different content")
+                    return
+                retired_before = require_json_string(base.get("retired_before"), "retired_before")
+                if event.kind not in {"task.completed", "task.failed", "memory.proposed", "memory.observation_checkpoint"} and timestamp(event.occurred_at) <= timestamp(retired_before):
+                    raise ValueError("memory command is outside the retained retry window")
+                floor = require_json_string(base.get("intake_before"), "intake_before")
+                if floor and event.kind in {"task.completed", "task.failed", "memory.proposed"} and timestamp(event.occurred_at) <= timestamp(floor):
+                    return
             previous = texts(connection.execute("SELECT event_json FROM events WHERE event_id = ?", (event.event_id,)))
             if previous:
                 if previous[0] != value:
@@ -107,16 +153,13 @@ class GhostDatabase:
     def rebuild(self, project: ProjectEvent) -> MemoryRebuildResult:
         with self.connect(write=True) as connection:
             # Validate the complete journal before changing any live projection.
-            raw: list[object] = connection.execute(
-                "SELECT sequence, event_id, event_json, previous, digest FROM events ORDER BY sequence",
-            ).fetchall()
-            events: list[MemoryEvent] = []
-            previous_digest = ""
-            for index, row in enumerate(raw, 1):
+            base_rows = texts(connection.execute("SELECT payload FROM recovery_base WHERE id = 1"))
+            base = self._base(base_rows[0]) if base_rows else None
+            sequence = require_json_integer(base.get("sequence"), "sequence") if base else 0
+            previous_digest = require_json_string(base.get("journal_digest"), "journal_digest") if base else ""
+            count = 0
+            for index, cells in enumerate(journal_rows(connection), sequence + 1):
                 self.host.check_cancelled()
-                if not isinstance(row, tuple):
-                    raise ValueError("invalid memory journal row")
-                cells: tuple[object, ...] = row
                 if (len(cells) != 5 or cells[0] != index or not isinstance(cells[2], str)
                         or cells[3] != previous_digest):
                     raise ValueError("memory journal sequence is corrupt")
@@ -124,17 +167,81 @@ class GhostDatabase:
                 event = event_from_text(cells[2])
                 if cells[1] != event.event_id or cells[4] != current or canonical(event_payload(event)) != cells[2]:
                     raise ValueError("memory journal content is corrupt")
-                events.append(event)
+                count += 1
                 previous_digest = current
-            head = canonical({"sequence": len(events), "digest": previous_digest})
+            head = canonical({"sequence": sequence + count, "digest": previous_digest})
             if texts(connection.execute("SELECT payload FROM journal_head WHERE id = 1")) != (head,):
                 raise ValueError("memory journal head is corrupt")
             connection.execute("DELETE FROM projections")
-            for event in events:
+            if base is not None:
+                records = base.get("records")
+                if not isinstance(records, list):
+                    raise ValueError("invalid recovery base records")
+                for value in records:
+                    row = decode_json_object(value)
+                    save(connection, require_json_string(row.get("collection"), "collection"),
+                         require_json_string(row.get("identity"), "identity"),
+                         require_json_string(row.get("scope"), "scope"), decode_json_object(row.get("payload")))
+            for cells in journal_rows(connection):
                 self.host.check_cancelled()
-                project(connection, event)
+                event_text = cells[2]
+                if not isinstance(event_text, str):
+                    raise ValueError("invalid validated journal payload")
+                project(connection, event_from_text(event_text))
             state = [parse_json_object(text) for text in texts(connection.execute(
                 "SELECT payload FROM projections ORDER BY collection, identity",
             ))]
             digest = hashlib.sha256(canonical({"records": state}).encode()).hexdigest()
-            return MemoryRebuildResult(len(events), digest)
+            return MemoryRebuildResult(sequence + count, digest)
+
+    @staticmethod
+    def _base(text: str) -> JsonObject:
+        base = parse_json_object(text)
+        expected = base.pop("checksum", None)
+        if expected != hashlib.sha256(canonical(base).encode()).hexdigest() or base.get("schema_version") != 1:
+            raise ValueError("memory recovery base is corrupt")
+        if base.get("projector_version") != 3:
+            raise ValueError("unsupported memory projector recovery version")
+        return base
+
+    def compact(self, *, as_of: str, retired_before: str, keep_events: int, project: ProjectEvent) -> MemoryRebuildResult:
+        if keep_events < 0:
+            raise ValueError("retained event count cannot be negative")
+        # Verify before touching the recovery base. Retention has already been
+        # committed as an ordinary deterministic event.
+        verified = self.rebuild(project)
+        with self.connect(write=True) as connection:
+            head = parse_json_object(texts(connection.execute("SELECT payload FROM journal_head WHERE id = 1"))[0])
+            prior_rows = texts(connection.execute("SELECT payload FROM recovery_base WHERE id = 1"))
+            prior = self._base(prior_rows[0]) if prior_rows else None
+            identities = decode_json_object(prior.get("identities")) if prior else {}
+            for text in texts(connection.execute("SELECT event_json FROM events ORDER BY sequence DESC LIMIT ?", (keep_events,))):
+                identities[event_from_text(text).event_id] = hashlib.sha256(text.encode()).hexdigest()
+            # Keep a bounded retry window. Older task inputs are additionally
+            # excluded by the intake floor, including after Core backfill.
+            identities = dict(list(identities.items())[-keep_events:]) if keep_events else {}
+            raw: list[object] = connection.execute(
+                "SELECT collection, identity, scope, payload FROM projections ORDER BY collection, identity").fetchall()
+            records: list[JsonValue] = []
+            for value in raw:
+                if not isinstance(value, tuple):
+                    raise ValueError("invalid recovery projection")
+                cells: tuple[object, ...] = value
+                if len(cells) != 4 or not all(isinstance(cell, str) for cell in cells):
+                    raise ValueError("invalid recovery projection fields")
+                collection, identity, scope, payload = cells
+                if not isinstance(payload, str):
+                    raise ValueError("invalid recovery projection payload")
+                records.append({"collection": str(collection), "identity": str(identity), "scope": str(scope), "payload": parse_json_object(payload)})
+            payloads = [decode_json_object(value)["payload"] for value in records]
+            state_digest = hashlib.sha256(canonical({"records": payloads}).encode()).hexdigest()
+            verified = MemoryRebuildResult(require_json_integer(head.get("sequence"), "sequence"), state_digest)
+            base: JsonObject = {"schema_version": 1, "projector_version": 3, "sequence": head.get("sequence"),
+                "journal_digest": head.get("digest"), "state_digest": state_digest, "records": records,
+                "identities": identities, "intake_before": as_of, "retired_before": retired_before}
+            base["checksum"] = hashlib.sha256(canonical(base).encode()).hexdigest()
+            connection.execute("INSERT INTO recovery_base VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", (canonical(base),))
+            connection.execute("DELETE FROM events")
+        with self.connect() as connection:
+            connection.execute("VACUUM")
+        return verified

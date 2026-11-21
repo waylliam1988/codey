@@ -636,6 +636,10 @@ def _lower_text_batches(items: list[tuple[str, ToolArgs, str]]) -> tuple[list[tu
 
 def _applicable_done_declarations(args: ToolArgs, *, runtime_owned: bool, spec: ToolSpec | None) -> ToolArgs:
     ignored = {"source_gaps", "execution_claims"} if runtime_owned else set()
+    if spec is not None and "memory_candidates" in dict(spec.parameters):
+        # Optional observational metadata is validated after accepted delivery;
+        # malformed metadata cannot cause execution/protocol retries.
+        ignored.add("memory_candidates")
     # Ordinary completion still validates execution claims. Source-gap metadata
     # is inapplicable there; use the captured contract, never the live registry.
     if spec is not None and "execution_claims" in dict(spec.parameters) and "source_gaps" not in dict(spec.parameters):

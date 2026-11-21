@@ -19,6 +19,7 @@ interface Item {
   slot: string;
   context: string;
   expires_at: string;
+  value: string;
 }
 type ControlName = 'accept_events' | 'retrieve_projections' | 'run_maintenance' | 'admit_hints';
 interface Controls {
@@ -31,6 +32,7 @@ interface Proposal {
   proposal_id: string;
   version: string;
   item: Item;
+  relations: { target_id: string; relation: string; source_refs: string[] }[];
 }
 interface Summary {
   enabled: boolean;
@@ -39,7 +41,12 @@ interface Summary {
   pending: Proposal[];
   controls: Controls;
   records: { item: Item; state: string; superseded_by: string }[];
-  exposures: { item_id: string; run_id: string; at: string }[];
+  exposures: { id: string; item_id: string; run_id: string; at: string; source_ref: string }[];
+  behaviors: { id: string; run_id: string; request_ref: string; kind: string; value: string }[];
+  predictions: { statement: string; status: string; due_at: string }[];
+  families: { family: string; consumer: string; state: string; scope: string }[];
+  familyOptions: string[];
+  familyStates: string[];
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -71,6 +78,7 @@ function item(value: unknown): Item {
     slot: string(row.slot),
     context: string(row.context),
     expires_at: string(row.expires_at),
+    value: string(row.value ?? ''),
   };
 }
 function summary(value: unknown): Summary {
@@ -94,11 +102,54 @@ function summary(value: unknown): Summary {
     }),
     exposures: rows(data.exposures).map((value) => {
       const row = record(value);
-      return { item_id: string(row.item_id), run_id: string(row.run_id), at: string(row.at) };
+      return {
+        id: string(row.id ?? ''),
+        item_id: string(row.item_id),
+        run_id: string(row.run_id),
+        at: string(row.at),
+        source_ref: string(row.source_ref ?? ''),
+      };
     }),
+    behaviors: rows(data.behaviors ?? []).map((value) => {
+      const row = record(value);
+      return {
+        id: string(row.id),
+        run_id: string(row.run_id),
+        request_ref: string(row.request_ref),
+        kind: string(row.kind),
+        value: string(row.value),
+      };
+    }),
+    predictions: rows(data.predictions ?? []).map((value) => {
+      const row = record(value);
+      return { statement: string(row.statement), status: string(row.status), due_at: string(row.due_at) };
+    }),
+    families: rows(data.families ?? []).map((value) => {
+      const row = record(value);
+      return {
+        family: string(row.family),
+        consumer: string(row.consumer),
+        state: string(row.state),
+        scope: string(row.scope),
+      };
+    }),
+    familyOptions: rows(data.family_options ?? []).map(string),
+    familyStates: rows(data.family_states ?? []).map(string),
     pending: rows(data.pending).map((value) => {
       const row = record(value);
-      return { proposal_id: string(row.proposal_id), version: string(row.version), item: item(row.item) };
+      return {
+        proposal_id: string(row.proposal_id),
+        version: string(row.version),
+        item: item(row.item),
+        relations: rows(row.relations ?? []).map((value) => {
+          const edge = record(value);
+          return {
+            target_id: string(edge.target_id),
+            relation: string(edge.relation),
+            source_refs: rows(edge.source_refs).map(string),
+          };
+        }),
+      };
     }),
   };
 }
@@ -199,6 +250,26 @@ function render(data: Summary): void {
   active.append(activeTitle);
   for (const proposal of data.pending) {
     const node = rowNode(proposal.item);
+    for (const edge of proposal.relations) {
+      const relation = document.createElement('p');
+      const target = data.records.find((row) => row.item.item_id === edge.target_id);
+      relation.textContent = `${edge.relation}: ${target?.item.text ?? edge.target_id}. Sources: ${edge.source_refs.join(', ')}`;
+      node.append(relation);
+      if (edge.relation === 'conflicting' || edge.relation === 'suspected_conflict') {
+        node.append(
+          button(
+            'Confirm and replace this item',
+            () =>
+              void postAction('accept', {
+                proposal_id: proposal.proposal_id,
+                version: proposal.version,
+                supersedes: [edge.target_id],
+                ...(proposal.item.scope === 'user' ? { scope_kind: 'user' } : {}),
+              }),
+          ),
+        );
+      }
+    }
     const actions = document.createElement('div');
     actions.className = 'local-context-actions';
     for (const action of ['accept', 'reject']) {
@@ -249,6 +320,9 @@ function render(data: Summary): void {
   const slot = document.createElement('input');
   slot.placeholder = 'Preference slot, such as language (optional)';
   slot.setAttribute('aria-label', 'Preference slot');
+  const normalized = document.createElement('input');
+  normalized.placeholder = 'Normalized value, such as es, brief or python';
+  normalized.setAttribute('aria-label', 'Normalized preference value');
   const context = document.createElement('select');
   context.setAttribute('aria-label', 'Applies during');
   for (const [label, value] of [
@@ -271,12 +345,14 @@ function render(data: Summary): void {
     if (!text.value.trim()) return;
     const fields: Record<string, string | string[]> = { kind: kind.value, text: text.value.trim() };
     if (slot.value.trim()) fields.slot = slot.value.trim();
+    if (normalized.value.trim()) fields.value = normalized.value.trim();
     if (context.value) fields.context = context.value;
     if (expiry.value) fields.expires_at = new Date(expiry.value).toISOString();
     if (replaces.value) fields.supersedes = [replaces.value];
     void postAction('propose', fields);
   };
   form.insertBefore(slot, submit);
+  form.insertBefore(normalized, submit);
   form.insertBefore(context, submit);
   form.insertBefore(expiry, submit);
   form.insertBefore(replaces, submit);
@@ -337,6 +413,79 @@ function render(data: Summary): void {
   footer.className = 'local-context-settings';
   footer.append(forget, confirmation);
   body.append(footer);
+  renderGovernance(body, data);
+}
+
+function renderGovernance(body: HTMLElement, data: Summary): void {
+  if (!data.familyOptions.length) return;
+  const panel = document.createElement('details');
+  const title = document.createElement('summary');
+  title.textContent = 'Memory categories and storage';
+  panel.append(title);
+  for (const value of data.families) {
+    const label = document.createElement('p');
+    label.textContent = `${value.family} · ${value.consumer}: ${value.state} (${value.scope})`;
+    panel.append(label);
+  }
+  for (const value of data.predictions) {
+    const label = document.createElement('p');
+    label.textContent = `Prediction: ${value.statement} · ${value.status} · due ${value.due_at}`;
+    panel.append(label);
+  }
+  const family = document.createElement('select');
+  family.setAttribute('aria-label', 'Memory category');
+  for (const value of data.familyOptions) family.add(new Option(value, value));
+  const consumer = document.createElement('select');
+  consumer.setAttribute('aria-label', 'Memory consumer');
+  for (const value of ['chat', 'project', 'research']) consumer.add(new Option(value, value));
+  const state = document.createElement('select');
+  state.setAttribute('aria-label', 'Category state');
+  for (const value of data.familyStates) state.add(new Option(value, value));
+  const references = document.createElement('input');
+  references.placeholder = 'Registered evaluation IDs, separated by commas';
+  references.setAttribute('aria-label', 'Evaluation references');
+  panel.append(
+    family,
+    consumer,
+    state,
+    references,
+    button(
+      'Apply category state',
+      () =>
+        void postAction('family', {
+          family: family.value,
+          consumer: consumer.value,
+          state: state.value,
+          evaluation_refs: references.value
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean),
+        }),
+    ),
+  );
+  const report = document.createElement('textarea');
+  report.setAttribute('aria-label', 'Frozen evaluation report');
+  report.placeholder = 'Paste a frozen evaluation report JSON';
+  panel.append(
+    report,
+    button('Register evaluation', () => {
+      try {
+        const value: unknown = JSON.parse(report.value);
+        void postAction('evaluate', { report: record(value) });
+      } catch {
+        report.setCustomValidity('A JSON object is required');
+        report.reportValidity();
+      }
+    }),
+  );
+  const note = document.createElement('p');
+  note.textContent =
+    'Apply retention limits and create a recovery snapshot. Core conversations remain under their own deletion controls.';
+  panel.append(
+    note,
+    button('Apply storage retention', () => void postAction('compact')),
+  );
+  body.append(panel);
 }
 function renderSettings(body: HTMLElement, data: Summary): void {
   const selector = document.createElement('select');
@@ -371,9 +520,15 @@ function renderSettings(body: HTMLElement, data: Summary): void {
   query.setAttribute('aria-label', 'Recall query');
   const preview = document.createElement('pre');
   preview.dataset.recallPreview = 'yes';
+  const shadow = document.createElement('input');
+  shadow.type = 'checkbox';
+  shadow.setAttribute('aria-label', 'Include categories under evaluation');
+  const shadowLabel = document.createElement('label');
+  shadowLabel.append(shadow, 'Include categories under evaluation in this preview');
   body.append(
     query,
-    button('Explain recall', () => void postAction('explain', { query: query.value })),
+    shadowLabel,
+    button('Explain recall', () => void postAction('explain', { query: query.value, shadow: shadow.checked })),
     preview,
   );
 }
@@ -382,8 +537,20 @@ function renderFeedback(node: HTMLElement, value: Item, data: Summary): void {
   if (!exposures.length) return;
   const answer = document.createElement('select');
   answer.setAttribute('aria-label', 'Answer to review');
-  for (const row of exposures) answer.add(new Option(`Answer from ${row.at}`, row.run_id));
-  node.append(answer);
+  for (const row of exposures) answer.add(new Option(`Answer from ${row.at}`, row.id || row.run_id));
+  const behavior = document.createElement('select');
+  behavior.setAttribute('aria-label', 'Observed behavior');
+  const refreshBehavior = () => {
+    behavior.replaceChildren(new Option('Whole answer: exposure only', ''));
+    const selected = exposures.find((row) => (row.id || row.run_id) === answer.value);
+    for (const row of data.behaviors.filter(
+      (row) => row.run_id === selected?.run_id && row.request_ref === selected.source_ref,
+    ))
+      behavior.add(new Option(`${row.kind}: ${row.value}`, row.id));
+  };
+  answer.onchange = refreshBehavior;
+  refreshBehavior();
+  node.append(answer, behavior);
   for (const [label, rating] of [
     ['Helpful', 'helpful'],
     ['Not helpful', 'unhelpful'],
@@ -395,7 +562,9 @@ function renderFeedback(node: HTMLElement, value: Item, data: Summary): void {
         () =>
           void postAction('feedback', {
             item_id: value.item_id,
-            run_id: answer.value,
+            run_id: exposures.find((row) => (row.id || row.run_id) === answer.value)?.run_id ?? '',
+            exposure_id: exposures.find((row) => (row.id || row.run_id) === answer.value)?.id ?? '',
+            behavior_id: behavior.value,
             rating,
             ...(value.scope === 'user' ? { scope_kind: 'user' } : {}),
           }),
@@ -425,7 +594,7 @@ async function load(): Promise<void> {
     $('body').replaceChildren();
   }
 }
-async function postAction(action: string, payload: Record<string, string | boolean | string[]> = {}): Promise<void> {
+async function postAction(action: string, payload: Record<string, unknown> = {}): Promise<void> {
   if (!loadedScope || !sameScope(loadedScope, scope())) {
     close();
     return;

@@ -56,7 +56,7 @@ from codey.runtime.log.session_view import (
     load_session_view,
     not_sent_continuation_effect,
 )
-from codey.types.json_value import decode_json_object, require_json_string
+from codey.types.json_value import JsonObject, decode_json_object, require_json_string
 from codey.workspace.coding_context import render_coding_context
 from codey.workspace.context_admission import admit_context
 
@@ -114,12 +114,20 @@ class KernelContext:
         self.responses: dict[str, ReceivedProviderTurn] = {}
         self.projected_provider_effects: set[str] = set()
         self.snapshots: dict[int, TurnSnapshot] = {}
-        self.attempt_gate_bound = wiring._bind_attempt_gate(self.provider, self.transport, self.observation.trace_recorder)
+        self.attempt_gate_bound = wiring._bind_attempt_gate(self.provider, self.transport, self.observation.trace_recorder,
+            observe_memory=self.observe_memory_attempt if self.transport.memory_sources else None)
+
+    def observe_memory_attempt(self, payload: JsonObject, reason: str) -> None:
+        from codey.operations.memory_routing import record_memory_attempt
+
+        record_memory_attempt(self.durable, self.sink.managed_outputs, session_id=self.sink.session_id,
+            run_id=self.sink.run_id, sources=self.transport.memory_sources, payload=payload, reason=reason)
 
     def restore_context(self, payload: ProviderRequestContext) -> None:
         self.transport = replace(self.transport, context_text=payload.context_text, memory_sources=payload.memory_sources,
                                  memory_traces=payload.memory_traces)
-        self.attempt_gate_bound = wiring._bind_attempt_gate(self.provider, self.transport, self.observation.trace_recorder)
+        self.attempt_gate_bound = wiring._bind_attempt_gate(self.provider, self.transport, self.observation.trace_recorder,
+            observe_memory=self.observe_memory_attempt if self.transport.memory_sources else None)
 
     @property
     def request_scoped_context(self) -> bool:
@@ -396,6 +404,10 @@ class KernelContext:
     def request_snapshot(self, snapshot: TurnSnapshot, *,
                          delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
         """Finish tool narrowing before rendering results or request options."""
+        if self.transport.collect_memory_candidates and (self.native or self.capabilities.text_tool_format == "json_schema"):
+            from codey.operations.memory_candidate_transport import offer_memory_candidates
+
+            snapshot = offer_memory_candidates(snapshot)
         research = self.execution.research_tools
         browser = research.browser_session if research is not None else None
         from codey.operations.browser_task_handoff import bind_browser_references

@@ -2,7 +2,75 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
-## Memory journal, scoped lifecycle and attributed feedback (2026-11-21)
+## Current: memory candidates, default adaptation, recovery and research separation (2026-11-21)
+
+Based on `37dba3a5`. See [implementation, exact live results and limitations](docs/ghost_progress/memory-completion-20261121.zh-CN.md).
+Same-call optional candidates are wired to normal native/structured completion without extra model calls; only accepted delivered answers project proposals.
+Confirmed declarations and real experiences now use the enabled production baseline, with independent category demotion/quarantine and physical admission checks.
+Core owns periodic maintenance and failed-terminal-observation backfill. Journal transactions own both cursors, learning, governance and retention.
+Recovery bases and subsequent logs replace indefinite full-history replay after physical compaction.
+All 13 plasticity research implementations live in `tools/`, outside the production package and composition.
+
+No full pytest was run. Counts below overlap and must not be added.
+
+| Evidence log in repository root | Result |
+| --- | --- |
+| `.tmp-memory-completion-expanded-second.txt`: memory, native/text/Responses, physical attempts, kernel protocol/receipts, task entry, CLI and durable scheduler selections | 378 passed, 4 skipped, 1 deselected, 6 subtests passed |
+| `.tmp-memory-completion-ninth.txt`: learning, versioned attribution, lifecycle, normal adaptation flow, maintenance and research bounds | 104 passed |
+| `.tmp-memory-completion-tenth.txt`: final default-confirmed consumption, isolation, targets, idle maintenance, research snapshot atomicity | 42 passed |
+| `.tmp-memory-completion-retention-first.txt`: snapshot installation/truncation failure injection, retry cutoff and normal headless flow | 23 passed |
+| `.tmp-memory-completion-frontend-second.txt`: TypeScript, Biome, Vitest including relation replacement, precise feedback and category UI | 431 passed, 67 files |
+| `.tmp-memory-completion-scoped-final.txt`: final scoped calibration, feedback, boundary and normal headless flow | 44 passed |
+| `.tmp-memory-completion-assets-first.txt`: official frontend build/fingerprint/declarations | 40 passed |
+| `.tmp-memory-completion-architecture-first.txt` | 107 passed, 432 subtests passed, 3 pre-existing failures |
+
+The expanded first run hung in `test_unified_writer_keeps_managed_output_receipt_in_event`; its 120-second faulthandler stack remains in `.tmp-memory-completion-expanded-first.txt`.
+It uses the old isolated adapter helper without a Core scheduler, creates a background command child, then waits for it at completion.
+The runner was explicitly terminated; the second selection explicitly deselects this one test. This is **not a fixed or passing test**.
+The helper, test, tool-task implementation and completion controller match the base commit; this unrelated test-host issue was not repaired by adding a second production executor.
+
+Architecture failures remain the existing oversized durable/model.py, toolchain/runtime.py, toolchain/tool_spec.py and research/browser_search.py; runtime allowed imports; and cancellation/process_io cycle.
+`.tmp-memory-completion-baseline.txt` verifies those files and the old hanging fixture against `37dba3a5` after newline normalization.
+No architecture baseline or checker configuration was relaxed.
+
+Full-repository Ruff passed. Production plus owned extra tests/tools mypy passed with **719 source files**; Pyrefly reports **0 errors** (35 existing suppressions, 165 warnings); ty passed.
+Kernel type precision gate passed. A separate strict audit of **all 47 owned Python files** with disallow-any-expr/explicit/decorated/unimported reports **zero owned diagnostics**;
+unchanged transitive imports still produce existing diagnostics and are not represented as a full strict-tree pass.
+Logs: `.tmp-memory-completion-ruff-release.txt`, `...-mypy-release.txt`, `...-pyrefly-release.txt`, `...-ty-release.txt`,
+`...-any-release.txt`, `...-any-release-owned.txt`, `...-precision-final.txt`.
+One final mypy command accidentally supplied production files twice and failed before checking; both that command failure and corrected successful run are retained.
+The final tool-only progress dictionary annotation was included in the strict audit without another model trial.
+A final scoped-calibration regression fixed project summaries including other projects in aggregate counts; full export and scoped views now share one derived statistics function.
+This summary-only change and reuse of retention-policy defaults occurred after the live source freeze and do not change model request/response contracts.
+Official frontend build, publication and `--check` passed; generated assets are included.
+
+Initial failures and reruns remain under `.tmp-memory-completion-*` and are copied to the external verification evidence directory:
+
+- Initial feedback lookup: 1 failed/75 passed; request-specific exposure identity lookup corrected.
+- Second: 8 failed/10 passed; scheduler constructor fields restored after an insertion error, snapshot row order made stable.
+- Third: 3 failed/15 passed; original completion lookup replaced cleared terminal caches.
+- Fourth: 2 failed/16 passed; native synthetic close acknowledgement excluded. Fifth: 46 passed.
+- Physical-flow first and second failures retained; restore_context now preserves the observer and it resolves the pending effect's frozen request. Third: 1 passed.
+- Seventh: 1 failed/23 passed; outcome observations now retain real settlement time for delayed review. Eighth: 62 passed.
+- Static initial errors, including conflicting gate declarations and owned implicit Any, were fixed with explicit types/narrowing; no casts, ignores or disabled checks were added.
+
+Live batches retain **22 requests/22 replies each**, separately at `D:/codey-local-evidence/memory-adaptation-20261121-first` and `...-second`.
+The first used an explicit tool-only shadow reader; the second used ordinary default production retrieval/admission without a reader patch or persisted promotion.
+Both scored **memory 5/8 vs control 0/8** on the frozen Rust-example proxy. The repeated eight tasks are not 16 independent held-out pairs.
+Three memory cells selected edit and exhausted the one-turn budget, retained as failures despite Rust appearing in the raw tool call.
+The four explicit extraction prompts yielded **zero accepted candidates** in each batch: final batch has three missing fields and one wrong quote/span rejected by production.
+Two temporary prompts saved no candidates; one selected run and did not complete, rather than creating an erroneous durable preference.
+This corrects the earlier progress-message interpretation of that failed temporary cell.
+Second-batch average prompt tokens: control 8756.125, memory 8994; average whole-cell elapsed seconds: 7.11 vs 8.43.
+This supports finite-sample confirmed-preference delivery; it does not establish reliable automatic extraction, general answer quality, long-term correction reduction or latency savings.
+
+Offline evidence is separate at `D:/codey-local-evidence/memory-plasticity-20261121-first` and `...-second`.
+Final research scripts compare 13 mechanisms on 7 synthetic scenarios/9 queries, retaining negative results, state size, operations and elapsed time.
+No mechanism was promoted into production based on these synthetic scores.
+The previous six-pair continuity evidence remains unchanged in the historical section below.
+
+## Historical: base-commit memory journal, scoped lifecycle and attributed feedback (2026-11-21)
+
 
 The current cold-start implementation now has a full canonical MemoryEvent journal,
 transactional projections, sequence/hash/head validation, deterministic rebuild and

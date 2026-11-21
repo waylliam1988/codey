@@ -262,6 +262,7 @@ def run(request: AgentRequest) -> RunResult:
                 memory_sources=memory_sources,
                 memory_spans=tuple(memory_spans),
                 memory_traces=memory.traces,
+                collect_memory_candidates=memory.collect_candidates,
                 admit_hints=request.admit_hints,
                 attempt_validate_memory_sources=sources_still_valid,
                 stop_flag=request.stop_flag,

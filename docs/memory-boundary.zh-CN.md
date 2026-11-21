@@ -1,6 +1,6 @@
 # Codey Memory / Ghost 当前所有权边界
 
-本页描述冷启动重写后的实现及本轮的日志、控制、纠正和反馈扩展。此前 Ghost 研究记录保留为历史证据，不代表当前算法、存储或生产合同。
+本页描述当前生产所有权。新增候选、默认消费、维护、恢复、研究脚本与实机限制见[本轮交付](ghost_progress/memory-completion-20261121.zh-CN.md)。此前 Ghost 研究记录保留为历史证据，不代表当前算法、存储或生产合同。
 
 ```text
 Codey Core → codey.memory.contracts → codey.ghost → Ghost SQLite / 检索算法
@@ -45,18 +45,20 @@ Ghost 返回带来源、scope、时间的结构化 item，不返回 prompt。Cor
 ## 存储和维护
 
 当前文件为 `<state_home>/memory/ghost/memory.sqlite3`，不读、不迁移旧 `ghost.sqlite3`。
-`events` 保存规范化的完整 MemoryEvent、连续序号和哈希链；`journal_head` 检测尾部丢失。
-`projections` 是这份日志的派生状态，包含 item、提案、四开关、删除水位、曝光、反馈、预测和结果引用。
-事件、head 和投影使用同一 SQLite 事务；与 durable.sqlite3 没有共享表、外键或跨库事务。
-重建先验证完整序列和 hash，再在单事务内清空和重放投影，使用事件自带时间、不读取当前时钟；
-返回事件数及排序后的投影 digest。相同 event_id 的不同载荷被拒绝，损坏重建不替换原投影。
-这是 MemoryEvent 日志的确定性重建，不是把 Ghost 日志当成 Core 执行事实的恢复源。
-最新 200 条的检索窗口只限制经历；已确认偏好、目标、假设单独进入候选集，再共同检查有效期、排序和
-应用最终数量与 Core 预算限制。新增经历不会隐式遗忘仍有效的长期项，也没有新增重复分类字段或存储。
-删除 scope 或会话来源会清理相应投影及依赖它的反馈、预测、曝光和判断，保留删除水位与来源 tombstone，
-防止延迟事件和重放复活。乱序的删除请求不能回退水位。清空投影不会擦除事件日志或 Core 原始对话；
-需要删除本地全部数据时仍须处理其原始存储，不能把 reset 解释成物理擦除。
-上一版仅有事件 ID 的测试库不迁移，明确报错要求重置测试状态。存储损坏不触发自动修复或猜测迁移。
+MemoryEvent、连续序号、哈希链和 journal_head 是持久更新路径；projections、控制、学习统计和游标由它派生。
+每次更新与投影共用 SQLite 事务，不与 durable.sqlite3 共享表或外键。
+
+维护注册在现有 Core scheduler 的中性 idle deadline 上；没有 Ghost daemon、线程或队列。
+每次使用确定逻辑时间、身份、策略版本、处理上限与日志内游标；正常批次通过 SQL LIMIT 有界读取。
+Core 从自己的提交记录补读失败的可选终态投影，消费成功后推进日志内观察游标。
+`start_scheduler=False` 禁用自动维护；维护错误不回滚已结算任务。
+
+保留策略和压缩建立版本化恢复基点，原子安装后截断旧事件正文。默认保留 1000 条/scope 经历、180 天经历、
+30 天归档、1000 个有界重试身份摘要；已确认 active 条目保留。旧命令在重试窗口外明确拒绝。
+压缩后从基点与后续日志恢复当前状态，不再承诺重放已经物理清除的原始历史。
+SQLite secure_delete 与 VACUUM 处理 Ghost 文件；reset 是逻辑删除，物理清理需 compact。
+Core 对话、请求工件和用户备份仍由原所有者删除，Ghost 不跨库删表。
+完整基点和显式全局压缩仍随必要状态增长，不宣称常量内存或任意负载下的硬容量上限。
 
 ## 四开关与纠正生命周期
 
@@ -66,28 +68,35 @@ user、project、session 可分别管理 `accept_events`、`retrieve_projections
 检索关闭不影响本地管理导出；投递关闭仍可检索但不进入 Context Epoch；维护按每条记录原始控制 scope 检查，
 显式删除、清空和用户管理动作仍可执行。发送前还会复核投递控制和候选快照。
 
-提案可带 `slot`、`context`、`expires_at`、`supersedes`。只有显式确认才进入 active；同 kind/scope/slot/context
+提案可带 `slot`、规范 `value`、`context`、`expires_at`、`supersedes`。只有显式确认才进入 active；同 kind/scope/slot/context
 的旧项变为 superseded，显式替代目标必须属于同 kind 和 scope。跨情境项可以并存，限定情境不符时不投递。
 还支持 revoked、quarantined、expired；被替代或已过期项不能直接 restore 绕过新确认。
-这是显式槽位冲突处理，没有声称自由文本的语义矛盾已能自动识别。
+规范槽位产生确定性关系；自由文本/同次模型建议只产生待确认 suspected_conflict，不能自动撤回。
+已确认声明与真实经历默认参加正常消费，不要求用户先做类别晋级或填写实验报告。类别仍支持独立降级、隔离、删除和有证据的重新晋级；发送前复核状态。
 
 ## 请求解释与反馈
 
 Core 从已结算 provider 请求工件读取真实曝光，从 settlement 读取有界的工具/provider 状态；未知保持 unknown。
 每次冻结请求保存逐候选 trace，包含来源、scope、family 标签、理由、score、rank 和字符预算。
 `explain` 是当前查询预览；`explain_run` 读取原始请求 trace，不用今天的检索结果冒充过去的投递。
-family 当前仅为解释标签，没有实现整族晋级/隔离状态机。实际物理发送仍由既有 admission 决定。
+family 有独立状态机；trace 冻结版本、状态、策略、冲突、预算和挤出关系。Core 另存真实物理尝试的 admission、payload 摘要和字符位置，explain_run 连接展示，保持原始冻结记录不可变。
 
-明确反馈必须绑定某个已完成 run 中实际曝光的 item，一项记忆在同一 run 只接受一次判断；请求重试不重复记账。
-`correction` 隔离相应 active item；helpful/unhelpful 保存可归因反馈，不把一次满意认定为事实、授权或任意奖励。
-预测须绑定 active item、预期反馈和未来窗口，到期复盘必须引用窗口内同 item/scope 的反馈；
-无观测保持 unjudged，不能自行标记 supported。这是用户反馈的有限预测记账，不是完整 World Model。
+曝光身份绑定原始请求、item 和完整版本摘要；反馈可以进一步绑定同请求的可观察行为。
+整体 run/item 反馈只表示 exposure-only，不能冒充行为归因。重复反馈不重复计数，没有反馈不增加满意数。
+`correction` 隔离相应 active item；情境理解仍走待确认候选，不自动覆盖用户确认。
 
-当前算法是本地词法匹配、排序和时间衰减的冷启动基线。旧图、Hebbian、Hopfield、自动提取和历史学习
-没有保留等价实现。新基线已做一次六组成对实机试验，记忆组行为代理指标 6/6、对照 3/6；
-样本与成本、首次失败、原始请求回执及剩余缺口见[本轮报告](ghost_progress/memory-evolution-20261121.zh-CN.md)。
-这不证明统计泛化或学习机制优势。后续研究在 Memory 合同后演进。
-维护由 Core 显式调用 `memory.maintain(as_of=...)`；目前 CLI 提供入口，没有第二套 daemon 或自动周期维护。
+同次结构化主调用提供可选 memory_candidates；严格校验原始用户文本和区间，只投影实际已交付完成回答。
+元数据失败不触发正文协议重试；整个 JSON 损坏仍失败。经历来自真实终态，不允许模型自行提案为 experience。
+受测本地模型尚不能可靠提取合法候选，人工提案/确认正常可用；不能把助手承诺理解成保存成功。
+
+预测目标支持反馈、代码围栏语言行为和正式验证观察，匹配版本、请求、时间窗口与工作区版本。
+到期维护自动产生 supported/contradicted/unjudged 复盘；没有观测保持 unjudged。
+修复经验使用已有失败/action/check 引用和显式 credit link，延迟回归复核相同 check 与版本。
+它们可以产生待确认假设和可追溯 hint，不能提供新的任务完成证明。
+
+生产检索使用词法、时间衰减和有界明确反馈统计。Hebbian、eligibility、循环状态等研究机制均只在
+`tools/memory_plasticity_mechanisms.py` 与独立 probe 中，不在生产包、不装配后端或生产路由。
+默认生产路径已完成八组成对小规模实机复核，记忆行为指标 5/8、对照 0/8；原始失败、成本及限制见[本轮报告](ghost_progress/memory-completion-20261121.zh-CN.md)。
 
 ```text
 python -m codey ghost export --state-home <目录>
@@ -104,7 +113,7 @@ python -m codey ghost rebuild --session-id <已有会话>
 ```
 
 HTTP 及抽屉保留 Ghost 产品名称；支持 scope 选择、四开关、提案有效期/情境/替代、停用/恢复和曝光反馈。
-DTO 使用 items/pending/records/controls/exposures；没有旧控制面或旧队列 DTO 兼容。
+DTO 包括 items/pending/records/controls/exposures、精确行为、类别、预测和修复状态；没有旧控制面或旧队列 DTO 兼容。
 管理失败返回可见错误，不能声称已经保存。导出是本地全量管理操作。
 
 ## 当前限制
@@ -114,6 +123,5 @@ DTO 使用 items/pending/records/controls/exposures；没有旧控制面或旧�
 冻结后、物理发送前发生来源撤回或后端失效时，发送边界保守拒绝该请求；不会修改已冻结请求字节，
 但也不保证这一竞态下任务自动重建并无缝继续。恢复冻结请求时仍需当前来源验证。
 
-自动化验收入口还包括 `tests/test_memory_lifecycle.py`、`tests/test_memory_feedback.py`，以及任务、
-审批、完成和研究恢复回归。自动同次候选提取、全自动个人适应、整族晋级、延迟回归/repair 学习及
-Hebbian 等研究机制仍未实现，不能把本次基础设施和显式反馈记账称作整份路线图完成。
+验收覆盖正常 headless/API 同次提取、确认、使用、纠正、重建与删除，以及真实 scheduler 空闲维护。
+本轮验证与剩余的模型可靠性、通用预测、长期效果限制见[交付报告](ghost_progress/memory-completion-20261121.zh-CN.md)和根目录 TEST_REPORT.md。

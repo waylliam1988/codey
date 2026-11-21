@@ -391,6 +391,7 @@ def run_research_iteration(
                 memory_sources=sources,
                 memory_spans=context_spans,
                 memory_traces=memory.traces,
+                collect_memory_candidates=memory.collect_candidates,
                 attempt_validate_memory_sources=lambda actual: memory.valid(deps.state.memory),
                 stop_flag=stop_flag,
                 task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),

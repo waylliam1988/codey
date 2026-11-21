@@ -16,8 +16,11 @@ from codey.memory.contracts import (
     MemoryControl,
     MemoryDecision,
     MemoryEvent,
+    MemoryFamilyChange,
     MemoryFeedback,
     MemoryItem,
+    MemoryMaintenanceRequest,
+    MemoryMaintenanceResult,
     MemoryPolicy,
     MemoryPrediction,
     MemoryProposal,
@@ -25,6 +28,7 @@ from codey.memory.contracts import (
     MemoryRebuildResult,
     MemoryRecord,
     MemoryResult,
+    MemoryRetentionPolicy,
     MemoryReview,
 )
 from codey.runtime.core.cancellation import DeadlineExceeded, TaskCancelled
@@ -53,6 +57,36 @@ class MemoryService:
         self._capabilities = capabilities
         self._source_available = source_available
         self.clock = clock
+
+    @property
+    def has_governance(self) -> bool:
+        return self._capabilities.governance is not None
+
+    def family_change(self, change: MemoryFamilyChange) -> None:
+        governance = self._capabilities.governance
+        if governance is None:
+            raise ValueError("memory governance is unavailable")
+        governance.family_change(change)
+
+    def maintain_batch(self, request: MemoryMaintenanceRequest) -> MemoryMaintenanceResult:
+        governance = self._capabilities.governance
+        if governance is None:
+            return MemoryMaintenanceResult(0, "", True)
+        return governance.maintain_batch(request)
+
+    def compact(self, policy: MemoryRetentionPolicy, *, as_of: str) -> MemoryRebuildResult:
+        governance = self._capabilities.governance
+        if governance is None:
+            raise ValueError("memory retention is unavailable")
+        return governance.compact(policy, as_of=as_of)
+
+    def observation_cursor(self) -> int:
+        governance = self._capabilities.governance
+        return governance.observation_cursor() if governance is not None else 0
+
+    def maintenance_cursor(self) -> str:
+        governance = self._capabilities.governance
+        return governance.maintenance_cursor() if governance is not None else ""
 
     def admissible(self, item: MemoryItem, query: MemoryQuery) -> bool:
         try:

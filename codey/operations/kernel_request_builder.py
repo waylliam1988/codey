@@ -45,6 +45,7 @@ class KernelRunRequestBuilder:
     memory_sources: tuple[ContextCandidate, ...] = ()
     memory_spans: tuple[ContextSpan, ...] = ()
     memory_traces: tuple[MemoryTrace, ...] = ()
+    collect_memory_candidates: bool = False
     admit_hints: bool = True
     attempt_gate: AttemptGateCallback | None = None
     attempt_admit_hints: Callable[[], bool] | None = None
@@ -88,6 +89,7 @@ class KernelRunRequestBuilder:
                 context_scope=self.context_scope,
                 memory_sources=selected,
                 memory_traces=traces,
+                collect_memory_candidates=self.collect_memory_candidates,
                 admit_hints=self.admit_hints,
                 attempt_gate=self.attempt_gate,
                 attempt_admit_hints=self.attempt_admit_hints,

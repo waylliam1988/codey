@@ -59,6 +59,11 @@ class TaskQueryFacade:
 
         return self._query_line(read)
 
+    def commits_after(self, sequence: int, *, limit: int = 100) -> tuple[CommitRecord, ...]:
+        if sequence < 0 or not 1 <= limit <= 1000:
+            raise ValueError("invalid bounded commit query")
+        return self._query_line(lambda: tuple(self._store.commits_after(sequence, limit=limit)))
+
     def task_at(self, task_id: str, commit_seq: int) -> TaskSnapshot:
         def read() -> TaskSnapshot:
             return read_task_snapshot(self._store, task_id, commit_seq)

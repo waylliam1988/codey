@@ -25,7 +25,7 @@ from codey.operations.kernel_trace import record_outbound
 from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
 from codey.policies.command_line import ShellSpec
-from codey.providers.attempt_gate import AttemptGateClient
+from codey.providers.attempt_gate import AttemptGateCallback, AttemptGateClient
 from codey.providers.base import ProviderToolResult
 from codey.providers.compat_transport import bind_attempt_gate
 from codey.providers.text_result_views import TextResultSpan
@@ -72,10 +72,11 @@ def _payload_strings(value: object) -> list[str]:
 
 def _bind_attempt_gate(
     provider: ProviderTransport, transport: KernelTransportDeps, trace_recorder: object,
+    *, observe_memory: Callable[[JsonObject, str], None] | None = None,
 ) -> bool:
-    gate = transport.attempt_gate
+    gate: AttemptGateCallback | None = transport.attempt_gate
     if gate is None and (transport.memory_sources or transport.attempt_validate_memory_sources is not None):
-        def gate(client: AttemptGateClient, payload: JsonObject) -> None:
+        def default_gate(client: AttemptGateClient, payload: JsonObject) -> None:
             rendered = "\n".join(_payload_strings(payload))
             enabled = (transport.attempt_admit_hints() if transport.attempt_admit_hints is not None
                        else transport.admit_hints)
@@ -106,6 +107,27 @@ def _bind_attempt_gate(
                     epoch=ContextEpoch(epoch_id=context_epoch_id(prompt), admissions=admission.epoch.admissions),
                 )
                 record_outbound(trace_recorder, prompt, admission=admission)
+        gate = default_gate
+    if gate is not None and observe_memory is not None:
+        validate = gate
+
+        def observed_gate(client: AttemptGateClient, payload: JsonObject) -> None:
+            reason = ""
+            try:
+                validate(client, payload)
+            except Exception as exc:
+                reason = str(exc) if isinstance(exc, ContextAdmissionError) else type(exc).__name__
+                raise
+            finally:
+                if client.purpose == "conversation":
+                    try:
+                        observe_memory(payload, reason)
+                    except Exception:
+                        import logging
+
+                        logging.getLogger(__name__).exception("memory attempt observation failed")
+
+        gate = observed_gate
     return bind_attempt_gate(provider, gate)
 
 

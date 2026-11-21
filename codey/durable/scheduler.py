@@ -102,8 +102,36 @@ class DurableTaskScheduler:
         self._owner_id = f"scheduler-{uuid.uuid4().hex}"
         self._owns_scheduler = False
         self._health_callback: Callable[[], None] | None = None
+        self._idle_callback: Callable[[], float | None] | None = None
+        self._idle_deadline: float | None = None
         self._tool_workers: dict[tuple[str, str], tuple[threading.Thread, threading.Event]] = {}
         self._tool_tasks_only = False
+
+    def set_idle_callback(self, callback: Callable[[], float | None] | None) -> None:
+        """Register host maintenance on this scheduler's existing worker."""
+        with self._lock:
+            self._idle_callback = callback
+            self._idle_deadline = time.monotonic() if callback is not None else None
+        self._wake.set()
+        self._ensure_thread()
+
+    def _idle_tick(self) -> None:
+        with self._lock:
+            callback, due = self._idle_callback, self._idle_deadline
+            busy = bool(self._pending or self._inflight or self._tool_workers or self._invocations)
+        if callback is None or due is None or due > time.monotonic() or busy:
+            return
+        try:
+            deadline = callback()
+        except Exception as exc:
+            with self._lock:
+                self._loop_failure = SchedulerFailure("host_maintenance", type(exc).__name__, str(exc), 1)
+            _LOGGER.exception("host maintenance failed")
+            deadline = time.monotonic() + 30.0
+            self._notify_health_change()
+        with self._lock:
+            if callback is self._idle_callback:
+                self._idle_deadline = deadline
 
     def dispatch_tool_task(self, task: TaskCheckpoint, worker: Callable[[threading.Event], None]) -> bool:
         """Bounded host execution; all business state stays in the durable task."""
@@ -399,13 +427,16 @@ class DurableTaskScheduler:
     def close(self, timeout: float = 5.0) -> bool:
         with self._lock:
             self._enabled = False
+            self._idle_callback = None
+            self._idle_deadline = None
             self._closed.set()
             invocations = tuple(self._invocations.values())
             abort_invocations = tuple(self._abort_invocations.values())
-            threads = tuple(dict.fromkeys(
+            unique_threads: dict[threading.Thread, None] = dict.fromkeys(
                 thread for thread in (self._thread, *self._retiring_threads,
                                       *(item[0] for item in self._tool_workers.values())) if thread is not None
-            ))
+            )
+            threads = tuple(unique_threads)
             for _thread, signal in self._tool_workers.values():
                 signal.set()
         self._wake.set()
@@ -435,12 +466,17 @@ class DurableTaskScheduler:
     def _run(self) -> None:
         try:
             while not self._closed.is_set():
-                self._wake.wait(self._retry_interval)
+                with self._lock:
+                    delay = self._retry_interval if (self._pending or self._reconcile_requested or self._inflight
+                        or self._tool_workers or self._invocations) else (
+                        max(0.01, self._idle_deadline - time.monotonic()) if self._idle_deadline is not None else self._retry_interval)
+                self._wake.wait(delay)
                 self._wake.clear()
                 if self._closed.is_set():
                     return
                 try:
                     self._reconcile()
+                    self._idle_tick()
                 except Exception as exc:
                     with self._lock:
                         self._loop_failure_count += 1
@@ -471,7 +507,7 @@ class DurableTaskScheduler:
                     # gives a later transient failure a fresh budget while the
                     # last failure remains available for operator inspection.
                     self._loop_failure_count = 0
-                    if not self._pending and not self._reconcile_requested:
+                    if not self._pending and not self._reconcile_requested and self._idle_deadline is None:
                         # Retire under the same lock used to start a worker.
                         # A later notification must see the vacant slot even
                         # while this thread is still unwinding its finally.
@@ -487,7 +523,7 @@ class DurableTaskScheduler:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return
-            if not self._enabled or (not self._pending and not self._reconcile_requested) or self._closed.is_set():
+            if not self._enabled or (not self._pending and not self._reconcile_requested and self._idle_deadline is None) or self._closed.is_set():
                 return
             thread = threading.Thread(target=self._run, name="codey-durable-scheduler", daemon=True)
             self._thread = thread

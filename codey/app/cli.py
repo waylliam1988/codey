@@ -65,6 +65,8 @@ class _Arguments(argparse.Namespace):
     prediction_id: str
     feedback_id: str
     as_of: str
+    fields: str
+    value: str
 
 
 @runtime_checkable
@@ -227,7 +229,7 @@ def cmd_ghost(args: _Arguments) -> int:
             body["request_id"] = args.request_id
         if action == "propose":
             body.update(kind=args.kind, text=args.text, expires_at=args.expires_at,
-                        slot=args.slot, context=args.context, supersedes=args.supersedes)
+                        slot=args.slot, value=args.value, context=args.context, supersedes=args.supersedes)
         elif action in {"accept", "reject"}:
             body.update(proposal_id=args.proposal_id, version=args.version)
         elif action == "control":
@@ -246,6 +248,13 @@ def cmd_ghost(args: _Arguments) -> int:
                 body.update(statement=args.statement, due_at=args.due_at)
         elif action == "review":
             body.update(prediction_id=args.prediction_id, feedback_id=args.feedback_id)
+        from codey.types.json_value import parse_json_object
+
+        extra = parse_json_object(args.fields)
+        reserved = ("action", "session_id", "project", "scope_kind", "request_id")
+        if any(key in extra for key in reserved):
+            raise ValueError("--fields cannot override command identity or scope")
+        body.update(extra)
         status, payload = memory_action(state, body)
         _safe_print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0 if status == 200 else 1
@@ -257,18 +266,20 @@ def _add_ghost_subcommands(sub: argparse._SubParsersAction[argparse.ArgumentPars
     from codey.memory.contracts import MEMORY_CONTROLS
 
     for action in ("export", "propose", "accept", "reject", "delete_scope", "reset", "maintain", "rebuild",
-                   "control", "revoke", "quarantine", "restore", "explain", "explain_run", "feedback", "predict", "review"):
+                   "control", "revoke", "quarantine", "restore", "explain", "explain_run", "feedback", "predict", "review", "family", "compact", "evaluate", "repair"):
         command = sub.add_parser(action)
         command.add_argument("--state-home", default="")
         command.add_argument("--project", default="")
         command.add_argument("--session-id", default="")
         command.add_argument("--scope-kind", choices=("user", "project", "session"), default="")
         command.add_argument("--request-id", default="")
+        command.add_argument("--fields", default="{}", help="additional typed memory command fields as JSON")
         if action == "propose":
             command.add_argument("kind", choices=("preference", "goal", "hypothesis"))
             command.add_argument("text")
             command.add_argument("--expires-at", default="")
             command.add_argument("--slot", default="")
+            command.add_argument("--value", default="")
             command.add_argument("--context", default="")
             command.add_argument("--supersedes", action="append", default=list[str]())
         if action in {"accept", "reject"}:
