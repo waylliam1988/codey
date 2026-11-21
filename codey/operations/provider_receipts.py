@@ -272,14 +272,14 @@ def _snapshot_payload(raw: object) -> JsonObject:
                 "nested_tool_names", "research_scope", "ignore_runtime_claims", "browser_copy", "input_binding",
                 "task_navigation_url", "browser_fill_text", "browser_followups", "browser_references"}
     version = require_json_integer(payload.get("schema_version"), "snapshot version")
-    if version not in {11, 12, 13}:
+    if version not in {11, 12, 13, 14}:
         raise ValueError("unsupported captured turn snapshot version; start a new request")
     if set(payload) != expected:
         raise ValueError("invalid captured turn snapshot version/shape")
     return payload
 
 
-def _input_contract_version(payload: JsonObject) -> Literal[11, 12, 13]:
+def _input_contract_version(payload: JsonObject) -> Literal[11, 12, 13, 14]:
     version = payload["schema_version"]
     if version == 11:
         return 11
@@ -287,6 +287,8 @@ def _input_contract_version(payload: JsonObject) -> Literal[11, 12, 13]:
         return 12
     if version == 13:
         return 13
+    if version == 14:
+        return 14
     raise ValueError("unsupported captured input contract")
 
 
@@ -314,6 +316,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     from codey.toolchain.tool_spec import custom_executor_for
 
     payload = _snapshot_payload(payload)
+    input_version = _input_contract_version(payload)
     raw_binding = payload["input_binding"]
     names = require_json_strings(payload["tool_names"], "tool_names")
     nested = require_json_strings(payload["nested_tool_names"], "nested_tool_names")
@@ -347,10 +350,10 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         from codey.policies.network import check_fetch_url
 
         navigation_url = require_json_string(navigation_url, "task_navigation_url")
-        targets = {"browser_navigate", "open_url"} if payload["schema_version"] == 13 else {"browser_navigate"}
+        targets = {"browser_navigate", "open_url"} if input_version >= 13 else {"browser_navigate"}
         navigation = next((spec for spec in specs if spec.name in targets and spec.name in (*names, *nested)), None)
         if (not navigation_url or check_fetch_url(navigation_url, resolve=False) is not None
-                or "codemode" not in names and (payload["schema_version"] != 13 or "open_url" not in names)
+                or "codemode" not in names and (input_version < 13 or "open_url" not in names)
                 or navigation is None or not policy.allows(navigation.grant)
                 or input_binding is not None and input_binding.kind != "declared_fields"
                 or copy is not None):
@@ -364,11 +367,11 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
             allow_project_edit="edit" in nested,
             allow_project_run="run" in nested,
             task_navigation_url=navigation_url,
-            task_source_selector=payload["schema_version"] == 13,
+            task_source_selector=input_version >= 13,
         )
         if "codemode" not in names or not set(nested) <= {entry.name for entry in catalog.entries}:
             raise ValueError("captured nested capabilities exceed the frozen CodeMode inventory")
-    compatible = payload["implementation_id"] == runtime_implementation_id()
+    compatible = payload["implementation_id"] == runtime_implementation_id() and binding_compatible
     bindings: list[tuple[str, ToolExecutor | None]] = []
     for raw in raw_executors:
         row = decode_json_object(raw)
@@ -390,7 +393,6 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     from codey.research.answer_contract import AnswerScope
 
     scope = AnswerScope.from_payload(payload["research_scope"]) if payload["research_scope"] is not None else None
-    compatible = compatible and binding_compatible
     from codey.operations.browser_followups import FOLLOWUP_TOOLS, MAX_TEXT, allows_surface
 
     fill_text = payload.get("browser_fill_text")
@@ -411,7 +413,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         custom_executors=tuple(bindings), implementation_compatible=bool(compatible), nested_tool_names=tuple(nested),
         research_scope=scope, ignore_runtime_claims=ignore_runtime_claims,
         browser_copy=copy, input_binding=input_binding, task_navigation_url=navigation_url,
-        input_contract_version=_input_contract_version(payload),
+        input_contract_version=input_version,
         browser_followups=followups, browser_fill_text=fill_text, browser_references=references)
     from codey.toolchain.constants import PAGE_DETAIL_TOOL
 

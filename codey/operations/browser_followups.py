@@ -67,7 +67,12 @@ def explicit_fill_text(task: str) -> str | None:
     return tail if tail.strip() and len(tail) <= MAX_TEXT else None
 
 
-def model_spec(spec: ToolSpec, fill_text: str | None, *, click_purposes: tuple[str, ...] = PURPOSES) -> ToolSpec:
+def model_spec(spec: ToolSpec, fill_text: str | None, *, click_purposes: tuple[str, ...] = PURPOSES,
+               navigation_observes: bool = False) -> ToolSpec:
+    if spec.name == "browser_navigate" and navigation_observes:
+        return replace(spec, description=spec.description + " After navigation, automatically observe the actual final page "
+            "and return its current control refs in a child snapshot receipt. If observation fails, the navigation "
+            "receipt still records its outcome; recover observation without repeating a delivered navigation.")
     if spec.name == "browser_fill":
         fields = decode_json_object(thaw_schema_value(dict(spec.parameters)))
         required = spec.required

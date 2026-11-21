@@ -70,7 +70,7 @@ ELEMENT_METADATA = """el => {
               el.getAttribute('placeholder') || el.innerText || '',
         type: el.getAttribute('type') || '',
         value: el.type === 'password' ? null : ('value' in el ? el.value : null),
-        disabled: el.disabled === true || el.getAttribute('aria-disabled') === 'true',
+        disabled: el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true',
         checked: 'checked' in el ? el.checked : null, context,
         query_relation: query.node ? query.relation : ''
         ,semantic_identity: {

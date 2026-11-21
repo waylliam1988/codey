@@ -154,7 +154,7 @@ class TurnSnapshot:
     browser_copy: CopyTurn | None = None
     input_binding: ModelInputBinding | None = None
     task_navigation_url: str | None = None
-    input_contract_version: Literal[11, 12, 13] = 13
+    input_contract_version: Literal[11, 12, 13, 14] = 14
     browser_followups: bool = False
     browser_fill_text: str | None = None
     browser_references: BrowserReferences | None = None
@@ -162,6 +162,11 @@ class TurnSnapshot:
     @property
     def task_navigation_selector(self) -> bool:
         return self.input_contract_version >= 12
+
+    @property
+    def navigation_observes(self) -> bool:
+        return (self.input_contract_version >= 14 and self.browser_followups
+                and "browser_snapshot" in self.nested_tool_names)
 
     @property
     def inventory_names(self) -> tuple[str, ...]:
@@ -187,7 +192,8 @@ class TurnSnapshot:
         plans = browser_followups.click_plans(self.policy.required_checks if self.policy else (),
                                               set(self.nested_tool_names))
         purposes = tuple(purpose for purpose in browser_followups.PURPOSES if purpose in plans)
-        return tuple(browser_followups.model_spec(spec, self.browser_fill_text, click_purposes=purposes) for spec in specs)
+        return tuple(browser_followups.model_spec(spec, self.browser_fill_text, click_purposes=purposes,
+                     navigation_observes=self.navigation_observes) for spec in specs)
 
 
 def render_snapshot_contract(snapshot: TurnSnapshot) -> str:
@@ -797,6 +803,7 @@ def _lower_bound_inputs(
         direct = snapshot.browser_followups and name in models and (
             name in {"browser_fill", "browser_click", *browser_followups.SINGLE_STEP_TOOLS} or bound_observation
             or isinstance(args.get("ref"), dict) and snapshot.browser_references is not None
+            or name == "browser_navigate" and snapshot.navigation_observes
             or name == "browser_navigate" and snapshot.task_navigation_selector and snapshot.task_navigation_url is not None
             or snapshot.research_scope is not None and name in {"browser_snapshot", "browser_read", "browser_navigate"})
         if not direct and (binding is None or name != binding.model_spec.name or name not in models):
@@ -810,12 +817,15 @@ def _lower_bound_inputs(
                     return _invalid_plan("Submit one direct browser action per turn.", tool=name)
                 if name == "browser_fill":
                     inputs = browser_followups.fill_args(args, snapshot.browser_fill_text)
-                    code = browser_followups.FILL + browser_followups.OBSERVE
+                    code = browser_followups.DIRECT_REF + browser_followups.FILL + browser_followups.OBSERVE
+                elif name == "browser_navigate" and snapshot.navigation_observes:
+                    inputs = dict(args)
+                    code = "const action=unwrap(await tools.browser_navigate(inputs));" + browser_followups.OBSERVE
                 else:
                     lowered.append(("codemode", {"code": f"return unwrap(await tools.{name}(inputs));",
                                                   "inputs": dict(args)}, call_id))
                     continue
-                lowered.append(("codemode", {"code": browser_followups.DIRECT_REF + code, "inputs": inputs}, call_id))
+                lowered.append(("codemode", {"code": code, "inputs": inputs}, call_id))
                 continue
             assert binding is not None
             if binding.kind == "upload":

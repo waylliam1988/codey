@@ -8,6 +8,7 @@ import time
 import traceback
 from contextlib import ExitStack
 from pathlib import Path
+from typing import Literal
 from unittest.mock import patch
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
@@ -19,7 +20,8 @@ from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import ExperimentProvider, Target
 
 
-def run_live(directory: Path, task: str, target: Target, *, max_turns: int = 16) -> JsonObject:
+def run_live(directory: Path, task: str, target: Target, *, max_turns: int = 16,
+             intent: Literal["chat", "research"] = "research") -> JsonObject:
     directory.mkdir(parents=True, exist_ok=False)
     source = BrowserSearchProvider(headless=True)
     recording = ExperimentProvider(target, directory, fixed_acquisition=False)
@@ -39,13 +41,14 @@ def run_live(directory: Path, task: str, target: Target, *, max_turns: int = 16)
     def source_factory() -> BrowserSearchProvider:
         return source
 
-    request = HeadlessRequest(None, task, intent="research", provider_id="local", max_turns=max_turns,
-        strict_research=True, project_changes_required=False,
+    request = HeadlessRequest(None, task, intent=intent, provider_id="local", max_turns=max_turns,
+        strict_research=intent == "research", project_changes_required=False,
         requested_capabilities=("web.read", "browser.observe", "browser.interact"),
         state_home=directory / "state", research_store_root=directory / "knowledge",
         model_selection={"model": target.model, "base_url": target.base_url})
     manifest: JsonObject = {"task": task, "model": target.model, "seed": target.seed,
         "temperature": 0, "max_turns": max_turns, "required_tools": [],
+        "intent": request.intent, "strict_research": request.strict_research,
         "scope": "real_site_production_entry_no_page_interception_no_scripted_actions"}
     (directory / "request.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     started = time.monotonic()
@@ -81,6 +84,7 @@ class Options(argparse.Namespace):
     task: str
     base_url: str
     max_turns: int
+    intent: Literal["chat", "research"]
 
 
 def main() -> None:
@@ -89,8 +93,10 @@ def main() -> None:
     parser.add_argument("--task", required=True)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--max-turns", type=int, default=16)
+    parser.add_argument("--intent", choices=("chat", "research"), default="research")
     options = parser.parse_args(namespace=Options())
-    summary = run_live(options.directory, options.task, select_target(180, options.base_url), max_turns=options.max_turns)
+    summary = run_live(options.directory, options.task, select_target(180, options.base_url),
+                       max_turns=options.max_turns, intent=options.intent)
     print(json.dumps({key: value for key, value in summary.items() if key != "receipts"}, ensure_ascii=False))
 
 

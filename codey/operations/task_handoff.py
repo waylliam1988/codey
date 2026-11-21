@@ -27,7 +27,11 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
                  browser: BrowserSession | None, *,
                  delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
     from codey.operations.browser_detail import offer_page_details, offer_query_controls
-    from codey.operations.browser_task_handoff import bind_browser_references, browser_task_handoff
+    from codey.operations.browser_task_handoff import (
+        bind_browser_references,
+        browser_observation_handoff,
+        browser_task_handoff,
+    )
     from codey.operations.kernel_protocol import offer_browser_call, offer_browser_tools
     from codey.operations.research_submission_handoff import research_browser_handoff, research_submission_handoff
 
@@ -39,6 +43,7 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     from codey.operations.browser_followups import DIRECT_TOOLS
 
     hints: list[str] = []
+    hints.append(browser_observation_handoff(session, snapshot, context, generation))
     from codey.codemode.verification import project_check_call
 
     run = next((spec for spec in snapshot.model_specs if spec.name == "run"), None)

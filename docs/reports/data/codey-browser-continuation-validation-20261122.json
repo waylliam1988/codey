@@ -1,0 +1,1388 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-22",
+  "timezone": "Asia/Taipei",
+  "base_commit": "f7a7b839393199b532a3fc3268caac639ec9cd20",
+  "production_source_digest": "02df3e234b5434198690e6fc947b422168275eede33a0f09dcb58e7af29d8fa3",
+  "no_worktree": true,
+  "full_pytest_run": false,
+  "modified_python_files": {
+    "codey/automation/browser_observation.py": {
+      "sha256": "e883448b2d790759820ea6ba0834a0e064e0a440630a23548d99789eed3e7d42",
+      "whole_file_precision_violations": []
+    },
+    "codey/operations/browser_followups.py": {
+      "sha256": "bb4af0e98a968ed098e3920701286b0e94838e316b596693d4433e3243c0ef72",
+      "whole_file_precision_violations": []
+    },
+    "codey/operations/browser_task_handoff.py": {
+      "sha256": "d4201cf96255bb72be95338da7956354ab816eff8aabfbbf332ddaf3b7b144c8",
+      "whole_file_precision_violations": []
+    },
+    "codey/operations/kernel_protocol.py": {
+      "sha256": "a28f618abddec3ec4cfdbb04855a11a5bcaf689b49fe74b329855a5c915694dd",
+      "whole_file_precision_violations": []
+    },
+    "codey/operations/provider_receipts.py": {
+      "sha256": "2d172f12494851b5503be0a85e963809ba0af15f625424f275b75eeda54ae056",
+      "whole_file_precision_violations": []
+    },
+    "codey/operations/task_handoff.py": {
+      "sha256": "ce2faad345faa31991ccde3a604a9a29a255854b1ed70147fdf40b89c59abcc3",
+      "whole_file_precision_violations": []
+    },
+    "tests/test_browser_navigation_continuation.py": {
+      "sha256": "d8f363201191efe077302160c95ce2b42fb9c67c6e917e40624630c413ee58c4",
+      "whole_file_precision_violations": []
+    },
+    "tests/test_task_navigation_selector.py": {
+      "sha256": "0f28b19f66909f4428a5dc252d79a190dbd3ef290e85dd055716f59692c86017",
+      "whole_file_precision_violations": []
+    },
+    "tests/test_unified_real_browser_probe.py": {
+      "sha256": "baf98d13f3275aa8ff25d5b379f9c620aff818517dd60aaafecaae91164f1e8f",
+      "whole_file_precision_violations": []
+    },
+    "tools/unified_real_browser_probe.py": {
+      "sha256": "8c2f17d4b11750a07dfe63b22d4031da5f05bb574015c66bcd478b23469a4158",
+      "whole_file_precision_violations": []
+    }
+  },
+  "commands": {
+    ".tmp-followthrough-regression-first.log": "python -m pytest tests/test_browser_navigation_continuation.py tests/test_task_navigation_selector.py tests/test_task_navigation_binding.py tests/test_deterministic_input_handoffs.py tests/test_browser_followups_production.py tests/test_browser_readable_references.py tests/test_unified_task_capabilities.py tests/test_unified_natural_browser_probe.py -q",
+    ".tmp-followthrough-final-handoff-second.log": "python -m pytest tests/test_browser_navigation_continuation.py tests/test_deterministic_input_handoffs.py tests/test_task_navigation_binding.py tests/test_task_navigation_selector.py tests/test_declared_work_continuation.py tests/test_kernel_protocol_repair_keeps_snapshot.py tests/durable/test_provider_response_receipts.py -q",
+    ".tmp-followthrough-final-focused-first.log": "python -m pytest tests/test_browser_navigation_continuation.py tests/test_browser_task_handoff.py tests/test_task_navigation_selector.py tests/test_task_guidance_reaches_production_entries.py tests/test_unified_real_browser_probe.py -q",
+    ".tmp-followthrough-frozen-images-final.log": "python -m pytest tests/test_browser_navigation_continuation.py tests/test_frozen_tool_views.py tests/test_kernel_execution_snapshot_guards.py tests/test_browser_tool_images.py tests/test_unified_real_browser_probe.py -q",
+    ".tmp-followthrough-fieldset-first.log": "python -m pytest tests/test_browser_navigation_continuation.py -k fieldset -q",
+    ".tmp-followthrough-fieldset-observe-final.log": "python -m pytest tests/test_browser_navigation_continuation.py tests/test_browser_observation_regressions.py tests/test_browser_context_delivery.py tests/test_browser_readable_references.py tests/test_unified_real_browser_probe.py -q",
+    ".tmp-followthrough-ruff-fieldset-final.log": "ruff check .",
+    ".tmp-followthrough-mypy-fieldset-final.log": "python -m mypy codey tests/test_browser_navigation_continuation.py tests/test_task_navigation_selector.py tests/test_unified_real_browser_probe.py tools/unified_real_browser_probe.py --python-version 3.11",
+    ".tmp-followthrough-pyrefly-fieldset-final.log": "pyrefly check codey tests/test_browser_navigation_continuation.py tests/test_task_navigation_selector.py tests/test_unified_real_browser_probe.py tools/unified_real_browser_probe.py --python-version 3.11",
+    ".tmp-followthrough-ty-fieldset-final.log": "ty check codey tests/test_browser_navigation_continuation.py tests/test_task_navigation_selector.py tests/test_unified_real_browser_probe.py tools/unified_real_browser_probe.py --python-version 3.11",
+    ".tmp-followthrough-mypy-all-fieldset-final.log": "python -m mypy codey tests tools --python-version 3.11",
+    ".tmp-followthrough-pyrefly-all-fieldset-final.log": "pyrefly check codey tests tools --python-version 3.11",
+    ".tmp-followthrough-ty-all-fieldset-final.log": "ty check codey tests tools --python-version 3.11"
+  },
+  "logs": [
+    {
+      "path": ".tmp-followthrough-composition-first.log",
+      "bytes": 2436,
+      "sha256": "d994f72fad5cec374f0bc464a651793745f3acea2e6a811da47c3b552fbe1250",
+      "summary_lines": []
+    },
+    {
+      "path": ".tmp-followthrough-dynamic-chat-first.log",
+      "bytes": 1074,
+      "sha256": "2b8269902644414fec684727315664f38c6902d7f1310361aaecbadd2e43f6d5",
+      "summary_lines": []
+    },
+    {
+      "path": ".tmp-followthrough-dynamic-first.log",
+      "bytes": 941,
+      "sha256": "0367fd77e7760478f19b6fc486df2c296072afe35ad982a4001cd95b7971b864",
+      "summary_lines": []
+    },
+    {
+      "path": ".tmp-followthrough-dynamic-second.log",
+      "bytes": 825,
+      "sha256": "13bef3f79dc899c36500f057a8cdcee447e174fee518b4ef23d859c27be6517e",
+      "summary_lines": []
+    },
+    {
+      "path": ".tmp-followthrough-dynamic-third.log",
+      "bytes": 825,
+      "sha256": "f74326d4295f428a45cda19badc543015e6fd6d7f7b64dbe07ef534ecba31f8c",
+      "summary_lines": []
+    },
+    {
+      "path": ".tmp-followthrough-fieldset-first.log",
+      "bytes": 2217,
+      "sha256": "7331c7b794860bce6aaf5b6a74e5063cd3672eb44194f5dd013a03796d81d6f6",
+      "summary_lines": [
+        "E       AssertionError: assert False is True",
+        "1 failed, 3 passed, 20 deselected in 14.15s"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-fieldset-observe-final.log",
+      "bytes": 260,
+      "sha256": "a1957cbf5f577ee01b5467b3789abbb3dc405c8202ede54a31abdb2248bd06c4",
+      "summary_lines": [
+        "73 passed in 202.01s (0:03:22)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-final-focused-first.log",
+      "bytes": 179,
+      "sha256": "35d03922843c639f0546d913f6bb36e6b5f52e2c05056e90d734efab255c9893",
+      "summary_lines": [
+        "61 passed in 136.64s (0:02:16)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-final-handoff-first.log",
+      "bytes": 169,
+      "sha256": "3cdfd2de9f51285075b715a7bb1c7c8db6d2b0bbcc9358ed8961810edbcd7c58",
+      "summary_lines": [
+        "no tests ran in 0.00s",
+        "ERROR: file or directory not found: tests/test_provider_request_receipts.py"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-final-handoff-second.log",
+      "bytes": 2982,
+      "sha256": "cf2ccbb6c4a715bf64640bdc900f207f7b7ae1f49af98f6958ce889cba26ef0e",
+      "summary_lines": [
+        "1 failed, 239 passed in 167.64s (0:02:47)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-flexible-first.log",
+      "bytes": 3851,
+      "sha256": "989062cfca9a82281d6a9e5bc76f098a3eaeafa4e07dbf4a79c7592b87d4d098",
+      "summary_lines": []
+    },
+    {
+      "path": ".tmp-followthrough-frozen-images-final.log",
+      "bytes": 178,
+      "sha256": "5a7c66ae5f99c9ef75a45a75009ec47a5814debd8be09b16cf8a6ef656c3f71c",
+      "summary_lines": [
+        "36 passed in 71.90s (0:01:11)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-live-harness-first.log",
+      "bytes": 3625,
+      "sha256": "c16d76a53d26459503fc71f0dec1dd698ddd76ab3abfb6416b0d77f9c945c983",
+      "summary_lines": [
+        "E       TypeError: install_http() missing 1 required keyword-only argument: 'native'",
+        "E       TypeError: install_http() missing 1 required keyword-only argument: 'native'",
+        "2 failed in 1.97s"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-live-harness-second.log",
+      "bytes": 4898,
+      "sha256": "64275d52b341e760f964d1fa6de272cb33220ad9702c79b690a63d2bc0d3856f",
+      "summary_lines": [
+        "E       AssertionError: {'answer': '��ʵ��������̣�ҳ����ʾ COMPLETE_39����Դ��https://example.com/real-probe-regression', 'intent': 'chat', 'max_turns': 4, 'model': 'fixture', ...}",
+        "E       AssertionError: {'answer': 'ERROR: provider failed [StopIteration]: ', 'intent': 'research', 'max_turns': 4, 'model': 'fixture', ...}",
+        "2 failed in 23.74s"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-modified-precision-final.log",
+      "bytes": 443,
+      "sha256": "b48183c1c79d30415174935ccba654e06b2e38c13217f1bd928a87f372e740f0",
+      "summary_lines": []
+    },
+    {
+      "path": ".tmp-followthrough-modified-precision-release.log",
+      "bytes": 493,
+      "sha256": "209c832825863cebcaaaa94586d6a0928897263d4da5651f27a1db4e321cc77c",
+      "summary_lines": []
+    },
+    {
+      "path": ".tmp-followthrough-mypy-all-fieldset-final.log",
+      "bytes": 2548397,
+      "sha256": "a982f8b08e8c8a500c0c41cde6487b9bf75b8c77521a9289d284470152cf0da1",
+      "summary_lines": [
+        "Found 18052 errors in 1265 files (checked 2568 source files)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-mypy-all-final.log",
+      "bytes": 2548397,
+      "sha256": "a982f8b08e8c8a500c0c41cde6487b9bf75b8c77521a9289d284470152cf0da1",
+      "summary_lines": [
+        "Found 18052 errors in 1265 files (checked 2568 source files)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-mypy-all-first.log",
+      "bytes": 2548397,
+      "sha256": "d8827d7392fb0354c22415720f2fc26dbfa449bbb225834a0a5c904640ba73b6",
+      "summary_lines": [
+        "Found 18052 errors in 1265 files (checked 2567 source files)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-mypy-fieldset-final.log",
+      "bytes": 46,
+      "sha256": "03a6ef5e8bce6e0de9abb28a0be6f0b544d665d72f4ecf522ac1531148771933",
+      "summary_lines": [
+        "Success: no issues found in 740 source files"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-mypy-final-expanded.log",
+      "bytes": 46,
+      "sha256": "03a6ef5e8bce6e0de9abb28a0be6f0b544d665d72f4ecf522ac1531148771933",
+      "summary_lines": [
+        "Success: no issues found in 740 source files"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-mypy-final.log",
+      "bytes": 46,
+      "sha256": "68f9608ba97287bf34b49d474fb9596f733ff95ac22eb911a6b57e3b14a2ceb9",
+      "summary_lines": [
+        "Success: no issues found in 738 source files"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-mypy-modified-first.log",
+      "bytes": 44,
+      "sha256": "90377c8fd97127580c93ac5740d596c9ebc9db94dafa6560ee11fe16b4460c62",
+      "summary_lines": [
+        "Success: no issues found in 6 source files"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-mypy-production-first.log",
+      "bytes": 46,
+      "sha256": "524d0d03e1bf67e4f2c35ff9d5c76dcc53b6b268647b72f048fe13ff09089c8f",
+      "summary_lines": [
+        "Success: no issues found in 736 source files"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-mypy-release.log",
+      "bytes": 46,
+      "sha256": "03a6ef5e8bce6e0de9abb28a0be6f0b544d665d72f4ecf522ac1531148771933",
+      "summary_lines": [
+        "Success: no issues found in 740 source files"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-navigation-completeness-first.log",
+      "bytes": 10730,
+      "sha256": "256a3583806f64fa8395c86fe8df03d9287f250676242a9bd83abded3495b14a",
+      "summary_lines": [
+        "E       AssertionError: assert 'browser_navigate' == 'codemode'",
+        "E       AssertionError: assert 'browser_navigate' == 'codemode'",
+        "4 failed, 3 passed in 9.85s"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-navigation-completeness-second.log",
+      "bytes": 167,
+      "sha256": "03c417f76d8fff2ffe289d503f6d3b187fb3e36642021f9cf7709e867e5cee87",
+      "summary_lines": [
+        "7 passed in 13.82s"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-navigation-first.log",
+      "bytes": 9541,
+      "sha256": "70182f15f46f86779fb15861825c3ae410c1b40792a2ddc3444903894d0199c7",
+      "summary_lines": [
+        "E       AssertionError: assert 'tools.browser_snapshot' in 'return unwrap(await tools.browser_navigate(inputs));'",
+        "E       AssertionError: assert 'tools.browser_snapshot' in 'return unwrap(await tools.browser_navigate(inputs));'",
+        "E           AssertionError: assert ['https://exa...ple.com/s.js'] == ['https://exa...om/controls/']",
+        "E           AssertionError: {\"ok\":true,\"value\":{\"action\":\"navigate\",\"content_type\":\"text/html; charset=utf-8\",\"delivery\":\"delivered\",\"generation\":1,\"http_status\":404,\"page_id\":\"63974221E2D77668C8608613F0D8E75A\",\"previous_url\":\"about:blank\",\"text\":\"Opened https://example.com/controls/\",\"url\":\"https://example.com/controls/\"}}",
+        "4 failed, 1 passed in 8.64s"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-navigation-guards-first.log",
+      "bytes": 2727,
+      "sha256": "2083a0a3b56fbe8be82a3861c39c3bd4a5e57eb979db3744a03b1829536670da",
+      "summary_lines": [
+        "1 failed, 19 passed in 14.81s"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-navigation-second.log",
+      "bytes": 6782,
+      "sha256": "efd7b5bbc83cde334432fda11eead1252ed39c904f20324e276d740c6375811e",
+      "summary_lines": [
+        "E           AssertionError: assert ['https://exa...ple.com/s.js'] == ['https://exa...om/controls/']",
+        "E           AssertionError: assert ['https://exa...ple.com/s.js'] == ['https://exa...om/controls/']",
+        "2 failed, 16 passed in 36.91s"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-navigation-third.log",
+      "bytes": 4838,
+      "sha256": "20cd57996387e0083c22ebe9bdc1e24dd75ea697868d8aceddec332bb7be811f",
+      "summary_lines": [
+        "E       AssertionError: browser_snapshot is not allowed by the current controller state (not in the turn snapshot: browser_snapshot)",
+        "1 failed, 17 passed in 38.70s"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-precision-final.log",
+      "bytes": 65,
+      "sha256": "a4235b3bf75e4945e89304625234e20fe199890bf1400658fd27a5d77cdb5c44",
+      "summary_lines": []
+    },
+    {
+      "path": ".tmp-followthrough-probe-navigation-third.log",
+      "bytes": 168,
+      "sha256": "f8be993a077679293e6d81ee66c1b779aee194cead69f4b046769db01267b25a",
+      "summary_lines": [
+        "22 passed in 49.88s"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-pyrefly-all-fieldset-final.log",
+      "bytes": 6730935,
+      "sha256": "f28fdb090fa67de8b67338dd21248777fd38767286c8424ad15497703c3c6de0",
+      "summary_lines": [
+        "28 |     monkeypatch.setattr(\"subprocess.run\", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=\"1 passed\"))",
+        "28 |     monkeypatch.setattr(\"subprocess.run\", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=\"1 passed\"))",
+        " INFO 21,142 errors (154 suppressed, 629 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-pyrefly-all-final.log",
+      "bytes": 6730935,
+      "sha256": "f28fdb090fa67de8b67338dd21248777fd38767286c8424ad15497703c3c6de0",
+      "summary_lines": [
+        "28 |     monkeypatch.setattr(\"subprocess.run\", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=\"1 passed\"))",
+        "28 |     monkeypatch.setattr(\"subprocess.run\", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=\"1 passed\"))",
+        " INFO 21,142 errors (154 suppressed, 629 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-pyrefly-all-first.log",
+      "bytes": 6730935,
+      "sha256": "f28fdb090fa67de8b67338dd21248777fd38767286c8424ad15497703c3c6de0",
+      "summary_lines": [
+        "28 |     monkeypatch.setattr(\"subprocess.run\", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=\"1 passed\"))",
+        "28 |     monkeypatch.setattr(\"subprocess.run\", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=\"1 passed\"))",
+        " INFO 21,142 errors (154 suppressed, 629 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-pyrefly-fieldset-final.log",
+      "bytes": 56,
+      "sha256": "37412df670883d47ade56ca1be0f0eed9ba8d7c48b1766d2145de32096fa2caf",
+      "summary_lines": [
+        " INFO 0 errors (35 suppressed, 164 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-pyrefly-final-expanded.log",
+      "bytes": 56,
+      "sha256": "37412df670883d47ade56ca1be0f0eed9ba8d7c48b1766d2145de32096fa2caf",
+      "summary_lines": [
+        " INFO 0 errors (35 suppressed, 164 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-pyrefly-final.log",
+      "bytes": 56,
+      "sha256": "37412df670883d47ade56ca1be0f0eed9ba8d7c48b1766d2145de32096fa2caf",
+      "summary_lines": [
+        " INFO 0 errors (35 suppressed, 164 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-pyrefly-modified-first.log",
+      "bytes": 39,
+      "sha256": "792c5701f1876755cd7d955539262c1c344e27627b040e00b774e6146ef5fce4",
+      "summary_lines": [
+        " INFO 0 errors (7 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-pyrefly-production-first.log",
+      "bytes": 56,
+      "sha256": "37412df670883d47ade56ca1be0f0eed9ba8d7c48b1766d2145de32096fa2caf",
+      "summary_lines": [
+        " INFO 0 errors (35 suppressed, 164 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-pyrefly-release.log",
+      "bytes": 56,
+      "sha256": "37412df670883d47ade56ca1be0f0eed9ba8d7c48b1766d2145de32096fa2caf",
+      "summary_lines": [
+        " INFO 0 errors (35 suppressed, 164 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-regression-first.log",
+      "bytes": 342,
+      "sha256": "221d26bcfb3cd1f4d61c83e145528cbfd3f25e76539a82401864e3c3e0949f97",
+      "summary_lines": [
+        "200 passed in 390.92s (0:06:30)"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-regression-stack-first.log",
+      "bytes": 3217,
+      "sha256": "56e2cd346f458734bfcde32b401e815724d51f1bb3c205d972fe4845d031f508",
+      "summary_lines": []
+    },
+    {
+      "path": ".tmp-followthrough-research-final.log",
+      "bytes": 2737,
+      "sha256": "6b92ef86c7a7e0a8dd14c70f6e4e2b6823297ae4b560d92704ef4c7b5db1325f",
+      "summary_lines": []
+    },
+    {
+      "path": ".tmp-followthrough-research-first.log",
+      "bytes": 3241,
+      "sha256": "80712f96abf438fc12db69aad1297dd2b2fc02bbac02fdc5dade2c5541addf3e",
+      "summary_lines": []
+    },
+    {
+      "path": ".tmp-followthrough-ruff-all-final-second.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summary_lines": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-ruff-all-final.log",
+      "bytes": 2068,
+      "sha256": "35e01bddece9007d73af31c00d76c2f0ab7a649db2932cef129dfee20dad0d32",
+      "summary_lines": []
+    },
+    {
+      "path": ".tmp-followthrough-ruff-all-first.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summary_lines": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-ruff-fieldset-final.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summary_lines": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-ruff-release.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summary_lines": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-ty-all-fieldset-final.log",
+      "bytes": 2661578,
+      "sha256": "47d2dd559b2b21135db988c9e8bc520cfa55b7b226d3684d71c101cbfab65a0d",
+      "summary_lines": [
+        "Found 4943 diagnostics"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-ty-all-final.log",
+      "bytes": 2661578,
+      "sha256": "47d2dd559b2b21135db988c9e8bc520cfa55b7b226d3684d71c101cbfab65a0d",
+      "summary_lines": [
+        "Found 4943 diagnostics"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-ty-all-first.log",
+      "bytes": 2661578,
+      "sha256": "99a2384234990571317742279bda92ab8e65ce2083f630c89ac26e7c189c9ff3",
+      "summary_lines": [
+        "Found 4943 diagnostics"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-ty-fieldset-final.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summary_lines": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-ty-final-expanded.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summary_lines": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-ty-final.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summary_lines": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-ty-modified-first.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summary_lines": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-ty-production-first.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summary_lines": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".tmp-followthrough-ty-release.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summary_lines": [
+        "All checks passed!"
+      ]
+    }
+  ],
+  "live_runs": [
+    {
+      "directory": ".e2e-artifacts/unified-followthrough-dynamic-first",
+      "request": {
+        "task": "请打开 https://testpages.eviltester.com/styled/dynamic-buttons-simple.html ，按页面实际出现的控件完成按钮流程，直到页面明确确认全部按钮已点击。不要靠脚本直接修改网页状态。报告实际完成提示并引用页面来源；若动作后页面尚未更新，请核对当前页面再继续，不要声称未观察到的成功。",
+        "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+        "seed": 123456789,
+        "temperature": 0,
+        "max_turns": 16,
+        "required_tools": [],
+        "scope": "real_site_production_entry_no_page_interception_no_scripted_actions"
+      },
+      "stop_reason": "max_turns",
+      "answer": "max turns reached; the task is incomplete.",
+      "natural_task_closed": null,
+      "original_base_browser_passed": null,
+      "project_result": null,
+      "report_before_edit": null,
+      "repair_triggered_research": null,
+      "successful_project_check": null,
+      "tool_counts": {
+        "codemode": 17,
+        "open_url": 1,
+        "browser_snapshot": 1,
+        "browser_navigate": 16
+      },
+      "clicks": [],
+      "latest_ui": {
+        "result_ref": "task_turn_effect:adbb9ddd915f5743",
+        "page_url": "https://testpages.eviltester.com/challenges/synchronization/dynamic-buttons-01/",
+        "all_buttons_clicked": false
+      },
+      "repeated_successful_click_arguments": {},
+      "failed_tool_receipts": [],
+      "evidence_files": [
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-first/request.json",
+          "bytes": 637,
+          "sha256": "bb694091a9f5f290a59a6cc90705157aafbe56aa33296ce0700debe34e0cfa0a"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-first/provider.jsonl",
+          "bytes": 1091700,
+          "sha256": "35c417bbeca460de840d25bdfc4f6e13028abf082fd7d7e8260631810b241e04"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-first/events.jsonl",
+          "bytes": 30320,
+          "sha256": "bc03d310ded45c136051bd0a9290012c5b264e7dc2f6d2641ad51bac34ae92c7"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-first/summary.json",
+          "bytes": 94342,
+          "sha256": "7b94b7694ab14615abc4f7f058ac5eb0a0c4d7859da99209700bdfd4e56d9119"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-first/observed-page.html",
+          "bytes": 190842,
+          "sha256": "20dbc8435a40e4107ef735d636c116895ab13b61a8e9c411e7023d3ba9f427ab"
+        }
+      ],
+      "state_file_count": 190,
+      "state_inventory_sha256": "530b087173c145fb6da7506338fba5ab4dc631149453e24591aed6b08c25ef3c",
+      "observed_operational_goal_completed": false,
+      "experiment_intent": "research",
+      "audit_file": {
+        "path": ".e2e-artifacts/unified-followthrough-dynamic-first/verification-audit.json",
+        "bytes": 2736,
+        "sha256": "2dd089ce28338c1fbec54379797c680a7f7cbac8445c07838a193dc1a14fd438"
+      }
+    },
+    {
+      "directory": ".e2e-artifacts/unified-followthrough-dynamic-second",
+      "request": {
+        "task": "请打开 https://testpages.eviltester.com/styled/dynamic-buttons-simple.html ，按页面实际出现的控件完成按钮流程，直到页面明确确认全部按钮已点击。不要靠脚本直接修改网页状态。报告实际完成提示并引用页面来源；若动作后页面尚未更新，请核对当前页面再继续，不要声称未观察到的成功。",
+        "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+        "seed": 123456789,
+        "temperature": 0,
+        "max_turns": 16,
+        "required_tools": [],
+        "scope": "real_site_production_entry_no_page_interception_no_scripted_actions"
+      },
+      "stop_reason": "max_turns",
+      "answer": "max turns reached; the task is incomplete.",
+      "natural_task_closed": null,
+      "original_base_browser_passed": null,
+      "project_result": null,
+      "report_before_edit": null,
+      "repair_triggered_research": null,
+      "successful_project_check": null,
+      "tool_counts": {
+        "codemode": 17,
+        "open_url": 1,
+        "browser_snapshot": 17,
+        "browser_navigate": 8,
+        "browser_click": 6
+      },
+      "clicks": [
+        {
+          "result_ref": "task_turn_effect:825aec82495c9bf6",
+          "ok": true,
+          "args": {
+            "ref": "ba3705b4525c0e89"
+          },
+          "observed_name": "Dynamic Buttons 01 - Instructions",
+          "call_id": "run_c714cf32f1c741839d000c44ab129f08:turn:4:codemode:413de4c219d79e79:child:0"
+        },
+        {
+          "result_ref": "task_turn_effect:47bff72ecc66647e",
+          "ok": true,
+          "args": {
+            "ref": "ba3705b4525c0e132"
+          },
+          "observed_name": "Dynamic Buttons 01 - Instructions",
+          "call_id": "run_c714cf32f1c741839d000c44ab129f08:turn:7:codemode:413de4c219d79e79:child:0"
+        },
+        {
+          "result_ref": "task_turn_effect:07ebdb5a35df6a29",
+          "ok": true,
+          "args": {
+            "ref": "ba3705b4525c0e175"
+          },
+          "observed_name": "Dynamic Buttons 01 - Instructions",
+          "call_id": "run_c714cf32f1c741839d000c44ab129f08:turn:10:codemode:413de4c219d79e79:child:0"
+        },
+        {
+          "result_ref": "task_turn_effect:c806a376bbff4642",
+          "ok": true,
+          "args": {
+            "ref": "ba3705b4525c0e218"
+          },
+          "observed_name": "Dynamic Buttons 01 - Instructions",
+          "call_id": "run_c714cf32f1c741839d000c44ab129f08:turn:12:codemode:413de4c219d79e79:child:0"
+        },
+        {
+          "result_ref": "task_turn_effect:c47cf83ee9329855",
+          "ok": true,
+          "args": {
+            "ref": "ba3705b4525c0e261"
+          },
+          "observed_name": "Dynamic Buttons 01 - Instructions",
+          "call_id": "run_c714cf32f1c741839d000c44ab129f08:turn:14:codemode:413de4c219d79e79:child:0"
+        },
+        {
+          "result_ref": "task_turn_effect:be799677106fd67a",
+          "ok": true,
+          "args": {
+            "ref": "ba3705b4525c0e304"
+          },
+          "observed_name": "Dynamic Buttons 01 - Instructions",
+          "call_id": "run_c714cf32f1c741839d000c44ab129f08:turn:16:codemode:413de4c219d79e79:child:0"
+        }
+      ],
+      "latest_ui": {
+        "result_ref": "task_turn_effect:5162cc5f2062385e",
+        "page_url": "https://testpages.eviltester.com/challenges/synchronization/dynamic-buttons-01/simple-dynamic-buttons-instructions/",
+        "all_buttons_clicked": true
+      },
+      "repeated_successful_click_arguments": {},
+      "failed_tool_receipts": [
+        {
+          "result_ref": "task_turn_effect:4022517e6cfc086e",
+          "tool": "codemode",
+          "args": {
+            "code": "return unwrap(await tools.browser_click(inputs));",
+            "inputs": {
+              "purpose": "controls",
+              "ref": {
+                "name": "Dynamic Buttons 01 - Instructions",
+                "role": "link"
+              }
+            },
+            "language": "javascript"
+          },
+          "text": "Click delivered; browser_snapshot failed: ERROR: snapshot scope unavailable. Continue from the committed receipts; do not repeat the click.\nSettled child receipts (the parent failure does not undo them): task_turn_effect:825aec82495c9bf6 (browser_click, ok=True), task_turn_effect:79f4212458151efe (browser_snapshot, ok=False)\nContinue only the missing work. Do not resubmit the original program to repeat completed actions.\nCurrent codemode contract:\nWrite an async JavaScript function body using tools.* and return its JSON result explicitly. Use return null for an intentional empty result. Normal authorization applies. Returning modified data does not persist it; invoke the declared action tool to change external state. Calls return Result<T>; use unwrap(await tools.NAME(...)) to obtain T. Access only fields declared for that tool's output schema. Await all tool/store/load calls. console.log/error fail; only return delivers data. No direct filesystem, process, network, shell or recursive CodeMode access. Preserve argument strings exactly, including whether quote characters are present. Put task data (paths, search queries, file contents) in inputs, not JS string literals. Read it as inputs.name; inputs is immutable JSON data, never executable source. Example inputs={\"path\": \"app.py\"}; JavaScript: const result = await tools.read_file({path:inputs.path}); const file = unwrap(result); return file.text;\nMultiline data arguments: {\"code\": \"return inputs.text;\", \"inputs\": {\"text\": \"first\\nsecond\\n\"}}\nArguments (JSON Schema; only declared fields): {\"additionalProperties\":false,\"properties\":{\"code\":{\"type\":\"string\"},\"inputs\":{\"additionalProperties\":true,\"description\":\"Named JSON data fields exposed as read-only inputs in JavaScript.\",\"type\":\"object\"},\"language\":{\"enum\":[\"javascript\",\"js\"],\"type\":\"string\"},\"repair_of\":{\"description\":\"Optional kernel-issued token for a return-only receipt replay.\",\"pattern\":\"^cmr_[A-Za-z0-9_-]{6,64}$\",\"type\":\"string\"}},\"required\":[\"code\"],\"type\":\"object\"}"
+        },
+        {
+          "result_ref": "task_turn_effect:79f4212458151efe",
+          "tool": "browser_snapshot",
+          "args": {},
+          "text": "ERROR: snapshot scope unavailable"
+        },
+        {
+          "result_ref": "task_turn_effect:13cb31f790bb3076",
+          "tool": "codemode",
+          "args": {
+            "code": "return unwrap(await tools.browser_click(inputs));",
+            "inputs": {
+              "purpose": "controls",
+              "ref": {
+                "name": "Dynamic Buttons 01 - Instructions",
+                "role": "link"
+              }
+            },
+            "language": "javascript"
+          },
+          "text": "Click delivered; browser_snapshot failed: ERROR: snapshot scope unavailable. Continue from the committed receipts; do not repeat the click.\nSettled child receipts (the parent failure does not undo them): task_turn_effect:47bff72ecc66647e (browser_click, ok=True), task_turn_effect:db47f0dbd6bb972e (browser_snapshot, ok=False)\nContinue only the missing work. Do not resubmit the original program to repeat completed actions.\nCurrent codemode contract:\nWrite an async JavaScript function body using tools.* and return its JSON result explicitly. Use return null for an intentional empty result. Normal authorization applies. Returning modified data does not persist it; invoke the declared action tool to change external state. Calls return Result<T>; use unwrap(await tools.NAME(...)) to obtain T. Access only fields declared for that tool's output schema. Await all tool/store/load calls. console.log/error fail; only return delivers data. No direct filesystem, process, network, shell or recursive CodeMode access. Preserve argument strings exactly, including whether quote characters are present. Put task data (paths, search queries, file contents) in inputs, not JS string literals. Read it as inputs.name; inputs is immutable JSON data, never executable source. Example inputs={\"path\": \"app.py\"}; JavaScript: const result = await tools.read_file({path:inputs.path}); const file = unwrap(result); return file.text;\nMultiline data arguments: {\"code\": \"return inputs.text;\", \"inputs\": {\"text\": \"first\\nsecond\\n\"}}\nArguments (JSON Schema; only declared fields): {\"additionalProperties\":false,\"properties\":{\"code\":{\"type\":\"string\"},\"inputs\":{\"additionalProperties\":true,\"description\":\"Named JSON data fields exposed as read-only inputs in JavaScript.\",\"type\":\"object\"},\"language\":{\"enum\":[\"javascript\",\"js\"],\"type\":\"string\"},\"repair_of\":{\"description\":\"Optional kernel-issued token for a return-only receipt replay.\",\"pattern\":\"^cmr_[A-Za-z0-9_-]{6,64}$\",\"type\":\"string\"}},\"required\":[\"code\"],\"type\":\"object\"}"
+        },
+        {
+          "result_ref": "task_turn_effect:db47f0dbd6bb972e",
+          "tool": "browser_snapshot",
+          "args": {},
+          "text": "ERROR: snapshot scope unavailable"
+        }
+      ],
+      "evidence_files": [
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-second/request.json",
+          "bytes": 637,
+          "sha256": "bb694091a9f5f290a59a6cc90705157aafbe56aa33296ce0700debe34e0cfa0a"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-second/provider.jsonl",
+          "bytes": 1337004,
+          "sha256": "4e6f0853f11ca967aa2d8d51fb2e7354dd5cc3eb461c15f16d0ebb347e89bc48"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-second/events.jsonl",
+          "bytes": 42185,
+          "sha256": "a7a6c6a7fbf203c19006bba7009c5dc5c9cad7037de65c5987cb16bc7b5f0e57"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-second/summary.json",
+          "bytes": 437023,
+          "sha256": "f34bd99c47da25ac7157ac21f6bfda211cf6619f7cd4e3c6706b67ee186a2c6b"
+        }
+      ],
+      "state_file_count": 242,
+      "state_inventory_sha256": "c8f8e18bc4cced03daa5fa6de77f71e87850a0e41baa0fc2def229187cb3ffbe",
+      "observed_operational_goal_completed": false,
+      "experiment_intent": "research",
+      "audit_file": {
+        "path": ".e2e-artifacts/unified-followthrough-dynamic-second/verification-audit.json",
+        "bytes": 9886,
+        "sha256": "3a34adde69bdf14de6d7b76b3f79174662f5e81d12fd3a1036126f96657211f4"
+      }
+    },
+    {
+      "directory": ".e2e-artifacts/unified-followthrough-dynamic-third",
+      "request": {
+        "task": "请打开 https://testpages.eviltester.com/styled/dynamic-buttons-simple.html ，按页面实际出现的控件完成按钮流程，直到页面明确确认全部按钮已点击。不要靠脚本直接修改网页状态。报告实际完成提示并引用页面来源；若动作后页面尚未更新，请核对当前页面再继续，不要声称未观察到的成功。",
+        "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+        "seed": 123456789,
+        "temperature": 0,
+        "max_turns": 16,
+        "required_tools": [],
+        "scope": "real_site_production_entry_no_page_interception_no_scripted_actions"
+      },
+      "stop_reason": "max_turns",
+      "answer": "max turns reached; the task is incomplete.",
+      "natural_task_closed": null,
+      "original_base_browser_passed": null,
+      "project_result": null,
+      "report_before_edit": null,
+      "repair_triggered_research": null,
+      "successful_project_check": null,
+      "tool_counts": {
+        "codemode": 17,
+        "open_url": 1,
+        "browser_snapshot": 17,
+        "browser_navigate": 16
+      },
+      "clicks": [],
+      "latest_ui": {
+        "result_ref": "task_turn_effect:7b7162e2e08a277c",
+        "page_url": "https://testpages.eviltester.com/challenges/synchronization/dynamic-buttons-01/",
+        "all_buttons_clicked": false
+      },
+      "repeated_successful_click_arguments": {},
+      "failed_tool_receipts": [],
+      "evidence_files": [
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-third/request.json",
+          "bytes": 637,
+          "sha256": "bb694091a9f5f290a59a6cc90705157aafbe56aa33296ce0700debe34e0cfa0a"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-third/provider.jsonl",
+          "bytes": 1346292,
+          "sha256": "e246e1de14a30adf5d99984a5223b4147d5897e75711f295ee2f0ec2b5c10ec6"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-third/events.jsonl",
+          "bytes": 44543,
+          "sha256": "21f033eda8bdce8ed99ea0bd9fbab2ed9a5d1d8e17f57782910e44c67b7758ef"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-third/summary.json",
+          "bytes": 468877,
+          "sha256": "b99c9ffa5ab7e412160d5b63dd59c93ecd337fbe5ec857b5615f346c8d340e03"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-third/source-integrity.json",
+          "bytes": 164,
+          "sha256": "0f5372711129a04af1a921d4dd7b43f14fe7541dfeb3cb666d9c0ea64390b2a5"
+        }
+      ],
+      "state_file_count": 254,
+      "state_inventory_sha256": "4c0c7a494c3cdd289f25ea864d38a5a4b20c5961567eca777f723b882e780839",
+      "observed_operational_goal_completed": false,
+      "experiment_intent": "research",
+      "audit_file": {
+        "path": ".e2e-artifacts/unified-followthrough-dynamic-third/verification-audit.json",
+        "bytes": 2738,
+        "sha256": "7c9c5585d503c8583472eb3cea9510c64fca2dd59b5743ede56d4c1621e4c1d5"
+      }
+    },
+    {
+      "directory": ".e2e-artifacts/unified-followthrough-dynamic-chat-first",
+      "request": {
+        "task": "请打开 https://testpages.eviltester.com/styled/dynamic-buttons-simple.html ，按页面实际出现的控件完成按钮流程，直到页面明确确认全部按钮已点击。不要靠脚本直接修改网页状态。报告实际完成提示并引用页面来源；若动作后页面尚未更新，请核对当前页面再继续，不要声称未观察到的成功。",
+        "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+        "seed": 123456789,
+        "temperature": 0,
+        "max_turns": 16,
+        "required_tools": [],
+        "intent": "chat",
+        "strict_research": false,
+        "scope": "real_site_production_entry_no_page_interception_no_scripted_actions"
+      },
+      "stop_reason": "done",
+      "answer": "已成功完成按钮流程。通过依次点击页面上出现的按钮，最终页面显示“All Buttons Clicked”，确认全部按钮均已点击。\n\n页面来源：https://testpages.eviltester.com/challenges/synchronization/dynamic-buttons-01/",
+      "natural_task_closed": null,
+      "original_base_browser_passed": null,
+      "project_result": null,
+      "report_before_edit": null,
+      "repair_triggered_research": null,
+      "successful_project_check": null,
+      "tool_counts": {
+        "open_url": 1,
+        "codemode": 6,
+        "browser_navigate": 1,
+        "browser_snapshot": 8,
+        "browser_click": 5
+      },
+      "clicks": [
+        {
+          "result_ref": "task_turn_effect:5824b10ca8f6a9fb",
+          "ok": true,
+          "args": {
+            "ref": "b3a58a3d0ea3ae16"
+          },
+          "observed_name": "start",
+          "call_id": "run_ba69971de7b4473e9bfb277aa8500d5a:turn:3:codemode:c624aa597688757a:child:0"
+        },
+        {
+          "result_ref": "task_turn_effect:2ba3ced2cc4b4033",
+          "ok": true,
+          "args": {
+            "ref": "b3a58a3d0ea3ae25"
+          },
+          "observed_name": "One",
+          "call_id": "run_ba69971de7b4473e9bfb277aa8500d5a:turn:4:codemode:79ec6c7d3552044b:child:0"
+        },
+        {
+          "result_ref": "task_turn_effect:4d0a6dbc2e90fa48",
+          "ok": true,
+          "args": {
+            "ref": "b3a58a3d0ea3ae26"
+          },
+          "observed_name": "Two",
+          "call_id": "run_ba69971de7b4473e9bfb277aa8500d5a:turn:6:codemode:4a337168cabb6abb:child:0"
+        },
+        {
+          "result_ref": "task_turn_effect:0d1eb8fc54fb6feb",
+          "ok": true,
+          "args": {
+            "ref": "b3a58a3d0ea3ae26"
+          },
+          "observed_name": "Two",
+          "call_id": "run_ba69971de7b4473e9bfb277aa8500d5a:turn:7:codemode:4a337168cabb6abb:child:0"
+        },
+        {
+          "result_ref": "task_turn_effect:b2553b0352f94f04",
+          "ok": true,
+          "args": {
+            "ref": "b3a58a3d0ea3ae27"
+          },
+          "observed_name": "Three",
+          "call_id": "run_ba69971de7b4473e9bfb277aa8500d5a:turn:8:codemode:4455ec877e2f6fd8:child:0"
+        }
+      ],
+      "latest_ui": {
+        "result_ref": "task_turn_effect:c5ab4f95db70725b",
+        "page_url": "https://testpages.eviltester.com/challenges/synchronization/dynamic-buttons-01/",
+        "all_buttons_clicked": true
+      },
+      "repeated_successful_click_arguments": {
+        "{'ref': 'b3a58a3d0ea3ae26'}": 2
+      },
+      "failed_tool_receipts": [],
+      "evidence_files": [
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-chat-first/request.json",
+          "bytes": 687,
+          "sha256": "bca6b623971306a1e932fe511e8d52dab8b3b12f6b41bb6c0434c1e75be026bf"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-chat-first/provider.jsonl",
+          "bytes": 860899,
+          "sha256": "81cee7268a123acdd080ea4309994851b4af28f9980d49001e15173388d9afb1"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-chat-first/events.jsonl",
+          "bytes": 19631,
+          "sha256": "d05a03aa95b8053b7df93e4792ab0680f6f247c370a8191e081fbc575b3e754f"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-chat-first/summary.json",
+          "bytes": 222585,
+          "sha256": "550e513a89cebed3722d60bb0350b7d814d219de263fd9579d266dae32994290"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-dynamic-chat-first/source-integrity.json",
+          "bytes": 164,
+          "sha256": "0f5372711129a04af1a921d4dd7b43f14fe7541dfeb3cb666d9c0ea64390b2a5"
+        }
+      ],
+      "state_file_count": 128,
+      "state_inventory_sha256": "ee4c13503aa5a0ac165e9093fad8ef83b3d8eec2b9c88662c6883cb931d079e3",
+      "observed_operational_goal_completed": true,
+      "experiment_intent": "chat",
+      "audit_file": {
+        "path": ".e2e-artifacts/unified-followthrough-dynamic-chat-first/verification-audit.json",
+        "bytes": 4506,
+        "sha256": "aeeb5f9fd2ecd93d4652a3ea51c77c0d8086c3ae51a7f792bf7f6a76b2a60546"
+      }
+    },
+    {
+      "directory": ".e2e-artifacts/unified-followthrough-research-first",
+      "request": {
+        "task": "请打开 https://playwright.dev/python/docs/actionability ，根据当前官方文档说明 locator.click 执行前检查哪些条件，解释 force=True 具体绕过什么，并区分 Visible、Stable、Receives Events、Enabled。请引用实际读过的原文；不要把 force 的说明扩大成文档未承诺的所有检查。",
+        "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+        "seed": 123456789,
+        "temperature": 0,
+        "max_turns": 12,
+        "required_tools": [],
+        "intent": "research",
+        "strict_research": true,
+        "scope": "real_site_production_entry_no_page_interception_no_scripted_actions"
+      },
+      "stop_reason": "done",
+      "answer": "根据 Playwright 官方文档，`locator.click()` 在执行前会进行一系列**可操作性检查（actionability checks）**，确保元素处于可交互状态。\n\n### 1. `locator.click()` 执行前的检查条件\n在执行 `click()` 操作时，Playwright 会自动等待以下所有检查通过：\n- **Visible**（可见）\n- **Stable**（稳定）\n- **Receives Events**（接收事件）\n- **Enabled**（启用）\n- **Not Inert**（非惰性）\n\n> [e1] \"Playwright will ensure that: locator resolves to exactly one element element is Visible element is Stable , as in not animating or completed animation element Receives Events , as in not obscured by other elements element is Enabled element is Not Inert\"\n\n### 2. `force=True` 具体绕过的内容\n当设置 `force=True` 时，Playwright 会禁用一些**非核心**的可操作性检查。具体来说，它会绕过“接收事件”的检查：\n\n> [e1] \"Some actions like locator.click() support force option that disables non-essential actionability checks, for example passing truthy force to locator.click() method will not check that the target element actually receives click events.\"\n\n### 3. 核心概念区分\n根据文档对各项检查的定义，其区别如下：\n\n*   **Visible（可见）**：元素必须具有非空的边界框（bounding box），且不具备 `visibility:hidden` 计算样式。注意：尺寸为零的元素不被视为可见，而 `opacity:0` 的元素仍被视为可见。[e1]\n*   **Stable（稳定）**：元素必须在至少两个连续的动画帧中保持相同的边界框（即不再处于动画中或动画已完成）。[e1]\n*   **Receives Events（接收事件）**：元素必须是点击点处的指针事件的命中目标（hit target）。例如，如果上方有遮罩层（overlay），Playwright 会检查点击点是否会被遮罩层捕获而非目标元素。[e1]\n*   **Enabled（启用）**：元素必须不是被禁用的（not disabled）。被禁用的情况包括：\n    *   具有 `[disabled]` 属性的 `<button>`, `<select>`, `<input>`, `<textarea>`, `<option>` 或 `<optgroup>`。\n    *   属于具有 `[disabled]` 属性的 `<fieldset>` 的元素。\n    *   是具有 `[aria-disabled=true]` 属性的元素的后代。[e1]\n\n**状态**：answered\n\n## 引用来源\n[e1] Auto-waiting | Playwright Python — https://playwright.dev/python/docs/actionability (source c3696e132e5000f4, 0:5552)",
+      "natural_task_closed": null,
+      "original_base_browser_passed": null,
+      "project_result": null,
+      "report_before_edit": null,
+      "repair_triggered_research": null,
+      "successful_project_check": null,
+      "tool_counts": {
+        "codemode": 1,
+        "open_url": 1,
+        "browser_snapshot": 1,
+        "submit_research_answer": 1,
+        "_publish_research_answer": 1
+      },
+      "clicks": [],
+      "latest_ui": {
+        "result_ref": "task_turn_effect:906b9f5aa1b534a4",
+        "page_url": "https://playwright.dev/python/docs/actionability",
+        "all_buttons_clicked": false
+      },
+      "repeated_successful_click_arguments": {},
+      "failed_tool_receipts": [],
+      "evidence_files": [
+        {
+          "path": ".e2e-artifacts/unified-followthrough-research-first/request.json",
+          "bytes": 651,
+          "sha256": "dafba6d7ea5c7244962f6b9b278275da50d00f125627d8eda090869d4ebe3407"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-research-first/provider.jsonl",
+          "bytes": 73845,
+          "sha256": "d747878d8dd4d2da9fddffea47baa30061f200375abcbc1614940927f31b6f29"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-research-first/events.jsonl",
+          "bytes": 6717,
+          "sha256": "a253719335500fc1a3625ef0bdd3863c1792e3645c60f3a56a7032739e3c3291"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-research-first/summary.json",
+          "bytes": 145721,
+          "sha256": "dcf03a0494dab9d1c27b86e878674898c8efd1ef029911b01a4583fd99e7df93"
+        }
+      ],
+      "state_file_count": 42,
+      "state_inventory_sha256": "3344e481817b2df2724e545e53fec62f5df4ae2d86bcfbe6212c10e10aadd10a",
+      "manual_review": "Official full 5552-character source and e1 citation checked; core requested distinctions supported. Compact report wording is not general semantic certification.",
+      "audit_file": {
+        "path": ".e2e-artifacts/unified-followthrough-research-first/verification-audit.json",
+        "bytes": 5063,
+        "sha256": "198e09a296232f77d791e4a41c3a29ab34fec157594f20002dd5230c7e65f010"
+      }
+    },
+    {
+      "directory": ".e2e-artifacts/unified-followthrough-research-final",
+      "request": {
+        "task": "请打开 https://playwright.dev/python/docs/actionability ，根据当前官方文档说明 locator.click 执行前检查哪些条件，解释 force=True 具体绕过什么，并区分 Visible、Stable、Receives Events、Enabled。请引用实际读过的原文；不要把 force 的说明扩大成文档未承诺的所有检查。",
+        "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+        "seed": 123456789,
+        "temperature": 0,
+        "max_turns": 12,
+        "required_tools": [],
+        "intent": "research",
+        "strict_research": true,
+        "scope": "real_site_production_entry_no_page_interception_no_scripted_actions"
+      },
+      "stop_reason": "done",
+      "answer": "根据 Playwright 官方文档，`locator.click()` 在执行前会进行一系列**可操作性检查（actionability checks）**，确保元素处于可交互状态。\n\n### 1. `locator.click()` 执行前的检查条件\n在执行 `click()` 操作时，Playwright 会自动等待以下所有检查通过：\n*   **Visible**（可见）\n*   **Stable**（稳定）\n*   **Receives Events**（接收事件）\n*   **Enabled**（启用）\n*   **Not Inert**（非惰性） [e1]\n\n### 2. `force=True` 具体绕过的内容\n当使用 `force=True` 选项时，Playwright 会禁用**非必要**的可操作性检查。具体而言：\n*   它**不会**检查目标元素是否真正接收到点击事件（即绕过了 **Receives Events** 检查） [e1]。\n\n### 3. 核心概念区分\n根据文档对各项检查的定义，其区别如下：\n*   **Visible**：元素必须具有非空的边界框（bounding box），且不具备 `visibility:hidden` 计算样式。注意：尺寸为零的元素不被视为可见，而 `opacity:0` 的元素仍被视为可见 [e1]。\n*   **Stable**：元素必须在至少两个连续的动画帧中保持相同的边界框（即不再处于动画中或已完成动画） [e1]。\n*   **Receives Events**：元素必须是当前指针事件在操作点处的命中目标（hit target）。例如，点击 (10;10) 点时，Playwright 会检查是否有其他元素（如覆盖层）会先捕获该点的点击 [e1]。\n*   **Enabled**：元素必须不是“禁用”状态。对于 `<button>`、`<select>`、`<input>`、`<textarea>`、`<option>` 或 `<optgroup>`，如果具有 `[disabled]` 属性，或者属于具有 `[disabled]` 属性的 `<fieldset>`，或者是具有 `[aria-disabled=true]` 属性的元素的后代，则视为禁用 [e1]。\n\n**状态**：answered\n\n## 引用来源\n[e1] Auto-waiting | Playwright Python — https://playwright.dev/python/docs/actionability (source c3696e132e5000f4, 0:5552)",
+      "natural_task_closed": null,
+      "original_base_browser_passed": null,
+      "project_result": null,
+      "report_before_edit": null,
+      "repair_triggered_research": null,
+      "successful_project_check": null,
+      "tool_counts": {
+        "codemode": 1,
+        "open_url": 1,
+        "browser_snapshot": 1,
+        "submit_research_answer": 1,
+        "_publish_research_answer": 1
+      },
+      "clicks": [],
+      "latest_ui": {
+        "result_ref": "task_turn_effect:235bdb7617a53884",
+        "page_url": "https://playwright.dev/python/docs/actionability",
+        "all_buttons_clicked": false
+      },
+      "repeated_successful_click_arguments": {},
+      "failed_tool_receipts": [],
+      "evidence_files": [
+        {
+          "path": ".e2e-artifacts/unified-followthrough-research-final/request.json",
+          "bytes": 651,
+          "sha256": "dafba6d7ea5c7244962f6b9b278275da50d00f125627d8eda090869d4ebe3407"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-research-final/provider.jsonl",
+          "bytes": 73325,
+          "sha256": "c708ce76157af63a30322fadd11e0e9611c4296882131894dd328c6f5301b7d8"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-research-final/events.jsonl",
+          "bytes": 6213,
+          "sha256": "775809a130ffd6e97c48aabfb8ed7cc0d6f94f66ea15a16db8a91bd9b0daf25c"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-research-final/summary.json",
+          "bytes": 143185,
+          "sha256": "4b6008d9782a606b0c982772f62b11414d2cbec05b2d71f637bbc291a1ac2979"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-research-final/source-integrity.json",
+          "bytes": 164,
+          "sha256": "843c1ca2a2d31f86e76da697a8eafa3a9fb2e7857c94b3e8148aeba55aa3f3c6"
+        }
+      ],
+      "state_file_count": 42,
+      "state_inventory_sha256": "a1dfafb3463256faeac49ab45cbce3b4f8c4e8078d24ac7cbcc2c102a7c011d5",
+      "manual_review": "Official full 5552-character source and e1 citation checked; core requested distinctions supported. Compact report wording is not general semantic certification.",
+      "audit_file": {
+        "path": ".e2e-artifacts/unified-followthrough-research-final/verification-audit.json",
+        "bytes": 4771,
+        "sha256": "52b7247de25cecf27807ce787cf136cb870223cade39343ad0bb368b88a83a4f"
+      }
+    },
+    {
+      "directory": ".e2e-artifacts/unified-followthrough-flexible-first",
+      "request": {
+        "task": "项目的记录同步有问题。请结合项目文件和 https://example.com/production-browser-record 中福州的真实记录查明原因，修复 result.json 的 amount（实际克数数值）和 code（完整字符串），保留其他字段。运行项目已有检查验证修复，并给出带实际来源引用的调查说明、修改内容和检查结果。",
+        "mode": "hybrid",
+        "max_turns": 14,
+        "required_tools": [
+          "tool_succeeded:{\"answer\":{\"browser_text\":{\"prefix\":\"鱼丸净重为 \",\"suffix\":\" 克。\",\"url\":\"https://example.com/production-browser-record\"},\"file_path\":\"result.json\",\"line\":null,\"pointer\":\"/amount\",\"result_pointer\":\"/text\",\"value_type\":\"number\"},\"args\":{},\"tool\":\"browser_read\",\"via\":\"\"}",
+          "tool_succeeded:{\"answer\":{\"browser_text\":{\"prefix\":\"记录校验码 \",\"suffix\":\"。\",\"url\":\"https://example.com/production-browser-record\"},\"file_path\":\"result.json\",\"line\":null,\"pointer\":\"/code\",\"result_pointer\":\"/text\",\"value_type\":\"string\"},\"args\":{},\"tool\":\"browser_read\",\"via\":\"\"}",
+          "tool_succeeded:run"
+        ],
+        "sources_open_required": null,
+        "strict_research": true,
+        "requested_capabilities": [
+          "web.read",
+          "browser.observe",
+          "browser.interact",
+          "browser.effect",
+          "knowledge.write"
+        ],
+        "output_format": "text",
+        "output_schema": "",
+        "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+        "base_url": "http://127.0.0.1:5001/v1",
+        "seed": 123456789,
+        "source_attempt_only": false,
+        "fixed_source_attempt": false
+      },
+      "stop_reason": "done",
+      "answer": "修复了 `result.json` 中的记录同步问题。通过访问 [e1] 页面并加载 '福州' 记录，获取到真实的鱼丸净重为 173 克，记录校验码为 QUARTZ_851。相应的，将 `result.json` 中的 `amount` 更新为 173，`code` 更新为 'QUARTZ_851'。最后通过运行项目已有检查验证了修复结果。\n\n## 调查说明\n通过访问 [e1] 页面并输入 Locality 为 \"福州\" 后，获取到以下真实记录：\n- **鱼丸净重**：173 克\n- **记录校验码**：QUARTZ_851\n\n对比项目文件 `result.json`，发现之前的 `amount` 和 `code` 字段与浏览器中的真实记录不一致。\n\n## 修改内容\n对 `result.json` 进行了如下修复：\n- `amount`: 修改为 `173`（对应“鱼丸净重为 173 克”）\n- `code`: 修改为 `QUARTZ_851`（对应“记录校验码 QUARTZ_851”）\n\n## 检查结果\n运行项目已有检查 `python -m unittest -v`，验证通过。\n\n## 引用来源\n[e1] Production browser fixture — https://example.com/production-browser-record (source b6fe97652a001b50, 0:102)",
+      "natural_task_closed": true,
+      "original_base_browser_passed": false,
+      "project_result": {
+        "amount": 173,
+        "code": "QUARTZ_851",
+        "keep": "preserved"
+      },
+      "report_before_edit": false,
+      "repair_triggered_research": false,
+      "successful_project_check": true,
+      "tool_counts": {
+        "codemode": 6,
+        "open_url": 1,
+        "browser_snapshot": 3,
+        "browser_read": 2,
+        "browser_fill": 1,
+        "browser_click": 1,
+        "read_file": 1,
+        "edit": 1,
+        "run": 2,
+        "submit_research_answer": 2
+      },
+      "clicks": [
+        {
+          "result_ref": "task_turn_effect:aba2b37eca3bfaa9",
+          "ok": true,
+          "args": {
+            "ref": "bcbcfbfd019bbe2"
+          },
+          "observed_name": "Load record",
+          "call_id": "run_e4596f0239fa4515a91e10bb257f4cb8:turn:3:codemode:62d38fe58b254a9a:child:0"
+        }
+      ],
+      "latest_ui": {
+        "result_ref": "task_turn_effect:5b11e9e8808021ac",
+        "page_url": "https://example.com/production-browser-record",
+        "all_buttons_clicked": false
+      },
+      "repeated_successful_click_arguments": {},
+      "failed_tool_receipts": [
+        {
+          "result_ref": "task_turn_effect:df71e07da0de5a11",
+          "tool": "submit_research_answer",
+          "args": {
+            "markdown": "## 调查说明\n通过访问 [e1] 页面并输入 Locality 为 \"福州\" 后，获取到以下真实记录：\n- **鱼丸净重**：173 克\n- **记录校验码**：QUARTZ_851\n\n对比项目文件 `result.json`，发现之前的 `amount` 和 `code` 字段与浏览器中的真实记录不一致。\n\n## 修改内容\n对 `result.json` 进行了如下修复：\n- `amount`: 修改为 `173`（对应“鱼丸净重为 173 克”）\n- `code`: 修改为 `",
+            "state": "answered"
+          },
+          "text": "ERROR: report_tail_incomplete: the report ends with an unmatched inline-code backtick delimiter. Repair only the unfinished report text and resubmit the complete markdown with submit_research_answer. Preserve supported statements and their original citations; reuse available {{field:/pointer}} slots. An intended literal backtick must be escaped or inside a complete code span. Do not repeat successful browser actions, file edits or verification to repair this writing defect."
+        }
+      ],
+      "evidence_files": [
+        {
+          "path": ".e2e-artifacts/unified-followthrough-flexible-first/request.json",
+          "bytes": 1633,
+          "sha256": "70bc9b9098d96c8bceab72a4e669effaa72ab3aac6473239e905c7d4176f637b"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-flexible-first/task.txt",
+          "bytes": 366,
+          "sha256": "7b065d952a6ec947a91baa648f365637a070130b3cb3b5f2624dfe78416c3974"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-flexible-first/provider.jsonl",
+          "bytes": 965815,
+          "sha256": "8c98c78b30d57f149b833b6154de008618e4a63f62d81cb5d05a9378bbfaf498"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-flexible-first/events.jsonl",
+          "bytes": 18014,
+          "sha256": "31b89ea8f916739924bce403f3ffe0f1323ad92a117187503afc5351d22ad192"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-flexible-first/summary.json",
+          "bytes": 3667,
+          "sha256": "ee5a0b2e609be7cbe2ae29cd34432b39686201cf62f89c903d1fa8b3bc47f27c"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-flexible-first/natural-verdict.json",
+          "bytes": 4173,
+          "sha256": "0a022d6547510aa0d5868e2edd30912fba31457633ea9e7cbe8e2965f1b5a44f"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-flexible-first/project-result.json",
+          "bytes": 58,
+          "sha256": "505f1cc0a3153a67003e1eac7f718098f3d557e6667a808e9221ed8b16d2a5f4"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-flexible-first/receipts.json",
+          "bytes": 51648,
+          "sha256": "a2f1109551916969db8de42d8432ed8ef639c0835ac9841731d7374e0a9401e7"
+        }
+      ],
+      "state_file_count": 89,
+      "state_inventory_sha256": "2c6c54c881209613552be6290ebe52ee8b96ed2df1be4b93f8e6455033fdb94f",
+      "audit_file": {
+        "path": ".e2e-artifacts/unified-followthrough-flexible-first/verification-audit.json",
+        "bytes": 6937,
+        "sha256": "ead5b9342e1e243d5e2d8abf38ad55408554020bcc99f4634f2d3afd1c0058ea"
+      }
+    },
+    {
+      "directory": ".e2e-artifacts/unified-followthrough-composition-first",
+      "request": {
+        "task": "请打开 https://example.com/production-browser-record，在网页中查询福州的鱼丸净重和记录校验码。先给出带来源引用的调查报告，再把项目 result.json 中 amount 更新为实际克数（数值）、code 更新为实际校验码（字符串），保留其它字段；运行项目已有的本地检查，确认文件里的两项与网页记录一致。最后说明修改内容和检查结果。",
+        "mode": "hybrid",
+        "max_turns": 14,
+        "required_tools": [
+          "tool_succeeded:{\"answer\":{\"browser_text\":{\"prefix\":\"鱼丸净重为 \",\"suffix\":\" 克。\",\"url\":\"https://example.com/production-browser-record\"},\"file_path\":\"result.json\",\"line\":null,\"pointer\":\"/amount\",\"result_pointer\":\"/text\",\"value_type\":\"number\"},\"args\":{},\"tool\":\"browser_read\",\"via\":\"\"}",
+          "tool_succeeded:{\"answer\":{\"browser_text\":{\"prefix\":\"记录校验码 \",\"suffix\":\"。\",\"url\":\"https://example.com/production-browser-record\"},\"file_path\":\"result.json\",\"line\":null,\"pointer\":\"/code\",\"result_pointer\":\"/text\",\"value_type\":\"string\"},\"args\":{},\"tool\":\"browser_read\",\"via\":\"\"}",
+          "tool_succeeded:run"
+        ],
+        "sources_open_required": null,
+        "strict_research": true,
+        "requested_capabilities": [
+          "web.read",
+          "browser.observe",
+          "browser.interact",
+          "browser.effect",
+          "knowledge.write"
+        ],
+        "output_format": "text",
+        "output_schema": "",
+        "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+        "base_url": "http://127.0.0.1:5001/v1",
+        "seed": 123456789,
+        "source_attempt_only": false,
+        "fixed_source_attempt": false
+      },
+      "stop_reason": "done",
+      "answer": "1. 调查报告：通过访问网页，获取到福州样本的鱼丸净重为 173 克 [e2]，记录校验码为 QUARTZ_851 [e2]。\n2. 文件修改：已将 `result.json` 中的 `amount` 更新为 173，`code` 更新为 \"QUARTZ_851\"。\n3. 检查结果：运行本地单元测试 `python -m unittest -v`，结果为 OK，确认文件中的两项数据与网页记录完全一致。\n\n### 调查报告\n\n根据网页记录，福州的鱼丸样本数据如下：\n- **鱼丸净重**：173 克 [e2]\n- **记录校验码**：QUARTZ_851 [e2]\n\n*来源引用：[e2] Production browser fixture — https://example.com/production-browser-record*\n\n## 引用来源\n[e2] Production browser fixture — https://example.com/production-browser-record (source c695a726decfb4f6, 0:100)",
+      "natural_task_closed": true,
+      "original_base_browser_passed": false,
+      "project_result": {
+        "amount": 173,
+        "code": "QUARTZ_851",
+        "keep": "preserved"
+      },
+      "report_before_edit": true,
+      "repair_triggered_research": false,
+      "successful_project_check": true,
+      "tool_counts": {
+        "codemode": 6,
+        "open_url": 1,
+        "browser_snapshot": 3,
+        "browser_read": 2,
+        "browser_fill": 1,
+        "browser_click": 1,
+        "submit_research_answer": 1,
+        "read_file": 1,
+        "edit": 1,
+        "run": 2
+      },
+      "clicks": [
+        {
+          "result_ref": "task_turn_effect:6c75cdc16adc49aa",
+          "ok": true,
+          "args": {
+            "ref": "b0509bca4b39be2"
+          },
+          "observed_name": "Load record",
+          "call_id": "run_f9ee523e3dc14cc4829e64b6487c9e2b:turn:3:codemode:62d38fe58b254a9a:child:0"
+        }
+      ],
+      "latest_ui": {
+        "result_ref": "task_turn_effect:1d8333d5df07abdd",
+        "page_url": "https://example.com/production-browser-record",
+        "all_buttons_clicked": false
+      },
+      "repeated_successful_click_arguments": {},
+      "failed_tool_receipts": [],
+      "evidence_files": [
+        {
+          "path": ".e2e-artifacts/unified-followthrough-composition-first/request.json",
+          "bytes": 1693,
+          "sha256": "681b2110590bf4a5780f4e7fd9da4e40b3d8a4b69150a08ffe796672b931c374"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-composition-first/task.txt",
+          "bytes": 426,
+          "sha256": "3a5f9063e118d081f34795ba9eb438536f2380c28e3ab7e6de05d7e229298c14"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-composition-first/provider.jsonl",
+          "bytes": 843155,
+          "sha256": "378beedeb3f4ff1f4817f9eb759beb428296fc25f0f4a0567135d652ca8276cd"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-composition-first/events.jsonl",
+          "bytes": 16766,
+          "sha256": "7bd61e08ff36ac9d6f10f5a5c204242f23910b81074efb3665d8c3f6951e68c6"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-composition-first/summary.json",
+          "bytes": 2193,
+          "sha256": "f8b87af3f9592b59403c4cb663c8e6a57d47837b986df594abf9bdf918ea7fc5"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-composition-first/natural-verdict.json",
+          "bytes": 2702,
+          "sha256": "f6a8b705d24c31f899ff088ce75b3fda3ba07b4af46e0e8787f7d46817d8e080"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-composition-first/project-result.json",
+          "bytes": 58,
+          "sha256": "505f1cc0a3153a67003e1eac7f718098f3d557e6667a808e9221ed8b16d2a5f4"
+        },
+        {
+          "path": ".e2e-artifacts/unified-followthrough-composition-first/receipts.json",
+          "bytes": 48887,
+          "sha256": "a365f419e550c86d3bfc73784f52ce83b1201ecafa81b88b3d489d20a4b15735"
+        }
+      ],
+      "state_file_count": 85,
+      "state_inventory_sha256": "1431d959d5e3c6da7a533f40ffa51cad30f0bd8f83af5ce63899ecf6fd050284",
+      "audit_file": {
+        "path": ".e2e-artifacts/unified-followthrough-composition-first/verification-audit.json",
+        "bytes": 5581,
+        "sha256": "fc3e990517fbb8fb74ed164a8ba738fad925afa6ff67484c166017450c38f178"
+      }
+    }
+  ],
+  "typecheck_summary": {
+    "production_and_modified": {
+      "mypy": "passed; 740 source files, Python 3.11 target",
+      "pyrefly": "0 errors; 35 historical suppressed, 164 warnings not shown",
+      "ty": "passed"
+    },
+    "all_source_roots": {
+      "roots": [
+        "codey",
+        "tests",
+        "tools"
+      ],
+      "mypy_errors": 18052,
+      "mypy_error_files": 1265,
+      "mypy_checked_files": 2568,
+      "pyrefly_errors": 21142,
+      "ty_diagnostics": 4943,
+      "passed": false
+    }
+  },
+  "limitations": [
+    "Three strict-research dynamic-button runs still failed; chat success does not replace them.",
+    "Chat dynamic-button success includes an explicit model-requested duplicate Two click.",
+    "Natural file tasks retain fixture field contracts and the original passed=false base browser metric.",
+    "Project verification remains limited/monitoring incomplete.",
+    "Raw local artifacts are retained in the workspace; this manifest does not embed their full contents."
+  ]
+}
