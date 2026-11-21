@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from codey.codemode import kernel as kernel_module
-from codey.codemode.catalog import build_codemode_catalog, render_declarations
+from codey.codemode.catalog import render_declarations, snapshot_catalog
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.replay import digest
 from codey.operations.kernel_execution import execute_turn
@@ -97,8 +97,8 @@ def test_ambiguous_or_unrequested_addresses_have_no_binding(task: str) -> None:
 
 
 @pytest.mark.parametrize("kind", ["research", "project"])
-def test_initial_binding_is_scoped_to_ordinary_chat_and_hybrid(kind: str) -> None:
-    assert build_turn_snapshot(session_for(f"打开 {URL}", kind=kind)).task_navigation_url is None
+def test_authorized_task_binding_is_shared_by_research_and_project(kind: str) -> None:
+    assert build_turn_snapshot(session_for(f"打开 {URL}", kind=kind)).task_navigation_url == URL
 
 
 def test_hybrid_uses_the_original_task_address() -> None:
@@ -200,12 +200,13 @@ def test_snapshot_roundtrip_and_runtime_use_the_same_bound_catalog(native: bool)
     snapshot = build_turn_snapshot(session, native=native)
     restored = restore_snapshot(snapshot_description(snapshot))
     assert restored == snapshot
-    catalog = build_codemode_catalog(restored.frozen_specs, task_navigation_url=restored.task_navigation_url)
+    catalog = snapshot_catalog(restored)
     specs = {spec.name: spec for spec in restored.frozen_specs}
-    assert specs["codemode"].declarations == render_declarations(catalog)
+    assert specs["codemode"].declarations == render_declarations(catalog,
+        outer_descriptions={spec.name: spec.description for spec in restored.model_specs})
     assert 'target: "task"' in specs["codemode"].declarations
     assert set(dict(specs["browser_navigate"].parameters)) == {"url"}
-    unbound = build_codemode_catalog(restored.frozen_specs)
+    unbound = snapshot_catalog(replace(restored, task_navigation_url=None))
     assert catalog.digest != unbound.digest
     assert [entry for entry in catalog.entries if entry.name != "browser_navigate"] == [
         entry for entry in unbound.entries if entry.name != "browser_navigate"]
@@ -253,11 +254,15 @@ def test_old_snapshot_has_no_implicit_binding_and_new_shapes_fail_closed() -> No
         del payload[key]
     payload["schema_version"] = 6
     del payload["task_navigation_url"]
-    assert restore_snapshot(payload) == snapshot
-    payload["task_navigation_url"] = URL
+    with pytest.raises(ValueError, match="unsupported captured turn snapshot"):
+        restore_snapshot(payload)
+    legacy = {**snapshot_description(snapshot), "schema_version": 11}
+    assert restore_snapshot(legacy) == replace(snapshot, task_navigation_selector=False)
+    payload = snapshot_description(snapshot)
+    payload["unknown"] = None
     with pytest.raises(ValueError, match="shape"):
         restore_snapshot(payload)
-    payload["schema_version"] = 7
+    payload = snapshot_description(snapshot)
     payload["task_navigation_url"] = 42
     with pytest.raises(ValueError):
         restore_snapshot(payload)

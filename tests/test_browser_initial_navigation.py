@@ -89,7 +89,7 @@ def test_ordinary_navigation_does_not_override_authorization_or_existing_work(st
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
 @pytest.mark.parametrize("explicit_open", [False, True])
-def test_original_hybrid_replies_keep_navigation_but_cannot_bypass_the_bound_file_menu(
+def test_original_hybrid_replies_keep_navigation_but_cannot_edit_with_an_invalid_read_receipt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, explicit_open: bool,
 ) -> None:
     fixture = parse_json_object(FIXTURE.read_text(encoding="utf-8"))
@@ -113,8 +113,17 @@ def test_original_hybrid_replies_keep_navigation_but_cannot_bypass_the_bound_fil
     for name in ("browser_click", "browser_read"):
         selected = [receipt for receipt in receipts if receipt.result.call.name == name]
         assert len(selected) == 1 and selected[0].result.ok, name
-    assert not any(receipt.result.call.name in {"read_file", "edit"} for receipt in receipts)
-    assert row["first_rejection"] is not None
+    reads = [receipt.result for receipt in receipts if receipt.result.call.name == "read_file"]
+    assert len(reads) == 1 and reads[0].ok and reads[0].call.args == {"path": "result.json"}
+    assert not any(receipt.result.call.name == "edit" for receipt in receipts)
+    parents = [receipt.result for receipt in receipts if receipt.result.call.name == "codemode"]
+    assert not parents[-1].ok
+    assert "JSON field edit rejected: use an original complete tools.read_file result" in parents[-1].model_text
+    assert row["project_result"] == {"amount": 0, "code": "unknown"}
+    assert row["first_rejection"] is None
+    rejection = decode_json_object(row["first_tool_rejection"])
+    assert rejection["tool"] == "codemode" and rejection["ok"] is False
+    assert rejection["model_text"] == parents[-1].model_text
     events = [parse_json_object(line) for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
     first = next(decode_json_object(event["payload"]) for event in events
                  if event.get("type") == "wire_attempt" and event.get("phase") == "request")

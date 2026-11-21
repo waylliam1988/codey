@@ -81,7 +81,7 @@ def test_wrong_page_recovery_reuses_the_existing_task_navigation_selector(monkey
     monkeypatch.setattr(browser, "document_identity", document)
     try:
         offered, hint = task_handoff(session, snapshot, CompletionContext(), browser)
-        assert '"inputs":{"target":"task"}' in hint
+        assert '{"args":{"target":"task"},"tool":"browser_navigate"}' in hint
         assert "instead of retyping its URL" in hint
         assert set(offered.inventory_names) == set(snapshot.inventory_names)
         assert not session.executed

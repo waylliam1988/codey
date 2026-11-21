@@ -53,8 +53,7 @@ def test_successful_navigation_to_404_and_empty_snapshot_offer_the_bound_selecto
     offered, hint = browser_task_handoff(session, snapshot, CompletionContext(browser_document=document), 2,
                                          delivered_results=[parent])
     assert session._memory_results["wrong-navigation"].ok
-    assert next_step(hint) == {"tool": "codemode", "args": {
-        "code": "return unwrap(await tools.browser_navigate(inputs));", "inputs": {"target": "task"}}}
+    assert next_step(hint) == {"tool": "browser_navigate", "args": {"target": "task"}}
     assert offered.task_navigation_url == URL
 
 

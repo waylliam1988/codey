@@ -7,6 +7,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from codey.codemode.navigation import task_navigation_schema
 from codey.codemode.types import (
     CatalogNamespaceSummary,
     CatalogSearchItem,
@@ -165,8 +166,7 @@ def build_codemode_catalog(
                 entry = replace(entry, description='Use {target: "task"} to open the task URL at the chosen time. '
                     'Use {url: "..."} for other authorized pages. ' + entry.description,
                     parameters={"anyOf": [
-                        {"type": "object", "properties": {"target": {"type": "string", "enum": ["task"]}},
-                         "required": ["target"], "additionalProperties": False},
+                        task_navigation_schema(),
                         canonical_json_object(entry.parameters),
                     ]})
             allowed.append(entry)

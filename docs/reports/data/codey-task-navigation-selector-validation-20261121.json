@@ -1,0 +1,1310 @@
+{
+  "date": "2026-11-21",
+  "timezone": "Asia/Taipei",
+  "scope": "task URL selector in actual direct browser navigation contract; original CodeMode execution retained",
+  "owned_python_files": [
+    "codey/codemode/catalog.py",
+    "codey/codemode/host.py",
+    "codey/codemode/navigation.py",
+    "codey/operations/browser_task_handoff.py",
+    "codey/operations/kernel_protocol.py",
+    "codey/operations/provider_receipts.py",
+    "tests/test_browser_initial_navigation.py",
+    "tests/test_browser_navigation_handoff.py",
+    "tests/test_deferred_source_prefetch.py",
+    "tests/test_task_navigation_binding.py",
+    "tests/test_task_navigation_selector.py"
+  ],
+  "original_failure_navigation_requests": [
+    {
+      "exchange": 3,
+      "action": {
+        "tool": "browser_navigate",
+        "args": {
+          "url": "https://example.com/production_browser_record"
+        }
+      },
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "exchange": 5,
+      "action": {
+        "tool": "browser_navigate",
+        "args": {
+          "url": "https://example.com/production_browser_record"
+        }
+      },
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "exchange": 8,
+      "action": {
+        "tool": "browser_navigate",
+        "args": {
+          "url": "https://example.com/production_browser_record"
+        }
+      },
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "exchange": 10,
+      "action": {
+        "tool": "browser_navigate",
+        "args": {
+          "url": "https://example.com/production_browser_record"
+        }
+      },
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "exchange": 12,
+      "action": {
+        "tool": "browser_navigate",
+        "args": {
+          "url": "https://example.com/production_browser_record"
+        }
+      },
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "exchange": 14,
+      "action": {
+        "tool": "browser_navigate",
+        "args": {
+          "url": "https://example.com/production_browser_record"
+        }
+      },
+      "schema": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "natural_runs": {
+    "repair": {
+      "directory": ".e2e-artifacts/task-navigation-natural-repair-first",
+      "verdict": {
+        "mode": "hybrid",
+        "passed": false,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_fill",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "codemode",
+          "edit",
+          "list_dir",
+          "read_file",
+          "run",
+          "submit_research_answer"
+        ],
+        "answer": "通过运行项目已有检查（`python -m unittest -v`），定位到记录同步失败的原因是 `result.json` 中的数据与真实记录不符：\n- 初始 `amount` 为 `0`，而预期为 `173`。\n- 初始 `code` 为 `\"\"`，而预期为 `\"QUARTZ_851\"`。\n\n通过打开生产环境记录页面 [e2] (`https://example.com/production-browser-record`)，在输入 `Locality` 为 \"福州\" 后加载记录，获取到以下真实数据：\n- **净重 (amount)**: 173 克 [e2]\n- **校验码 (code)**: QUARTZ_851 [e2]\n\n已修复 `result.json` 文件，并将 `amount` 更新为 `173`，`code` 更新为 `\"QUARTZ_851\"`。重新验证后，单元测试已全部通过。\n\n### 调查说明与修复结果\n\n**1. 现状分析**\n通过运行项目已有检查（`python -m unittest -v`），定位到记录同步失败的原因是 `result.json` 中的数据与真实记录不符：\n- 初始 `amount` 为 `0`，而预期为 `173`。\n- 初始 `code` 为 `\"\"`，而预期为 `\"QUARTZ_851\"`。\n\n**2. 真实记录核对**\n打开生产环境记录页面 [e2] (`https://example.com/production-browser-record`)，在输入 `Locality` 为 \"福州\" 后加载记录，获取到以下真实数据：\n- **净重 (amount)**: 173 克 [e2]\n- **校验码 (code)**: QUARTZ_851 [e2]\n\n**3. 修复内容**\n已更新 `result.json` 文件，保留原有字段结构，并将数值修正如下：\n- `amount`: 173\n- `code`: \"QUARTZ_851\"\n\n**4. 检查结果**\n重新运行单元测试，验证通过。`test_record.py` 中的 `test_record` 测试项现在已成功通过（`AssertionError: 0 != 173` 已消除）。\n\n## 引用来源\n[e2] Production browser fixture — https://example.com/production-browser-record (source c695a726decfb4f6, 0:100)",
+        "project_result": {
+          "amount": 173,
+          "code": "QUARTZ_851",
+          "keep": "preserved"
+        },
+        "navigations": [
+          "https://example.com/production-browser-record"
+        ],
+        "source_reads": 2,
+        "failed_edits": 0,
+        "changed_after_read": false,
+        "downloads": [],
+        "failed_stale_refs": 0,
+        "stale_ref_injected": false,
+        "posthoc_output_checks": {},
+        "explanation_output": false,
+        "source_failure_receipts": [],
+        "first_tool_rejection": {
+          "identity": "task_turn_effect:d7b4ae0445181576",
+          "tool": "run",
+          "ok": false,
+          "args": {
+            "command": "python -m unittest -v",
+            "path": "."
+          },
+          "model_text": "exit 1: python -m unittest -v\nExit code scope: process\nFull execution output recoverable: true\nFailure excerpts (reported by command):\nFAILED (failures=1)\n[stderr]\ntest_record (test_record.RecordCheck.test_record) ... FAIL\r\n\r\n======================================================================\r\nFAIL: test_record (test_record.RecordCheck.test_record)\r\n----------------------------------------------------------------------\r\nTraceback (most recent call last):\r\n  File \"C:\\Users\\Administrator\\AppData\\Local\\Temp\\codey-browser-live-project-waia26nv\\test_record.py\", line 9, in test_record\r\n    self.assertEqual(record[\"amount\"], 173)\r\nAssertionError: 0 != 173\r\n\r\n----------------------------------------------------------------------\r\nRan 1 test in 0.002s\r\n\r\nFAILED (failures=1)",
+          "canonical": {
+            "tool_task": {
+              "execution_ref": "tool_execution:067f358aebd9c67a",
+              "task_ref": "tool_task:0da3a83e9aa9c8d0"
+            }
+          },
+          "audit": {
+            "exit_code": 1
+          }
+        },
+        "first_edit_rejection": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "facts_match": true,
+        "assembled_upload": false,
+        "source_attempt_only": false,
+        "fixed_source_attempt": false,
+        "final_file_correct": true,
+        "version_check_reached": false,
+        "conflict_injected": false,
+        "conflict_recovery_covered": false,
+        "conflict_coverage": "not_reached",
+        "first_rejection": null,
+        "repair_attempts": [],
+        "seconds": 261.828,
+        "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+        "restored_snapshots": 0,
+        "scope": "controlled_fixture_production_entry_and_kernel",
+        "fixed_copy_offered_exchanges": [
+          9,
+          10
+        ],
+        "preserved_other_fields": true,
+        "report_before_edit": false,
+        "successful_project_check": true,
+        "repair_triggered_research": false,
+        "probe_configuration": {
+          "strict_research": true,
+          "project_verification_config": true,
+          "max_turns": 14,
+          "seed": 123456789,
+          "temperature": 0
+        },
+        "natural_task_closed": false
+      },
+      "actual_navigation_requests": [
+        {
+          "exchange": 3,
+          "schema": {
+            "additionalProperties": false,
+            "properties": {
+              "target": {
+                "enum": [
+                  "task"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "target"
+            ],
+            "type": "object"
+          },
+          "model_action": {
+            "tool": "browser_navigate",
+            "args": {
+              "target": "task"
+            }
+          }
+        }
+      ],
+      "physical_navigations": [
+        {
+          "effect_id": "task_turn_effect:5f8747414e1affff",
+          "args": {
+            "url": "https://example.com/production-browser-record"
+          },
+          "ok": true,
+          "canonical": {
+            "value": {
+              "action": "navigate",
+              "content_type": "text/html",
+              "delivery": "delivered",
+              "generation": 1,
+              "http_status": 200,
+              "page_id": "2F387B05FD1B8A7CA576DF6BAD0EFFCF",
+              "previous_url": "about:blank",
+              "text": "Opened https://example.com/production-browser-record",
+              "url": "https://example.com/production-browser-record"
+            }
+          }
+        }
+      ],
+      "project_checks": [
+        {
+          "effect_id": "task_turn_effect:d7b4ae0445181576",
+          "args": {
+            "command": "python -m unittest -v",
+            "path": "."
+          },
+          "ok": false,
+          "exit_code": 1
+        },
+        {
+          "effect_id": "tool_execution:067f358aebd9c67a",
+          "args": {
+            "command": "python -m unittest -v",
+            "path": "."
+          },
+          "ok": false,
+          "exit_code": 1
+        },
+        {
+          "effect_id": "task_turn_effect:3c0453ca0ea374a5",
+          "args": {
+            "command": "python -m unittest -v",
+            "path": "."
+          },
+          "ok": true,
+          "exit_code": 0
+        },
+        {
+          "effect_id": "tool_execution:e2411c153ba45a00",
+          "args": {
+            "command": "python -m unittest -v",
+            "path": "."
+          },
+          "ok": true,
+          "exit_code": 0
+        }
+      ],
+      "model_actions": [
+        {
+          "exchange": 1,
+          "tool": "list_dir",
+          "args": {
+            "path": "."
+          }
+        },
+        {
+          "exchange": 2,
+          "tool": "read_file",
+          "args": {
+            "path": "test_record.py"
+          }
+        },
+        {
+          "exchange": 3,
+          "tool": "browser_navigate",
+          "args": {
+            "target": "task"
+          }
+        },
+        {
+          "exchange": 4,
+          "tool": "browser_read",
+          "args": {
+            "offset": 0
+          }
+        },
+        {
+          "exchange": 5,
+          "tool": "browser_snapshot",
+          "args": {}
+        },
+        {
+          "exchange": 6,
+          "tool": "browser_fill",
+          "args": {
+            "ref": {
+              "name": "Locality",
+              "role": "textbox"
+            },
+            "value": "福州"
+          }
+        },
+        {
+          "exchange": 7,
+          "tool": "browser_click",
+          "args": {
+            "ref": {
+              "name": "Load record",
+              "role": "button"
+            },
+            "purpose": "controls"
+          }
+        },
+        {
+          "exchange": 8,
+          "tool": "browser_read",
+          "args": {}
+        },
+        {
+          "exchange": 9,
+          "tool": "run",
+          "args": {
+            "command": "python -m unittest -v",
+            "path": "."
+          }
+        },
+        {
+          "exchange": 10,
+          "tool": "edit",
+          "args": {
+            "path": "result.json"
+          }
+        },
+        {
+          "exchange": 11,
+          "tool": "run",
+          "args": {
+            "command": "python -m unittest -v",
+            "path": "."
+          }
+        },
+        {
+          "exchange": 12,
+          "tool": "submit_research_answer",
+          "args": {
+            "markdown": "### 调查说明与修复结果\n\n**1. 现状分析**\n最初运行项目检查时，`test_record.py` 中的测试失败，原因是 `result.json` 中的数据与预期不符：\n- 预期 `amount` 为 `173`，但初始值为 `0`。\n- 预期 `code` 为 `",
+            "state": "answered"
+          }
+        },
+        {
+          "exchange": 13,
+          "tool": "submit_research_answer",
+          "args": {
+            "markdown": "### 调查说明与修复结果\n\n**1. 现状分析**\n通过运行项目已有检查（`python -m unittest -v`），定位到记录同步失败的原因是 `result.json` 中的数据与真实记录不符：\n- 初始 `amount` 为 `0`，而预期为 `173`。\n- 初始 `code` 为 `\"\"`，而预期为 `\"QUARTZ_851\"`。\n\n**2. 真实记录核对**\n打开生产环境记录页面 [e2] (`https://example.com/production-browser-record`)，在输入 `Locality` 为 \"福州\" 后加载记录，获取到以下真实数据：\n- **净重 (amount)**: 173 克 [e2]\n- **校验码 (code)**: QUARTZ_851 [e2]\n\n**3. 修复内容**\n已更新 `result.json` 文件，保留原有字段结构，并将数值修正如下：\n- `amount`: 173\n- `code`: \"QUARTZ_851\"\n\n**4. 检查结果**\n重新运行单元测试，验证通过。`test_record.py` 中的 `test_record` 测试项现在已成功通过（`AssertionError: 0 != 173` 已消除）。",
+            "state": "answered"
+          }
+        },
+        {
+          "exchange": 14,
+          "tool": "done",
+          "args": {
+            "summary": "通过运行项目已有检查（`python -m unittest -v`），定位到记录同步失败的原因是 `result.json` 中的数据与真实记录不符：\n- 初始 `amount` 为 `0`，而预期为 `173`。\n- 初始 `code` 为 `\"\"`，而预期为 `\"QUARTZ_851\"`。\n\n通过打开生产环境记录页面 [e2] (`https://example.com/production-browser-record`)，在输入 `Locality` 为 \"福州\" 后加载记录，获取到以下真实数据：\n- **净重 (amount)**: 173 克 [e2]\n- **校验码 (code)**: QUARTZ_851 [e2]\n\n已修复 `result.json` 文件，并将 `amount` 更新为 `173`，`code` 更新为 `\"QUARTZ_851\"`。重新验证后，单元测试已全部通过。",
+            "memory_candidates": [
+              {
+                "kind": "preference",
+                "quote": "请先检查项目现有文件并运行项目已有检查，定位记录同步失败的原因。",
+                "quote_end": 45,
+                "quote_start": 0,
+                "text": "在修复数据不一致问题时，优先通过运行现有单元测试来定位错误点。",
+                "slot": "verification.strategy",
+                "value": "unittest_first"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "composition": {
+      "directory": ".e2e-artifacts/task-navigation-natural-composition-first",
+      "verdict": {
+        "mode": "hybrid",
+        "passed": false,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_fill",
+          "browser_read",
+          "browser_snapshot",
+          "codemode",
+          "edit",
+          "open_url",
+          "read_file",
+          "run",
+          "submit_research_answer"
+        ],
+        "answer": "1. 调查报告：通过访问网页并输入 '福州' 后，获取到鱼丸净重为 173 克 [e2]，记录校验码为 QUARTZ_851 [e2]。\n2. 文件更新：已将 `result.json` 中的 `amount` 更新为 173，`code` 更新为 'QUARTZ_851'。\n3. 检查结果：运行本地单元测试 `python -m unittest -v`，结果为 OK，确认文件中的数据与网页记录完全一致。\n\n### 调查报告\n\n根据网页记录，福州的鱼丸数据如下：\n- **鱼丸净重**：173 克 [e2]\n- **记录校验码**：QUARTZ_851 [e2]\n\n*来源引用：[e2] Production browser fixture — https://example.com/production-browser-record*\n\n## 引用来源\n[e2] Production browser fixture — https://example.com/production-browser-record (source c695a726decfb4f6, 0:100)",
+        "project_result": {
+          "amount": 173,
+          "code": "QUARTZ_851",
+          "keep": "preserved"
+        },
+        "navigations": [
+          "https://example.com/production-browser-record"
+        ],
+        "source_reads": 2,
+        "failed_edits": 0,
+        "changed_after_read": false,
+        "downloads": [],
+        "failed_stale_refs": 0,
+        "stale_ref_injected": false,
+        "posthoc_output_checks": {},
+        "explanation_output": false,
+        "source_failure_receipts": [],
+        "first_tool_rejection": null,
+        "first_edit_rejection": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "facts_match": true,
+        "assembled_upload": false,
+        "source_attempt_only": false,
+        "fixed_source_attempt": false,
+        "final_file_correct": true,
+        "version_check_reached": false,
+        "conflict_injected": false,
+        "conflict_recovery_covered": false,
+        "conflict_coverage": "not_reached",
+        "first_rejection": null,
+        "repair_attempts": [],
+        "seconds": 118.781,
+        "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+        "restored_snapshots": 0,
+        "scope": "controlled_fixture_production_entry_and_kernel",
+        "fixed_copy_offered_exchanges": [
+          5,
+          6
+        ],
+        "preserved_other_fields": true,
+        "report_before_edit": true,
+        "successful_project_check": true,
+        "repair_triggered_research": false,
+        "probe_configuration": {
+          "strict_research": true,
+          "project_verification_config": true,
+          "max_turns": 14,
+          "seed": 123456789,
+          "temperature": 0
+        },
+        "natural_task_closed": true
+      },
+      "actual_navigation_requests": [],
+      "physical_navigations": [],
+      "project_checks": [
+        {
+          "effect_id": "task_turn_effect:40f61ebe32fd65b6",
+          "args": {
+            "command": "python -m unittest -v",
+            "path": "."
+          },
+          "ok": true,
+          "exit_code": 0
+        },
+        {
+          "effect_id": "tool_execution:90b97a6adcb5ca2c",
+          "args": {
+            "command": "python -m unittest -v",
+            "path": "."
+          },
+          "ok": true,
+          "exit_code": 0
+        }
+      ],
+      "model_actions": [
+        {
+          "exchange": 1,
+          "tool": "browser_read",
+          "args": {}
+        },
+        {
+          "exchange": 2,
+          "tool": "browser_fill",
+          "args": {
+            "ref": {
+              "name": "Locality",
+              "role": "textbox"
+            },
+            "value": "福州"
+          }
+        },
+        {
+          "exchange": 3,
+          "tool": "browser_click",
+          "args": {
+            "ref": {
+              "name": "Load record",
+              "role": "button"
+            },
+            "purpose": "action"
+          }
+        },
+        {
+          "exchange": 4,
+          "tool": "browser_read",
+          "args": {}
+        },
+        {
+          "exchange": 5,
+          "tool": "submit_research_answer",
+          "args": {
+            "markdown": "### 调查报告\n\n根据网页记录，福州的鱼丸数据如下：\n- **鱼丸净重**：173 克 [e2]\n- **记录校验码**：QUARTZ_851 [e2]\n\n*来源引用：[e2] Production browser fixture — https://example.com/production-browser-record*",
+            "state": "answered"
+          }
+        },
+        {
+          "exchange": 6,
+          "tool": "edit",
+          "args": {
+            "path": "result.json"
+          }
+        },
+        {
+          "exchange": 7,
+          "tool": "run",
+          "args": {
+            "command": "python -m unittest -v",
+            "path": "."
+          }
+        },
+        {
+          "exchange": 8,
+          "tool": "done",
+          "args": {
+            "summary": "1. 调查报告：通过访问网页并输入 '福州' 后，获取到鱼丸净重为 173 克 [e2]，记录校验码为 QUARTZ_851 [e2]。\n2. 文件更新：已将 `result.json` 中的 `amount` 更新为 173，`code` 更新为 'QUARTZ_851'。\n3. 检查结果：运行本地单元测试 `python -m unittest -v`，结果为 OK，确认文件中的数据与网页记录完全一致。",
+            "memory_candidates": []
+          }
+        }
+      ]
+    }
+  },
+  "production_static_checks": [
+    {
+      "name": "ruff",
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/task-navigation-ruff-first.log"
+    },
+    {
+      "name": "production-mypy",
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/task-navigation-production-mypy-first.log"
+    },
+    {
+      "name": "production-pyrefly",
+      "command": [
+        "python",
+        "-m",
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/task-navigation-production-pyrefly-first.log"
+    },
+    {
+      "name": "production-ty",
+      "command": [
+        "python",
+        "-m",
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/task-navigation-production-ty-first.log"
+    },
+    {
+      "name": "owned-mypy",
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey/codemode/catalog.py",
+        "codey/codemode/host.py",
+        "codey/codemode/navigation.py",
+        "codey/operations/browser_task_handoff.py",
+        "codey/operations/kernel_protocol.py",
+        "codey/operations/provider_receipts.py",
+        "tests/test_deferred_source_prefetch.py",
+        "tests/test_task_navigation_selector.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/task-navigation-owned-mypy-first.log"
+    },
+    {
+      "name": "owned-pyrefly",
+      "command": [
+        "python",
+        "-m",
+        "pyrefly",
+        "check",
+        "codey/codemode/catalog.py",
+        "codey/codemode/host.py",
+        "codey/codemode/navigation.py",
+        "codey/operations/browser_task_handoff.py",
+        "codey/operations/kernel_protocol.py",
+        "codey/operations/provider_receipts.py",
+        "tests/test_deferred_source_prefetch.py",
+        "tests/test_task_navigation_selector.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/task-navigation-owned-pyrefly-first.log"
+    },
+    {
+      "name": "owned-ty",
+      "command": [
+        "python",
+        "-m",
+        "ty",
+        "check",
+        "codey/codemode/catalog.py",
+        "codey/codemode/host.py",
+        "codey/codemode/navigation.py",
+        "codey/operations/browser_task_handoff.py",
+        "codey/operations/kernel_protocol.py",
+        "codey/operations/provider_receipts.py",
+        "tests/test_deferred_source_prefetch.py",
+        "tests/test_task_navigation_selector.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/task-navigation-owned-ty-first.log"
+    },
+    {
+      "name": "precision",
+      "command": [
+        "python",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/task-navigation-precision-first.log"
+    }
+  ],
+  "final_owned_static_checks": [
+    {
+      "name": "ruff",
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/task-navigation-ruff-final-third.log"
+    },
+    {
+      "name": "owned-mypy",
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey/codemode/catalog.py",
+        "codey/codemode/host.py",
+        "codey/codemode/navigation.py",
+        "codey/operations/browser_task_handoff.py",
+        "codey/operations/kernel_protocol.py",
+        "codey/operations/provider_receipts.py",
+        "tests/test_browser_initial_navigation.py",
+        "tests/test_browser_navigation_handoff.py",
+        "tests/test_deferred_source_prefetch.py",
+        "tests/test_task_navigation_binding.py",
+        "tests/test_task_navigation_selector.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/task-navigation-owned-mypy-final-third.log"
+    },
+    {
+      "name": "owned-pyrefly",
+      "command": [
+        "python",
+        "-m",
+        "pyrefly",
+        "check",
+        "codey/codemode/catalog.py",
+        "codey/codemode/host.py",
+        "codey/codemode/navigation.py",
+        "codey/operations/browser_task_handoff.py",
+        "codey/operations/kernel_protocol.py",
+        "codey/operations/provider_receipts.py",
+        "tests/test_browser_initial_navigation.py",
+        "tests/test_browser_navigation_handoff.py",
+        "tests/test_deferred_source_prefetch.py",
+        "tests/test_task_navigation_binding.py",
+        "tests/test_task_navigation_selector.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/task-navigation-owned-pyrefly-final-third.log"
+    },
+    {
+      "name": "owned-ty",
+      "command": [
+        "python",
+        "-m",
+        "ty",
+        "check",
+        "codey/codemode/catalog.py",
+        "codey/codemode/host.py",
+        "codey/codemode/navigation.py",
+        "codey/operations/browser_task_handoff.py",
+        "codey/operations/kernel_protocol.py",
+        "codey/operations/provider_receipts.py",
+        "tests/test_browser_initial_navigation.py",
+        "tests/test_browser_navigation_handoff.py",
+        "tests/test_deferred_source_prefetch.py",
+        "tests/test_task_navigation_binding.py",
+        "tests/test_task_navigation_selector.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/task-navigation-owned-ty-final-third.log"
+    },
+    {
+      "name": "precision",
+      "command": [
+        "python",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/task-navigation-precision-final-third.log"
+    }
+  ],
+  "full_tree_type_checks": {
+    "mypy": {
+      "log": ".e2e-artifacts/task-navigation-all-tree-mypy-first.log",
+      "tail": "Found 18059 errors in 1266 files (checked 2563 source files)",
+      "owned_diagnostics": []
+    },
+    "pyrefly": {
+      "log": ".e2e-artifacts/task-navigation-all-tree-pyrefly-first.log",
+      "tail": " INFO 21,148 errors (154 suppressed, 629 warnings not shown)",
+      "owned_diagnostics": []
+    },
+    "ty": {
+      "log": ".e2e-artifacts/task-navigation-all-tree-ty-first.log",
+      "tail": "Found 4947 diagnostics",
+      "owned_diagnostics": []
+    }
+  },
+  "regression_results": [
+    {
+      "log": ".e2e-artifacts/task-navigation-core-second.log",
+      "summary": [
+        "5 failed, 72 passed in 70.67s (0:01:10)"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/task-navigation-initial-navigation-third.log",
+      "summary": [
+        "84 passed in 42.41s"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/task-navigation-legacy-migration-first.log",
+      "summary": [
+        "5 passed, 51 deselected in 5.02s"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/task-navigation-legacy-regression-second.log",
+      "summary": [
+        "2 failed, 178 passed in 144.85s (0:02:24)"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/task-navigation-regression-first.log",
+      "summary": [
+        "4 failed, 343 passed in 425.23s (0:07:05)"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/task-navigation-unit-first.log",
+      "summary": [
+        "19 passed, 2 deselected in 4.72s"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/task-navigation-wire-first.log",
+      "summary": [
+        "2 failed, 11 deselected in 21.84s"
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/events.jsonl",
+      "bytes": 24513,
+      "sha256": "30bf06e0218e04f2da52c9303af1d70f5fc1545294d1c194cf648f4eb92bee0f"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/natural-verdict.json",
+      "bytes": 5675,
+      "sha256": "d6aeba688323a6144ab625ad59af55542a669f7cdf72b0cc2527cc52118c69e9"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/project-result.json",
+      "bytes": 53,
+      "sha256": "8e9254cf167fa184975774cd732d4f8ed02ba3e7911e3542ef2446ff809336dc"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/provider.jsonl",
+      "bytes": 1360232,
+      "sha256": "2a0ab5d946f34a8176d35b74217888c67a29ca9f1a712eb39bbc7e4e6ad737bb"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/receipts.json",
+      "bytes": 49623,
+      "sha256": "eb4a1cc29a58408829625b333040fb4a1e9acc37096e190701b1f6076456f184"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/request.json",
+      "bytes": 1677,
+      "sha256": "322fe9da227218075e5913fe35a49c41f632963166bd7d8efd705e0cd3906b09"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/state/durable.sqlite3",
+      "bytes": 8966144,
+      "sha256": "16734b21c7d48a5b5fda2aaa2b93566e80588f2808c6c5ee182e613ac9e57100"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/summary.json",
+      "bytes": 5285,
+      "sha256": "4aed247477f4b10ba0de70c9c674b0d2dde03ce271b0c6c02edc27521c0f3e46"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/task.txt",
+      "bytes": 410,
+      "sha256": "faa00a1b0d147b2513f8ac1541e82e491529903f27bd7e381d9bda19316020c8"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-all-tree-mypy-first.log",
+      "bytes": 2550337,
+      "sha256": "b8a6bce9f06334595d4344cffc90643322082add4e77531538f5683cae0263b6"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-all-tree-pyrefly-first.log",
+      "bytes": 6733276,
+      "sha256": "89297172ad9fa06f8448195b28554a5dd4372f85a6f3a6b4eeb28a15f58d4828"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-all-tree-ty-first.log",
+      "bytes": 2664350,
+      "sha256": "7269116a201f7dddfc876c528f2f2b2f182c0644a4d9b23d0c7f34bd29efb8f9"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-core-second.log",
+      "bytes": 9709,
+      "sha256": "9982c6c301635c254ec2684488685f8239a550d339fab8a47d462abab15ad844"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-initial-navigation-third.log",
+      "bytes": 249,
+      "sha256": "4151ee55c0c2ae8ad35f3f84f50dc20a60ee4c58f0b7f8bf45921c33f60d788d"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-legacy-migration-first.log",
+      "bytes": 181,
+      "sha256": "52ae0ef1baf263f57524cdf2ec17cbac061c119c809231711e1796b7234cfb9e"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-legacy-regression-second.log",
+      "bytes": 7114,
+      "sha256": "41217f12ca258190f02c7d1ae00561a02a9bef79ecfb7970516b8e501f183227"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-composition-first/events.jsonl",
+      "bytes": 15873,
+      "sha256": "962c6fbb135be02abceb2f0a716003505c08943832be8943a832bafa955394c8"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-composition-first/natural-verdict.json",
+      "bytes": 2592,
+      "sha256": "91cef421fde48302a41a892a8765996ad6400f6d70636754b8b212e8c27cea63"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-composition-first/project-result.json",
+      "bytes": 58,
+      "sha256": "505f1cc0a3153a67003e1eac7f718098f3d557e6667a808e9221ed8b16d2a5f4"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-composition-first/proposals.jsonl",
+      "bytes": 1403,
+      "sha256": "d56edf590d3f07091d2f855fe1f3fa78dff69acecee17de94e7996cdf74154e7"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-composition-first/provider.jsonl",
+      "bytes": 733467,
+      "sha256": "a28702d63c4258708c5ba2c20b19c0f21199a222a554f616cfdb3031ccc2630e"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-composition-first/receipts.json",
+      "bytes": 42665,
+      "sha256": "e1d8388acf2f966f195fee38691a409cd3412872666e2ea92fcbfe17ca495fd4"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-composition-first/request.json",
+      "bytes": 1693,
+      "sha256": "681b2110590bf4a5780f4e7fd9da4e40b3d8a4b69150a08ffe796672b931c374"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-composition-first/state/durable.sqlite3",
+      "bytes": 5672960,
+      "sha256": "a22485dcfb0747f3e25bb431e0c1f2da18260c939b5e98884656c7cea7985874"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-composition-first/summary.json",
+      "bytes": 2186,
+      "sha256": "5025f0b45d34b0ea54195c1974eef939d3bf2e9094b746ee6c00679caf7b1dd8"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-composition-first/task.txt",
+      "bytes": 426,
+      "sha256": "3a5f9063e118d081f34795ba9eb438536f2380c28e3ab7e6de05d7e229298c14"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-composition-first.log",
+      "bytes": 2545,
+      "sha256": "1988adbbdc62374498fd1d132cfe4fe186d664e202e7bc04454d8c94f3f0c953"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-repair-first/events.jsonl",
+      "bytes": 22258,
+      "sha256": "daca7dfcca28cebeb8d41290db7e3d12b708f1f4d76cb552b8cd059f958360f6"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-repair-first/natural-verdict.json",
+      "bytes": 4845,
+      "sha256": "7df4219a25d9abcff7826e55c8073a752df91b1608afd0eb65f232cfa881fc5d"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-repair-first/project-result.json",
+      "bytes": 58,
+      "sha256": "505f1cc0a3153a67003e1eac7f718098f3d557e6667a808e9221ed8b16d2a5f4"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-repair-first/proposals.jsonl",
+      "bytes": 3026,
+      "sha256": "c980aa393841b508b4e2023a1dca81abb00027b5545a02dfc905a82a9f4eb0b2"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-repair-first/provider.jsonl",
+      "bytes": 1396348,
+      "sha256": "deef5bdf520cb6e8bed87d2187b02d099fb7aef4dfaee808254b516e94f983f4"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-repair-first/receipts.json",
+      "bytes": 60796,
+      "sha256": "c79adc905c8a532716b0f982c3ce6f653e0a98c1702ca83ddea0f63112281c76"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-repair-first/request.json",
+      "bytes": 1677,
+      "sha256": "322fe9da227218075e5913fe35a49c41f632963166bd7d8efd705e0cd3906b09"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-repair-first/state/durable.sqlite3",
+      "bytes": 10194944,
+      "sha256": "aa8c69ed331656e77327e30b1af3308c56949a3b3b53aa6e487d62c178b33b4f"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-repair-first/summary.json",
+      "bytes": 4436,
+      "sha256": "aeb8572687919f7a7208ce17f1bf74ba7c028732bbcb3b3359c66a484589bad6"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-repair-first/task.txt",
+      "bytes": 410,
+      "sha256": "faa00a1b0d147b2513f8ac1541e82e491529903f27bd7e381d9bda19316020c8"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-natural-repair-first.log",
+      "bytes": 4977,
+      "sha256": "e17c7b9d3a2cdaeeb48f8b737d88b839e01b2b20488958926fcd52441ebefccd"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-owned-mypy-final-second.log",
+      "bytes": 45,
+      "sha256": "ce32e21ee307d2da61637151f2f239cf8568be270711ff04e8e3025805ab7f57"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-owned-mypy-final-third.log",
+      "bytes": 45,
+      "sha256": "ce32e21ee307d2da61637151f2f239cf8568be270711ff04e8e3025805ab7f57"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-owned-mypy-final.log",
+      "bytes": 44,
+      "sha256": "f645b10e21546f038559fbaaffb91f957d61ada15bed410cfd1fd85e15524598"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-owned-mypy-first.log",
+      "bytes": 44,
+      "sha256": "7aefcacc6d445354a115cf76fcdea696165be7ad8cf9b86a60ea98727c6e96f6"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-owned-precision-final.json",
+      "bytes": 522,
+      "sha256": "e6f68d25b3ec5207c87aa8f8961a49ebcff65557a32233013f82f71c01aaaba6"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-owned-pyrefly-final-second.log",
+      "bytes": 39,
+      "sha256": "25f20fcc07c9cf500d104c4e88d6824af14f81e4a5e9aa1b6d1ea866525b84e4"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-owned-pyrefly-final-third.log",
+      "bytes": 39,
+      "sha256": "25f20fcc07c9cf500d104c4e88d6824af14f81e4a5e9aa1b6d1ea866525b84e4"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-owned-pyrefly-final.log",
+      "bytes": 39,
+      "sha256": "25f20fcc07c9cf500d104c4e88d6824af14f81e4a5e9aa1b6d1ea866525b84e4"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-owned-pyrefly-first.log",
+      "bytes": 39,
+      "sha256": "25f20fcc07c9cf500d104c4e88d6824af14f81e4a5e9aa1b6d1ea866525b84e4"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-owned-python.txt",
+      "bytes": 402,
+      "sha256": "566ea9ed6fdba5e226f9579d5aa9a09a1617db616dfa29b61698f24cfe6d663f"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-owned-ty-final-second.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-owned-ty-final-third.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-owned-ty-final.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-owned-ty-first.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-precision-final-second.log",
+      "bytes": 65,
+      "sha256": "a4235b3bf75e4945e89304625234e20fe199890bf1400658fd27a5d77cdb5c44"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-precision-final-third.log",
+      "bytes": 65,
+      "sha256": "a4235b3bf75e4945e89304625234e20fe199890bf1400658fd27a5d77cdb5c44"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-precision-final.log",
+      "bytes": 65,
+      "sha256": "a4235b3bf75e4945e89304625234e20fe199890bf1400658fd27a5d77cdb5c44"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-precision-first.log",
+      "bytes": 65,
+      "sha256": "a4235b3bf75e4945e89304625234e20fe199890bf1400658fd27a5d77cdb5c44"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-production-mypy-first.log",
+      "bytes": 46,
+      "sha256": "be53c5001524aa89ff3b3871e0fb323975691c6810b2e10698a889957bb0ed45"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-production-pyrefly-first.log",
+      "bytes": 55,
+      "sha256": "400b91ded9c3de1ef50dbc89a15b8bb595495dea03817437e1c09240a78d16b1"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-production-ty-first.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-regression-first.log",
+      "bytes": 9709,
+      "sha256": "adf653f4fc597a22320c16b44def59574730963fe3459f98403f2dfa33be307e"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-ruff-final-second.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-ruff-final-third.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-ruff-final.log",
+      "bytes": 602,
+      "sha256": "4749384900443e5419a79caf488faebdbc6926760e39e42dced410c739d509eb"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-ruff-first.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-static-final-second.json",
+      "bytes": 2719,
+      "sha256": "fad244031db2fb7ae46d52e44e645a4d70b4ace4e3f1b4af7c17502a3e554e2e"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-static-final-third.json",
+      "bytes": 2714,
+      "sha256": "5a5fb4e00ce226bace11d821b95927974c5348a0ac19c8459d526a1d370886a4"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-static-final.json",
+      "bytes": 2378,
+      "sha256": "f796c66297002e210dbdf36b770bc66a472b88755b030539ea9aa4baff169490"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-static-first.json",
+      "bytes": 3058,
+      "sha256": "1497146f00d75b9ede285f490ae54525ec06ce7a019a94df25a31fbab8caf9b3"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-unit-first.log",
+      "bytes": 181,
+      "sha256": "f12248a2885fb45c5d370660f273df35946618e69f6c068c688297bc7a4f9c25"
+    },
+    {
+      "path": ".e2e-artifacts/task-navigation-wire-first.log",
+      "bytes": 5067,
+      "sha256": "40c15708123b1811b61972df0b4ead9c0bffa22e3f9678bff0cab67a26af530a"
+    },
+    {
+      "path": ".e2e-artifacts/task_navigation_audit.py",
+      "bytes": 6740,
+      "sha256": "8071fd09b4f5f87d79e2397aece1b2a8db42608b39ecbcffdc17696e061a9ad9"
+    },
+    {
+      "path": ".e2e-artifacts/task_navigation_checks.py",
+      "bytes": 1509,
+      "sha256": "de672a6e564d5d11c9f813a369bc5e8b2003031a826ebbf4895794a798a280dc"
+    },
+    {
+      "path": "codey/codemode/catalog.py",
+      "bytes": 18256,
+      "sha256": "18b3f174a8a5fabb78ad1ea97c12a4290942bfb3ad3dc1ba7426ebcb097818c9"
+    },
+    {
+      "path": "codey/codemode/host.py",
+      "bytes": 13373,
+      "sha256": "60208db689cb4c7911ce857c1718fdd8e7fc32c1f239d3774f3defc9aa2cf39f"
+    },
+    {
+      "path": "codey/codemode/navigation.py",
+      "bytes": 1677,
+      "sha256": "ac522e9132ab69037e8107f30acf05febf0a0eefa4c12ef9e8f4d9479eab2c2e"
+    },
+    {
+      "path": "codey/operations/browser_task_handoff.py",
+      "bytes": 39028,
+      "sha256": "26eefb1f4fb1c40357926d14860bbd2b96b13a3b87f476566b16d894eae148c9"
+    },
+    {
+      "path": "codey/operations/kernel_protocol.py",
+      "bytes": 46222,
+      "sha256": "ec29f897cbffb6ccbbfeed924219c7216f6ccb35970f72bc123707f714e79245"
+    },
+    {
+      "path": "codey/operations/provider_receipts.py",
+      "bytes": 24352,
+      "sha256": "456753c239e3530e61b75f2912b45a10dda07bef4322ba40905c0402bb25a1ee"
+    },
+    {
+      "path": "docs/reports/codey-task-navigation-selector-20261121.zh-CN.md",
+      "bytes": 8654,
+      "sha256": "9f4e40a9faa63939fd9912d375907f1b566f8b6903e3fa0e336fd8bf413888f2"
+    },
+    {
+      "path": "tests/test_browser_initial_navigation.py",
+      "bytes": 8337,
+      "sha256": "a04459a0c872b560ee6d871feda431c25faee43130e7c09270f9466f7f9ed9ce"
+    },
+    {
+      "path": "tests/test_browser_navigation_handoff.py",
+      "bytes": 12912,
+      "sha256": "69176e68ac9068b3debe9ae0054c7b5f81ab065f8235ab0f0b201a0458a82797"
+    },
+    {
+      "path": "tests/test_deferred_source_prefetch.py",
+      "bytes": 4602,
+      "sha256": "695a006950923d5115cd6ce9c9a781ced91b1aa90e965deecbb917505878d023"
+    },
+    {
+      "path": "tests/test_task_navigation_binding.py",
+      "bytes": 17609,
+      "sha256": "80ba576eaf759070de7b869f6a50bbbb92159b387dde91efcb38a6816be52553"
+    },
+    {
+      "path": "tests/test_task_navigation_selector.py",
+      "bytes": 8714,
+      "sha256": "f2ef77a335c79beb69a3218f26d1364a68260b7d18f2e1f9faaa5f19cc6f6527"
+    }
+  ]
+}

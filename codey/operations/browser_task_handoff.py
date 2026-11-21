@@ -97,8 +97,13 @@ def handoff_call(session: TaskSession, snapshot: TurnSnapshot,
     only = codemode_only(session.task_text)
     if not only:
         snapshot = offer_browser_call(snapshot, session, call.name, research=snapshot.research_scope is not None)
+    bound_navigation = (call.name == "browser_navigate" and snapshot.task_navigation_selector
+                        and snapshot.task_navigation_url is not None)
+    if bound_navigation and call.args == {"url": snapshot.task_navigation_url}:
+        call = replace(call, args={"target": "task"})
     task_selector = call.name == "browser_navigate" and "target" in call.args
-    direct = call.name in snapshot.tool_names and not only and not task_selector
+    direct = (call.name in snapshot.tool_names and not only
+              and (bound_navigation and task_selector or not bound_navigation and not task_selector))
     if direct:
         spec = next(spec for spec in snapshot.model_specs if spec.name == call.name)
         missing: list[str] = [name for name in spec.required if name not in call.args]

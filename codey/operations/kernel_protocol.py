@@ -141,6 +141,7 @@ class TurnSnapshot:
     browser_copy: CopyTurn | None = None
     input_binding: ModelInputBinding | None = None
     task_navigation_url: str | None = None
+    task_navigation_selector: bool = True
     browser_followups: bool = False
     browser_fill_text: str | None = None
     browser_references: BrowserReferences | None = None
@@ -158,6 +159,10 @@ class TurnSnapshot:
         specs = tuple(reference_spec(spec, self.browser_references) for spec in specs)
         if not self.browser_followups:
             return specs
+        if self.task_navigation_selector and self.task_navigation_url is not None:
+            from codey.codemode.navigation import task_navigation_spec
+
+            specs = tuple(task_navigation_spec(spec) if spec.name == "browser_navigate" else spec for spec in specs)
         plans = browser_followups.click_plans(self.policy.required_checks if self.policy else (),
                                               set(self.nested_tool_names))
         purposes = tuple(purpose for purpose in browser_followups.PURPOSES if purpose in plans)
@@ -746,6 +751,7 @@ def _lower_bound_inputs(
             for check in checks)
         direct = snapshot.browser_followups and name in models and (
             name in {"browser_fill", "browser_click", *browser_followups.SINGLE_STEP_TOOLS} or bound_observation
+            or name == "browser_navigate" and snapshot.task_navigation_selector and snapshot.task_navigation_url is not None
             or snapshot.research_scope is not None and name in {"browser_snapshot", "browser_read", "browser_navigate"})
         if not direct and (binding is None or name != binding.model_spec.name or name not in models):
             lowered.append((raw, args, call_id))

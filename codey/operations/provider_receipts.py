@@ -122,7 +122,7 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
     """Persist the captured contract, never Python callables or a live registry."""
     if snapshot.policy is None:
         raise ValueError("captured turn has no authorization policy")
-    payload = decode_json_object(json_value({"schema_version": 11,
+    payload = decode_json_object(json_value({"schema_version": 12 if snapshot.task_navigation_selector else 11,
             "task_navigation_url": snapshot.task_navigation_url,
             "browser_copy": snapshot.browser_copy.payload() if snapshot.browser_copy is not None else None,
             "input_binding": json_value(snapshot.input_binding),
@@ -272,7 +272,7 @@ def _snapshot_payload(raw: object) -> JsonObject:
                 "nested_tool_names", "research_scope", "ignore_runtime_claims", "browser_copy", "input_binding",
                 "task_navigation_url", "browser_fill_text", "browser_followups", "browser_references"}
     version = require_json_integer(payload.get("schema_version"), "snapshot version")
-    if version != 11:
+    if version not in {11, 12}:
         raise ValueError("unsupported captured turn snapshot version; start a new request")
     if set(payload) != expected:
         raise ValueError("invalid captured turn snapshot version/shape")
@@ -398,6 +398,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         custom_executors=tuple(bindings), implementation_compatible=bool(compatible), nested_tool_names=tuple(nested),
         research_scope=scope, ignore_runtime_claims=ignore_runtime_claims,
         browser_copy=copy, input_binding=input_binding, task_navigation_url=navigation_url,
+        task_navigation_selector=payload["schema_version"] == 12,
         browser_followups=followups, browser_fill_text=fill_text, browser_references=references)
     from codey.toolchain.constants import PAGE_DETAIL_TOOL
 

@@ -6,6 +6,7 @@ from typing import Protocol
 
 from codey.codemode.identity import rpc_child_admission, rpc_child_allocator, rpc_child_index
 from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE, replace_json_fields
+from codey.codemode.navigation import resolve_task_navigation
 from codey.codemode.types import ToolCatalogEntry
 from codey.operations.browser_references import BrowserReferences
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -174,12 +175,8 @@ class CodeModeHost:
             decoded_args = self._bound_edit(index, decoded_args)
         if tool_name == "open_result":
             decoded_args = _normalize_open_result_args(decoded_args)
-        if tool_name == "browser_navigate" and "target" in decoded_args:
-            if set(decoded_args) != {"target"} or decoded_args["target"] != "task":
-                raise ValueError('Use either {target: "task"} or {url: "..."}')
-            if self._task_navigation_url is None:
-                raise ValueError("This turn has no bound task URL")
-            decoded_args = decode_json_object({"url": self._task_navigation_url})
+        if tool_name == "browser_navigate":
+            decoded_args = resolve_task_navigation(decoded_args, self._task_navigation_url)
         json_edit = tool_name == "edit" and "changes" in decoded_args
         if json_edit:
             try:
