@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
 from codey.automation.browser_document import same_document
@@ -41,6 +41,7 @@ from codey.policies.tool_requirement import (
     argument_digest,
     parse_tool_success_check,
 )
+from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.web_intent import explicit_web_intent
 from codey.toolchain.tool_spec import _check_spec_value_against_schema, validate_args_with_spec
@@ -155,10 +156,13 @@ def observation_recovery_handoff(session: TaskSession, snapshot: TurnSnapshot,
                                ).evaluation.reason_code == "observation_selector_unavailable"]
     actions = [(ref, row) for ref, row in _action_receipts(session, snapshot, context)
                if same_document(row.audit.get("browser_document"), context.browser_document)]
-    if (not missing and not fields or actions and not fields
+    natural_input = repeated and not missing and not fields and not any(
+        row.call.name == "browser_fill" and row.ok for _, row in actions)
+    if (not (missing or fields or natural_input) or actions and not fields and not natural_input
             or any(delivery(row) == "uncertain" for _, row in actions)):
         return snapshot, ""
-    choices = [choice for choice in references.choices() if isinstance(choice, dict) and choice.get("role") == "textbox"]
+    choices = [choice for choice in references.choices("browser_fill")
+               if isinstance(choice, dict) and choice.get("role") in {"textbox", "searchbox"}]
     if not choices:
         return snapshot, ""
     fills = [(ref, row) for ref, row in committed_results(records, results, frozenset({"browser_fill"}))
@@ -169,7 +173,8 @@ def observation_recovery_handoff(session: TaskSession, snapshot: TurnSnapshot,
               + ("The last verified input was " + json.dumps(fills[-1][1].call.args.get("value"), ensure_ascii=False)
                  + ". Check it against the user's original query and the page's validation feedback; "
                  "preserve the original spelling. Do not repeat an unchanged input. " if fills else "")
-              if fields else "The declared browser_fill still has no successful verified receipt. ")
+              if fields else "The declared browser_fill still has no successful verified receipt. " if missing else
+              "No input has been verified in this document. If your task needs a query, fill its observed input first. ")
     introduction = ("Repeated observation returned no new page information. " if repeated else
                     "The complete source read did not establish the declared fields after the input. ")
     lines = [introduction + status +
@@ -191,7 +196,8 @@ def query_result_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
     if "result" not in click_followup_plan(checks, set(snapshot.nested_tool_names)).plans:
         return snapshot, ""
     records, results = tool_facts(session, context)
-    if task_named and any(same_document(row.audit.get("browser_document"), context.browser_document)
+    changed_input = _input_after_click(records, results, context.browser_document)
+    if task_named and not changed_input and any(same_document(row.audit.get("browser_document"), context.browser_document)
            and delivery(row) in {"verified", "delivered", "uncertain"} for _, row in committed_results(
                records, results, frozenset({"browser_click"}), include_failed=frozenset({"browser_click"}))):
         return snapshot, ""
@@ -222,7 +228,8 @@ def query_result_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
             continue
         named = (name in declared if declared else re.search(
             r"(?<![A-Za-z0-9_])" + re.escape(name) + r"(?![A-Za-z0-9_])", session.task_text, re.I) is not None
-            ) if task_named else row.get("query_relation") == "aria-controls"
+            ) if task_named else (row.get("query_relation") == "aria-controls"
+                                  or changed_input and row.get("role") == "button")
         if not named:
             continue
         ref = row["ref"]
@@ -240,8 +247,27 @@ def query_result_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
                     if task_named else "If the current evidence answers the question, submit it. To inspect missing information, "
                     "choose its matching current query/detail control below. ")
     return snapshot, (introduction +
+                      ("An input was verified after the last click. If the evidence still lacks the requested result "
+                       "and another query is needed, choose its current button with the updated input. "
+                       "These choices do not authorize repeating a business action or an uncertain delivery. "
+                       if changed_input else "") +
                       "The result call clicks once, performs any declared waits and formally reads the result; "
                       "use its child receipts as evidence. Follow the task's ordering and prerequisites.\n" + "\n".join(lines))
+
+
+def _input_after_click(records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],
+                       document: JsonObject | None) -> bool:
+    actions = [row for _, row in committed_results(records, results, frozenset({"browser_click", "browser_fill"}),
+                include_failed=frozenset({"browser_click"}))
+               if same_document(row.audit.get("browser_document"), document)]
+    clicks = [index for index, row in enumerate(actions) if row.call.name == "browser_click"]
+    if not clicks or delivery(actions[clicks[-1]]) == "uncertain" or not actions[clicks[-1]].ok:
+        return False
+    click = clicks[-1]
+    before = [row.call.args.get("value") for row in actions[:click] if row.call.name == "browser_fill" and row.ok]
+    after = [row.call.args.get("value") for row in actions[click + 1:] if row.call.name == "browser_fill" and row.ok
+             and delivery(row) == "verified"]
+    return bool(after and isinstance(after[-1], str) and (not before or after[-1] != before[-1]))
 
 
 def confirmed_query_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext) -> str:
@@ -324,7 +350,8 @@ def bind_browser_references(session: TaskSession, snapshot: TurnSnapshot, contex
     """Freeze complete controls independently of body-text truncation."""
     references = None
     if (snapshot.input_binding is None and snapshot.browser_copy is None
-            and {"browser_fill", "browser_click"} & set(snapshot.nested_tool_names)
+            and any(spec.executor == "browser" and "ref" in dict(spec.parameters)
+                    and spec.name in snapshot.nested_tool_names for spec in snapshot.frozen_specs)
             and context.browser_document is not None
             and (current := _current_snapshot(session, context, generation, require_text=False)) is not None):
         try:

@@ -6,7 +6,6 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from codey.knowledge.model import canonical_json
-from codey.runtime.core.models import ToolCall
 
 if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
@@ -28,7 +27,7 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
                  browser: BrowserSession | None, *,
                  delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
     from codey.operations.browser_detail import offer_page_details, offer_query_controls
-    from codey.operations.browser_task_handoff import bind_browser_references, browser_task_handoff, handoff_call
+    from codey.operations.browser_task_handoff import bind_browser_references, browser_task_handoff
     from codey.operations.kernel_protocol import offer_browser_call, offer_browser_tools
     from codey.operations.research_submission_handoff import research_browser_handoff, research_submission_handoff
 
@@ -40,6 +39,14 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     from codey.operations.browser_followups import DIRECT_TOOLS
 
     hints: list[str] = []
+    from codey.codemode.verification import project_check_call
+
+    run = next((spec for spec in snapshot.model_specs if spec.name == "run"), None)
+    check = project_check_call(run) if run is not None else None
+    if check is not None:
+        hints.append("The existing project check can be selected without copying its command or working directory: "
+            + canonical_json(check) + ". Follow the user's workflow when deciding whether and when to run it. "
+            "Reuse completed receipts instead of rerunning a check merely to retrieve its output.")
     if context.browser_document is None:
         from codey.task.web_intent import explicit_web_intent
 
@@ -53,15 +60,6 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     if snapshot.browser_followups and set(DIRECT_TOOLS) <= set(snapshot.tool_names):
         hints.append("For browser steps, prefer the offered direct browser tools. "
                      "Use CodeMode for operations that need programming or composition.")
-    page_url = context.browser_document.get("url") if context.browser_document is not None else None
-    if isinstance(page_url, str) and snapshot.task_navigation_url is not None:
-        from codey.task.web_intent import source_url_key
-
-        if source_url_key(page_url) != source_url_key(snapshot.task_navigation_url):
-            snapshot, action, _ = handoff_call(session, snapshot, ToolCall("browser_navigate", {"target": "task"}))
-            if action is not None:
-                hints.append("The current page differs from the declared task source. When you need that source, "
-                    "reuse its frozen target instead of retyping its URL: " + canonical_json(action))
     snapshot, hint = browser_task_handoff(session, snapshot, context, generation,
                                            delivered_results=delivered_results)
     hints.append(hint)

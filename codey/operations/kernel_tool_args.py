@@ -276,6 +276,14 @@ def _validate_project_args(name: str, args: ToolArgs) -> tuple[ToolArgs, str]:
     from codey.toolchain.execution_options import split_execution_options
 
     business, _options = split_execution_options(args)
+    from codey.toolchain.command_output import tail_lines
+
+    presentation: ToolArgs = {}
+    if name == "run" and "output_tail_lines" in business:
+        try:
+            presentation["output_tail_lines"] = tail_lines(business.pop("output_tail_lines"))
+        except ValueError as exc:
+            return {}, str(exc)
     process_keys = {key: business.pop(key) for key in ("stdin", "tty", "cols", "rows") if key in business}
     if process_keys:
         if name != "run":
@@ -288,6 +296,7 @@ def _validate_project_args(name: str, args: ToolArgs) -> tuple[ToolArgs, str]:
             return {}, "tty=true conflicts with stdin=false"
     normalized, error = _validate_coding_args(name, business)
     normalized.update(process_keys)
+    normalized.update(presentation)
     if "run_in_background" in args:
         normalized["run_in_background"] = args["run_in_background"]
     return normalized, error

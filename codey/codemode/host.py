@@ -6,8 +6,9 @@ from typing import Protocol
 
 from codey.codemode.identity import rpc_child_admission, rpc_child_allocator, rpc_child_index
 from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE, replace_json_fields
-from codey.codemode.navigation import resolve_task_navigation
+from codey.codemode.navigation import TASK_SOURCE_TOOLS, resolve_task_navigation, resolve_task_source
 from codey.codemode.types import ToolCatalogEntry
+from codey.codemode.verification import resolve_verification
 from codey.operations.browser_references import BrowserReferences
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.constants import STALE_READ_REFERENCE_CODE, STALE_READ_REFERENCE_ERROR
@@ -177,6 +178,10 @@ class CodeModeHost:
             decoded_args = _normalize_open_result_args(decoded_args)
         if tool_name == "browser_navigate":
             decoded_args = resolve_task_navigation(decoded_args, self._task_navigation_url)
+        if tool_name in TASK_SOURCE_TOOLS:
+            decoded_args = resolve_task_source(decoded_args, self._task_navigation_url)
+        if tool_name == "run":
+            decoded_args = resolve_verification(decoded_args, canonical_json_object(self._catalog[tool_name].parameters))
         json_edit = tool_name == "edit" and "changes" in decoded_args
         if json_edit:
             try:
@@ -199,7 +204,7 @@ class CodeModeHost:
         return raw
 
     def _reference_args(self, index: int, tool_name: str, args: JsonObject) -> JsonObject:
-        if tool_name not in {"browser_fill", "browser_click"} or not isinstance(selector := args.get("ref"), dict):
+        if self._catalog[tool_name].namespace != "browser" or not isinstance(selector := args.get("ref"), dict):
             return args
         if self._replay_browser_ref is not None:
             resolved_ref = self._replay_browser_ref(index, tool_name, selector)

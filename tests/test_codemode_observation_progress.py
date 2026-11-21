@@ -208,7 +208,7 @@ def test_production_repeated_program_receives_recovery_then_completes_without_an
             "unwrap(await tools.browser_snapshot({}));return a;", "inputs": {
                 "ref": {"role": "textbox", "name": "Locality"}, "value": "福州"}}}
         wire = (directory / "provider.jsonl").read_text(encoding="utf-8")
-        assert "only observed control refs changed" in wire and "browser_fill still has no successful" in wire
+        assert "Repeated observation returned no new page information" in wire and "browser_fill still has no successful" in wire
         yield {"tool": "codemode", "args": {"code": "unwrap(await tools.browser_click(inputs));"
             "unwrap(await tools.browser_wait({condition:'text',value:'鱼丸'}));"
             "return unwrap(await tools.browser_read({}));", "inputs": {"ref": {"role": "button", "name": "Load record"}}}}

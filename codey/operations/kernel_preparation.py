@@ -8,6 +8,7 @@ from codey.operations.browser_upload import upload_scope
 from codey.operations.completion_context import CompletionContextInput
 from codey.operations.kernel_protocol import TurnSnapshot
 from codey.operations.project_prompt_context import prepare_coding_context
+from codey.operations.project_verification import refresh_verification_candidates
 from codey.operations.task_session import TaskSession
 from codey.policies.browser_requirement import parse_browser_requirement
 from codey.policies.output_requirement import has_explanation, is_output_check
@@ -20,11 +21,17 @@ class PreparedKernelTurn:
     prompt: str
 
 
+def capture_turn_snapshot(session: TaskSession, *, native: bool = False) -> TurnSnapshot:
+    """Refresh derived project choices before freezing a new, unsent request."""
+    refresh_verification_candidates(session)
+    return kernel_protocol.build_turn_snapshot(session, native=native)
+
+
 def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: str,
                         task_guidance: str, native: bool, completion_context: CompletionContextInput | None = None,
                         request_scoped_contract: bool = False, snapshot: TurnSnapshot | None = None) -> PreparedKernelTurn:
     if snapshot is None:
-        snapshot = kernel_protocol.build_turn_snapshot(session, native=native)
+        snapshot = capture_turn_snapshot(session, native=native)
     from codey.research.answer_contract import AnswerScope
 
     if snapshot.policy is None:

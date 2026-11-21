@@ -19,6 +19,7 @@ class AnswerScopePayload(TypedDict):
     attempt_refs: list[str]
     schema_version: int
     fields: NotRequired[list[JsonObject]]
+    declared_fields_ready: NotRequired[bool]
 
 
 class UnsignedAnswerSubmission(TypedDict):

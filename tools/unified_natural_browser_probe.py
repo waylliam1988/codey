@@ -17,6 +17,9 @@ REPAIR_TASK = ("请先检查项目现有文件并运行项目已有检查，定�
     f"需要核对真实记录时，请打开 {URL}，查询福州的净重和校验码。"
     "修复 result.json 的 amount（实际克数数值）和 code（完整字符串），保留其他字段，重新验证；"
     "给出带实际来源引用的调查说明与修复、检查结果。")
+FLEXIBLE_REPAIR_TASK = (f"项目的记录同步有问题。请结合项目文件和 {URL} 中福州的真实记录查明原因，"
+    "修复 result.json 的 amount（实际克数数值）和 code（完整字符串），保留其他字段。"
+    "运行项目已有检查验证修复，并给出带实际来源引用的调查说明、修改内容和检查结果。")
 PROJECT = {
     "result.json": '{"amount": 0, "code": "unknown", "keep": "preserved"}\n',
     "README.md": "# Record fixture\nUpdate result.json using the current public record.\nRun local checks with python -m unittest -v.\n",
@@ -101,7 +104,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("directory", type=Path)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
-    parser.add_argument("--case", choices=("composition", "repair", "vision"), default="composition")
+    parser.add_argument("--case", choices=("composition", "repair", "repair-flexible", "vision"), default="composition")
     args = parser.parse_args(namespace=Options())
     directory = Path(args.directory)
     target = select_target(180, str(args.base_url))
@@ -118,7 +121,8 @@ def main() -> None:
         return
     summary = run_case(directory, "hybrid", target, max_turns=14, declare_required_tools=False,
         strict_research=True,
-        task_transform=lambda _task: REPAIR_TASK if args.case == "repair" else TASK,
+        task_transform=lambda _task: (REPAIR_TASK if args.case == "repair" else
+                                     FLEXIBLE_REPAIR_TASK if args.case == "repair-flexible" else TASK),
         additional_required_tools=(require_tool_success("run"),),
         requested_capabilities=("web.read", "browser.observe", "browser.interact", "browser.effect", "knowledge.write"),
         project_files=PROJECT)
@@ -136,12 +140,16 @@ def main() -> None:
     reads = [i for i, row in enumerate(receipts) if row.result.call.name == "browser_read" and row.result.ok]
     repair = any(failure < read < edit for failure in failed for read in reads for edit in edits)
     summary["repair_triggered_research"] = repair
+    summary["case"] = args.case
     summary["probe_configuration"] = {"strict_research": True, "project_verification_config": True,
         "max_turns": 14, "seed": 123456789, "temperature": 0}
-    summary["natural_task_closed"] = (summary.get("stop_reason") == "done" and verified
-        and (bool(reports) and repair if args.case == "repair" else summary.get("report_before_edit") is True)
+    summary["operational_goal_completed"] = (summary.get("stop_reason") == "done" and verified and bool(reports)
         and summary.get("final_file_correct") is True
         and summary.get("preserved_other_fields") is True)
+    summary["requested_order_satisfied"] = (True if args.case == "repair-flexible" else repair
+        if args.case == "repair" else summary.get("report_before_edit") is True)
+    summary["natural_task_closed"] = (summary["operational_goal_completed"] is True
+        and summary["requested_order_satisfied"] is True)
     (directory / "natural-verdict.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(parse_json_object(json.dumps(summary)), ensure_ascii=False))
 

@@ -46,7 +46,7 @@ class BrowserReferences:
     document_json: str
     generation: int
     controls: tuple[ObservedControl, ...]
-    presentation_version: Literal[1, 2, 3] = 3
+    presentation_version: Literal[1, 2, 3, 4] = 4
 
     def __post_init__(self) -> None:
         if (not self.receipt_ref or self.generation < 0 or not parse_json_object(self.document_json)
@@ -102,6 +102,13 @@ class BrowserReferences:
                     continue
                 if action == "browser_click" and row.role in {"textbox", "searchbox", "file_input"}:
                     continue
+                if self.presentation_version >= 4:
+                    if action == "browser_upload" and row.role != "file_input":
+                        continue
+                    if action == "browser_select" and row.role not in {"combobox", "listbox"}:
+                        continue
+                    if action == "browser_check" and row.role not in {"checkbox", "radio", "switch"}:
+                        continue
             base: JsonObject = {"role": row.role, "name": row.name}
             for selector in (base, {**base, "context": row.context}):
                 if len(self._matches(selector)) == 1 and selector not in choices:
@@ -133,13 +140,15 @@ class BrowserReferences:
         if set(row) not in (expected, expected | {"presentation_version"}) or not isinstance(row["controls"], list):
             raise ValueError("Invalid frozen browser control binding.")
         raw_version = require_json_integer(row.get("presentation_version", 2), "control presentation version")
-        presentation_version: Literal[1, 2, 3]
+        presentation_version: Literal[1, 2, 3, 4]
         if raw_version == 1:
             presentation_version = 1
         elif raw_version == 2:
             presentation_version = 2
         elif raw_version == 3:
             presentation_version = 3
+        elif raw_version == 4:
+            presentation_version = 4
         else:
             raise ValueError("Unsupported frozen browser control presentation version.")
         controls: list[ObservedControl] = []
@@ -159,7 +168,8 @@ class BrowserReferences:
 
 def reference_spec(spec: ToolSpec, references: BrowserReferences | None) -> ToolSpec:
     """The same ref union serves the outer interface and CodeMode catalog."""
-    if references is None or spec.name not in {"browser_fill", "browser_click"}:
+    if (references is None or spec.executor != "browser" or "ref" not in dict(spec.parameters)
+            or references.presentation_version < 4 and spec.name not in {"browser_fill", "browser_click"}):
         return spec
     choices = references.choices(spec.name)
     selector: JsonObject = {"type": "object", "properties": {

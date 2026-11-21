@@ -44,11 +44,12 @@ from codey.toolchain.tool_spec import (
     is_text_batch_tool,
     validate_args_with_spec,
 )
-from codey.types.json_value import JsonValue, ToolArgs, decode_json_object
+from codey.types.json_value import JsonValue, ToolArgs, canonical_json_object, decode_json_object
 
 MAX_NATIVE_CALLS_PER_TURN = 8
 
 if TYPE_CHECKING:
+    from codey.completion.verification_policy import VerificationCandidate
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.protocols.json_repair import JsonTailClosure
@@ -56,6 +57,18 @@ if TYPE_CHECKING:
 
 
 class KernelSessionView(Protocol):
+    @property
+    def verification_candidates(self) -> tuple[VerificationCandidate, ...]: ...
+
+    @property
+    def selected_verification(self) -> VerificationCandidate | None: ...
+
+    @property
+    def verification_forbidden(self) -> bool: ...
+
+    @property
+    def verification_candidates_refresh_failed(self) -> bool: ...
+
     @property
     def executed(self) -> Mapping[str, ExecutionRecord]: ...
 
@@ -141,10 +154,14 @@ class TurnSnapshot:
     browser_copy: CopyTurn | None = None
     input_binding: ModelInputBinding | None = None
     task_navigation_url: str | None = None
-    task_navigation_selector: bool = True
+    input_contract_version: Literal[11, 12, 13] = 13
     browser_followups: bool = False
     browser_fill_text: str | None = None
     browser_references: BrowserReferences | None = None
+
+    @property
+    def task_navigation_selector(self) -> bool:
+        return self.input_contract_version >= 12
 
     @property
     def inventory_names(self) -> tuple[str, ...]:
@@ -157,6 +174,10 @@ class TurnSnapshot:
         specs = tuple(binding.model_spec if binding is not None and spec.name == binding.model_spec.name else spec
                       for spec in self.frozen_specs if spec.name in self.tool_names)
         specs = tuple(reference_spec(spec, self.browser_references) for spec in specs)
+        if self.input_contract_version >= 13 and self.task_navigation_url is not None:
+            from codey.codemode.navigation import TASK_SOURCE_TOOLS, task_source_spec
+
+            specs = tuple(task_source_spec(spec) if spec.name in TASK_SOURCE_TOOLS else spec for spec in specs)
         if not self.browser_followups:
             return specs
         if self.task_navigation_selector and self.task_navigation_url is not None:
@@ -350,6 +371,8 @@ def _task_edit_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...]) -
 def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
                      scope: AnswerScope | None) -> tuple[ToolSpec, ...]:
     """Select completion once; bind investigation tools on their separate route."""
+    from codey.codemode.verification import verification_spec
+    from codey.completion.verification_policy import preferred_verification_candidate
     from codey.operations.browser_waits import wait_spec
     from codey.operations.chat_knowledge import chat_knowledge_spec, hybrid_knowledge_spec, read_knowledge_versions
     from codey.operations.execution_claims import execution_claim_spec
@@ -373,6 +396,11 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
     question_refs = tuple(f"q{index}" for index in range(1, len(session.research_questions) + 1))
     selected: list[ToolSpec] = []
     for spec in frozen:
+        if (spec.name == "run" and session.policy.allows("project.verify") and not session.verification_forbidden
+                and not session.verification_candidates_refresh_failed):
+            candidate = session.selected_verification or preferred_verification_candidate(session.verification_candidates)
+            if candidate is not None:
+                spec = verification_spec(spec, candidate)
         if spec.name == "done":
             if explaining:
                 spec = explanation_spec(spec)
@@ -437,7 +465,7 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         # composable surface.
         upload = task_upload_scope(session.task_kind, session.task_text, session.required_source_urls, session.policy)
         if (upload is None and target is None
-                and any(spec.name == "browser_navigate" for spec in frozen)):
+                and any(spec.name in {"browser_navigate", "open_url"} for spec in frozen)):
             task_navigation_url = _task_navigation_url(session)
         catalog = build_codemode_catalog(frozen, task_navigation_url=task_navigation_url,
             allow_writes=session.policy.allows("project.write"),
@@ -460,6 +488,8 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
                 next(spec for spec in frozen if spec.name == "codemode"), upload, phase)))
             frozen = tuple(structured_upload_spec(spec, upload, phase) if spec.name != "codemode" else spec
                            for spec in frozen)
+    if "codemode" not in names and target is None and "open_url" in names:
+        task_navigation_url = _task_navigation_url(session)
     browser_copy = None
     copy_tools = {"browser_navigate", "browser_eval", "read_file", "edit"}
     if (not session.policy.strict_research and "codemode" in names and "done" in names
@@ -738,6 +768,7 @@ def _response_objects(reply: object) -> list[tuple[str, ToolArgs, str]] | ToolPl
 def _lower_bound_inputs(
     items: list[tuple[str, ToolArgs, str]], snapshot: TurnSnapshot,
 ) -> list[tuple[str, ToolArgs, str]] | ToolPlan:
+    from codey.codemode.navigation import TASK_SOURCE_TOOLS
     from codey.policies.tool_requirement import parse_tool_success_check
 
     binding = snapshot.input_binding
@@ -746,11 +777,26 @@ def _lower_bound_inputs(
     lowered: list[tuple[str, ToolArgs, str]] = []
     for raw, args, call_id in items:
         name = _canonical_name(raw)
+        if name == "run" and name in models:
+            from codey.codemode.verification import resolve_verification
+
+            try:
+                args = resolve_verification(args, {"properties": canonical_json_object(dict(models[name].parameters))})
+            except ValueError as exc:
+                return _invalid_plan(str(exc), tool=name)
+        if name in TASK_SOURCE_TOOLS and name in models and snapshot.input_contract_version >= 13 and snapshot.task_navigation_url is not None:
+            from codey.codemode.navigation import resolve_task_source
+
+            if error := validate_args_with_spec(models[name], args):
+                return _invalid_plan(error, tool=name)
+            lowered.append((raw, resolve_task_source(args, snapshot.task_navigation_url), call_id))
+            continue
         bound_observation = name in {"browser_snapshot", "browser_read"} and any(
             (rule := parse_tool_success_check(check)) is not None and rule.tool == name and rule.via == "codemode"
             for check in checks)
         direct = snapshot.browser_followups and name in models and (
             name in {"browser_fill", "browser_click", *browser_followups.SINGLE_STEP_TOOLS} or bound_observation
+            or isinstance(args.get("ref"), dict) and snapshot.browser_references is not None
             or name == "browser_navigate" and snapshot.task_navigation_selector and snapshot.task_navigation_url is not None
             or snapshot.research_scope is not None and name in {"browser_snapshot", "browser_read", "browser_navigate"})
         if not direct and (binding is None or name != binding.model_spec.name or name not in models):
@@ -884,7 +930,7 @@ def normalize_turn(
         return _validate_control_plan(items, snapshot, frozen)
     if snapshot is not None and snapshot.browser_copy is not None and len(items) != 1:
         return _invalid_plan("Submit one browser copy action per turn.")
-    if snapshot is not None and (snapshot.input_binding is not None or snapshot.browser_followups):
+    if snapshot is not None:
         lowered = _lower_bound_inputs(items, snapshot)
         if isinstance(lowered, ToolPlan):
             return lowered

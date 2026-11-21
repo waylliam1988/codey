@@ -47,6 +47,10 @@ def _browser_value(result: ToolResult) -> JsonObject | None:
     for key in ("ref", "generation", "page_id"):
         value.pop(key, None)
     if result.call.name == "browser_snapshot":
+        # A full observation advances the transport revision even when its
+        # document and visible content are unchanged. It is not new evidence.
+        if value.get("kind") == "full":
+            value.pop("revision", None)
         elements = value.get("elements")
         if isinstance(elements, list):
             value["elements"] = [{key: item for key, item in row.items() if key != "ref"}
@@ -186,7 +190,8 @@ def progress_comparison(result: ToolResult, receipts: Mapping[str, ToolResult]) 
     if value is not None:
         call = ToolCall(result.call.name, _target(result.call.args, receipts))
         text = _encoded({"ok": result.ok, "value": value, "truncated": result.truncated})
-        return ProgressComparison(call, ToolResult(call, text, ok=result.ok, audit=result.audit), text)
+        return ProgressComparison(call, ToolResult(call, text, ok=result.ok, audit=result.audit), text,
+                                  result.ok and result.call.name in {"browser_snapshot", "browser_read"})
     if (observed := _observation_program(result, receipts)) is not None:
         return ProgressComparison(result.call, ToolResult(result.call, observed, ok=result.ok, audit=result.audit), observed, True)
     # General CodeMode return values retain their own semantics.

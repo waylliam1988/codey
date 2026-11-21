@@ -13,7 +13,7 @@ from codey.codemode.catalog import render_declarations, snapshot_catalog
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.replay import digest
 from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import TurnSnapshot, build_turn_snapshot
+from codey.operations.kernel_protocol import TurnSnapshot, build_turn_snapshot, refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy, build_task_policy
@@ -107,7 +107,8 @@ def test_hybrid_uses_the_original_task_address() -> None:
 
 def test_authorization_and_frozen_required_source_must_match() -> None:
     session = session_for(f"打开 {URL}", grants=GRANTS - {"browser.interact"})
-    assert build_turn_snapshot(session).task_navigation_url is None
+    source_only = build_turn_snapshot(session)
+    assert source_only.task_navigation_url == URL and "browser_navigate" not in source_only.inventory_names
     session = session_for(f"打开 {URL}")
     session.required_source_urls = frozenset({"https://example.com/other"})
     assert build_turn_snapshot(session).task_navigation_url is None
@@ -116,7 +117,7 @@ def test_authorization_and_frozen_required_source_must_match() -> None:
     session = session_for(f"打开 {URL}")
     session.controller_denied = ("browser_navigate",)
     snapshot = build_turn_snapshot(session)
-    assert snapshot.task_navigation_url is None
+    assert snapshot.task_navigation_url == URL
     assert "browser_navigate" not in snapshot.inventory_names
     calls: list[ToolCall] = []
     result = run_program(session, snapshot, calls, "return unwrap(await tools.browser_navigate({target:'task'}));")
@@ -208,8 +209,8 @@ def test_snapshot_roundtrip_and_runtime_use_the_same_bound_catalog(native: bool)
     assert set(dict(specs["browser_navigate"].parameters)) == {"url"}
     unbound = snapshot_catalog(replace(restored, task_navigation_url=None))
     assert catalog.digest != unbound.digest
-    assert [entry for entry in catalog.entries if entry.name != "browser_navigate"] == [
-        entry for entry in unbound.entries if entry.name != "browser_navigate"]
+    assert [entry for entry in catalog.entries if entry.name not in {"browser_navigate", "open_url", "source_search"}] == [
+        entry for entry in unbound.entries if entry.name not in {"browser_navigate", "open_url", "source_search"}]
     calls: list[ToolCall] = []
     before = run_program(session, restored, calls, "return 'not yet';")
     assert before.ok and not calls
@@ -256,8 +257,8 @@ def test_old_snapshot_has_no_implicit_binding_and_new_shapes_fail_closed() -> No
     del payload["task_navigation_url"]
     with pytest.raises(ValueError, match="unsupported captured turn snapshot"):
         restore_snapshot(payload)
-    legacy = {**snapshot_description(snapshot), "schema_version": 11}
-    assert restore_snapshot(legacy) == replace(snapshot, task_navigation_selector=False)
+    legacy_snapshot = refresh_snapshot_contract(replace(snapshot, input_contract_version=11))
+    assert restore_snapshot(snapshot_description(legacy_snapshot)) == legacy_snapshot
     payload = snapshot_description(snapshot)
     payload["unknown"] = None
     with pytest.raises(ValueError, match="shape"):
@@ -273,7 +274,7 @@ def test_old_snapshot_has_no_implicit_binding_and_new_shapes_fail_closed() -> No
     del missing["task_navigation_url"]
     with pytest.raises(ValueError, match="shape"):
         restore_snapshot(missing)
-    denied = replace(snapshot, policy=TaskPolicy(GRANTS - {"browser.interact"}))
+    denied = replace(snapshot, policy=TaskPolicy(GRANTS - {"browser.interact", "web.read"}))
     payload = snapshot_description(denied)
     payload["task_navigation_url"] = URL
     with pytest.raises(ValueError, match="navigation binding"):

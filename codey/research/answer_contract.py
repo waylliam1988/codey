@@ -28,10 +28,16 @@ from codey.research.questions import is_investigation_tool
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec
-from codey.types.json_value import ToolArgs, canonical_json_object, decode_json_object, require_json_string
+from codey.types.json_value import (
+    ToolArgs,
+    canonical_json_object,
+    decode_json_object,
+    require_json_boolean,
+    require_json_string,
+)
 from codey.utils.citation_scanner import mask_markdown_code
 
-ANSWER_SCOPE_VERSION = 6
+ANSWER_SCOPE_VERSION = 7
 ANSWER_CONTRACT_VERSION = 1
 MAX_ANSWER_CHARACTERS = 64000
 ANSWER_STATES = ("answered", "partial", "unresolved")
@@ -125,6 +131,7 @@ class AnswerScope:
     attempt_refs: tuple[str, ...]
     schema_version: int = ANSWER_SCOPE_VERSION
     fields: tuple[AnswerField, ...] = ()
+    declared_fields_ready: bool = True
 
     @property
     def passage_refs(self) -> tuple[str, ...]:
@@ -133,17 +140,21 @@ class AnswerScope:
     def to_payload(self) -> AnswerScopePayload:
         payload = AnswerScopePayload(task_digest=self.task_digest, aliases=[list(row) for row in self.aliases],
                                      attempt_refs=list(self.attempt_refs), schema_version=self.schema_version)
-        if self.schema_version in {5, ANSWER_SCOPE_VERSION}:
+        if self.schema_version >= 5:
             payload["fields"] = [field.to_payload() for field in self.fields]
+        if self.schema_version >= 7:
+            payload["declared_fields_ready"] = self.declared_fields_ready
         return payload
 
     @classmethod
     def from_payload(cls, raw: object) -> AnswerScope:
         raw = decode_json_object(raw)
         version = raw.get("schema_version")
-        if type(version) is not int or version not in {4, 5, ANSWER_SCOPE_VERSION}:
+        if type(version) is not int or version not in {4, 5, 6, ANSWER_SCOPE_VERSION}:
             raise ValueError("invalid whole-task research scope")
-        expected = {"task_digest", "aliases", "attempt_refs", "schema_version"} | ({"fields"} if version in {5, ANSWER_SCOPE_VERSION} else set())
+        expected = {"task_digest", "aliases", "attempt_refs", "schema_version"} | ({"fields"} if version >= 5 else set())
+        if version >= 7:
+            expected.add("declared_fields_ready")
         if set(raw) != expected:
             raise ValueError("invalid whole-task research scope")
         task_digest = require_json_string(raw.get("task_digest"), "task_digest")
@@ -173,7 +184,8 @@ class AnswerScope:
         fields = tuple(AnswerField.from_payload(row) for row in raw_fields)
         if len({field.pointer for field in fields}) != len(fields) or any(set(field.labels) - {label for label, _ in bindings} for field in fields):
             raise ValueError("duplicate or unread frozen answer field")
-        return cls(task_digest, tuple(bindings), attempt_refs, version, fields)
+        return cls(task_digest, tuple(bindings), attempt_refs, version, fields,
+                   require_json_boolean(raw.get("declared_fields_ready", True), "declared_fields_ready"))
 
 
 def answer_scope(session: AnswerSessionView) -> AnswerScope:
@@ -195,14 +207,19 @@ def answer_scope(session: AnswerSessionView) -> AnswerScope:
     from codey.policies.tool_requirement import parse_tool_success_check
 
     fields: list[AnswerField] = []
+    declared_fields_ready = True
     document = next((decode_json_object(raw) for result in reversed(tuple(results.values()))
                      if isinstance(raw := result.audit.get("browser_document"), dict)), None)
     for check in session.policy.required_checks:
         rule = parse_tool_success_check(check)
-        if rule is not None and rule.report_label:
+        if rule is not None and (rule.report_label or rule.file_path):
             observation = rule.observe(session.executed, results=results, browser_document=document)
-            fields.append(freeze_field(rule, observation, results, aliases))
-    return AnswerScope(digest(session.task_text), aliases, tuple(attempts), fields=tuple(fields))
+            if rule.report_label:
+                fields.append(freeze_field(rule, observation, results, aliases))
+            if rule.file_path and not observation.evaluation.passed:
+                declared_fields_ready = False
+    return AnswerScope(digest(session.task_text), aliases, tuple(attempts), fields=tuple(fields),
+                       declared_fields_ready=declared_fields_ready)
 
 
 def citation_occurrences(markdown: str) -> list[CitationOccurrence]:
@@ -227,10 +244,14 @@ def submit_answer(scope: AnswerScope, args: ToolArgs) -> AnswerSubmission:
             or not isinstance(markdown_value, str)
             or not 12 <= len(markdown_value.strip()) <= MAX_ANSWER_CHARACTERS):
         raise ValueError("Submit markdown (12..64000 characters) and state=answered/partial/unresolved.")
+    if scope.schema_version >= 7 and state == "answered" and not scope.declared_fields_ready:
+        raise ValueError("declared_fields_unavailable: the task-declared source fields are not established by formal reads. "
+            "Complete the intended query and read its actual result before submitting answered. "
+            "A partial/unresolved report must describe the real gap. Do not invent values or repeat an unchanged read.")
     markdown = render_fields(scope.fields, markdown_value.strip(), state)
     if len(markdown) > MAX_ANSWER_CHARACTERS:
         raise ValueError("Expanded answer exceeds the Markdown size limit.")
-    if scope.schema_version == ANSWER_SCOPE_VERSION:
+    if scope.schema_version >= 6:
         _validate_report_tail(markdown)
     citations = citation_occurrences(markdown)
     from codey.research.answer_fields import validate_fields
@@ -313,13 +334,16 @@ def answer_spec(spec: ToolSpec, scope: AnswerScope) -> ToolSpec:
             return freeze_spec_parameters(replace(spec, description=spec.description + " " + KNOWLEDGE_READ_GUIDANCE))
         return spec
     answer_parameters: dict[str, object] = {"markdown": {"type": "string", "minLength": 12, "maxLength": MAX_ANSWER_CHARACTERS},
-                  "state": {"type": "string", "enum": list(ANSWER_STATES)},
+                  "state": {"type": "string", "enum": list(ANSWER_STATES if scope.declared_fields_ready else ANSWER_STATES[1:])},
                   "knowledge_updates": updates_schema()}
     return freeze_spec_parameters(replace(spec, parameters=tuple(answer_parameters.items()), required=("markdown", "state"),
         description="Submit the whole research answer as Markdown, with explicit [eN] citations beside supported statements. "
                     "Explain any unanswered requested point in place. state is your declaration, not semantic certification. "
                     + ("Do not end the report with an unescaped, unmatched inline-code backtick delimiter. "
-                       "Complete the report text before declaring its state. " if scope.schema_version == ANSWER_SCOPE_VERSION else "")
+                       "Complete the report text before declaring its state. " if scope.schema_version >= 6 else "")
+                    + ("The task-declared source fields are not yet established. Read the actual query result before "
+                       "submitting answered; partial/unresolved must describe the real gap, never invented field values. "
+                       if not scope.declared_fields_ready else "")
                     + "Optional knowledge_updates saves explicitly authored candidate claims/inferences/questions atomically: "
                     "use unique local keys (k1 or writer_limit). references is a string list, e.g. [\"e1\"] for a claim "
                     "or [\"k1\",\"e1\"] for an inference. The application derives relation types from kind. "

@@ -248,8 +248,8 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         # A submission handoff must recheck the current document on repair.
         # Other native rejection replies keep their original declarations.
         if messages is None or PAGE_DETAIL_TOOL in snapshot.tool_names or snapshot.tool_names == SUBMISSION_TOOLS:
-            from codey.operations.kernel_protocol import build_turn_snapshot
-            snapshot = build_turn_snapshot(context.session, native=context.native)
+            from codey.operations.kernel_preparation import capture_turn_snapshot
+            snapshot = capture_turn_snapshot(context.session, native=context.native)
         # Both request-scoped providers and text-only providers render the
         # same frozen repair basis, including after a successful local write.
         research = context.execution.research_tools

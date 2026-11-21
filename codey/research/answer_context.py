@@ -27,21 +27,23 @@ class _TextCount(Protocol):
     def __call__(self, text: str, *, deadline: float) -> object: ...
 
 
-def work_view_limits(provider: object) -> tuple[Callable[[str], int], int]:
-    """Use the same tokenizer and half-window limit for acquisition and display."""
+def work_view_limits(provider: object, *, fixed_context: str = "") -> tuple[Callable[[str], int], int]:
+    """Account for the current contract before spending capacity on repeated evidence."""
     from codey.providers.token_accounting import ContextBudget
 
     budget = provider_attribute(provider, "context_budget")
     counter: _TextCount | None = optional_callable(provider, "count_text")
     if not isinstance(budget, ContextBudget) or not callable(counter):
-        return estimate_tokens, 16384
+        def estimate(text: str) -> int:
+            return estimate_tokens("\n\n".join(part for part in (fixed_context, text) if part))
+        return estimate, 16384
     timeout = provider_attribute(provider, "timeout")
     deadline = time.monotonic() + min(30.0, timeout if isinstance(timeout, (int, float)) else 30.0)
 
     def count(text: str) -> int:
         from codey.providers.token_accounting import RequestContextCount
 
-        counted = counter(text, deadline=deadline)
+        counted = counter("\n\n".join(part for part in (fixed_context, text) if part), deadline=deadline)
         if not isinstance(counted, RequestContextCount):
             raise ValueError("provider research token count is unavailable")
         value = counted.value
@@ -49,7 +51,7 @@ def work_view_limits(provider: object) -> tuple[Callable[[str], int], int]:
             raise ValueError("provider research token count is unavailable")
         return value
 
-    return count, min(budget.window_tokens // 2, budget.input_limit)
+    return count, budget.input_limit if fixed_context else min(budget.window_tokens // 2, budget.input_limit)
 
 
 def fitting_full_read(session: TaskSession, ledger: ResearchLedger, call: ToolCall,

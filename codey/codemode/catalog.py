@@ -7,7 +7,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from codey.codemode.navigation import task_navigation_schema
+from codey.codemode.navigation import TASK_SOURCE_TOOLS, task_navigation_schema, task_source_schema
 from codey.codemode.types import (
     CatalogNamespaceSummary,
     CatalogSearchItem,
@@ -38,6 +38,7 @@ def snapshot_catalog(
         allow_project_run=allow_writes and snapshot.policy is not None and snapshot.policy.allows("project.verify")
             and "run" in names,
         task_navigation_url=snapshot.task_navigation_url,
+        task_source_selector=snapshot.input_contract_version >= 13,
         browser_followup_checks=(snapshot.policy.required_checks if snapshot.policy else ())
         if snapshot.browser_followups else None,
         browser_references=snapshot.browser_references if observed_choices else None,
@@ -120,6 +121,7 @@ def build_codemode_catalog(
     specs: Mapping[str, ToolSpec] | Iterable[ToolSpec], *, allow_writes: bool = False,
     allow_project_edit: bool | None = None, allow_project_run: bool | None = None,
     task_navigation_url: str | None = None,
+    task_source_selector: bool = True,
     browser_followup_checks: tuple[str, ...] | None = None,
     browser_references: BrowserReferences | None = None,
 ) -> ToolCatalogSnapshot:
@@ -169,6 +171,11 @@ def build_codemode_catalog(
                         task_navigation_schema(),
                         canonical_json_object(entry.parameters),
                     ]})
+            if entry.name in TASK_SOURCE_TOOLS and task_navigation_url is not None and task_source_selector:
+                original = canonical_json_object(entry.parameters)
+                entry = replace(entry, description='Select target="task" to read the original task URL without copying it. '
+                    'Use url for another authorized source. ' + entry.description,
+                    parameters={"anyOf": [task_source_schema(original), original]})
             allowed.append(entry)
     if browser_followup_checks is not None:
         for index, entry in enumerate(allowed):

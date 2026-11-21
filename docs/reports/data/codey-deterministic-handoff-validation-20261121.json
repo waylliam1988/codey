@@ -1,0 +1,596 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-21",
+  "timezone": "Asia/Taipei",
+  "base_head": "19c2d391bb973ae9e98d425e69c33446e2aaee4d",
+  "full_pytest_run": false,
+  "worktree_created": false,
+  "working_file_sha256": {
+    "codey/automation/browser_runtime.py": "6da1fb7e24b8191277099681c759e2cf69f00a52f365e3e19d90b4ffd20aabd3",
+    "codey/codemode/catalog.py": "57e49431d4b49ac3424dca0f175b265695458dc603712f8384235d9447e96e57",
+    "codey/codemode/host.py": "7b7fd7152e63c1fa42212ee7913177e47553c39d43af098a279a84cf8dd25b5d",
+    "codey/codemode/navigation.py": "43547bb55e233b34ae06a303d6e7ce1fe1eceed17d011fc6648cd95b5a8af92e",
+    "codey/codemode/verification.py": "a3c1798b79021effa6adaebacd75244ed3fafb1191f8a0d8bd3a752ffb8bd61e",
+    "codey/operations/browser_references.py": "efb8a9a3a5783db2f116f795d571766fc08a5efac01baf6b415adb517d17985e",
+    "codey/operations/browser_task_handoff.py": "1e5a189132f8020d59320c367d196b0e231ee636bcf42aaa7f77daade5fecc3d",
+    "codey/operations/kernel_context.py": "29f35bb4db3a916969dc358651707b8a939422dc500a08c73f45633a5a67ab54",
+    "codey/operations/kernel_control.py": "333d1a79c3cbf4d36769fdd24e92bd89197b5ec0dfa57f812fc0470ce60c2ba7",
+    "codey/operations/kernel_preparation.py": "c1ad33ba04a2b5ffe80c0b7dad95171ee20af0cc36ad38dbc4c53e03f5aba690",
+    "codey/operations/kernel_protocol.py": "d80ae6590a2e5dddb962b73acf79f86d9c970422c95086de21ba0786d12d0c71",
+    "codey/operations/kernel_tool_args.py": "1e51ef5f390301284aaddf26f1f0f670c630aefbbab75023447bb51af64d17cc",
+    "codey/operations/progress_comparison.py": "22632e926080d70421d6bdaf448d60aa958fab607514dfafa82d66a9aace39d6",
+    "codey/operations/provider_receipts.py": "b66e5e542ec8cc41d295f8f0f4de1f6f384f1f1036f966cc64f0cb221341b81d",
+    "codey/operations/task_guidance.py": "8e294468a39607c9e909b10ea2e0f15886c4ac9f4dbf627fc1bedb0d50688ea0",
+    "codey/operations/task_handoff.py": "e2c13534bbaaa23fba35b727a1317cf7b9739d719d0895a6fca3bc70700ecdb7",
+    "codey/research/answer_context.py": "87a8c1690ffcdfe83247615d96d8f5cc739f61f651123c18c3c86338fb697d4e",
+    "codey/research/answer_contract.py": "c051b2cf28d0a572daa8f06527c17df5489450460572fbdfed79ad1f9c9bfba6",
+    "codey/research/answer_values.py": "1b94484504f3b8a7fb1702864edf477f67825e47df0f3ec6cbe815a15721b088",
+    "codey/task/web_intent.py": "ff437f55264d9f8ad1a219758f9488989ac712b8e0f3b85b2f1b3eb7719808bb",
+    "tests/test_codemode_observation_progress.py": "fa3233297f7aba3c818d3b1ecb8eb07837d29bccd307f3bae151955cd00773da",
+    "tests/test_deterministic_input_handoffs.py": "3b0f85f60ac42fd1b11922055fc66a399a73ce78b60bdc866f83fb6ac1aec92f",
+    "tests/test_receipt_dependency_regressions.py": "43e2e4e84e1b58747d6754f1f6ffd6c25966689498dadd6598e847ded430e148",
+    "tests/test_task_guidance_reaches_production_entries.py": "24783dff0aa9e809bf6d0c329fd68e302b7fcf91ec21fc314133bea952cd2f19",
+    "tests/test_task_navigation_binding.py": "b59af71ed2a53930b291196f82421e01cca5ba9a905bc67db35a1b0bed81f674",
+    "tests/test_task_navigation_selector.py": "0035b96294689676678ced829c52224262e4a4da469578a0c88401cfc68f4af8",
+    "tools/unified_natural_browser_probe.py": "a5b7f27d72f07130ef23dbe639f3853917117fc9621dea0e150c1d1da3125868",
+    "tools/unified_real_browser_probe.py": "e8151a0108ecd674592beafa88c3c5bf06e88ab3c8c670a6da66b30447f596de"
+  },
+  "static_checks": [
+    {
+      "name": "ruff",
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/deterministic-handoff-ruff-verified-final.log",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "name": "production-mypy",
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/deterministic-handoff-production-mypy-verified-final.log",
+      "sha256": "524d0d03e1bf67e4f2c35ff9d5c76dcc53b6b268647b72f048fe13ff09089c8f",
+      "tail": [
+        "Success: no issues found in 736 source files"
+      ]
+    },
+    {
+      "name": "production-pyrefly",
+      "command": [
+        "python",
+        "-m",
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/deterministic-handoff-production-pyrefly-verified-final.log",
+      "sha256": "400b91ded9c3de1ef50dbc89a15b8bb595495dea03817437e1c09240a78d16b1",
+      "tail": [
+        " INFO 0 errors (35 suppressed, 164 warnings not shown)"
+      ]
+    },
+    {
+      "name": "production-ty",
+      "command": [
+        "python",
+        "-m",
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/deterministic-handoff-production-ty-verified-final.log",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "name": "owned-mypy",
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey/automation/browser_runtime.py",
+        "codey/codemode/catalog.py",
+        "codey/codemode/host.py",
+        "codey/codemode/navigation.py",
+        "codey/codemode/verification.py",
+        "codey/operations/browser_references.py",
+        "codey/operations/browser_task_handoff.py",
+        "codey/operations/kernel_context.py",
+        "codey/operations/kernel_control.py",
+        "codey/operations/kernel_preparation.py",
+        "codey/operations/kernel_protocol.py",
+        "codey/operations/kernel_tool_args.py",
+        "codey/operations/progress_comparison.py",
+        "codey/operations/provider_receipts.py",
+        "codey/operations/task_guidance.py",
+        "codey/operations/task_handoff.py",
+        "codey/research/answer_context.py",
+        "codey/research/answer_contract.py",
+        "codey/research/answer_values.py",
+        "codey/task/web_intent.py",
+        "tests/test_codemode_observation_progress.py",
+        "tests/test_deterministic_input_handoffs.py",
+        "tests/test_receipt_dependency_regressions.py",
+        "tests/test_task_guidance_reaches_production_entries.py",
+        "tests/test_task_navigation_binding.py",
+        "tests/test_task_navigation_selector.py",
+        "tools/unified_natural_browser_probe.py",
+        "tools/unified_real_browser_probe.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/deterministic-handoff-owned-mypy-verified-final.log",
+      "sha256": "e135b1fbc13e9616f6c4932f047bc42c8815dd18540caf5d3b4c9210b2c6c210",
+      "tail": [
+        "Success: no issues found in 28 source files"
+      ]
+    },
+    {
+      "name": "owned-pyrefly",
+      "command": [
+        "python",
+        "-m",
+        "pyrefly",
+        "check",
+        "codey/automation/browser_runtime.py",
+        "codey/codemode/catalog.py",
+        "codey/codemode/host.py",
+        "codey/codemode/navigation.py",
+        "codey/codemode/verification.py",
+        "codey/operations/browser_references.py",
+        "codey/operations/browser_task_handoff.py",
+        "codey/operations/kernel_context.py",
+        "codey/operations/kernel_control.py",
+        "codey/operations/kernel_preparation.py",
+        "codey/operations/kernel_protocol.py",
+        "codey/operations/kernel_tool_args.py",
+        "codey/operations/progress_comparison.py",
+        "codey/operations/provider_receipts.py",
+        "codey/operations/task_guidance.py",
+        "codey/operations/task_handoff.py",
+        "codey/research/answer_context.py",
+        "codey/research/answer_contract.py",
+        "codey/research/answer_values.py",
+        "codey/task/web_intent.py",
+        "tests/test_codemode_observation_progress.py",
+        "tests/test_deterministic_input_handoffs.py",
+        "tests/test_receipt_dependency_regressions.py",
+        "tests/test_task_guidance_reaches_production_entries.py",
+        "tests/test_task_navigation_binding.py",
+        "tests/test_task_navigation_selector.py",
+        "tools/unified_natural_browser_probe.py",
+        "tools/unified_real_browser_probe.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/deterministic-handoff-owned-pyrefly-verified-final.log",
+      "sha256": "cdf54c0cd66ecb05c5ecdf7def103e60f528336b4ce6e9426c6f3efd31415e0b",
+      "tail": [
+        " INFO 0 errors (16 warnings not shown)"
+      ]
+    },
+    {
+      "name": "owned-ty",
+      "command": [
+        "python",
+        "-m",
+        "ty",
+        "check",
+        "codey/automation/browser_runtime.py",
+        "codey/codemode/catalog.py",
+        "codey/codemode/host.py",
+        "codey/codemode/navigation.py",
+        "codey/codemode/verification.py",
+        "codey/operations/browser_references.py",
+        "codey/operations/browser_task_handoff.py",
+        "codey/operations/kernel_context.py",
+        "codey/operations/kernel_control.py",
+        "codey/operations/kernel_preparation.py",
+        "codey/operations/kernel_protocol.py",
+        "codey/operations/kernel_tool_args.py",
+        "codey/operations/progress_comparison.py",
+        "codey/operations/provider_receipts.py",
+        "codey/operations/task_guidance.py",
+        "codey/operations/task_handoff.py",
+        "codey/research/answer_context.py",
+        "codey/research/answer_contract.py",
+        "codey/research/answer_values.py",
+        "codey/task/web_intent.py",
+        "tests/test_codemode_observation_progress.py",
+        "tests/test_deterministic_input_handoffs.py",
+        "tests/test_receipt_dependency_regressions.py",
+        "tests/test_task_guidance_reaches_production_entries.py",
+        "tests/test_task_navigation_binding.py",
+        "tests/test_task_navigation_selector.py",
+        "tools/unified_natural_browser_probe.py",
+        "tools/unified_real_browser_probe.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/deterministic-handoff-owned-ty-verified-final.log",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "name": "all-tree-mypy",
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey",
+        "tests",
+        "tools",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 1,
+      "log": ".e2e-artifacts/deterministic-handoff-all-tree-mypy-verified-final.log",
+      "sha256": "8e7cc94c77ea8e5c930883e8a64ab63654f20f31e3ff596fefebdf054119ba3b",
+      "tail": [
+        "tests\\test_browser_receipt_edit_ab.py:59: note:     def __getitem__(self, slice[Any, Any, Any], /) -> list[JsonValue]",
+        "tests\\test_browser_receipt_edit_ab.py:59: error: Invalid index type \"str\" for \"str\"; expected type \"SupportsIndex | slice[Any, Any, Any]\"  [index]",
+        "Found 18052 errors in 1265 files (checked 2566 source files)"
+      ]
+    },
+    {
+      "name": "all-tree-pyrefly",
+      "command": [
+        "python",
+        "-m",
+        "pyrefly",
+        "check",
+        "codey",
+        "tests",
+        "tools",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 1,
+      "log": ".e2e-artifacts/deterministic-handoff-all-tree-pyrefly-verified-final.log",
+      "sha256": "4694a80db92794b335d1f21cf7c693e2b8ed079d5ab3068590efe9e6eed469d3",
+      "tail": [
+        "    |                                                                             ^^",
+        "  Consider adding a type annotation or initializing with a non-empty value",
+        " INFO 21,142 errors (154 suppressed, 629 warnings not shown)"
+      ]
+    },
+    {
+      "name": "all-tree-ty",
+      "command": [
+        "python",
+        "-m",
+        "ty",
+        "check",
+        "codey",
+        "tests",
+        "tools",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 1,
+      "log": ".e2e-artifacts/deterministic-handoff-all-tree-ty-verified-final.log",
+      "sha256": "b8c356e10fbef51f075c51ca13e22850fc6d6fd7fb29946fab071c7f5c7c32fb",
+      "tail": [
+        "info:     └── ... omitted 5 union elements without additional context",
+        "",
+        "Found 4943 diagnostics"
+      ]
+    },
+    {
+      "name": "precision",
+      "command": [
+        "python",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/deterministic-handoff-precision-verified-final.log",
+      "sha256": "a4235b3bf75e4945e89304625234e20fe199890bf1400658fd27a5d77cdb5c44",
+      "tail": [
+        "kernel Any counts are zero; typed contract escape checks passed"
+      ]
+    }
+  ],
+  "test_batches": [
+    {
+      "log": ".e2e-artifacts/deterministic-handoff-baseline-tests.log",
+      "exit_code": 0,
+      "sha256": "448cb89058776a9c88b735d4f953970b0fbcbe8a06e1fcc4ccbf0135278c1f10",
+      "tail": [
+        "........................................................................ [ 52%]",
+        ".................................................................        [100%]",
+        "RAM disk: R:\\codey-pytest\\run-mq88axr7 (cleaned at process exit)",
+        "137 passed in 110.23s (0:01:50)"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/handoff-expanded-first.log",
+      "exit_code": 1,
+      "sha256": "2996ef77949a3e039d863fe6955eb8d747966dfa47694fe138273b431cf1ff5b",
+      "tail": [
+        "RAM disk: R:\\codey-pytest\\run-87lz4osw (retained after failure)",
+        "no tests ran in 0.00s",
+        "ERROR: file or directory not found: tests/test_research_whole_answer_contract.py",
+        ""
+      ],
+      "note": "The exec command reported failure; pytest ran no tests because a selected path did not exist."
+    },
+    {
+      "log": ".e2e-artifacts/handoff-expanded-second.log",
+      "exit_code": 0,
+      "sha256": "852ad81035d8e0e44c2695facc40d6e30a398925900fa34959f8b8bf95c7e874",
+      "tail": [
+        "........................................................................ [ 88%]",
+        "...................                                                      [100%]",
+        "RAM disk: R:\\codey-pytest\\run-2m4ovunm (cleaned at process exit)",
+        "163 passed in 564.13s (0:09:24)"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/handoff-recovery-budget-first.log",
+      "exit_code": 1,
+      "sha256": "cec773dddecc5fbceaf8551c1bb7f62604bd906721cf83a619cf2689fd8aed72",
+      "tail": [
+        "RAM disk: R:\\codey-pytest\\run-m9xhap_3 (retained after failure)",
+        "=========================== short test summary info ===========================",
+        "FAILED tests/test_codemode_observation_progress.py::test_production_repeated_program_receives_recovery_then_completes_without_another_search_loop",
+        "1 failed, 72 passed in 61.56s (0:01:01)"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/handoff-recovery-budget-second.log",
+      "exit_code": 1,
+      "sha256": "a6be9f7fe9be9b369b64cc702e494e302307b58ffb3c12c57e7ea89bc390ae11",
+      "tail": [
+        "RAM disk: R:\\codey-pytest\\run-xsqoxpbf (retained after failure)",
+        "=========================== short test summary info ===========================",
+        "FAILED tests/test_codemode_observation_progress.py::test_production_repeated_program_receives_recovery_then_completes_without_another_search_loop",
+        "1 failed, 76 passed in 59.94s"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/handoff-recovery-budget-third.log",
+      "exit_code": 0,
+      "sha256": "4ef7313d851f09d1d2231b8518b9e3362fa6f55e21ed92d2c0a21a6f1772b8ea",
+      "tail": [
+        "........................................................................ [ 93%]",
+        ".....                                                                    [100%]",
+        "RAM disk: R:\\codey-pytest\\run-qou4gdta (cleaned at process exit)",
+        "77 passed in 66.08s (0:01:06)"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/handoff-final-regressions-first.log",
+      "exit_code": 0,
+      "sha256": "fb189e9f9518d1aa6f66321526240ffdf9628774c5f8c51859daaa5ede3e6588",
+      "tail": [
+        "........................................................................ [ 96%]",
+        ".......                                                                  [100%]",
+        "RAM disk: R:\\codey-pytest\\run-m0bwd9bb (cleaned at process exit)",
+        "223 passed in 206.49s (0:03:26)"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/handoff-progress-final-first.log",
+      "exit_code": 1,
+      "sha256": "ee8a4086183e4215f549f942b486551d3baaf864401966a2cf36de2de9e640e8",
+      "tail": [
+        "RAM disk: R:\\codey-pytest\\run-2di00641 (retained after failure)",
+        "no tests ran in 0.00s",
+        "ERROR: file or directory not found: tests/test_kernel_progress_semantics.py",
+        ""
+      ],
+      "note": "The exec command reported failure; pytest ran no tests because a selected path did not exist."
+    },
+    {
+      "log": ".e2e-artifacts/handoff-progress-final-second.log",
+      "exit_code": 0,
+      "sha256": "9880763eed7d0d5aadbeb13bd2dab53ff480ea18bca765cb86253b5b00d830a7",
+      "tail": [
+        "........................................................................ [ 59%]",
+        ".................................................                        [100%]",
+        "RAM disk: R:\\codey-pytest\\run-xg_51v7z (cleaned at process exit)",
+        "121 passed in 121.65s (0:02:01)"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/handoff-browser-final-first.log",
+      "exit_code": 0,
+      "sha256": "dea73f3a0e1e9a46d0d85fa64e697b0344fc909d20bffc603635d1c370324013",
+      "tail": [
+        "........................................................................ [ 94%]",
+        "....                                                                     [100%]",
+        "RAM disk: R:\\codey-pytest\\run-e53_s6ty (cleaned at process exit)",
+        "76 passed in 154.50s (0:02:34)"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/handoff-reference-first.log",
+      "exit_code": 0,
+      "sha256": "707412e646ecb17bda6437b8a2c1a141ae632902fa6bf231e6ce96a7b60692c6",
+      "tail": [
+        "....................                                                     [100%]",
+        "RAM disk: R:\\codey-pytest\\run-0bsl1095 (cleaned at process exit)",
+        "20 passed, 90 deselected in 6.44s"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/handoff-entry-final-first.log",
+      "exit_code": 0,
+      "sha256": "7cfa27c695c3668f99f01d9feb635c599e15333d8efe48a9239ea06ed652fa37",
+      "tail": [
+        "........................................................................ [ 77%]",
+        "..........................................                               [100%]",
+        "RAM disk: R:\\codey-pytest\\run-puz67ht1 (cleaned at process exit)",
+        "186 passed in 129.45s (0:02:09)"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/handoff-unbound-document-first.log",
+      "exit_code": 0,
+      "sha256": "f7e9d71e19d1038e6354188f9ae83445f28e0fc187842c23f027e358cf504e95",
+      "tail": [
+        ".                                                                        [100%]",
+        "RAM disk: R:\\codey-pytest\\run-zz7cczrj (cleaned at process exit)",
+        "1 passed, 50 deselected in 4.66s"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "directory": ".e2e-artifacts/handoff-live-docs-first",
+      "task_sha256": "fbeb53aea517485898c291b0a31d03bca9b63b78a28bf9f666ac122ff411219b",
+      "stop_reason": "error",
+      "external_verdict": "production_budget_failure",
+      "natural_task_closed": null,
+      "artifacts": {
+        "events.jsonl": "92643bc37f691c2e896a4fb47593dae9d5f60c5d411704dff62fb1dcffb1ac26",
+        "provider.jsonl": "e01690d901817626872d9d55381f7dc914f486a39f40e31d5b31a885511c1e45",
+        "request.json": "3dc6eaf65325b36fb7e947ba7cfc3dfc1a43a22f9325978c9955b7f564d2188d",
+        "summary.json": "a3d9b4a2e99d17b441fcb8d5ca92f75bff06c1845e9bb6cb86067864fa4c7c17"
+      }
+    },
+    {
+      "directory": ".e2e-artifacts/handoff-live-docs-second",
+      "task_sha256": "fbeb53aea517485898c291b0a31d03bca9b63b78a28bf9f666ac122ff411219b",
+      "stop_reason": "max_turns",
+      "external_verdict": "model_navigation_failure",
+      "natural_task_closed": null,
+      "artifacts": {
+        "events.jsonl": "18af5adb2b0fcd31b14335ed94753b78caa994b2aad00137134d8368648cafe5",
+        "provider.jsonl": "3da87de3465f3485abc6cf8f0852a755dbd22167c9dd6cb510132a935cdd4fb0",
+        "request.json": "3dc6eaf65325b36fb7e947ba7cfc3dfc1a43a22f9325978c9955b7f564d2188d",
+        "summary.json": "d4082c83e5df544bb5f7066406a197ec29d68c8248c2f7f3eaf90abae1a27c79"
+      }
+    },
+    {
+      "directory": ".e2e-artifacts/handoff-live-docs-third",
+      "task_sha256": "fbeb53aea517485898c291b0a31d03bca9b63b78a28bf9f666ac122ff411219b",
+      "stop_reason": "done",
+      "external_verdict": "reviewed_goal_pass",
+      "natural_task_closed": null,
+      "artifacts": {
+        "events.jsonl": "39817350e855459078a2a66e081484d534072d697bea2fe7593b781334da934c",
+        "provider.jsonl": "93c3efed648a3a6f35bc42692c36e33d00020638772e5668648c31b88338cf06",
+        "request.json": "3dc6eaf65325b36fb7e947ba7cfc3dfc1a43a22f9325978c9955b7f564d2188d",
+        "summary.json": "06d6c0423f496bad3e8dd44e5e9b8041406e780e2fae6ab620c46566f2333ce1"
+      }
+    },
+    {
+      "directory": ".e2e-artifacts/handoff-live-books-first",
+      "task_sha256": "96997b22589c37b22b74dd56ba6799171d086a39ab326115ccc044a9c6d56450",
+      "stop_reason": "done",
+      "external_verdict": "insufficient_source_for_tax_label_despite_kernel_done",
+      "natural_task_closed": null,
+      "artifacts": {
+        "events.jsonl": "efbed86b223f7b623f95ca704fff39f0b0bad8ea72e22bb5c60e0524209fcadd",
+        "provider.jsonl": "0bf88124db68af31bba45ecc4c5f0cd5eff4756b439e71b9ced23474b98466d5",
+        "request.json": "e56ca5929b1fbe2887700a8ef8c21744ff868899f87fff45e84c28789f8e0ae3",
+        "summary.json": "abc9161bbb73e8faac2fb913294edbde456caeafc7cb72cfe52e91657c95b1a2"
+      }
+    },
+    {
+      "directory": ".e2e-artifacts/handoff-live-books-second",
+      "task_sha256": "96997b22589c37b22b74dd56ba6799171d086a39ab326115ccc044a9c6d56450",
+      "stop_reason": "done",
+      "external_verdict": "reviewed_goal_pass",
+      "natural_task_closed": null,
+      "artifacts": {
+        "events.jsonl": "4f14557e5d791f996d7e05b244cdfa0ed6b9ad1c761f91c3b20d1acccdf2902c",
+        "provider.jsonl": "a3da96662e52da2ae5efcd4620e297291bf03f21ea373c7e370a1382d2a802a4",
+        "request.json": "e56ca5929b1fbe2887700a8ef8c21744ff868899f87fff45e84c28789f8e0ae3",
+        "summary.json": "6f4333fe764773cc9cbbc57dbabf8d55db641ccfd54a26b6c82b113257979313"
+      }
+    },
+    {
+      "directory": ".e2e-artifacts/handoff-natural-flexible-first",
+      "task_sha256": "7b065d952a6ec947a91baa648f365637a070130b3cb3b5f2624dfe78416c3974",
+      "stop_reason": "controller_failure",
+      "external_verdict": "production_unbound_document_failure",
+      "natural_task_closed": false,
+      "artifacts": {
+        "events.jsonl": "ccf16be382e328c83acd3ca16d21b044b72ec6f52f28c460feb85187102b440c",
+        "natural-verdict.json": "6f1fdde25b338d874362e4dd1e9d3a47b15b56bee31f9f2494d03ab69a896b93",
+        "project-result.json": "8e9254cf167fa184975774cd732d4f8ed02ba3e7911e3542ef2446ff809336dc",
+        "provider.jsonl": "7bcb7c1094d58d7bb481577836075e0f4f1f83927703813760ea264f2510add6",
+        "receipts.json": "4ac210d1a787e5f7aec48aba5ac28325034e03bcb0da6343e0a94aa64c7139e6",
+        "request.json": "70bc9b9098d96c8bceab72a4e669effaa72ab3aac6473239e905c7d4176f637b",
+        "summary.json": "62ac196fbc60bd6db980e0f3664eee9aa08207082261a676a33f861b18dc2372",
+        "task.txt": "7b065d952a6ec947a91baa648f365637a070130b3cb3b5f2624dfe78416c3974"
+      }
+    },
+    {
+      "directory": ".e2e-artifacts/handoff-natural-flexible-second",
+      "task_sha256": "7b065d952a6ec947a91baa648f365637a070130b3cb3b5f2624dfe78416c3974",
+      "stop_reason": "no_progress",
+      "external_verdict": "model_wrong_url_and_no_progress",
+      "natural_task_closed": false,
+      "artifacts": {
+        "events.jsonl": "76cf14de5cc8da6863d5919f20b67366b0fde3f22a3324f1004fb4a3cc113f31",
+        "natural-verdict.json": "ebfe06a9511c20f79f861cb6c1916cd4d4f4c922d6d8254ff12a5d58117460a3",
+        "project-result.json": "8e9254cf167fa184975774cd732d4f8ed02ba3e7911e3542ef2446ff809336dc",
+        "provider.jsonl": "b61caca7dc35b03c7dd62c067ef3d3462138b3692f911604168058a5a411d6cd",
+        "receipts.json": "ba2225dae1b2540e38587586561f93fd83c34e194f71f4af189e72ec39abc303",
+        "request.json": "70bc9b9098d96c8bceab72a4e669effaa72ab3aac6473239e905c7d4176f637b",
+        "summary.json": "4aa494a4ba9c50d5f120c095b52821b0d4c763148cc7901d70fb4a1cb3daf817",
+        "task.txt": "7b065d952a6ec947a91baa648f365637a070130b3cb3b5f2624dfe78416c3974"
+      }
+    },
+    {
+      "directory": ".e2e-artifacts/handoff-natural-flexible-third",
+      "task_sha256": "7b065d952a6ec947a91baa648f365637a070130b3cb3b5f2624dfe78416c3974",
+      "stop_reason": "done",
+      "external_verdict": "reviewed_goal_pass",
+      "natural_task_closed": true,
+      "artifacts": {
+        "events.jsonl": "a9016b737ee4ffbcfc8dc4c4da32842e775eb6d18fe04d91a1e26bad8b4cf623",
+        "natural-verdict.json": "d96dfbce70df1ba28b2882eaf0b3f5467ee30c0f93d80322c17b0af87de0105b",
+        "project-result.json": "505f1cc0a3153a67003e1eac7f718098f3d557e6667a808e9221ed8b16d2a5f4",
+        "proposals.jsonl": "127c387c4fc88381959ee5cdec66fa22ea1c07a9090c3d5585dddc810c40ff80",
+        "provider.jsonl": "16acea8fcbdd0f35350b09cc98c8ddfb4443736a3858b579ef39e5e93c096038",
+        "receipts.json": "9874701e6b284854163a9fb3904c0fcf9d8e28aa4dc438e3ef047f0ea0d43d1b",
+        "request.json": "70bc9b9098d96c8bceab72a4e669effaa72ab3aac6473239e905c7d4176f637b",
+        "summary.json": "df980684117604ee95e66cf719d6ca31deb9c8425a7422f7524ebe41012266e4",
+        "task.txt": "7b065d952a6ec947a91baa648f365637a070130b3cb3b5f2624dfe78416c3974"
+      }
+    }
+  ],
+  "precision": {
+    "artifact": ".e2e-artifacts/handoff-owned-precision-final.json",
+    "sha256": "42e47caadc4e38284cd223b15455052f1071a0b6cfc85aa14229d48192787126",
+    "violations": {}
+  },
+  "limits": [
+    "Historical tests/tools full-tree type errors remain; production and changed-file gates passed.",
+    "A kernel done or a cited page alone does not certify arbitrary report semantics.",
+    "Batch coverage overlaps; counts must not be added."
+  ]
+}

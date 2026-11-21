@@ -38,8 +38,8 @@ def test_real_5796b29d_snapshot_is_preserved_but_rejected_by_current_runtime() -
     assert fixture.read_bytes() == original
 
 
-@pytest.mark.parametrize("version", [1, 2, 3])
-def test_control_presentation_versions_are_explicit_and_tampering_cannot_select_another_contract(version: Literal[1, 2]) -> None:
+@pytest.mark.parametrize("version", [1, 2, 3, 4])
+def test_control_presentation_versions_are_explicit_and_tampering_cannot_select_another_contract(version: Literal[1, 2, 3, 4]) -> None:
     from codey.operations.kernel_protocol import offer_browser_tools, refresh_snapshot_contract
     from tests.test_browser_result_adoption_ab import session_with_snapshot
 
@@ -54,7 +54,7 @@ def test_control_presentation_versions_are_explicit_and_tampering_cannot_select_
     payload["browser_references"] = raw
     with pytest.raises(ValueError, match="contract text differs"):
         restore_snapshot(payload)
-    raw["presentation_version"] = 4
+    raw["presentation_version"] = 5
     with pytest.raises(ValueError, match="presentation version"):
         restore_snapshot(payload)
 

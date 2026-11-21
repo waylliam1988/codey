@@ -393,7 +393,7 @@ class BrowserRuntime:
             self._revision += 1
             return None, b""
         if action == BrowserAction.DOCUMENT:
-            if self._browser is None and self._resume_binding is None:
+            if not self._active and (self._resume_binding is None or not self._resume_binding.active_target):
                 return None, b""
             state = await self._state(invocation)
             if state.binding.target_id in self._dialogs:

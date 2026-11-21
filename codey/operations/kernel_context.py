@@ -24,7 +24,7 @@ from codey.operations.kernel_contracts import (
     RetryDecision,
 )
 from codey.operations.kernel_errors import RecoveryFailed
-from codey.operations.kernel_preparation import prepare_kernel_turn
+from codey.operations.kernel_preparation import capture_turn_snapshot, prepare_kernel_turn
 from codey.operations.kernel_progress import KernelProgress
 from codey.operations.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
 from codey.operations.kernel_trace import record_outbound, record_turn
@@ -488,11 +488,22 @@ class KernelContext:
         if explanation_only:
             options = replace(options, tool_call_observations=prompt, tool_call_history_groups=1)
         elif self.request_scoped_observations and not (self.native and acknowledge):
+            from codey.knowledge.model import canonical_json
+            from codey.providers.response_record import json_value
+            # The sampling schema is not prompt prose. The provider counts its
+            # real wire envelope at admission; serializing it here counts a
+            # second textual tool catalog that this request never sends.
+            declaration = (kernel_prompt._text_request_prompt("", snapshot)
+                           if not self.native else canonical_json(json_value(tools)))
+            fixed = "\n\n".join(part for part in (prompt,
+                self.transport.context_text if self.transport.context_text not in prompt else "",
+                coding if coding not in prompt else "", declaration,
+                canonical_json(json_value(messages)) if messages else "") if part)
             observations = task_working_context(
                 self.session, self.execution.research_tools.ledger if self.execution.research_tools is not None else None,
                 self.execution.research_tools.store if self.execution.research_tools is not None else None,
                 self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research_scope,
-                tool_names=snapshot.tool_names, provider=self.provider)
+                tool_names=snapshot.tool_names, provider=self.provider, fixed_context=fixed)
             # Canonical replay excludes optional memory candidates. Each continuation must
             # carry its frozen context without relying on a warm wire history.
             context = self.transport.context_text
@@ -540,7 +551,7 @@ class KernelContext:
         from codey.operations.knowledge_context import knowledge_background
 
         recalled = knowledge_background(self.execution.research_tools, self.session, str(self.transport.user_task or ""))
-        snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native)
+        snapshot = capture_turn_snapshot(self.session, native=self.native)
         if (prefetched is None and state.logical_turn == 0 and state.leaf == operation_payload.LEAF_WRITER_RUNNING
                 and self.prefetch_required_sources(snapshot)):
             return
@@ -806,7 +817,7 @@ class KernelContext:
             self.close(state, no_progress_result(self.session, turn) if reason == "no_progress"
                        else KernelResult(False, summary, turn, reason))
             return
-        snapshot, handoff = self.request_snapshot(kernel_protocol.build_turn_snapshot(self.session, native=self.native),
+        snapshot, handoff = self.request_snapshot(capture_turn_snapshot(self.session, native=self.native),
                                                  delivered_results=results)
 
         def result_context(result: ToolResult) -> str:

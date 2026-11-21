@@ -22,7 +22,8 @@ if TYPE_CHECKING:
 def task_working_context(session: TaskSession, research_ledger: ResearchLedger | None = None,
                          knowledge_store: KnowledgeStore | StagedKnowledgeStore | None = None,
                          knowledge_session_id: str = "", *, research_scope: AnswerScope | None = None,
-                         tool_names: tuple[str, ...] | None = None, provider: object = None) -> str:
+                         tool_names: tuple[str, ...] | None = None, provider: object = None,
+                         fixed_context: str = "") -> str:
     from codey.operations.kernel_prompt import working_context
     from codey.research.completion_guidance import render_research_observations
 
@@ -40,7 +41,7 @@ def task_working_context(session: TaskSession, research_ledger: ResearchLedger |
     if isinstance(scope, AnswerScope):
         from codey.research.answer_context import answer_context, work_view_limits
 
-        count, cap = work_view_limits(provider)
+        count, cap = work_view_limits(provider, fixed_context=fixed_context)
         parts.append(answer_context(session, research_ledger, scope, count_tokens=count, token_budget=cap))
         return "\n\n".join(parts)
     from codey.operations.source_gaps import source_gap_context

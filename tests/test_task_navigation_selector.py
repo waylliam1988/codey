@@ -48,7 +48,7 @@ def offered(url: str = URL) -> tuple[TaskSession, TurnSnapshot]:
 def test_direct_selector_freezes_the_exact_source_and_preserves_other_navigation(native: bool, url: str) -> None:
     session, snapshot = offered(url)
     restored = restore_snapshot(parse_json_object(canonical_json(snapshot_description(snapshot))))
-    assert restored == snapshot and snapshot_description(restored)["schema_version"] == 12
+    assert restored == snapshot and snapshot_description(restored)["schema_version"] == 13
     spec = next(spec for spec in restored.model_specs if spec.name == "browser_navigate")
     assert spec.required == ("target",) and set(dict(spec.parameters)) == {"target"}
     reply = (AssistantTurn(tool_calls=(ProviderToolCall("navigate", "browser_navigate", {"target": "task"}),)) if native
@@ -75,7 +75,7 @@ def test_raw_url_and_ambiguous_arguments_are_rejected_before_an_effect(args: Jso
 
 def test_legacy_request_keeps_url_contract_and_new_request_cannot_change_its_presentation() -> None:
     _, current = offered()
-    legacy = refresh_snapshot_contract(replace(current, task_navigation_selector=False))
+    legacy = refresh_snapshot_contract(replace(current, input_contract_version=11))
     raw = snapshot_description(legacy)
     assert raw["schema_version"] == 11
     restored = restore_snapshot(parse_json_object(canonical_json(raw)))
@@ -99,13 +99,13 @@ def test_no_unique_source_keeps_url_input_and_denied_navigation_stays_denied() -
     assert "browser_navigate" not in {entry.name for entry in snapshot_catalog(denied).entries}
 
 
-def wire_navigation_schema(payload: JsonObject, native: bool) -> JsonObject:
+def wire_navigation_schema(payload: JsonObject, native: bool, tool_name: str = "browser_navigate") -> JsonObject:
     if native:
         tools = payload["tools"]
         assert isinstance(tools, list)
         for raw in tools:
             function = decode_json_object(decode_json_object(raw)["function"])
-            if function["name"] == "browser_navigate":
+            if function["name"] == tool_name:
                 return decode_json_object(function["parameters"])
     else:
         root = decode_json_object(decode_json_object(decode_json_object(payload["response_format"])["json_schema"])["schema"])
@@ -116,9 +116,9 @@ def wire_navigation_schema(payload: JsonObject, native: bool) -> JsonObject:
             assert isinstance(clauses, list)
             properties: JsonObject = {key: value for clause in clauses
                 for key, value in decode_json_object(decode_json_object(clause).get("properties", {})).items()}
-            if decode_json_object(properties["tool"]).get("enum") == ["browser_navigate"]:
+            if decode_json_object(properties["tool"]).get("enum") == [tool_name]:
                 return decode_json_object(properties["args"])
-    raise AssertionError("actual request has no browser_navigate contract")
+    raise AssertionError(f"actual request has no {tool_name} contract")
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
