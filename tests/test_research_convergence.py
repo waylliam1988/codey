@@ -1,32 +1,56 @@
-"""Research has one complete-answer contract and rejects retired local writes."""
+"""Report delivery composes with authorized tools and rejects invalid writes."""
+
+from __future__ import annotations
 
 import json
-from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 
+from codey.knowledge.changes import KnowledgeChanges
+from codey.knowledge.store import KnowledgeStore
 from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_execution import ExecutionDelegate
+from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, STRICT_RESEARCH_REQUIRED_CHECKS, TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.research.answer_contract import AnswerScope
+from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall
-from tests.test_research_findings import setup
+from codey.types.json_value import JsonObject
 
-RETIRED = ("research_plan", "knowledge_commit", "knowledge_write", "knowledge_link", "save_finding", "save_inference")
+AUXILIARY = ("research_plan", "knowledge_commit", "knowledge_write", "knowledge_link", "save_finding", "save_inference")
+
+
+class Search:
+    def fetch(self, url: str) -> dict[str, object]:
+        return {"status": "ok", "url": url, "title": "Original study", "text": "One writer at a time.", "truncated": False}
+
+    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
+        return [{"url": "https://example.com/study", "title": "Original study", "snippet": "Lead, not evidence"}]
+
+
+def setup(tmp_path: Path) -> tuple[KnowledgeStore, ResearchTools, TaskSession, ExecutionDelegate]:
+    store = KnowledgeStore(tmp_path)
+    tools = ResearchTools(Search(), store, KnowledgeChanges(tmp_path), session_id="first")
+    session = TaskSession(TaskPolicy(frozenset({"web.read", "knowledge.write", "knowledge.read", "control"})),
+        task_kind="research", task_text="Explain writer concurrency.")
+    tools.ledger.questions = ("What limits writer concurrency?",)
+    session.research_questions = tools.ledger.questions
+    return store, tools, session, ExecutionDelegate(session=session, research_tools=tools)
 
 
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("checks", [(), STRICT_RESEARCH_REQUIRED_CHECKS, RESEARCH_ANSWER_REQUIRED_CHECKS])
-def test_every_research_entry_exposes_only_complete_answer_contract(tmp_path, native, checks):
+def test_every_research_entry_exposes_complete_delivery_and_authorized_tools(tmp_path: Path, native: bool, checks: tuple[str, ...]) -> None:
     store, tools, session, _ = setup(tmp_path)
     try:
         session.policy = TaskPolicy(session.policy.grants, strict_research=True, required_checks=checks)
         snapshot = build_turn_snapshot(session, native=native)
         assert isinstance(snapshot.research_scope, AnswerScope)
-        assert not set(RETIRED).intersection(snapshot.tool_names)
-        assert "submit_research_answer" in snapshot.tool_names and "done" not in snapshot.tool_names
+        assert {"knowledge_commit", "knowledge_write", "save_finding", "save_inference"} <= set(snapshot.tool_names)
+        assert "submit_research_answer" in snapshot.tool_names and "done" in snapshot.tool_names
         spec = next(spec for spec in snapshot.model_specs if spec.name == "submit_research_answer")
         assert spec.required == ("markdown", "state")
         assert set(dict(spec.parameters)) == {"markdown", "state", "knowledge_updates"}
@@ -39,8 +63,8 @@ def test_every_research_entry_exposes_only_complete_answer_contract(tmp_path, na
         store.close()
 
 
-@pytest.mark.parametrize("tool", RETIRED)
-def test_forced_retired_action_never_writes_or_registers_plan(tmp_path, tool):
+@pytest.mark.parametrize("tool", AUXILIARY)
+def test_invalid_auxiliary_action_never_writes_or_registers_plan(tmp_path: Path, tool: str) -> None:
     store, tools, session, _ = setup(tmp_path)
     try:
         session.policy = TaskPolicy(session.policy.grants, strict_research=True)
@@ -49,14 +73,14 @@ def test_forced_retired_action_never_writes_or_registers_plan(tmp_path, tool):
         questions, count = tools.ledger.questions, store.index.count()
         result, ok, _ = delegate._execute_research(ToolCall(tool, {}))
         assert not ok and not result.ok
-        assert "knowledge_updates" in result.model_text
+        assert result.model_text.startswith("ERROR:")
         assert tools.ledger.questions == questions and store.index.count() == count
         assert not result.canonical.get("research_submission")
     finally:
         store.close()
 
 
-def test_old_frozen_local_request_fails_explicitly_instead_of_becoming_whole_answer(tmp_path):
+def test_old_frozen_local_request_fails_explicitly_instead_of_becoming_whole_answer(tmp_path: Path) -> None:
     store, _, session, _ = setup(tmp_path)
     try:
         session.policy = TaskPolicy(session.policy.grants, strict_research=True)
@@ -69,11 +93,13 @@ def test_old_frozen_local_request_fails_explicitly_instead_of_becoming_whole_ans
         store.close()
 
 
-def test_scope_for_another_task_is_rejected_before_any_acquisition(tmp_path, monkeypatch):
+def test_scope_for_another_task_is_rejected_before_any_acquisition(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     store, tools, session, _ = setup(tmp_path)
     try:
         session.policy = TaskPolicy(session.policy.grants, strict_research=True)
-        monkeypatch.setattr(tools.search, "search", lambda *_: pytest.fail("retired request acquired new sources"))
+        def unexpected_search(*args: object, **kwargs: object) -> list[JsonObject]:
+            pytest.fail("request for another task acquired new sources")
+        monkeypatch.setattr(tools.search, "search", unexpected_search)
         delegate = ExecutionDelegate(session=session, research_tools=tools,
                                      research_scope=AnswerScope("a" * 64, (), ()))
         result, ok, _ = delegate._execute_research(ToolCall("web_search", {"query": "writer"}))
@@ -83,13 +109,13 @@ def test_scope_for_another_task_is_rejected_before_any_acquisition(tmp_path, mon
         store.close()
 
 
-def test_complete_answer_submission_never_leaks_into_other_task_contracts(tmp_path):
+def test_complete_answer_submission_never_leaks_into_other_task_contracts(tmp_path: Path) -> None:
     store, _, session, _ = setup(tmp_path)
     try:
         session.task_kind = "chat"
         session.policy = TaskPolicy(session.policy.grants, strict_research=True)
         session.opened_sources = {"https://example.com/study"}
-        session.evidence = [("https://example.com/study", "saved prior finding")]
+        session.evidence = [{"source": "https://example.com/study", "quote": "saved prior finding"}]
         snapshot = build_turn_snapshot(session)
         assert snapshot.research_scope is None
         assert "submit_research_answer" not in snapshot.tool_names
@@ -99,19 +125,25 @@ def test_complete_answer_submission_never_leaks_into_other_task_contracts(tmp_pa
 
 @pytest.mark.parametrize("kind", ["research", "hybrid", "chat"])
 @pytest.mark.parametrize("has_prior", [False, True])
-def test_background_guidance_only_requests_fields_the_task_can_submit(kind, has_prior):
+def test_background_guidance_only_requests_fields_the_task_can_submit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str, has_prior: bool,
+) -> None:
     from codey.knowledge.model import KnowledgeObject, KnowledgeVersion
     from codey.knowledge.recall import KnowledgeHit
     from codey.operations.knowledge_context import knowledge_background
-    from codey.operations.task_session import TaskSession
 
     value = KnowledgeObject("claim-writer", "claim", "Only one writer can write at a time.", "model_extraction")
     hits = [KnowledgeHit(KnowledgeVersion(value, 3, "2026-11-04", "old-commit"), "text")] if has_prior else []
-    tools = SimpleNamespace(store=SimpleNamespace(search=lambda *args, **kwargs: hits, owner_id="owner"),
-                            project="", session_id="s", created_ids=[], updated_ids=[])
-    session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read", "knowledge.write"}),
-                                    strict_research=kind != "chat"), task_kind=kind)
-    text = knowledge_background(tools, session, "writer")
+    store, tools, session, _ = setup(tmp_path)
+    def search(*args: object, **kwargs: object) -> list[KnowledgeHit]:
+        return hits
+    monkeypatch.setattr(store, "search", search)
+    session.task_kind = kind
+    session.policy = TaskPolicy(session.policy.grants, strict_research=kind != "chat")
+    try:
+        text = knowledge_background(tools, session, "writer")
+    finally:
+        store.close()
     if kind == "research":
         assert "Use scope=" not in text and "scope_id" not in text
         assert "in done" not in text

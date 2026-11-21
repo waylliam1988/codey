@@ -19,7 +19,13 @@ from codey.operations.provider_receipts import restore_snapshot, snapshot_descri
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import parse_tool_success_check, require_browser_report_field, require_tool_success
-from codey.research.answer_contract import AnswerScope, answer_scope, submit_answer, validate_submission
+from codey.research.answer_contract import (
+    ANSWER_SCOPE_VERSION,
+    AnswerScope,
+    answer_scope,
+    submit_answer,
+    validate_submission,
+)
 from codey.research.answer_report import AnswerReport
 from codey.research.ledger import OpenedSource
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -509,7 +515,7 @@ def test_original_scope_payload_and_new_frozen_snapshot_restore_without_upgradin
     snapshot = build_turn_snapshot(session)
     restored = restore_snapshot(snapshot_description(snapshot))
     assert restored == snapshot
-    assert restored.research_scope is not None and restored.research_scope.schema_version == 5
+    assert restored.research_scope is not None and restored.research_scope.schema_version == ANSWER_SCOPE_VERSION
     declaration = session.policy.required_checks[0]
     rule = parse_tool_success_check(declaration)
     assert rule is not None and rule.declaration == declaration

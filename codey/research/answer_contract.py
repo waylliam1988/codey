@@ -31,7 +31,7 @@ from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import ToolArgs, canonical_json_object, decode_json_object, require_json_string
 from codey.utils.citation_scanner import mask_markdown_code
 
-ANSWER_SCOPE_VERSION = 4
+ANSWER_SCOPE_VERSION = 6
 ANSWER_CONTRACT_VERSION = 1
 MAX_ANSWER_CHARACTERS = 64000
 ANSWER_STATES = ("answered", "partial", "unresolved")
@@ -133,7 +133,7 @@ class AnswerScope:
     def to_payload(self) -> AnswerScopePayload:
         payload = AnswerScopePayload(task_digest=self.task_digest, aliases=[list(row) for row in self.aliases],
                                      attempt_refs=list(self.attempt_refs), schema_version=self.schema_version)
-        if self.schema_version == 5:
+        if self.schema_version in {5, ANSWER_SCOPE_VERSION}:
             payload["fields"] = [field.to_payload() for field in self.fields]
         return payload
 
@@ -141,8 +141,10 @@ class AnswerScope:
     def from_payload(cls, raw: object) -> AnswerScope:
         raw = decode_json_object(raw)
         version = raw.get("schema_version")
-        expected = {"task_digest", "aliases", "attempt_refs", "schema_version"} | ({"fields"} if version == 5 else set())
-        if (set(raw) != expected or type(version) is not int or version not in {ANSWER_SCOPE_VERSION, 5}):
+        if type(version) is not int or version not in {4, 5, ANSWER_SCOPE_VERSION}:
+            raise ValueError("invalid whole-task research scope")
+        expected = {"task_digest", "aliases", "attempt_refs", "schema_version"} | ({"fields"} if version in {5, ANSWER_SCOPE_VERSION} else set())
+        if set(raw) != expected:
             raise ValueError("invalid whole-task research scope")
         task_digest = require_json_string(raw.get("task_digest"), "task_digest")
         if re.fullmatch(r"[0-9a-f]{64}", task_digest) is None:
@@ -200,7 +202,7 @@ def answer_scope(session: AnswerSessionView) -> AnswerScope:
         if rule is not None and rule.report_label:
             observation = rule.observe(session.executed, results=results, browser_document=document)
             fields.append(freeze_field(rule, observation, results, aliases))
-    return AnswerScope(digest(session.task_text), aliases, tuple(attempts), 5 if fields else ANSWER_SCOPE_VERSION, tuple(fields))
+    return AnswerScope(digest(session.task_text), aliases, tuple(attempts), fields=tuple(fields))
 
 
 def citation_occurrences(markdown: str) -> list[CitationOccurrence]:
@@ -228,6 +230,8 @@ def submit_answer(scope: AnswerScope, args: ToolArgs) -> AnswerSubmission:
     markdown = render_fields(scope.fields, markdown_value.strip(), state)
     if len(markdown) > MAX_ANSWER_CHARACTERS:
         raise ValueError("Expanded answer exceeds the Markdown size limit.")
+    if scope.schema_version == ANSWER_SCOPE_VERSION:
+        _validate_report_tail(markdown)
     citations = citation_occurrences(markdown)
     from codey.research.answer_fields import validate_fields
 
@@ -249,6 +253,21 @@ def submit_answer(scope: AnswerScope, args: ToolArgs) -> AnswerSubmission:
         body["schema_version"] = 2
         body["knowledge_updates"] = updates
     return AnswerSubmission(**body, submission_digest=digest(body))
+
+
+def _validate_report_tail(markdown: str) -> None:
+    """Reject an exposed terminal delimiter, never infer missing prose or facts."""
+    tail = re.search(r"`+$", markdown)
+    if tail is None or mask_markdown_code(markdown, escaped_backslashes=True)[tail.start():] != tail[0]:
+        return
+    prefix = markdown[:tail.start()]
+    if (len(prefix) - len(prefix.rstrip("\\"))) % 2:
+        return
+    raise ValueError("report_tail_incomplete: the report ends with an unmatched inline-code backtick delimiter. "
+        "Repair only the unfinished report text and resubmit the complete markdown with submit_research_answer. "
+        "Preserve supported statements and their original citations; reuse available {{field:/pointer}} slots. "
+        "An intended literal backtick must be escaped or inside a complete code span. "
+        "Do not repeat successful browser actions, file edits or verification to repair this writing defect.")
 
 
 def validate_submission(raw: object, task: str) -> AnswerSubmission:
@@ -299,7 +318,9 @@ def answer_spec(spec: ToolSpec, scope: AnswerScope) -> ToolSpec:
     return freeze_spec_parameters(replace(spec, parameters=tuple(answer_parameters.items()), required=("markdown", "state"),
         description="Submit the whole research answer as Markdown, with explicit [eN] citations beside supported statements. "
                     "Explain any unanswered requested point in place. state is your declaration, not semantic certification. "
-                    "Optional knowledge_updates saves explicitly authored candidate claims/inferences/questions atomically: "
+                    + ("Do not end the report with an unescaped, unmatched inline-code backtick delimiter. "
+                       "Complete the report text before declaring its state. " if scope.schema_version == ANSWER_SCOPE_VERSION else "")
+                    + "Optional knowledge_updates saves explicitly authored candidate claims/inferences/questions atomically: "
                     "use unique local keys (k1 or writer_limit). references is a string list, e.g. [\"e1\"] for a claim "
                     "or [\"k1\",\"e1\"] for an inference. The application derives relation types from kind. "
                     "Include all premises needed by an inference; "

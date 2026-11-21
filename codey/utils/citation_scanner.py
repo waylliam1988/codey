@@ -63,7 +63,7 @@ class SourceIdRef:
     bracketed: bool = False
 
 
-def mask_markdown_code(text: str) -> str:
+def mask_markdown_code(text: str, *, escaped_backslashes: bool = False) -> str:
     """Keep prose offsets while excluding fenced, indented and inline code."""
     lines: list[str] = []
     fence = ""
@@ -92,7 +92,10 @@ def mask_markdown_code(text: str) -> str:
             lines.append(" " * len(line))
         else:
             lines.append(line)
-    return re.sub(r"(?<![`\\])(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)",
+    # Historical citation offsets use the original escape rule. New delivery
+    # scopes can recognize an escaped backslash before an opening delimiter.
+    prefix = r"(?:\\\\)*" if escaped_backslashes else ""
+    return re.sub(r"(?<![`\\])" + prefix + r"(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)",
                   lambda match: " " * len(match[0]), "".join(lines))
 
 

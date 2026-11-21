@@ -1,0 +1,663 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-21",
+  "timezone": "Asia/Taipei",
+  "base_commit": "847a9ea4abc75e504ad5178d1f663bad8ad4dd52",
+  "scope_version": {
+    "new": 6,
+    "legacy_unchanged": [
+      4,
+      5
+    ]
+  },
+  "full_pytest_run": false,
+  "checks": [
+    {
+      "name": "ruff",
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/report-tail-ruff-final-second.log"
+    },
+    {
+      "name": "owned-mypy",
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey/research/answer_contract.py",
+        "codey/utils/citation_scanner.py",
+        "tests/test_research_answer_fields.py",
+        "tests/test_research_report_tail.py",
+        "tests/test_research_convergence.py",
+        "tools/research_query_delivery_live_gate.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/report-tail-owned-mypy-final-second.log"
+    },
+    {
+      "name": "owned-pyrefly",
+      "command": [
+        "python",
+        "-m",
+        "pyrefly",
+        "check",
+        "codey/research/answer_contract.py",
+        "codey/utils/citation_scanner.py",
+        "tests/test_research_answer_fields.py",
+        "tests/test_research_report_tail.py",
+        "tests/test_research_convergence.py",
+        "tools/research_query_delivery_live_gate.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/report-tail-owned-pyrefly-final-second.log"
+    },
+    {
+      "name": "owned-ty",
+      "command": [
+        "python",
+        "-m",
+        "ty",
+        "check",
+        "codey/research/answer_contract.py",
+        "codey/utils/citation_scanner.py",
+        "tests/test_research_answer_fields.py",
+        "tests/test_research_report_tail.py",
+        "tests/test_research_convergence.py",
+        "tools/research_query_delivery_live_gate.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/report-tail-owned-ty-final-second.log"
+    },
+    {
+      "name": "precision",
+      "command": [
+        "python",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/report-tail-precision-final-second.log"
+    },
+    {
+      "name": "production-mypy",
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/report-tail-production-mypy-third.log"
+    },
+    {
+      "name": "production-pyrefly",
+      "command": [
+        "python",
+        "-m",
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/report-tail-production-pyrefly-third.log"
+    },
+    {
+      "name": "production-ty",
+      "command": [
+        "python",
+        "-m",
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0,
+      "log": ".e2e-artifacts/report-tail-production-ty-third.log"
+    }
+  ],
+  "owned_precision": {
+    "codey/research/answer_contract.py": [],
+    "codey/utils/citation_scanner.py": [],
+    "tests/test_research_answer_fields.py": [],
+    "tests/test_research_report_tail.py": [],
+    "tests/test_research_convergence.py": [],
+    "tools/research_query_delivery_live_gate.py": []
+  },
+  "regressions": [
+    {
+      "log": ".e2e-artifacts/report-tail-regression-first.log",
+      "passed": 134,
+      "failed": 31,
+      "causes": [
+        "19 old synchronous browser fixtures did not route the task worker",
+        "12 obsolete authorization-isolation assertions"
+      ]
+    },
+    {
+      "log": ".e2e-artifacts/report-tail-regression-second.log",
+      "passed": 165,
+      "failed": 0
+    },
+    {
+      "log": ".e2e-artifacts/report-tail-unit-final-second.log",
+      "passed": 20,
+      "deselected": 2,
+      "failed": 0
+    }
+  ],
+  "original_failure_replay": {
+    "original_directory": ".e2e-artifacts/unified-repair-natural-repair-fifth",
+    "original_submission_digest": "3315748c0291ac2bd0153088838bcfa41063ac9409440d1a3a02893f49211595",
+    "original_scope_version": 4,
+    "historical_submission_unchanged": true,
+    "new_scope_version": 6,
+    "new_submission_rejected": true,
+    "diagnostic": "report_tail_incomplete: the report ends with an unmatched inline-code backtick delimiter. Repair only the unfinished report text and resubmit the complete markdown with submit_research_answer. Preserve supported statements and their original citations; reuse available {{field:/pointer}} slots. An intended literal backtick must be escaped or inside a complete code span. Do not repeat successful browser actions, file edits or verification to repair this writing defect."
+  },
+  "live_repair": {
+    "mode": "archived_proposal_prefix_then_live_model_repair",
+    "full_natural_run": false,
+    "rejected_report_turn": 11,
+    "live_repair_turn": 12,
+    "accepted_done_turn": 13,
+    "submission_outcomes": [
+      false,
+      true
+    ],
+    "tools_after_rejection": [
+      "submit_research_answer"
+    ],
+    "no_repeated_browser_edit_or_verification": true,
+    "file_correct": true,
+    "kept_other_fields": true,
+    "source_prefix": ".e2e-artifacts/unified-repair-natural-repair-fifth/provider.jsonl"
+  },
+  "natural_task": {
+    "path": ".e2e-artifacts/report-tail-natural-repair-first",
+    "passed": false,
+    "reason": "Model repeatedly changed the authorized URL hyphens to underscores and visited the 404 page; initial check order was also not followed. No report was submitted."
+  },
+  "historical_source": {
+    "path": ".e2e-artifacts/unified-repair-natural-repair-fifth/provider.jsonl",
+    "sha256": "7fa4bec5cfe1ec2dc8e32cc1a4b1293b80de5fcba1c0337b62001d02e8d47c57"
+  },
+  "artifacts": [
+    {
+      "path": ".e2e-artifacts/report-tail-first-fixture-failure/origins.json",
+      "bytes": 2131,
+      "sha256": "489ee66ab66dfdd08f87c296dc21e0cede0ac7c0a7fb09cf218317559343ad01"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-first-fixture-failure/test_initial_open_field_is_inv0-events.jsonl",
+      "bytes": 4448,
+      "sha256": "4353ac7cfaa38b6be186e62ce166019fee199bbf06d3dab0f0d230eea91bf3ec"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-first-fixture-failure/test_initial_open_field_is_inv0-input.json",
+      "bytes": 561,
+      "sha256": "93f5c266265fa0403e63ad99021cfa6020ad7ac6758c0ff43308cf0a66487955"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-first-fixture-failure/test_initial_open_field_is_inv0-provider.jsonl",
+      "bytes": 67541,
+      "sha256": "59b29130fcc02c33b9dc5bea62bd9eb3d612d9ee938b06c03563d12259386967"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-first-fixture-failure/test_initial_open_field_is_inv0-summary.json",
+      "bytes": 356,
+      "sha256": "7bddd0e87d62e5ec4ef3a6dc65d6461bf2543be67637d768419c681681418029"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-first-fixture-failure/test_production_reload_rejects0-events.jsonl",
+      "bytes": 4439,
+      "sha256": "62025872fb0c61f01708da505e43e33c93c6d66e21032c4feef73d5cfefdc00e"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-first-fixture-failure/test_production_reload_rejects0-input.json",
+      "bytes": 637,
+      "sha256": "b14eae3452a9f1cb5b004fd00c4ec123d76994185b10b742884c51c3a67d1616"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-first-fixture-failure/test_production_reload_rejects0-provider.jsonl",
+      "bytes": 67604,
+      "sha256": "c277759debcc5326f89eb37fb21a4be810a7605c990d90fad7caf7ad26712431"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-first-fixture-failure/test_production_reload_rejects0-summary.json",
+      "bytes": 347,
+      "sha256": "3d507b03bcf15812082a88d7ea7fdd72bc261f2e07d83daa0f677663ddf2c334"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-live-repair-audit.json",
+      "bytes": 501,
+      "sha256": "81036a20d512d737e4397ba97ac8a6dfef85ad20e501db6c601ada8089c10c56"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-live-repair-first/events.jsonl",
+      "bytes": 21355,
+      "sha256": "b837cb8da9f6732ced3dde7e46fcf34f0c7c6f55bb9dd0c1c8274c1549bfd954"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-live-repair-first/live-repair-requests.jsonl",
+      "bytes": 228907,
+      "sha256": "c2e2384829f61fdfffe8163a5d19a5066dda1d28fb0f3dca76c9f8e361370b46"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-live-repair-first/natural-verdict.json",
+      "bytes": 4677,
+      "sha256": "5b2879e4233ed5cae8de3a58c7431805b153b2a131afb6908fb3e2b5be5b5ca6"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-live-repair-first/project-result.json",
+      "bytes": 58,
+      "sha256": "505f1cc0a3153a67003e1eac7f718098f3d557e6667a808e9221ed8b16d2a5f4"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-live-repair-first/proposals.jsonl",
+      "bytes": 2306,
+      "sha256": "42855db009d1e078fa6dc5a6e55ebd06e81ab12e632c22fc261502002d399086"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-live-repair-first/provider.jsonl",
+      "bytes": 1284934,
+      "sha256": "06ac02e8da6f4a335f60dd855e1b3a83b4a9c611e889440528b9b6cb1ba06bc8"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-live-repair-first/receipts.json",
+      "bytes": 59748,
+      "sha256": "033172dc14e7ab4c267092ea28d5a6b3e790013e106dc2bfb4cb8de5d4ccb479"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-live-repair-first/replayed-prefix.jsonl",
+      "bytes": 7583,
+      "sha256": "7737ca997e3b0240ad92703bc726179c092815c48048c2a75814d86a4858bb6c"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-live-repair-first/request.json",
+      "bytes": 1677,
+      "sha256": "322fe9da227218075e5913fe35a49c41f632963166bd7d8efd705e0cd3906b09"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-live-repair-first/summary.json",
+      "bytes": 4279,
+      "sha256": "1c5d212718f4ce6dfef2966b557c053db2f48e995ea29bfff37be7f2dacd6728"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-live-repair-first/task.txt",
+      "bytes": 410,
+      "sha256": "faa00a1b0d147b2513f8ac1541e82e491529903f27bd7e381d9bda19316020c8"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-live-repair-first.log",
+      "bytes": 4782,
+      "sha256": "843415938b631baab54f28f94f8eef25709bbe91cfb78e780de502b7b899e9a1"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/events.jsonl",
+      "bytes": 24513,
+      "sha256": "30bf06e0218e04f2da52c9303af1d70f5fc1545294d1c194cf648f4eb92bee0f"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/natural-verdict.json",
+      "bytes": 5675,
+      "sha256": "d6aeba688323a6144ab625ad59af55542a669f7cdf72b0cc2527cc52118c69e9"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/project-result.json",
+      "bytes": 53,
+      "sha256": "8e9254cf167fa184975774cd732d4f8ed02ba3e7911e3542ef2446ff809336dc"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/provider.jsonl",
+      "bytes": 1360232,
+      "sha256": "2a0ab5d946f34a8176d35b74217888c67a29ca9f1a712eb39bbc7e4e6ad737bb"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/receipts.json",
+      "bytes": 49623,
+      "sha256": "eb4a1cc29a58408829625b333040fb4a1e9acc37096e190701b1f6076456f184"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/request.json",
+      "bytes": 1677,
+      "sha256": "322fe9da227218075e5913fe35a49c41f632963166bd7d8efd705e0cd3906b09"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/summary.json",
+      "bytes": 5285,
+      "sha256": "4aed247477f4b10ba0de70c9c674b0d2dde03ce271b0c6c02edc27521c0f3e46"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/task.txt",
+      "bytes": 410,
+      "sha256": "faa00a1b0d147b2513f8ac1541e82e491529903f27bd7e381d9bda19316020c8"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first.log",
+      "bytes": 5005,
+      "sha256": "512bc159a3195dccf308529689ec044de473fce6ca8721b6d8dd5fa3d6d0bc39"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-original-replay.json",
+      "bytes": 814,
+      "sha256": "7c8ac5381ef6184194eab0a30c554a73d7483150b6af99fd75f942f807574f3f"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-owned-mypy-final-second.log",
+      "bytes": 44,
+      "sha256": "90377c8fd97127580c93ac5740d596c9ebc9db94dafa6560ee11fe16b4460c62"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-owned-mypy-final.log",
+      "bytes": 258,
+      "sha256": "68ee3c1b0681bd10cafd3088543780475625a73479f8e6290ea28bea6569d735"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-owned-mypy-first.log",
+      "bytes": 437,
+      "sha256": "88e97973666c9226515ab56e6fcb336dbb59653adfe890bad985723d88cb531d"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-owned-mypy-second.log",
+      "bytes": 1138,
+      "sha256": "f8384ebbcf1e77522fa52e5c5671ff8929508c85f576ba8455365c09cc4995e9"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-owned-mypy-third.log",
+      "bytes": 44,
+      "sha256": "90377c8fd97127580c93ac5740d596c9ebc9db94dafa6560ee11fe16b4460c62"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-owned-precision-final.json",
+      "bytes": 279,
+      "sha256": "83a8b6bcf4b45b5910d2dc315f616b80082ab84e5630d1737aeb6d15f4e6bd1f"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-owned-pyrefly-final-second.log",
+      "bytes": 15,
+      "sha256": "7f5e59adbab3afa8c93f23d4297e1c003ec37056a7862a8dc0354c5fe6f42634"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-owned-pyrefly-final.log",
+      "bytes": 366,
+      "sha256": "a3af17d4ca8fbb214a4c9ff4433eb3db4a786c2b85d0e572a4d12476a4255444"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-owned-pyrefly-first.log",
+      "bytes": 15,
+      "sha256": "7f5e59adbab3afa8c93f23d4297e1c003ec37056a7862a8dc0354c5fe6f42634"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-owned-pyrefly-second.log",
+      "bytes": 1532,
+      "sha256": "4a0d5bcd1dbf130c07a421a35013271321b25f56b58b3e2ad90d97e541a2b380"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-owned-pyrefly-third.log",
+      "bytes": 15,
+      "sha256": "7f5e59adbab3afa8c93f23d4297e1c003ec37056a7862a8dc0354c5fe6f42634"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-owned-ty-final-second.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-owned-ty-final.log",
+      "bytes": 1302,
+      "sha256": "d4673f00ae743aeb4945c6adb6d8af0885ccc05f0c7ea8784ce07f59ecfc6920"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-owned-ty-first.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-owned-ty-second.log",
+      "bytes": 2509,
+      "sha256": "a291d8db7cceabc213c991eebc8c0db305407bbadfba1766a07e29e1a6b8cd59"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-owned-ty-third.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-precision-final-second.log",
+      "bytes": 65,
+      "sha256": "a4235b3bf75e4945e89304625234e20fe199890bf1400658fd27a5d77cdb5c44"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-precision-final.log",
+      "bytes": 65,
+      "sha256": "a4235b3bf75e4945e89304625234e20fe199890bf1400658fd27a5d77cdb5c44"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-precision-first.log",
+      "bytes": 65,
+      "sha256": "a4235b3bf75e4945e89304625234e20fe199890bf1400658fd27a5d77cdb5c44"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-precision-second.log",
+      "bytes": 65,
+      "sha256": "a4235b3bf75e4945e89304625234e20fe199890bf1400658fd27a5d77cdb5c44"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-precision-third.log",
+      "bytes": 65,
+      "sha256": "a4235b3bf75e4945e89304625234e20fe199890bf1400658fd27a5d77cdb5c44"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-production-mypy-first.log",
+      "bytes": 46,
+      "sha256": "c642e5b33b5e7d157e7b2362ef94a292d50ab8abbba717375ca1704ad53de820"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-production-mypy-second.log",
+      "bytes": 46,
+      "sha256": "c642e5b33b5e7d157e7b2362ef94a292d50ab8abbba717375ca1704ad53de820"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-production-mypy-third.log",
+      "bytes": 46,
+      "sha256": "c642e5b33b5e7d157e7b2362ef94a292d50ab8abbba717375ca1704ad53de820"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-production-pyrefly-first.log",
+      "bytes": 55,
+      "sha256": "400b91ded9c3de1ef50dbc89a15b8bb595495dea03817437e1c09240a78d16b1"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-production-pyrefly-second.log",
+      "bytes": 55,
+      "sha256": "400b91ded9c3de1ef50dbc89a15b8bb595495dea03817437e1c09240a78d16b1"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-production-pyrefly-third.log",
+      "bytes": 55,
+      "sha256": "400b91ded9c3de1ef50dbc89a15b8bb595495dea03817437e1c09240a78d16b1"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-production-ty-first.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-production-ty-second.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-production-ty-third.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-regression-first.log",
+      "bytes": 76612,
+      "sha256": "33f346ad65170d5cdb214daf4efe4fbc61519624b81591b8d8903a21a37573c2"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-regression-progress-stack.log",
+      "bytes": 7145,
+      "sha256": "4e97572b706c7158409cffd9260b66ceb0173eb8ccb6456680aa173ada39bf34"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-regression-second.log",
+      "bytes": 342,
+      "sha256": "79f75edcbd6244aa6b91447fcc68effe56f1a5814d1f8980f77aff9a408fd46c"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-ruff-final-second.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-ruff-final.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-ruff-first.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-ruff-second.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-ruff-third.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-static-final-second.json",
+      "bytes": 2024,
+      "sha256": "5a8d8828b34ea2e04556d17ae23d80ddf87c00c15ea30fca73958fe2012082d0"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-static-final.json",
+      "bytes": 1989,
+      "sha256": "cb3ebad27e50e8f77836264cc6f3fbc186f12a31a35ccf9ce3435d8253293fa7"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-static-first.json",
+      "bytes": 2507,
+      "sha256": "e417ab1e80b6f05dc84908b605cd420ada2c5253e125fd6ddbd14bf3bcd29c95"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-static-second.json",
+      "bytes": 2809,
+      "sha256": "91aa4495fc399d35b2e6c808560f4229ecce02fcf61290d8a389e1711fbf1895"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-static-third.json",
+      "bytes": 2801,
+      "sha256": "a346779b5fcf89ebe571f48518e27b79a67f31f6773042c5f503306406adfff0"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-unit-final-second.log",
+      "bytes": 181,
+      "sha256": "01563f36290364eaed5f34a7578caa370640198e140b39323e332157d8af9877"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-unit-final.log",
+      "bytes": 181,
+      "sha256": "e4b6d74950ca1c518b3eb710ce21a836d158392353ad53ff5cd1c521f6c3c8dd"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-unit-first.log",
+      "bytes": 181,
+      "sha256": "d098e3109b5b319223c5685b52362924aeba2529fa33ee3d8042cce7e9d12ddc"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-unit-second.log",
+      "bytes": 181,
+      "sha256": "4a0dabcebced9cb1515d33133f70dcf17b37fde9551cda7af50fd42cdc95aa7d"
+    },
+    {
+      "path": ".e2e-artifacts/report_tail_checks.py",
+      "bytes": 1447,
+      "sha256": "5202814fdc93d43bd3e5db15e8c43ff5247f3ef863b4e07e255bc33d7c3003aa"
+    },
+    {
+      "path": ".e2e-artifacts/report_tail_live_repair.py",
+      "bytes": 3058,
+      "sha256": "21866ab5e6d1f34ff21e7b46a9e64f668aba374683b09bb2b3caad68a435a6ec"
+    },
+    {
+      "path": ".e2e-artifacts/report_tail_manifest.py",
+      "bytes": 4713,
+      "sha256": "cb36b58932a65a12d7a97ca15214756d3148253bdea48282c176a562da496b15"
+    }
+  ],
+  "state_trees": [
+    {
+      "path": ".e2e-artifacts/report-tail-live-repair-first/state",
+      "files": 103,
+      "bytes": 12567099,
+      "sha256_of_sorted_relative_path_nul_file_sha256_lf": "41085dbe8f146714f15d3b6fe1455d13731b8ffd034f3a7ee50ff18e3b0374d7"
+    },
+    {
+      "path": ".e2e-artifacts/report-tail-natural-repair-first/state",
+      "files": 119,
+      "bytes": 12044572,
+      "sha256_of_sorted_relative_path_nul_file_sha256_lf": "565f99281c52cf52c7fa0bad9b5e6eeb1823d0c739fdd722b742717c1125004c"
+    }
+  ],
+  "owned_sources": [
+    {
+      "path": "codey/research/answer_contract.py",
+      "sha256": "899d9b34329ccbdb33906615261cc51235e390e61b4c6176e9d7e267c0c21d4e"
+    },
+    {
+      "path": "codey/utils/citation_scanner.py",
+      "sha256": "c66f3d32bd37b02a249feb2153ee45f6ad64708985f683f7a67949d4deb474a7"
+    },
+    {
+      "path": "tests/test_research_answer_fields.py",
+      "sha256": "d47db7218ecd1cabbfce5d6b028fb3e81f5a715f64b12c3dd7ab9f7a6c32fbbe"
+    },
+    {
+      "path": "tests/test_research_report_tail.py",
+      "sha256": "fb1f91716293716ce467c792a228e37b57358237fd1500e39759622e4c0f3f49"
+    },
+    {
+      "path": "tests/test_research_convergence.py",
+      "sha256": "33a7b771affcaa254ddb12b48499b9893375f758460a52c5dbab74bf35455ec2"
+    },
+    {
+      "path": "tools/research_query_delivery_live_gate.py",
+      "sha256": "e99a400de39118df745712d24dd0c42db20efc2d91ae4dc2c7209b9054af2991"
+    }
+  ],
+  "report": {
+    "path": "docs/reports/codey-research-report-tail-guard-20261121.zh-CN.md",
+    "sha256": "750043df9f578c50772faa548039711aa164b633aadbf87e3ca1ca1c571f7ddf"
+  },
+  "limits": [
+    "Narrow exposed inline-code delimiter check, not semantic completeness or correctness certification.",
+    "Live repair replayed original proposals before turn 12; it is not a fresh full natural-task pass.",
+    "First fresh natural task failed and is retained.",
+    "Historical whole tests/tools typing debt remains outside the green production/owned scope."
+  ]
+}

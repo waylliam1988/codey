@@ -7,12 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
 
-from playwright.sync_api import Route
-
 from codey.app.headless_runner import HeadlessRequest, run_headless
+from codey.automation.browser_contracts import RouteDecision as Route
 from codey.policies.tool_requirement import require_browser_report_field
-from codey.research.browser_search import BrowserSearchProvider
 from codey.types.json_value import JsonObject, decode_json_object
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 from tools.browser_production_live_gate import select_target
 from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import (
@@ -86,7 +85,7 @@ def run_case(directory: Path, case: QueryCase, target: Target, *, max_turns: int
         events.append(value)
         append_json(directory / 'events.jsonl', value)
 
-    def connect(_provider_id: str, **_kwargs: object) -> ExperimentProvider:
+    def connect(provider_id: str, *, port: int) -> ExperimentProvider:
         return provider
 
     task = f'帮我看看 {case.url}，{case.question}' if source_access_wording else case.question + '\n' + case.url
