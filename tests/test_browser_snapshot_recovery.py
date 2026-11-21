@@ -30,4 +30,5 @@ def test_restored_browser_contract_preserves_mutations_evidence_and_repair_ident
     assert not specs["browser_fill"].read_only
     assert not specs["browser_navigate"].read_only
     assert specs["browser_read"].evidence_route == "source_read"
-    assert specs["codemode"].declarations == render_declarations(catalogs[1])
+    assert specs["codemode"].declarations == render_declarations(catalogs[1],
+        outer_descriptions={spec.name: spec.description for spec in restored.model_specs})

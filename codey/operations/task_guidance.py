@@ -40,7 +40,8 @@ def task_working_context(session: TaskSession, research_ledger: ResearchLedger |
         from codey.research.answer_context import answer_context, work_view_limits
 
         count, cap = work_view_limits(provider)
-        return answer_context(session, research_ledger, scope, count_tokens=count, token_budget=cap)
+        parts.append(answer_context(session, research_ledger, scope, count_tokens=count, token_budget=cap))
+        return "\n\n".join(parts)
     from codey.operations.source_gaps import source_gap_context
 
     failure_context = source_gap_context(session, research_ledger)

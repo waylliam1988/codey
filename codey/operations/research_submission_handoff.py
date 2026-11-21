@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from codey.operations.browser_completion import (
@@ -142,17 +141,8 @@ def research_submission_handoff(session: TaskSession, snapshot: TurnSnapshot, co
         return snapshot, ("The declared wait/read obligations have formal evidence. "
             f"Use {labels} for the required page. Continue checking other requirements in the original question; "
             "the tool checklist does not declare the whole investigation complete.")
-    return _offer_submission(snapshot, "The required post-wait page evidence is ready. Use submit_research_answer and cite "
-                             f"{labels} for the required page.")
-
-
-def _offer_submission(snapshot: TurnSnapshot, guidance: str) -> tuple[TurnSnapshot, str]:
-    from codey.operations.kernel_protocol import refresh_snapshot_contract
-
-    specs = tuple(spec for spec in snapshot.frozen_specs if spec.name in SUBMISSION_TOOLS)
-    return refresh_snapshot_contract(replace(snapshot, tool_names=SUBMISSION_TOOLS, nested_tool_names=(), frozen_specs=specs,
-                   browser_followups=False, browser_references=None, browser_fill_text=None,
-                   custom_executors=tuple(row for row in snapshot.custom_executors if row[0] in SUBMISSION_TOOLS))), guidance
+    return snapshot, ("The required post-wait page evidence is ready. Use submit_research_answer and cite "
+                      f"{labels} for the required page.")
 
 
 def research_browser_handoff(session: TaskSession, snapshot: TurnSnapshot,
@@ -172,15 +162,7 @@ def research_browser_handoff(session: TaskSession, snapshot: TurnSnapshot,
         snapshot = offer_browser_call(snapshot, session, name, research=True)
     from codey.operations.browser_task_handoff import browser_continuation_handoff
 
-    records, results = tool_facts(session, context)
-    current = _current_document_records(records, results, context.browser_document)
-    prerequisites = [rule for check in session.policy.required_checks
-                     if (rule := parse_tool_success_check(check)) is not None
-                     and rule.tool not in PAGE_EVIDENCE_TOOLS]
-    ready = all(rule.observe(current, results=results, browser_document=context.browser_document).evaluation.passed
-                for rule in prerequisites)
-    snapshot, continuation = browser_continuation_handoff(session, snapshot, context, workflow=True,
-                                                          declared_actions_ready=ready)
+    snapshot, continuation = browser_continuation_handoff(session, snapshot, context, workflow=True)
     if continuation:
         return snapshot, continuation
     return snapshot, ("For declared browser steps, use the offered direct browser tools. "

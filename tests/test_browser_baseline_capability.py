@@ -32,11 +32,10 @@ def test_new_tasks_have_web_and_browser_tools_without_requested_grants(kind: str
     assert not policy.sources_open_required
     session = TaskSession(policy=policy, task_kind=kind)
     snapshot = build_turn_snapshot(session, native=native)
-    if strict and kind != "research":
-        assert "research_plan" in snapshot.inventory_names
-        assert "browser_read" not in snapshot.inventory_names
-        session.research_questions = ("Inspect a website",)
-        snapshot = build_turn_snapshot(session, native=native)
+    if strict:
+        assert "submit_research_answer" in snapshot.inventory_names
+        assert "browser_read" in snapshot.inventory_names
+        assert "research_plan" not in snapshot.inventory_names
     assert {"web_search", "open_url", "browser_navigate", "browser_snapshot", "browser_fill",
             "browser_click", "browser_scroll", "browser_tab_switch"} <= set(snapshot.inventory_names)
     assert {"web_search", "open_url"} <= set(snapshot.tool_names)
@@ -93,6 +92,7 @@ def test_headless_entry_has_default_browser_tools(
 
 class ScriptedProvider:
     name = "Local"
+    location = "fixture://local"
     context_budget = ContextBudget(32768, 8192, 0, 12000)
 
     def __init__(self, replies: tuple[JsonObject, ...]) -> None:
@@ -132,7 +132,7 @@ def test_baseline_browser_catalog_keeps_real_project_reads_and_durable_delivery(
     ))
     rows: list[dict[str, object]] = []
 
-    def connect(_provider_id: str, **_options: object) -> ScriptedProvider:
+    def connect(provider_id: str, *, port: int) -> ScriptedProvider:
         return provider
 
     state = tmp_path / "state"
@@ -187,7 +187,7 @@ def test_default_entry_searches_opens_and_delivers_observed_source(
     ))
     rows: list[dict[str, object]] = []
 
-    def connect(_identity: str, **_options: object) -> ScriptedProvider:
+    def connect(provider_id: str, *, port: int) -> ScriptedProvider:
         return provider
 
     project = None if kind == "chat" else tmp_path / "project"

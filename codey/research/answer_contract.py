@@ -104,7 +104,10 @@ class AnswerSessionView(ResearchPolicyView, Protocol):
 
 
 def whole_research(session: ResearchPolicyView) -> bool:
-    return session.task_kind == "research" and session.policy.strict_research
+    # New entries freeze the report obligation independently of their UI kind.
+    # Historical Research policies retain their original submission contract.
+    return ("research_submission" in session.policy.required_checks
+            or session.task_kind == "research" and session.policy.strict_research)
 
 
 def digest(value: object) -> str:
@@ -285,7 +288,8 @@ def answer_spec(spec: ToolSpec, scope: AnswerScope) -> ToolSpec:
                     "Include all premises needed by an inference; "
                     "source-stated facts are claims. Batch keys are not answer citations. "
                     "Omit this batch for ordinary answer delivery. "
-                    "The application validates and publishes this answer; no separate plan, finding, adoption or done is needed."
+                    "The application validates this report. Continue any remaining project work and verification; "
+                    "a report receipt alone does not complete a task with other obligations."
                     + (" Explicit receipt fields are available as {{field:/pointer}} slots. The application expands each "
                        "slot into its exact value and citation before publication; include all declared fields. "
                        + canonical_json([field.to_payload() for field in scope.fields]) if scope.fields else ""),

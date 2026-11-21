@@ -39,7 +39,12 @@ def prepare_research_completion(session: TaskSession, text: str, context: object
         answer = compile_answer_report(session, ledger, store,
             project=str(context.knowledge_project or ""),
             session_id=str(context.knowledge_session_id or ""))
-        return answer.text, answer
+        from codey.operations.task_handoff import report_completes_task
+
+        final_text = answer.text
+        if not report_completes_task(session) and text.strip() and text.strip() != answer.text.strip():
+            final_text = text.rstrip() + "\n\n" + answer.text
+        return final_text, answer
     try:
         report = compile_finding_report(session.last_done_args, ledger, store,
             project=str(context.knowledge_project or ""),
@@ -254,15 +259,18 @@ def research_completion_feedback(session: TaskSession, text: str, context: objec
 
 
 def _ledger_checks(session: TaskSession, done_text: str, compiled: ResearchReport | None) -> list[CompletionCheck]:
+    from codey.operations.task_handoff import report_completes_task
     from codey.research.answer_report import DELIVERY_CHECKS, AnswerReport
+    from codey.research.report_values import report_delivery_matches
 
     if isinstance(compiled, AnswerReport):
         AnswerReport.from_payload(compiled.to_payload())
-        if done_text != compiled.text:
+        intact = report_delivery_matches(done_text, compiled.text, combined=not report_completes_task(session))
+        if not intact:
             return [CompletionCheck("research_report_sections", CHECK_FAIL, "answer_text_changed")]
         return [CompletionCheck(check, CHECK_PASS, "whole_answer_delivery_not_semantic_verification")
                 for check in DELIVERY_CHECKS]
-    if compiled is None or compiled.text != done_text:
+    if compiled is None or not report_delivery_matches(done_text, compiled.text, combined=not report_completes_task(session)):
         return [CompletionCheck("research_report_sections", CHECK_FAIL, "structured_report_missing")]
     # These checks confirm structure and exact evidence chains, not semantics.
     # Historical evidence does not become a fresh source-open execution receipt.

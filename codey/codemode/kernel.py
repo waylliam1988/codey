@@ -27,6 +27,7 @@ from codey.types.json_value import JsonObject
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
     from codey.agents.tools import AgentToolFns
+    from codey.automation.browser_session import BrowserSession
     from codey.durable import DurableStore
     from codey.durable.session import DurableSession
     from codey.operations.kernel_contracts import StopSignal, ToolExecutor
@@ -281,6 +282,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
     state_store: CodeModeStateStore | None = None,
     on_event: Callable[[RunEvent], None] | None = None,
     runtime_factory: Callable[[], CodeModeRuntime] | None = None,
+    browser_session: BrowserSession | None = None,
 ) -> Callable[[ToolCall], ToolResult]:
     """Build the production parent executor; every child re-enters execute_turn."""
     from codey.operations.kernel_execution import execute_turn
@@ -485,6 +487,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                 project_path=project_path,
                 tool_fns=tool_fns,
                 research_tools=research_tools,
+                browser_session=browser_session,
                 change_tracker=change_tracker,
                 managed_outputs=managed_outputs,
                 session_id=session_id,
@@ -510,7 +513,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             from codey.operations.browser_completion import browser_click_stage
             from codey.operations.browser_followups import query_document
 
-            browser = research_tools.browser_session if research_tools is not None else None
+            browser = browser_session or (research_tools.browser_session if research_tools is not None else None)
             document = browser.document_identity() if browser is not None else query_document(session._memory_results)
             return browser_click_stage(session.executed, session._memory_results, document)
 

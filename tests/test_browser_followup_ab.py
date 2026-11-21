@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from codey.automation.browser_session import BrowserSession
+from codey.operations import kernel_protocol
 from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn, refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_execution import ExecutionDelegate
@@ -16,13 +17,13 @@ from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, decode_json_object, require_json_integer
 from tests.test_model_input_binding import copy_snapshot, upload_snapshot
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import browser_followup_ab as ab
 from tools import browser_leaf_exposure_ab as base
 from tools.completion_artifact_audit import tool_receipts
-from tools.completion_explanation_ab import Target
+from tools.completion_explanation_ab import Target, append_json, write_json
 
 GRANTS = frozenset({"control", "web.read", "browser.observe", "browser.interact"})
 
@@ -33,7 +34,7 @@ def test_variants_reuse_frozen_contract_and_recover(name: str) -> None:
     original = build_turn_snapshot(session)
     candidate = ab.expose(original, session, ab.VARIANTS[name])
     assert set(candidate.tool_names) - set(original.tool_names) == set(ab.VARIANTS[name].leaves)
-    assert {s.name: s for s in candidate.frozen_specs} == {s.name: s for s in original.frozen_specs}
+    assert base.execution_specs(candidate) == base.execution_specs(original)
     assert dict(candidate.custom_executors) == dict(original.custom_executors)
     assert candidate.nested_tool_names == original.nested_tool_names
     assert restore_snapshot(snapshot_description(candidate)) == candidate
@@ -42,7 +43,7 @@ def test_variants_reuse_frozen_contract_and_recover(name: str) -> None:
 def test_program_inputs_preserve_quotes_and_newlines_without_interpolation() -> None:
     session = TaskSession(TaskPolicy(GRANTS), task_kind="chat")
     snapshot = ab.expose(build_turn_snapshot(session), session, ab.VARIANTS["combined"])
-    args = {"ref": "observed", "value": base.NOTE + '` ${throw "bad";}'}
+    args: JsonObject = {"ref": "observed", "value": base.NOTE + '` ${throw "bad";}'}
     plan = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("identity", "browser_fill", args),)), snapshot=snapshot)
     lowered = ab.lower(plan, snapshot, ab.VARIANTS["combined"])
     assert lowered.calls[0].call_id == "identity" and lowered.calls[0].name == "codemode"
@@ -72,8 +73,8 @@ def test_followups_do_not_bypass_authorization_or_bound_inputs(guard: str) -> No
 def test_failed_original_admission_is_never_lowered(tmp_path: Path) -> None:
     session = TaskSession(TaskPolicy(GRANTS), task_kind="chat")
     with ab.intervention(tmp_path, ab.VARIANTS["combined"]):
-        snapshot = ab.kernel_protocol.build_turn_snapshot(session)
-        denied = ab.kernel_protocol.normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall(
+        snapshot = kernel_protocol.build_turn_snapshot(session)
+        denied = kernel_protocol.normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall(
             "bad", "browser_fill", {"ref": "x"}),)), snapshot=snapshot)
         assert denied.protocol_error and not denied.calls
     assert not (tmp_path / "lowering.jsonl").exists()
@@ -129,8 +130,8 @@ def test_full_headless_preserves_values_effect_counts_and_formal_evidence(
     assert decode_json_object(row["browser_successes"]) == {
         "browser_snapshot": 2, "browser_fill": 1, "browser_click": 1, "browser_read": 1}
     phases = decode_json_object(row["phases"])
-    assert sum(int(decode_json_object(p)["calls"]) for p in phases.values()) == row["model_calls"]
-    assert sum(int(decode_json_object(p)["prompt_tokens"]) for p in phases.values()) == row["prompt_tokens"]
+    assert sum(require_json_integer(decode_json_object(p)["calls"], "calls") for p in phases.values()) == row["model_calls"]
+    assert sum(require_json_integer(decode_json_object(p)["prompt_tokens"], "prompt_tokens") for p in phases.values()) == row["prompt_tokens"]
     assert decode_json_object(row["page_state"])["clicks"] == 1
     if variant.fill_observe or variant.click_readback:
         requests = [r for r in ab.jsonl(directory / "provider.jsonl") if r.get("phase") == "request"]
@@ -144,10 +145,10 @@ def test_full_headless_preserves_values_effect_counts_and_formal_evidence(
 def test_web_source_does_not_become_knowledge_object_with_guidance(tmp_path: Path) -> None:
     session = TaskSession(TaskPolicy(GRANTS), task_kind="chat")
     with ab.intervention(tmp_path, ab.VARIANTS["reference_guidance"]):
-        snapshot = ab.kernel_protocol.build_turn_snapshot(session)
+        snapshot = kernel_protocol.build_turn_snapshot(session)
         reply = AssistantTurn(tool_calls=(ProviderToolCall("bad-knowledge", "done", {
             "summary": "已读取网页 [s1]", "knowledge_refs": [{"id": "s1", "revision": 1}]}),))
-        plan = ab.kernel_protocol.normalize_turn(reply, snapshot=snapshot)
+        plan = kernel_protocol.normalize_turn(reply, snapshot=snapshot)
         assert plan.protocol_error and not plan.calls and plan.control is None
 
 
@@ -171,7 +172,8 @@ def test_failed_followup_preserves_committed_action_and_does_not_replay(
     original = ExecutionDelegate._execute_browser_operation
     snapshots = 0
 
-    def browser(delegate: ExecutionDelegate, resource: BrowserSession, call: ToolCall, *, turn: int, tool_index: int):
+    def browser(delegate: ExecutionDelegate, resource: BrowserSession, call: ToolCall, *, turn: int,
+                tool_index: int) -> tuple[ToolResult, bool, int | None]:
         nonlocal snapshots
         if call.name == "browser_snapshot":
             snapshots += 1
@@ -237,20 +239,20 @@ def test_matrix_audit_rejects_invalid_comparisons(tmp_path: Path, tamper: str) -
     for name in ("direct", "fill_observe"):
         directory = tmp_path / name
         directory.mkdir()
-        ab.write_json(directory / "input.json", {"task": "changed" if tamper == "input" and name == "direct" else "same"})
+        write_json(directory / "input.json", {"task": "changed" if tamper == "input" and name == "direct" else "same"})
         payload: JsonObject = {"model": "fixture", "temperature": 0, "seed": 1, "stream": False}
         if tamper == "sampling" and name == "direct":
             payload["seed"] = 2
         if tamper == "leak":
             payload["content"] = "QUARTZ_851"
-        ab.append_json(directory / "provider.jsonl", {"phase": "request", "attempt": 1, "payload": payload})
-        ab.append_json(directory / "provider.jsonl", {"type": "response"})
-        snap = {**snapshot, "policy": {} if tamper == "authority" and name == "direct" else snapshot["policy"]}
-        ab.append_json(directory / "snapshots.jsonl", {"snapshot": snap})
+        append_json(directory / "provider.jsonl", {"phase": "request", "attempt": 1, "payload": payload})
+        append_json(directory / "provider.jsonl", {"type": "response"})
+        snap: JsonObject = {**snapshot, "policy": {} if tamper == "authority" and name == "direct" else snapshot["policy"]}
+        append_json(directory / "snapshots.jsonl", {"snapshot": snap})
         runs.append({"unit": name, "case": "form", "wording": "original", "repeat": 1,
             "source_stable": True, "bound_before_model": True, "source_digest": "source", "harness_digest": "harness",
             "model_calls": 1, "prompt_tokens": 10, "phases": {"operation": {"calls": 1, "prompt_tokens": 10}}})
-    manifest = {"variants": {"direct": {}, "fill_observe": {}}, "cases": ["form"], "wordings": ["original"],
+    manifest: JsonObject = {"variants": {"direct": {}, "fill_observe": {}}, "cases": ["form"], "wordings": ["original"],
                 "repeats": 1, "source_digest": "source", "harness_digest": "harness",
                 "target": {"model": "fixture", "seed": 1}}
     if tamper == "none":

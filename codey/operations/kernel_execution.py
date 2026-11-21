@@ -53,6 +53,7 @@ from codey.types.json_value import JsonObject
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
     from codey.agents.tools import AgentToolFns
+    from codey.automation.browser_session import BrowserSession
     from codey.durable import DurableStore
     from codey.operations.kernel_protocol import TurnSnapshot
     from codey.operations.task_effects import KernelEffectSink
@@ -142,6 +143,7 @@ def _build_delegate(
     frozen_specs: Mapping[str, ToolSpec] | None = None,
     custom_executors: Mapping[str, ToolExecutor | None] | None = None,
     research_scope: AnswerScope | None = None,
+    *, browser_session: BrowserSession | None = None,
 ) -> ToolDelegate | None:
     """Build the production delegate; fail closed when a project needs one."""
     try:
@@ -156,6 +158,7 @@ def _build_delegate(
             project_path=project_path,
             tool_fns=tool_fns,
             research_tools=research_tools,
+            browser_session=browser_session,
             change_tracker=change_tracker,
             managed_outputs=managed_outputs,
             session_id=session_id,
@@ -330,6 +333,7 @@ def execute_turn(
     snapshot: TurnSnapshot | None = None,
     durable: DurableStore | DurableSession | None = None,
     nested: bool = False,
+    browser_session: BrowserSession | None = None,
 ) -> list[ToolResult]:
     """Execute one turn; identity is run+turn+index with durable delivery first.
 
@@ -475,6 +479,7 @@ def execute_turn(
         frozen_specs=frozen_specs,
         custom_executors=frozen_custom_executor_map(snapshot),
         research_scope=snapshot.research_scope if snapshot is not None else None,
+        browser_session=browser_session,
     )
     _begin_pending_intents(
         intent_sink, calls, session, delivered_map, identity_ref, active_turn, base_index,

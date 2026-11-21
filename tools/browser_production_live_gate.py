@@ -44,7 +44,7 @@ from codey.research.browser_search import BrowserSearchProvider
 from codey.storage.input_attachments import InputAttachmentStore
 from codey.toolchain import runtime as tool_runtime
 from codey.toolchain.runtime import ToolOutcome
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object, require_json_string
 from codey.workspace.paths import path_hash
 from tools.completion_artifact_audit import rejection_audit, tool_receipts
 from tools.completion_explanation_ab import (
@@ -128,18 +128,21 @@ def schema_tool_names(schema: JsonValue) -> set[str]:
     return names.union(*(schema_tool_names(row) for row in schema.values()))
 
 
-def has_submission_only_request(directory: Path) -> bool:
+def has_submission_ready_request(directory: Path) -> bool:
     for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines():
         row = parse_json_object(line)
         if row.get("phase") != "request":
             continue
         payload = decode_json_object(row["payload"])
-        if schema_tool_names(payload.get("response_format")) == {"submit_research_answer"}:
+        if "required post-wait page evidence is ready" not in json.dumps(payload.get("messages"), ensure_ascii=False):
+            continue
+        if {"submit_research_answer", "codemode"} <= schema_tool_names(payload.get("response_format")):
             return True
         tools = payload.get("tools")
-        if isinstance(tools, list) and len(tools) == 1:
-            function = decode_json_object(decode_json_object(tools[0])["function"])
-            if function.get("name") == "submit_research_answer":
+        if isinstance(tools, list):
+            names = {require_json_string(decode_json_object(decode_json_object(tool)["function"]).get("name"), "tool name")
+                     for tool in tools}
+            if {"submit_research_answer", "codemode"} <= names:
                 return True
     return False
 
@@ -435,7 +438,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             {"external_revision": EXTERNAL_FIELD} if preserve_external_field and changed_after_read else {})}
         conflict_recovered = (changed_after_read and audit["true_stale_conflicts"] == 1
                               and audit["fresh_read_recovery"] is True)
-        submission_only = has_submission_only_request(directory) if research_sequence else False
+        submission_ready = has_submission_ready_request(directory) if research_sequence else False
         passed = (result.stop_reason == "done" and required <= successful and facts_match
                   and (not reread or reads >= 2)
                   and (not stale_edit or conflict_recovered)
@@ -444,7 +447,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                        and output_checks.get("exact_fields") is True and output_checks.get("facts_mentioned") is True
                        and explanation_quality.get("bound_values_repeated") is False)
                   and (not (stale_ref or inject_stale_ref) or failed_refs >= 1)
-                  and (not research_sequence or submission_only)
+                  and (not research_sequence or submission_ready)
                   and (mode != "research" or re.search(r"\[e[1-9][0-9]*\]", answer) is not None)
                   and (not project_task or file_correct))
         if assembled_upload:
@@ -466,7 +469,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             "posthoc_output_checks": output_checks, "explanation_output": explanation_output,
             "source_failure_receipts": source_failures}
         if mode == "research":
-            summary.update(research_sequence=research_sequence, submission_only_request=submission_only)
+            summary.update(research_sequence=research_sequence, submission_ready_request=submission_ready)
         summary.update(first_tool_rejection=audit["first_tool_rejection"],
                        first_edit_rejection=audit["first_edit_rejection"],
                        true_stale_conflicts=audit["true_stale_conflicts"], fresh_read_recovery=audit["fresh_read_recovery"],

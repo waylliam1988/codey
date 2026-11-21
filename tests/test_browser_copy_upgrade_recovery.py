@@ -53,7 +53,10 @@ ARGS: JsonObject = {"source": SOURCE, "target": {"file": "vouchers.json", "field
 
 def legacy_spec() -> ToolSpec:
     fixture = parse_json_object((Path(__file__).parent / "fixtures" / "browser_copy_legacy_binding.json").read_text(encoding="utf-8"))
-    return _restore_spec(decode_json_object(fixture["input_binding"])["model_spec"])
+    # Keep the obsolete model input intact while using the current ToolSpec
+    # container. This copy operation never supported background execution.
+    spec = decode_json_object(decode_json_object(fixture["input_binding"])["model_spec"])
+    return _restore_spec({**spec, "supports_background": False})
 
 
 def legacy_snapshot() -> TurnSnapshot:
@@ -170,7 +173,7 @@ def test_completed_legacy_copy_returns_stored_result_after_restart_without_rewri
             raise InterruptedAtResult
         original_restore(context)
 
-    selection: JsonObject = {"model": target.model, "base_url": target.base_url}
+    selection: dict[str, object] = {"model": target.model, "base_url": target.base_url}
     events: list[dict[str, object]] = []
     try:
         with monkeypatch.context() as old_runtime:

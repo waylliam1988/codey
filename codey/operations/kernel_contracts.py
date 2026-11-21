@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
     from codey.agents.shell_approval import ShellApprovalRequest
     from codey.agents.tools import AgentToolFns
+    from codey.automation.browser_session import BrowserSession
     from codey.completion.contract import CompletionProof
     from codey.operations.completion_context import CompletionContextInput
     from codey.operations.task_effects import KernelEffectSink
@@ -106,8 +107,12 @@ def result_from_payload(payload: object) -> KernelResult:
 
     report = payload["research_report"]
     compiled = FindingReport.from_payload(report) if report is not None else None
-    if compiled is not None and (not completed or compiled.text != summary):
-        raise ValueError("accepted research report differs from kernel delivery")
+    if compiled is not None:
+        from codey.research.report_values import has_project_delivery, report_delivery_matches
+
+        combined = has_project_delivery(proof)
+        if not completed or not report_delivery_matches(summary, compiled.text, combined=combined):
+            raise ValueError("accepted research report differs from kernel delivery")
     return KernelResult(completed, summary, turns, stop_reason, proof=proof, delivery=delivery, research_report=compiled)
 
 
@@ -185,6 +190,7 @@ class KernelExecutionDeps:
     project_path: Path | None = None
     tool_fns: AgentToolFns | None = None
     research_tools: ResearchTools | None = None
+    browser_session: BrowserSession | None = None
     change_tracker: ChangeTracker | None = None
     permission_profile: str = "coding_writer"
     workspace_ignored_paths: tuple[str, ...] = ()

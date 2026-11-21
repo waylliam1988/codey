@@ -176,7 +176,7 @@ def test_download_candidates_require_current_complete_snapshot(state: str) -> No
     _, hint = browser_task_handoff(session, build_turn_snapshot(session), CompletionContext(browser_document=document),
                                   3 if state == "generation" else 2)
     if state in {"generation", "document", "truncated"}:
-        assert '"tool": "codemode"' in hint and "tools.browser_snapshot(inputs)" in hint
+        assert '"tool": "browser_snapshot", "args": {}' in hint
         assert "real-first" not in hint
     else:
         assert "real-first" in hint and "browser_download" in hint
@@ -443,7 +443,12 @@ def interrupted_action_probe(state: Path, port: int, operation: str, stage: str)
         raise AssertionError("expected interrupted process")
     result = dispatch()
     assert not initial
-    outcome: JsonObject = {"ok": result.ok, "text": result.model_text, "value": decode_json_value(result.canonical.get("value"))}
+    outcome: JsonObject = {"ok": result.ok, "text": result.model_text,
+        "value": decode_json_value(result.canonical.get("value"))}
+    if result.ok:
+        count = browser.evaluate("document.querySelector('a').dataset.count")
+        assert count.ok, count.model_text
+        outcome["effect_count"] = count.observation["value"]
     if operation == "browser_click":
         _, hint = browser_task_handoff(session, build_turn_snapshot(session),
             CompletionContext(browser_document=browser.document_identity()), browser.generation)
@@ -472,11 +477,19 @@ def test_process_recovery_preserves_delivered_action_without_clicking_again(tmp_
         assert resumed.returncode == 0, resumed.stdout + resumed.stderr
         result = parse_json_object((state / "result.json").read_text(encoding="utf-8"))
         assert result["ok"] is (stage == "after"), result
+        if stage == "after":
+            assert result["effect_count"] == "1"
         if operation == "browser_download" and stage == "after":
             value = decode_json_object(result["value"])
             assert Path(require_json_string(value["path"], "path")).read_bytes() == b"real bytes"
             assert value["sha256"] == hashlib.sha256(b"real bytes").hexdigest()
         with sync_playwright() as observer:
             browser = observer.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
-            page = next(page for page in browser.contexts[0].pages if page.url == URL)
-            assert page.locator("a").get_attribute("data-count") == "1"
+            pages = [page for page in browser.contexts[0].pages if page.url == URL]
+            assert len(pages) <= 1
+            if stage == "before":
+                assert pages  # No committed action binding authorized reattachment or page cleanup.
+            # The durable owner may dispose its owned page during cleanup.
+            # Observe the action count in the resumed child before that cleanup.
+            if pages:
+                assert pages[0].locator("a").get_attribute("data-count") == "1"

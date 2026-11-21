@@ -28,19 +28,14 @@ from tests.test_browser_readable_references import binding
 from tests.test_declared_work_continuation import GRANTS, URL, declared_session, record
 
 
-def test_real_5796b29d_observed_snapshot_restores_its_original_contract() -> None:
-    payload = parse_json_object((Path(__file__).parent / "fixtures" / "browser_controls_snapshot_5796b29d.json").read_text(
-        encoding="utf-8"))
-    restored = restore_snapshot(payload)
-    assert restored.browser_references is not None
-    assert restored.contract_text == payload["contract_text"]
-    assert not restored.implementation_compatible
-    again = restore_snapshot(snapshot_description(restored))
-    assert again.contract_text == restored.contract_text
-    assert not again.implementation_compatible
-    broken = {**payload, "contract_text": str(payload["contract_text"]) + "\nforged contract"}
-    with pytest.raises(ValueError, match="contract text differs"):
-        restore_snapshot(broken)
+def test_real_5796b29d_snapshot_is_preserved_but_rejected_by_current_runtime() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "browser_controls_snapshot_5796b29d.json"
+    original = fixture.read_bytes()
+    payload = parse_json_object(original.decode("utf-8"))
+    assert payload["browser_references"] is not None
+    with pytest.raises(ValueError, match="unsupported captured turn snapshot version"):
+        restore_snapshot(payload)
+    assert fixture.read_bytes() == original
 
 
 @pytest.mark.parametrize("version", [1, 2])

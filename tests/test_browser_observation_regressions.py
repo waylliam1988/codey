@@ -1,6 +1,7 @@
 """Browser identity, observed relationships and visible disclosure regression cases."""
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 from typing import NoReturn
 
@@ -26,7 +27,7 @@ from codey.research.passages import passage_ref
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.runtime.core.operation_payload import RuntimeOperationState
-from codey.types.json_value import JsonObject, decode_json_object, require_json_string
+from codey.types.json_value import JsonObject, decode_json_object, parse_json_object, require_json_string
 from tests.support.browser_reconnect_process import NoModel, resources
 from tests.test_browser_context_delivery import URL, elements, install
 from tests.test_browser_context_delivery import production_browser as production_browser
@@ -179,7 +180,7 @@ def test_declared_wait_after_push_state_still_settles_the_original_query(
     session._memory_results['wait'] = wait
     project_execution_record(session, 'wait', wait.call, wait, ok=wait.ok)
     _, hint = browser_task_handoff(session, build_turn_snapshot(session), CompletionContext(browser_document=browser.document_identity()))
-    assert 'tools.browser_read(inputs)' in hint  # This frozen request exposes the existing CodeMode entry.
+    assert parse_json_object(hint.partition('Execute this next step: ')[2]) == {'tool': 'browser_read', 'args': {}}
     read, ok, _ = delegate.execute(ToolCall('browser_read', {}))
     assert ok, read.model_text
     session._memory_results['read'] = read
@@ -232,27 +233,28 @@ def test_chat_completion_refreshes_live_identity_for_an_unconfirmed_query(
     baseline = start_query(session, tools, browser, '<button>Query</button><article>Previous result</article>')
     assert browser.navigate(URL + '?new-document').ok  # Website navigation, no new tool receipt yet.
     sink = resources(tmp_path / 'state', initialize=True)
-    context = KernelContext(session, KernelRunRequest(
-        transport=KernelTransportDeps(provider=NoModel(), run_id='r', effect_scope='task', provider_id='local'),
-        execution=KernelExecutionDeps(intent_sink=sink, research_tools=tools)))
-    state = context.load_view().state
-    assert state is not None
-    captured: list[CompletionContext] = []
+    with closing(sink.durable):
+        context = KernelContext(session, KernelRunRequest(
+            transport=KernelTransportDeps(provider=NoModel(), run_id='r', effect_scope='task', provider_id='local'),
+            execution=KernelExecutionDeps(intent_sink=sink, research_tools=tools)))
+        state = context.load_view().state
+        assert state is not None
+        captured: list[CompletionContext] = []
 
-    class Inspected(BaseException):
-        pass
+        class Inspected(BaseException):
+            pass
 
-    def plan(_state: RuntimeOperationState) -> ToolPlan:
-        return ToolPlan([], None)
+        def plan(_state: RuntimeOperationState) -> ToolPlan:
+            return ToolPlan([], None)
 
-    def inspect(_session: TaskSession, _text: str, observed: CompletionContext) -> NoReturn:
-        captured.append(observed)
-        raise Inspected
+        def inspect(_session: TaskSession, _text: str, observed: CompletionContext) -> NoReturn:
+            captured.append(observed)
+            raise Inspected
 
-    monkeypatch.setattr(context, 'plan', plan)
-    monkeypatch.setattr(kernel_control, 'prepare_completion_output', inspect)
-    with pytest.raises(Inspected):
-        kernel_control.evaluate_completion(context, state)
-    assert captured[0].browser_document == browser.document_identity()
-    assert captured[0].browser_document != baseline['document']
-    assert _browser_completion_block(session, 'Previous result unverified.', captured[0]) is None
+        monkeypatch.setattr(context, 'plan', plan)
+        monkeypatch.setattr(kernel_control, 'prepare_completion_output', inspect)
+        with pytest.raises(Inspected):
+            kernel_control.evaluate_completion(context, state)
+        assert captured[0].browser_document == browser.document_identity()
+        assert captured[0].browser_document != baseline['document']
+        assert _browser_completion_block(session, 'Previous result unverified.', captured[0]) is None

@@ -22,7 +22,16 @@ from codey.types.json_value import JsonObject, decode_json_object
 from tests.test_browser_context_delivery import URL, install
 from tests.test_browser_context_delivery import production_browser as production_browser
 from tests.test_model_input_binding import upload_snapshot
-from tools.browser_leaf_exposure_ab import CASES, DIRECT_TOOLS, NOTE, evidence_checks, expose_leaves, metrics, run_arm
+from tools.browser_leaf_exposure_ab import (
+    CASES,
+    DIRECT_TOOLS,
+    NOTE,
+    evidence_checks,
+    execution_specs,
+    expose_leaves,
+    metrics,
+    run_arm,
+)
 from tools.completion_explanation_ab import Arm, Target
 
 GRANTS = frozenset({"control", "web.read", "browser.observe", "browser.interact"})
@@ -35,9 +44,9 @@ def test_visibility_and_roundtrip_reuse_one_definition_per_leaf() -> None:
     assert not set(DIRECT_TOOLS).intersection(a.tool_names)
     assert set(b.tool_names) - set(a.tool_names) == set(DIRECT_TOOLS)
     assert b.nested_tool_names == a.nested_tool_names and b.policy is a.policy and b.allowed == a.allowed
-    original = {spec.name: spec for spec in a.frozen_specs}
+    original = execution_specs(a)
     assert len(b.frozen_specs) == len(set(b.inventory_names))
-    assert {spec.name: spec for spec in b.frozen_specs} == original
+    assert execution_specs(b) == original
     assert dict(b.custom_executors) == dict(a.custom_executors)
     restored = restore_snapshot(snapshot_description(b))
     assert restored == b

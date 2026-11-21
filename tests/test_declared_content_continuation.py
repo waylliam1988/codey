@@ -72,13 +72,14 @@ def test_click_stage_wait_does_not_start_during_observation_or_fill(action: str,
         document=document, names={"browser_wait", "browser_read"}) is None
 
 
-def test_b8fc1529_snapshot_keeps_its_original_input_contract() -> None:
-    payload = parse_json_object((Path(__file__).parent / "fixtures" / "declared_fields_snapshot_b8fc1529.json").read_text(
-        encoding="utf-8"))
-    snapshot = restore_snapshot(payload)
-    assert snapshot.input_binding is not None and not snapshot.input_binding.source_refs
-    plan = normalize_turn(decode_text_turn('{"tool":"codemode","args":{"path":"ledger.data"}}'), snapshot=snapshot)
-    assert not plan.protocol_error and "declared_fields:true" in str(plan.calls[0].args["code"])
+def test_b8fc1529_snapshot_is_preserved_but_rejected_by_current_runtime() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "declared_fields_snapshot_b8fc1529.json"
+    original = fixture.read_bytes()
+    payload = parse_json_object(original.decode("utf-8"))
+    assert payload["input_binding"] is not None
+    with pytest.raises(ValueError, match="unsupported captured turn snapshot version"):
+        restore_snapshot(payload)
+    assert fixture.read_bytes() == original
 
 
 def test_content_menu_and_pinned_sources_survive_snapshot_restore(tmp_path: Path) -> None:

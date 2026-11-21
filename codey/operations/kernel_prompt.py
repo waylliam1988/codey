@@ -130,8 +130,8 @@ def kernel_prompt_for_session(
         parts.extend(_tool_contract_parts(visible_names, contract_text, native=native))
     if whole_submission:
         parts.append(("Use native tool calls. " + _NATIVE_ARGUMENTS_RULE) if native else _TEXT_ACTION_RULE)
-        parts.append("Submit the whole answer with submit_research_answer. After its receipt, the application checks "
-                     "and publishes the same answer; no further model rewrite is needed.")
+        parts.append("Submit the research report with submit_research_answer. Continue any remaining implementation "
+                     "and verification, then propose done. Report-only tasks can finish from the report receipt.")
         return "\n\n".join(parts)
     if native:
         parts.append(

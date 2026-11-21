@@ -10,7 +10,6 @@ from codey.automation.browser_document import same_document
 from codey.automation.browser_query import QueryObservationError
 from codey.operations import browser_followups
 from codey.operations.browser_upload import audit_upload_open, browser_delivered_source, matches_document
-from codey.research.answer_contract import whole_research
 from codey.research.source_reading import render_source_read
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.web_intent import source_url_key
@@ -33,7 +32,7 @@ if TYPE_CHECKING:
 
 
 def _can_inspect(session: TaskSession) -> bool:
-    return (whole_research(session) and session.policy.allows("browser.interact")
+    return (session.policy.allows("browser.interact")
             and session.policy.allows("browser.observe"))
 
 
@@ -43,7 +42,7 @@ def audit_browser_open(result: ToolResult, session: TaskSession | None, browser:
         result = audit_upload_open(result, session, browser)
     source = source_url_key(url)
     if (session is None or browser is None or not _can_inspect(session)
-            or not browser_delivered_source(result, source)):
+            or not (browser_delivered_source(result, source) or _retained_failure(result, source))):
         return result
     document = browser.document_identity()
     if document is None or not matches_document(document, source):
@@ -51,7 +50,19 @@ def audit_browser_open(result: ToolResult, session: TaskSession | None, browser:
     audit = {**result.audit, "browser_document": document}
     if (binding := browser.resource_binding()) is not None:
         audit["browser_resource"] = binding
-    return audit_record_regions(replace(result, audit=audit), session, browser, document)
+    bound = replace(result, audit=audit)
+    return audit_record_regions(bound, session, browser, document) if result.ok else bound
+
+
+def _retained_failure(result: ToolResult, source: str) -> bool:
+    acquisition = result.canonical.get("source_acquisition")
+    attempts = acquisition.get("attempts") if isinstance(acquisition, dict) else None
+    if result.ok or not isinstance(attempts, list) or not attempts:
+        return False
+    last = attempts[-1]
+    return (isinstance(last, dict) and last.get("backend") == "browser"
+            and last.get("delivery") == "confirmed" and last.get("failure_code") != "policy_denied"
+            and isinstance(url := last.get("final_url"), str) and source_url_key(url) == source)
 
 
 def audit_record_regions(result: ToolResult, session: TaskSession, browser: BrowserSession,
@@ -169,10 +180,9 @@ def initial_query_access(session: TaskSession, snapshot: TurnSnapshot,
             or call.name != "open_url" or "codemode" not in snapshot.tool_names
             or not {"open_url", "browser_snapshot"} <= set(snapshot.nested_tool_names)):
         return call
-    # A failed source read stops the program. An optional observation failure
-    # retains the source and its own failure receipt for normal model recovery.
-    return ToolCall("codemode", {"code": "const source = unwrap(await tools.open_url(inputs)); "
-                    "await tools.browser_snapshot({}); return source;", "inputs": call.args}, call.call_id)
+    # Source rejection must not suppress observation of the retained page.
+    return ToolCall("codemode", {"code": "const source = await tools.open_url(inputs); "
+                    "await tools.browser_snapshot({}); return unwrap(source);", "inputs": call.args}, call.call_id)
 
 
 def selected_detail(session: TaskSession | None, browser: BrowserSession, call: ToolCall,

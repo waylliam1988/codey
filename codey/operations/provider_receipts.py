@@ -317,8 +317,13 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     if [spec.name for spec in specs] != inventory:
         raise ValueError("captured definitions do not match tool names")
     policy = TaskPolicy.from_payload(payload["policy"])
+    from codey.memory.candidates import CANDIDATE_FIELD
+    from codey.operations.memory_candidate_transport import memory_candidate_spec
+
     if has_explanation(policy.required_checks) and any(
-            spec.name == "done" and spec != explanation_spec(spec) for spec in specs):
+            spec.name == "done" and spec != (
+                memory_candidate_spec(explanation_spec(spec)) if CANDIDATE_FIELD in dict(spec.parameters)
+                else explanation_spec(spec)) for spec in specs):
         raise ValueError("unsupported captured explanation contract; start a new request")
     navigation_url = payload.get("task_navigation_url")
     if navigation_url is not None:
@@ -328,7 +333,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         navigation = next((spec for spec in specs if spec.name == "browser_navigate"), None)
         if (not navigation_url or check_fetch_url(navigation_url, resolve=False) is not None
                 or "codemode" not in names or "browser_navigate" not in nested
-                or navigation is None or not policy.allows(navigation.grant) or policy.strict_research
+                or navigation is None or not policy.allows(navigation.grant)
                 or payload["input_binding"] is not None
                 or payload["browser_copy"] is not None):
             raise ValueError("invalid captured task navigation binding")
@@ -372,7 +377,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     copy = CopyTurn.restore(decode_json_object(payload["browser_copy"])) if payload["browser_copy"] is not None else None
     input_binding, binding_compatible = _restore_input_binding(raw_binding, names, specs, copy, policy)
     compatible = compatible and binding_compatible
-    from codey.operations.browser_followups import DIRECT_TOOLS, MAX_TEXT, SINGLE_STEP_TOOLS, allows_surface
+    from codey.operations.browser_followups import FOLLOWUP_TOOLS, MAX_TEXT, allows_surface
 
     fill_text = payload.get("browser_fill_text")
     if fill_text is not None and (not isinstance(fill_text, str) or not fill_text.strip() or len(fill_text) > MAX_TEXT):
@@ -398,7 +403,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     # coexist with, but do not lower through, the browser follow-up programs.
     direct = tuple(spec.name for spec in specs if spec.executor == "browser" and spec.name in names and spec.name != PAGE_DETAIL_TOOL)
     research = snapshot.research_scope is not None
-    direct_surface = {*DIRECT_TOOLS, "browser_wait", "browser_navigate"} if research else {*DIRECT_TOOLS, *SINGLE_STEP_TOOLS}
+    direct_surface = set(FOLLOWUP_TOOLS)
     if snapshot.browser_followups and (not set(direct) <= direct_surface
             or not allows_surface(snapshot, direct, research=research)):
         raise ValueError("captured browser follow-ups exceed the authorized browser interface")

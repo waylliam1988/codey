@@ -1,0 +1,1391 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-11-21T12:37:48.398468+08:00",
+  "timezone": "Asia/Taipei",
+  "base_commit": "eba01df2662300179d61fc77176e36cdfc1cbf96",
+  "plan_complete": false,
+  "scope": "First implementation batch: unified capabilities and composed delivery, parent browser ownership/injection, related deterministic browser and recovery fixes.",
+  "production_source_digest": "8112bc1b8fb1a21291b1f270d545412c9dd8f7b7fee5b27e39ba903fa184efc7",
+  "owned_python_files": [
+    {
+      "path": "codey/automation/browser_input.py",
+      "bytes": 1894,
+      "sha256": "f7e7484cbd46657c42e74981e390a8a230970da8f00f009ed7c285438d823d14"
+    },
+    {
+      "path": "codey/automation/browser_session.py",
+      "bytes": 46280,
+      "sha256": "6a72563e069db85240ea5c9b1a5c7af4f83818f384b0470d80b4b0c3c69dd5ad"
+    },
+    {
+      "path": "codey/codemode/catalog.py",
+      "bytes": 17854,
+      "sha256": "8c8e13a03a78c481f84ad94449d57373cf25b8ec53674d0be3ae71598cea7aaa"
+    },
+    {
+      "path": "codey/codemode/kernel.py",
+      "bytes": 37053,
+      "sha256": "7dc858f76cff786351bcdcfcdcee85179b2e7f8a409d68b8178681a559966367"
+    },
+    {
+      "path": "codey/operations/browser_detail.py",
+      "bytes": 15209,
+      "sha256": "60d084b1633d0828c30cfa14129bcc60eb892e431138d226fc6ba9440ea3c49b"
+    },
+    {
+      "path": "codey/operations/browser_followups.py",
+      "bytes": 10222,
+      "sha256": "5d60457d4a80f02c7fb57d8130326c1575e9a980ddbdb91a29f74326a6cef535"
+    },
+    {
+      "path": "codey/operations/browser_next_step.py",
+      "bytes": 11463,
+      "sha256": "7b4eba4a51f3bee908f5402181afbdf5a3a994e5f4cdab1fa41e98c56189d2d5"
+    },
+    {
+      "path": "codey/operations/browser_resources.py",
+      "bytes": 2032,
+      "sha256": "3c00c6a5d61db549f68f9205fd0da08371b38c349c0c30f11ba41a77d7d39894"
+    },
+    {
+      "path": "codey/operations/browser_task_handoff.py",
+      "bytes": 36261,
+      "sha256": "e614a688cc9ecd8e95f41bbd06f8da854bc3c47d69b3f17f21cde5cd41aa35e0"
+    },
+    {
+      "path": "codey/operations/kernel_actions.py",
+      "bytes": 17242,
+      "sha256": "224a806d0755e915f6cfff3ce6dcb33d27c00c17955369ac102392fc9bb91346"
+    },
+    {
+      "path": "codey/operations/kernel_context.py",
+      "bytes": 58030,
+      "sha256": "d1c81a65bc56893e602baaad47d4592973efff75834a17090b68f0a87d0a200d"
+    },
+    {
+      "path": "codey/operations/kernel_contracts.py",
+      "bytes": 10044,
+      "sha256": "58aae3c991f7cbaff3815550b4f0f853ebb8820764b9f3fa44250036afbdf0c7"
+    },
+    {
+      "path": "codey/operations/kernel_control.py",
+      "bytes": 21032,
+      "sha256": "108b5e4419377a5f9ac4068fed588e1396d1e25ba371cccea686f69202132812"
+    },
+    {
+      "path": "codey/operations/kernel_execution.py",
+      "bytes": 45669,
+      "sha256": "8c24e83cd98a6d7c43577ebcc58ce8f474b23ea06c0dfe2be9be757fa0c8cf4f"
+    },
+    {
+      "path": "codey/operations/kernel_prompt.py",
+      "bytes": 42606,
+      "sha256": "e8f3ba2d0976ce53986e759db1e1fff6aa29b0b7ad4ab75129f62c3ca009fa30"
+    },
+    {
+      "path": "codey/operations/kernel_protocol.py",
+      "bytes": 45731,
+      "sha256": "f2d6835d84a3a0e285018263abb59013f671c333256ef5c49dba8cf94bf227d6"
+    },
+    {
+      "path": "codey/operations/memory_candidate_transport.py",
+      "bytes": 2319,
+      "sha256": "d10ee3f0fb52e9eb800288449ebb110677168d0c3d6a669a89e98f9796351069"
+    },
+    {
+      "path": "codey/operations/project_adapter.py",
+      "bytes": 15467,
+      "sha256": "0c3797e478810a13d4b01e5289953ac4c09d2602ed677abe331b63e54f035cb0"
+    },
+    {
+      "path": "codey/operations/provider_receipts.py",
+      "bytes": 23903,
+      "sha256": "90bd5b31b317c7e4bd4669dadc84980b73d71187df30c92c92fd33a1d68d47cc"
+    },
+    {
+      "path": "codey/operations/research_completion_checks.py",
+      "bytes": 15799,
+      "sha256": "d640376377a2e75d0cdad4a159fe89b014023fe69bbaab9364c07b2730496acd"
+    },
+    {
+      "path": "codey/operations/research_iteration.py",
+      "bytes": 26953,
+      "sha256": "fdc69bb42936be21872e7dcbb74ef02b52c899afb4f87fff803db08d04097c97"
+    },
+    {
+      "path": "codey/operations/research_submission_handoff.py",
+      "bytes": 9506,
+      "sha256": "33efe6d5bf2a3e780c4da576b691e32054b9656ed94257ff185b794f7aee7cf6"
+    },
+    {
+      "path": "codey/operations/task_entry.py",
+      "bytes": 33531,
+      "sha256": "0ddee67afa5a256e934d2394add872c2544f9f7ab038eaf9447df3da35f0d39f"
+    },
+    {
+      "path": "codey/operations/task_execution.py",
+      "bytes": 56497,
+      "sha256": "5d0d5764ea2314a647be183fc51c6f34276303162e654091fbdbea7c56ad8f7f"
+    },
+    {
+      "path": "codey/operations/task_guidance.py",
+      "bytes": 8106,
+      "sha256": "05f36409783cd03e36cd443f4fa2fcffd1afb912297f44b4a0499ed6257092d7"
+    },
+    {
+      "path": "codey/operations/task_handoff.py",
+      "bytes": 2955,
+      "sha256": "2758597f947b46c586f495d858eef03347f05eb61deb88fb2e67a1e744af19d5"
+    },
+    {
+      "path": "codey/policies/task_policy.py",
+      "bytes": 16592,
+      "sha256": "9ee321b437f0ec5ba71bbc6e7882771eb22a154560286a5e4bfabc0f1320ed4e"
+    },
+    {
+      "path": "codey/research/answer_contract.py",
+      "bytes": 17443,
+      "sha256": "037faa592cf000460da9d371a47ab3f4541908d113bfe19a67eb7aab64446e84"
+    },
+    {
+      "path": "codey/research/browser_search.py",
+      "bytes": 42233,
+      "sha256": "59b77054be3e2639099f17eb50a57cb37fde80ab5b805695a7b4693ebdf83a82"
+    },
+    {
+      "path": "codey/research/report_projection.py",
+      "bytes": 11805,
+      "sha256": "f1ad4b06fcf2d5c7135772b2a3de22263bc50043687bf9a5ead28aac9446043d"
+    },
+    {
+      "path": "codey/research/report_values.py",
+      "bytes": 9072,
+      "sha256": "c2c3456aa7d338af03e5decc2d11da79bf1b5138cbe92d0482726295466ee938"
+    },
+    {
+      "path": "codey/research/web_sources.py",
+      "bytes": 4661,
+      "sha256": "9bdcf82a202891274d2a5ec308f39680575c2a179e5dbc3a1fded7e09408ccd7"
+    },
+    {
+      "path": "codey/runtime/core/tool_resources.py",
+      "bytes": 4795,
+      "sha256": "cc5033d9a21de9deee27f5d15b221cd31b32d1c0e118e75966603f6a3c4b2ec8"
+    },
+    {
+      "path": "tests/test_browser_baseline_capability.py",
+      "bytes": 9846,
+      "sha256": "54c00ee5829589cf43a05b9c5a353197c68aa244cc73134d446b3cf3489e16db"
+    },
+    {
+      "path": "tests/test_browser_click_plan.py",
+      "bytes": 11109,
+      "sha256": "ae456d44ba58fed712c9892fd2a64ebfd2aca702149c5e2ef453814db11fd2d8"
+    },
+    {
+      "path": "tests/test_browser_completion_production.py",
+      "bytes": 10035,
+      "sha256": "89040dde30780cf3bf9ec3ebbaa4f50fdb4994ca760bd9c27a63b162c168e1b4"
+    },
+    {
+      "path": "tests/test_browser_copy_upgrade_recovery.py",
+      "bytes": 12354,
+      "sha256": "5e18a1507a1f10627f0f08f64966c3c30f9441d3fdb2863db7f7ac9f7bfab24c"
+    },
+    {
+      "path": "tests/test_browser_direct_hybrid.py",
+      "bytes": 9647,
+      "sha256": "91da00f95ea428017fbb7217111167d72e84a934973a2f63576214bf1b95425f"
+    },
+    {
+      "path": "tests/test_browser_failed_source_retention.py",
+      "bytes": 2901,
+      "sha256": "91802ce78d317405238daade7e0897e540a74fb897d381f99343993f4b3db786"
+    },
+    {
+      "path": "tests/test_browser_followup_ab.py",
+      "bytes": 15091,
+      "sha256": "612e666ac1cbb2770e05cd4482d03dc77db91ac4231892f9c8dac1efb5125923"
+    },
+    {
+      "path": "tests/test_browser_handoff_next_steps.py",
+      "bytes": 29461,
+      "sha256": "b4da6376f5148af97ac46d972c8fabcaf198ffccad6f993c317006bf87a65e2a"
+    },
+    {
+      "path": "tests/test_browser_initial_navigation.py",
+      "bytes": 7654,
+      "sha256": "a60f623028abfd56252cf54a1f124b511b6db13f06b338f0a93f84accb340425"
+    },
+    {
+      "path": "tests/test_browser_leaf_exposure_ab.py",
+      "bytes": 13084,
+      "sha256": "d51272ded2660af12c8bd3eed5858e101f03c83304f46ef2e8825a776156f205"
+    },
+    {
+      "path": "tests/test_browser_observation_regressions.py",
+      "bytes": 16071,
+      "sha256": "7bc39d474ce51fd1aae71f2c70bcbab3b64dfb256c90489ea6e31d8d00681995"
+    },
+    {
+      "path": "tests/test_browser_pending_recovery.py",
+      "bytes": 5609,
+      "sha256": "f3d9f682c50e35d2922c8698504f9c042401769e7ce0d171b3110b4ea18e0338"
+    },
+    {
+      "path": "tests/test_browser_readable_references.py",
+      "bytes": 17222,
+      "sha256": "73e1f3dc4f768526c401fcbf7cb81a931871536d8db2bdf0031df611f71df25f"
+    },
+    {
+      "path": "tests/test_browser_research_direct_steps.py",
+      "bytes": 4709,
+      "sha256": "07e66e65bf319ebd4e8ecc58df31a78d457a50cc111c853e9228944b7f2e6713"
+    },
+    {
+      "path": "tests/test_browser_snapshot_recovery.py",
+      "bytes": 1953,
+      "sha256": "ea17f90e6ac5b894125edaac833c6632f55996a2f7aac62c6946386a8d892f8d"
+    },
+    {
+      "path": "tests/test_declared_content_continuation.py",
+      "bytes": 20916,
+      "sha256": "9c692532ee33e19a8b115d7cd17923ee2501ff36b535bfc1e3a72b7248acc9ca"
+    },
+    {
+      "path": "tests/test_receipt_dependency_regressions.py",
+      "bytes": 13548,
+      "sha256": "abe859f9b2939f09d469fde542540dff95cb07b0c2f7c9d1331163b18828a403"
+    },
+    {
+      "path": "tests/test_research_submission_handoff_production.py",
+      "bytes": 9375,
+      "sha256": "26e1ad207ad9709b704e6f4800ba2197df60309b7a34d4782dfebca0d6dcb293"
+    },
+    {
+      "path": "tests/test_task_browser_resources.py",
+      "bytes": 4361,
+      "sha256": "3300b22c624b1247788e9da0ba9f84f8146f791e0dc79d482c1dbe12e495d1b8"
+    },
+    {
+      "path": "tests/test_unified_task_capabilities.py",
+      "bytes": 19577,
+      "sha256": "cc061a76698751ff31a4c74fde89c1ac3224c3d91d410f32a1e5e9ddf282ad0b"
+    },
+    {
+      "path": "tools/browser_chat_followup_gate.py",
+      "bytes": 54488,
+      "sha256": "b038e9534d0f1c8ffba58e739de71da391a86753f37b9205afb37a8a0b7a5403"
+    },
+    {
+      "path": "tools/browser_followup_ab.py",
+      "bytes": 27340,
+      "sha256": "33cd8562a6d00111f8a1a666a92c09685a514557fc41b3453e21ec3738dcc3bd"
+    },
+    {
+      "path": "tools/browser_leaf_exposure_ab.py",
+      "bytes": 20404,
+      "sha256": "7ac7256622c90f4cdba7828fe3ab12012a9500aa8342bd3cab2fa1779393acbd"
+    },
+    {
+      "path": "tools/browser_production_live_gate.py",
+      "bytes": 35858,
+      "sha256": "7b1c348ea4e5766425b8af765732d9a818a8f651838345f4543b6204975af447"
+    }
+  ],
+  "owned_python_file_count": 57,
+  "final_production_tests": {
+    "passed": 548,
+    "files": 42,
+    "batches": [
+      {
+        "log": ".e2e-artifacts/unified-frozen-production-a-first.log",
+        "passed": 296
+      },
+      {
+        "log": ".e2e-artifacts/unified-frozen-production-b-first.log",
+        "passed": 252
+      }
+    ],
+    "full_repository_pytest_run": false,
+    "excluded_expanded_file": "tests/test_task_entry_cutover.py"
+  },
+  "static_checks": [
+    {
+      "command": "python -m ruff check .",
+      "log": ".e2e-artifacts/unified-ruff-final-sixth.log",
+      "exit_code": 0
+    },
+    {
+      "command": "python -m mypy codey --python-version 3.11",
+      "log": ".e2e-artifacts/unified-mypy-handoff-second.log",
+      "exit_code": 0,
+      "checked_source_files": 714
+    },
+    {
+      "command": "pyrefly check codey --python-version 3.11",
+      "log": ".e2e-artifacts/unified-pyrefly-handoff.log",
+      "exit_code": 0
+    },
+    {
+      "command": "ty check codey --python-version 3.11",
+      "log": ".e2e-artifacts/unified-ty-handoff.log",
+      "exit_code": 0
+    },
+    {
+      "command": "pyrefly check <57 modified Python files> --python-version 3.11",
+      "log": ".e2e-artifacts/unified-owned-pyrefly-final-sixth.log",
+      "exit_code": 0
+    },
+    {
+      "command": "ty check <57 modified Python files> --python-version 3.11",
+      "log": ".e2e-artifacts/unified-owned-ty-final-sixth.log",
+      "exit_code": 0
+    },
+    {
+      "command": "python -m tools.kernel_type_precision_gate",
+      "log": ".e2e-artifacts/unified-type-precision-final-second.log",
+      "exit_code": 0
+    },
+    {
+      "command": "mypy <57 modified Python files> including imports",
+      "log": ".e2e-artifacts/unified-owned-mypy-final-second.log",
+      "exit_code": 1,
+      "owned_diagnostics": 0,
+      "unmodified_dependency_errors": 68,
+      "unmodified_dependency_files": 4
+    }
+  ],
+  "unresolved": [
+    "Full P0-P8 plan is not implemented: async worker/IPC and invocation progress, complete dependency inversion, frames/stable refs/scopes/delta, explicit ordinary-div query binding, new native inputs, screenshot-to-model/UI chain and final natural/real-site acceptance remain.",
+    "Two obsolete whole-prompt absence assertions in unmodified tests/test_task_entry_cutover.py still fail with the intentionally unified authorized tool catalog.",
+    "The unmodified legacy writer managed-output fixture waited indefinitely in wait_tool_task; timeout stack and interrupted batch are retained. Root cause and fixture migration are not fully verified.",
+    "Supplementary mypy with historical test dependencies reports 68 errors in four unmodified files; production-tree mypy and modified-file pyrefly/ty/precision checks pass.",
+    "Both natural local-model runs failed and remain failures; no command policy was relaxed."
+  ],
+  "natural_runs": [
+    {
+      "directory": ".e2e-artifacts/unified-natural-first",
+      "passed": false,
+      "stop_reason": "provider_failure",
+      "evidence": [
+        {
+          "path": ".e2e-artifacts/unified-natural-first/task.txt",
+          "bytes": 411,
+          "sha256": "cc2d1d0f91ec6dc63bbd43f1e3ca64cc0540d95294672631ad4591911d5f42f6"
+        },
+        {
+          "path": ".e2e-artifacts/unified-natural-first/request.json",
+          "bytes": 1631,
+          "sha256": "640811f319dafa945acd57b3b3721aa39ab63fea54afe2abcefedca7bc67e27b"
+        },
+        {
+          "path": ".e2e-artifacts/unified-natural-first/provider.jsonl",
+          "bytes": 191804,
+          "sha256": "9ac3b9e1130141f3564b090dde5c3b0b8f6031ad6809a346cc6248b73f2cd967"
+        },
+        {
+          "path": ".e2e-artifacts/unified-natural-first/events.jsonl",
+          "bytes": 6689,
+          "sha256": "4f96bbb7ed0d33adf393a23f32ffbdcdc98b18849a49e2f7d5c339ea4e48e1ce"
+        },
+        {
+          "path": ".e2e-artifacts/unified-natural-first/receipts.json",
+          "bytes": 16452,
+          "sha256": "4b8e82b6ea63727da14801f7a02aedc330c57489b3f101598bddcbefd7355752"
+        },
+        {
+          "path": ".e2e-artifacts/unified-natural-first/summary.json",
+          "bytes": 2267,
+          "sha256": "88047dad3199b65690a0df1a21c1371b4a1e0abdf9a3e7478e0dad65574412c6"
+        }
+      ]
+    },
+    {
+      "directory": ".e2e-artifacts/unified-natural-second",
+      "passed": false,
+      "stop_reason": "no_progress",
+      "evidence": [
+        {
+          "path": ".e2e-artifacts/unified-natural-second/task.txt",
+          "bytes": 411,
+          "sha256": "cc2d1d0f91ec6dc63bbd43f1e3ca64cc0540d95294672631ad4591911d5f42f6"
+        },
+        {
+          "path": ".e2e-artifacts/unified-natural-second/request.json",
+          "bytes": 1631,
+          "sha256": "640811f319dafa945acd57b3b3721aa39ab63fea54afe2abcefedca7bc67e27b"
+        },
+        {
+          "path": ".e2e-artifacts/unified-natural-second/provider.jsonl",
+          "bytes": 364676,
+          "sha256": "d1505adf2ec0a6b614f726d68a21f611a566afa1a1b2c04c650ff5af8399ddbc"
+        },
+        {
+          "path": ".e2e-artifacts/unified-natural-second/events.jsonl",
+          "bytes": 8469,
+          "sha256": "747ac90441cf88246606f5014e8e021eb33a356c7fbe77133651e441914d7f11"
+        },
+        {
+          "path": ".e2e-artifacts/unified-natural-second/receipts.json",
+          "bytes": 18850,
+          "sha256": "2c6bfdb07868495902b2ef4d471dbc37d9b6ace8452b911119e6229d5b1a887b"
+        },
+        {
+          "path": ".e2e-artifacts/unified-natural-second/summary.json",
+          "bytes": 2197,
+          "sha256": "fe0bd2b9a56d3aec3133135bafd55d7e19aa3c3b2050d0cbc4c80e824819717d"
+        }
+      ]
+    }
+  ],
+  "test_selections": [
+    {
+      "path": ".e2e-artifacts/unified-final-frozen-a-selection.txt",
+      "bytes": 700,
+      "sha256": "baa07ba54497ed8a6930ab783ee787d6ad36620d659c69f7590ffb9cce6329bb"
+    },
+    {
+      "path": ".e2e-artifacts/unified-final-frozen-b-selection.txt",
+      "bytes": 1034,
+      "sha256": "04894ec68bf7619f080cb3222e9437597140033b272a5310d905dd24f8405559"
+    },
+    {
+      "path": ".e2e-artifacts/unified-final-production-selection.txt",
+      "bytes": 1768,
+      "sha256": "3fc4613ece4fe391acde010ba5301226c95b3f195136177286b70f2e2593903c"
+    },
+    {
+      "path": ".e2e-artifacts/unified-final-remaining-selection.txt",
+      "bytes": 1068,
+      "sha256": "beff591c4f088aca13b8b07555c0449cb4d2e3371ca2185f244a636cc1eb0b3d"
+    },
+    {
+      "path": ".e2e-artifacts/unified-regression-selection.txt",
+      "bytes": 4451,
+      "sha256": "832004cb17f3e373d2e007f912035bcf9c7a7c3d55513d47e95a54e90ca43817"
+    }
+  ],
+  "additional_records": [
+    {
+      "path": ".e2e-artifacts/unified-regression-second-interruption.json",
+      "bytes": 485,
+      "sha256": "da5dd300237ebe576d29a87bdeb0bfffbc58c3af411680e9c985ca2fa40a5a44"
+    },
+    {
+      "path": ".e2e-artifacts/unified-production-tail-interruption.json",
+      "bytes": 479,
+      "sha256": "d94c64988d9dc780076d1e169c467e6c7a8b15be293846f2f98f077425e63f5d"
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-precision-final-second.json",
+      "bytes": 2648,
+      "sha256": "88e19e4a34488519733bba1c24d2ec3982ab469ee2df78e530c8ace51b2bde7d"
+    }
+  ],
+  "logs": [
+    {
+      "path": ".e2e-artifacts/unified-action-recovery-third.log",
+      "bytes": 167,
+      "sha256": "af3b647d5ce06d651118439d1582dc896d82cb2014d0b6ec2f52b67fd85f63ef",
+      "summaries": [
+        "4 passed in 37.67s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-archived-recovery-second.log",
+      "bytes": 4581,
+      "sha256": "8b9f99d3cd9ab4715c8357626683371c564ed86bf77903da95c05fbd0379f994",
+      "summaries": [
+        "1 failed, 58 passed in 43.14s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-capabilities-fifth.log",
+      "bytes": 4011,
+      "sha256": "2866ff874a27e487298bbf686bf10bd357ce2335d7bc326811bdcad2ab15711d",
+      "summaries": [
+        "1 failed, 7 passed in 3.03s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-capabilities-first.log",
+      "bytes": 1090,
+      "sha256": "ac1eb4e9e72c97847e363b20e02bc3c4b098d194aa385ab1733b3f092797328f",
+      "summaries": [
+        "1 failed, 7 passed in 3.02s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-capabilities-fourth.log",
+      "bytes": 4160,
+      "sha256": "9efd3d123911044706704d2a810a9abe102a18a967ec0f237e3e39e51e76cbf1",
+      "summaries": [
+        "1 failed, 7 passed in 3.02s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-capabilities-second.log",
+      "bytes": 1682,
+      "sha256": "4bdc669206d534b04b83900e8543892a6c585d7fe839bacbf531f8d167901a4e",
+      "summaries": [
+        "1 failed, 7 passed in 2.95s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-capabilities-sixth.log",
+      "bytes": 166,
+      "sha256": "2dd3340443a31db2a53619a948dfc461190d083f9a4fd6373f613b8b2c9b324b",
+      "summaries": [
+        "8 passed in 2.83s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-capabilities-third.log",
+      "bytes": 3707,
+      "sha256": "edf795b901d4a0020d14fc31fec08912eb75562ce85a525df0fdf45109d70727",
+      "summaries": [
+        "1 failed, 7 passed in 3.02s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-catalog-first.log",
+      "bytes": 179,
+      "sha256": "200b9c868d8ff3886c0f8609c4394966b3079d7ebd044ae097547661d5a726fa",
+      "summaries": [
+        "61 passed in 100.93s (0:01:40)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-click-contract-first.log",
+      "bytes": 6695,
+      "sha256": "124527a73a168c706acd9f9631e89a90bb58a173df39d34d77fb59bfb0bf0ec6",
+      "summaries": [
+        "3 failed in 2.04s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-click-contract-second.log",
+      "bytes": 167,
+      "sha256": "cd3c0fccfaf1612efef0f5dbe096f212be8a2ff369ea2bcf2cded852454d57f3",
+      "summaries": [
+        "17 passed in 3.87s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-composition-eighth.log",
+      "bytes": 179,
+      "sha256": "8dfcba4ccb2f9c70abff58e53e2230e309ffb882037e52786efc35eccbf837a8",
+      "summaries": [
+        "42 passed in 304.33s (0:05:04)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-composition-seventh.log",
+      "bytes": 165,
+      "sha256": "fe6871b3bfe123b52f960eef2ed684ad05128d3cdcba0e8c7697ce0008bad587",
+      "summaries": [
+        "no tests ran in 0.00s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-core-first.log",
+      "bytes": 28440,
+      "sha256": "63927192d13d760e7e0e9525763c9fee8723620d1aa28fc2dc675781d1f83c83",
+      "summaries": [
+        "12 failed, 67 passed in 29.48s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-core-second.log",
+      "bytes": 81452,
+      "sha256": "ed452be16a19af0f3d377b3f8c9155e49a88efeb372e8bac357729f3e9420e20",
+      "summaries": [
+        "14 failed, 80 passed in 349.65s (0:05:49)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-core-third.log",
+      "bytes": 62864,
+      "sha256": "e9cc3016a483690cf8956fbd4204752e35f38ad6673f2ddfc52665e17dfc3c4a",
+      "summaries": [
+        "9 failed, 39 passed in 391.63s (0:06:31)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-expanded-first.log",
+      "bytes": 250,
+      "sha256": "24b359d5bec0bbed626b73bebc164ff9e584351592c468d212180e7b19d7b71c",
+      "summaries": [
+        "112 passed in 46.11s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-final-production-collection.log",
+      "bytes": 76449,
+      "sha256": "e5d4a687ffc2743423655ac263f7091c6e166171fab5760ff97e791ae0f5f84b",
+      "summaries": []
+    },
+    {
+      "path": ".e2e-artifacts/unified-followup-first.log",
+      "bytes": 3072,
+      "sha256": "166fddd5bbeee8681021cd5c63033e731dffb8b0d12276ff3ca0233964a4ea7e",
+      "summaries": [
+        "1 failed in 24.92s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-frozen-production-a-first.log",
+      "bytes": 504,
+      "sha256": "f9edf386c8901d1c84ea644663d271ba43c4f6fc9b0965a6b2b8a0804ad47c9c",
+      "summaries": [
+        "296 passed in 600.33s (0:10:00)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-frozen-production-b-first.log",
+      "bytes": 423,
+      "sha256": "686d5909ad7c86645cdeca4cdc75bf5ade6c241bae3492d8f4df2efc6d151b2b",
+      "summaries": [
+        "252 passed in 591.44s (0:09:51)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-full-ruff-first.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-handoff-prerequisites-first.log",
+      "bytes": 18641,
+      "sha256": "665dcbed83abcf1de4baec66db7b021738c24c73a69723ed9992b65a0f1768e0",
+      "summaries": [
+        "8 failed, 206 passed in 273.14s (0:04:33)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-kernel-integration-first.log",
+      "bytes": 6470,
+      "sha256": "ab65949fe595896c8c87c964543fd1668989013bb2b0947026f53ddd35fa43d1",
+      "summaries": [
+        "1 failed, 9 passed in 3.26s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-kernel-integration-second.log",
+      "bytes": 6608,
+      "sha256": "1693eb66ed4ca32cf6e3070c7a9246e6fd4fbd68f99e70aa5471e7782ed56100",
+      "summaries": [
+        "1 failed, 9 passed in 8.69s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-kernel-integration-third.log",
+      "bytes": 167,
+      "sha256": "0427807dbd408467cb0b2d6d417562ad4806e73996095ed05fb41021015085a6",
+      "summaries": [
+        "10 passed in 8.96s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-lifecycle-collection.log",
+      "bytes": 5258,
+      "sha256": "2cec9903d49b7803c0392257f7d01be5933047228f4b4f1c2a243f8d9e3285b5",
+      "summaries": []
+    },
+    {
+      "path": ".e2e-artifacts/unified-lifecycle-regression-second.log",
+      "bytes": 178,
+      "sha256": "fe36df2fd132140e7dabab5960699e31c4d0b6f3ba222c5da477d789da57825c",
+      "summaries": [
+        "44 passed in 88.86s (0:01:28)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-memory-explanation-final-first.log",
+      "bytes": 168,
+      "sha256": "a8d093393b0721b296f43b21ba40e0ccc6389504f3ed17c4435599d929e89104",
+      "summaries": [
+        "65 passed in 11.64s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-mypy-eighth.log",
+      "bytes": 46,
+      "sha256": "e063c917338fa6fd92b5b7004652f9a676f29686f8fa891fe922c202a8345596",
+      "summaries": [
+        "Success: no issues found in 714 source files"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-mypy-fifth.log",
+      "bytes": 46,
+      "sha256": "e063c917338fa6fd92b5b7004652f9a676f29686f8fa891fe922c202a8345596",
+      "summaries": [
+        "Success: no issues found in 714 source files"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-mypy-final-first.log",
+      "bytes": 46,
+      "sha256": "e063c917338fa6fd92b5b7004652f9a676f29686f8fa891fe922c202a8345596",
+      "summaries": [
+        "Success: no issues found in 714 source files"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-mypy-first.log",
+      "bytes": 46,
+      "sha256": "ac747ae966549915b04b52d1d48e9d23477deafc3f2c923cab9530fc53e1a752",
+      "summaries": [
+        "Success: no issues found in 712 source files"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-mypy-fourth.log",
+      "bytes": 135,
+      "sha256": "78a49bf3038ad152821aeb6ae1a6b31e74a6ce83bf6e0e0e48f2842992d0e6e8",
+      "summaries": [
+        "Found 1 error in 1 file (errors prevented further checking)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-mypy-handoff-second.log",
+      "bytes": 46,
+      "sha256": "e063c917338fa6fd92b5b7004652f9a676f29686f8fa891fe922c202a8345596",
+      "summaries": [
+        "Success: no issues found in 714 source files"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-mypy-second.log",
+      "bytes": 46,
+      "sha256": "d1fb5b14c1a9df32a7085d15dd2e7fe162fa417e675ca16f1ce3020d3a85573c",
+      "summaries": [
+        "Success: no issues found in 715 source files"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-mypy-seventh.log",
+      "bytes": 46,
+      "sha256": "e063c917338fa6fd92b5b7004652f9a676f29686f8fa891fe922c202a8345596",
+      "summaries": [
+        "Success: no issues found in 714 source files"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-mypy-sixth.log",
+      "bytes": 46,
+      "sha256": "e063c917338fa6fd92b5b7004652f9a676f29686f8fa891fe922c202a8345596",
+      "summaries": [
+        "Success: no issues found in 714 source files"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-mypy-third.log",
+      "bytes": 46,
+      "sha256": "e063c917338fa6fd92b5b7004652f9a676f29686f8fa891fe922c202a8345596",
+      "summaries": [
+        "Success: no issues found in 714 source files"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-first.log",
+      "bytes": 2269,
+      "sha256": "dcb3e65447253a2f10d4dc5c156b37565ed4a4c0b3ae6e2d69ff169d821f58cf",
+      "summaries": []
+    },
+    {
+      "path": ".e2e-artifacts/unified-natural-second.log",
+      "bytes": 2199,
+      "sha256": "dd4c080ca6c8d634903708f94a5615d76abaee151e4b25d324ac74d04010bfc0",
+      "summaries": []
+    },
+    {
+      "path": ".e2e-artifacts/unified-navigation-contract-final-second.log",
+      "bytes": 166,
+      "sha256": "8d2ad3d9f9d4c3f79718209e9274c8af0d8bca08041c6cb4b373f4c7eb132022",
+      "summaries": [
+        "6 passed in 2.34s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-navigation-types-first.log",
+      "bytes": 36,
+      "sha256": "b7e6dc29ea3d616cfb04312074fac0edd62e443e2a1bd5d19f3e45166c392441",
+      "summaries": [
+        " INFO 0 errors",
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-outer-composition-first.log",
+      "bytes": 784,
+      "sha256": "f183c41f6bbdc1c6143faa431f490881e72626ab2da7eef787a9c8f303f7b1ff",
+      "summaries": [
+        "============================== 1 passed in 8.30s =============================="
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-mypy-final-second.log",
+      "bytes": 10043,
+      "sha256": "371541b381c030f1d2e3e368a4629d88d56d2f6b93e9beabee05e2ef87734d26",
+      "summaries": [
+        "Found 68 errors in 4 files (checked 57 source files)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-mypy-final.log",
+      "bytes": 11248,
+      "sha256": "b5ce7f238cae17edf63858148451c50249bc29f0920c8be9ac493540ea1ccb44",
+      "summaries": [
+        "Found 76 errors in 5 files (checked 53 source files)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-mypy-third.log",
+      "bytes": 10043,
+      "sha256": "7d6f9e177cb86fa825e87706c3eaa54a2a2e1087ea380e48747ec0b01724971e",
+      "summaries": [
+        "Found 68 errors in 4 files (checked 45 source files)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-pyrefly-final-fifth.log",
+      "bytes": 40,
+      "sha256": "f56671d0d547601aba3bdccd24371174465a2473a728d2a8e4b6770996d9617e",
+      "summaries": [
+        " INFO 0 errors (50 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-pyrefly-final-second.log",
+      "bytes": 40,
+      "sha256": "f56671d0d547601aba3bdccd24371174465a2473a728d2a8e4b6770996d9617e",
+      "summaries": [
+        " INFO 0 errors (50 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-pyrefly-final-sixth.log",
+      "bytes": 40,
+      "sha256": "f56671d0d547601aba3bdccd24371174465a2473a728d2a8e4b6770996d9617e",
+      "summaries": [
+        " INFO 0 errors (50 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-pyrefly-final-third.log",
+      "bytes": 40,
+      "sha256": "f56671d0d547601aba3bdccd24371174465a2473a728d2a8e4b6770996d9617e",
+      "summaries": [
+        " INFO 0 errors (50 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-pyrefly-final.log",
+      "bytes": 40,
+      "sha256": "f56671d0d547601aba3bdccd24371174465a2473a728d2a8e4b6770996d9617e",
+      "summaries": [
+        " INFO 0 errors (50 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-pyrefly-handoff.log",
+      "bytes": 40,
+      "sha256": "f56671d0d547601aba3bdccd24371174465a2473a728d2a8e4b6770996d9617e",
+      "summaries": [
+        " INFO 0 errors (50 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-pyrefly-third.log",
+      "bytes": 40,
+      "sha256": "bd4a2d326a5357b4e331a12f90d9ae0e10922a92a0505bda48f3a84f2820f554",
+      "summaries": [
+        " INFO 0 errors (51 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-ty-final-fifth.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-ty-final-second.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-ty-final-sixth.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-ty-final-third.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-ty-final.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-ty-handoff.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-ty-third.log",
+      "bytes": 312,
+      "sha256": "db3eb8ac903203f3c46392df87ddb2776de3786bc121b71f0884a27fb6027bce",
+      "summaries": [
+        "Found 1 diagnostic"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-types-first.log",
+      "bytes": 5106,
+      "sha256": "b0173c8bb7a6275b8d5469445aa9c072b9c43256034d76bffd9df7dcbb700f58",
+      "summaries": [
+        "Found 2 errors in 1 file (checked 34 source files)",
+        " INFO 2 errors (50 warnings not shown)",
+        "Found 2 diagnostics"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-types-second.log",
+      "bytes": 31992,
+      "sha256": "0a99f9e8dd784bb36bad81f45a201d3ff5da6d011fe50f9fca790f33960cd507",
+      "summaries": [
+        "Found 79 errors in 10 files (checked 43 source files)",
+        " INFO 13 errors (51 warnings not shown)",
+        "Found 14 diagnostics"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-owned-warnings-first.log",
+      "bytes": 15078,
+      "sha256": "7caa5ae6d47b1a0fb1c144582cac0ebe809b0274a4e467758f694d3d0238e770",
+      "summaries": []
+    },
+    {
+      "path": ".e2e-artifacts/unified-production-fixes-first.log",
+      "bytes": 168,
+      "sha256": "184ba1b3aacaf447b93516325d76cecda36545f5a84fbbefc8bd7b99ddd501cf",
+      "summaries": [
+        "41 passed in 38.56s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-production-regression-final-first.log",
+      "bytes": 45724,
+      "sha256": "025f3f73ae27528695e0e85e1a673b2760d3ffeaf5ac4747ed84c4215c11dbb9",
+      "summaries": [
+        "15 failed, 270 passed in 558.84s (0:09:18)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-production-remaining-final-second.log",
+      "bytes": 38061,
+      "sha256": "dc117ce98d3ed3afb801ffdddad4fa463c42883f925499f81617bf764ae0bd3f",
+      "summaries": [
+        "15 failed, 77 passed in 195.67s (0:03:15)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-production-tail-final-third.log",
+      "bytes": 4618,
+      "sha256": "4ce811ed259dff7349e483f1295396c6a1c6cce73e807e0ed349b48e50243a86",
+      "summaries": []
+    },
+    {
+      "path": ".e2e-artifacts/unified-pyrefly-eighth.log",
+      "bytes": 56,
+      "sha256": "0b2b274e3fc203612dc5f5cff8bf19984eb84ce401d6836948b2de77b44a622c",
+      "summaries": [
+        " INFO 0 errors (35 suppressed, 163 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-pyrefly-final-first.log",
+      "bytes": 56,
+      "sha256": "0b2b274e3fc203612dc5f5cff8bf19984eb84ce401d6836948b2de77b44a622c",
+      "summaries": [
+        " INFO 0 errors (35 suppressed, 163 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-pyrefly-first.log",
+      "bytes": 56,
+      "sha256": "0b2b274e3fc203612dc5f5cff8bf19984eb84ce401d6836948b2de77b44a622c",
+      "summaries": [
+        " INFO 0 errors (35 suppressed, 163 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-pyrefly-handoff.log",
+      "bytes": 56,
+      "sha256": "0b2b274e3fc203612dc5f5cff8bf19984eb84ce401d6836948b2de77b44a622c",
+      "summaries": [
+        " INFO 0 errors (35 suppressed, 163 warnings not shown)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-recovery-discovery-first.log",
+      "bytes": 15063,
+      "sha256": "01fd3aa90daa8b7f1983dd4bdecf22ddab6a4ebf0982761614c39a06e691bd5c",
+      "summaries": [
+        "2 failed in 5.51s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-recovery-first.log",
+      "bytes": 4501,
+      "sha256": "76d3f15467f745f6e1e492dda0653a64f3f1e68050eb4c06e791542bb6ea91ce",
+      "summaries": [
+        "3 errors in 2.40s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-recovery-second.log",
+      "bytes": 168,
+      "sha256": "4b1f7473b70bfc2c8d30d6b1876d916440f0ea4eb340b807a8e5528a7b328b5f",
+      "summaries": [
+        "19 passed in 41.86s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-reference-contract-third.log",
+      "bytes": 12382,
+      "sha256": "13560a1a52f65b208b24936b43a184f215a40098fdaa28c55fe4da14116d94a3",
+      "summaries": [
+        "4 failed, 42 passed in 149.70s (0:02:29)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-regression-collection.log",
+      "bytes": 222091,
+      "sha256": "928e9789da96b87a6ad5b690eeb82adde6336a6fe4a7519011c2e5ab93f56f6a",
+      "summaries": []
+    },
+    {
+      "path": ".e2e-artifacts/unified-regression-first.log",
+      "bytes": 40240,
+      "sha256": "0ad8951c1f9899a83d030513a91cda85ff48ba31fdae02fe8dd2d8e35a4b1daa",
+      "summaries": [
+        "20 failed, 225 passed in 685.46s (0:11:25)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-regression-second.log",
+      "bytes": 303,
+      "sha256": "0e372e1a1a51ec25045227bbb527fc301cddf702ebce366cbedc13b134356508",
+      "summaries": []
+    },
+    {
+      "path": ".e2e-artifacts/unified-remaining-collection.log",
+      "bytes": 33247,
+      "sha256": "9ca0cc2596e3862868cd23f19d556348425e2198cfc7ac0ca88e1abc4107c212",
+      "summaries": []
+    },
+    {
+      "path": ".e2e-artifacts/unified-repaired-first.log",
+      "bytes": 9327,
+      "sha256": "7846f66f024f811abbf9c71b74bba66fb4ddd2e9a8eb40d26acebc82c3a43c98",
+      "summaries": [
+        "1 failed, 65 passed in 377.11s (0:06:17)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-research-entry-first.log",
+      "bytes": 155,
+      "sha256": "0ccbcf7f848a695c25ad66563e7588e823f5e101097c01ce04963d8338783bd4",
+      "summaries": [
+        "no tests ran in 0.00s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-research-entry-second.log",
+      "bytes": 259,
+      "sha256": "4418aa167ec42db0336a4adcec13480900e8eb5d740ec69f752d316e70f57946",
+      "summaries": [
+        "78 passed in 98.42s (0:01:38)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-resources-first.log",
+      "bytes": 168,
+      "sha256": "6884aabc15d41261e5f2f9d8fbbe8ff21299a61a220067c3992c92297da919d9",
+      "summaries": [
+        "16 passed in 13.04s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ruff-fifth.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ruff-final-fifth.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ruff-final-first.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ruff-final-fourth.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ruff-final-second.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ruff-final-sixth.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ruff-final-third.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ruff-first.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ruff-fourth.log",
+      "bytes": 1022,
+      "sha256": "d0f10db9738e8f8899ea9d70a19603af2801945425fcb90d7fbd81858b6ef092",
+      "summaries": [
+        "Found 12 errors."
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ruff-handoff-fifth.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ruff-second.log",
+      "bytes": 166,
+      "sha256": "67d7d476c40eb873044c03c8f3af7f3fe8c01ea902e5752c7aa45aea6171d758",
+      "summaries": [
+        "Found 1 error."
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ruff-seventh.log",
+      "bytes": 242,
+      "sha256": "0ddb2d2fa369c4b76aace17fd039c7356e1d904217855580adfda5ece25d0d83",
+      "summaries": [
+        "Found 1 error."
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ruff-sixth.log",
+      "bytes": 162,
+      "sha256": "137d45865e13cd38355169f80beaf45d2972145962e971ad01c4a4c206571d13",
+      "summaries": [
+        "Found 1 error."
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ruff-third.log",
+      "bytes": 147,
+      "sha256": "a91ca5dfd9f4f8991b1bf9fefb0fbda22d7977bd9204666e03c821a1c0d764de",
+      "summaries": [
+        "Found 1 error."
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-shadow-hit-first.log",
+      "bytes": 5850,
+      "sha256": "de1d177415e11d1acab87a9861589e58bee02cd77eccd6092c846cab3661ed7f",
+      "summaries": [
+        "3 failed in 6.89s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-source-first.log",
+      "bytes": 3897,
+      "sha256": "7c9f2552656b95cd7e3857a3ce6fb033accfc1d46f2aa1e34b48e03515443bd8",
+      "summaries": [
+        "2 failed, 38 passed in 14.57s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-source-second.log",
+      "bytes": 168,
+      "sha256": "d40fa5f755ee97fda1439947019776faaf2692ae38708c649c68e8fa58eed975",
+      "summaries": [
+        "40 passed in 14.45s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-tool-tests-types-first.log",
+      "bytes": 10240,
+      "sha256": "028aaca3b16a45e91cba2c6fbb35f6f313290c81ad5825e07dfd2bb27ab3dd78",
+      "summaries": [
+        " INFO 8 errors",
+        "Found 5 diagnostics"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-tool-tests-types-second.log",
+      "bytes": 36,
+      "sha256": "b7e6dc29ea3d616cfb04312074fac0edd62e443e2a1bd5d19f3e45166c392441",
+      "summaries": [
+        " INFO 0 errors",
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-tools-contract-final-second.log",
+      "bytes": 166,
+      "sha256": "30e05abd4e8378c0d222c5bf058b39fea7f319b983defc52cb9d985df1752278",
+      "summaries": [
+        "9 passed in 2.81s"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-tools-regression-final-first.log",
+      "bytes": 12687,
+      "sha256": "81d21a1794c14bfd0a3d74c4181cd2498696663f700d2dee188da234e4661f57",
+      "summaries": [
+        "8 failed, 73 passed in 346.17s (0:05:46)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-tools-regression-final-second.log",
+      "bytes": 179,
+      "sha256": "fc0c1d331949679520c1674341e3a9be15b5cdd05893ae307581170ffcaede36",
+      "summaries": [
+        "56 passed in 188.15s (0:03:08)"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ty-eighth.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ty-final-first.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ty-first.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-ty-handoff.log",
+      "bytes": 20,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summaries": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "path": ".e2e-artifacts/unified-type-precision-final-second.log",
+      "bytes": 65,
+      "sha256": "a4235b3bf75e4945e89304625234e20fe199890bf1400658fd27a5d77cdb5c44",
+      "summaries": []
+    },
+    {
+      "path": ".e2e-artifacts/unified-type-precision-final.log",
+      "bytes": 65,
+      "sha256": "a4235b3bf75e4945e89304625234e20fe199890bf1400658fd27a5d77cdb5c44",
+      "summaries": []
+    },
+    {
+      "path": ".e2e-artifacts/unified-type-precision-second.log",
+      "bytes": 65,
+      "sha256": "a4235b3bf75e4945e89304625234e20fe199890bf1400658fd27a5d77cdb5c44",
+      "summaries": []
+    },
+    {
+      "path": ".e2e-artifacts/unified-verify-authority-first.log",
+      "bytes": 1244,
+      "sha256": "3fd26288f40d25495e9e1facb71661e1a78407192bf914d1fbdbdd17cd53f4f4",
+      "summaries": [
+        "1 failed in 1.91s"
+      ]
+    }
+  ],
+  "tool_versions": {
+    "pytest": "9.0.3",
+    "ruff": "0.15.14",
+    "mypy": "1.18.2",
+    "pyrefly": "1.3.2",
+    "ty": "0.0.87",
+    "playwright": "1.58.0"
+  }
+}

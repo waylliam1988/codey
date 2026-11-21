@@ -19,6 +19,7 @@ from codey.policies.task_policy import TaskPolicy
 from codey.research.finding_report import ResearchReport
 from codey.research.ledger import ResearchLedger
 from codey.research.report_quality import ReportQualityReview
+from codey.research.report_values import has_project_delivery, report_delivery_matches
 from codey.research.source_gateway import _SearchProvider
 from codey.research.staging import StagedKnowledgeStore
 from codey.research.tools import ResearchTools
@@ -26,6 +27,8 @@ from codey.runs.trace import RunTraceRecorder
 
 if TYPE_CHECKING:
     from codey.operations.research_flow import ResearchFlowDeps
+    from codey.operations.task_session import TaskSession
+    from codey.workspace.revision import WorkspaceRevisionStore
 
 from codey.memory.context import retrieve_context
 from codey.operations.generation_boundary import durable_generation_boundary_callback
@@ -250,6 +253,17 @@ def _result_context(ledger: ResearchLedger, compiled: ResearchReport | None,
     return coverage, citations
 
 
+def _project_revisions(deps: ResearchFlowDeps, session: TaskSession) -> WorkspaceRevisionStore | None:
+    if not session.project or not session.policy.allows("project.write") or deps.managed_outputs is None:
+        return None
+    from codey.workspace.revision import WorkspaceRevisionStore
+
+    revisions = WorkspaceRevisionStore(deps.managed_outputs.root.parent)
+    workspace = revisions.current_state(session.project)
+    session.set_workspace_state(workspace.revision, workspace.fingerprint)
+    return revisions
+
+
 def run_research_iteration(
     deps: ResearchFlowDeps,
     *,
@@ -346,8 +360,6 @@ def run_research_iteration(
             managed_outputs=deps.managed_outputs,
             durable=admitted,
         )
-    from codey.operations.research_continuation import ResearchContinuation
-
     history = ResearchContinuation(deps.runtime_mutations, deps.managed_outputs,
                                    session_id=session_id, run_id=run_id)
     prerequisites = history.prerequisite_facts(before_attempt=writer_attempt, policy=policy)
@@ -376,6 +388,7 @@ def run_research_iteration(
     )
     sources: tuple[ContextCandidate, ...] = memory.sources + ((topic_source,) if topic_source is not None else ())
     context_text, context_spans = assemble_context_candidates(sources)
+    revisions = _project_revisions(deps, session)
     outcome = history.kernel(
         session,
         invocation=invocation,
@@ -398,6 +411,7 @@ def run_research_iteration(
             ).build(execution=KernelExecutionDeps(
                 intent_sink=intent_sink,
                 project_path=Path(project) if project else None,
+                workspace_revision_store=revisions,
                 research_tools=tools,
                 permission_profile="coding_writer" if policy.allows("project.write") else "research",
             ), observation=KernelObservationDeps(
@@ -432,7 +446,8 @@ def run_research_iteration(
     compiled = None
     if outcome.completed:
         compiled = outcome.research_report if policy.strict_research else None
-        if compiled is not None and compiled.text != outcome.summary:
+        if compiled is not None and not report_delivery_matches(
+                outcome.summary, compiled.text, combined=has_project_delivery(outcome.proof)):
             raise ValueError("settled report does not match accepted delivery")
         # Deterministic projection of the settled driver output; the stored
         # digest rejects changes to that original output on replay.
@@ -441,7 +456,7 @@ def run_research_iteration(
         open_questions: object = compiled.open_questions if compiled else session.last_done_args.get("open_questions", ())
         knowledge_refs: list[object] = [*_proposal_knowledge_refs(session.last_done_args), *(compiled.knowledge_refs if compiled else ())]
         synthesis_id = publish_answer(history,
-            tools, task, outcome.summary, session_id=session_id,
+            tools, task, compiled.text if compiled is not None else outcome.summary, session_id=session_id,
             project=project, run_id=run_id, on_event=on_event,
             open_questions=open_questions,
             knowledge_refs=knowledge_refs,

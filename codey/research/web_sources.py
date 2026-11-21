@@ -78,6 +78,11 @@ class WebSourceProvider:
         self.browser_session = browser_session
         self._browser: BrowserSource | None = None
 
+    def bind_browser_source(self, browser: BrowserSource) -> None:
+        if self._browser is not None and self._browser is not browser:
+            self._browser.close()
+        self._browser = browser
+
     def _browser_source(self) -> BrowserSource:
         if self._browser is None:
             if self.browser_session is not None and self._browser_factory is _background_browser:

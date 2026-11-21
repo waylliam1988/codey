@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from codey.app.headless_runner import HeadlessRequest, HeadlessResult, run_headless
+from codey.app.headless_runner import HeadlessConnector, HeadlessRequest, HeadlessResult, run_headless
 from codey.policies.browser_requirement import require_browser_page_rounds, require_browser_research_sequence
 from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.policies.tool_requirement import required_tool_names
@@ -19,12 +19,11 @@ from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import browser_prerequisite_ab as fixture
 from tools import browser_production_live_gate as gate
 from tools.completion_artifact_audit import artifacts, tool_receipts
-from tools.completion_explanation_ab import ExperimentProvider
 
 
 def add_requirement(monkeypatch: pytest.MonkeyPatch, declaration: str) -> None:
     def execute(request: HeadlessRequest, *, emit_jsonl: Callable[[dict[str, object]], None],
-                connect_provider: Callable[[str], ExperimentProvider]) -> HeadlessResult:
+                connect_provider: HeadlessConnector) -> HeadlessResult:
         return run_headless(replace(request, required_tools=(*request.required_tools, declaration)),
                             emit_jsonl=emit_jsonl, connect_provider=connect_provider)
 
@@ -93,8 +92,11 @@ def test_research_sequence_is_explicit_and_frozen_without_granting_access() -> N
     assert declaration in policy.required_checks
     assert TaskPolicy.from_payload(policy.to_payload()) == policy
     assert not policy.allows("browser.observe")
-    with pytest.raises(ValueError, match="requires strict Research"):
-        build_task_policy(submission, task_kind="chat")
+    chat_policy = build_task_policy(submission, task_kind="chat")
+    assert declaration in chat_policy.required_checks
+    assert not chat_policy.allows("browser.observe")
+    with pytest.raises(ValueError, match="requires a research report"):
+        build_task_policy(SimpleNamespace(project=None, strict_research=False, required_tools=(declaration,)), task_kind="chat")
     with pytest.raises(ValueError, match="invalid tool predicate"):
         required_tool_names([declaration + " "])
     with pytest.raises(ValueError, match="condition"):

@@ -190,15 +190,15 @@ def refresh_snapshot_contract(snapshot: TurnSnapshot) -> TurnSnapshot:
     if "codemode" in snapshot.tool_names:
         from codey.codemode.catalog import render_declarations, snapshot_catalog
 
-        declarations = render_declarations(snapshot_catalog(snapshot))
+        declarations = render_declarations(snapshot_catalog(snapshot),
+            outer_descriptions={spec.name: spec.description for spec in snapshot.model_specs})
         snapshot = replace(snapshot, frozen_specs=tuple(
             replace(spec, declarations=declarations) if spec.name == "codemode" else spec for spec in snapshot.frozen_specs))
     return replace(snapshot, contract_text=render_snapshot_contract(snapshot))
 
 
 def offer_browser_tools(snapshot: TurnSnapshot, session: KernelSessionView) -> TurnSnapshot:
-    if (session.task_kind not in {"chat", "hybrid"}
-            or not browser_followups.allows_surface(snapshot)
+    if (not browser_followups.allows_surface(snapshot)
             or (exposed := session.model_tool_names) is not None
             and not set(browser_followups.DIRECT_TOOLS) <= set(exposed)
             or set(browser_followups.DIRECT_TOOLS) & set(session.controller_denied)):
@@ -218,8 +218,7 @@ def offer_browser_tools(snapshot: TurnSnapshot, session: KernelSessionView) -> T
 
 def offer_browser_call(snapshot: TurnSnapshot, session: KernelSessionView, name: str, *, research: bool = False) -> TurnSnapshot:
     """Offer an existing leaf through the same single-step CodeMode lowering."""
-    eligible = ({*browser_followups.DIRECT_TOOLS, "browser_navigate", "browser_wait"}
-                if research else set(browser_followups.SINGLE_STEP_TOOLS))
+    eligible = set(browser_followups.FOLLOWUP_TOOLS)
     if (name not in eligible
             or not browser_followups.allows_surface(snapshot, (name,), research=research)
             or name in session.controller_denied
@@ -247,84 +246,22 @@ class ReceivedProviderTurn:
 def controller_allowed_for_session(session: KernelSessionView) -> tuple[str, ...] | None:
     if session.task_kind == "research_review":
         raise ValueError("same-model research assessment execution has been retired")
-    policy = session.policy
-    try:
-        denied = {"submit_research_review"} | {str(n or "").strip().lower() for n in (session.controller_denied or ())
-                  if str(n or "").strip()}
-    except Exception:
-        denied = {"submit_research_review"}
-    observed_aliases = {"open_result": bool(session.search_results), "reopen_source": bool(session.source_ids),
-                        "open_hit": bool(session.hit_targets)}
-    if not policy.strict_research:
+    from codey.research.answer_contract import whole_research
+    from codey.research.questions import QUESTION_BOUND_TOOLS, requires_question_ref
+    from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
+
+    denied = {"submit_research_review", *(name.strip().lower() for name in session.controller_denied)}
+    if not whole_research(session):
         denied.add("submit_research_answer")
-        from codey.research.questions import requires_question_ref
-
-        question_binding = requires_question_ref(session)
-        if not question_binding:
-            denied.add("research_plan")
-        base: tuple[str, ...] | None = None
-        if question_binding and not session.research_questions:
-            base = ("research_plan", "done")
-    else:
-        from codey.research.answer_contract import ANSWER_TOOLS, whole_research
-
-        if whole_research(session):
-            from codey.toolchain.tool_spec import tool_specs
-
-            # The answer contract stays unchanged. Explicitly authorized
-            # operation resources compose with it in this one turn planner.
-            browser = tuple(spec.name for spec in tool_specs().values()
-                            if spec.executor == "browser" and policy.allows(spec.grant))
-            tools: tuple[str, ...] = (*ANSWER_TOOLS, *browser, *(("codemode", "read_tool_result") if browser else ()))
-            return tuple(name for name in tools if name not in denied and (
-                name not in observed_aliases or observed_aliases[name]))
-        # Other strict callers retain their scoped acquisition contract.
-        # Whole-answer submission requires the Research task's frozen scope.
-        denied.update({"knowledge_write", "knowledge_commit", "knowledge_link", "submit_research_answer"})
-        results = dict(session.search_results or {})
-        opened = set(session.opened_sources or ())
-        evidence = list(session.evidence or ())
-        if not session.research_questions:
-            base = ("research_plan", "done")
-        elif not results and not opened:
-            base = ("knowledge_search", "knowledge_read", "web_search", "open_url", "save_inference", "done")
-        elif not opened:
-            base = ("knowledge_search", "knowledge_read", "web_search", "open_url", "open_result", "save_inference", "done")
-        elif not evidence:
-            base = (
-                "knowledge_search",
-                "knowledge_read",
-                "web_search",
-                "open_url",
-                "open_result",
-                "reopen_source",
-                "open_hit",
-                "source_search",
-                "save_finding",
-                "save_inference",
-                "knowledge_write",
-                "done",
-            )
-        else:
-            base = None
-        if base is not None and "research_plan" not in base:
-            base = ("research_plan", *base)
-    if base is not None:
-        base = (*base, "ask_user", "read_tool_result")
-    # Reference aliases require an observed target, in ordinary and strict
-    # tasks alike. The resulting list drives both wire protocols and execution.
-    for alias, observed in observed_aliases.items():
-        if not observed:
-            denied.add(alias)
-    if not denied:
-        return base
-    if base is None:
-        # 否决表存在时 unlimited 即不可用：按策略可见全集减去否决，
-        # 收窄仍经同一快照进入提示、schema、解析与执行。
-        from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
-
-        base = tuple(visible_tool_names_for_snapshot(policy, None))
-    return tuple(name for name in base if name not in denied)
+    if not requires_question_ref(session):
+        denied.add("research_plan")
+    elif not session.research_questions:
+        # A missing plan blocks only tools whose own input needs a question.
+        denied.update(QUESTION_BOUND_TOOLS)
+    aliases = {"open_result": bool(session.search_results), "reopen_source": bool(session.source_ids),
+               "open_hit": bool(session.hit_targets)}
+    denied.update(name for name, observed in aliases.items() if not observed)
+    return tuple(name for name in visible_tool_names_for_snapshot(session.policy, None) if name not in denied)
 
 
 def _frozen_specs_for_names(names: tuple[str, ...]) -> tuple[ToolSpec, ...]:
@@ -423,10 +360,8 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
     explaining = has_explanation(session.policy.required_checks)
     if explaining and session.policy.strict_research:
         raise ValueError("json_explanation cannot replace the strict Research answer contract")
-    if scope is not None:
-        return tuple(answer_spec(spec, scope) for spec in frozen)
     purpose = ("evidence" if session.task_kind == "evidence_followup" else
-               "report" if session.policy.strict_research else "chat" if session.task_kind == "chat" else "ordinary")
+               "report" if session.policy.strict_research and scope is None else "chat" if session.task_kind == "chat" else "ordinary")
     hybrid = purpose == "ordinary" and session.task_kind == "hybrid"
     versions = (read_knowledge_versions(session.executed, session._memory_results)
                 if (purpose == "chat" or hybrid) and not explaining else [])
@@ -449,7 +384,7 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
             if bound is None:
                 continue
             spec = bound
-        selected.append(spec)
+        selected.append(answer_spec(spec, scope) if scope is not None else spec)
     return tuple(selected)
 
 
@@ -496,13 +431,12 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         # project completion. Project verification remains outside this
         # composable surface.
         upload = task_upload_scope(session.task_kind, session.task_text, session.required_source_urls, session.policy)
-        if (session.task_kind in {"chat", "hybrid"} and not session.policy.strict_research
-                and upload is None and target is None
+        if (upload is None and target is None
                 and any(spec.name == "browser_navigate" for spec in frozen)):
             task_navigation_url = _task_navigation_url(session)
         catalog = build_codemode_catalog(frozen, task_navigation_url=task_navigation_url,
             allow_writes=session.policy.allows("project.write"),
-            allow_project_run=session.policy.allows("project.write") and not aggregate_browser)
+            allow_project_run=session.policy.allows("project.verify"))
         nested = tuple(entry.name for entry in catalog.entries)
         if aggregate_browser:
             # Browser leaves compose through CodeMode. Granting browsing must
@@ -901,8 +835,6 @@ def _validate_control_plan(
     if (snapshot is not None and snapshot.browser_copy is not None and items.control is not None
             and items.control.kind == "done" and "done" not in snapshot.tool_names):
         return _invalid_plan("Finish the browser copy before reporting completion.", tool="done")
-    if snapshot is not None and snapshot.research_scope is not None and items.control is not None and items.control.kind == "done":
-        return _invalid_plan("Submit the answer with submit_research_answer under the frozen contract; global done is not allowed")
     done_spec = frozen.get("done") if frozen is not None else None
     if (items.control is not None and items.control.kind == "done" and not items.protocol_error
             and done_spec is not None and "report_sections" in done_spec.required):

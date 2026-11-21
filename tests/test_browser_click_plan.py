@@ -64,7 +64,8 @@ def test_frozen_contract_dispatches_each_leaf_once(purpose: str, expected: list[
     catalog = snapshot_catalog(snapshot)
     snapshot = restore_snapshot(parse_json_object(json.dumps(snapshot_description(snapshot), sort_keys=True)))
     assert snapshot_catalog(snapshot).digest == catalog.digest
-    assert next(s.declarations for s in snapshot.model_specs if s.name == "codemode") == render_declarations(catalog)
+    assert next(s.declarations for s in snapshot.model_specs if s.name == "codemode") == render_declarations(
+        catalog, outer_descriptions={spec.name: spec.description for spec in snapshot.model_specs})
     calls: list[tuple[str, JsonObject]] = []
 
     def invoke(name: str, args: JsonObject) -> ToolResult:

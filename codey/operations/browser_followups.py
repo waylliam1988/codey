@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 DIRECT_TOOLS = ("browser_snapshot", "browser_fill", "browser_click", "browser_read")
 SINGLE_STEP_TOOLS = ("browser_wait", "browser_eval", "browser_tab_list", "browser_download")
+FOLLOWUP_TOOLS = (*DIRECT_TOOLS, *SINGLE_STEP_TOOLS, "browser_navigate")
 PURPOSES = ("result", "controls", "action")
 TEXT_SOURCE = "task_text"
 MAX_TEXT = 4096
@@ -83,9 +84,7 @@ def model_spec(spec: ToolSpec, fill_text: str | None, *, click_purposes: tuple[s
 def allows_surface(snapshot: TurnSnapshot, direct_names: tuple[str, ...] = DIRECT_TOOLS, *, research: bool = False) -> bool:
     policy = snapshot.policy
     names = {"codemode", *direct_names}
-    scope_matches = (policy is not None and policy.strict_research and snapshot.research_scope is not None
-                     if research else policy is not None and not policy.strict_research and snapshot.research_scope is None)
-    return (policy is not None and scope_matches
+    return (policy is not None
             and snapshot.browser_copy is None
             and snapshot.input_binding is None
             and "codemode" in snapshot.tool_names and set(direct_names) <= set(snapshot.nested_tool_names)

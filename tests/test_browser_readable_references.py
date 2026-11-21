@@ -112,6 +112,10 @@ def test_snapshot_versions_parse_separately_from_runtime_compatibility(version: 
     session = session_with_snapshot()
     snapshot = offer_browser_tools(build_turn_snapshot(session), session) if version == 8 else build_turn_snapshot(session)
     payload = snapshot_description(snapshot)
+    assert restore_snapshot(payload) == snapshot
+    restored = restore_snapshot({**payload, "implementation_id": "previous-runtime"})
+    assert not restored.implementation_compatible
+    assert restored.browser_references is None
     payload["schema_version"] = version
     if version < 9:
         del payload["browser_followups"], payload["browser_references"]
@@ -119,11 +123,8 @@ def test_snapshot_versions_parse_separately_from_runtime_compatibility(version: 
         del payload["browser_fill_text"]
     if version < 7:
         del payload["task_navigation_url"]
-    assert restore_snapshot(payload) == snapshot
-    payload["implementation_id"] = "previous-runtime"
-    restored = restore_snapshot(payload)
-    assert not restored.implementation_compatible
-    assert restored.browser_references is None
+    with pytest.raises(ValueError, match="unsupported captured turn snapshot version"):
+        restore_snapshot(payload)
 
 
 def test_outer_and_nested_use_the_same_ref_schema_and_frozen_binding() -> None:
@@ -151,7 +152,8 @@ def test_expired_binding_removes_descriptions_from_nested_declarations() -> None
     expired = bind_browser_references(session, frozen, CompletionContext(browser_document=DOCUMENT), 8)
     assert expired.browser_references is None
     codemode = next(spec for spec in expired.frozen_specs if spec.name == "codemode")
-    assert codemode.declarations == render_declarations(snapshot_catalog(expired))
+    assert codemode.declarations == render_declarations(snapshot_catalog(expired),
+        outer_descriptions={spec.name: spec.description for spec in expired.model_specs})
 
 
 def observed_snapshot(session: TaskSession, browser: BrowserSession) -> TurnSnapshot:

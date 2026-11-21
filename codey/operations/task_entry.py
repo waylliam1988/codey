@@ -181,7 +181,7 @@ def _entry_policy_with_recovery(frame: RunFrame, durable: DurableSession | None,
 def _entry_check_conflict(policy: TaskPolicy, request: TaskSubmission, kind: str) -> None:
     requires = (request.project_changes_required is True
                 or "project_changes_required" in policy.required_checks)
-    if requires and kind in {"project", "hybrid"} and not policy.allows("project.write"):
+    if requires and not policy.allows("project.write"):
         raise RuntimeError(
             "project_changes_required without project.write: task declares must-change "
             "but entry grants no write permission"

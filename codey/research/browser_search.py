@@ -551,7 +551,6 @@ class BrowserSearchProvider:
             except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
                 raise
             except Exception as exc:
-                self._discard_fetch_page_on_browser_thread(page)
                 return source_download._fetch_failure(url, f'could not load page: {exc}')
             cancellation.check()
             final_url = page.url or url
@@ -569,13 +568,11 @@ class BrowserSearchProvider:
                 response_status = None
             invalid = _validate_page_status(final_url, response_status)
             if invalid is not None:
-                self._discard_fetch_page_on_browser_thread(page)
                 return invalid
             if source_download._is_pdf_response(ctype, final_url):
                 return source_download._pdf_download_sentinel(final_url, mime_type=ctype)
             invalid = _validate_page_content_type(final_url, ctype)
             if invalid is not None:
-                self._discard_fetch_page_on_browser_thread(page)
                 return invalid
             cancellation.check()
             try:
@@ -583,20 +580,17 @@ class BrowserSearchProvider:
             except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
                 raise
             except Exception as exc:
-                self._discard_fetch_page_on_browser_thread(page)
                 return source_download._fetch_failure(final_url, f'could not read page content: {exc}',
                                                      code="execution_failed", delivery="confirmed")
             cancellation.check()
             invalid = _validate_page_observation(page, final_url, html, text, failures=failures)
             if invalid is not None:
-                self._discard_fetch_page_on_browser_thread(page)
                 return invalid
             truncated = len(text) > _MAX_PAGE_CHARS
             if truncated:
                 text = text[:_MAX_PAGE_CHARS]
             return {"status": "ok", "url": final_url, "title": extract_title(html), "text": text, "truncated": truncated}
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            self._discard_fetch_page_on_browser_thread(page)
             raise
         finally:
             failures.close()
@@ -608,10 +602,12 @@ class BrowserSearchProvider:
         browser_failure = source_download._fetch_failure(url,
             "page had no usable visible content after navigation: " + detail, title=extract_title(html),
             code=code, delivery="confirmed")
-        self._discard_fetch_page_on_browser_thread(page)
         return browser_failure
 
     def _abandon_fetch_on_browser_thread(self) -> None:
+        with self._lease_lock:
+            if self._leases:
+                return
         if self.headless:
             self._close_on_browser_thread()
         else:
@@ -631,7 +627,7 @@ class BrowserSearchProvider:
 
     def retain(self) -> None:
         with self._lease_lock:
-            if self._close_requested:
+            if self._close_requested and not self._leases:
                 raise ValueError("browser provider is closing")
             self._leases += 1
 

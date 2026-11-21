@@ -329,8 +329,9 @@ class ExecutionDelegate:
                                     max_text=require_json_integer(args.get("max_text", 12000), "max_text"),
                                     file_inputs_only=file_inputs_only)
         if call.name == "browser_click":
-            if self.session is not None and (pending := browser_followups.pending_click(
-                    self.session._memory_results, browser.document_identity())) is not None:
+            if (self.session is not None and (pending := browser_followups.pending_click(
+                    self.session._memory_results, browser.document_identity())) is not None
+                    and browser.matches_query_control(ref, decode_json_object(pending[1].audit["query_baseline"]))):
                 from codey.automation.browser_session import BrowserToolOutput
 
                 message = (browser_followups.UNCERTAIN if browser_followups.delivery(pending[1]) == "uncertain"
@@ -726,16 +727,9 @@ class ExecutionDelegate:
 
     def _research_call_denial(self, call: ToolCall) -> tuple[ToolResult, bool, int | None] | None:
         from codey.operations.kernel_result import policy_denial_result
-        from codey.research.answer_contract import digest, whole_research
+        from codey.research.answer_contract import digest
 
         try:
-            if (call.name == "knowledge_commit" and self.session is not None
-                    and self.session.task_kind == "research"):
-                raise ValueError("Research does not modify existing knowledge objects; use knowledge_updates in the complete answer")
-            if self.session is not None and whole_research(self.session) and call.name in {
-                "research_plan", "knowledge_write", "knowledge_link", "save_finding", "save_inference",
-            }:
-                raise ValueError("Research uses one complete answer; save new candidates with knowledge_updates in submit_research_answer")
             if self._research_scope is not None:
                 scope = self._research_scope
                 if self.session is None or scope.task_digest != digest(self.session.task_text):
@@ -836,8 +830,7 @@ class ExecutionDelegate:
         except SourceSnapshotUnavailable as exc:
             opened = ResearchToolOutput(f"ERROR: {exc}", ok=False, failure_code="snapshot_unavailable")
         result, ok, code = self._opened_result(call, opened, url, ledger=tools.ledger, turn=turn, tool_index=tool_index)
-        if ok:
-            result = audit_browser_open(result, self.session, self.browser_session, url)
+        result = audit_browser_open(result, self.session, self.browser_session, url)
         return result, ok, code
 
     def _commit_research_knowledge(self, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:

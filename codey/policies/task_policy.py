@@ -188,16 +188,13 @@ def _entry_tool_checks(raw: object, *, kind: str, strict: bool, explanation: boo
     occurrences: dict[ToolSuccessRequirement, set[bool]] = {}
     for name in required_tool_names(raw):
         if (browser := parse_browser_requirement(name)) is not None:
-            if isinstance(browser, BrowserPageRounds):
-                if kind != "chat" or strict:
-                    raise ValueError("browser page rounds require ordinary Chat")
-            elif kind != "research" or not strict:
-                raise ValueError("browser research sequence requires strict Research")
+            if not isinstance(browser, BrowserPageRounds) and not strict:
+                raise ValueError("browser research sequence requires a research report")
             declared.append(browser.declaration)
         else:
             requirement = parse_tool_success_check(name) or ToolSuccessRequirement(name)
-            if requirement.report_label and not (kind == "research" and strict):
-                raise ValueError("Markdown receipt fields require strict whole-task Research")
+            if requirement.report_label and not strict:
+                raise ValueError("Markdown receipt fields require a research report")
             if (requirement.browser_text is not None and not requirement.file_path and not requirement.report_label or requirement.answer_contains
                     or requirement.omit_from_explanation) and not explanation:
                 raise ValueError("browser text fields and explanation occurrence rules require json_explanation")
@@ -228,7 +225,7 @@ def _entry_browser_checks(submission: object, *, kind: str, strict: bool) -> tup
     from codey.task.web_intent import explicit_browser_checks
 
     task: object = getattr(submission, "task", "")
-    return explicit_browser_checks(task) if kind in {"chat", "hybrid"} and not strict and isinstance(task, str) else ()
+    return explicit_browser_checks(task) if isinstance(task, str) else ()
 
 
 def build_task_policy(
@@ -246,6 +243,8 @@ def build_task_policy(
     sources_open_required = requested_sources is True
     has_project = _has_project(submission)
     requested = _requested_grants(submission)
+    changes_required: object = getattr(submission, "project_changes_required", False)
+    write_requested = "project.write" in requested or changes_required is True
 
     grants: set[str] = {"control"}
 
@@ -269,7 +268,7 @@ def build_task_policy(
             grants.update({"web.read", "knowledge.read", "knowledge.write", "knowledge.link"})
             if has_project:
                 grants.update({"project.read", "project.verify"})
-            if "project.write" in requested and has_project:
+            if write_requested and has_project:
                 grants.add("project.write")
             else:
                 # Strict Research without an explicit project.write request
@@ -281,8 +280,8 @@ def build_task_policy(
         grants.update({"web.read", "knowledge.read", "knowledge.write", "knowledge.link"})
         if has_project:
             grants.update({"project.read", "project.verify"})
-        if "project.write" in requested and has_project:
-            grants.add("project.write")
+        if write_requested and has_project:
+            grants.update({"project.write", "shell.approval"})
     elif kind in {"planning", "planning_readonly", "readonly"}:
         grants.add("knowledge.read")
         if has_project:
@@ -296,7 +295,7 @@ def build_task_policy(
         if "web.read" in requested:
             grants.add("web.read")
 
-    if strict and not ("project.write" in requested and has_project):
+    if strict and not (write_requested and has_project):
         # Single strict-research gate for every kind: without an explicit
         # user project.write grant, neither project.write nor the shell
         # request surface may survive, no matter which branch added them.
@@ -318,9 +317,8 @@ def build_task_policy(
     denied = _denied_grants(submission)
     grants -= denied
 
-    strict_checks = RESEARCH_ANSWER_REQUIRED_CHECKS if kind == "research" else STRICT_RESEARCH_REQUIRED_CHECKS
+    strict_checks = RESEARCH_ANSWER_REQUIRED_CHECKS
     required_checks: tuple[str, ...] = strict_checks if strict else (("research_sources_opened",) if sources_open_required else ())
-    changes_required: object = getattr(submission, "project_changes_required", False)
     if changes_required is True:
         required_checks = (*required_checks, "project_changes_required")
     from codey.policies.output_requirement import has_explanation

@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
     from codey.agents.shell_approval import ShellApprovalRequest
     from codey.agents.tools import AgentToolFns
+    from codey.automation.browser_session import BrowserSession
     from codey.durable import DurableStore
     from codey.durable.session import DurableSession
     from codey.operations.kernel_protocol import TurnSnapshot
@@ -279,6 +280,7 @@ def _call_execute_turn(
     durable: DurableStore | DurableSession | None = None,
     snapshot: TurnSnapshot | None = None,
     on_event: Callable[[RunEvent], None] | None = None,
+    *, browser_session: BrowserSession | None = None,
 ) -> list[ToolResult] | KernelResult:
     """Run one execution turn; faults fail closed as provider_failure."""
     try:
@@ -295,6 +297,7 @@ def _call_execute_turn(
                 project_path=project_path,
                 tool_fns=tool_fns,
                 research_tools=research_tools,
+                browser_session=browser_session,
                 change_tracker=change_tracker,
                 managed_outputs=managed_outputs,
                 session_id=session_id,
@@ -308,13 +311,13 @@ def _call_execute_turn(
                 stop_flag=stop_flag,
                 executors=effective_runnable,
                 durable=durable,
-                allow_writes=permission_profile == "coding_writer" and project_path is not None,
+                allow_writes=permission_profile in {"coding_writer", "research"} and project_path is not None,
                 on_event=on_event,
             )
         return _execute_turn(
             session, calls, executors=effective_runnable, run_id=run_id,
             effect_scope=effect_scope, turn=turn, project_path=project_path,
-            tool_fns=tool_fns, research_tools=research_tools,
+            tool_fns=tool_fns, research_tools=research_tools, browser_session=browser_session,
             change_tracker=change_tracker, managed_outputs=managed_outputs,
             session_id=session_id, permission_profile=permission_profile,
             delivered=delivered_map or None, intent_sink=intent_sink,

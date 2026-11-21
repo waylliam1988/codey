@@ -96,13 +96,15 @@ class KernelContext:
         self.window = self.capabilities.window_ref
         self.completion_context = wiring._completion_context_with_ignores(
             self.observation.completion_context, self.execution.workspace_ignored_paths)
+        from codey.operations.browser_resources import build_task_browser
+        from codey.toolchain.tool_spec import tool_specs
+
+        if any(spec.executor == "browser" and session.policy.allows(spec.grant) for spec in tool_specs().values()):
+            browser = build_task_browser(self.sink.run_id, self.durable.tool_resources,
+                                         self.execution.research_tools, browser=self.execution.browser_session)
+            self.execution = replace(self.execution, browser_session=browser)
         if self.execution.research_tools is not None:
             tools = self.execution.research_tools
-            from codey.operations.task_execution import bind_browser_session
-            from codey.toolchain.tool_spec import tool_specs
-
-            if any(spec.executor == "browser" and session.policy.allows(spec.grant) for spec in tool_specs().values()):
-                bind_browser_session(tools)
             tools.direct_urls = session.required_source_urls
             self.completion_context = replace(
                 self.completion_context,
@@ -353,8 +355,8 @@ class KernelContext:
             from codey.operations.research_continuation import ResearchContinuation
             projector: _ResearchProjector = ResearchContinuation
             projector.project_urls(tools)
-            if tools.browser_session is not None:
-                tools.browser_session.prepare_from_receipts(tuple(self.session._memory_results.values()))
+        if self.execution.browser_session is not None:
+            self.execution.browser_session.prepare_from_receipts(tuple(self.session._memory_results.values()))
 
     def restore_completion_proposal(self, effect: RuntimeEffectProjection) -> None:
         """Rebuild proposal metadata from its original response, without a gate."""
@@ -408,37 +410,11 @@ class KernelContext:
             from codey.operations.memory_candidate_transport import offer_memory_candidates
 
             snapshot = offer_memory_candidates(snapshot)
-        research = self.execution.research_tools
-        browser = research.browser_session if research is not None else None
-        from codey.operations.browser_task_handoff import bind_browser_references
+        browser = self.execution.browser_session
+        from codey.operations.task_handoff import task_handoff
 
-        context = replace(self.completion_context, browser_document=browser.document_identity() if browser else None)
-        snapshot = bind_browser_references(self.session, snapshot, context, browser.generation if browser else None)
-        if snapshot.research_scope is None:
-            from codey.operations.browser_followups import DIRECT_TOOLS
-            from codey.operations.browser_task_handoff import browser_task_handoff
-
-            if (not snapshot.browser_followups and browser is not None and browser.document_identity() is not None):
-                snapshot = kernel_protocol.offer_browser_tools(snapshot, self.session)
-            snapshot, handoff = browser_task_handoff(self.session, snapshot, context, browser.generation if browser else None,
-                                                      delivered_results=delivered_results)
-            if snapshot.browser_followups and set(DIRECT_TOOLS) <= set(snapshot.tool_names):
-                guidance = ("For ordinary browser steps, prefer the offered direct browser tools. "
-                            "Use CodeMode for operations that need programming or composition.")
-                handoff = "\n\n".join(part for part in (guidance, handoff) if part)
-            return snapshot, handoff
-        from codey.operations.browser_detail import offer_page_details, offer_query_controls
-        from codey.operations.research_submission_handoff import research_browser_handoff, research_submission_handoff
-
-        snapshot, handoff = research_submission_handoff(self.session, snapshot, context, browser)
-        if snapshot.tool_names == ("submit_research_answer",):
-            return snapshot, handoff
-        snapshot, browser_handoff = research_browser_handoff(self.session, snapshot, context)
-        if browser_handoff and not handoff:
-            return snapshot, "\n\n".join(part for part in (browser_handoff, handoff) if part)
-        snapshot, query_handoff = offer_query_controls(self.session, snapshot, context, browser)
-        snapshot, detail_handoff = offer_page_details(self.session, snapshot, browser)
-        return snapshot, "\n\n".join(part for part in (handoff, browser_handoff, query_handoff, detail_handoff) if part)
+        return task_handoff(self.session, snapshot, self.completion_context, browser,
+                            delivered_results=delivered_results)
 
     def freeze(self, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int, prompt: str = "",
                messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
@@ -627,7 +603,7 @@ class KernelContext:
             calls.append(ToolCall("browser_navigate", {"url": upload.url}, call_id="required-source:upload-page"))
         if not calls:
             return False
-        browser = self.execution.research_tools.browser_session if self.execution.research_tools is not None else None
+        browser = self.execution.browser_session
         calls[-1] = initial_query_access(self.session, snapshot, browser, calls[-1])
         # CodeMode aggregation hides this leaf from the model's outer catalog,
         # while the frozen inventory still authorizes it for the runtime.
@@ -766,7 +742,7 @@ class KernelContext:
             self.sink, snapshot.allowed, wiring._outer_evidence_for_context(self.completion_context),
             self.execution.workspace_ignored_paths, self.execution.workspace_revision_store,
             turn, True, self.transport.stop_flag, durable=self.durable, snapshot=snapshot,
-            on_event=self.observation.on_event)
+            on_event=self.observation.on_event, browser_session=self.execution.browser_session)
         if isinstance(result, KernelResult):
             raise RecoveryFailed(result.summary)
 
@@ -796,9 +772,10 @@ class KernelContext:
                 and result.call.call_id.startswith("required-source:") for result in results) and not self.cancelled():
             self.prepare_turn(state, prefetched=results)
             return
+        from codey.operations.task_handoff import report_completes_task
         from codey.research.answer_contract import submitted_answer
 
-        if (not self.cancelled() and len(results) == 1 and results[0].ok
+        if (report_completes_task(self.session) and not self.cancelled() and len(results) == 1 and results[0].ok
                 and results[0].call.name == "submit_research_answer"
                 and submitted_answer(self.session) is not None):
             self.advance(state, operation_payload.LEAF_COMPLETION_PENDING)
@@ -834,7 +811,7 @@ class KernelContext:
             from codey.operations.progress_comparison import progress_comparison
 
             if any(progress_comparison(row, self.session._memory_results).browser_observation for row in results):
-                browser = self.execution.research_tools.browser_session if self.execution.research_tools is not None else None
+                browser = self.execution.browser_session
                 context = replace(self.completion_context, browser_document=browser.document_identity() if browser else None)
                 snapshot, recovery = observation_recovery_handoff(self.session, snapshot, context)
                 handoff = "\n\n".join(part for part in (handoff, recovery) if part)

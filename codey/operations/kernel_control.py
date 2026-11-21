@@ -130,8 +130,7 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
                 or any(rule.after for check in checks if (rule := parse_tool_success_check(check)) is not None)
                 or any(check.startswith(RESEARCH_PREFIX) for check in checks)
                 or unconfirmed_clicks(context.session._memory_results)):
-            tools = context.execution.research_tools
-            browser = tools.browser_session if tools is not None else None
+            browser = context.execution.browser_session
             if browser is not None:
                 completion_context = replace(completion_context, browser_document=browser.document_identity())
         output = prepare_completion_output(context.session, context.session.last_done_text, completion_context)

@@ -31,6 +31,7 @@ from codey.operations.browser_text_report import BrowserMetadata, MetadataPendin
 from codey.operations.browser_waits import wait_plan as upload_wait_plan
 from codey.operations.kernel_context import KernelContext
 from codey.operations.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
+from codey.operations.kernel_tool_args import _invalid_plan
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_guidance import task_result_context
@@ -236,14 +237,14 @@ def normalize_candidate(reply: DecodedTextTurn | AssistantTurn, snapshot: TurnSn
             adapted.add("browser_fill")
         if isinstance(items, list) and any(name in adapted for name, _, _ in items):
             if len(items) != 1:
-                return kernel_protocol._invalid_plan("Submit one direct browser action per turn.")
+                return _invalid_plan("Submit one direct browser action per turn.")
             name, args, _ = items[0]
             spec = next(s for s in snapshot.model_specs if s.name == name)
             if error := validate_args_with_spec(spec, args):
-                return kernel_protocol._invalid_plan(error, tool=name)
+                return _invalid_plan(error, tool=name)
             if name == "browser_fill":
                 if not isinstance(snapshot, BoundFillSnapshot) or not can_bind_fill(snapshot):
-                    return kernel_protocol._invalid_plan("No authorized frozen fill text.", tool=name)
+                    return _invalid_plan("No authorized frozen fill text.", tool=name)
                 stripped: JsonObject = {"ref": args["ref"], "value": snapshot.fill_text}
             else:
                 purpose = str(args["purpose"])
@@ -270,7 +271,7 @@ def normalize_candidate(reply: DecodedTextTurn | AssistantTurn, snapshot: TurnSn
         assert snapshot.policy is not None
         waits = upload_wait_plan(snapshot.policy.required_checks)
         if waits.missing or (waits.waits and not admits(snapshot, "browser_wait")):
-            return kernel_protocol._invalid_plan("The declared wait cannot be run within this tool contract.", tool=call.name)
+            return _invalid_plan("The declared wait cannot be run within this tool contract.", tool=call.name)
         inputs["waits"] = list(waits.waits)
         code = RESULT + (WAIT if waits.waits else "") + READ
     lowered_args: JsonObject = {"code": code, "inputs": inputs}
@@ -417,7 +418,7 @@ def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
         restored = restore(payload)
         if (restored != candidate or not restored.implementation_compatible or restored.policy != baseline.policy
                 or restored.allowed != baseline.allowed or restored.nested_tool_names != baseline.nested_tool_names
-                or {s.name: s for s in restored.frozen_specs} != {s.name: s for s in baseline.frozen_specs}
+                or base.execution_specs(restored) != base.execution_specs(baseline)
                 or dict(restored.custom_executors) != dict(baseline.custom_executors)):
             raise AssertionError("Candidate changed frozen execution authority or failed snapshot round trip")
         append_json(directory / "snapshots.jsonl", {"baseline_tools": list(baseline.tool_names), "snapshot": payload})
@@ -550,6 +551,7 @@ def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
     # Each arm offers only its own browser surface. The production offer is
     # already enabled on ordinary Chat, so it must stay out of this experiment.
     with (patch.object(kernel_protocol, "offer_browser_tools", ab.retain_browser_surface),
+          patch.object(kernel_protocol, "offer_browser_call", ab.retain_browser_surface),
           patch.object(TurnSnapshot, "model_specs", property(model_specs)),
           patch.object(provider_receipts, "snapshot_description", describe),
           patch.object(provider_receipts, "restore_snapshot", restore),
@@ -673,7 +675,7 @@ def authority(snapshot: JsonObject) -> str:
 
     payload: JsonObject = {"policy": snapshot["policy"], "allowed": snapshot["allowed"],
         "nested": snapshot["nested_tool_names"],
-        "specs": sorted(specs, key=name),
+        "specs": sorted([{k: v for k, v in decode_json_object(row).items() if k != "declarations" or name(row) != "codemode"} for row in specs], key=name),
         "executors": sorted(executors, key=name)}
     return json.dumps(payload, sort_keys=True)
 

@@ -146,8 +146,7 @@ def _task_kind_and_policy(request: AgentRequest) -> tuple[str, TaskPolicy]:
 
 
 def _require_write_permission(task_kind: str, policy: TaskPolicy, request: AgentRequest) -> None:
-    if (request.project_changes_required is True and task_kind in {"project", "hybrid"}
-            and not policy.allows("project.write")):
+    if request.project_changes_required is True and not policy.allows("project.write"):
         raise RuntimeError(
             "project_changes_required without project.write: task declares must-change "
             "but entry grants no write permission"

@@ -140,7 +140,8 @@ def children(result: ToolResult, session: TaskSession) -> list[tuple[str, ToolRe
             if isinstance(ref, str) and ref in session._memory_results] if isinstance(refs, list) else []
 
 
-def retain_browser_surface(snapshot: TurnSnapshot, _session: KernelSessionView) -> TurnSnapshot:
+def retain_browser_surface(snapshot: TurnSnapshot, _session: KernelSessionView, _name: str | None = None,
+                           *, research: bool = False) -> TurnSnapshot:
     """Let each experimental arm own its offer, using the existing frozen authority."""
     return snapshot
 
@@ -170,7 +171,7 @@ def intervention(directory: Path, variant: Variant) -> Generator[None, None, Non
             raise AssertionError("snapshot did not preserve the original execution contract")
         if (candidate.policy != baseline.policy or candidate.allowed != baseline.allowed
                 or candidate.nested_tool_names != baseline.nested_tool_names
-                or {s.name: s for s in candidate.frozen_specs} != {s.name: s for s in baseline.frozen_specs}
+                or base.execution_specs(candidate) != base.execution_specs(baseline)
                 or dict(candidate.custom_executors) != dict(baseline.custom_executors)):
             raise AssertionError("intervention broadened authority or changed tool definitions")
         append_json(directory / "snapshots.jsonl", {"baseline_tools": list(baseline.tool_names),
@@ -227,6 +228,7 @@ def intervention(directory: Path, variant: Variant) -> Generator[None, None, Non
                         initial_source_batch=initial_source_batch, handoff=handoff)
 
     with (patch.object(kernel_protocol, "offer_browser_tools", retain_browser_surface),
+          patch.object(kernel_protocol, "offer_browser_call", retain_browser_surface),
           patch.object(kernel_protocol, "build_turn_snapshot", build),
           patch.object(kernel_protocol, "normalize_turn", normalize),
           patch.object(kernel_context, "task_result_context", context),

@@ -12,7 +12,7 @@ import os
 import re
 import time
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -32,6 +32,7 @@ from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import source_observation
 from codey.research.passages import restore_passages
 from codey.runtime.core.models import ToolResult
+from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from codey.utils.citation_scanner import mask_markdown_code
 from tools.browser_production_live_gate import select_target
@@ -94,6 +95,12 @@ PARAPHRASES = {
 }
 
 
+def execution_specs(snapshot: TurnSnapshot) -> dict[str, ToolSpec]:
+    """Derived CodeMode prose may change when outer descriptions are deduplicated."""
+    return {spec.name: replace(spec, declarations="") if spec.name == "codemode" else spec
+            for spec in snapshot.frozen_specs}
+
+
 def expose_leaves(snapshot: TurnSnapshot, session: KernelSessionView) -> TurnSnapshot:
     """Add reachability only; definitions, nested capabilities and grants stay frozen."""
     if (session.task_kind != "chat" or snapshot.input_binding is not None or snapshot.browser_copy is not None
@@ -115,7 +122,7 @@ def expose_leaves(snapshot: TurnSnapshot, session: KernelSessionView) -> TurnSna
 
 
 @contextmanager
-def experiment(directory: Path, arm: Arm) -> Iterator[None]:
+def experiment(directory: Path, arm: Arm) -> Generator[None, None, None]:
     original = kernel_protocol.build_turn_snapshot
 
     def build(session: KernelSessionView, *, native: bool = False) -> TurnSnapshot:
@@ -127,7 +134,7 @@ def experiment(directory: Path, arm: Arm) -> Iterator[None]:
             raise AssertionError("snapshot roundtrip changed the experiment contract")
         if (candidate.policy != baseline.policy or candidate.allowed != baseline.allowed
                 or candidate.nested_tool_names != baseline.nested_tool_names
-                or {s.name: s for s in candidate.frozen_specs} != {s.name: s for s in baseline.frozen_specs}
+                or execution_specs(candidate) != execution_specs(baseline)
                 or dict(candidate.custom_executors) != dict(baseline.custom_executors)):
             raise AssertionError("exposure changed execution authority or definitions")
         append_json(directory / "snapshots.jsonl", {"baseline_tools": list(baseline.tool_names),
@@ -260,14 +267,14 @@ def run_arm(directory: Path, case: Case, arm: Arm, target: Target, *, max_turns:
                 if state.ok:
                     page_state = decode_json_object(state.observation.get("value", {}))
 
-    def connect(_provider_id: str, **_kwargs: object) -> ExperimentProvider:
+    def connect(provider_id: str, *, port: int) -> ExperimentProvider:
         return provider
 
     previous_native = os.environ.get(NATIVE_TOOLS_ENV)
     os.environ[NATIVE_TOOLS_ENV] = '1'
     available: dict[str, bool] = {'local': True}
     tabs: dict[str, object] = {}
-    selection: JsonObject = {'model': target.model, 'base_url': target.base_url}
+    selection: dict[str, object] = {'model': target.model, 'base_url': target.base_url}
     try:
         with (experiment(directory, arm),
               patch.object(browser, "_guard_request", route),

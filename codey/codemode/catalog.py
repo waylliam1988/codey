@@ -34,7 +34,8 @@ def snapshot_catalog(
     return build_codemode_catalog(
         (spec for spec in snapshot.frozen_specs if spec.name in names),
         allow_project_edit=writable and "edit" in names,
-        allow_project_run=writable and "run" in names,
+        allow_project_run=allow_writes and snapshot.policy is not None and snapshot.policy.allows("project.verify")
+            and "run" in names,
         task_navigation_url=snapshot.task_navigation_url,
         browser_followup_checks=(snapshot.policy.required_checks if snapshot.policy else ())
         if snapshot.browser_followups else None,
@@ -201,8 +202,8 @@ def _entry_signatures(entry: ToolCatalogEntry, *, json_edit: bool) -> tuple[str,
     return (ordinary,)
 
 
-def _entry_declarations(entry: ToolCatalogEntry, *, json_edit: bool) -> tuple[str, ...]:
-    lines = [f"  // {line}" for line in entry.description.splitlines()]
+def _entry_declarations(entry: ToolCatalogEntry, *, json_edit: bool, include_description: bool = True) -> tuple[str, ...]:
+    lines = [f"  // {line}" for line in entry.description.splitlines()] if include_description else []
     for name, schema in canonical_json_object(entry.parameters.get("properties", {})).items():
         description = canonical_json_object(schema).get("description")
         if isinstance(description, str) and description:
@@ -211,7 +212,8 @@ def _entry_declarations(entry: ToolCatalogEntry, *, json_edit: bool) -> tuple[st
     return tuple(lines)
 
 
-def render_declarations(snapshot: ToolCatalogSnapshot, *, budget_bytes: int = MODEL_CATALOG_BUDGET_BYTES) -> str:
+def render_declarations(snapshot: ToolCatalogSnapshot, *, budget_bytes: int = MODEL_CATALOG_BUDGET_BYTES,
+                        outer_descriptions: Mapping[str, str] | None = None) -> str:
     """Render a bounded model view; discovery retains the complete frozen contract."""
     from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE
 
@@ -249,7 +251,8 @@ def render_declarations(snapshot: ToolCatalogSnapshot, *, budget_bytes: int = MO
         return priority.get(entry.name, len(priority)), entry.name
 
     for entry in sorted(snapshot.entries, key=entry_order):
-        lines = _entry_declarations(entry, json_edit=json_edit)
+        lines = _entry_declarations(entry, json_edit=json_edit,
+            include_description=outer_descriptions is None or outer_descriptions.get(entry.name) != entry.description)
         cost = len(("\n".join(lines) + "\n").encode("utf-8"))
         if size + cost <= budget_bytes:
             selected[entry.name] = lines

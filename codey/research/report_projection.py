@@ -19,6 +19,7 @@ from codey.research.object_model import (
     ResearchRecord,
     ResearchSource,
 )
+from codey.research.report_values import has_project_delivery, report_delivery_matches
 from codey.research.run_result import ResearchRunResult
 from codey.types.json_value import require_json_string
 from codey.utils.refs import digest_json, digest_text, stable_ref
@@ -49,18 +50,20 @@ def published_completion(proof: CompletionProof, compiled: ResearchReport, *,
 
 
 def validate_accepted_projection(result: ResearchRunResult, *, run_id: str, session_id: str, project: str) -> None:
-    compiled = result.accepted_report
-    if compiled is None:
+    raw_compiled: object = result.accepted_report
+    if not isinstance(raw_compiled, (FindingReport, AnswerReport)):
         raise ValueError("accepted projection requires a compiled report")
+    compiled = raw_compiled
     FindingReport.from_payload(compiled.to_payload())
-    from codey.research.answer_report import DELIVERY_CHECKS, AnswerReport
+    from codey.research.answer_report import DELIVERY_CHECKS
     from codey.research.task_requirements import validate_task_accounting
 
     if not isinstance(compiled, AnswerReport):
         validate_task_accounting(list(compiled.coverage), result.question)
     elif compiled.questions != (result.question,):
         raise ValueError("whole answer belongs to another task")
-    proof = result.completion_proof
+    raw_proof: object = result.completion_proof
+    proof = raw_proof if isinstance(raw_proof, CompletionProof) else None
     required = {"research_citations", "research_sources_opened", "research_evidence_saved",
                 "research_report_sections", "research_claim_bindings", "research_question_coverage",
                 "research_task_accounting", "research_publication"}
@@ -73,7 +76,8 @@ def validate_accepted_projection(result: ResearchRunResult, *, run_id: str, sess
         answer_ref = stable_ref("knowledge_answer", stable_identity("answer", run_id, "initial"), 1)
         if proof is None or answer_ref not in proof.evidence_refs:
             raise ValueError("whole-answer proof lost its exact published version")
-    if (result.summary != compiled.text or result.stop_reason != "done"
+    if (not report_delivery_matches(result.summary, compiled.text, combined=has_project_delivery(proof))
+            or result.stop_reason != "done"
             or not isinstance(proof, CompletionProof) or not proof.satisfied
             or proof.domain != "research" or proof.subject_ref != f"run:{run_id[:80]}:task:research"
             or not required <= {row.check_id for row in proof.checks if row.status == "pass"}

@@ -20,8 +20,9 @@ from playwright.sync_api import ElementHandle, Error, FilePayload, Page
 
 from codey.automation.browser_binding import BrowserBinding
 from codey.automation.browser_document import normalize_element_ref, same_document
+from codey.automation.browser_input import check_actionability
 from codey.automation.browser_observation import observe_element, observe_elements, render_controls, same_node
-from codey.automation.browser_query import QueryObservationError, bind_query_target, observe_query_target
+from codey.automation.browser_query import QueryObservationError, _backend_node, bind_query_target, observe_query_target
 from codey.policies.network import check_fetch_url
 from codey.research.browser_page import (
     _validate_page_content_type,
@@ -106,8 +107,17 @@ class BrowserSession:
         self._file_document: JsonObject | None = None
         self._file_controls_truncated = False
         self._page_ids: dict[Page, str] = {}
-        self._navigation_facts: dict[int, tuple[int | None, str]] = {}
+        self._navigation_facts: dict[int, tuple[JsonObject | None, int | None, str]] = {}
         self._recovery_checked = False
+
+    def retain(self) -> None:
+        self.provider.retain()
+
+    def release(self) -> None:
+        self.provider.release()
+
+    def close(self) -> None:
+        self.provider.close()
 
     def prepare_from_receipts(self, results: Iterable[ToolResult]) -> None:
         """Project committed metadata once; connecting waits until an actual browser call."""
@@ -176,6 +186,18 @@ class BrowserSession:
 
     def click(self, ref: str, *, query: bool = False) -> BrowserToolOutput:
         return _browser_call(self._click_on_browser_thread, normalize_element_ref(ref), query=query)
+
+    def matches_query_control(self, ref: str, baseline: JsonObject) -> bool:
+        """Fresh presentation refs cannot replay the same unsettled DOM target."""
+        def matches() -> bool:
+            control = baseline.get("control")
+            if not isinstance(control, dict):
+                # Historical receipts did not record an action target.
+                return True
+            page, handle = self._resolve_ref(normalize_element_ref(ref))
+            return control.get("backend_node_id") == _backend_node(page, handle)
+
+        return _browser_call(matches)
 
     def fill(self, ref: str, value: str) -> BrowserToolOutput:
         return _browser_call(self._fill_on_browser_thread, normalize_element_ref(ref), value)
@@ -390,11 +412,20 @@ class BrowserSession:
                 if original is not None and target != original:
                     raise QueryObservationError("query_target_changed", "The observed query target changed before the click.")
                 baseline = self._query_observation(target)
+                baseline["control"] = {"backend_node_id": _backend_node(page, handle)}
                 baseline["context"] = self._refs[ref].context
                 if target is not None:
                     baseline["target"] = target
             except QueryObservationError as exc:
                 return self._stale_ref_output("click", ref, exc, reason=exc.reason)
+        try:
+            actionable = check_actionability(handle)
+        except Error as exc:
+            return self._stale_ref_output("click", ref, RuntimeError(str(exc)))
+        if actionable.get("ready") is not True:
+            reason = str(actionable.get("reason", "stale_ref"))
+            return BrowserToolOutput(f"ERROR: click not dispatched: {reason}", False,
+                {"action": "click", "ref": ref, "delivery": "not_delivered", **actionable})
         try:
             handle.click(timeout=5_000, no_wait_after=True)
         except Exception as exc:
@@ -484,14 +515,14 @@ class BrowserSession:
         final_url = page.url or target
         final_policy_reason = check_fetch_url(final_url, resolve=False)
         if final_policy_reason:
-            self._navigation_facts[id(page)] = (None, "")
+            self._navigation_facts[id(page)] = (self._document_identity_on_browser_thread(), None, "")
             self._invalidate_refs()
             return BrowserToolOutput(f"ERROR: navigation denied after redirect: {final_policy_reason}", False,
                                      {"action": "navigate", "url": final_url,
                                       "delivery": "confirmed", "reason": "policy_denied"})
         status = response.status if response is not None else None
         content_type = response.headers.get("content-type", "") if response is not None else ""
-        self._navigation_facts[id(page)] = (status, content_type)
+        self._navigation_facts[id(page)] = (self._document_identity_on_browser_thread(), status, content_type)
         self._invalidate_refs()
         return BrowserToolOutput(f"Navigated to {final_url}", True,
                                  {"action": "navigate", "url": final_url, "previous_url": previous_url,
@@ -558,7 +589,7 @@ class BrowserSession:
         response = page.goto(target, wait_until="domcontentloaded", timeout=20_000)
         status = response.status if response is not None else None
         content_type = response.headers.get("content-type", "") if response is not None else ""
-        self._navigation_facts[id(page)] = (status, content_type)
+        self._navigation_facts[id(page)] = (self._document_identity_on_browser_thread(), status, content_type)
         return BrowserToolOutput(f"Opened tab at {page.url}", True,
                                  {"action": "tab_new", "url": page.url, "page_id": self._page_id(page),
                                   "generation": self._generation, "delivery": "delivered",
@@ -663,10 +694,10 @@ class BrowserSession:
 
     def _capture_on_browser_thread(self) -> dict[str, object]:
         page = self._page_on_browser_thread()
-        response_status, content_type = self._navigation_facts.get(id(page), (None, ""))
+        observed_document, response_status, content_type = self._navigation_facts.get(id(page), (None, None, ""))
         # A resumed/borrowed document has no trustworthy process-local navigation
         # response. Observe the surviving document rather than replaying old headers.
-        if id(page) not in self._navigation_facts:
+        if not same_document(observed_document, self._document_identity_on_browser_thread()):
             raw_observed: object = page.evaluate("""() => ({
                 status: performance.getEntriesByType('navigation')[0]?.responseStatus || 0,
                 content_type: document.contentType

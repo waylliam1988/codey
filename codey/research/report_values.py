@@ -2,6 +2,7 @@
 
 from typing import NotRequired, TypedDict
 
+from codey.completion.contract import CompletionProof
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, KnowledgeReference
 from codey.research.knowledge_update_types import MutationPayload
 from codey.types.json_value import (
@@ -204,3 +205,14 @@ def finding_metadata(value: object) -> FindingMetadata:
     if "version_mentions" in row:
         result["version_mentions"] = row["version_mentions"]
     return result
+
+
+def report_delivery_matches(delivery: str, report: str, *, combined: bool = False) -> bool:
+    """A composed delivery must retain the original report as one exact suffix."""
+    return delivery == report or combined and delivery.endswith("\n\n" + report)
+
+
+def has_project_delivery(proof: CompletionProof | None) -> bool:
+    return proof is not None and proof.satisfied and any(
+        check.check_id in {"project_changes_required", "relevant_verification"} and check.status == "pass"
+        for check in proof.checks)

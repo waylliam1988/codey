@@ -58,7 +58,10 @@ def test_hybrid_shortcuts_preserve_existing_boundaries(guard: str) -> None:
     elif guard in {"copy", "upload"}:
         snapshot = copy_snapshot() if guard == "copy" else upload_snapshot()
     offered = offer_browser_tools(snapshot, session)
-    if guard == "codemode":
+    if guard in {"research", "project", "strict"}:
+        assert set(DIRECT_TOOLS) <= set(offered.tool_names)
+        assert offered.browser_followups
+    elif guard == "codemode":
         assert offered.tool_names == snapshot.tool_names
         assert offered.nested_tool_names == snapshot.nested_tool_names
         assert offered.browser_followups

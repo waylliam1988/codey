@@ -35,7 +35,11 @@ def test_research_leaf_offering_cannot_expand_the_frozen_surface(guard: str) -> 
 
         snapshot = replace(snapshot, research_scope=None)
     offered = offer_browser_call(snapshot, session, "browser_wait", research=True)
-    assert offered == snapshot
+    if guard in {"ordinary", "no_scope"}:
+        assert "browser_wait" in offered.tool_names and offered.policy == snapshot.policy
+        assert offered.allowed == snapshot.allowed and offered.nested_tool_names == snapshot.nested_tool_names
+    else:
+        assert offered == snapshot
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
@@ -64,7 +68,7 @@ def test_research_completes_with_direct_steps_and_cites_the_post_wait_read(
         if not composed:
             yield {"tool": "browser_wait", "args": {"condition": "text", "value": "鱼丸", "timeout_ms": 5000}}
             yield {"tool": "browser_read", "args": {}}
-        label = assert_submitting(directory, narrowed=sequence)
+        label = assert_submitting(directory, sequence=sequence)
         yield fixture.submission(label, current=True)
 
     install_http(monkeypatch, replies(), native=native)

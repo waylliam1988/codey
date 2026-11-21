@@ -10,6 +10,7 @@ import pytest
 
 from codey.operations.task_execution import ExecutionDelegate
 from codey.policies.tool_requirement import require_tool_success
+from codey.providers.api_generation import AttemptObserver
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
@@ -29,10 +30,9 @@ class NativeExperimentProvider(ExperimentProvider):
 def install_http(monkeypatch: pytest.MonkeyPatch, replies: Iterator[JsonObject], *, native: bool) -> None:
     call_id = 0
 
-    def scripted(url: str, payload: dict[str, object], headers: dict[str, str], **kwargs: object) -> JsonObject:
+    def scripted(url: str, payload: dict[str, object], headers: dict[str, str], *,
+                 observe: AttemptObserver, **kwargs: object) -> JsonObject:
         nonlocal call_id
-        observe = kwargs["observe"]
-        assert callable(observe)
         observe(attempt=1, data=json.dumps(payload).encode(), phase="request", response_bytes=0, seconds=0.0)
         reply = next(replies)
         message: JsonObject = {"role": "assistant", "content": json.dumps(reply), "tool_calls": []}
@@ -62,14 +62,14 @@ def assert_collecting(directory: Path) -> None:
     assert "post-wait page evidence is ready" not in json.dumps(request["messages"])
 
 
-def assert_submitting(directory: Path, *, narrowed: bool = True) -> str:
+def assert_submitting(directory: Path, *, sequence: bool = True) -> str:
     request = requests(directory)[-1]
     schema = json.dumps(request.get("response_format", request.get("tools")))
     assert "submit_research_answer" in schema
-    assert ('"codemode"' not in schema) is narrowed
+    assert '"codemode"' in schema  # Report readiness preserves other authorized work.
     messages = json.dumps(request["messages"], ensure_ascii=False)
     assert "QUARTZ_851" in messages
-    pattern = (r"post-wait page evidence is ready\. Use submit_research_answer and cite \[(e\d+)\]" if narrowed else
+    pattern = (r"post-wait page evidence is ready\. Use submit_research_answer and cite \[(e\d+)\]" if sequence else
                r"declared wait/read obligations have formal evidence\. Use \[(e\d+)\]")
     handoff = re.search(pattern, messages)
     assert handoff is not None
@@ -144,17 +144,17 @@ def test_production_handoff_requires_citable_read_on_current_document(
             assert_collecting(directory)
             yield fixture.submission("e2", current=True)
             return
-        label = assert_submitting(directory, narrowed=not workflow)
+        label = assert_submitting(directory, sequence=not workflow)
         if case == "old_citation":
             assert label != "e1"
             yield fixture.submission("e1", current=False)
-            assert assert_submitting(directory, narrowed=not workflow) == label
+            assert assert_submitting(directory, sequence=not workflow) == label
         if scenario == "lost_on_submit":
             yield fixture.submission(label, current=True)
             assert_collecting(directory)
             prefix = fixture.NAVIGATE if workflow else ""
             yield fixture.code_action(prefix + fixture.LOAD + fixture.WAIT + f"return {fixture.READ};")
-            label = assert_submitting(directory, narrowed=not workflow)
+            label = assert_submitting(directory, sequence=not workflow)
         yield fixture.submission(label, current=True)
 
     install_http(monkeypatch, replies(), native=native)

@@ -49,8 +49,6 @@ from codey.types.json_value import JsonObject, decode_json_object, parse_json_ob
 def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall | None:
     """Materialize explicit navigation to one authorized task URL before interaction."""
     research = session.policy.strict_research and snapshot.research_scope is not None
-    if session.task_kind not in {"chat", "hybrid", "research"}:
-        return None
     # Repeated page rounds own their transitions. A single explicitly required
     # navigation can initialize Research before any control interaction.
     if any(isinstance(parse_browser_requirement(check), BrowserPageRounds) for check in session.policy.required_checks):
@@ -63,8 +61,6 @@ def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall
         return None
     requirements = [rule for check in session.policy.required_checks
                     if (rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_navigate"]
-    if research and not requirements:
-        return None
     if not requirements and not explicit_web_intent(session.task_text).browser_navigation_requested:
         return None
     url = _task_navigation_url(session) if requirements else snapshot.task_navigation_url
@@ -86,7 +82,7 @@ def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall
             if not {"browser_read", "browser_snapshot"} <= set(snapshot.nested_tool_names):
                 return None
             code = ("const action = unwrap(await tools.browser_navigate(inputs)); "
-                    "unwrap(await tools.browser_read({})); unwrap(await tools.browser_snapshot({})); return action;")
+                    "unwrap(await tools.browser_snapshot({})); await tools.browser_read({}); return action;")
         return ToolCall("codemode", {"code": code, "inputs": args},
                         call_id="required-source:navigation")
     return ToolCall("browser_navigate", args, call_id="required-source:navigation")
@@ -436,23 +432,17 @@ def _download_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Com
 
 
 def _browser_step(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext, *,
-                  workflow: bool = False, declared_actions_ready: bool = True) -> BrowserNextStep | None:
+                  workflow: bool = False) -> BrowserNextStep | None:
     records, results = tool_facts(session, context)
     references = snapshot.browser_references
     return next_browser_step(session.policy.required_checks, records=records, results=results,
         document=context.browser_document, names=set(snapshot.nested_tool_names), workflow=workflow,
-        observation_ref=references.receipt_ref if references is not None else "", declared_actions_ready=declared_actions_ready)
+        observation_ref=references.receipt_ref if references is not None else "")
 
 
 def _step_handoff(session: TaskSession, snapshot: TurnSnapshot, step: BrowserNextStep) -> tuple[TurnSnapshot, str]:
     if step.call is None:
         return snapshot, step.feedback
-    # Narrow outer choices only; fixed programs retain all frozen leaves for
-    # execution, recovery and newly declared work on subsequent turns.
-    if step.kind != "advice":
-        aliases = {*DIRECT_TOOLS, "browser_wait"} - {step.call.name, "browser_snapshot"}
-        snapshot = refresh_snapshot_contract(replace(snapshot,
-            tool_names=tuple(name for name in snapshot.tool_names if name not in aliases)))
     snapshot, action = _call_handoff(session, snapshot, step.call)
     references = snapshot.browser_references
     controls_payload: list[JsonObject] = [row.payload() for row in references.controls] if references is not None else []
@@ -463,9 +453,8 @@ def _step_handoff(session: TaskSession, snapshot: TurnSnapshot, step: BrowserNex
 
 
 def browser_continuation_handoff(session: TaskSession, snapshot: TurnSnapshot,
-                                 context: CompletionContext, *, workflow: bool = False,
-                                 declared_actions_ready: bool = True) -> tuple[TurnSnapshot, str]:
-    step = _browser_step(session, snapshot, context, workflow=workflow, declared_actions_ready=declared_actions_ready)
+                                 context: CompletionContext, *, workflow: bool = False) -> tuple[TurnSnapshot, str]:
+    step = _browser_step(session, snapshot, context, workflow=workflow)
     return (snapshot, "") if step is None else _step_handoff(session, snapshot, step)
 
 
@@ -478,7 +467,7 @@ def _project_edit_handoff(session: TaskSession, snapshot: TurnSnapshot, context:
         return offered, guidance
     tools = {"codemode", "read_file", "edit"}
     browser_names = {spec.name for spec in snapshot.frozen_specs if spec.executor == "browser"}
-    if (session.task_kind != "hybrid" or not session.project_changes_required
+    if (not session.project_changes_required
             or "codemode" not in snapshot.tool_names
             or not {"read_file", "edit"} <= set(snapshot.nested_tool_names)
             or tools & set(session.controller_denied)
@@ -516,8 +505,7 @@ def _project_edit_handoff(session: TaskSession, snapshot: TurnSnapshot, context:
 def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                           generation: int | None = None, *,
                           delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
-    if (session.task_kind not in {"chat", "hybrid"} or session.policy.strict_research
-            or snapshot.input_binding is not None or snapshot.browser_copy is not None
+    if (snapshot.input_binding is not None or snapshot.browser_copy is not None
             or "browser_read" not in snapshot.inventory_names):
         return snapshot, ""
     records, results = tool_facts(session, context)

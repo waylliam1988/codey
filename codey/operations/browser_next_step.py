@@ -19,7 +19,7 @@ from codey.operations.browser_completion import (
 )
 from codey.operations.browser_followups import UNCERTAIN, click_followup_plan, delivery, pending_click
 from codey.policies.browser_requirement import BrowserResearchSequence, parse_browser_requirement
-from codey.policies.tool_requirement import argument_digest, parse_tool_success_check
+from codey.policies.tool_requirement import ToolSuccessRequirement, argument_digest, parse_tool_success_check
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, parse_json_object
@@ -70,10 +70,17 @@ def _matching_waits(args: JsonObject, rows: list[tuple[str, ToolResult]], url: s
                 for key, value in args.items())]
 
 
+def _declared_page_actions_ready(rules: tuple[ToolSuccessRequirement, ...], stage: int, *,
+                                  records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],
+                                  document: JsonObject) -> bool:
+    return all(rule.observe(records, results=results, browser_document=document).evaluation.passed
+               for rule in rules if rule.tool in PAGE_ACTIONS and rule.stage in {0, stage})
+
+
 def next_browser_step(checks: tuple[str, ...], *, records: Mapping[str, ExecutionRecord],
                       results: Mapping[str, ToolResult], document: JsonObject | None,
                       names: set[str], workflow: bool = False,
-                      observation_ref: str = "", declared_actions_ready: bool = True) -> BrowserNextStep | None:
+                      observation_ref: str = "") -> BrowserNextStep | None:
     if document is None or not isinstance(url := document.get("url"), str):
         return None
     active = tuple(check for check in checks if (page := parse_browser_requirement(check)) is None or page.url == url)
@@ -89,7 +96,7 @@ def next_browser_step(checks: tuple[str, ...], *, records: Mapping[str, Executio
             "Recover that stage on its original document before advancing; its waits cannot attach to the current click.")
     if recovery is not None:
         return recovery
-    if not declared_actions_ready:
+    if not _declared_page_actions_ready(rules, stage, records=records, results=results, document=document):
         return None
     invalidators = PAGE_EVIDENCE_INVALIDATORS if pages or workflow else PAGE_ACTIONS
     actions = [(ref, row) for ref, row in committed_results(records, results, invalidators, include_failed=invalidators)
