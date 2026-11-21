@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from codey.types.json_value import JsonObject, JsonValue, canonical_json_object
+from codey.types.tool_image import ToolImageRef
 from codey.utils.refs import strict_nonnegative_int
 
 TRUNCATED_RESULT_NOTICE = (
@@ -280,6 +281,7 @@ class ToolResult:
     presentation: Mapping[str, object] = field(default_factory=dict)
     audit: Mapping[str, object] = field(default_factory=dict)
     canonical: Mapping[str, object] = field(default_factory=dict)
+    images: tuple[ToolImageRef, ...] = ()
 
     def __post_init__(self) -> None:
         if self.kind not in {"completed", "accepted"}:

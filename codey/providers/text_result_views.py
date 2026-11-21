@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from codey.providers.base import ResultMetadata
 from codey.providers.context_ledger import digest
 from codey.types.json_value import JsonObject, require_json_boolean, require_json_integer, require_json_string
+from codey.types.tool_image import ToolImageRef
 
 TEXT_RESULTS_KEY = "_codey_text_results"
 
@@ -25,6 +26,7 @@ class TextResultSpan:
     result_ref: str
     tool: str
     ok: bool
+    images: tuple[ToolImageRef, ...] = ()
 
     def __post_init__(self) -> None:
         require_json_integer(self.start, "start")
@@ -37,8 +39,11 @@ class TextResultSpan:
                 raise ValueError(f"text result span {name} must not be empty")
 
     def to_payload(self) -> JsonObject:
-        return {"start": self.start, "end": self.end, "digest": self.digest,
-                "result_ref": self.result_ref, "tool": self.tool, "ok": self.ok}
+        value: JsonObject = {"start": self.start, "end": self.end, "digest": self.digest,
+                             "result_ref": self.result_ref, "tool": self.tool, "ok": self.ok}
+        if self.images:
+            value["images"] = [image.payload() for image in self.images]
+        return value
 
 
 def decode_text_result_spans(text: str, spans: object) -> tuple[TextResultSpan, ...]:
@@ -47,13 +52,18 @@ def decode_text_result_spans(text: str, spans: object) -> tuple[TextResultSpan, 
     validated: list[TextResultSpan] = []
     previous_end = 0
     for span in spans:
-        if not isinstance(span, dict) or set(span) != {"start", "end", "digest", "result_ref", "tool", "ok"}:
+        if not isinstance(span, dict) or set(span) not in ({"start", "end", "digest", "result_ref", "tool", "ok"},
+            {"start", "end", "digest", "result_ref", "tool", "ok", "images"}):
             raise ValueError("invalid text result span")
+        images = span.get("images", [])
+        if not isinstance(images, list):
+            raise ValueError("invalid text result images")
         try:
             parsed = TextResultSpan(
                 require_json_integer(span["start"], "start"), require_json_integer(span["end"], "end"),
                 require_json_string(span["digest"], "digest"), require_json_string(span["result_ref"], "result_ref"),
-                require_json_string(span["tool"], "tool"), require_json_boolean(span["ok"], "ok"))
+                require_json_string(span["tool"], "tool"), require_json_boolean(span["ok"], "ok"),
+                tuple(ToolImageRef.read(image) for image in images))
         except ValueError as exc:
             raise ValueError(f"invalid text result span: {exc}") from exc
         if (not previous_end <= parsed.start < parsed.end <= len(text)
@@ -75,7 +85,7 @@ def reducible_text_result_count(item: JsonObject, result_refs: frozenset[str]) -
     text = item.get("content")
     if not isinstance(text, str):
         raise ValueError("text result view requires text content")
-    return sum(span.end - span.start >= 2400 and span.result_ref in result_refs
+    return sum((span.end - span.start >= 2400 or bool(span.images)) and span.result_ref in result_refs
                for span in decode_text_result_spans(text, item[TEXT_RESULTS_KEY]))
 
 
@@ -91,10 +101,12 @@ def reduce_text_results(item: JsonObject, result_refs: frozenset[str]) -> JsonOb
         parts.append(prefix)
         size += len(prefix)
         body = text[span.start:span.end]
-        if len(body) >= 2400 and span.result_ref in result_refs:
+        if (len(body) >= 2400 or span.images) and span.result_ref in result_refs:
             metadata = ResultMetadata(span.result_ref, span.tool, span.ok)
             body = ("[Stored body omitted from this view]\n" + metadata.render()
                     + "\nRead it with read_tool_result. Do not execute it again.")
+            if span.images:
+                body += "\nCaptured pixels remain in the original receipt; read_tool_result reopens them."
         else:
             retained.append({**span.to_payload(), "start": size, "end": size + len(body)})
         parts.append(body)

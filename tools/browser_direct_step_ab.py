@@ -23,7 +23,6 @@ from codey.operations.kernel_protocol import TurnSnapshot, refresh_snapshot_cont
 from codey.policies.tool_requirement import decode_answer
 from codey.providers.base import ProviderToolDefinition, tools_from_specs
 from codey.providers.text_tool_schema import text_tool_schema
-from codey.research.browser_search import _search_browser_call
 from codey.runtime.core.models import ToolResult
 from codey.types.json_value import (
     JsonObject,
@@ -185,14 +184,7 @@ def run_arm(directory: Path, case: choices.Case, arm: Arm, target: Target, *, ma
         if browser is not None:
             generation = browser.generation
 
-            def passive_counts() -> JsonObject:
-                page = browser.provider._fetch_page
-                if page is None or page.is_closed():
-                    return {}
-                value: object = page.evaluate("() => window.counts || {}")
-                return decode_json_object(value)
-
-            state = _search_browser_call(passive_counts)
+            state = decode_json_object(browser.inspect_state("window.counts || {}"))
             assert browser.generation == generation
         return result
 

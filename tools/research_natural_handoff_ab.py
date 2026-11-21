@@ -8,12 +8,10 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import cast
 from unittest.mock import patch
 
-from playwright.sync_api import Route
-
 from codey.app.headless_runner import HeadlessRequest, run_headless
+from codey.automation.browser_contracts import RouteDecision as Route
 from codey.operations import kernel_protocol
 from codey.operations.browser_completion import committed_results, complete_page_passages
 from codey.operations.browser_upload import browser_opened
@@ -26,12 +24,12 @@ from codey.protocols.text_turn import DecodedTextTurn, TextError, TextRequest, T
 from codey.providers.base import AssistantTurn, ProviderToolResult
 from codey.providers.text_result_views import TextResultSpan
 from codey.research.answer_contract import AnswerScope
-from codey.research.browser_search import BrowserSearchProvider
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, json_contract_text, validate_args_with_spec
 from codey.types.json_value import JsonObject, decode_json_object
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 from tools.browser_production_live_gate import select_target
 from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import (
@@ -150,11 +148,19 @@ def experiment(directory: Path, arm: Arm) -> Generator[None, None, None]:
     original_freeze, normalize = KernelContext.freeze, kernel_protocol.normalize_turn
     descriptor: object = vars(TurnSnapshot)["model_specs"]
     assert isinstance(descriptor, property) and descriptor.fget is not None
-    original_specs = cast("Callable[[TurnSnapshot], tuple[ToolSpec, ...]]", descriptor.fget)
+    original_specs: Callable[[TurnSnapshot], object] = descriptor.fget
     execute_browser, open_source = ExecutionDelegate._execute_browser, ExecutionDelegate._execute_source_open
 
     def specs(snapshot: TurnSnapshot) -> tuple[ToolSpec, ...]:
-        return tuple(assessment_spec(spec) if spec.description == ASSESS else spec for spec in original_specs(snapshot))
+        values = original_specs(snapshot)
+        if not isinstance(values, tuple):
+            raise TypeError("model specs must be a tuple")
+        result: list[ToolSpec] = []
+        for value in values:
+            if not isinstance(value, ToolSpec):
+                raise TypeError("invalid model tool spec")
+            result.append(assessment_spec(value) if value.description == ASSESS else value)
+        return tuple(result)
 
     def lower(reply: DecodedTextTurn | AssistantTurn, *, snapshot: TurnSnapshot) -> ToolPlan:
         if isinstance(reply, TextRequests) and len(reply.items) == 1:
@@ -277,7 +283,7 @@ def run_arm(directory: Path, case: Case, arm: Arm, target: Target, *, max_turns:
         events.append(value)
         append_json(directory / "events.jsonl", value)
 
-    def connect(_provider_id: str, **_kwargs: object) -> ExperimentProvider:
+    def connect(provider_id: str, *, port: int) -> ExperimentProvider:
         return provider
 
     task = f"{case.question}\n{case.url}" if separate_url else f"帮我看看 {case.url}，{case.question.removeprefix('帮我看看')}"

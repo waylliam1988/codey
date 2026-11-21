@@ -265,9 +265,14 @@ def _run_admitted_operation(durable: DurableSession, child: TaskCheckpoint, requ
             intent_payload: object = intent.to_payload()
             durable.record_effect_intent(task_id, EffectRecord(identity, task_id, "tool_call", spec.replay_class,
                 intent.args_digest, "pending", canonical_json_object(intent_payload)))
-            result, ok, code = execute_tool_operation(session, call, delegate=delegate, runnable={},
-                turn=request.turn, tool_index=request.tool_index, project_path=project,
-                workspace_revision_store=stores.workspace_revisions)
+            from codey.automation.browser_invocation import invocation_scope
+            from codey.operations.browser_progress import browser_invocation
+
+            with invocation_scope(browser_invocation(identity, durable=durable, store=stores.managed_outputs,
+                    session_id=child.conversation_id, run_id=task_id)):
+                result, ok, code = execute_tool_operation(session, call, delegate=delegate, runnable={},
+                    turn=request.turn, tool_index=request.tool_index, project_path=project,
+                    workspace_revision_store=stores.workspace_revisions)
             fields = result_receipt_fields(result, store=stores.managed_outputs,
                 session_id=child.conversation_id, run_id=task_id, effect_id=identity)
             receipt = prepare_settlement(child.conversation_id, task_id, RuntimeEffectSettlement(effect_id=identity, effect_category="tool_call",

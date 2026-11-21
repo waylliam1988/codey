@@ -32,7 +32,12 @@ PURPOSE_DESCRIPTION = (
     " Returns the click result; follow-up observations are delivered in child receipts. "
     "A failed follow-up returns failure even when the click was delivered."
 )
-PENDING = "Click delivered. The query result is unconfirmed. Read the result again without repeating the click."
+PENDING = (
+    "Click delivered. The query result is unconfirmed. Read the result again without repeating the click. "
+    "If a source read still cannot confirm the result, use browser_snapshot to inspect the current result controls "
+    "and continue the requested interaction. Repeating the same source read is not progress. "
+    "A changed page does not by itself prove that the requested result loaded."
+)
 UNCERTAIN = "Click delivery is uncertain. Inspect the page before taking another action."
 
 
@@ -86,7 +91,7 @@ def allows_surface(snapshot: TurnSnapshot, direct_names: tuple[str, ...] = DIREC
     names = {"codemode", *direct_names}
     return (policy is not None
             and snapshot.browser_copy is None
-            and snapshot.input_binding is None
+            and (snapshot.input_binding is None or snapshot.input_binding.kind == "declared_fields")
             and "codemode" in snapshot.tool_names and set(direct_names) <= set(snapshot.nested_tool_names)
             and (snapshot.allowed is None or names <= set(snapshot.allowed))
             and names <= {spec.name for spec in snapshot.frozen_specs if policy.allows(spec.grant)})

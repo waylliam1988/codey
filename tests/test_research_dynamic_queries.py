@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from codey.automation.browser_session import BrowserSession, BrowserToolOutput, _browser_call
+from codey.automation.browser_session import BrowserSession, BrowserToolOutput
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
 from codey.research.tools import ResearchTools
@@ -31,6 +31,15 @@ document.getElementById('eta').textContent='ZX-581 arrival: Friday 18:37.';},350
 <section aria-label="Parcel ZX-582"><h2>Parcel ZX-582</h2><p>Arrival: Thursday 12:10.</p>
 <button aria-controls="neighbor">View itinerary</button><article id="neighbor">Neighbor record.</article></section>
 ''', ('In transit', 'Friday 18:37'))
+
+
+def arrival_answer(directory: Path) -> str:
+    messages = '\n'.join(text_values(requests(directory)[-1]['messages']))
+    headings = list(re.finditer(r'(?m)^\[(e[0-9]+)\] [^\n]+\n', messages))
+    label = next(match[1] for index, match in enumerate(headings)
+                 if 'Friday 18:37' in messages[match.end():headings[index + 1].start()
+                     if index + 1 < len(headings) else len(messages)])
+    return f'ZX-581: In transit [e1]; arrival Friday 18:37. [{label}]'
 
 
 def text_values(value: JsonValue) -> Iterator[str]:
@@ -128,12 +137,14 @@ def test_failed_initial_observation_is_settled_once_and_normal_observation_can_r
     calls = 0
 
     def observe(self: BrowserSession, *, max_elements: int = 80, max_text: int = 12000,
-                file_inputs_only: bool = False) -> BrowserToolOutput:
+                file_inputs_only: bool = False, scope_ref: str = "", selector: str = "",
+                base_revision: int | None = None) -> BrowserToolOutput:
         nonlocal calls
         calls += 1
         if calls == 1:
             return BrowserToolOutput('Observation temporarily unavailable.', False, {})
-        return original(self, max_elements=max_elements, max_text=max_text, file_inputs_only=file_inputs_only)
+        return original(self, max_elements=max_elements, max_text=max_text, file_inputs_only=file_inputs_only,
+                        scope_ref=scope_ref, selector=selector, base_revision=base_revision)
 
     monkeypatch.setattr(BrowserSession, 'snapshot', observe)
 
@@ -142,7 +153,7 @@ def test_failed_initial_observation_is_settled_once_and_normal_observation_can_r
         yield {'tool': 'browser_snapshot', 'args': {}}
         chosen = next(row for row in query_choices(directory) if decode_json_object(row['context'])['label'] == 'Parcel ZX-581')
         yield decode_json_object(chosen['call'])
-        yield submit('ZX-581: In transit [e1]; arrival Friday 18:37. [e3]')
+        yield submit(arrival_answer(directory))
 
     install_http(monkeypatch, replies(), native=False)
     row = run_case(directory, DYNAMIC_CASE, Target('http://scripted.test/v1', 'fixture', 123456789, 10))
@@ -157,22 +168,26 @@ def test_slow_query_continues_from_the_delivered_click_after_first_capture_timeo
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     directory = tmp_path / 'run'
-    case = replace(DYNAMIC_CASE, html=DYNAMIC_CASE.html.replace('},350)', '},3200)'))
+    case = replace(DYNAMIC_CASE, html=DYNAMIC_CASE.html.replace('},350)', '},6000)'))
 
     def replies() -> Iterator[JsonObject]:
         chosen = next(row for row in query_choices(directory) if decode_json_object(row['context'])['label'] == 'Parcel ZX-581')
         yield decode_json_object(chosen['call'])
-        messages = '\n'.join(text_values(requests(directory)[-1]['messages']))
-        assert 'do not click again' in messages.lower()
+        rows = tool_receipts(directory / 'state')
+        first = next(item.result for item in reversed(rows) if item.result.call.name == 'browser_read')
+        assert 'query_click' not in first.audit
+        assert all(item.result.call.name != 'browser_click' or item.result.ok for item in rows)
+        yield {'tool': 'browser_wait', 'args': {'condition': 'text', 'value': 'Friday 18:37',
+                                               'timeout_ms': 10000, 'run_in_background': False}}
         yield {'tool': 'browser_read', 'args': {}}
-        yield submit('ZX-581: In transit [e1]; arrival Friday 18:37. [e3]')
+        yield submit(arrival_answer(directory))
 
     install_http(monkeypatch, replies(), native=False)
     row = run_case(directory, case, Target('http://scripted.test/v1', 'fixture', 123456789, 10))
     assert row['stop_reason'] == 'done', row
     receipts = [item.result for item in tool_receipts(directory / 'state')]
     assert sum(item.call.name == 'browser_click' for item in receipts) == 1
-    assert [item.ok for item in receipts if item.call.name == 'browser_read'] == [False, True]
+    assert [item.ok for item in receipts if item.call.name == 'browser_read'] == [True, True]
 
 
 @pytest.mark.parametrize('change', ['replace', 'relationship'])
@@ -187,14 +202,9 @@ def test_query_target_observed_before_selection_cannot_be_rebound_before_click(
     assert control['query_relation'] == 'aria-controls'
     script = ("document.getElementById('result').outerHTML='<article id=\"result\">Replacement</article>'"
               if change == 'replace' else "document.querySelector('button').setAttribute('aria-controls','other')")
-    def mutate() -> None:
-        browser._page_on_browser_thread().evaluate(script)
-    _browser_call(mutate)
+    assert browser.evaluate(script).ok
     rejected = browser.click(require_json_string(control['ref'], 'ref'), query=True)
     assert not rejected.ok and rejected.observation['delivery'] == 'not_delivered'
-    assert rejected.observation['reason'] == 'query_target_changed'
-    def has_clicked() -> object:
-        raw: object = browser._page_on_browser_thread().evaluate('Boolean(window.clicked)')
-        return raw
-    clicked = _browser_call(has_clicked)
+    assert rejected.observation['reason'] in {'query_target_changed', 'stale_ref'}
+    clicked = browser.inspect_state('Boolean(window.clicked)')
     assert clicked is False

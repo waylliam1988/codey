@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, nullcontext
+from dataclasses import replace
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -343,10 +344,28 @@ class KernelEffectSink:
                 raise ValueError("download settlement requires its original file artifact")
             artifacts = (*artifacts, self._managed_outputs.file_artifact_record(
                 value, session_id=self.session_id, run_id=self.run_id, owner_effect_id=identity))
+        for image in result.images:
+            if self._managed_outputs is None or (image.session_id, image.run_id) != (self.session_id, self.run_id):
+                raise ValueError("captured image settlement requires its original scoped artifact")
+            try:
+                original = self.durable.artifact(image.handle)
+            except KeyError:
+                original = None
+            if original is not None:
+                if (original.owner_task_id != self.run_id or original.metadata.get("kind") != "tool_image"
+                        or original.sha256 != image.sha256 or original.byte_count != image.size):
+                    raise ValueError("captured image reference differs from its original artifact")
+                self._managed_outputs.read_binary_artifact(session_id=image.session_id, run_id=image.run_id,
+                    handle=image.handle, sha256=image.sha256, size=image.size)
+                continue
+            artifact = self._managed_outputs.file_artifact_record(
+                {"handle": image.handle, "sha256": image.sha256, "bytes": image.size},
+                session_id=self.session_id, run_id=self.run_id, owner_effect_id=identity)
+            artifacts = (*artifacts, replace(artifact, metadata={"kind": "tool_image", "image": image.payload()}))
         self.mutations.settle_tool_effect(
             self.session_id, self.run_id,
             settlement,
-            messages=tool_history_messages(settlement) if self.durable is not None and not self.parent_effect_id else (),
+            messages=tool_history_messages(settlement, images=result.images) if self.durable is not None and not self.parent_effect_id else (),
             artifacts=artifacts,
         )
 

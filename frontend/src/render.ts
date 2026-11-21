@@ -33,6 +33,8 @@ export interface ToolDisplay {
   outputTruncated?: boolean;
   outputBytes?: number;
   outputStoredBytes?: number;
+  elapsedMs?: number;
+  phase?: string;
   failure?: import('./failure_presentation').FailureInfo;
 }
 /* Codey render helpers: HTML escaping, minimal markdown, copy buttons,
@@ -310,8 +312,10 @@ const renderApi = (function () {
     result.textContent = m.pending
       ? m.activity || m.result || 'Working'
       : m.error
-        ? toolFailureSummary(m.failure) ||
-          (['run', 'shell'].includes(m.toolName || m.kind || '') ? 'Command blocked or failed' : 'Tool failed')
+        ? m.phase === 'unknown'
+          ? 'Action outcome unknown'
+          : toolFailureSummary(m.failure) ||
+            (['run', 'shell'].includes(m.toolName || m.kind || '') ? 'Command blocked or failed' : 'Tool failed')
         : '';
     if (!m.pending && !m.error && m.preview) {
       const p = m.preview;
@@ -323,6 +327,10 @@ const renderApi = (function () {
         path.textContent = p.query || path.textContent;
         result.textContent = `${p.matches}${p.has_more ? '+' : ''} matches`;
       } else if (p.diff_unavailable) result.textContent = 'Changed · preview unavailable';
+    }
+    if (!m.pending && typeof m.elapsedMs === 'number' && Number.isFinite(m.elapsedMs) && m.elapsedMs >= 0) {
+      const duration = m.elapsedMs < 1000 ? `${Math.round(m.elapsedMs)}ms` : `${(m.elapsedMs / 1000).toFixed(1)}s`;
+      result.textContent = [result.textContent, duration].filter(Boolean).join(' · ');
     }
     arrow.hidden = !result.textContent;
     if (arrow.hidden) row.classList.add('no-result');

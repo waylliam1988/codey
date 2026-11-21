@@ -33,6 +33,7 @@ from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import session_key, write_json_atomic
 from codey.toolchain import runtime as tool_runtime
 from codey.toolchain.runtime import ToolOutcome
+from codey.types.json_value import parse_json_object, parse_json_value
 
 MAX_METADATA_BYTES = 16 * 1024
 MAX_COMMAND_CHARS = 500
@@ -160,6 +161,12 @@ class ManagedOutputStore:
         """Retain complete binary bytes once; the effect settlement owns metadata."""
         with source.open("rb") as stream:
             raw = stream.read(MAX_MANAGED_OUTPUT_BYTES + 1)
+        return self.write_binary_artifact(session_id=session_id, run_id=run_id, raw=raw,
+                                          permission_profile=permission_profile)
+
+    def write_binary_artifact(self, *, session_id: str, run_id: str, raw: bytes,
+                              permission_profile: str) -> ManagedOutputRef:
+        """One bounded binary write path for downloads and captured images."""
         run_dir = self._run_dir(session_id, run_id)
         with with_file_lock(filesystem_path(run_dir)):
             count = _optional_output_count(run_dir)
@@ -182,13 +189,18 @@ class ManagedOutputStore:
         digest = require_json_string(value.get("sha256"), "sha256")
         size = require_json_integer(value.get("bytes"), "bytes")
         path = self._handle_path(session_id, run_id, _safe_artifact_handle(handle), ".bin")
-        with filesystem_path(path).open("rb") as stream:
-            raw = stream.read(MAX_MANAGED_OUTPUT_BYTES + 1)
-        if len(raw) != size or hashlib.sha256(raw).hexdigest() != digest or size > MAX_MANAGED_OUTPUT_BYTES:
-            raise ValueError("file artifact content differs from its receipt")
+        self.read_binary_artifact(session_id=session_id, run_id=run_id, handle=handle, sha256=digest, size=size)
         return ArtifactRecord(handle=handle, sha256=digest, byte_count=size, storage_path=str(path),
             owner_task_id=run_id, owner_effect_id=owner_effect_id, created_at=_now(),
             metadata={"kind": "browser_download", "suggested_filename": value.get("suggested_filename", "")})
+
+    def read_binary_artifact(self, *, session_id: str, run_id: str, handle: str, sha256: str, size: int) -> bytes:
+        path = self._handle_path(session_id, run_id, _safe_artifact_handle(handle), ".bin")
+        with filesystem_path(path).open("rb") as stream:
+            raw = stream.read(MAX_MANAGED_OUTPUT_BYTES + 1)
+        if not 0 < size <= MAX_MANAGED_OUTPUT_BYTES or len(raw) != size or hashlib.sha256(raw).hexdigest() != sha256:
+            raise ValueError("file artifact content differs from its receipt")
+        return raw
 
     def path_for(self, session_id: str, run_id: str, handle: str) -> Path:
         return self._handle_path(session_id, run_id, handle, ".txt")
@@ -204,8 +216,6 @@ class ManagedOutputStore:
         do not match the recorded sha256. Recovery callers map any exception
         to an explicit recovery failure (never silent truncation).
         """
-        import json as _json
-
         safe_handle = _safe_handle(handle)
         text_path = filesystem_path(self._handle_path(session_id, run_id, safe_handle, ".txt"))
         metadata_path = filesystem_path(self._handle_path(session_id, run_id, safe_handle, ".json"))
@@ -218,7 +228,7 @@ class ManagedOutputStore:
         except OSError as exc:
             raise OSError(f"managed receipt metadata missing for {safe_handle}: {exc}") from exc
         try:
-            metadata = _json.loads(metadata_raw)
+            metadata = parse_json_object(metadata_raw)
         except ValueError as exc:
             raise ValueError(f"managed receipt metadata unreadable for {safe_handle}: {exc}") from exc
         if not isinstance(metadata, dict) or metadata.get("handle") != safe_handle:
@@ -351,7 +361,7 @@ class ManagedOutputStore:
         with with_file_lock(filesystem_path(self._run_dir(ref_session, ref_run))):
             path = filesystem_path(path)
             metadata_path = filesystem_path(metadata_path)
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata = parse_json_object(metadata_path.read_text(encoding="utf-8"))
             if not isinstance(metadata, dict):
                 raise ValueError("json artifact metadata is invalid")
             if metadata.get("session_id") != ref_session or metadata.get("run_id") != ref_run:
@@ -362,7 +372,7 @@ class ManagedOutputStore:
             digest = hashlib.sha256(raw).hexdigest()
             if digest != metadata.get("sha256") or (expected_digest and digest != expected_digest):
                 raise ValueError("json artifact digest mismatch")
-            return json.loads(raw.decode("utf-8"))
+            return parse_json_value(raw.decode("utf-8"))
 
     def json_artifact_record(
         self, ref: ManagedJsonArtifactRef, *, owner_task_id: str, owner_effect_id: str | None,

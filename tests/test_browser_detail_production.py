@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from codey.automation.browser_detail import DetailControl, observe_details
-from codey.automation.browser_session import BrowserSession, _browser_call
+from codey.automation.browser_session import BrowserSession
 from codey.policies.tool_requirement import _browser_body
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.types.json_value import JsonObject
@@ -65,7 +65,8 @@ def test_production_details_are_optional_record_bound_and_citable(
         case = replace(case, html=case.html.replace("</section>",
             "<details><summary>查实时记录</summary><p>另一处同名详情</p></details></section>"))
     elif scenario == "scripted":
-        case = replace(case, html=natural.CASES["interactive"].html)
+        case = replace(case, html=natural.CASES["interactive"].html +
+                       '<p>This source describes the current warehouse record and its available detail control.</p>')
     elif scenario == "wrong_record":
         case = replace(case, html=case.html.replace("B-19", "B-190"))
     if native:
@@ -105,8 +106,7 @@ def test_production_details_are_optional_record_bound_and_citable(
             assert all(fact in current for fact in case.facts)
             assert "HIDDEN_VALUE" not in current and "周四 12:10" not in current
             assert browser is not None
-            assert _browser_call(lambda: browser._page_on_browser_thread().evaluate(
-                "() => !window.siteAction && !document.querySelector('details').open")) is True
+            assert browser.inspect_state("!window.siteAction && !document.querySelector('details').open") is True
             yield submit("、".join(case.facts) + "。 [e2]")
 
     install_http(monkeypatch, replies(), native=native)

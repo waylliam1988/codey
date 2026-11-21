@@ -5,68 +5,41 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Iterator
-from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
-from playwright.sync_api import Error
 
-from codey.research import browser_search
+from codey.automation.browser_contracts import RouteDecision
+from codey.automation.browser_invocation import BrowserInvocation, invocation_scope
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import restore_ledger_observation
 from codey.research.passages import restore_passages
 from codey.research.source_reading import render_source_read
 from codey.research.tools import ResearchTools
 from codey.runtime.core import cancellation
+from codey.types.json_value import JsonObject
 from tests.support.real_cdp import chromium_executable
+from tests.support.task_browser import install
 from tools.browser_experiment_interaction import BrowserInteraction
 from tools.browser_experiment_sources import BrowserCaptureGateway, ResumableBrowserSearchProvider
 
 
-class _InteractionHandler(BaseHTTPRequestHandler):
-    def do_GET(self) -> None:  # noqa: N802
-        body = b"<html><body><article>Initial readable article</article></body></html>"
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, format: str, *args: object) -> None:
-        return
-
-
 @pytest.fixture(scope="function")
-def browser_fixture(
-    monkeypatch: pytest.MonkeyPatch,
-) -> Iterator[tuple[ResumableBrowserSearchProvider, BrowserInteraction]]:
-    server = HTTPServer(("127.0.0.1", 0), _InteractionHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    provider = ResumableBrowserSearchProvider(headless=True,
-                                              browser_path=chromium_executable())
+def browser_fixture(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[ResumableBrowserSearchProvider, BrowserInteraction]]:
+    provider = ResumableBrowserSearchProvider(headless=True, browser_path=chromium_executable())
 
-    def allow_fetch(_url: str, *, use_cache: bool = False) -> str:
-        return ""
+    def route(reply: RouteDecision) -> None:
+        reply.fulfill(content_type="text/html", body="<article>Initial readable source article with current facts.</article>")
 
-    monkeypatch.setattr(browser_search, "check_fetch_url", allow_fetch)
-    url = f"http://127.0.0.1:{server.server_port}/article"
+    monkeypatch.setattr(provider, "_guard_request", route)
     try:
-        assert provider.fetch(url)["status"] == "ok"
-        yield provider, BrowserInteraction(provider)
+        assert provider.fetch("https://example.com/article")["status"] == "ok"
+        yield provider, provider.browser
     finally:
         provider.close()
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
 
 
 def _install_page(provider: ResumableBrowserSearchProvider, html: str) -> None:
-    def install() -> None:
-        page = provider._fetch_page
-        assert page is not None
-        page.set_content(html)
-
-    browser_search._search_browser_call(install)
+    install(provider.browser, html)
 
 
 def _ref(interaction: BrowserInteraction, role: str) -> str:
@@ -97,13 +70,11 @@ def test_semantic_actions_use_snapshot_refs_and_reject_stale_refs(
         assert rejected.observation["delivery"] == "not_delivered"
     filled = interaction.fill(f" [{query_ref}] ", "福州小吃")
     assert filled.ok and filled.observation["ref"] == query_ref
-    stale = interaction.click(f"[{button_ref}]")
-    # This low-level session has no formal receipt history establishing provenance.
-    assert stale.observation["reason"] == "unknown_ref"
-    assert stale.observation["delivery"] == "not_delivered"
+    # Filling a different live node preserves this button's identity.
+    assert interaction.click(f"[{button_ref}]").ok
 
     second = interaction.snapshot()
-    assert "Waiting" in str(second.observation["text"])
+    assert "Loaded article" in str(second.observation["text"])
     second_elements = second.observation["elements"]
     assert isinstance(second_elements, list)
     second_rows = [row for row in second_elements if isinstance(row, dict)]
@@ -113,7 +84,7 @@ def test_semantic_actions_use_snapshot_refs_and_reject_stale_refs(
     assert "Loaded article" in interaction.snapshot().model_text
     assert interaction.scroll("down", 700).ok
     assert interaction.wait("text", "Loaded article", 1000).ok
-    assert interaction.click(button_ref).ok is False
+    assert interaction.click(button_ref).ok
 
 
 @pytest.mark.parametrize("mutation", ["replace_node", "replace_document", "navigate_same_url"])
@@ -124,17 +95,12 @@ def test_old_node_cannot_target_replacement(
     _install_page(provider, "<button onclick='document.body.dataset.clicked=1'>Same name</button>")
     ref = _ref(interaction, "button")
 
-    def mutate() -> None:
-        page = provider._fetch_page
-        assert page is not None
-        if mutation == "replace_node":
-            page.evaluate("document.querySelector('button').outerHTML = document.querySelector('button').outerHTML")
-        elif mutation == "replace_document":
-            page.set_content("<button onclick='document.body.dataset.clicked=1'>Same name</button>")
-        else:
-            page.goto(page.url)
-
-    browser_search._search_browser_call(mutate)
+    if mutation == "replace_node":
+        assert interaction.evaluate("document.querySelector('button').outerHTML = document.querySelector('button').outerHTML").ok
+    elif mutation == "replace_document":
+        install(interaction, "<button onclick='document.body.dataset.clicked=1'>Same name</button>")
+    else:
+        assert interaction.navigate(str(interaction.capture()["url"])).ok
     rejected = interaction.click(ref)
     assert rejected.ok is False
     assert rejected.observation["delivery"] == "not_delivered"
@@ -151,7 +117,7 @@ def test_ref_ids_are_not_reused_and_snapshots_report_truncation(
     assert snapshot.observation["complete"] is False
     assert snapshot.observation["text_truncated"] is True
     assert snapshot.observation["elements_truncated"] is True
-    assert interaction.click(old_ref).observation["delivery"] == "not_delivered"
+    assert interaction.click(old_ref).ok
 
 
 def test_new_controller_cannot_reuse_reference_from_previous_controller(
@@ -160,9 +126,12 @@ def test_new_controller_cannot_reuse_reference_from_previous_controller(
     provider, interaction = browser_fixture
     _install_page(provider, "<button>Original control</button>")
     old_ref = _ref(interaction, "button")
-    replacement = BrowserInteraction(provider)
-    new_ref = _ref(replacement, "button")
-    assert old_ref != new_ref
+    # Source consumers borrow one controller. A fresh observation preserves a
+    # live node; an explicit assistance boundary expires the old observation.
+    replacement = provider.browser
+    assert _ref(replacement, "button") == old_ref
+    replacement.discard_references()
+    assert _ref(replacement, "button") != old_ref
     assert replacement.click(old_ref).observation["delivery"] == "not_delivered"
 
 
@@ -189,8 +158,9 @@ def test_cancel_during_wait_stops_browser_job(
     timer.start()
     started = time.monotonic()
     try:
-        with cancellation.scope(event), pytest.raises(cancellation.TaskCancelled):
-            interaction.wait("text", "Never appearing condition", 10000)
+        with cancellation.scope(event):
+            stopped = interaction.wait("text", "Never appearing condition", 10000)
+        assert not stopped.ok and stopped.observation["reason"] == "cancelled"
         assert time.monotonic() - started < 2
         assert interaction.snapshot().ok
     finally:
@@ -203,27 +173,17 @@ def test_lost_click_acknowledgement_is_not_replayed(
     provider, interaction = browser_fixture
     _install_page(provider, "<button onclick='window.count=(window.count || 0)+1'>Count</button>")
     ref = _ref(interaction, "button")
-    handle_type = type(interaction._refs[ref].handle)
-    original = handle_type.click
+    def lose_ack(progress: JsonObject) -> None:
+        if progress.get("phase") == "input_complete":
+            worker = interaction._process._process
+            assert worker is not None
+            worker.kill()
 
-    def lose_ack(handle: object, *, timeout: float, no_wait_after: bool) -> None:
-        if isinstance(handle, handle_type):
-            original(handle, timeout=timeout, no_wait_after=no_wait_after)
-        raise Error("injected acknowledgement loss after real DOM click")
-
-    monkeypatch.setattr(handle_type, "click", lose_ack)
-    result = interaction.click(ref)
-    assert not result.ok
-    assert result.observation["delivery"] == "uncertain"
+    with invocation_scope(BrowserInvocation("injected-ack-loss", lose_ack)):
+        result = interaction.click(ref)
+    assert not result.ok and result.observation["delivery"] == "uncertain"
+    assert interaction.inspect_state("window.count") == 1
     assert interaction.click(ref).observation["delivery"] == "not_delivered"
-
-    def count() -> object:
-        page = provider._fetch_page
-        assert page is not None
-        count: object = page.evaluate("window.count")
-        return count
-
-    assert browser_search._search_browser_call(count) == 1
 
 
 def test_snapshot_exposes_current_field_value_and_hides_password(

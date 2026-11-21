@@ -20,9 +20,10 @@ def close_research_tools(tools: ResearchTools | None) -> None:
 def bind_browser_session(resources: ResearchTools) -> None:
     """Attach the shared page resource once, for every production kernel entry."""
     if resources.browser_session is None:
-        from codey.automation.browser_session import BrowserSession
+        from codey.operations.browser_resources import bind_source_browser, source_browser
 
-        resources.browser_session = BrowserSession.from_provider(resources.search)
+        resources.browser_session = source_browser(resources)
+        bind_source_browser(resources, resources.browser_session)
 
 
 def build_research_tools(deps: object, *, session_id: str, project: str, browser_sources: bool = True,

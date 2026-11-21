@@ -198,18 +198,16 @@ def refresh_snapshot_contract(snapshot: TurnSnapshot) -> TurnSnapshot:
 
 
 def offer_browser_tools(snapshot: TurnSnapshot, session: KernelSessionView) -> TurnSnapshot:
-    if (not browser_followups.allows_surface(snapshot)
-            or (exposed := session.model_tool_names) is not None
-            and not set(browser_followups.DIRECT_TOOLS) <= set(exposed)
-            or set(browser_followups.DIRECT_TOOLS) & set(session.controller_denied)):
+    from codey.toolchain.browser_native_specs import browser_native_specs
+
+    exposed = session.model_tool_names
+    direct_names = tuple(name for name in (*browser_followups.DIRECT_TOOLS, "browser_wait", *browser_native_specs())
+        if browser_followups.allows_surface(snapshot, (name,))
+        and name not in session.controller_denied and (exposed is None or name in exposed))
+    if not direct_names:
         return snapshot
     if browser_followups.codemode_only(session.task_text):
         return refresh_snapshot_contract(replace(snapshot, browser_followups=True))
-    direct_names: tuple[str, ...] = browser_followups.DIRECT_TOOLS
-    if (browser_followups.allows_surface(snapshot, ("browser_wait",))
-            and "browser_wait" not in session.controller_denied
-            and (exposed is None or "browser_wait" in exposed)):
-        direct_names = (*direct_names, "browser_wait")
     names = (*snapshot.tool_names, *(name for name in direct_names if name not in snapshot.tool_names))
     offered = replace(snapshot, tool_names=names, browser_followups=True,
                       browser_fill_text=browser_followups.explicit_fill_text(session.task_text))

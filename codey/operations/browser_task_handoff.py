@@ -287,7 +287,7 @@ def _metadata_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Com
 def _current_snapshot(session: TaskSession, context: CompletionContext,
                       generation: int | None, *, require_text: bool = True) -> tuple[str, JsonObject] | None:
     records, results = tool_facts(session, context)
-    snapshots = committed_results(records, results, frozenset({"browser_snapshot"}))
+    snapshots = committed_results(records, results, frozenset({"browser_snapshot", "browser_screenshot"}))
     raw = snapshots[-1][1].canonical.get("value") if snapshots else None
     value = decode_json_object(raw) if isinstance(raw, dict) else None
     if (value is None or snapshots[-1][1].truncated

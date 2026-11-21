@@ -272,10 +272,14 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         if context.observation.on_event is None:
             raise ValueError("user questions require an event surface")
         task = context.durable.task(context.sink.run_id)
+        from codey.operations.browser_resources import capture_assistance_binding
+
+        assistance = capture_assistance_binding(context.execution.browser_session, context.session._memory_results)
         request: Callable[[str, str, str, object, dict[str, object]], object] = DurableUserQuestionStore(context.durable).request
         request(decision["question_id"], context.sink.session_id,
             context.sink.run_id, decision["question"], {"request_ref": state.response_ref,
-                "input_request": decode_json_object(thaw_json(task.state.get("input_request", {})))})
+                "input_request": decode_json_object(thaw_json(task.state.get("input_request", {}))),
+                **({"browser_assistance": assistance} if assistance is not None else {})})
         # Notification is a projection of the saved question, so its failure
         # leaves the same stable question available after a restart.
         context.observation.on_event(RunEvent("user_question", turn=received.logical_turn,

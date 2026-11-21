@@ -265,6 +265,7 @@ def _consistent_tool_result(
             presentation=dict(produced.presentation) if isinstance(produced.presentation, dict) else {},
             audit=cleaned_audit,
             canonical=dict(produced.canonical) if isinstance(produced.canonical, dict) else {},
+            images=produced.images,
         )
     except Exception:
         return _error_result(requested, "tool result normalization failed; refusing to lose receipt")

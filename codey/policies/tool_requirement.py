@@ -380,8 +380,10 @@ class ToolSuccessRequirement:
                 if ((self._binds_browser_body or self.binds_browser_fields or self.tool == "browser_upload")
                         and receipt.call.call_id != row.get("call_id")):
                     raise ValueError("browser receipt identity differs from committed execution")
-                scope = report_read_scope(receipt, self.browser_text, include_missing=True) if self.report_label and self.browser_text is not None else None
+                scope = report_read_scope(receipt, self.browser_text, include_missing=True) if (
+                    (self.report_label or self.file_path) and self.browser_text is not None) else None
                 value = ((scope.text if scope is not None else None) if self.report_label else
+                         scope.text if scope is not None else
                          _query_body(receipt, self.browser_text) if self.browser_text is not None and self.browser_text.context else
                          _browser_body(receipt, url=self.browser_text.url if self.browser_text is not None else None)
                          if self._binds_browser_body

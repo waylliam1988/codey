@@ -13,9 +13,10 @@ from typing import NoReturn
 from unittest.mock import patch
 
 import pytest
-from playwright.sync_api import Route, sync_playwright
+from playwright.sync_api import sync_playwright
 
-from codey.automation.browser_session import BrowserSession, BrowserToolOutput
+from codey.automation.browser_contracts import RouteDecision as Route
+from codey.automation.browser_session import BrowserToolOutput
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.operations.browser_followups import click_followup_plan
 from codey.operations.browser_task_handoff import browser_task_handoff, initial_navigation
@@ -291,7 +292,7 @@ def test_download_storage_failure_preserves_delivery_and_does_not_offer_a_retry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     provider = FixtureBrowser(headless=True)
-    browser = BrowserSession(provider)
+    browser = provider.browser
     tools = ResearchTools(search=provider, store=None, changes=None, browser_session=browser)
     session = new_session()
     session.policy = replace(session.policy, required_checks=(require_tool_success("browser_download"),))
@@ -308,13 +309,13 @@ def test_download_storage_failure_preserves_delivery_and_does_not_offer_a_retry(
         calls += 1
         return original(ref)
 
-    def fail_storage(store: ManagedOutputStore, *, session_id: str, run_id: str, source: Path,
+    def fail_storage(store: ManagedOutputStore, *, session_id: str, run_id: str, raw: bytes,
                      permission_profile: str) -> NoReturn:
         raise OSError("fixture storage failure")
 
-    monkeypatch.setattr(browser.provider, "_guard_request", route_document)
+    monkeypatch.setattr(provider, "_guard_request", route_document)
     monkeypatch.setattr(browser, "download", download)
-    monkeypatch.setattr(ManagedOutputStore, "write_file_artifact", fail_storage)
+    monkeypatch.setattr(ManagedOutputStore, "write_binary_artifact", fail_storage)
     snapshot = build_turn_snapshot(session)
     parent = build_execute_turn_executor(session=session, snapshot=snapshot, run_id="r", effect_scope="task", turn=1,
         research_tools=tools, intent_sink=sink, durable=sink.durable, managed_outputs=sink.managed_outputs, session_id="s")
@@ -330,7 +331,7 @@ def test_download_storage_failure_preserves_delivery_and_does_not_offer_a_retry(
                                       browser.generation)
         assert '"delivery": "delivered"' in hint and '"storage": "failed"' in hint
         assert "Outstanding declared calls: browser_download" not in hint
-        assert not sink.durable.artifacts_for_task("r")
+        assert all(artifact.metadata.get("kind") == "browser_progress" for artifact in sink.durable.artifacts_for_task("r"))
     finally:
         sink.durable.close()
         provider.close()
@@ -390,7 +391,7 @@ def interrupted_action_probe(state: Path, port: int, operation: str, stage: str)
                 "setTimeout(()=>document.querySelector('article').textContent='Ready: current record is 29 grams.',200)\">Download</a>"))
 
     provider = ActionBrowser(headless=False, isolated=False, launch=False, require_existing_session=True, cdp_port=port)
-    browser = BrowserSession(provider)
+    browser = provider.browser
     tools = ResearchTools(search=provider, store=None, changes=None, browser_session=browser)
     context = KernelContext(session, KernelRunRequest(
         transport=KernelTransportDeps(provider=NoModel(), run_id="r", effect_scope="task", provider_id="local"),
@@ -449,6 +450,13 @@ def interrupted_action_probe(state: Path, port: int, operation: str, stage: str)
         count = browser.evaluate("document.querySelector('a').dataset.count")
         assert count.ok, count.model_text
         outcome["effect_count"] = count.observation["value"]
+    else:
+        # Unknown dispatch is inspected independently before the durable owner
+        # uses its saved progress binding to clean up its page.
+        with sync_playwright() as observer:
+            observed = observer.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+            page = next(item for item in observed.contexts[0].pages if item.url == URL)
+            outcome["effect_count"] = page.locator("a").get_attribute("data-count")
     if operation == "browser_click":
         _, hint = browser_task_handoff(session, build_turn_snapshot(session),
             CompletionContext(browser_document=browser.document_identity()), browser.generation)
@@ -488,7 +496,7 @@ def test_process_recovery_preserves_delivered_action_without_clicking_again(tmp_
             pages = [page for page in browser.contexts[0].pages if page.url == URL]
             assert len(pages) <= 1
             if stage == "before":
-                assert pages  # No committed action binding authorized reattachment or page cleanup.
+                assert result["effect_count"] == "1"
             # The durable owner may dispose its owned page during cleanup.
             # Observe the action count in the resumed child before that cleanup.
             if pages:

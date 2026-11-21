@@ -6,9 +6,9 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Route
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
+from codey.automation.browser_contracts import RouteDecision as Route
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.operations.browser_copy import CopyTurn
 from codey.operations.kernel_context import KernelContext
@@ -35,7 +35,6 @@ from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.providers.requests import ProviderRequest, SendTextRequest
 from codey.providers.transport import ProviderTransport
-from codey.research.browser_search import BrowserSearchProvider
 from codey.runtime.core.operation_payload import LEAF_KERNEL_SETTLED
 from codey.runtime.effects.effect_records import RuntimeEffectStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
@@ -44,6 +43,7 @@ from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object, require_json_string
 from tests.test_model_input_binding import URL, copy_snapshot
 from tests.test_receipt_bound_edit_surface_probe import install_http
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import ExperimentProvider, Target
 
@@ -146,6 +146,11 @@ def test_completed_legacy_copy_returns_stored_result_after_restart_without_rewri
             "<tbody><tr><td>RZ-824</td><td>962</td></tr></tbody></table>"))
 
     monkeypatch.setattr(BrowserSearchProvider, "_guard_request", route)
+    def source_factory() -> BrowserSearchProvider:
+        return BrowserSearchProvider(headless=True)
+
+    monkeypatch.setattr("codey.research.search_factory.default_research_search_provider", source_factory)
+    monkeypatch.setattr("codey.operations.task_phases.dispatch.default_research_search_provider", source_factory)
     monkeypatch.setattr("codey.app.provider_services.provider_availability", lambda: {"local": True})
     monkeypatch.setattr("codey.app.provider_services.provider_tab_availability", dict)
 

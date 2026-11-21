@@ -10,14 +10,12 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Route
 
-from codey.automation.browser_session import BrowserSession
 from codey.operations.browser_references import BrowserReferences
 from codey.operations.declared_field_input import model_spec
 from codey.operations.kernel_protocol import ModelInputBinding, build_turn_snapshot, normalize_turn
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
-from codey.research.browser_search import BrowserSearchProvider, _search_browser_call
 from codey.research.ledger import OpenedSource, ResearchLedger
 from codey.research.ledger_receipts import source_snapshot
 from codey.research.passages import describe_window, restore_passages
@@ -25,6 +23,7 @@ from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_object, parse_json_object
 from tests.test_research_submission_handoff_production import install_http, requests
 from tools import browser_choice_presentation_ab as experiment
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 from tools.browser_production_live_gate import URL
 from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import Arm, ExperimentProvider, Target
@@ -123,7 +122,7 @@ def test_fixture_is_solvable_and_passive_audit_preserves_refs(name: str, monkeyp
         request.fulfill(status=200, content_type="text/html; charset=utf-8", body=case.body)
 
     monkeypatch.setattr(browser, "_guard_request", route)
-    session = BrowserSession.from_provider(browser)
+    session = browser.browser
     try:
         # Match the live runner's initial open_url acquisition, including its
         # readable-content checks; navigate alone bypasses that source contract.
@@ -131,25 +130,30 @@ def test_fixture_is_solvable_and_passive_audit_preserves_refs(name: str, monkeyp
         assert fetched.get("status") == "ok", fetched
         observation = session.snapshot()
         assert observation.ok
+        def choose(role: str, name: str = "", selector: str = "") -> str:
+            from codey.automation.browser_contracts import BrowserAction
+
+            output = session.action(BrowserAction.LOCATE, {"role": role,
+                **({"name": name} if name else {}), **({"selector": selector} if selector else {})})
+            rows = output.observation["candidates"]
+            assert output.ok and isinstance(rows, list) and len(rows) == 1, output
+            value = decode_json_object(rows[0])["ref"]
+            assert isinstance(value, str)
+            return value
+
+        if name == "pagination":
+            assert session.click(choose("button", "下一页")).ok
+            assert session.click(choose("button", "打开 ZX-62")).ok
+        elif name != "visible":
+            scope = 'section[aria-label="当前库存"] ' if name == "duplicate" else ""
+            assert session.fill(choose("textbox", selector=scope + "input"), "NB-41" if name == "duplicate" else "福州").ok
+            assert session.click(choose("button", selector=scope + "button")).ok
+        assert session.wait("text", case.code, 5000).ok
         generation = session.generation
-
-        def exercise_fixture() -> JsonObject:
-            page = session._page_on_browser_thread()
-            # This is an offline fixture check; live runs do not get these selectors.
-            if name == "pagination":
-                page.get_by_role("button", name="下一页", exact=True).click()
-                page.get_by_role("button", name="打开 ZX-62", exact=True).click()
-            elif name != "visible":
-                scope = page.get_by_role("region", name="当前库存") if name == "duplicate" else page.locator("body")
-                scope.get_by_role("textbox").fill("NB-41" if name == "duplicate" else "福州")
-                scope.get_by_role("button").click()
-            page.get_by_role("article").filter(has_text=case.code).wait_for(timeout=5000)
-            raw: object = page.evaluate("() => window.counts")
-            return decode_json_object(raw)
-
-        counts = _search_browser_call(exercise_fixture)
+        counts = decode_json_object(session.inspect_state("window.counts"))
         assert counts == {"clicks": case.clicks, "fills": case.fills, "wrong": 0}
         assert session.generation == generation
+
     finally:
         browser.close()
 

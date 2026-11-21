@@ -240,7 +240,7 @@ def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, ca
     result, ok, code = delegate._opened_result(call, opened, url, ledger=tools.ledger, turn=turn, tool_index=tool_index)
     if ok and document is not None:
         result = replace(result, audit={**result.audit, "browser_document": document})
-    if ok and query_ref:
+    if ok and query_ref and page.get("query_confirmed") is True:
         result = replace(result, audit={**result.audit, "query_click": query_ref})
         region = page.get("query_region")
         if isinstance(region, dict):

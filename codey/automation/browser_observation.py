@@ -8,6 +8,37 @@ from playwright.sync_api import ElementHandle, Page
 from codey.automation.browser_query import QUERY_TARGET, _backend_node
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string
 
+ACTIONABLE_CANDIDATES = ("button,summary,a[href],input,textarea,select,[contenteditable=true],"
+    "[tabindex],[onclick],[role=button],[role=link],[role=textbox],[role=combobox],"
+    "[role=searchbox],[role=menuitem],[role=checkbox],[role=radio],[role=switch],[role=tab]")
+
+VISIBLE_TEXT = r"""root => {
+    const parts = []; let length = 0;
+    const visit = node => {
+        if (length > 100000) return;
+        if (node.nodeType === Node.TEXT_NODE) {
+            const parent = node.parentElement;
+            if (!parent || !node.textContent.trim() || getComputedStyle(parent).visibility !== 'visible') return;
+            const closed = parent.closest('details:not([open])');
+            if (closed && !closed.querySelector(':scope > summary')?.contains(parent)) return;
+            const range = document.createRange(); range.selectNodeContents(node);
+            if (range.getClientRects().length) {
+                const text = node.textContent.slice(0,100001-length);
+                parts.push(text); length += text.length;
+            }
+            return;
+        }
+        if (node.nodeType === Node.ELEMENT_NODE && node.matches('slot')) {
+            const assigned = node.assignedNodes({flatten:true});
+            if (assigned.length) { assigned.forEach(visit); return; }
+        }
+        const children = node.shadowRoot ? node.shadowRoot.childNodes : node.childNodes;
+        for (const child of children) visit(child);
+    };
+    if (root) visit(root);
+    return parts.join(' ').replace(/\s+/g,' ').trim();
+}"""
+
 _CONTEXT = """node => {
     const owners = 'article,section,tr,[role=row],[role=region],fieldset';
     const clean = value => (value || '').replace(/\\s+/g, ' ').trim();
@@ -32,6 +63,7 @@ ELEMENT_METADATA = """el => {
         break;
     }
     return {contextNode, metadata: {
+        actionable: el.matches(""" + json.dumps(ACTIONABLE_CANDIDATES) + """),
         tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || '',
         name: el.getAttribute('aria-label') || el.getAttribute('title') ||
               Array.from(el.labels || [], label => label.innerText).join(' ') ||
@@ -41,6 +73,12 @@ ELEMENT_METADATA = """el => {
         disabled: el.disabled === true || el.getAttribute('aria-disabled') === 'true',
         checked: 'checked' in el ? el.checked : null, context,
         query_relation: query.node ? query.relation : ''
+        ,semantic_identity: {
+            id: el.id || '', href: el.getAttribute('href') || '', controls: el.getAttribute('aria-controls') || '',
+            records: Array.from((function*(){for(let n=el;n;n=n.parentElement)
+                if(n.matches('[data-id],[data-key],[itemid],[aria-rowindex],[aria-posinset]')) yield n;})(),
+                n => ['data-id','data-key','itemid','aria-rowindex','aria-posinset'].map(k => n.getAttribute(k)))
+        }
     }};
 }"""
 

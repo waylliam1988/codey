@@ -230,6 +230,7 @@ def _research_specs() -> dict[str, ToolSpec]:
 
 
 def _browser_specs() -> dict[str, ToolSpec]:
+    from codey.toolchain.browser_native_specs import browser_native_specs
     from codey.toolchain.browser_read_specs import browser_read_specs
     """Canonical browser contracts; execution is supplied by the task runtime."""
     specs = {
@@ -237,7 +238,9 @@ def _browser_specs() -> dict[str, ToolSpec]:
             name="browser_snapshot", grant="browser.observe", executor="browser",
             namespace="browser.observe", effect="read",
             parameters=(("max_elements", {"type": "integer", "minimum": 1, "maximum": 80}),
-                        ("max_text", {"type": "integer", "minimum": 500, "maximum": 12000})),
+                        ("max_text", {"type": "integer", "minimum": 500, "maximum": 12000}),
+                        ("scope_ref", {"type": "string"}), ("selector", {"type": "string"}),
+                        ("base_revision", {"type": "integer", "minimum": 1})),
             description="Observe the bound page as bounded text and named interactive element refs.",
             json_examples=('{"tool":"browser_snapshot","args":{}}',),
             preconditions=("browser_bound",),
@@ -246,8 +249,8 @@ def _browser_specs() -> dict[str, ToolSpec]:
         "browser_click": ToolSpec(
             name="browser_click", grant="browser.interact", executor="browser",
             namespace="browser.interact", effect="page_mutation",
-            parameters=(("ref", {"type": "string"}),), required=("ref",),
-            description="Click a ref from the latest browser snapshot; stale refs are rejected.",
+            parameters=(("ref", {"type": "string"}), ("result_ref", {"type": "string"})), required=("ref",),
+            description="Click an observed ref. Reobservation preserves the same actual node; detached or repurposed nodes are rejected.",
             json_examples=('{"tool":"browser_click","args":{"ref":"<snapshot ref>"}}',),
             preconditions=("browser_bound", "fresh_snapshot"),
         ),
@@ -264,7 +267,7 @@ def _browser_specs() -> dict[str, ToolSpec]:
             name="browser_scroll", grant="browser.interact", executor="browser",
             namespace="browser.interact", effect="page_mutation",
             parameters=(("direction", {"type": "string", "enum": ["up", "down", "left", "right"]}),
-                        ("amount", {"type": "integer", "minimum": 1, "maximum": 20000})),
+                        ("amount", {"type": "integer", "minimum": 1, "maximum": 20000}), ("ref", {"type": "string"})),
             required=("direction", "amount"),
             description="Scroll the bound page by a bounded amount.",
             json_examples=('{"tool":"browser_scroll","args":{"direction":"down","amount":500}}',),
@@ -274,7 +277,7 @@ def _browser_specs() -> dict[str, ToolSpec]:
             name="browser_wait", grant="browser.observe", executor="browser",
             supports_background=True,
             namespace="browser.observe", effect="read",
-            parameters=(("condition", {"type": "string", "enum": ["text", "selector", "url_contains"]}),
+            parameters=(("condition", {"type": "string", "enum": ["text", "text_absent", "selector", "selector_hidden", "selector_detached", "url_contains", "new_document", "popup", "dialog", "download"]}),
                         ("value", {"type": "string"}),
                         ("timeout_ms", {"type": "integer", "minimum": 100, "maximum": 30000})),
             required=("condition", "value"),
@@ -341,6 +344,8 @@ def _browser_specs() -> dict[str, ToolSpec]:
         ),
     }
     from codey.toolchain.result_schema import browser_output_schema
+
+    specs.update(browser_native_specs())
 
     return {name: replace(spec, output_schema=browser_output_schema(name)) for name, spec in specs.items()}
 

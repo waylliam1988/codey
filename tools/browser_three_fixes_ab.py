@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -74,14 +74,14 @@ def record_from_reads(session: TaskSession, context: CompletionContext) -> JsonO
 
 
 @contextmanager
-def candidate(directory: Path, scenario: str, *, enabled: bool) -> Iterator[None]:
+def candidate(directory: Path, scenario: str, *, enabled: bool) -> Generator[None, None, None]:
     if scenario == "stale_edit":
         with edit.prototype_helper(directory, enabled=enabled):
             yield
     elif not enabled:
         yield
     elif scenario == "legacy_structured":
-        evaluate = BrowserSession._evaluate_on_browser_thread
+        evaluate = BrowserSession.evaluate
 
         def evaluate_property(browser: BrowserSession, source: str) -> BrowserToolOutput:
             expression = property_expression(source)
@@ -91,7 +91,7 @@ def candidate(directory: Path, scenario: str, *, enabled: bool) -> Iterator[None
                             {"original": source, "executed": expression, "ok": result.ok})
             return result
 
-        with patch.object(BrowserSession, "_evaluate_on_browser_thread", evaluate_property):
+        with patch.object(BrowserSession, "evaluate", evaluate_property):
             yield
     elif scenario == "reread":
         def assemble(session: TaskSession, text: str, context: CompletionContext) -> CompletionOutput:
@@ -102,8 +102,11 @@ def candidate(directory: Path, scenario: str, *, enabled: bool) -> Iterator[None
             append_json(directory / "candidate.jsonl", {**record, "model_text": text})
             return replace(output, text=f"加载后的页面记录显示净重 {record['amount']} 克，校验码 {record['code']}。")
 
+        def receipt_tools(checks: tuple[str, ...]) -> frozenset[str]:
+            return browser_receipt_tools(checks) | READ_TOOLS
+
         with (patch.object(kernel_control, "prepare_completion_output", assemble),
-              patch.object(task_execution, "browser_receipt_tools", lambda checks: browser_receipt_tools(checks) | READ_TOOLS)):
+              patch.object(task_execution, "browser_receipt_tools", receipt_tools)):
             yield
     else:
         raise ValueError(f"unknown scenario: {scenario}")

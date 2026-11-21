@@ -18,14 +18,14 @@ from typing import Literal
 from unittest.mock import patch
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
-from codey.automation.browser_session import BrowserSession, _browser_call
+from codey.automation.browser_session import BrowserSession
 from codey.env_names import NATIVE_TOOLS_ENV
 from codey.operations.task_execution import ExecutionDelegate
 from codey.policies.tool_requirement import _browser_body
-from codey.research.browser_search import BrowserSearchProvider
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 from tools.browser_production_live_gate import select_target
 from tools.completion_artifact_audit import EffectReceipt, tool_receipts
 from tools.completion_explanation_ab import (
@@ -118,21 +118,19 @@ def read_jsonl(path: Path) -> list[JsonObject]:
 
 
 def click_state(browser: BrowserSession, ref: str = "") -> JsonObject:
-    def inspect() -> JsonObject:
-        value: JsonObject = {}
-        try:
-            page = browser._page_on_browser_thread()
-            raw: object = page.evaluate(WITNESS)
-            value["events"] = decode_json_object({"events": raw})["events"]
-            if ref:
-                _, element = browser._resolve_ref(ref)
-                target: object = element.evaluate(ELEMENT)
-                value["element"] = decode_json_object(target)
-        except Exception as exc:
-            value["inspection_error"] = f"{type(exc).__name__}: {exc}"
-        return value
+    value: JsonObject = {}
+    try:
+        value["events"] = browser.inspect_state("(" + WITNESS + ")()")
+        if ref:
+            from codey.automation.browser_contracts import BrowserAction
 
-    return _browser_call(inspect)
+            output = browser.action(BrowserAction.INSPECT, {"ref": ref})
+            if not output.ok:
+                raise ValueError(output.model_text)
+            value["element"] = output.observation
+    except (RuntimeError, ValueError) as exc:
+        value["inspection_error"] = f"{type(exc).__name__}: {exc}"
+    return value
 
 
 @contextmanager
@@ -268,7 +266,7 @@ def run_arm(directory: Path, scenario: Scenario, expected: ExpectedFlow, arm: Ar
         events.append(value)
         append_json(directory / "events.jsonl", value)
 
-    def connect(_provider_id: str, **_kwargs: object) -> ExperimentProvider:
+    def connect(provider_id: str, *, port: int) -> ExperimentProvider:
         return provider
 
     source_tool = "open_url" if arm == "A" else "open_result"
@@ -280,7 +278,7 @@ def run_arm(directory: Path, scenario: Scenario, expected: ExpectedFlow, arm: Ar
             "用 browser_wait 等待文本“记录已就绪”，最后 browser_read 读取当前页。点击可能触发页面事件，按真实元素引用点击。")
         required += ("browser_snapshot", "browser_click", "browser_wait", "browser_read")
     task = scenario.source.question + "\n" + instruction + "根据成功读取的正文报告用户所问各项信息，用 done 完成交付。不要修改文件或执行命令。"
-    selection: dict[str, str] = {"model": target.model, "base_url": target.base_url}
+    selection: dict[str, object] = {"model": target.model, "base_url": target.base_url}
     request = HeadlessRequest(None, task, intent="chat", provider_id="local", max_turns=max_turns,
         state_home=directory / "state", research_store_root=directory / "knowledge",
         requested_capabilities=("web.read", "browser.observe", "browser.interact"), model_selection=selection,

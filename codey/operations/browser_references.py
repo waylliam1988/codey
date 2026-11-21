@@ -46,7 +46,7 @@ class BrowserReferences:
     document_json: str
     generation: int
     controls: tuple[ObservedControl, ...]
-    presentation_version: Literal[1, 2] = 2
+    presentation_version: Literal[1, 2, 3] = 3
 
     def __post_init__(self) -> None:
         if (not self.receipt_ref or self.generation < 0 or not parse_json_object(self.document_json)
@@ -91,16 +91,23 @@ class BrowserReferences:
         return [row for row in self.controls if row.role == role and _label(row.name) == name
                 and (context is None or _label(row.context) == context)]
 
-    def choices(self) -> list[JsonValue]:
+    def choices(self, action: str = "") -> list[JsonValue]:
         """Offer complete, uniquely resolvable combinations from this observation."""
         choices: list[JsonValue] = []
         for row in self.controls:
             if row.disabled:
                 continue
+            if self.presentation_version >= 3:
+                if action == "browser_fill" and row.role not in {"textbox", "combobox", "searchbox"}:
+                    continue
+                if action == "browser_click" and row.role in {"textbox", "searchbox", "file_input"}:
+                    continue
             base: JsonObject = {"role": row.role, "name": row.name}
             for selector in (base, {**base, "context": row.context}):
                 if len(self._matches(selector)) == 1 and selector not in choices:
                     choices.append(selector)
+                    if self.presentation_version >= 3:
+                        break
         return choices
 
     def resolve(self, selector: JsonValue) -> str:
@@ -126,11 +133,13 @@ class BrowserReferences:
         if set(row) not in (expected, expected | {"presentation_version"}) or not isinstance(row["controls"], list):
             raise ValueError("Invalid frozen browser control binding.")
         raw_version = require_json_integer(row.get("presentation_version", 2), "control presentation version")
-        presentation_version: Literal[1, 2]
+        presentation_version: Literal[1, 2, 3]
         if raw_version == 1:
             presentation_version = 1
         elif raw_version == 2:
             presentation_version = 2
+        elif raw_version == 3:
+            presentation_version = 3
         else:
             raise ValueError("Unsupported frozen browser control presentation version.")
         controls: list[ObservedControl] = []
@@ -152,7 +161,7 @@ def reference_spec(spec: ToolSpec, references: BrowserReferences | None) -> Tool
     """The same ref union serves the outer interface and CodeMode catalog."""
     if references is None or spec.name not in {"browser_fill", "browser_click"}:
         return spec
-    choices = references.choices()
+    choices = references.choices(spec.name)
     selector: JsonObject = {"type": "object", "properties": {
         "role": {"type": "string", "minLength": 1}, "name": {"type": "string"}, "context": {"type": "string"}},
         "required": ["role", "name"], "additionalProperties": False}
@@ -166,6 +175,13 @@ def reference_spec(spec: ToolSpec, references: BrowserReferences | None) -> Tool
             "for duplicate context labels use the actual string ref."))
     selector["enum"] = choices
     example = " Example ref argument: " + json.dumps(choices[0], ensure_ascii=False) if choices else ""
+    if references.presentation_version >= 3:
+        return freeze_spec_parameters(replace(spec, parameters=tuple(
+            (key, {"anyOf": [selector, schema]} if choices else schema) if key == "ref" else (key, schema)
+            for key, schema in spec.parameters), json_examples=(),
+            description=spec.description + " Select a complete observed role/name/context choice. "
+            "A raw ref is available for controls observed inside CodeMode. "
+            "Copy only ref, never a display row. Reobserve when the target is absent." + example))
     return freeze_spec_parameters(replace(spec, parameters=tuple(
         (key, {"anyOf": [selector, schema]} if choices else schema) if key == "ref" else (key, schema)
         for key, schema in spec.parameters),

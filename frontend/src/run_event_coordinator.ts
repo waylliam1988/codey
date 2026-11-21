@@ -58,6 +58,7 @@ export interface RunEventDeps {
 type ServerEventData = ServerEvent & {
   preview?: import('./render').ToolPreview;
   elapsed_ms?: number;
+  phase?: string;
   stream_id?: string;
   sequence?: number;
   state?: string;
@@ -328,6 +329,8 @@ export class RunEventCoordinator {
         outputTruncated: data.detail_truncated || data.truncated,
         outputBytes: data.output_bytes,
         outputStoredBytes: data.output_stored_bytes,
+        elapsedMs: typeof data.elapsed_ms === 'number' ? data.elapsed_ms : undefined,
+        phase: data.phase,
         failure: data.failure,
         status: toolStatus,
         error: toolStatus === 'error',
@@ -693,11 +696,11 @@ export class RunEventCoordinator {
         runId: question.run_id,
         eventKey: 'question:' + question.id,
       });
-    if (question.state !== 'pending')
+    if (question.state === 'cancelled')
       this.deps.state.addMessage(session.id, {
         type: 'run_state',
         runId: question.run_id,
-        state: question.state === 'cancelled' ? 'stopped' : question.state === 'answered' ? 'done' : 'blocked',
+        state: 'stopped',
         eventKey: `question-state:${question.id}:${question.revision}`,
       });
   }

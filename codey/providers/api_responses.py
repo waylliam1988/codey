@@ -17,12 +17,16 @@ def encode_context(messages: list[dict[str, object]]) -> list[dict[str, object]]
     from codey.providers.api_chat import encode_context as canonical_messages
 
     result: list[dict[str, object]] = []
-    for message in canonical_messages(messages):
+    for message in canonical_messages(messages, protocol="openai-responses"):
         if message.get("role") == "tool":
             call_id = message.get("tool_call_id")
             if not isinstance(call_id, str) or not call_id:
                 raise RequestPrepError("durable tool result has no call ID")
             result.append({"type": "function_call_output", "call_id": call_id, "output": message.get("content", "")})
+            from codey.types.tool_image import TOOL_IMAGES_KEY
+
+            if TOOL_IMAGES_KEY in message:
+                result[-1][TOOL_IMAGES_KEY] = message[TOOL_IMAGES_KEY]
         elif message.get("role") == "assistant" and message.get("tool_calls"):
             if message.get("content"):
                 result.append({"role": "assistant", "content": message["content"]})
@@ -59,9 +63,12 @@ def encode_tools(tools: list[ProviderToolDefinition] | None) -> list[dict[str, o
 
 
 def encode_results(results: list[ProviderToolResult]) -> list[dict[str, object]]:
+    from codey.providers.tool_images import TOOL_IMAGES_KEY
+
     encoded: list[dict[str, object]] = []
     for result in results:
-        encoded.append({"type": "function_call_output", "call_id": result.call_id, "output": result.content})
+        encoded.append({"type": "function_call_output", "call_id": result.call_id, "output": result.content,
+                        **({TOOL_IMAGES_KEY: [image.payload() for image in result.images]} if result.images else {})})
         if result.user_content:
             encoded.append({"type": "message", "role": "user", "content": result.user_content})
     return encoded
@@ -128,7 +135,10 @@ def checkpoint_item(text: str) -> dict[str, object]:
 
 def build_payload(items: list[dict[str, object]], tools: list[ProviderToolDefinition] | None,
                   settings: GenerationSettings) -> dict[str, object]:
-    body: dict[str, object] = {"model": settings.model, "input": items, "stream": settings.stream, "store": False,
+    from codey.providers.tool_images import materialize_messages
+
+    wire = materialize_messages(items, protocol="openai-responses", pending_calls=pending_calls)
+    body: dict[str, object] = {"model": settings.model, "input": wire, "stream": settings.stream, "store": False,
                             "include": ["reasoning.encrypted_content"]}
     if settings.effort is not None:
         body["reasoning"] = {"effort": "none" if settings.effort == "off" else settings.effort}

@@ -8,6 +8,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
 from codey.durable.model import EntryDraft, thaw_json
+from codey.types.tool_image import TOOL_IMAGES_KEY
 from codey.utils.object_fields import mapping_fields, object_fields
 from codey.utils.text_budget import estimate_tokens
 
@@ -108,6 +109,8 @@ def _message_for(entry: EntryDraft) -> Mapping[str, object]:
             message["tool_call_id"] = call_id
         if payload.get("is_error") is True:
             message["is_error"] = True
+        if TOOL_IMAGES_KEY in payload:
+            message[TOOL_IMAGES_KEY] = payload[TOOL_IMAGES_KEY]
         return message
     if entry.kind == "compaction":
         return {"role": "system", "content": _summary_text(payload.get("summary"))}
@@ -453,6 +456,7 @@ def _payload_for_message(message: Mapping[str, object]) -> dict[str, object]:
             "call_id": message.get("tool_call_id"),
             "content": message.get("content") or "",
             "is_error": message.get("is_error") is True,
+            **({TOOL_IMAGES_KEY: message[TOOL_IMAGES_KEY]} if TOOL_IMAGES_KEY in message else {}),
         }
     return {"content": message.get("content") or ""}
 

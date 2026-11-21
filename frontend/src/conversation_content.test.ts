@@ -112,6 +112,26 @@ describe('conversation content contract', () => {
     expect(host.querySelector('summary')?.textContent).not.toContain(result);
   });
 
+  it('distinguishes an unknown browser effect from an ordinary failed action', () => {
+    const host = window.Render.standaloneToolEl({
+      kind: 'browser click',
+      result: 'Worker lost after dispatch',
+      phase: 'unknown',
+      error: true,
+      elapsedMs: 31,
+    });
+    expect(host.querySelector('summary')?.textContent).toContain('Action outcome unknown');
+    expect(host.querySelector('summary')?.textContent).toContain('31ms');
+    expect(host.querySelector('pre')?.textContent).toBe('Worker lost after dispatch');
+  });
+
+  it('shows only the recorded duration of each completed browser action', () => {
+    const completed = window.Render.standaloneToolEl({ toolName: 'browser_click', elapsedMs: 27 });
+    expect(completed.querySelector('.tl-result')?.textContent).toBe('27ms');
+    const pending = window.Render.standaloneToolEl({ toolName: 'browser_fill', pending: true, elapsedMs: 90000 });
+    expect(pending.querySelector('.tl-result')?.textContent).toBe('Working');
+  });
+
   it('shows an edit diff and measured counts rather than another generic result row', () => {
     const host = window.Render.standaloneToolEl({
       kind: 'edit',

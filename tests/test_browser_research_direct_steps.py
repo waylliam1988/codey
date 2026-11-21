@@ -68,6 +68,10 @@ def test_research_completes_with_direct_steps_and_cites_the_post_wait_read(
         if not composed:
             yield {"tool": "browser_wait", "args": {"condition": "text", "value": "鱼丸", "timeout_ms": 5000}}
             yield {"tool": "browser_read", "args": {}}
+        elif sequence:
+            # The composed query supplies a complete result region. The explicit
+            # research sequence also requires a complete page after its wait.
+            yield {"tool": "browser_read", "args": {}}
         label = assert_submitting(directory, sequence=sequence)
         yield fixture.submission(label, current=True)
 
@@ -77,7 +81,8 @@ def test_research_completes_with_direct_steps_and_cites_the_post_wait_read(
     assert result["passed"] is True, result
     calls = [row.result for row in tool_receipts(directory / "state")]
     reads = [result for result in calls if result.call.name == "browser_read" and result.ok]
-    assert len(reads) == 2 and all("research_observation" in row.canonical and "read_passages" in row.canonical for row in reads)
+    assert len(reads) == (3 if composed and sequence else 2)
+    assert all("research_observation" in row.canonical and "read_passages" in row.canonical for row in reads)
     assert sum(row.call.name == "browser_navigate" and row.ok for row in calls) == 1
     assert next(index for index, row in enumerate(calls) if row.call.name == "browser_navigate") < next(
         index for index, row in enumerate(calls) if row.call.name == "browser_fill")

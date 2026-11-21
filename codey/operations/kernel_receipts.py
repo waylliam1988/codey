@@ -19,7 +19,14 @@ from codey.runtime.effects.effect_records import (
     compute_args_digest,
 )
 from codey.storage.managed_outputs import ManagedOutputStore
-from codey.types.json_value import JsonObject, decode_json_object, require_json_boolean, require_json_string
+from codey.types.json_value import (
+    JsonObject,
+    decode_json_object,
+    parse_json_object,
+    require_json_boolean,
+    require_json_string,
+)
+from codey.types.tool_image import TOOL_IMAGES_KEY, ToolImageRef
 from codey.workspace.revision import WorkspaceRevisionStore
 
 INLINE_RECEIPT_CHARS = 8000
@@ -37,7 +44,7 @@ class ResultReceiptFields(TypedDict):
     call_id: str
 
 
-def tool_history_messages(settlement: RuntimeEffectSettlement) -> tuple[tuple[str, dict[str, object]], ...]:
+def tool_history_messages(settlement: RuntimeEffectSettlement, *, images: tuple[ToolImageRef, ...] = ()) -> tuple[tuple[str, dict[str, object]], ...]:
     """Persist bounded native history in the same commit as its receipt."""
     if not settlement.call_id:
         return ()
@@ -46,6 +53,7 @@ def tool_history_messages(settlement: RuntimeEffectSettlement) -> tuple[tuple[st
         "content": settlement.result_text or settlement.result_excerpt,
         "is_error": settlement.status != "ok",
         "result_ref": settlement.result_ref,
+        **({TOOL_IMAGES_KEY: [image.payload() for image in images]} if images else {}),
     }),)
 
 
@@ -68,6 +76,7 @@ def result_receipt_fields(result: ToolResult, *, store: ManagedOutputStore | Non
         "canonical": result.canonical,
         "presentation": result.presentation,
         "audit": result.audit,
+        "images": [image.payload() for image in result.images],
         "truncated": result.truncated,
         "workspace_identity": {"workspace_revision": identity.revision,
                                "workspace_fingerprint": identity.fingerprint} if identity is not None else None,
@@ -135,11 +144,11 @@ def restore_result_receipt(projection: RuntimeEffectProjection, *, store: Manage
         payload = _managed_receipt_payload(settlement, intent, store, session_id, run_id)
     if not payload or text_digest(payload) != settlement.result_payload_sha256:
         raise ValueError("tool result receipt digest mismatch")
-    data = decode_json_object(json.loads(payload))
+    data = parse_json_object(payload)
     expected = {
         "schema_version", "kind", "call_name", "ok", "args", "model_text", "canonical", "presentation", "audit", "truncated", "workspace_identity",
     }
-    if set(data) != expected:
+    if set(data) not in (expected, expected | {"images"}):
         raise ValueError("invalid tool result receipt fields")
     _validate_call_name(data, intent.tool_name)
     if type(data["ok"]) is not bool or data["ok"] != (settlement.status == "ok"):
@@ -159,12 +168,16 @@ def restore_result_receipt(projection: RuntimeEffectProjection, *, store: Manage
             raise ValueError(f"invalid tool result {key}")
     # Verify the full receipt here. External output is checked by the output
     # resolver when read; losing an attachment cannot erase known execution facts.
+    images = data.get("images", [])
+    if not isinstance(images, list):
+        raise ValueError("invalid tool result images")
     result = ToolResult(
         ok=require_json_boolean(data["ok"], "ok"),
         kind=require_json_string(data["kind"], "kind"),
         call=ToolCall(require_json_string(data["call_name"], "call_name"), decode_json_object(data["args"]), call_id=intent.call_id),
         model_text=text, canonical=decode_json_object(data["canonical"]), presentation=decode_json_object(data["presentation"]),
         audit=decode_json_object(data["audit"]), truncated=require_json_boolean(data["truncated"], "truncated"),
+        images=tuple(ToolImageRef.read(image) for image in images),
     )
     if data["workspace_identity"] is not None:
         from codey.operations.kernel_provenance import _trusted_workspace_proof, attach_trusted_workspace

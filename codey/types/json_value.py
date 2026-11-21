@@ -154,3 +154,8 @@ def unique_json_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
 def parse_json_object(source: str) -> JsonObject:
     value: object = json.loads(source, object_pairs_hook=unique_json_fields)
     return decode_json_object(value)
+
+
+def parse_json_value(source: str) -> JsonValue:
+    value: object = json.loads(source, object_pairs_hook=unique_json_fields)
+    return decode_json_value(value)

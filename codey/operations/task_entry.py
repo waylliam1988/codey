@@ -371,6 +371,15 @@ def _run_entry_kernel(  # noqa: PLR0915
         durable=durable_task_for(deps.state.durable, frame.run_id),
     )
     project_path, tool_fns, research_tools = _entry_executors(frame, deps, policy)
+    if project_path is not None and policy.allows("project.verify"):
+        from codey.operations.task_context import safe_verification_candidates
+        from codey.workspace.config import load_project_config
+
+        config_result = config_result if config_result is not None else load_project_config(project_path)
+        config = config_result.config
+        session.verification_candidate_loader = partial(safe_verification_candidates, project_path,
+            configured_commands=config.verification_commands, ignored_paths=config.ignored_paths)
+        session.verification_candidates = session.verification_candidate_loader()
     previous_tools = frame.entry_research_tools
     if research_tools is not None and previous_tools is not None:
         research_tools.ledger = previous_tools.ledger

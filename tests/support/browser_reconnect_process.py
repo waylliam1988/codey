@@ -6,9 +6,10 @@ import faulthandler
 import os
 from pathlib import Path
 
-from playwright.sync_api import Route
+from playwright.sync_api import sync_playwright
 
-from codey.automation.browser_session import BrowserSession
+from codey.automation.browser_binding import BrowserBinding, browser_endpoint, browser_identity, page_binding
+from codey.automation.browser_contracts import RouteDecision as Route
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.operations.kernel_context import KernelContext
@@ -21,12 +22,12 @@ from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.requests import ProviderRequest
 from codey.providers.transport import ProviderTransport
-from codey.research.browser_search import BrowserSearchProvider
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 
 URL = "https://example.com/reconnect-article"
 HTML = """<article>Original article amount is 17 grams.</article>
@@ -95,12 +96,17 @@ def initialize(state: Path, port: int) -> None:
     session = new_session()
     provider = FixtureBrowser(headless=False, isolated=False, launch=False,
                               require_existing_session=True, cdp_port=port)
-    tools = ResearchTools(search=provider, store=None, changes=None, browser_session=BrowserSession(provider))
+    with sync_playwright() as observer:
+        connected = observer.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+        borrowed = page_binding(connected.contexts[0].pages[0], owned=False)
+    provider.browser.restore_binding(BrowserBinding(port, browser_identity(browser_endpoint(port)),
+        borrowed.target_id, (borrowed,)))
+    tools = ResearchTools(search=provider, store=None, changes=None, browser_session=provider.browser)
     snapshot = build_turn_snapshot(session)
     parent = build_execute_turn_executor(session=session, snapshot=snapshot, run_id="r", effect_scope="task",
         turn=1, research_tools=tools, intent_sink=sink, managed_outputs=sink.managed_outputs, session_id="s")
     code = """
-    unwrap(await tools.browser_navigate({url: inputs.url}));
+    unwrap(await tools.browser_tab_new({url: inputs.url}));
     unwrap(await tools.browser_read({}));
     unwrap(await tools.browser_tab_new({url: inputs.url}));
     unwrap(await tools.browser_tab_new({url: inputs.url}));
@@ -132,7 +138,7 @@ def recover(state: Path, port: int, expected_failure: str, read_failure: str, *,
         transport=KernelTransportDeps(provider=NoModel(), run_id="r", effect_scope="task", provider_id="local"),
         execution=KernelExecutionDeps(intent_sink=sink, research_tools=tools)))
     context.restore_facts()
-    assert provider._session is None  # Projection does not connect or navigate.
+    assert provider.browser._process._process is None  # Projection does not connect or navigate.
     assert session.source_ids == {"s1": URL}
     assert len(tools.ledger.opened_sources) == 1
     original = next(result for result in session._memory_results.values() if result.call.name == "codemode")
@@ -143,7 +149,7 @@ def recover(state: Path, port: int, expected_failure: str, read_failure: str, *,
     replay = execute_turn(session, [original.call], snapshot=build_turn_snapshot(session),
         run_id="r", turn=1, effect_scope="task", research_tools=tools, executors={"codemode": forbidden_replay})[0]
     assert replay.ok, replay.model_text
-    assert provider._session is None
+    assert provider.browser._process._process is None
     if cleanup_only:
         close_research_tools(tools)
         sink.durable.close()
@@ -159,10 +165,11 @@ def recover(state: Path, port: int, expected_failure: str, read_failure: str, *,
             turn=turn, effect_scope="task", research_tools=tools, nested=True)[0]
 
     try:
+        original_binding = provider.browser.resource_binding()
         first = execute("browser_snapshot", {})
         if expected_failure:
             assert not first.ok and expected_failure in first.model_text, first.model_text
-            assert provider._session is None
+            assert provider.browser.resource_binding() == original_binding
             # Even navigate/new-tab must not silently attach another browser/page.
             for name in ("browser_navigate", "browser_tab_new"):
                 failed = execute(name, {"url": URL})

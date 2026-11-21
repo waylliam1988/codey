@@ -25,13 +25,13 @@ def session_for() -> TaskSession:
 
 def control_snapshot(ref: str, *, duplicate: bool = False, truncated: bool = False, text: str = "Loaded") -> ToolResult:
     elements: list[JsonValue] = [{"ref": ref, "role": "button", "name": "Load", "value": None,
-                                  "disabled": False, "checked": None}]
+                                  "disabled": False, "checked": None, "context_id": ""}]
     if duplicate:
         row = elements[0]
         assert isinstance(row, dict)
         elements.append({**row, "ref": ref + "other"})
     return ToolResult(ToolCall("browser_snapshot", {}), "snapshot " + ref, ok=True, canonical={"value": {
-        "elements": elements, "text": text, "elements_truncated": truncated, "text_truncated": False,
+        "elements": elements, "contexts": [], "text": text, "elements_truncated": truncated, "text_truncated": False,
         "page_url": URL, "page_id": "page", "generation": sum(ord(char) for char in ref), "complete": not truncated,
         "scope": "main_frame_visible_text_and_named_controls"}})
 

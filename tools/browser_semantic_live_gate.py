@@ -28,9 +28,9 @@ from codey.env_names import NATIVE_TOOLS_ENV
 from codey.operations.task_execution import ExecutionDelegate
 from codey.providers.request_context import clock_context
 from codey.research import answer_contract
-from codey.research.browser_search import BrowserSearchProvider
 from codey.research.ledger import ResearchLedger
 from codey.research.source_reading import render_source_read
+from codey.research.task_browser_source import TaskBrowserSource
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import register_custom_executor, spec_for_tool, unregister_custom_tool
@@ -40,6 +40,7 @@ from tools import local_model_gate_attempts as attempts
 from tools.browser_experiment_context import browser_action_context
 from tools.browser_experiment_interaction import BrowserInteraction
 from tools.browser_experiment_sources import BrowserCaptureGateway, ResumableBrowserSearchProvider
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 from tools.browser_observation_candidates import PROJECTIONS, observation_candidate
 from tools.browser_policy_cases import policy_cases, search_hits
 from tools.browser_policy_options import GUIDANCE
@@ -92,11 +93,12 @@ def execute_browser(call: ToolCall, browser: BrowserInteraction) -> ToolResult:
             capture = browser.capture()
             url = str(capture.get("url") or "")
             ledger = ResearchLedger()
-            outcome = BrowserCaptureGateway(browser.provider, ledger).accept_capture(url, capture)
+            source = TaskBrowserSource(browser)
+            outcome = BrowserCaptureGateway(source, ledger).accept_capture(url, capture)
             opened = render_source_read(outcome, ledger,
                 offset=require_json_integer(args.get("offset", 0), "offset"),
                 limit=require_json_integer(args.get("limit", 6000), "limit"), coherent=True)
-            delegate = ExecutionDelegate(research_tools=ResearchTools(search=browser.provider,
+            delegate = ExecutionDelegate(browser_session=browser, research_tools=ResearchTools(search=source,
                                                                      store=None, changes=None, ledger=ledger))
             result, _, _ = delegate._opened_result(call, opened, url, ledger=ledger, turn=0, tool_index=0)
             return result
@@ -126,7 +128,7 @@ def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool, c
     target = select_target("gemma", timeout, "http://127.0.0.1:5001/v1")
     provider = (ResumableBrowserSearchProvider if candidate else BrowserSearchProvider)(
         headless=not bool(cdp_port), isolated=False, cdp_port=cdp_port or 9262)
-    browser = BrowserInteraction(provider) if isinstance(provider, ResumableBrowserSearchProvider) else None
+    browser = provider.browser if isinstance(provider, ResumableBrowserSearchProvider) else None
     task = (f"查看 {URL} 中福州样本的鱼丸净重，说明页面实际显示的数值。"
             "只使用这个来源；如果材料不足，请如实说明。不要保存知识。")
     documents = case.documents if case is not None else {URL: Document(HTML.encode("utf-8"))}

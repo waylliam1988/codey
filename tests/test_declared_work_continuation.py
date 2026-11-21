@@ -29,8 +29,8 @@ from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_browser_file_field, require_tool_success
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
-from codey.research.browser_search import BrowserSearchProvider
 from codey.research.ledger import OpenedSource
+from codey.research.task_browser_source import TaskBrowserSource
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain import runtime as tool_runtime
@@ -53,7 +53,8 @@ def record(session: TaskSession, name: str, args: JsonObject, document: JsonObje
         source = OpenedSource(str(document["url"]), str(document["url"]), "Declared source", "2026-11-16T00:00:00Z",
                               hashlib.sha256(body.encode()).hexdigest()[:16])
         canonical = {"research_observation": {"source": source.to_dict(), "text": body, "pages": []},
-                     "read_passages": [{"ref": f"passage-{ref}", "start": 0, "end": len(body)}]}
+                     "read_passages": [{"ref": "p" + hashlib.sha256(ref.encode()).hexdigest()[:12],
+                                        "start": 0, "end": len(body)}]}
     result = ToolResult(ToolCall(name, args, ref), body or "settled", ok=ok, canonical=canonical,
                         audit={"browser_document": document})
     session._memory_results[ref] = result
@@ -79,6 +80,28 @@ def test_pending_file_work_never_offers_done(tmp_path: Path) -> None:
     _, handoff = browser_task_handoff(session, build_turn_snapshot(session), context)
     assert "deliver done" not in handoff
     assert "ledger.data" in handoff
+
+
+@pytest.mark.parametrize("coverage", ["complete", "partial", "truncated", "wrong_document"])
+def test_fixed_copy_uses_only_a_completely_read_query_region(tmp_path: Path, coverage: str) -> None:
+    session, context = declared_session(tmp_path)
+    session.executed.clear()
+    session._memory_results.clear()
+    assert context.browser_document is not None
+    text = "Header. Amount: 173.25 units. Footer."
+    region = "Amount: 173.25 units."
+    ref = record(session, "browser_read", {}, context.browser_document, body=text)
+    receipt = session._memory_results[ref]
+    start, end = text.index(region), text.index(region) + len(region)
+    audit: JsonObject = {**decode_json_object(receipt.audit), "query_click": "settled-click",
+        "query_region": {"text": region, "visible": True}}
+    if coverage == "wrong_document":
+        audit["browser_document"] = {"url": URL, "loader_id": "other-document"}
+    session._memory_results[ref] = replace(receipt, truncated=coverage == "truncated", audit=audit,
+        canonical={**receipt.canonical, "read_passages": [{"ref": "scoped-passage", "start": start,
+            "end": end - 1 if coverage == "partial" else end}]})
+    snapshot, _ = browser_task_handoff(session, build_turn_snapshot(session), context)
+    assert (snapshot.input_binding is not None) is (coverage == "complete")
 
 
 @pytest.mark.parametrize("kind", ["chat", "hybrid", "project", "research"])
@@ -148,6 +171,32 @@ def test_complete_source_offers_frozen_path_only_input(tmp_path: Path) -> None:
     for invalid in invalid_args:
         reply = {"tool": "codemode", "args": invalid}
         assert normalize_turn(decode_text_turn(json.dumps(reply)), snapshot=restored).protocol_error
+
+
+@pytest.mark.parametrize("navigation", [False, True])
+def test_fixed_copy_keeps_report_and_other_authorized_actions_available(tmp_path: Path, navigation: bool) -> None:
+    from codey.operations.kernel_protocol import offer_browser_tools
+
+    session, context = declared_session(tmp_path)
+    if navigation:
+        session.task_text = f"Open {URL} in a browser, then copy the declared fields."
+    session.policy = replace(session.policy, strict_research=True, grants=session.policy.grants | {"knowledge.write"},
+        required_checks=(*session.policy.required_checks, "research_submission"))
+    original = offer_browser_tools(build_turn_snapshot(session), session)
+    if navigation:
+        assert original.task_navigation_url == URL
+    snapshot, hint = browser_task_handoff(session, original, context)
+    assert snapshot.input_binding is not None
+    assert snapshot.tool_names == original.tool_names
+    assert "submit_research_answer" in snapshot.tool_names
+    assert "Report submission is still pending" in hint
+    assert '{"tool":"codemode","args":{"path":"ledger.data"}}' in hint
+    assert snapshot.browser_followups
+    assert restore_snapshot(snapshot_description(snapshot)) == snapshot
+    proposal = AssistantTurn(tool_calls=(ProviderToolCall("report", "submit_research_answer", {
+        "markdown": "The acquired record gives the requested amount [e1].", "state": "answered"}),))
+    plan = normalize_turn(proposal, snapshot=snapshot)
+    assert not plan.protocol_error and plan.calls[0].name == "submit_research_answer"
 
 
 @pytest.mark.parametrize("case", ["read_only", "incomplete", "old_document"])
@@ -244,8 +293,8 @@ def test_fixed_program_preserves_values_and_retries_with_a_new_full_read(
     file = tmp_path / path
     baseline = '{"' + field + '":0,"keep":9007199254740993.123456789}\n'
     file.write_text(baseline, encoding="utf-8")
-    provider = BrowserSearchProvider(headless=True)
-    browser = BrowserSession(provider)
+    browser = BrowserSession()
+    provider = TaskBrowserSource(browser)
 
     def current_document() -> JsonObject:
         return document
@@ -435,7 +484,7 @@ def test_strict_research_resumes_each_declared_stage_and_submits_its_latest_pass
         _, handoff = research_browser_handoff(session, build_turn_snapshot(session), context)
         assert '"tool": "browser_read"' in handoff
         record(session, "browser_read", {}, document, body=f"Stage {stage} complete.")
-    browser = BrowserSession(BrowserSearchProvider(headless=True))
+    browser = BrowserSession()
 
     def current_document() -> JsonObject:
         return document

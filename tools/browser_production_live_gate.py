@@ -15,13 +15,13 @@ import re
 import sys
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from playwright.sync_api import Route
+from codey.automation.browser_contracts import RouteDecision as Route
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -40,12 +40,12 @@ from codey.policies.tool_requirement import (
     require_tool_success,
 )
 from codey.providers.local_discovery import probe_local_endpoint_detail
-from codey.research.browser_search import BrowserSearchProvider
 from codey.storage.input_attachments import InputAttachmentStore
 from codey.toolchain import runtime as tool_runtime
 from codey.toolchain.runtime import ToolOutcome
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object, require_json_string
 from codey.workspace.paths import path_hash
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 from tools.completion_artifact_audit import rejection_audit, tool_receipts
 from tools.completion_explanation_ab import (
     BINDINGS,
@@ -166,7 +166,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              additional_required_tools: tuple[str, ...] = (),
              explanation_bindings: tuple[str, ...] = BINDINGS,
              explanation_schema: JsonObject | None = None,
-             requested_capabilities: tuple[str, ...] | None = None) -> dict[str, object]:
+             requested_capabilities: tuple[str, ...] | None = None,
+             project_files: Mapping[str, str] | None = None) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     project_task = mode in {"hybrid", "project"}
     provider = BrowserSearchProvider(headless=True)
@@ -351,6 +352,12 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             project = Path(temporary)
             result_file = project / "result.json"
             result_file.write_text('{"amount": 0, "code": "unknown"}\n', encoding="utf-8")
+            for relative, content in (project_files or {}).items():
+                path = (project / relative).resolve()
+                path.relative_to(project.resolve())
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+            initial_record = parse_json_object(result_file.read_text(encoding="utf-8"))
             stack.enter_context(patch.dict(os.environ, dict[str, str]([(NATIVE_TOOLS_ENV, "1")])))
             stack.enter_context(patch("codey.app.provider_services.provider_availability", return_value=dict[str, bool](local=True)))
             if recording.fixed_acquisition:
@@ -434,7 +441,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                            if not row.result.ok and "source_failure" in row.result.canonical]
         metadata_matches = ("SCHEMA_TOKEN_74" in answer and legacy_urls_match(answer)
                             if model_reports_metadata else legacy_report_fields_match(answer))
-        file_correct = artifact == {"amount": expected_amount, "code": expected_code, **(
+        file_correct = artifact == {**initial_record, "amount": expected_amount, "code": expected_code, **(
             {"external_revision": EXTERNAL_FIELD} if preserve_external_field and changed_after_read else {})}
         conflict_recovered = (changed_after_read and audit["true_stale_conflicts"] == 1
                               and audit["fresh_read_recovery"] is True)

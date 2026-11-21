@@ -11,7 +11,6 @@ from codey.research.source_gateway import ResearchSourceGateway
 from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core import cancellation
 from codey.types.json_value import JsonObject, canonical_json_object
-from tools.browser_experiment_interaction import BrowserInteraction
 from tools.browser_experiment_sources import ResumableBrowserSearchProvider
 
 SITES = (
@@ -45,7 +44,7 @@ def run(directory: Path, repeats: int) -> list[JsonObject]:
                         outcome = ResearchSourceGateway(provider, ResearchLedger()).open(url)
                         text = outcome.document.text if outcome.document is not None else ""
                         if candidate:
-                            snapshot = BrowserInteraction(browser).snapshot() if browser._session is not None else None
+                            snapshot = browser.browser.snapshot() if browser.browser.resource_binding() is not None else None
                             observation = snapshot.observation if snapshot is not None else {}
                         row = canonical_json_object({"site": name, "url": url, "arm": arm, "repeat": repeat,
                             "status": outcome.status, "failure_code": outcome.failure_code if outcome.status != "ok" else "",

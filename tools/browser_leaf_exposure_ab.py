@@ -18,16 +18,13 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from unittest.mock import patch
 
-from playwright.sync_api import Route
-
 from codey.app.headless_runner import HeadlessRequest, run_headless
-from codey.automation.browser_session import BrowserSession
+from codey.automation.browser_contracts import RouteDecision as Route
 from codey.env_names import NATIVE_TOOLS_ENV
 from codey.operations import kernel_protocol
 from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot, refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.policies.tool_requirement import decode_answer
-from codey.research.browser_search import BrowserSearchProvider
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import source_observation
 from codey.research.passages import restore_passages
@@ -35,6 +32,7 @@ from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from codey.utils.citation_scanner import mask_markdown_code
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 from tools.browser_production_live_gate import select_target
 from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import (
@@ -256,7 +254,7 @@ def run_arm(directory: Path, case: Case, arm: Arm, target: Target, *, max_turns:
         if value.get("type") == "tool":
             provider.observed_tools += 1
             # Passive verifier only, before production task cleanup closes its page.
-            session = BrowserSession.from_provider(browser)
+            session = browser.browser
             document = session.document_identity()
             if document is not None:
                 if initial_document is None:

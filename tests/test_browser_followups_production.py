@@ -11,8 +11,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from playwright.sync_api import Route, sync_playwright
+from playwright.sync_api import sync_playwright
 
+from codey.automation.browser_contracts import RouteDecision as Route
 from codey.automation.browser_session import BrowserSession, BrowserToolOutput
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.operations.browser_followups import DIRECT_TOOLS, TEXT_SOURCE, explicit_fill_text
@@ -50,16 +51,24 @@ def test_snapshot_freezes_text_without_changing_authority(kind: str) -> None:
     restored = restore_snapshot(snapshot_description(offered))
     assert restored == offered and restored.browser_fill_text == NOTE
     assert base.nested_tool_names == restored.nested_tool_names
-    assert set(restored.tool_names) - set(base.tool_names) == {*DIRECT_TOOLS, "browser_wait"}
+    from codey.codemode.catalog import snapshot_catalog
+    from codey.toolchain.browser_native_specs import browser_native_specs
+
+    assert set(restored.tool_names) - set(base.tool_names) == {*DIRECT_TOOLS, "browser_wait", *browser_native_specs()}
     original = {s.name: s for s in base.frozen_specs}
     assert all(replace(s, declarations=original[s.name].declarations) == original[s.name] for s in restored.frozen_specs)
-    assert '"purpose"?' in next(s.declarations for s in restored.model_specs if s.name == "codemode")
+    click = next(entry for entry in snapshot_catalog(restored).entries if entry.name == "browser_click")
+    from codey.toolchain.tool_spec import thaw_schema_value
+
+    assert "purpose" in decode_json_object(thaw_schema_value(click.parameters["properties"]))
     for args in ('{"ref":"observed","source":"wrong"}', '{"ref":"observed","value":"partial"}'):
         reply = decode_text_turn('{"tool":"browser_fill","args":' + args + '}')
         assert normalize_turn(reply, snapshot=restored).protocol_error
     session.controller_denied = ("browser_read",)
     restricted = build_turn_snapshot(session)
-    assert offer_browser_tools(restricted, session) == restricted
+    allowed = offer_browser_tools(restricted, session)
+    assert "browser_read" not in allowed.inventory_names
+    assert {"browser_fill", "browser_click"} <= set(allowed.tool_names)
     assert explicit_fill_text(QUESTION + "\n\nAnother paragraph.") is None
 
 
@@ -245,7 +254,7 @@ def query_restart_probe(state: Path, port: int, stage: str, *, readable: bool = 
                 document.getElementById('record').textContent='Current record is 29 grams.'">Query</button>""")
 
     provider = QueryBrowser(headless=False, isolated=False, launch=False, require_existing_session=True, cdp_port=port)
-    browser = BrowserSession(provider)
+    browser = provider.browser
     tools = ResearchTools(search=provider, store=None, changes=None, browser_session=browser)
     context = KernelContext(session, KernelRunRequest(
         transport=KernelTransportDeps(provider=NoModel(), run_id="r", effect_scope="task", provider_id="local"),
@@ -289,8 +298,8 @@ def query_restart_probe(state: Path, port: int, stage: str, *, readable: bool = 
     if stage == "before":
         original_click = browser.click
 
-        def interrupt(ref: str, *, query: bool = False) -> BrowserToolOutput:
-            original_click(ref, query=query)
+        def interrupt(ref: str, *, query: bool = False, result_ref: str = "") -> BrowserToolOutput:
+            original_click(ref, query=query, result_ref=result_ref)
             os._exit(74)
 
         with patch.object(browser, "click", interrupt):

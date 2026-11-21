@@ -175,7 +175,7 @@ def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall) -> ToolResu
                 data["next_offset"] = None
         return ToolResult(call, json.dumps(data, ensure_ascii=False), ok=True,
                           canonical={"receipt_page": {"result_ref": identity, "view": view,
-                                                      "next_offset": data["next_offset"]}})
+                                                      "next_offset": data["next_offset"]}}, images=result.images)
     except (OSError, sqlite3.Error, ValueError, KeyError) as exc:
         text = f"ERROR: {exc}. Read failure does not authorize re-execution."
         if "execution" in known:

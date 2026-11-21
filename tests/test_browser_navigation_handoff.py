@@ -7,8 +7,8 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Route
 
+from codey.automation.browser_contracts import RouteDecision as Route
 from codey.automation.browser_document import same_document
 from codey.automation.browser_session import BrowserSession
 from codey.operations.browser_task_handoff import _call_handoff, browser_task_handoff
@@ -195,7 +195,9 @@ def test_real_browser_normal_transitions_do_not_offer_task_recovery(
             route.fulfill(status=404 if flow in {"redirect", "push_state"} else 200,
                           content_type="text/html", body="<article>Current page</article>")
 
-    monkeypatch.setattr(browser.provider, "_guard_request", route_document)
+    from codey.automation.browser_routes import route_policy
+
+    monkeypatch.setattr(browser._process, "network_policy", route_policy(route_document))
     delegate = ExecutionDelegate(session=session, research_tools=tools)
     navigation, ok, _ = delegate.execute(ToolCall("browser_navigate", {"url": URL}, "first-navigation"))
     assert ok

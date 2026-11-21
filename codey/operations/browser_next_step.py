@@ -77,6 +77,15 @@ def _declared_page_actions_ready(rules: tuple[ToolSuccessRequirement, ...], stag
                for rule in rules if rule.tool in PAGE_ACTIONS and rule.stage in {0, stage})
 
 
+def _declared_reads_ready(rules: tuple[ToolSuccessRequirement, ...], reads: set[str], *,
+                         records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],
+                         document: JsonObject) -> bool:
+    read_rules = tuple(rule for rule in rules if rule.tool == "browser_read" and not rule.report_label)
+    observations = tuple(rule.observe(records, results=results, browser_document=document) for rule in read_rules)
+    return bool(observations) and all(observation.evaluation.passed
+        and reads.intersection(observation.evaluation.evidence_refs) for observation in observations)
+
+
 def next_browser_step(checks: tuple[str, ...], *, records: Mapping[str, ExecutionRecord],
                       results: Mapping[str, ToolResult], document: JsonObject | None,
                       names: set[str], workflow: bool = False,
@@ -169,8 +178,11 @@ def next_browser_step(checks: tuple[str, ...], *, records: Mapping[str, Executio
         latest_wait = max(latest_wait, matching[-1])
     needs_read = query is not None or bool(pages) or any(
         rule.tool == "browser_read" and not rule.report_label and rule.stage in {0, stage} for rule in rules)
-    read = any(row.ok and row.call.name == "browser_read" and complete_page_passages(row, url)
-               for _, row in current[latest_wait + 1:])
+    read_refs = {ref for ref, row in current[latest_wait + 1:] if row.ok and row.call.name == "browser_read"}
+    read = (any(row.ok and row.call.name == "browser_read" and complete_page_passages(row, url)
+                for _, row in current[latest_wait + 1:])
+            or not pages and _declared_reads_ready(current_rules, read_refs,
+                records=records, results=results, document=document))
     page_ready = all(bool(post_wait_passages(page, records=records, results=results, document=document)[1]) for page in pages)
     if needs_read and (not read or not page_ready):
         if not narrow_tools:

@@ -109,6 +109,15 @@ def task_result_context(session: TaskSession, result: ToolResult, research_scope
             return ("Tool failed. The complete error appears in latest_error in the current evidence view.\n"
                     + render_result_metadata(identity, tool=result.call.name, ok=False))
     rows = read_passage_refs(result.canonical.get("read_passages", []))
+    if not rows and result.ok and result.call.name == "codemode":
+        children = result.canonical.get("child_effect_ids")
+        if isinstance(children, list):
+            for ref in children:
+                child = session._memory_results.get(ref) if isinstance(ref, str) else None
+                if (child is not None and child.ok and child.call.name in {"browser_read", "open_url"}
+                        and result.canonical.get("value") == child.model_text):
+                    rows = read_passage_refs(child.canonical.get("read_passages", []))
+                    break
     if isinstance(research_scope, AnswerScope) and result.ok and rows:
         labels = {ref: label for label, ref in research_scope.aliases}
         if all(ref in labels for ref in rows):

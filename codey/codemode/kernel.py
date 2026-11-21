@@ -562,7 +562,9 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             )
         # References only: child facts stay in their original committed receipts.
         ordered_child_effect_ids = child_effect_ids()
-        result = replace(result, canonical={**result.canonical, "child_effect_ids": ordered_child_effect_ids})
+        images = tuple(dict.fromkeys(image for identity in ordered_child_effect_ids
+            for image in session._memory_results[identity].images))
+        result = replace(result, canonical={**result.canonical, "child_effect_ids": ordered_child_effect_ids}, images=images)
         if not result.ok and result.audit.get("error_code") in {"missing_return", "result_encoding", "execution_error", "result_contract"}:
             from codey.codemode.shape_repair import readonly_settled, shape_diagnostic
 

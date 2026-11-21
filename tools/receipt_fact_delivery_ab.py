@@ -125,7 +125,7 @@ def acquire(directory: Path, page: Page, target: Target) -> list[EffectReceipt]:
                       body="<!doctype html><meta charset='utf-8'>" + page.html + MARKER
                       if route.request.url == page.url else "Not found")
 
-    def connect(_provider_id: str, **_kwargs: object) -> ExperimentProvider:
+    def connect(provider_id: str, *, port: int) -> ExperimentProvider:
         return provider
 
     def observe(row: dict[str, object]) -> None:
@@ -138,7 +138,7 @@ def acquire(directory: Path, page: Page, target: Target) -> list[EffectReceipt]:
         require_browser_read_field(url=page.url, prefix="READ_SCOPE_BEGIN ", suffix=" READ_SCOPE_END",
                                    answer_pointer="/read_marker"),
     )
-    selection: dict[str, str] = {"model": target.model, "base_url": target.base_url}
+    selection: dict[str, object] = {"model": target.model, "base_url": target.base_url}
     schema: JsonObject = {"type": "object", "properties": {
         "explanation": {"type": "string"}, "read_marker": {"type": "string"}, "data": {"type": "object"}},
         "required": ["explanation", "read_marker", "data"], "additionalProperties": False}

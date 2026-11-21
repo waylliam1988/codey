@@ -2,15 +2,36 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Protocol
 
 from codey.durable.model import thaw_json
+from codey.durable.session import DurableSession
+from codey.providers.context_ledger import ContextLedger
+from codey.providers.tool_images import message_images
 from codey.task.attachments import IMAGE_UNSUPPORTED, attachment_message, validate_attachments
+from codey.types.json_value import decode_json_object, require_json_strings
 
 ATTACHMENT_ENTRIES = "_codey_attachment_entries"
 
 
-def pending_attachments(durable: Any, session_id: str, task_id: str, delivered: set[str]) -> tuple[list[dict[str, object]], list[str]]:
+class AttachmentProvider(Protocol):
+    @property
+    def context_ledger(self) -> ContextLedger: ...
+    @property
+    def _durable(self) -> DurableSession | None: ...
+    @property
+    def _durable_source_entry_ids(self) -> tuple[str | None, ...]: ...
+    @property
+    def _durable_session_id(self) -> str: ...
+    @property
+    def _attachment_task_id(self) -> str: ...
+    @property
+    def supports_images(self) -> bool: ...
+    @property
+    def api_protocol(self) -> str: ...
+
+
+def pending_attachments(durable: DurableSession | None, session_id: str, task_id: str, delivered: set[str]) -> tuple[list[dict[str, object]], list[str]]:
     if durable is None or not task_id:
         return [], []
     task = durable.task(task_id)
@@ -27,6 +48,8 @@ def pending_attachments(durable: Any, session_id: str, task_id: str, delivered: 
         if entry.kind != "user_message" or entry.entry_id in delivered:
             continue
         if entry.by_task_id != task_id:
+            if entry.by_task_id is None:
+                continue
             try:
                 owner = durable.task(entry.by_task_id)
             except KeyError:
@@ -54,7 +77,9 @@ def browser_attachment_text(provider_id: str, text: str, items: list[dict[str, o
     return result
 
 
-def with_attachment_content(message: dict[str, Any], *, protocol: str, images: bool) -> dict[str, Any]:
+def with_attachment_content(message: dict[str, object], *, protocol: str, images: bool) -> dict[str, object]:
+    if not images and message_images(message):
+        raise ValueError(IMAGE_UNSUPPORTED)
     result = dict(message)
     attachments = result.pop("attachments", [])
     if attachments:
@@ -62,8 +87,14 @@ def with_attachment_content(message: dict[str, Any], *, protocol: str, images: b
     return result
 
 
-def enrich_pending(provider: Any, pending: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    delivered = {identity for event in provider.context_ledger.events() for identity in event.get(ATTACHMENT_ENTRIES, [])}
+def enrich_pending(provider: AttachmentProvider, pending: list[dict[str, object]]) -> list[dict[str, object]]:
+    if not provider.supports_images and any(message_images(message) for message in pending):
+        raise ValueError(IMAGE_UNSUPPORTED)
+    events: object = provider.context_ledger.events()
+    if not isinstance(events, list):
+        raise TypeError("invalid provider context events")
+    delivered = {identity for raw in events for event in (decode_json_object(raw),)
+                 for identity in require_json_strings(event.get(ATTACHMENT_ENTRIES, []), "attachment entries")}
     delivered.update(identity for identity in provider._durable_source_entry_ids if identity)
     items, identities = pending_attachments(provider._durable, provider._durable_session_id, provider._attachment_task_id, delivered)
     if not items:
@@ -72,7 +103,7 @@ def enrich_pending(provider: Any, pending: list[dict[str, Any]]) -> list[dict[st
         raise ValueError(IMAGE_UNSUPPORTED)
     result = [dict(item) for item in pending]
     target: dict[str, object] | None = next((item for item in reversed(result) if item.get("role") == "user"), None)
-    if target is None:
+    if target is None or message_images(target):
         target = {"role": "user", "content": "Attached files"}
         result.append(target)
     target["content"] = attachment_message(str(target.get("content") or ""), items, protocol=provider.api_protocol, images=provider.supports_images)

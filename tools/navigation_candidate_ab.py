@@ -18,18 +18,16 @@ from typing import Literal
 from unittest.mock import patch
 from urllib.parse import urlsplit
 
-from playwright.sync_api import Route
-
-from codey.automation.browser_session import BrowserSession, _browser_call
-from codey.research.browser_search import BrowserSearchProvider
+from codey.automation.browser_contracts import RouteDecision as Route
+from codey.automation.browser_session import BrowserSession
 from codey.types.json_value import (
     JsonObject,
     JsonValue,
     decode_json_object,
-    decode_json_value,
     require_json_integer,
     require_json_string,
 )
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 from tools.browser_production_live_gate import select_target
 from tools.completion_explanation_ab import Target, append_json, production_source_digest, provider_metrics, write_json
 from tools.receipt_fact_delivery_ab import ask
@@ -138,11 +136,10 @@ def source_fixture(browser: BrowserSearchProvider, case: Case, directory: Path) 
 
 
 def current_links(session: BrowserSession) -> list[JsonObject]:
-    def inspect() -> object:
-        raw: object = session._page_on_browser_thread().evaluate(LINKS)
-        return raw
-
-    value = decode_json_value(_browser_call(inspect))
+    observed = session.evaluate("(" + LINKS + ")()")
+    if not observed.ok:
+        raise RuntimeError(observed.model_text)
+    value = observed.observation["value"]
     if not isinstance(value, list):
         raise ValueError("Expected rendered links")
     return [decode_json_object(row) for row in value]
@@ -243,7 +240,7 @@ def score(outcome: JsonObject, expected: Expected) -> JsonObject:
 def run_arm(directory: Path, case: Case, expected: Expected, arm: Arm, target: Target, *, reply: Reply = ask) -> JsonObject:
     directory.mkdir(parents=True, exist_ok=False)
     browser = BrowserSearchProvider(engine="bing", headless=True, profile_dir=directory / "browser-profile")
-    session = BrowserSession(browser)
+    session = browser.browser
     write_json(directory / "input.json", {"question": case.question, "group": case.group, "arm": arm,
         "seed": target.seed, "model": target.model, "scope": "bounded_selector_controlled_sources_real_model_browser"})
     outcome: JsonObject = {}

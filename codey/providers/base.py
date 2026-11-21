@@ -4,9 +4,10 @@ import json
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Protocol
 
-from codey.types.json_value import JsonObject
+from codey.types.json_value import JsonObject, parse_json_object
+from codey.types.tool_image import ToolImageRef
 
 if TYPE_CHECKING:
     from codey.toolchain.tool_spec import ToolSpec
@@ -33,7 +34,7 @@ def result_metadata_from_text(text: str) -> ResultMetadata | None:
         return None
     encoded = tail.partition("\n")[0]
     try:
-        value = json.loads(encoded)
+        value = parse_json_object(encoded)
     except (ValueError, RecursionError):
         return None
     if not isinstance(value, dict) or set(value) != {"result_ref", "tool", "ok"}:
@@ -67,6 +68,7 @@ class ProviderToolResult:
     # It is encoded after this tool result by native protocol codecs, keeping
     # the call/result pair intact while avoiding a separate provider turn.
     user_content: str | None = None
+    images: tuple[ToolImageRef, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -80,11 +82,13 @@ def tools_from_specs(specs: tuple[ToolSpec, ...]) -> list[ProviderToolDefinition
     from codey.toolchain.tool_prompt import model_tool_description
     from codey.toolchain.tool_spec import _freeze_schema_value, _schema_for_spec
 
-    return sorted([
-        ProviderToolDefinition(spec.name, model_tool_description(spec),
-                               cast(Mapping[str, object], _freeze_schema_value(_schema_for_spec(spec))))
-        for spec in specs
-    ], key=lambda tool: tool.name)
+    tools: list[ProviderToolDefinition] = []
+    for spec in specs:
+        frozen = _freeze_schema_value(_schema_for_spec(spec))
+        if not isinstance(frozen, Mapping):
+            raise TypeError("tool parameters must be an object")
+        tools.append(ProviderToolDefinition(spec.name, model_tool_description(spec), frozen))
+    return sorted(tools, key=lambda tool: tool.name)
 
 
 class TurnFinish(Enum):

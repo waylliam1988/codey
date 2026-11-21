@@ -1,5 +1,7 @@
 # 统一任务与浏览器：首批实施和验证记录
 
+> 本文保留首批实施的历史状态与失败记录。async worker、frame、截图入模及后续回归的当前结果见[后续实施与验证](codey-unified-agent-browser-worker-and-validation-20261121.zh-CN.md)；本页“尚未完成”章节不再代表这些实现的当前状态。
+
 日期：2026-11-21，Asia/Taipei。
 
 ## 实施边界

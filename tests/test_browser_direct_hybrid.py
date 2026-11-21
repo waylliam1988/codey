@@ -66,6 +66,12 @@ def test_hybrid_shortcuts_preserve_existing_boundaries(guard: str) -> None:
         assert offered.nested_tool_names == snapshot.nested_tool_names
         assert offered.browser_followups
         assert not set(DIRECT_TOOLS) & set(offered.tool_names)
+    elif guard == "denied":
+        assert "browser_read" not in offered.inventory_names
+        assert set(DIRECT_TOOLS) - {"browser_read"} <= set(offered.tool_names)
+    elif guard == "grant":
+        assert not {"browser_snapshot", "browser_read", "browser_screenshot"} & set(offered.tool_names)
+        assert {"browser_fill", "browser_click", "browser_press"} <= set(offered.tool_names)
     else:
         assert offered == snapshot
 

@@ -3,14 +3,13 @@ import json
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Route
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
-from codey.automation.browser_session import BrowserSession
+from codey.automation.browser_contracts import RouteDecision as Route
 from codey.operations.browser_copy import EXPIRED, CopyTurn, copy_target
-from codey.research.browser_search import BrowserSearchProvider
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tests.test_receipt_bound_edit_surface_probe import install_http
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 from tools.completion_artifact_audit import artifacts, tool_receipts
 from tools.completion_explanation_ab import ExperimentProvider, Target, write_json
 from tools.receipt_bound_edit_recovery_probe import receipt_audit
@@ -135,10 +134,10 @@ def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
             injected = file.read_bytes()
             if case == "expired":
                 assert active is not None
-                assert BrowserSession.from_provider(active).navigate(URL).ok
+                assert active.browser.navigate(URL).ok
             elif case == "changed_data":
                 assert active is not None
-                browser = BrowserSession.from_provider(active)
+                browser = active.browser
                 document = browser.document_identity()
                 assert browser.evaluate(
                     """document.querySelector("#dispatch").textContent='{"parcel":{"label":"000784"}}'"""
@@ -147,6 +146,8 @@ def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
                 html = html.replace("000783", "000784")
 
     monkeypatch.setattr(BrowserSearchProvider, "_guard_request", route)
+    monkeypatch.setattr("codey.research.search_factory.default_research_search_provider", BrowserSearchProvider)
+    monkeypatch.setattr("codey.operations.task_phases.dispatch.default_research_search_provider", BrowserSearchProvider)
     monkeypatch.setattr("codey.app.provider_services.provider_availability", lambda: {"local": True})
     monkeypatch.setattr("codey.app.provider_services.provider_tab_availability", dict)
 
@@ -160,7 +161,7 @@ def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         return recorder
 
     state = tmp_path / "state"
-    selection: JsonObject = {"model": TARGET.model, "base_url": TARGET.base_url}
+    selection: dict[str, object] = {"model": TARGET.model, "base_url": TARGET.base_url}
     try:
         result = run_headless(HeadlessRequest(
             project, task, intent="hybrid", provider_id="local", max_turns=len(proposals), state_home=state,

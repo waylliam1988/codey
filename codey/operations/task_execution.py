@@ -16,6 +16,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+from codey.automation.browser_contracts import BrowserAction
 from codey.automation.browser_document import same_document
 from codey.operations import browser_followups, browser_text_report, browser_upload
 from codey.operations.browser_detail import audit_browser_open, read_browser_source
@@ -43,9 +44,11 @@ from codey.types.json_value import (
     JsonValue,
     ToolArgs,
     decode_json_object,
+    encode_transport_value,
     require_json_integer,
     require_json_string,
 )
+from codey.types.tool_image import ToolImageRef
 
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
@@ -269,14 +272,18 @@ class ExecutionDelegate:
                               or self._research_scope is not None
                               or (call.name in browser_text_report.METADATA_TOOLS and browser_text_report.report_scope(self.session) is not None)
                               or (call.name in browser_upload.UPLOAD_RECEIPTS and browser_upload.upload_scope(self.session) is not None)
-                              or (call.name == "browser_snapshot" and call.args.get("file_inputs_only") is True)
+                              or call.name in {"browser_screenshot", "browser_snapshot", "browser_locate", "browser_inspect"}
                               or (call.name == "browser_eval" and call.args.get("code") == CAPTURE) or
                               (call.name in {"browser_eval", "browser_read"} and has_browser_field_bindings(checks, tool=call.name)))
             transition = call.name in PAGE_TRANSITIONS
             before = browser.document_identity() if trace_document and not transition else None
             result, ok, code = self._execute_browser_operation(browser, call, turn=turn, tool_index=tool_index)
             if trace_document and (transition or before is not None):
-                after = browser.document_identity()
+                try:
+                    after = browser.document_identity()
+                except (RuntimeError, ValueError, OSError) as exc:
+                    after = None
+                    result = replace(result, audit={**result.audit, "browser_observation_error": str(exc)})
                 if after is not None and (transition or same_document(before, after)):
                     result = replace(result, audit={**result.audit, "browser_document": after})
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
@@ -299,6 +306,7 @@ class ExecutionDelegate:
             if call.name in {"browser_read", PAGE_DETAIL_TOOL}:
                 return read_browser_source(self, browser, call, turn=turn, tool_index=tool_index)
             output = self._browser_action(browser, call)
+            images = self._persist_browser_image(output) if call.name == "browser_screenshot" and output.ok else ()
             if self.session is not None:
                 from codey.operations.browser_references import reference_failure
 
@@ -311,7 +319,7 @@ class ExecutionDelegate:
                     and browser_followups.pending_click(self.session._memory_results, browser.document_identity()) is not None):
                 audit["query_wait_document"] = browser.document_identity()
             result = ToolResult(ok=output.ok, call=call, model_text=output.model_text,
-                                canonical={"value": value}, audit=audit)
+                                canonical={"value": value}, audit=audit, images=images)
             return result, result.ok, None
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
@@ -327,7 +335,10 @@ class ExecutionDelegate:
                 browser_upload.verified_upload_document(self.session, browser)
             return browser.snapshot(max_elements=require_json_integer(args.get("max_elements", 80), "max_elements"),
                                     max_text=require_json_integer(args.get("max_text", 12000), "max_text"),
-                                    file_inputs_only=file_inputs_only)
+                                    file_inputs_only=file_inputs_only,
+                                    scope_ref=require_json_string(args.get("scope_ref", ""), "scope_ref"),
+                                    selector=require_json_string(args.get("selector", ""), "selector"),
+                                    base_revision=require_json_integer(args["base_revision"], "base_revision") if "base_revision" in args else None)
         if call.name == "browser_click":
             if (self.session is not None and (pending := browser_followups.pending_click(
                     self.session._memory_results, browser.document_identity())) is not None
@@ -337,11 +348,12 @@ class ExecutionDelegate:
                 message = (browser_followups.UNCERTAIN if browser_followups.delivery(pending[1]) == "uncertain"
                            else browser_followups.PENDING)
                 return BrowserToolOutput(message, False, {"action": "click", "ref": ref, "delivery": "not_delivered"})
-            return browser.click(ref, query=True) if browser_followups.query_click.get() else browser.click(ref)
+            return browser.click(ref, query=browser_followups.query_click.get(),
+                                 result_ref=require_json_string(args.get("result_ref", ""), "result_ref"))
         if call.name == "browser_fill":
             return browser.fill(ref, str(args.get("value") or ""))
         if call.name == "browser_scroll":
-            return browser.scroll(str(args.get("direction") or ""), require_json_integer(args.get("amount"), "amount"))
+            return browser.action(BrowserAction.SCROLL, args)
         if call.name == "browser_wait":
             if self._browser_wait_document is not None:
                 return browser.wait(str(args.get("condition") or ""), str(args.get("value") or ""),
@@ -363,7 +375,19 @@ class ExecutionDelegate:
             return browser_upload.select_attachment(self.session, browser, self.managed_outputs, self.session_id, args)
         if call.name == "browser_download":
             return self._browser_download(browser, ref)
-        raise ValueError(f"unsupported browser tool {call.name}")
+        return browser.action(BrowserAction(call.name.removeprefix("browser_")), args)
+
+    def _persist_browser_image(self, output: BrowserToolOutput) -> tuple[ToolImageRef, ...]:
+        if self.managed_outputs is None or not self.session_id or not self.run_id:
+            raise ValueError("task-scoped image storage unavailable")
+        image = decode_json_object(output.observation["image"])
+        stored = self.managed_outputs.write_binary_artifact(session_id=self.session_id, run_id=self.run_id,
+            raw=output.binary, permission_profile=self.permission_profile)
+        if image["sha256"] != stored.sha256:
+            raise ValueError("captured image changed during persistence")
+        return (ToolImageRef(str(self.managed_outputs.root.parent), self.session_id, self.run_id, stored.handle,
+            stored.sha256, stored.stored_bytes, require_json_integer(image["width"], "width"),
+            require_json_integer(image["height"], "height"), require_json_string(image["observation_ref"], "observation_ref")),)
 
     def _browser_download(self, browser: BrowserSession, ref: str) -> BrowserToolOutput:
         if self.managed_outputs is None or not self.session_id or not self.run_id:
@@ -372,9 +396,9 @@ class ExecutionDelegate:
         if not output.ok:
             return output
         try:
-            stored = self.managed_outputs.write_file_artifact(
+            stored = self.managed_outputs.write_binary_artifact(
                 session_id=self.session_id, run_id=self.run_id,
-                source=Path(str(output.observation["path"])), permission_profile=self.permission_profile)
+                raw=output.binary, permission_profile=self.permission_profile)
         except (OSError, ValueError) as exc:
             return replace(output, ok=False, model_text=f"ERROR: download delivered but persistence failed: {exc}",
                            observation={"action": "download", "delivery": "delivered", "storage": "failed"})
@@ -755,12 +779,16 @@ class ExecutionDelegate:
                 from codey.research.text_args import first_text_arg
 
                 outcome = tools.web_search(first_text_arg(args, "query"))
-                canonical = {}
+                canonical: JsonObject = {}
                 ledger = tools.ledger
                 if outcome.ok:
                     if not isinstance(ledger, ResearchLedger):
                         raise ValueError("successful search requires a research ledger observation")
                     canonical["research_observation"] = ledger_observation(ledger, name)
+                else:
+                    from codey.research.search_provenance import provider_search_attempts
+
+                    canonical["search_attempts"] = encode_transport_value(provider_search_attempts(tools.search))
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
             if name in SOURCE_READ_TOOL_NAMES:
                 return self._execute_source_open(call, tools, turn=turn, tool_index=tool_index)

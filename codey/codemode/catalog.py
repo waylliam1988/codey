@@ -236,6 +236,11 @@ def render_declarations(snapshot: ToolCatalogSnapshot, *, budget_bytes: int = MO
         "// Discovery only: await describe('tools.NAME') for the full omitted declaration. Calls still require authorization.",
         f"// catalog_digest={snapshot.digest}",
     ]
+    shared = {entry.name for entry in snapshot.entries
+              if outer_descriptions is not None and outer_descriptions.get(entry.name) == entry.description}
+    if shared:
+        footer.append("// Also callable as tools.NAME with the exact already-visible NAME arguments and Result<T>: "
+                      + ", ".join(sorted(shared)) + ". Full signatures remain available through describe('tools.NAME').")
     groups: dict[str, int] = {}
     for entry in snapshot.entries:
         namespace = _catalog_namespace(entry)
@@ -251,6 +256,8 @@ def render_declarations(snapshot: ToolCatalogSnapshot, *, budget_bytes: int = MO
         return priority.get(entry.name, len(priority)), entry.name
 
     for entry in sorted(snapshot.entries, key=entry_order):
+        if entry.name in shared:
+            continue
         lines = _entry_declarations(entry, json_edit=json_edit,
             include_description=outer_descriptions is None or outer_descriptions.get(entry.name) != entry.description)
         cost = len(("\n".join(lines) + "\n").encode("utf-8"))

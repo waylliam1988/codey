@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
-from codey.automation.browser_session import BrowserSession
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.completion.verification_policy import VerificationCandidate
 from codey.operations.browser_completion import ordered_browser_progress, post_wait_passages
@@ -20,12 +20,12 @@ from codey.policies.browser_requirement import BrowserResearchSequence
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import parse_tool_success_check, require_tool_success
 from codey.protocols.text_turn import decode_text_turn
-from codey.research.browser_search import BrowserSearchProvider
 from codey.research.tools import ResearchTools
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from codey.workspace.revision import WorkspaceRevisionStore
 from tests.test_browser_readable_references import binding
 from tests.test_declared_work_continuation import GRANTS, URL, declared_session, record
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 
 
 def test_real_5796b29d_snapshot_is_preserved_but_rejected_by_current_runtime() -> None:
@@ -38,15 +38,13 @@ def test_real_5796b29d_snapshot_is_preserved_but_rejected_by_current_runtime() -
     assert fixture.read_bytes() == original
 
 
-@pytest.mark.parametrize("version", [1, 2])
-def test_control_presentation_versions_are_explicit_and_tampering_cannot_select_another_contract(version: int) -> None:
+@pytest.mark.parametrize("version", [1, 2, 3])
+def test_control_presentation_versions_are_explicit_and_tampering_cannot_select_another_contract(version: Literal[1, 2]) -> None:
     from codey.operations.kernel_protocol import offer_browser_tools, refresh_snapshot_contract
     from tests.test_browser_result_adoption_ab import session_with_snapshot
 
     session = session_with_snapshot()
-    references = binding()
-    if version == 1:
-        references = replace(references, presentation_version=1)
+    references = replace(binding(), presentation_version=version)
     snapshot = refresh_snapshot_contract(replace(offer_browser_tools(build_turn_snapshot(session), session),
                                                 browser_references=references))
     payload = snapshot_description(snapshot)
@@ -56,7 +54,7 @@ def test_control_presentation_versions_are_explicit_and_tampering_cannot_select_
     payload["browser_references"] = raw
     with pytest.raises(ValueError, match="contract text differs"):
         restore_snapshot(payload)
-    raw["presentation_version"] = 3
+    raw["presentation_version"] = 4
     with pytest.raises(ValueError, match="presentation version"):
         restore_snapshot(payload)
 
@@ -67,7 +65,7 @@ def test_unversioned_d379cc63_control_presentation_restores_as_choices() -> None
 
     session = session_with_snapshot()
     snapshot = refresh_snapshot_contract(replace(offer_browser_tools(build_turn_snapshot(session), session),
-                                                browser_references=binding()))
+                                                browser_references=replace(binding(), presentation_version=2)))
     payload = snapshot_description(snapshot)
     raw = decode_json_object(payload["browser_references"])
     raw.pop("presentation_version")
@@ -138,7 +136,7 @@ def test_ordered_source_binding_reaches_real_content_host_and_keeps_receipt_orde
     assert mapping[wait] in snapshot.input_binding.source_refs and mapping[read] in snapshot.input_binding.source_refs
     assert snapshot.input_binding.source_refs == tuple(session.executed)
     provider = BrowserSearchProvider(headless=True)
-    browser = BrowserSession(provider)
+    browser = provider.browser
 
     def current_document() -> JsonObject:
         return document

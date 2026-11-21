@@ -4,9 +4,9 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
-from playwright.sync_api import Route
 
-from codey.automation.browser_session import BrowserSession, _browser_call
+from codey.automation.browser_contracts import RouteDecision as Route
+from codey.automation.browser_session import BrowserSession
 from codey.operations.browser_task_handoff import browser_task_handoff
 from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel_facts import project_execution_record
@@ -14,18 +14,19 @@ from codey.operations.kernel_protocol import build_turn_snapshot, offer_browser_
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.research.browser_search import BrowserSearchProvider
+from codey.research.task_browser_source import TaskBrowserSource
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.result_schema import validate_output
 from codey.toolchain.tool_spec import tool_specs
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string
-from tests.support.real_cdp import chromium_executable
+from tests.support.task_browser import browser_for
+from tests.support.task_browser import install as install
 
 URL = 'https://example.com/context-observation'
 
 
-class FixtureBrowser(BrowserSearchProvider):
+class FixtureBrowser:
     def _guard_request(self, route: Route) -> None:
         route.fulfill(status=200, content_type='text/html; charset=utf-8',
                       body='<article>Initial readable browser article.</article>')
@@ -33,21 +34,15 @@ class FixtureBrowser(BrowserSearchProvider):
 
 @pytest.fixture()
 def production_browser() -> Iterator[tuple[TaskSession, ResearchTools, BrowserSession]]:
-    provider = FixtureBrowser(headless=True, browser_path=chromium_executable())
-    browser = BrowserSession(provider)
+    provider = FixtureBrowser()
+    browser = browser_for(provider._guard_request, owner_task_id="r")
     session = TaskSession(TaskPolicy(frozenset({'control', 'web.read', 'browser.observe', 'browser.interact'})),
                           task_kind='chat', task_text=f'Navigate to {URL} and inspect the page.')
-    tools = ResearchTools(search=provider, store=None, changes=None, browser_session=browser)
+    tools = ResearchTools(search=TaskBrowserSource(browser), store=None, changes=None, browser_session=browser)
     try:
         yield session, tools, browser
     finally:
-        provider.close()
-
-
-def install(browser: BrowserSession, html: str) -> None:
-    def run() -> None:
-        browser._page_on_browser_thread().set_content(html)
-    _browser_call(run)
+        browser.close()
 
 
 def elements(value: JsonObject) -> list[JsonObject]:

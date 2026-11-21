@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from codey.automation.browser_session import BrowserSession
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.replay import DurableCodeModeReplay
 from codey.completion.verification_policy import VerificationCandidate
@@ -27,7 +26,6 @@ from codey.policies.output_requirement import declaration
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import parse_tool_success_check, require_browser_file_field, require_tool_success
 from codey.protocols.text_turn import decode_text_turn
-from codey.research.browser_search import BrowserSearchProvider
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.effects.effect_records import RuntimeEffectStore
@@ -37,6 +35,7 @@ from codey.types.json_value import JsonObject, parse_json_object
 from codey.workspace.revision import WorkspaceRevisionStore
 from tests.test_codemode_replay_authority import _durable, fixture
 from tests.test_declared_work_continuation import GRANTS, URL, declared_session, record
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 
 
 @pytest.mark.parametrize("action", ["browser_navigate", "browser_upload", "browser_click"])
@@ -85,10 +84,11 @@ def test_b8fc1529_snapshot_is_preserved_but_rejected_by_current_runtime() -> Non
 def test_content_menu_and_pinned_sources_survive_snapshot_restore(tmp_path: Path) -> None:
     session, context = declared_session(tmp_path)
     session.task_text += " using content for the whole file."
-    snapshot, _ = browser_task_handoff(session, build_turn_snapshot(session), context)
+    original = build_turn_snapshot(session)
+    snapshot, _ = browser_task_handoff(session, original, context)
     assert snapshot.input_binding is not None and snapshot.input_binding.source_refs == ("receipt-0",)
     assert {"read_file", "edit"} <= set(snapshot.nested_tool_names)
-    assert set(snapshot.tool_names) <= {"codemode", "ask_user"}
+    assert snapshot.tool_names == original.tool_names
     restored = restore_snapshot(snapshot_description(snapshot))
     assert restored == snapshot
     for name in ("read_tool_result", "done", "browser_navigate"):
@@ -166,7 +166,7 @@ def test_settled_content_recovery_uses_original_arguments_after_source_and_file_
     code = str(call.args["code"]).replace("return unwrap(await tools.edit", "unwrap(await tools.edit")
     call = replace(call, args={**call.args, "code": code + "throw new Error('parent failed after edit');"})
     provider = BrowserSearchProvider(headless=True)
-    browser = BrowserSession(provider)
+    browser = provider.browser
 
     def current_document() -> JsonObject:
         return document
@@ -237,7 +237,7 @@ def test_content_restart_restores_settled_formal_arguments_from_durable_receipts
             raise Crash()
 
     provider = BrowserSearchProvider(headless=True)
-    browser = BrowserSession(provider)
+    browser = provider.browser
 
     def current_document() -> JsonObject:
         assert context.browser_document is not None

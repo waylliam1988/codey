@@ -1,6 +1,6 @@
 """Default research search factory has one owner outside operations flow.
 
-``task_execution`` (execution resources) must not import the research flow
+``research_resources`` (execution resources) must not import the research flow
 to obtain a default search provider. The factory lives in
 ``codey.research.search_factory`` and is consumed by execution resources,
 the research flow, and dispatch. The leaf imports no operations modules.
@@ -46,11 +46,14 @@ def test_search_factory_is_operations_leaf() -> None:
 
 def test_execution_and_flow_consume_factory_leaf() -> None:
     for rel in (
-        "codey/operations/task_execution.py",
+        "codey/operations/research_resources.py",
         "codey/operations/task_phases/dispatch.py",
     ):
         text = (ROOT / rel).read_text(encoding="utf-8-sig")
         assert "codey.research.search_factory" in text, rel
+    execution = imports_from(ROOT / "codey/operations/task_execution.py")
+    assert "codey.operations.research_resources" in execution
+    assert "codey.operations.research_flow" not in execution
     flow_text = (ROOT / "codey/operations/research_flow.py").read_text(encoding="utf-8-sig")
     assert "def default_research_search_provider" not in flow_text
     assert "codey.research.search_factory" not in flow_text

@@ -11,6 +11,7 @@ from codey.providers.api_codec import ApiCodec
 from codey.providers.base import ResultMetadata, result_metadata_from_text
 from codey.providers.context_ledger import digest
 from codey.types.json_value import JsonValue, decode_json_object, decode_json_value, require_json_strings
+from codey.types.tool_image import TOOL_IMAGES_KEY
 
 
 @dataclass(frozen=True)
@@ -124,7 +125,7 @@ def _old_outputs(codec: ApiCodec, items: list[dict[str, object]]) -> Iterator[tu
         for item in items[start:end]:
             key = "content" if item.get("role") == "tool" else "output" if item.get("type") == "function_call_output" else ""
             text = item.get(key)
-            if isinstance(text, str) and len(text) >= 2400:
+            if isinstance(text, str) and (len(text) >= 2400 or item.get(TOOL_IMAGES_KEY)):
                 yield item, key, text
 
 
@@ -167,8 +168,11 @@ def reduce_old_outputs(codec: ApiCodec, items: list[dict[str, object]], result_r
     for item, key, text in _old_outputs(codec, result):
         metadata = _available_metadata(text, result_refs)
         if metadata is not None:
-            item[key] = ("[Stored body omitted from this view]\n" + metadata.render() + "\n"
-                         + "Read it with read_tool_result. Do not execute it again.")
+            reduced = ("[Stored body omitted from this view]\n" + metadata.render() + "\n"
+                       + "Read it with read_tool_result. Do not execute it again.")
+            if item.pop(TOOL_IMAGES_KEY, None):
+                reduced += "\nCaptured pixels remain in the original receipt; read_tool_result reopens them."
+            item[key] = reduced
         else:
             item[key] = _encode_retained_output(text)
     from codey.providers.text_result_views import reduce_text_results

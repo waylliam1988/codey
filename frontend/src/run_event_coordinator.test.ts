@@ -273,6 +273,52 @@ describe('RunEventCoordinator ordering', () => {
     expect(deps.requests.projectLifecycle).not.toHaveBeenCalled();
   });
 
+  it.each(['answered', 'cancelled'])('keeps an %s assistance question separate from task completion', (state) => {
+    const { coordinator, session } = setup();
+    coordinator.observeUserQuestion({
+      id: 'q',
+      session_id: 'session',
+      run_id: 'run',
+      revision: 2,
+      state,
+      question: 'Continue?',
+      options: ['Continue', 'Cancel'],
+    });
+    expect(session.messages.some((message) => message.type === 'user_question')).toBe(true);
+    expect(session.messages.some((message) => message.type === 'run_state' && message.state === 'done')).toBe(false);
+    expect(session.messages.some((message) => message.type === 'run_state' && message.state === 'stopped')).toBe(
+      state === 'cancelled',
+    );
+  });
+
+  it('projects each settled browser call duration independently', () => {
+    const { coordinator, session } = setup();
+    coordinator.handleServerEvent(start);
+    coordinator.handleServerEvent({
+      ...start,
+      type: 'tool',
+      tool_name: 'browser_click',
+      tool_id: '1:0',
+      call_id: 'click',
+      ok: true,
+      status: 'ok',
+      elapsed_ms: 27,
+    });
+    coordinator.handleServerEvent({
+      ...start,
+      type: 'tool',
+      tool_name: 'browser_fill',
+      tool_id: '2:0',
+      call_id: 'fill',
+      ok: true,
+      status: 'ok',
+      elapsed_ms: 5,
+    });
+    expect(session.messages.filter((message) => message.type === 'tool').map((message) => message.elapsedMs)).toEqual([
+      27, 5,
+    ]);
+  });
+
   it('keeps control information flowing while unknown display events await validation', () => {
     const { coordinator, deps, approvals, session } = setup();
     deps.history.acceptRunEvent.mockImplementation(() => {});

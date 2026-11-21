@@ -2,18 +2,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 
 import pytest
-from playwright.sync_api import Page, Route, sync_playwright
+from playwright.sync_api import Route, sync_playwright
 
 from codey.automation.browser import CdpEndpoint, Session
 from codey.research.browser_search import BrowserSearchProvider, _search_browser_call
 from codey.research.source_acquisition import with_attempt
 from codey.research.web_sources import WebSourceProvider
 from tests.support.real_cdp import cdp_browser
-from tools.browser_experiment_interaction import BrowserInteraction
-from tools.browser_experiment_sources import ResumableBrowserSearchProvider
 
 URL = "https://example.com/article"
 pytestmark = pytest.mark.usefixtures("public_source_dns")
@@ -46,9 +43,11 @@ def test_task_close_releases_task_pages_and_keeps_borrowed_browser(
                 cdp_port=port,
             )
             provider = WebSourceProvider(browser_factory=lambda: browser_source)
-            monkeypatch.setattr("codey.research.web_sources.fetch_http_document", lambda url: with_attempt(
-                {"status": "error", "url": url, "failure_code": "access_restricted", "http_status": 403,
-                 "detail": "HTTP 403"}, "http", url))
+            def http_failure(url: str) -> dict[str, object]:
+                return with_attempt({"status": "error", "url": url, "failure_code": "access_restricted",
+                                     "http_status": 403, "detail": "HTTP 403"}, "http", url)
+
+            monkeypatch.setattr("codey.research.web_sources.fetch_http_document", http_failure)
             try:
                 fetched = provider.fetch(URL)
                 assert fetched["status"] == "ok", fetched
@@ -91,44 +90,36 @@ def test_failed_search_keeps_borrowed_user_page(tmp_path: Path) -> None:
             assert len(browser.contexts[0].pages) == 1
 
 
-def test_actions_do_not_touch_other_contexts_or_replacement_page(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    with cdp_browser(tmp_path / "profile") as port:
-        def connect() -> Session:
-            pw = sync_playwright().start()
-            browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
-            return Session(pw, browser, browser.contexts[0].pages[0])
+def test_actions_do_not_touch_other_contexts_or_replacement_page(tmp_path: Path) -> None:
+    from codey.automation.browser_binding import BrowserBinding, browser_endpoint, browser_identity, page_binding
+    from codey.automation.browser_contracts import BrowserConfig
+    from codey.automation.browser_session import BrowserSession
 
-        session = _search_browser_call(connect)
-        provider = ResumableBrowserSearchProvider(headless=False, isolated=False, cdp_port=port)
-        provider._session = session
-
-        def prepare() -> None:
-            target = session.page.context.new_page()
-            other = session.browser.new_context().new_page()
-            for page in (target, other, session.page):
-                page.set_content("<button onclick='document.body.dataset.clicked=1'>Same name</button>")
-            provider._fetch_page = target
-
-        _search_browser_call(prepare)
-        interaction = BrowserInteraction(provider)
+    with cdp_browser(tmp_path / "profile") as port, sync_playwright() as observer:
+        observed = observer.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+        original = observed.contexts[0].pages[0]
+        target = original.context.new_page()
+        other = observed.new_context().new_page()
+        for page in (target, other, original):
+            page.set_content("<button onclick='document.body.dataset.clicked=1'>Same name</button>")
+        identity = page_binding(target, owned=True)
+        binding = BrowserBinding(port, browser_identity(browser_endpoint(port)), identity.target_id, (identity,))
+        interaction = BrowserSession(BrowserConfig(cdp_port=port, isolated=False, launch=False))
+        interaction.restore_binding(binding)
         try:
             snapshot = interaction.snapshot()
             elements = snapshot.observation["elements"]
             assert isinstance(elements, list) and isinstance(elements[0], dict)
             assert interaction.click(str(elements[0]["ref"])).ok
-
-            def inspect_and_replace() -> None:
-                assert session.page.get_attribute("body", "data-clicked") is None
-                assert session.browser.contexts[1].pages[0].get_attribute("body", "data-clicked") is None
-                cast(Page, provider._fetch_page).close()
-                provider._fetch_page = session.page.context.new_page()
-                provider._fetch_page.set_content("<button>Same name</button>")
-
-            _search_browser_call(inspect_and_replace)
+            assert original.get_attribute("body", "data-clicked") is None
+            assert other.get_attribute("body", "data-clicked") is None
+            target.close()
+            replacement = original.context.new_page()
+            replacement.set_content("<button>Same name</button>")
             stale = interaction.click(str(elements[0]["ref"]))
-            assert not stale.ok and stale.observation["reason"] == "unknown_ref"
-            assert interaction.snapshot().ok
+            assert not stale.ok and stale.observation["reason"] == "browser_target_lost"
+            assert not interaction.snapshot().ok
+            assert replacement.get_attribute("body", "data-clicked") is None
         finally:
-            provider.close()
+            interaction.close()
+        assert not original.is_closed() and not other.is_closed()

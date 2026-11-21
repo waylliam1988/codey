@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import json
 import tempfile
+from collections.abc import Callable
+from email.message import Message
 from pathlib import Path
+from types import TracebackType
 from unittest import mock
+from urllib.request import Request
 
 import pytest
 
@@ -11,8 +15,9 @@ from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
 from codey.research import connector_search
 from codey.research.connector_search import ConnectorAwareSearchProvider, _read_url_text
-from codey.research.source_connectors import SourceConnectorRegistry, SourceConnectorSpec
+from codey.research.source_connectors import SourceConnectorRegistry, SourceConnectorSpec, safe_connector_query
 from codey.research.tools import ResearchTools
+from codey.types.json_value import JsonObject, require_json_string
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures" / "research_connectors"
@@ -24,8 +29,11 @@ class FakeBaseSearchProvider:
     def __init__(self) -> None:
         self.searches: list[tuple[str, int]] = []
         self.fetches: list[str] = []
+        self.search_override: Callable[[str, int], list[JsonObject]] | None = None
 
-    def search(self, query: str, limit: int = 8) -> list[dict]:
+    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
+        if self.search_override is not None:
+            return self.search_override(query, limit)
         self.searches.append((query, limit))
         return [
             {
@@ -35,7 +43,7 @@ class FakeBaseSearchProvider:
             }
         ]
 
-    def fetch(self, url: str) -> dict:
+    def fetch(self, url: str) -> dict[str, object]:
         self.fetches.append(url)
         return {"status": "ok",
             "url": url,
@@ -56,7 +64,7 @@ def _fixture_response(url: str, *, timeout: float) -> str:
     raise AssertionError(url)
 
 
-def _allow_http_url(url: str, *args, **kwargs) -> str | None:
+def _allow_http_url(url: str, *args: object, **kwargs: object) -> str | None:
     del args, kwargs
     if url.startswith(("http://", "https://")):
         return None
@@ -70,7 +78,7 @@ def test_connector_aware_search_adds_pubmed_result_and_open_url_reads_connector_
     with mock.patch("codey.research.connector_search._read_url_text", side_effect=_fixture_response):
         results = provider.search("clinical hepatotoxicity patient therapy", limit=3)
 
-    assert results[0]["title"].startswith("PubMed:")
+    assert require_json_string(results[0]["title"], "title").startswith("PubMed:")
     assert results[0]["url"] == "https://pubmed.ncbi.nlm.nih.gov/12345678/"
     assert results[1]["url"] == "https://example.com/generic"
     assert base.searches == [("clinical hepatotoxicity patient therapy", 3)]
@@ -79,7 +87,7 @@ def test_connector_aware_search_adds_pubmed_result_and_open_url_reads_connector_
         store = KnowledgeStore(Path(td))
         tools = ResearchTools(provider, store, KnowledgeChanges(store.root))
         with mock.patch("codey.research.source_gateway.check_fetch_url", side_effect=_allow_http_url):
-            opened = tools.open_url(results[0]["url"]).model_text
+            opened = tools.open_url(require_json_string(results[0]["url"], "url")).model_text
         store.close()
 
     assert "hepatotoxicity" in opened
@@ -133,7 +141,7 @@ def test_connector_live_search_uses_shared_medical_routing_terms() -> None:
 def test_connector_live_search_reuses_single_safe_query_for_routing_and_api_request() -> None:
     base = FakeBaseSearchProvider()
     provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
-    original = connector_search.safe_connector_query
+    original = safe_connector_query
 
     with mock.patch("codey.research.connector_search.safe_connector_query", wraps=original) as safe, mock.patch("codey.research.connector_search._read_url_text", side_effect=_fixture_response):
         provider.search("clinical cancer therapy", limit=3)
@@ -355,15 +363,15 @@ def test_connector_redirects_share_single_request_timeout_budget() -> None:
         code = 302
         headers = {"Location": "https://export.arxiv.org/api/query?next=1"}
 
-        def __enter__(self):
+        def __enter__(self) -> RedirectResponse:
             return self
 
-        def __exit__(self, *args):
+        def __exit__(self, *args: object) -> None:
             pass
 
     observed_timeouts: list[float] = []
 
-    def open_redirect(_request, *, timeout: float):
+    def open_redirect(_request: Request, *, timeout: float) -> RedirectResponse:
         observed_timeouts.append(timeout)
         return RedirectResponse()
 
@@ -379,10 +387,17 @@ def test_connector_redirects_share_single_request_timeout_budget() -> None:
 
 
 def test_connector_http_user_agent_does_not_name_product() -> None:
-    response = mock.MagicMock()
-    response.read.return_value = b"{}"
-    response.headers.get_content_charset.return_value = "utf-8"
-    response.__enter__.return_value = response
+    class Response:
+        status = 200
+        headers = Message()
+        def read(self, size: int) -> bytes:
+            return b"{}"
+        def __enter__(self) -> Response:
+            return self
+        def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None,
+                     tb: TracebackType | None) -> None:
+            pass
+    response = Response()
 
     with mock.patch("codey.research.connector_search.urllib.request.Request") as request, mock.patch("codey.research.connector_search.check_fetch_url", return_value=None), mock.patch.object(connector_search._CONNECTOR_OPENER, "open", return_value=response):
         assert _read_url_text("https://export.arxiv.org/api/query", timeout=1) == "{}"
@@ -417,7 +432,7 @@ def test_connector_search_skips_api_when_safe_query_is_empty() -> None:
 def test_connector_aware_search_adds_arxiv_result_and_deduplicates_base_result() -> None:
     base = FakeBaseSearchProvider()
 
-    def base_search(query: str, limit: int = 8) -> list[dict]:
+    def base_search(query: str, limit: int = 8) -> list[JsonObject]:
         base.searches.append((query, limit))
         return [
             {
@@ -432,7 +447,7 @@ def test_connector_aware_search_adds_arxiv_result_and_deduplicates_base_result()
             },
         ]
 
-    base.search = base_search  # type: ignore[method-assign]
+    base.search_override = base_search
     provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
 
     with mock.patch("codey.research.connector_search._read_url_text", side_effect=_fixture_response):
@@ -448,7 +463,7 @@ def test_connector_aware_search_adds_arxiv_result_and_deduplicates_base_result()
 def test_connector_merge_preserves_distinct_base_urls_that_differ_by_query() -> None:
     base = FakeBaseSearchProvider()
 
-    def base_search(query: str, limit: int = 8) -> list[dict]:
+    def base_search(query: str, limit: int = 8) -> list[JsonObject]:
         base.searches.append((query, limit))
         return [
             {
@@ -463,7 +478,7 @@ def test_connector_merge_preserves_distinct_base_urls_that_differ_by_query() -> 
             },
         ]
 
-    base.search = base_search  # type: ignore[method-assign]
+    base.search_override = base_search
     provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
 
     results = provider.search("ordinary web lookup", limit=4)
@@ -542,7 +557,8 @@ def test_connector_aware_fetch_direct_pubmed_url_uses_connector_before_browser()
         page = provider.fetch("https://pubmed.ncbi.nlm.nih.gov/12345678/")
 
     assert page["url"] == "https://pubmed.ncbi.nlm.nih.gov/12345678/"
-    assert "hepatotoxicity" in page["text"]
+    text = page["text"]
+    assert isinstance(text, str) and "hepatotoxicity" in text
     assert base.fetches == []
 
 

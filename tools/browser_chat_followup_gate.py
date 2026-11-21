@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 from unittest.mock import patch
 
-from codey.automation.browser_session import BrowserSession, _browser_call
+from codey.automation.browser_session import BrowserSession
 from codey.codemode.kernel import CodeModeKernelExecutor
 from codey.operations import completion_gate, kernel_context, kernel_protocol, provider_receipts
 from codey.operations.browser_copy import committed_children
@@ -292,11 +292,10 @@ REGIONS = """() => [...document.querySelectorAll('article, [role=status], [role=
 
 
 def observe_regions(browser: BrowserSession) -> JsonObject:
-    doc = browser._document_identity_on_browser_thread()
+    doc = browser.document_identity()
     if doc is None:
         return {}
-    page = browser._page_on_browser_thread()
-    rows: object = page.evaluate(REGIONS)
+    rows = browser.inspect_state("(" + REGIONS + ")()")
     return decode_json_object({"document": doc, "regions": rows})
 
 
@@ -336,7 +335,7 @@ def guard_capture(browser: BrowserSession, baseline: JsonObject, *, wait_seconds
             raise RuntimeError(PENDING + " The bound document changed.")
         region = changed_region(baseline, current)
         if region:
-            capture = browser._capture_on_browser_thread()
+            capture = browser.capture()
             body = capture.get("text")
             if (capture.get("status") == "ok" and isinstance(body, str)
                     and region in " ".join(body.split()) and observe_regions(browser) == current):
@@ -468,7 +467,7 @@ def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
         parent = call.call_id.rpartition(":child:")[0]
         session = delegate.session
         if call.name == "browser_click" and parent in active:
-            before = _browser_call(observe_regions, browser)
+            before = observe_regions(browser)
             result, ok, code = original_execute(delegate, browser, call, turn=turn, tool_index=tool_index)
             return replace(result, audit={**result.audit, "query_baseline": before}), ok, code
         if call.name != "browser_read" or session is None or (pending := pending_click(session)) is None:
@@ -495,7 +494,7 @@ def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
         def capture(resource: BrowserSession) -> dict[str, object]:
             if resource is not browser:
                 return original_capture(resource)
-            return _browser_call(guard_capture, resource, baseline, wait_seconds=2.5)
+            return guard_capture(resource, baseline, wait_seconds=2.5)
 
         with patch.object(BrowserSession, "capture", capture):
             result, ok, code = original_execute(delegate, browser, call, turn=turn, tool_index=tool_index)

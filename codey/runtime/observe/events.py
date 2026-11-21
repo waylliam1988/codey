@@ -42,7 +42,7 @@ def _safe_byte_count(value: object) -> int:
 
 
 def _fields(value: object) -> dict[str, object]:
-    if not isinstance(value, dict):
+    if not isinstance(value, Mapping):
         return {}
     fields: Mapping[object, object] = value
     return {key: item for key, item in fields.items() if isinstance(key, str)}
@@ -260,6 +260,13 @@ def run_event_ui_payload(
     if event.outcome.exit_code is not None and type(event.outcome.exit_code) is int:
         payload["exit_code"] = event.outcome.exit_code
     managed = event.outcome.managed_output()
+    browser_execution = _fields(event.outcome.audit.get("browser_execution"))
+    elapsed = browser_execution.get("elapsed_ms")
+    if type(elapsed) is int and elapsed >= 0:
+        payload["elapsed_ms"] = elapsed
+        for key in ("effect_ref", "phase"):
+            if isinstance(value := browser_execution.get(key), str):
+                payload[key] = value
     if "source_failure" in event.outcome.canonical:
         from codey.research.source_acquisition import failure_event
 

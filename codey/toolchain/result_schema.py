@@ -4,59 +4,74 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 
+from codey.automation.browser_contracts import InputRelease
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.types.json_value import canonical_json_object, decode_json_object, require_json_integer, require_json_string
 
 
 def browser_output_schema(name: str) -> dict[str, object]:
-    """Browser success values, including the delegate's text projection."""
+    """One structured success contract for direct tools, CodeMode and recovery."""
     string: dict[str, object] = {"type": "string"}
     integer: dict[str, object] = {"type": "integer"}
+    number: dict[str, object] = {"type": "number"}
     boolean: dict[str, object] = {"type": "boolean"}
 
-    def record(properties: dict[str, object], *, optional: tuple[str, ...] = ()) -> dict[str, object]:
-        return {"type": "object", "additionalProperties": False, "properties": properties,
-                "required": [key for key in properties if key not in optional]}
+    def record(properties: dict[str, object], required: tuple[str, ...] = ()) -> dict[str, object]:
+        return {"type": "object", "additionalProperties": False, "properties": properties, "required": list(required)}
 
+    def array(item: dict[str, object]) -> dict[str, object]:
+        return {"type": "array", "items": item}
+
+    document = record({key: string for key in ("target_id", "frame_id", "loader_id", "url")},
+                      ("target_id", "frame_id", "loader_id", "url"))
+    box = record({key: number for key in ("x", "y", "width", "height")}, ("x", "y", "width", "height"))
+    element = record({"ref": string, "role": string, "name": string, "disabled": boolean, "context_id": string,
+                      "value": {"anyOf": [string, {"type": "null"}]}, "checked": {"anyOf": [boolean, {"type": "null"}]},
+                      "query_relation": string, "box": box}, ("ref", "role", "name", "disabled", "context_id"))
+    snapshot: dict[str, object] = {
+        "page_id": string, "page_url": string, "generation": integer, "revision": integer, "text": string,
+        "document": document, "kind": {"type": "string", "enum": ["full", "delta"]}, "base_revision": integer,
+        "complete": boolean, "scope": {"anyOf": [string, record({"frame_id": string, "root_ref": string,
+            "selector": string, "max_elements": integer, "max_text": integer})]},
+        "text_truncated": boolean, "elements_truncated": boolean, "elements": array(element),
+        "added": array(element), "changed": array(element), "removed": array(string),
+        "contexts": array(record({key: string for key in ("id", "kind", "label", "basis")})),
+        "file_controls": array(record({**{key: string for key in ("id", "name", "dom_id", "field_name", "group")}, "disabled": boolean})),
+    }
     action: dict[str, object] = {"action": string, "delivery": string, "text": string}
+    observed = {**action, "ref": string, "effect_verified": boolean, "page_url": string, "observation": string,
+                "value_length": integer, "values": array(string), "checked": boolean,
+                "input_state": record({"keys": array(string), "release": {"type": "string", "enum": [state.value for state in InputRelease]}}, ("keys", "release"))}
     page = {"url": string, "page_id": string, "generation": integer,
             "http_status": {"anyOf": [integer, {"type": "null"}]}, "content_type": string}
-    observed = {**action, "ref": string, "observation": string, "effect_verified": boolean, "page_url": string}
     schemas = {
-        "browser_snapshot": record({
-            "page_id": string, "page_url": string, "generation": integer, "text": string,
-            "complete": boolean, "scope": string, "text_truncated": boolean, "elements_truncated": boolean,
-            "elements": {"type": "array", "items": record({
-                "ref": string, "role": string, "name": string, "disabled": boolean, "context_id": string,
-                "value": {"anyOf": [string, {"type": "null"}]},
-                "checked": {"anyOf": [boolean, {"type": "null"}]},
-                "query_relation": {"type": "string", "enum": ["", "aria-controls", "native-details"]},
-            }, optional=("context_id", "query_relation"))},
-            "contexts": {"type": "array", "items": record({
-                "id": string, "kind": string, "label": string, "basis": string,
-            })},
-            "file_controls": {"type": "array", "items": record({
-                "id": string, "name": string, "dom_id": string, "field_name": string, "group": string, "disabled": boolean,
-            })},
-        }, optional=("file_controls", "contexts")),
-        "browser_click": record(observed),
-        "browser_scroll": record(observed),
-        "browser_fill": record({**action, "ref": string, "value_length": integer}),
-        "browser_wait": record({"action": string, "condition": string, "matched": boolean,
-                                "page_url": string, "text": string}),
-        "browser_navigate": record({**action, **page, "previous_url": string}),
-        "browser_eval": record({**action, "value": {}, "truncated": boolean}),
-        "browser_tab_list": record({"text": string, "page_url": string, "tabs": {"type": "array", "items": record({
-            "index": integer, "page_id": string, "url": string, "title": string})}}),
-        "browser_tab_new": record({**action, **page}),
-        "browser_tab_switch": record({**action, "index": integer, "url": string}),
-        "browser_upload": record({**action, "ref": string, "attachment_id": string, "name": string,
-                                  "media_type": string, "bytes": integer, "sha256": string, "effect_verified": boolean}),
-        "browser_download": record({**action, "ref": string, "path": string, "suggested_filename": string,
-                                    "handle": string, "bytes": integer, "sha256": string}),
-        "browser_read": text_output_schema(),
-        PAGE_DETAIL_TOOL: text_output_schema(),
+        "browser_snapshot": record(snapshot, ("page_id", "page_url", "generation", "text", "complete", "scope", "elements", "contexts", "text_truncated", "elements_truncated")),
+        **{tool: record(observed, ("action", "text")) for tool in
+           ("browser_click", "browser_fill", "browser_scroll", "browser_press", "browser_hover", "browser_select", "browser_check")},
+        "browser_wait": record({**action, "condition": string, "matched": boolean, "page_url": string, "page_id": string, "document": document}, ("action", "condition", "matched", "text")),
+        "browser_navigate": record({**action, **page, "previous_url": string}, ("action", "url", "page_id", "generation", "text")),
+        "browser_eval": record({**action, "value": {}, "truncated": boolean}, ("action", "value", "truncated", "text")),
+        "browser_tab_list": record({"text": string, "page_url": string, "tabs": array(record({"index": integer, "page_id": string, "url": string, "title": string}))}, ("text", "page_url", "tabs")),
+        "browser_tab_new": record({**action, **page, "previous_url": string}, ("action", "url", "page_id", "generation", "text")),
+        "browser_tab_switch": record({**action, "index": integer, "url": string, "page_id": string}, ("action", "index", "url", "text")),
+        "browser_upload": record({**observed, "attachment_id": string, "name": string, "media_type": string, "bytes": integer, "sha256": string}),
+        "browser_download": record({**action, "ref": string, "path": string, "suggested_filename": string, "handle": string, "bytes": integer, "sha256": string}),
+        **{tool: record({**action, "frame_id": string, "frames": array(record({"frame_id": string, "url": string,
+           "name": string, "document": document, "main": boolean}))}) for tool in ("browser_frame_list", "browser_frame_select")},
+        "browser_locate": record({**action, "document": document, "unique": boolean, "candidates": array(record({key: string for key in ("ref", "role", "name", "text", "placeholder")}))}),
+        "browser_inspect": record({**action, "ref": string, "tag": string, "attributes": {"type": "object", "additionalProperties": string}, "box": {"anyOf": [box, {"type": "null"}]},
+                                   "ancestors": array(record({"tag": string, "role": string, "name": string})), "children": array(record({"tag": string, "text": string}))}),
+        "browser_dialog": record({**action, "open": boolean, "type": string, "message": string}),
+        "browser_dialog_respond": record(action),
+        "browser_visual_click": record({**action, "observation_ref": string, "effect_verified": boolean}),
+        "browser_read": text_output_schema(), PAGE_DETAIL_TOOL: text_output_schema(),
     }
+    image = record({"observation_ref": string, "document": document,
+        "viewport": record({key: number for key in ("width", "height", "x", "y", "scale", "offset_x", "offset_y")}),
+        "clip": box, "full_page": boolean, "raw_sha256": string, "sha256": string,
+        "width": integer, "height": integer, "media_type": string, "scale_x": number, "scale_y": number,
+        "mapping": array(record({"number": integer, "ref": string, "role": string, "name": string, "box": box}))})
+    schemas["browser_screenshot"] = record({**snapshot, "image": image})
     return schemas[name]
 
 

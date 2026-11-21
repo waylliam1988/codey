@@ -80,6 +80,23 @@ def _validate_page_content_type(url: str, content_type: str) -> dict[str, object
     return None
 
 
+def validate_browser_capture(page: dict[str, object]) -> dict[str, object]:
+    """Accept worker observations with the same source rules as standalone fetches."""
+    url, text = str(page.get("url") or ""), str(page.get("text") or "")
+    status = page.get("http_status")
+    invalid = (_validate_page_status(url, status if type(status) is int and isinstance(status, int) else None)
+               or _validate_page_content_type(url, str(page.get("content_type") or "")))
+    if invalid is None and (page.get("password_visible") is True and len(text) < 1500
+            and any(marker in text.casefold() for marker in ("log in", "sign in", "登录", "登入"))):
+        invalid = source_download._fetch_failure(url, "login_required: page requires authentication",
+                                                code="login_required", delivery="confirmed")
+    if invalid is None and not _usable_fetch_page_text(text):
+        reason = "render_timeout" if page.get("render_pending") is True else _fetch_page_failure_kind(text)
+        invalid = source_download._fetch_failure(url, reason,
+            code="access_restricted" if reason == "page_unavailable" else "page_not_loaded", delivery="confirmed")
+    return {**invalid, **({"acquisition": page["acquisition"]} if "acquisition" in page else {})} if invalid is not None else page
+
+
 def _validate_page_observation(
     page: Page,
     url: str,

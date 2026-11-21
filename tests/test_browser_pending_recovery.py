@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from codey.automation.browser_session import BrowserSession, _browser_call
+from codey.automation.browser_session import BrowserSession
 from codey.operations.browser_task_handoff import browser_task_handoff
 from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel_facts import project_execution_record
@@ -48,19 +48,7 @@ def test_nested_shadow_target_checks_outer_overlay_before_dispatch(
     assert browser.navigate(URL).ok
     install(browser, '<div id="host"></div>')
 
-    def install_roots() -> None:
-        raw: object = browser._page_on_browser_thread().evaluate('''() => {
-            const outer = document.querySelector('#host').attachShadow({mode:'open'});
-            outer.innerHTML='<div id="inner"></div>';
-            const inner = outer.querySelector('#inner').attachShadow({mode:'open'});
-            inner.innerHTML='<button onclick="window.queries=(window.queries||0)+1">Query</button>';
-            document.body.insertAdjacentHTML('beforeend',
-                '<div style="position:fixed;inset:0;background:white;z-index:100">' +
-                '<button onclick="this.parentElement.remove()">Close</button></div>');
-        }''')
-        assert raw is None
-
-    _browser_call(install_roots)
+    assert browser.evaluate('() => {\n            const outer = document.querySelector(\'#host\').attachShadow({mode:\'open\'});\n            outer.innerHTML=\'<div id="inner"></div>\';\n            const inner = outer.querySelector(\'#inner\').attachShadow({mode:\'open\'});\n            inner.innerHTML=\'<button onclick="window.queries=(window.queries||0)+1">Query</button>\';\n            document.body.insertAdjacentHTML(\'beforeend\',\n                \'<div style="position:fixed;inset:0;background:white;z-index:100">\' +\n                \'<button onclick="this.parentElement.remove()">Close</button></div>\');\n        }').ok
     output = browser.click(control(browser, "Query"))
     assert not output.ok and output.observation["reason"] == "occluded"
     assert output.observation["delivery"] == "not_delivered"

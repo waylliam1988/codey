@@ -142,12 +142,15 @@ def test_report_cannot_finish_required_implementation_or_failed_verification(tmp
 
 
 def test_outer_and_nested_contracts_share_descriptions_and_keep_full_signatures() -> None:
+    from codey.codemode.catalog import render_declarations, snapshot_catalog
     session = TaskSession(build_task_policy(Request(), task_kind="project"), project_changes_required=True)
     snapshot = offer_browser_tools(build_turn_snapshot(session), session)
     outer = next(spec for spec in snapshot.model_specs if spec.name == "read_file")
     code = next(spec for spec in snapshot.model_specs if spec.name == "codemode")
     assert snapshot.contract_text.count(outer.description) == 1
-    assert "read_file(args:" in code.declarations and "browser_snapshot(args:" in code.declarations
+    assert "Also callable as tools.NAME" in code.declarations
+    signatures = render_declarations(snapshot_catalog(snapshot))
+    assert "read_file(args:" in signatures and "browser_snapshot(args:" in signatures
     assert restore_snapshot(snapshot_description(snapshot)) == snapshot
 
 

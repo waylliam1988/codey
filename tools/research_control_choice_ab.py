@@ -8,12 +8,9 @@ from collections.abc import Callable, Generator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import cast
 from unittest.mock import patch
 
-from playwright.sync_api import Error
-
-from codey.automation.browser_session import BrowserSession, _browser_call
+from codey.automation.browser_session import BrowserSession
 from codey.operations import kernel_protocol
 from codey.operations.kernel_context import KernelContext
 from codey.operations.kernel_protocol import TurnSnapshot
@@ -78,13 +75,10 @@ def owner_tokens(owner: str) -> set[str]:
 
 def detail_region(browser: BrowserSession, ref: str) -> JsonObject | None:
     try:
-        _, handle = browser._resolve_ref(ref)
-        if not handle.is_visible() or not handle.is_enabled():
-            return None
-        raw: object = handle.evaluate(readback._CONTROL)
-        return decode_json_object(raw) if raw is not None else None
-    except (Error, RuntimeError, ValueError):
+        return readback.control_region(browser, ref)
+    except (RuntimeError, ValueError):
         return None
+
 
 
 def observed_controls(browser: BrowserSession, document: JsonObject) -> list[JsonObject]:
@@ -104,7 +98,7 @@ def observed_controls(browser: BrowserSession, document: JsonObject) -> list[Jso
                              "region": region["id"], "ref": ref})
         return rows if browser.document_identity() == document else []
 
-    return _browser_call(capture)
+    return capture()
 
 
 def choice_snapshot(snapshot: TurnSnapshot, document: JsonObject, rows: list[JsonObject]) -> TurnSnapshot:
@@ -145,7 +139,19 @@ def experiment(directory: Path, case: natural.Case, arm: Arm) -> Generator[None,
         freeze, normalize = KernelContext.freeze, kernel_protocol.normalize_turn
         descriptor: object = vars(TurnSnapshot)["model_specs"]
         assert isinstance(descriptor, property) and descriptor.fget is not None
-        original_specs = cast("Callable[[TurnSnapshot], tuple[ToolSpec, ...]]", descriptor.fget)
+        getter: Callable[[TurnSnapshot], object] = descriptor.fget
+
+        def original_specs(snapshot: TurnSnapshot) -> tuple[ToolSpec, ...]:
+            values = getter(snapshot)
+            if not isinstance(values, tuple):
+                raise ValueError("invalid model specs")
+            rows: tuple[object, ...] = values
+            result: list[ToolSpec] = []
+            for row in rows:
+                if not isinstance(row, ToolSpec):
+                    raise ValueError("invalid model spec")
+                result.append(row)
+            return tuple(result)
 
         def specs(snapshot: TurnSnapshot) -> tuple[ToolSpec, ...]:
             return tuple(public_spec(spec) if spec.name == TOOL else spec for spec in original_specs(snapshot))
@@ -195,9 +201,9 @@ def experiment(directory: Path, case: natural.Case, arm: Arm) -> Generator[None,
                     region = detail_region(browser, ref)
                     return (region is not None and region["id"] == row["region"] and region["owner"] == row["record"]
                             and record in owner_tokens(str(row["record"]))
-                            and readback.unique_text(readback.projection(browser._page_on_browser_thread(), record)) is not None)
+                            and readback.unique_text(readback.projection(browser, record)) is not None)
 
-                valid = _browser_call(matches_current_record)
+                valid = matches_current_record()
                 append_json(directory / "choices.jsonl", {"event": "selected", "choice": args["choice"],
                             "record": row["record"], "valid": valid})
                 if not valid:

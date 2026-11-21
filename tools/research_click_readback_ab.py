@@ -2,17 +2,17 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
+import time
 from collections.abc import Generator
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path
 from unittest.mock import patch
 
-from playwright.sync_api import Error, Page
-from playwright.sync_api import TimeoutError as PlaywrightTimeout
-
-from codey.automation.browser_session import BrowserSession, _browser_call
+from codey.automation.browser_contracts import BrowserAction
+from codey.automation.browser_session import BrowserSession
 from codey.operations.kernel_context import KernelContext
 from codey.operations.kernel_protocol import TurnSnapshot
 from codey.operations.task_execution import ExecutionDelegate
@@ -20,9 +20,10 @@ from codey.policies.tool_requirement import _browser_body
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
 from codey.providers.text_result_views import TextResultSpan
 from codey.research.answer_contract import AnswerScope, citation_occurrences
-from codey.research.browser_search import BrowserSearchProvider
 from codey.research.passages import read_passage_refs
+from codey.research.task_browser_source import TaskBrowserSource as BrowserSearchProvider
 from codey.research.tools import ResearchTools
+from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
@@ -80,8 +81,27 @@ def record_id(question: str) -> str:
     return next(iter(ids)) if len(ids) == 1 else ""
 
 
-def projection(page: Page, record: str) -> JsonObject:
-    return decode_json_object(page.evaluate(_RECORD, record))
+def projection(browser: BrowserSession, record: str) -> JsonObject:
+    return decode_json_object(browser.inspect_state("(" + _RECORD + ")(" + json.dumps(record) + ")"))
+
+
+def control_region(browser: BrowserSession, ref: str) -> JsonObject | None:
+    output = browser.action(BrowserAction.INSPECT, {"ref": ref})
+    if not output.ok:
+        return None
+    attrs = decode_json_object(output.observation["attributes"])
+    identity = attrs.get("aria-controls")
+    if not isinstance(identity, str) or attrs.get("aria-expanded") != "false":
+        return None
+    expression = """id => {
+        const region=document.getElementById(id);
+        const owner=region?.closest('article[aria-label],section[aria-label],tr,[role=row]');
+        return region && owner ? {id,text:region.innerText,
+            owner:owner.getAttribute('aria-label')||owner.cells?.[0]?.innerText||''} : null;
+    }"""
+    value = browser.inspect_state("(" + expression + ")(" + json.dumps(identity) + ")")
+    return decode_json_object(value) if value is not None else None
+
 
 
 def unique_text(selected: JsonObject) -> str | None:
@@ -90,39 +110,30 @@ def unique_text(selected: JsonObject) -> str | None:
 
 
 def click_candidate(browser: BrowserSession, call: ToolCall, record: str) -> Click | None:
-    def inspect() -> Click | None:
-        try:
-            page, handle = browser._resolve_ref(str(call.args.get("ref") or ""))
-            raw: object = handle.evaluate(_CONTROL)
-            if not isinstance(raw, dict) or unique_text(projection(page, record)) is None:
-                return None
-            region = decode_json_object(raw)
-            owner = str(region.get("owner") or "")
-            document = browser._document_identity_on_browser_thread()
-            if document is not None and record in re.split(r"[^A-Za-z0-9_-]+", owner):
-                return Click(call.call_id, document, region)
-        except (Error, RuntimeError, ValueError):
+    try:
+        region = control_region(browser, str(call.args.get("ref") or ""))
+        if region is None or unique_text(projection(browser, record)) is None:
             return None
+        document = browser.document_identity()
+        if document is not None and record in re.split(r"[^A-Za-z0-9_-]+", str(region.get("owner") or "")):
+            return Click(call.call_id, document, region)
+    except (RuntimeError, ValueError):
         return None
+    return None
 
-    return _browser_call(inspect)
 
 
 def wait_for_readback(browser: BrowserSession, click: Click) -> str | None:
-    def wait() -> str | None:
-        if browser._document_identity_on_browser_thread() != click.document:
+    deadline = time.monotonic() + 1.6
+    while time.monotonic() < deadline:
+        if browser.document_identity() != click.document:
             return None
-        page = browser._page_on_browser_thread()
-        try:
-            page.wait_for_function(_READY, arg=click.region, timeout=1600)
-        except (PlaywrightTimeout, Error):
-            return None
-        if browser._document_identity_on_browser_thread() != click.document:
-            return None
-        text: object = page.evaluate("id => document.getElementById(id)?.innerText", click.region["id"])
-        return text if isinstance(text, str) and text.strip() else None
+        if browser.inspect_state("(" + _READY + ")(" + json.dumps(click.region) + ")") is True:
+            text = browser.inspect_state("document.getElementById(" + json.dumps(click.region["id"]) + ")?.innerText")
+            return text if isinstance(text, str) and text.strip() else None
+        cancellation.wait(0.05)
+    return None
 
-    return _browser_call(wait)
 
 
 def cites_post_click(browser: BrowserSession, click: Click | None, rows: tuple[ToolResult, ...], document: JsonObject,
@@ -130,12 +141,8 @@ def cites_post_click(browser: BrowserSession, click: Click | None, rows: tuple[T
     if click is None or click.document != document:
         return True
 
-    def changed_region() -> object:
-        page = browser._page_on_browser_thread()
-        return page.evaluate(_READY, click.region) and page.evaluate(
-            "id => document.getElementById(id)?.innerText", click.region["id"])
-
-    updated = _browser_call(changed_region)
+    updated = (browser.inspect_state("document.getElementById(" + json.dumps(click.region["id"]) + ")?.innerText")
+               if browser.inspect_state("(" + _READY + ")(" + json.dumps(click.region) + ")") is True else None)
     index = next((i for i, result in enumerate(rows) if result.ok and result.call.call_id == click.call_id), None)
     if not isinstance(updated, str) or not updated.strip() or index is None:
         return False
@@ -150,7 +157,7 @@ def readback_experiment(directory: Path, arm: Arm, case: natural.Case, *,
                         automatic_readback: bool = True, guidance: bool = True) -> Generator[None, None, None]:
     execute, opened, submit = (ExecutionDelegate._execute_browser, ExecutionDelegate._execute_source_open,
                                ExecutionDelegate._submit_research_answer)
-    fetch, generate, freeze = BrowserSearchProvider._fetch_on_browser_thread, ExperimentProvider._generate, KernelContext.freeze
+    fetch, generate, freeze = BrowserSearchProvider.fetch, ExperimentProvider._generate, KernelContext.freeze
     record = record_id(case.question)
     active: BrowserSession | None = None
     pending: Click | None = None
@@ -163,9 +170,8 @@ def readback_experiment(directory: Path, arm: Arm, case: natural.Case, *,
     def fetch_record(provider: BrowserSearchProvider, url: str) -> dict[str, object]:
         nonlocal source_scoped
         result = fetch(provider, url)
-        page = provider._fetch_page
-        if result.get("status") == "ok" and page is not None and page.url == case.url:
-            text = unique_text(projection(page, record))
+        if result.get("status") == "ok" and result.get("url") == case.url:
+            text = unique_text(projection(provider.browser, record))
             if text is not None and result.get("truncated") is False:
                 source_scoped = True
                 return {**result, "text": text}
@@ -203,7 +209,7 @@ def readback_experiment(directory: Path, arm: Arm, case: natural.Case, *,
             nonlocal scoped
             result = capture()
             if document is not None and document == browser.document_identity() and document.get("url") == case.url:
-                text = _browser_call(lambda: unique_text(projection(browser._page_on_browser_thread(), record)))
+                text = unique_text(projection(browser, record))
                 if text is not None and result.get("status") == "ok" and result.get("truncated") is False:
                     scoped = True
                     return {**result, "text": text}
@@ -259,7 +265,7 @@ def readback_experiment(directory: Path, arm: Arm, case: natural.Case, *,
         if isinstance(scope, AnswerScope) and browser is not None and session is not None and call.args.get("state") == "answered":
             document = browser.document_identity()
             if document is not None and document.get("url") == case.url:
-                selected = _browser_call(lambda: projection(browser._page_on_browser_thread(), record))
+                selected = projection(browser, record)
                 count = selected.get("count")
                 labels = {row["label"] for row in citation_occurrences(str(call.args.get("markdown") or ""))}
                 rows = tuple(session._memory_results.values())
@@ -285,7 +291,7 @@ def readback_experiment(directory: Path, arm: Arm, case: natural.Case, *,
         if guidance and not hinted and browser is not None and isinstance(snapshot.research_scope, AnswerScope):
             document = browser.document_identity()
             if document is not None and document.get("url") == case.url:
-                selected = _browser_call(lambda: projection(browser._page_on_browser_thread(), record))
+                selected = projection(browser, record)
                 if selected.get("expandable") is True:
                     prompt += ("\n\nThe requested record has an observed expandable detail control. If a requested fact is "
                                "missing, inspect and use the relevant control before answering. The runtime can read back its updated region.")
@@ -297,7 +303,7 @@ def readback_experiment(directory: Path, arm: Arm, case: natural.Case, *,
     if arm == "A" or not record:
         yield
     else:
-        with (patch.object(BrowserSearchProvider, "_fetch_on_browser_thread", fetch_record),
+        with (patch.object(BrowserSearchProvider, "fetch", fetch_record),
               patch.object(ExecutionDelegate, "_execute_source_open", source),
               patch.object(ExecutionDelegate, "_execute_browser", browser_call),
               patch.object(ExecutionDelegate, "_submit_research_answer", submission),

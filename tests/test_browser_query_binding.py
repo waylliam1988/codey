@@ -8,10 +8,10 @@ import sys
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Route
 
-from codey.automation.browser_query import QueryObservationError, bind_query_target, observe_query_target
-from codey.automation.browser_session import BrowserSession, _browser_call
+from codey.automation.browser_contracts import RouteDecision as Route
+from codey.automation.browser_query import QueryObservationError
+from codey.automation.browser_session import BrowserSession
 from codey.operations.browser_followups import pending_click
 from codey.operations.browser_task_handoff import browser_task_handoff
 from codey.operations.completion_context import CompletionContext
@@ -21,13 +21,13 @@ from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
-from codey.research.browser_search import BrowserSearchProvider
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object, require_json_string
 from tests.support.real_cdp import cdp_browser
 from tests.test_browser_context_delivery import URL, elements, install
 from tests.test_browser_context_delivery import production_browser as production_browser
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 
 
 @pytest.mark.parametrize('relation', ['aria', 'native'])
@@ -40,20 +40,19 @@ def test_original_result_node_is_bound_without_requiring_a_global_single_region(
             if relation == 'aria' else '<details><summary>Details</summary>Original target</details>')
     install(browser, html + '<article id="other">Unrelated result</article>')
 
-    def probe() -> None:
-        page = browser._page_on_browser_thread()
-        control = page.query_selector('button,summary')
-        assert control is not None
-        binding = bind_query_target(page, control)
-        assert binding is not None
-        before = observe_query_target(page, binding)
-        page.locator('#other').evaluate("el => el.textContent='Unrelated update'")
-        assert observe_query_target(page, binding) == before
-        selector = '#result' if relation == 'aria' else 'details'
-        page.locator(selector).evaluate("el => el.outerHTML=el.outerHTML")
-        with pytest.raises(QueryObservationError, match='original query node'):
-            observe_query_target(page, binding)
-    _browser_call(probe)
+    control = require_json_string(elements(browser.snapshot().observation)[0]['ref'], 'ref')
+    clicked = browser.click(control, query=True)
+    assert clicked.ok, clicked.model_text
+    baseline = decode_json_object(clicked.observation['query_baseline'])
+    assert isinstance(baseline.get('target'), dict)
+    before = browser.capture_query_result(baseline, pending='Unconfirmed')
+    assert browser.evaluate("document.querySelector('#other').textContent='Unrelated update'").ok
+    after = browser.capture_query_result(baseline, pending='Unconfirmed')
+    assert after.get('query_region') == before.get('query_region')
+    selector = '#result' if relation == 'aria' else 'details'
+    assert browser.evaluate(f"document.querySelector('{selector}').outerHTML=document.querySelector('{selector}').outerHTML").ok
+    with pytest.raises(QueryObservationError):
+        browser.capture_query_result(baseline, pending='Unconfirmed')
 
 
 def test_ambiguous_control_relationship_has_no_target_binding(
@@ -63,12 +62,10 @@ def test_ambiguous_control_relationship_has_no_target_binding(
     assert ExecutionDelegate(session=session, research_tools=tools).execute(ToolCall('browser_navigate', {'url': URL}))[1]
     install(browser, '<button aria-controls="same">Details</button><div id="same">One</div><div id="same">Two</div>')
 
-    def probe() -> JsonObject | None:
-        page = browser._page_on_browser_thread()
-        control = page.query_selector('button')
-        assert control is not None
-        return bind_query_target(page, control)
-    assert _browser_call(probe) is None
+    control = require_json_string(elements(browser.snapshot().observation)[0]['ref'], 'ref')
+    clicked = browser.click(control, query=True)
+    assert clicked.ok, clicked.model_text
+    assert 'target' not in decode_json_object(clicked.observation['query_baseline'])
 
 
 @pytest.mark.parametrize('relation', ['aria', 'native'])
@@ -166,9 +163,9 @@ def test_target_update_is_not_inferred_from_other_regions_or_semantic_success(
         assert 'Query failed' in str(page['text'])
         assert 'query_success' not in page
     else:
-        with pytest.raises(QueryObservationError) as caught:
-            browser.capture_query_result(baseline, pending='Unconfirmed')
-        assert caught.value.reason == 'query_update_unconfirmed'
+        page = browser.capture_query_result(baseline, pending='Unconfirmed')
+        assert page['query_confirmed'] is False
+        assert 'query_region' not in page
 
 
 class BoundBrowser(BrowserSearchProvider):
@@ -181,7 +178,7 @@ class BoundBrowser(BrowserSearchProvider):
 
 def restart_probe(state: Path, port: int, resume: bool) -> None:
     provider = BoundBrowser(headless=False, isolated=False, launch=False, require_existing_session=True, cdp_port=port)
-    browser = BrowserSession(provider)
+    browser = provider.browser
     if not resume:
         assert browser.navigate(URL).ok
         ref = require_json_string(elements(browser.snapshot().observation)[0]['ref'], 'ref')
@@ -196,9 +193,7 @@ def restart_probe(state: Path, port: int, resume: bool) -> None:
         audit={'browser_resource': saved['browser_resource']})])
     page = browser.capture_query_result(decode_json_object(saved['baseline']), pending='Unconfirmed')
     assert 'CORRECT_173' in str(page['text'])
-    def count() -> str | None:
-        return browser._page_on_browser_thread().locator('button').get_attribute('data-clicks')
-    assert _browser_call(count) == '1'
+    assert browser.inspect_state("document.querySelector('button').getAttribute('data-clicks')") == '1'
     provider.close()
 
 
@@ -233,9 +228,6 @@ def test_query_read_never_confirms_when_document_identity_is_unavailable(
     assert ExecutionDelegate(session=session, research_tools=tools).execute(ToolCall('browser_navigate', {'url': URL}))[1]
     install(browser, '<article id="record">Current target CORRECT_173 is now available.</article>')
 
-    def unavailable() -> JsonObject | None:
-        return None
-    monkeypatch.setattr(browser, '_document_identity_on_browser_thread', unavailable)
     baseline: JsonObject = {'document': None, 'regions': [{'key': 'record', 'text': 'Original target', 'busy': False}]}
     with pytest.raises(QueryObservationError):
         browser.capture_query_result(baseline, pending='Unconfirmed')

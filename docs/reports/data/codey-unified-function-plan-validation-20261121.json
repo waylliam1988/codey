@@ -1,0 +1,20 @@
+{
+  "validated_at_utc": "2026-11-21T02:06:22.426807+00:00",
+  "document": "docs/reports/codey-unified-agent-browser-function-plan-20261121.zh-CN.md",
+  "document_sha256": "7c59694fe5a7edaf15a7dd17a891fce30eabc740034d950099c5acd398ab1df9",
+  "scope": "Document references, real source/test locations and baseline consistency only; no production implementation or browser/model test was executed.",
+  "anchor_count": 16,
+  "link_count": 66,
+  "missing_links": [],
+  "existing_test_name_count": 21,
+  "missing_existing_tests": [],
+  "proposed_test_files": [
+    "test_browser_observation_revisions.py",
+    "test_browser_visual_binding.py"
+  ],
+  "unreplaced_continuation_marker": false,
+  "baseline_file_count": 94,
+  "baseline_python_symbol_count": 1249,
+  "source_files_changed_since_recording": [],
+  "line_count": 733
+}

@@ -1,833 +1,191 @@
-"""Task-scoped browser actions over the existing Research browser worker.
-
-This module owns page interaction state only. It does not run a model, write a
-Research ledger, or publish events; callers turn its bounded observations into
-the ordinary kernel ``ToolResult`` receipt.
-"""
-
+"""Synchronous task-browser facade; Playwright objects live only in the child."""
 from __future__ import annotations
 
-import hashlib
-import json
-import re
 import time
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass
-from typing import ParamSpec, TypeVar
+from collections.abc import Iterable
 from uuid import uuid4
 
-from playwright.sync_api import ElementHandle, Error, FilePayload, Page
+from playwright.async_api import FilePayload
 
 from codey.automation.browser_binding import BrowserBinding
-from codey.automation.browser_document import normalize_element_ref, same_document
-from codey.automation.browser_input import check_actionability
-from codey.automation.browser_observation import observe_element, observe_elements, render_controls, same_node
-from codey.automation.browser_query import QueryObservationError, _backend_node, bind_query_target, observe_query_target
-from codey.policies.network import check_fetch_url
-from codey.research.browser_page import (
-    _validate_page_content_type,
-    _validate_page_observation,
-    _validate_page_status,
-)
-from codey.research.browser_search import BrowserSearchProvider, _fetch_page_content_after_settle, _search_browser_call
-from codey.research.connector_search import ConnectorAwareSearchProvider
-from codey.research.extract import _MAX_PAGE_CHARS, extract_title
-from codey.research.source_acquisition import with_attempt
-from codey.research.web_sources import WebSourceProvider
+from codey.automation.browser_contracts import BrowserAction, BrowserCommand, BrowserCompletion, BrowserConfig
+from codey.automation.browser_contracts import BrowserToolOutput as BrowserToolOutput
+from codey.automation.browser_document import normalize_element_ref
+from codey.automation.browser_invocation import current_invocation
+from codey.automation.browser_ipc import BrowserPacket
+from codey.automation.browser_process import BrowserProcess, NetworkPolicy, Progress
+from codey.automation.browser_query import QueryObservationError
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolResult
-from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_object, decode_json_value
-
-MAX_SNAPSHOT_ELEMENTS = 80
-MAX_SNAPSHOT_TEXT = 12_000
-MAX_ACTION_TEXT = 2_000
-_RESULT_REGIONS = """() => [...document.querySelectorAll('article, [role=status], [role=region], [aria-live]')]
-  .filter(el => el.getClientRects().length && getComputedStyle(el).visibility === 'visible')
-  .map((el, i) => ({key: el.id || el.tagName + ':' + i, text: el.innerText.replace(/\\s+/g, ' ').trim(),
-                  visible: true, busy: !!el.closest('[aria-busy=true]')}))"""
-_PROPERTY_RETURN = re.compile(r"\s*return[ \t]+(window\.[A-Za-z_$][\w$]*)(?:\s*;)?\s*", re.ASCII)
-T = TypeVar("T")
-P = ParamSpec("P")
-
-
-@dataclass(frozen=True)
-class BrowserToolOutput:
-    model_text: str
-    ok: bool
-    observation: JsonObject
-
-
-class BrowserReferenceError(RuntimeError):
-    def __init__(self, reason: str, message: str) -> None:
-        super().__init__(message)
-        self.reason = reason
-
-
-@dataclass
-class _ElementRef:
-    handle: ElementHandle
-    page_token: int
-    generation: int
-    url: str
-    document: JsonObject | None = None
-    context: JsonObject | None = None
-    context_node: ElementHandle | None = None
-    role: str | None = None
-    name: str | None = None
-    query_target: JsonObject | None = None
-
-
-def _browser_call(fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
-    """Keep the browser worker boundary typed when its runtime is imported lazily."""
-    return _search_browser_call(lambda: fn(*args, **kwargs))
-
-
-def _browser_attempt(page: dict[str, object], url: str) -> dict[str, object]:
-    return with_attempt(page, "browser", url)
-
-
-def _base_provider(provider: object) -> BrowserSearchProvider:
-    base = provider.base_provider if isinstance(provider, ConnectorAwareSearchProvider) else provider
-    if isinstance(base, WebSourceProvider):
-        base = base.browser_source
-    if not isinstance(base, BrowserSearchProvider):
-        raise TypeError("browser interaction requires the production BrowserSearchProvider")
-    return base
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 
 
 class BrowserSession:
-    """One task-owned page binding using the Research browser worker."""
-
-    def __init__(self, provider: object) -> None:
-        self.provider = _base_provider(provider)
-        self._reference_scope = uuid4().hex
-        self._generation = 0
-        self._refs: dict[str, _ElementRef] = {}
-        self._file_controls: dict[str, tuple[str, JsonObject]] = {}
-        self._file_document: JsonObject | None = None
-        self._file_controls_truncated = False
-        self._page_ids: dict[Page, str] = {}
-        self._navigation_facts: dict[int, tuple[JsonObject | None, int | None, str]] = {}
+    def __init__(self, config: BrowserConfig | None = None, *, owner_task_id: str = "",
+                 network_policy: NetworkPolicy | None = None) -> None:
+        self.owner_task_id = owner_task_id or uuid4().hex
+        self.resource_id = uuid4().hex
+        self._process = BrowserProcess(config or BrowserConfig(headless=False),
+            owner_task_id=self.owner_task_id, resource_id=self.resource_id, network_policy=network_policy)
         self._recovery_checked = False
+        self._leases = 0
 
     def retain(self) -> None:
-        self.provider.retain()
+        self._leases += 1
+
+    def attach_owner(self, owner_task_id: str) -> None:
+        self._process.attach_owner(owner_task_id)
+        self.owner_task_id = owner_task_id
 
     def release(self) -> None:
-        self.provider.release()
+        self._leases = max(0, self._leases - 1)
+        if not self._leases:
+            self.close()
 
     def close(self) -> None:
-        self.provider.close()
+        if not self._leases:
+            self._process.close()
 
     def prepare_from_receipts(self, results: Iterable[ToolResult]) -> None:
-        """Project committed metadata once; connecting waits until an actual browser call."""
         if self._recovery_checked:
             return
         latest: BrowserBinding | None = None
         for result in results:
             if (result.call.name.startswith("browser_") or result.call.name == "open_url") and "browser_resource" in result.audit:
                 latest = BrowserBinding.read(result.audit["browser_resource"])
-        if self.provider._session is None:
-            self.provider._resume_binding = latest
+        if latest is not None and self._process.binding is None:
+            self._process.restore(latest)
         self._recovery_checked = True
 
-    def resource_binding(self) -> JsonObject | None:
-        binding = _browser_call(self.provider._binding_on_browser_thread)
-        return binding.payload() if binding is not None else None
+    def restore_binding(self, binding: BrowserBinding) -> None:
+        self._process.restore(binding)
 
-    def document_identity(self) -> JsonObject | None:
-        return _browser_call(self._document_identity_on_browser_thread)
-
-    def capture_wait_binding(self) -> JsonObject:
-        def capture() -> JsonObject:
-            document = self._document_identity_on_browser_thread()
-            if document is None:
-                raise ValueError("background browser wait requires an identified original page")
-            binding = self.provider._binding_on_browser_thread()
-            return {"browser_resource": binding.payload() if binding is not None else None,
-                    "browser_document": document}
-
-        return _browser_call(capture)
-
-    def _document_identity_on_browser_thread(self) -> JsonObject | None:
-        """Chromium's main-frame loader changes even on a same-URL reload."""
-        try:
-            page = self._page_on_browser_thread()
-            cdp = page.context.new_cdp_session(page)
-            try:
-                raw_tree: object = cdp.send("Page.getFrameTree")
-                tree = decode_json_object(raw_tree)
-                frame = decode_json_object(decode_json_object(tree["frameTree"])["frame"])
-                loader, url = frame.get("loaderId"), frame.get("url")
-                raw_target: object = cdp.send("Target.getTargetInfo")
-                target = decode_json_object(decode_json_object(raw_target)['targetInfo']).get('targetId')
-                if isinstance(loader, str) and loader and isinstance(url, str) and url and isinstance(target, str) and target:
-                    return {"loader_id": loader, "target_id": target, "url": url}
-            finally:
-                cdp.detach()
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except (Error, KeyError, RuntimeError, ValueError):
-            return None
-        return None
-
-    @classmethod
-    def from_provider(cls, provider: object) -> BrowserSession:
-        return cls(provider)
+    def restore_input_state(self, progress: JsonObject) -> None:
+        self._process.observe_input_state(progress)
 
     @property
     def generation(self) -> int:
-        return self._generation
+        return self._process.generation
 
-    def snapshot(self, *, max_elements: int = MAX_SNAPSHOT_ELEMENTS,
-                 max_text: int = MAX_SNAPSHOT_TEXT, file_inputs_only: bool = False) -> BrowserToolOutput:
-        return _browser_call(self._file_snapshot_on_browser_thread, max_elements) if file_inputs_only else _browser_call(
-            self._snapshot_on_browser_thread, max_elements, max_text)
+    def resource_binding(self) -> JsonObject | None:
+        binding = self._process.binding
+        return binding.payload() if binding is not None else None
 
-    def click(self, ref: str, *, query: bool = False) -> BrowserToolOutput:
-        return _browser_call(self._click_on_browser_thread, normalize_element_ref(ref), query=query)
+    def invoke(self, action: BrowserAction, arguments: JsonObject | None = None, *,
+               binary: bytes = b"", effect_ref: str = "", progress: Progress | None = None) -> BrowserPacket:
+        cancellation.check()
+        deadline = min(time.monotonic() + 45, cancellation.current_deadline() or float("inf"))
+        admitted = current_invocation()
+        if admitted is not None:
+            effect_ref, progress = admitted.effect_ref, admitted.progress
+        command = BrowserCommand(uuid4().hex, action, arguments or {}, self.owner_task_id, self.resource_id,
+                                 effect_ref, deadline,
+                                 target_id=str(expected.get("target_id", "")) if isinstance(expected := (arguments or {}).get("expected_document"), dict) else "",
+                                 frame_id=str(expected.get("frame_id", "")) if isinstance(expected, dict) else "")
+        return self._process.call(command, binary=binary, progress=progress)
 
-    def matches_query_control(self, ref: str, baseline: JsonObject) -> bool:
-        """Fresh presentation refs cannot replay the same unsettled DOM target."""
-        def matches() -> bool:
-            control = baseline.get("control")
-            if not isinstance(control, dict):
-                # Historical receipts did not record an action target.
-                return True
-            page, handle = self._resolve_ref(normalize_element_ref(ref))
-            return control.get("backend_node_id") == _backend_node(page, handle)
+    def action(self, action: BrowserAction, arguments: JsonObject | None = None, *, binary: bytes = b"") -> BrowserToolOutput:
+        packet = self.invoke(action, arguments, binary=binary)
+        return BrowserToolOutput.read(packet.message["value"], binary=packet.blob)
 
-        return _browser_call(matches)
+    def _data(self, action: BrowserAction, arguments: JsonObject | None = None) -> JsonValue:
+        packet = self.invoke(action, arguments)
+        if BrowserCompletion(str(packet.message["completion"])) == BrowserCompletion.FAILED:
+            output = BrowserToolOutput.read(packet.message["value"])
+            if action == BrowserAction.QUERY_RESULT:
+                raise QueryObservationError(str(output.observation["reason"]), output.model_text)
+            raise RuntimeError(output.model_text)
+        return packet.message["value"]
+
+    def document_identity(self) -> JsonObject | None:
+        if self._process.binding is None:
+            return None
+        value = self._data(BrowserAction.DOCUMENT)
+        return decode_json_object(value) if value is not None else None
+
+    def capture_wait_binding(self) -> JsonObject:
+        document = self.document_identity()
+        if document is None:
+            raise ValueError("background browser wait requires an identified original page")
+        return {"browser_resource": self.resource_binding(), "browser_document": document}
+
+    def snapshot(self, *, max_elements: int = 80, max_text: int = 12000, file_inputs_only: bool = False,
+                 scope_ref: str = "", selector: str = "", base_revision: int | None = None) -> BrowserToolOutput:
+        args: JsonObject = {"max_elements": max_elements, "max_text": max_text,
+            "file_inputs_only": file_inputs_only, "scope_ref": scope_ref, "selector": selector}
+        if base_revision is not None:
+            args["base_revision"] = base_revision
+        return self.action(BrowserAction.SNAPSHOT, args)
+
+    def click(self, ref: str, *, query: bool = False, result_ref: str = "") -> BrowserToolOutput:
+        return self.action(BrowserAction.CLICK, {"ref": normalize_element_ref(ref), "query": query, "result_ref": result_ref})
 
     def fill(self, ref: str, value: str) -> BrowserToolOutput:
-        return _browser_call(self._fill_on_browser_thread, normalize_element_ref(ref), value)
+        return self.action(BrowserAction.FILL, {"ref": normalize_element_ref(ref), "value": value})
+
+    def matches_query_control(self, ref: str, baseline: JsonObject) -> bool:
+        value = self._data(BrowserAction.MATCH_QUERY, {"ref": normalize_element_ref(ref), "baseline": baseline})
+        if type(value) is not bool or not isinstance(value, bool):
+            raise ValueError("query target identity unavailable")
+        return value
 
     def scroll(self, direction: str, amount: int) -> BrowserToolOutput:
-        return _browser_call(self._scroll_on_browser_thread, direction, amount)
+        return self.action(BrowserAction.SCROLL, {"direction": direction, "amount": amount})
 
     def wait(self, condition: str, value: str, timeout_ms: int, *,
              expected_document: JsonObject | None = None) -> BrowserToolOutput:
-        """Coordinate outside the page worker so allowed page operations can advance."""
-        if condition not in {"text", "selector", "url_contains"} or not value:
-            return BrowserToolOutput("ERROR: wait requires a supported condition and non-empty value", False,
-                {"action": "wait", "matched": False, "reason": "invalid_condition"})
-        expected = expected_document if expected_document is not None else self.document_identity()
-        deadline = time.monotonic() + max(100, min(timeout_ms, 30_000)) / 1000
-        try:
-            with cancellation.deadline_scope(deadline):
-                while True:
-                    cancellation.check()
-                    observation = _browser_call(self._check_wait_on_browser_thread, condition, value, expected)
-                    if observation.ok or observation.observation.get("reason"):
-                        return observation
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        break
-                    cancellation.wait(min(0.1, remaining))
-        except cancellation.DeadlineExceeded:
-            # An enclosing operation's deadline remains its own failure.
-            cancellation.check()
-        return BrowserToolOutput(f"ERROR: wait timed out: {condition}", False,
-            {"action": "wait", "condition": condition, "matched": False, "reason": "timeout"})
+        return self.action(BrowserAction.WAIT, {"condition": condition, "value": value, "timeout_ms": timeout_ms,
+            "expected_document": (expected_document if expected_document is not None else
+                None if condition in {"dialog", "popup", "download"} else self.document_identity())})
 
     def navigate(self, url: str) -> BrowserToolOutput:
-        return _browser_call(self._navigate_on_browser_thread, url)
+        return self.action(BrowserAction.NAVIGATE, {"url": url})
 
     def evaluate(self, code: str) -> BrowserToolOutput:
-        return _browser_call(self._evaluate_on_browser_thread, code)
+        return self.action(BrowserAction.EVALUATE, {"code": code})
 
     def tab_list(self) -> BrowserToolOutput:
-        return _browser_call(self._tab_list_on_browser_thread)
+        return self.action(BrowserAction.TAB_LIST)
 
     def tab_new(self, url: str) -> BrowserToolOutput:
-        return _browser_call(self._tab_new_on_browser_thread, url)
+        return self.action(BrowserAction.TAB_NEW, {"url": url})
 
     def tab_switch(self, index: int) -> BrowserToolOutput:
-        return _browser_call(self._tab_switch_on_browser_thread, index)
+        return self.action(BrowserAction.TAB_SWITCH, {"index": index})
 
     def upload(self, ref: str, file: FilePayload, *, expected_document: JsonObject | None = None,
                target: JsonObject | None = None) -> BrowserToolOutput:
-        return _browser_call(self._upload_on_browser_thread, normalize_element_ref(ref), file, expected_document, target)
+        args: JsonObject = {"ref": normalize_element_ref(ref), "name": file["name"], "mime_type": file["mimeType"],
+                            "expected_document": expected_document}
+        if target is not None:
+            args["target"] = target
+        return self.action(BrowserAction.UPLOAD, args, binary=file["buffer"])
 
     def download(self, ref: str) -> BrowserToolOutput:
-        return _browser_call(self._download_on_browser_thread, normalize_element_ref(ref))
+        return self.action(BrowserAction.DOWNLOAD, {"ref": normalize_element_ref(ref)})
 
     def capture(self) -> dict[str, object]:
-        return _browser_call(self._capture_on_browser_thread)
+        value = self._data(BrowserAction.CAPTURE)
+        return dict(decode_json_object(value))
+
+    def inspect_state(self, expression: str) -> JsonValue:
+        """Passive controller observation: Chromium rejects expressions with side effects."""
+        return self._data(BrowserAction.PEEK, {"expression": expression})
+
+    def discard_references(self) -> None:
+        """A user assistance boundary invalidates observations, never the page."""
+        self._data(BrowserAction.RESET_REFS)
 
     def record_regions(self, labels: tuple[str, ...]) -> list[JsonObject]:
-        from codey.automation.browser_observation import observe_records
-
-        def observe() -> list[JsonObject]:
-            return observe_records(self._page_on_browser_thread(), labels)
-
-        return _browser_call(observe)
+        value = self._data(BrowserAction.RECORDS, {"labels": list(labels)})
+        if not isinstance(value, list):
+            raise ValueError("invalid observed record regions")
+        return [decode_json_object(row) for row in value]
 
     def capture_query_result(self, baseline: JsonObject, *, pending: str) -> dict[str, object]:
-        return _browser_call(self._capture_query_result, baseline, pending)
+        value = self._data(BrowserAction.QUERY_RESULT, {"baseline": baseline})
+        return dict(decode_json_object(value))
 
-    def _query_observation(self, target: JsonObject | None = None) -> JsonObject:
-        document = self._document_identity_on_browser_thread()
-        page = self._page_on_browser_thread()
-        if target is not None:
-            return {"document": document, "regions": [observe_query_target(page, target)]}
-        regions: object = page.evaluate(_RESULT_REGIONS)
-        return decode_json_object({"document": document, "regions": regions})
-
-    def _capture_query_result(self, baseline: JsonObject, pending: str) -> dict[str, object]:
-        deadline = time.monotonic() + 2.5
-        raw_target = baseline.get("target")
-        target = decode_json_object(raw_target) if isinstance(raw_target, dict) else None
-        while True:
-            cancellation.check()
-            if not same_document(self._document_identity_on_browser_thread(), baseline.get("document")):
-                raise QueryObservationError("query_document_changed", pending + " The query document changed.")
-            current = self._query_observation(target)
-            if not same_document(current["document"], baseline.get("document")):
-                raise QueryObservationError("query_document_changed", pending + " The query document changed or is unavailable.")
-            if region := _changed_query_region(baseline, current):
-                page = self._capture_on_browser_thread()
-                body = page.get("text")
-                if (page.get("status") == "ok" and isinstance(body, str)
-                        and region in " ".join(body.split()) and self._query_observation(target) == current):
-                    if target is not None:
-                        page["query_region"] = {"text": region, "relation": target["relation"], "visible": True,
-                                                "context": baseline.get("context")}
-                    return page
-            if time.monotonic() >= deadline:
-                raise QueryObservationError("query_update_unconfirmed", pending)
-            cancellation.wait(0.1)
-
-    def _page_on_browser_thread(self) -> Page:
-        if self.provider._resume_binding is not None:
-            self.provider._ensure_session_on_browser_thread()
-        page = self.provider._fetch_page
-        if page is None or page.is_closed():
-            raise RuntimeError(
-                "no retained browser page; call browser_navigate with the source URL "
-                "to take over an HTTP-first source before browser actions"
-            )
-        return page
-
-    def _page_id(self, page: Page) -> str:
-        if page not in self._page_ids:
-            self._page_ids[page] = uuid4().hex
-        return self._page_ids[page]
-
-    def _snapshot_on_browser_thread(self, max_elements: int, max_text: int) -> BrowserToolOutput:
-        page = self._page_on_browser_thread()
-        self._invalidate_refs()
-        document = self._document_identity_on_browser_thread()
-        full_text = page.locator("body").inner_text(timeout=2_000)
-        body = full_text[:max(1, min(max_text, MAX_SNAPSHOT_TEXT))]
-        handles = page.query_selector_all(
-            "button,summary,a,input,textarea,select,[role=button],[role=link],[role=textbox],[role=combobox]"
-        )
-        elements: list[JsonObject] = []
-        contexts: dict[str, JsonObject] = {}
-        metadata_rows, observed_contexts, context_nodes = observe_elements(page, handles)
-        elements_truncated = False
-        for handle, metadata in zip(handles, metadata_rows, strict=True):
-            if not handle.is_visible():
-                continue
-            role = _element_role(metadata)
-            name = _element_name(metadata)[:240]
-            if not name and role not in {"textbox", "combobox"}:
-                continue
-            if len(elements) >= max(1, min(max_elements, MAX_SNAPSHOT_ELEMENTS)):
-                elements_truncated = True
-                break
-            ref = f"b{self._reference_scope}g{self._generation}e{len(elements) + 1}"
-            context_id = str(metadata['context_id'])
-            context = observed_contexts.get(context_id)
-            context_node = context_nodes.get(context_id)
-            if context is not None:
-                contexts[context_id] = context
-            target = bind_query_target(page, handle) if metadata.get("query_relation") else None
-            self._refs[ref] = _ElementRef(handle, id(page), self._generation, page.url, document,
-                                         context if isinstance(context, dict) else None, context_node,
-                                         role, _element_name(metadata), target)
-            elements.append({"ref": ref, "role": role, "name": name,
-                             "context_id": context_id,
-                             **{key: metadata[key] for key in ("value", "disabled", "checked", "query_relation")}})
-        for context_id, node in context_nodes.items():
-            if context_id not in contexts:
-                node.dispose()
-        if not same_document(document, self._document_identity_on_browser_thread()):
-            self._invalidate_refs()
-            raise RuntimeError("The document changed while observing controls; take a fresh browser_snapshot.")
-        text = (f"Page URL: {page.url}\nObservation generation: {self._generation}\n"
-                f"Visible text:\n{body}\nInteractive elements:\n" + render_controls(elements, list(contexts.values())))
-        elements_value: list[JsonValue] = [row for row in elements]
-        return BrowserToolOutput(text, True, {
-            "page_id": self._page_id(page), "page_url": page.url, "generation": self._generation,
-            "complete": len(body) == len(full_text) and not elements_truncated,
-            "scope": "main_frame_visible_text_and_named_controls",
-            "text_truncated": len(body) < len(full_text),
-            "elements_truncated": elements_truncated, "text": body,
-            "elements": elements_value,
-            "contexts": list(contexts.values()),
-        })
-
-    def _file_snapshot_on_browser_thread(self, max_elements: int) -> BrowserToolOutput:
-        page = self._page_on_browser_thread()
-        self._invalidate_refs()
-        document = self._document_identity_on_browser_thread()
-        if document is None:
-            raise RuntimeError("Cannot verify the current upload document.")
-        for handle in page.query_selector_all("input[type=file]"):
-            if not handle.is_visible():
-                continue
-            if len(self._file_controls) >= max(1, min(max_elements, MAX_SNAPSHOT_ELEMENTS)):
-                self._file_controls_truncated = True
-                break
-            index = len(self._file_controls) + 1
-            ref = f"b{self._reference_scope}g{self._generation}e{index}"
-            identity = f"file-{index}-{self._reference_scope[:8]}-{self._generation}"
-            details = _file_control_details(handle)
-            self._refs[ref] = _ElementRef(handle, id(page), self._generation, page.url)
-            self._file_controls[identity] = (ref, {"id": identity, **details})
-        if self._document_identity_on_browser_thread() != document:
-            self._invalidate_refs()
-            raise RuntimeError("The upload page changed while observing its file controls.")
-        self._file_document = document
-        candidates: list[JsonValue] = [row for _, row in self._file_controls.values()]
-        text = "Observed file inputs: " + json.dumps(candidates, ensure_ascii=False)
-        return BrowserToolOutput(text, True, {"page_id": self._page_id(page), "page_url": page.url,
-            "generation": self._generation, "complete": not self._file_controls_truncated, "scope": "file_inputs",
-            "text_truncated": False, "elements_truncated": self._file_controls_truncated,
-            "text": text, "elements": [], "file_controls": candidates})
-
-    def _click_on_browser_thread(self, ref: str, *, query: bool = False) -> BrowserToolOutput:
-        cancellation.check()
-        try:
-            page, handle = self._resolve_ref(ref)
-        except RuntimeError as exc:
-            return self._stale_ref_output("click", ref, exc)
-        baseline = None
-        if query:
-            try:
-                target = bind_query_target(page, handle)
-                original = self._refs[ref].query_target
-                if original is not None and target != original:
-                    raise QueryObservationError("query_target_changed", "The observed query target changed before the click.")
-                baseline = self._query_observation(target)
-                baseline["control"] = {"backend_node_id": _backend_node(page, handle)}
-                baseline["context"] = self._refs[ref].context
-                if target is not None:
-                    baseline["target"] = target
-            except QueryObservationError as exc:
-                return self._stale_ref_output("click", ref, exc, reason=exc.reason)
-        try:
-            actionable = check_actionability(handle)
-        except Error as exc:
-            return self._stale_ref_output("click", ref, RuntimeError(str(exc)))
-        if actionable.get("ready") is not True:
-            reason = str(actionable.get("reason", "stale_ref"))
-            return BrowserToolOutput(f"ERROR: click not dispatched: {reason}", False,
-                {"action": "click", "ref": ref, "delivery": "not_delivered", **actionable})
-        try:
-            handle.click(timeout=5_000, no_wait_after=True)
-        except Exception as exc:
-            self._invalidate_refs()
-            output = BrowserToolOutput(f"ERROR: click delivery is uncertain: {exc}", False,
-                                       {"action": "click", "ref": ref, "delivery": "uncertain"})
-        else:
-            self._invalidate_refs()
-            output = self._action_observation(page, "click", ref)
-        if baseline is not None:
-            output.observation["query_baseline"] = baseline
-        return output
-
-    def _fill_on_browser_thread(self, ref: str, value: str) -> BrowserToolOutput:
-        cancellation.check()
-        try:
-            page, handle = self._resolve_ref(ref)
-        except RuntimeError as exc:
-            return self._stale_ref_output("fill", ref, exc)
-        try:
-            handle.fill(value, timeout=5_000)
-            actual: object = handle.evaluate("el => 'value' in el ? el.value : el.textContent || ''")
-        except Exception as exc:
-            self._invalidate_refs()
-            return BrowserToolOutput(f"ERROR: fill delivery is uncertain: {exc}", False,
-                                     {"action": "fill", "ref": ref, "delivery": "uncertain"})
-        self._invalidate_refs()
-        verified = str(actual) == value
-        return BrowserToolOutput(
-            ("Filled and verified " + ref) if verified else "ERROR: fill was delivered but readback differed",
-            verified, {"action": "fill", "ref": ref,
-                       "delivery": "verified" if verified else "unverified", "value_length": len(value)},
-        )
-
-    def _scroll_on_browser_thread(self, direction: str, amount: int) -> BrowserToolOutput:
-        page = self._page_on_browser_thread()
-        normalized = direction.strip().lower()
-        if normalized not in {"up", "down", "left", "right"}:
-            return BrowserToolOutput("ERROR: invalid scroll direction", False,
-                                     {"action": "scroll", "delivery": "not_delivered"})
-        distance = max(1, min(abs(amount), 20_000))
-        dx = distance if normalized == "right" else -distance if normalized == "left" else 0
-        dy = distance if normalized == "down" else -distance if normalized == "up" else 0
-        delta: list[int] = [dx, dy]
-        page.evaluate("([x, y]) => window.scrollBy(x, y)", delta)
-        self._invalidate_refs()
-        return self._action_observation(page, "scroll", normalized)
-
-    def _check_wait_on_browser_thread(self, condition: str, value: str,
-                                      expected: JsonObject | None) -> BrowserToolOutput:
-        page = self._page_on_browser_thread()
-        cancellation.check()
-        if expected is not None:
-            actual = self._document_identity_on_browser_thread()
-            valid = (actual is not None and actual.get("target_id") == expected.get("target_id")
-                     and (condition == "url_contains" or same_document(expected, actual)))
-            if not valid:
-                return BrowserToolOutput("ERROR: wait page/document binding changed", False,
-                    {"action": "wait", "matched": False, "reason": "stale_document"})
-        matched = (
-            any(item.is_visible() for item in page.get_by_text(value, exact=False).all()[:200])
-            if condition == "text" else
-            any(item.is_visible() for item in page.locator(value).all()[:200]) if condition == "selector" else
-            value in page.url)
-        return BrowserToolOutput(f"Wait condition {'satisfied' if matched else 'pending'}: {condition}", matched,
-            {"action": "wait", "condition": condition, "matched": matched, "page_url": page.url})
-
-    def _navigate_on_browser_thread(self, url: str) -> BrowserToolOutput:
-        cancellation.check()
-        target = url.strip()
-        if not target:
-            return BrowserToolOutput("ERROR: browser_navigate needs a URL", False,
-                                     {"action": "navigate", "delivery": "not_delivered"})
-        policy_reason = check_fetch_url(target, resolve=False)
-        if policy_reason:
-            return BrowserToolOutput(f"ERROR: navigation denied: {policy_reason}", False,
-                                     {"action": "navigate", "url": target,
-                                      "delivery": "not_delivered", "reason": "policy_denied"})
-        page = self.provider._ensure_fetch_page_on_browser_thread(target)
-        previous_url = page.url
-        try:
-            response = page.goto(target, wait_until="domcontentloaded", timeout=20_000)
-        except Exception as exc:
-            self._invalidate_refs()
-            return BrowserToolOutput(f"ERROR: navigation failed: {exc}", False,
-                                     {"action": "navigate", "url": target, "delivery": "uncertain"})
-        final_url = page.url or target
-        final_policy_reason = check_fetch_url(final_url, resolve=False)
-        if final_policy_reason:
-            self._navigation_facts[id(page)] = (self._document_identity_on_browser_thread(), None, "")
-            self._invalidate_refs()
-            return BrowserToolOutput(f"ERROR: navigation denied after redirect: {final_policy_reason}", False,
-                                     {"action": "navigate", "url": final_url,
-                                      "delivery": "confirmed", "reason": "policy_denied"})
-        status = response.status if response is not None else None
-        content_type = response.headers.get("content-type", "") if response is not None else ""
-        self._navigation_facts[id(page)] = (self._document_identity_on_browser_thread(), status, content_type)
-        self._invalidate_refs()
-        return BrowserToolOutput(f"Navigated to {final_url}", True,
-                                 {"action": "navigate", "url": final_url, "previous_url": previous_url,
-                                  "page_id": self._page_id(page), "generation": self._generation,
-                                  "delivery": "delivered", "http_status": status,
-                                  "content_type": content_type})
-
-    def _evaluate_on_browser_thread(self, code: str) -> BrowserToolOutput:
-        page = self._page_on_browser_thread()
-        if not code.strip():
-            return BrowserToolOutput("ERROR: browser_eval needs code", False,
-                                     {"action": "eval", "delivery": "not_delivered"})
-        try:
-            # CodeMode accepts a function body, while this browser call also accepts expressions.
-            property_return = _PROPERTY_RETURN.fullmatch(code)
-            value: object = page.evaluate(property_return[1] if property_return else code)
-            canonical = decode_json_value(value)
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception as exc:
-            return BrowserToolOutput(f"ERROR: eval failed: {exc}", False,
-                                     {"action": "eval", "delivery": "uncertain"})
-        finally:
-            # Scripts can replace the document even when evaluation throws.
-            self._invalidate_refs()
-        rendered = json.dumps(canonical, ensure_ascii=False)
-        truncated = len(rendered) > MAX_ACTION_TEXT
-        bounded: JsonValue = rendered[:MAX_ACTION_TEXT] if truncated else canonical
-        return BrowserToolOutput("Evaluation completed: " + rendered[:MAX_ACTION_TEXT], True,
-                                 {"action": "eval", "delivery": "delivered", "value": bounded,
-                                  "truncated": truncated})
-
-    def _tab_list_on_browser_thread(self) -> BrowserToolOutput:
-        if self.provider._resume_binding is not None:
-            self.provider._ensure_session_on_browser_thread()
-        session = self.provider._session
-        if session is None:
-            raise RuntimeError("no browser session")
-        pages: list[JsonValue] = []
-        current = self.provider._fetch_page
-        observation: JsonObject = {"tabs": pages, "page_url": current.url if current is not None else ""}
-        context = session.browser.contexts[0] if session.browser.contexts else None
-        if context is None:
-            return BrowserToolOutput("No browser tabs", True, observation)
-        for index, page in enumerate(context.pages):
-            pages.append({"index": index, "page_id": self._page_id(page),
-                          "url": page.url, "title": str(page.title() or "")[:240]})
-        return BrowserToolOutput("Current browser tabs: " + json.dumps(observation, ensure_ascii=False), True, observation)
-
-    def _tab_new_on_browser_thread(self, url: str) -> BrowserToolOutput:
-        cancellation.check()
-        target = url.strip()
-        policy_reason = check_fetch_url(target, resolve=False)
-        if policy_reason:
-            return BrowserToolOutput(f"ERROR: tab URL denied: {policy_reason}", False,
-                                     {"action": "tab_new", "url": target,
-                                      "delivery": "not_delivered", "reason": "policy_denied"})
-        session = self.provider._ensure_session_on_browser_thread()
-        context = session.browser.contexts[0] if session.browser.contexts else session.page.context
-        page = self.provider._prepare_page_on_browser_thread(context.new_page())
-        self.provider._register_owned_page_on_browser_thread(page)
-        self.provider._fetch_page = page
-        self._invalidate_refs()
-        response = page.goto(target, wait_until="domcontentloaded", timeout=20_000)
-        status = response.status if response is not None else None
-        content_type = response.headers.get("content-type", "") if response is not None else ""
-        self._navigation_facts[id(page)] = (self._document_identity_on_browser_thread(), status, content_type)
-        return BrowserToolOutput(f"Opened tab at {page.url}", True,
-                                 {"action": "tab_new", "url": page.url, "page_id": self._page_id(page),
-                                  "generation": self._generation, "delivery": "delivered",
-                                  "http_status": status, "content_type": content_type})
-
-    def _tab_switch_on_browser_thread(self, index: int) -> BrowserToolOutput:
-        if self.provider._resume_binding is not None:
-            self.provider._ensure_session_on_browser_thread()
-        session = self.provider._session
-        if session is None:
-            raise RuntimeError("no browser session")
-        context = session.browser.contexts[0] if session.browser.contexts else session.page.context
-        pages = context.pages
-        if index < 0 or index >= len(pages):
-            return BrowserToolOutput("ERROR: tab index is unavailable", False,
-                                     {"action": "tab_switch", "index": index, "delivery": "not_delivered"})
-        page = self.provider._prepare_page_on_browser_thread(pages[index])
-        self.provider._register_borrowed_page_on_browser_thread(page)
-        self.provider._fetch_page = page
-        self._invalidate_refs()
-        return BrowserToolOutput(f"Switched to tab {index}", True,
-                                 {"action": "tab_switch", "index": index, "url": pages[index].url,
-                                  "delivery": "delivered"})
-
-    def _upload_on_browser_thread(self, ref: str, file: FilePayload, expected_document: JsonObject | None = None,
-                                  target: JsonObject | None = None) -> BrowserToolOutput:
-        cancellation.check()
-        stale_reason = "file_observation_expired" if target is not None else "stale_ref"
-        if ((expected_document is not None and self._document_identity_on_browser_thread() != expected_document)
-                or (target is not None and (expected_document is None or self._file_document != expected_document))):
-            return self._stale_ref_output("upload", ref, RuntimeError("upload page changed; take a fresh snapshot"), reason=stale_reason)
-        try:
-            if target is not None:
-                ref = self._file_control_ref(target)
-            _, handle = self._resolve_ref(ref)
-        except RuntimeError as exc:
-            return self._stale_ref_output("upload", ref, exc, reason=stale_reason)
-        except ValueError as exc:
-            return BrowserToolOutput(f"ERROR: {exc}", False,
-                                     {"action": "upload", "ref": ref, "delivery": "not_delivered", "reason": "file_target_unavailable"})
-        try:
-            handle.set_input_files(file)
-            selected: object = handle.evaluate("el => Array.from(el.files, f => ({name:f.name,size:f.size,type:f.type}))")
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception as exc:
-            self._invalidate_refs()
-            return BrowserToolOutput(f"ERROR: upload failed: {exc}", False,
-                                     {"action": "upload", "ref": ref, "delivery": "uncertain"})
-        self._invalidate_refs()
-        data = file["buffer"]
-        verified = selected == [{"name": file["name"], "size": len(data), "type": file["mimeType"]}]
-        return BrowserToolOutput("File input selection " + ("verified" if verified else "unverified"), verified,
-                                 {"action": "upload", "ref": ref,
-                                  "delivery": "verified" if verified else "unverified", "effect_verified": False,
-                                  "name": file["name"], "media_type": file["mimeType"],
-                                  "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
-
-    def _file_control_ref(self, target: JsonObject) -> str:
-        controls = tuple(self._file_controls.values())
-        selector, key = ("id", target["id"]) if "id" in target else ("name", target["name"])
-        matches = [(ref, row) for ref, row in controls if row[selector] == key]
-        if len(matches) != 1 or (selector == "name" and self._file_controls_truncated):
-            candidates = [row for _, row in matches or controls]
-            raise ValueError("Choose one file input using a current observed ID. Candidates: "
-                             + json.dumps(candidates, ensure_ascii=False))
-        ref, observed = matches[0]
-        _, handle = self._resolve_ref(ref)
-        try:
-            current = _file_control_details(handle)
-        except Error as exc:
-            raise RuntimeError("The observed file input changed. Observe the page again.") from exc
-        if not handle.is_visible() or current != {field: value for field, value in observed.items() if field != "id"}:
-            raise RuntimeError("The observed file input changed. Observe the page again.")
-        if current["disabled"] is True:
-            raise ValueError("The selected file input is disabled. Choose an enabled observed control.")
-        return ref
-
-    def _download_on_browser_thread(self, ref: str) -> BrowserToolOutput:
-        cancellation.check()
-        try:
-            page, handle = self._resolve_ref(ref)
-        except RuntimeError as exc:
-            return self._stale_ref_output("download", ref, exc)
-        try:
-            with page.expect_download(timeout=20_000) as pending:
-                handle.click(timeout=5_000, no_wait_after=True)
-            download = pending.value
-            path = download.path()
-            if path is None:
-                raise RuntimeError("download path unavailable")
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception as exc:
-            self._invalidate_refs()
-            return BrowserToolOutput(f"ERROR: download failed: {exc}", False,
-                                     {"action": "download", "ref": ref, "delivery": "uncertain"})
-        self._invalidate_refs()
-        return BrowserToolOutput("Download completed", True,
-                                 {"action": "download", "ref": ref, "delivery": "verified",
-                                  "suggested_filename": download.suggested_filename, "path": str(path)})
-
-    def _capture_on_browser_thread(self) -> dict[str, object]:
-        page = self._page_on_browser_thread()
-        observed_document, response_status, content_type = self._navigation_facts.get(id(page), (None, None, ""))
-        # A resumed/borrowed document has no trustworthy process-local navigation
-        # response. Observe the surviving document rather than replaying old headers.
-        if not same_document(observed_document, self._document_identity_on_browser_thread()):
-            raw_observed: object = page.evaluate("""() => ({
-                status: performance.getEntriesByType('navigation')[0]?.responseStatus || 0,
-                content_type: document.contentType
-            })""")
-            observed = canonical_json_object(raw_observed)
-            status = observed["status"]
-            response_status = status if isinstance(status, int) and not isinstance(status, bool) and status > 0 else None
-            content_type = str(observed["content_type"])
-        invalid = (_validate_page_status(page.url, response_status)
-                   or _validate_page_content_type(page.url, content_type))
-        if invalid is not None:
-            return _browser_attempt(invalid, page.url)
-        html, text = _fetch_page_content_after_settle(page)
-        invalid = _validate_page_observation(page, page.url, html, text)
-        if invalid is not None:
-            return _browser_attempt(invalid, page.url)
-        truncated = len(text) > _MAX_PAGE_CHARS
-        if truncated:
-            text = text[:_MAX_PAGE_CHARS]
-        result: dict[str, object] = {"status": "ok", "url": page.url, "title": extract_title(html),
-                                     "text": text, "truncated": truncated, "observation": "current_page"}
-        return _browser_attempt(result, page.url)
-
-    def _resolve_ref(self, ref: str) -> tuple[Page, ElementHandle]:
-        page = self._page_on_browser_thread()
-        entry = self._refs.get(ref)
-        if entry is None:
-            raise BrowserReferenceError("unknown_ref", "unknown browser element reference; choose a ref field from "
-                                        "observed controls or take a browser_snapshot. Expiry is not established.")
-        if entry.page_token != id(page) or entry.generation != self._generation or entry.url != page.url:
-            raise RuntimeError("stale browser element reference; take a fresh browser_snapshot")
-        if entry.document is not None and not same_document(entry.document, self._document_identity_on_browser_thread()):
-            raise RuntimeError("stale browser element reference; the document changed")
-        try:
-            connected: object = entry.handle.evaluate("el => el.isConnected && el.ownerDocument === document")
-        except Error as exc:
-            raise RuntimeError("stale browser element reference; document is no longer available") from exc
-        if connected is not True:
-            raise RuntimeError("stale browser element reference; original node is detached")
-        metadata, context_node = observe_element(entry.handle)
-        try:
-            if entry.role is not None and (_element_role(metadata) != entry.role
-                    or _element_name(metadata) != entry.name):
-                raise RuntimeError("stale browser element reference; observed role or name changed")
-            if metadata.get("disabled") is True or not entry.handle.is_enabled():
-                raise BrowserReferenceError("disabled_control", "the observed control is disabled; choose an enabled control")
-            if not entry.handle.is_visible():
-                raise RuntimeError("stale browser element reference; control is no longer available")
-            if entry.context is not None and (
-                    context_node is None or entry.context_node is None or not same_node(context_node, entry.context_node)
-                    or metadata.get("context") != {key: value for key, value in entry.context.items() if key != "id"}):
-                raise RuntimeError("stale browser element reference; observed structural context changed")
-        finally:
-            if context_node is not None:
-                context_node.dispose()
-        return page, entry.handle
-
-    def _invalidate_refs(self) -> None:
-        self._generation += 1
-        self._refs.clear()
-        self._file_controls.clear()
-        self._file_document = None
-        self._file_controls_truncated = False
-
-    @staticmethod
-    def _stale_ref_output(action: str, ref: str, error: RuntimeError, *, reason: str = "stale_ref") -> BrowserToolOutput:
-        if reason == "stale_ref" and isinstance(error, BrowserReferenceError):
-            reason = error.reason
-        return BrowserToolOutput(
-            f"ERROR: {error}", False,
-            {"action": action, "ref": ref, "delivery": "not_delivered", "reason": reason},
-        )
-
-    @staticmethod
-    def _action_observation(page: Page, action: str, ref: str) -> BrowserToolOutput:
-        try:
-            text = page.locator("body").inner_text(timeout=2_000)[:MAX_ACTION_TEXT]
-        except Error as exc:
-            return BrowserToolOutput(f"ERROR: action delivered; page observation failed: {exc}", False,
-                                     {"action": action, "ref": ref, "delivery": "delivered",
-                                      "observation": "unavailable", "effect_verified": False})
-        return BrowserToolOutput(f"Action delivered and page observed: {action} {ref}\n{text}", True,
-                                 {"action": action, "ref": ref, "delivery": "delivered",
-                                  "observation": "observed", "effect_verified": False,
-                                  "page_url": page.url, "text": text})
-
-
-def _changed_query_region(before: JsonObject, after: JsonObject) -> str:
-    old, new = before.get("regions"), after.get("regions")
-    if not isinstance(old, list) or len(old) != 1 or not isinstance(new, list) or len(new) != 1:
-        return ""
-    previous, current = old[0], new[0]
-    if (isinstance(previous, dict) and isinstance(current, dict) and previous.get("key") == current.get("key")
-            and current.get("busy") is False and isinstance(body := current.get("text"), str)
-            and current.get('visible') is True
-            and (body != previous.get("text") or previous.get('visible') is False)):
-        return body
-    return ""
-
-
-def _file_control_details(handle: ElementHandle) -> JsonObject:
-    raw: object = handle.evaluate("""el => ({
-        name: el.getAttribute('aria-label') || Array.from(el.labels || [], label => label.innerText).join(' ') || el.title,
-        dom_id: el.id, field_name: el.name,
-        group: el.closest('fieldset')?.querySelector('legend')?.innerText || el.form?.getAttribute('aria-label') || '',
-        disabled: el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true' || el.type !== 'file'
-    })""")
-    row = canonical_json_object(raw)
-    return {"disabled": row["disabled"], **{key: " ".join(str(row[key]).split())[:240]
-            for key in ("name", "dom_id", "field_name", "group")}}
-
-
-def _element_name(metadata: JsonObject) -> str:
-    return " ".join(str(metadata.get("name") or "").split())
-
-
-def _element_role(metadata: JsonObject) -> str:
-    role = str(metadata.get("role") or "").strip().lower()
-    if role:
-        return role
-    tag = str(metadata.get("tag") or "").lower()
-    if tag == "a":
-        return "link"
-    if tag in {"button", "summary"}:
-        return "button"
-    if tag in {"textarea", "input"}:
-        return "checkbox" if str(metadata.get("type") or "").lower() == "checkbox" else "textbox"
-    if tag == "select":
-        return "combobox"
-    return "generic"
-
-
-__all__ = ["BrowserSession", "BrowserToolOutput"]
+    def inspect_details(self, document: JsonObject, task: str, selected: JsonObject | None = None) -> JsonObject | None:
+        value = self._data(BrowserAction.DISCLOSURE, {"document": document, "task": task, "selected": selected})
+        return decode_json_object(value) if value is not None else None

@@ -20,6 +20,7 @@ from codey.research import source_domains
 from codey.research.passages import ReadPassage
 from codey.research.receipt_types import InvestigationRecord, SourceSearchLocator, SourceSearchObservation
 from codey.research.reference import ResearchReference
+from codey.research.search_provenance import SearchAttempt
 from codey.research.source_document import SourceDocument, SourceReadScope
 from codey.research.urls import host_key, opened_url, parsed_url
 from codey.types.json_value import JsonObject, canonical_json_object, encode_transport_value
@@ -68,6 +69,7 @@ class SearchRecord:
     query: str
     timestamp: str
     results: tuple[SearchResultRecord, ...] = ()
+    attempts: tuple[SearchAttempt, ...] = ()
 
     def to_dict(self) -> JsonObject:
         data = canonical_json_object(encode_transport_value(self))
@@ -174,7 +176,8 @@ class ResearchLedger:
         self._source_pages = staged._source_pages
         self._source_page_versions = staged._source_page_versions
 
-    def record_search(self, query: str, results: Sequence[Mapping[str, object]]) -> None:
+    def record_search(self, query: str, results: Sequence[Mapping[str, object]], *,
+                      attempts: tuple[SearchAttempt, ...] = ()) -> None:
         query = " ".join((query or "").split())
         if not query:
             return
@@ -189,7 +192,7 @@ class ResearchLedger:
                 url=url,
                 snippet=_clip(str(result.get("snippet") or ""), 260),
             ))
-        self.searches.append(SearchRecord(query=query, timestamp=now_iso(), results=tuple(items)))
+        self.searches.append(SearchRecord(query=query, timestamp=now_iso(), results=tuple(items), attempts=attempts))
 
     def record_open(self, requested_url: str, final_url: str, title: str, text: str) -> None:
         self.record_open_document(SourceDocument.html(

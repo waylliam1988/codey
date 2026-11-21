@@ -46,14 +46,24 @@ def test_choices_are_whole_observed_combinations_and_shared_across_surfaces(name
                      {"role": "textbox", "name": name, "context": "region two"}):
         assert validate_args_with_spec(outer, {"ref": selector, "value": "chosen"})
     assert references.resolve({"role": "textbox", "name": name}) == ref
-    example = "Example ref argument: " + json.dumps(references.choices()[0], ensure_ascii=False)
     for spec in restored.model_specs:
         if spec.name in {"browser_fill", "browser_click"}:
+            example = "Example ref argument: " + json.dumps(references.choices(spec.name)[0], ensure_ascii=False)
             assert not spec.json_examples
             assert example in spec.description
+    example = "Example ref argument: " + json.dumps(references.choices("browser_fill")[0], ensure_ascii=False)
     assert example in nested.description
     # Raw refs remain a formal capability, including refs acquired inside JS.
     assert not validate_args_with_spec(outer, {"ref": "newly-observed-in-program", "value": "chosen"})
+
+
+def test_action_choices_are_compact_and_do_not_offer_clicking_the_input() -> None:
+    refs = binding()
+    assert len(refs.choices()) == len(refs.controls)
+    assert all(isinstance(choice, dict) and choice["role"] == "textbox" for choice in refs.choices("browser_fill"))
+    assert all(isinstance(choice, dict) and choice["role"] != "textbox" for choice in refs.choices("browser_click"))
+    legacy = replace(refs, presentation_version=2)
+    assert len(legacy.choices()) > len(refs.choices())
 
 
 @pytest.mark.parametrize("same_context", [False, True])
@@ -171,7 +181,7 @@ def test_formal_failure_reasons_distinguish_evidence_without_delivering(
     assert frozen.browser_references is not None
     ref = "unobserved-" + uuid4().hex if case == "unknown" else frozen.browser_references.controls[0].ref
     if case == "stale":
-        browser.snapshot()
+        install(browser, '<input aria-label="field">')
     result = program(session, tools, frozen, "return unwrap(await tools.browser_fill({ref:"
                      + json.dumps(ref) + ",value:'never'}));")
     assert not result.ok

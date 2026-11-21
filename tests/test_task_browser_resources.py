@@ -11,6 +11,7 @@ from codey.durable import DurableSession, SQLiteDurableStore
 from codey.operations.browser_resources import build_task_browser
 from codey.operations.research_resources import close_research_tools
 from codey.operations.task_session import TaskSession
+from codey.research.task_browser_source import TaskBrowserSource
 from codey.research.tools import ResearchTools
 from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core.tool_resources import ToolResources
@@ -87,7 +88,8 @@ def test_source_cleanup_and_new_adapter_reuse_original_browser(
         acquired = build_task_browser("task", resources, replacement)
         assert acquired is browser and replacement.browser_session is browser
         assert isinstance(replacement.search, WebSourceProvider)
-        assert replacement.search.browser_source is browser.provider
+        assert isinstance(replacement.search.browser_source, TaskBrowserSource)
+        assert replacement.search.browser_source.browser is browser
         # A resumed task may register a wait after the previous source adapter closed.
         binding = browser.capture_wait_binding()
         resources.bind_browser("wait", browser, binding)

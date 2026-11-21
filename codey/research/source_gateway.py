@@ -33,6 +33,7 @@ from codey.research.pdf_extract import (
     PdfSkipped,
     extract_pdf_document,
 )
+from codey.research.search_provenance import SearchAttempt, filter_site_results, provider_search_attempts
 from codey.research.source_acquisition import SourceFailureCode, acquisition_observation, source_failure_code
 from codey.research.source_document import SourceDocument, SourceReadScope
 from codey.research.source_search import (
@@ -128,7 +129,12 @@ class ResearchSourceGateway:
             detail = str(exc) or type(exc).__name__
             return SearchedSources(query=query, error=f"search failed: {detail}")
         cancellation.check()
-        self.ledger.record_search(query, results)
+        results, rejected = filter_site_results(query, results)
+        attempts = provider_search_attempts(self.search_provider)
+        if rejected or not attempts:
+            attempts += (SearchAttempt(query, type(self.search_provider).__name__, extraction_scope="provider_results",
+                accepted_urls=tuple(str(row["url"]) for row in results), rejected_urls=rejected),)
+        self.ledger.record_search(query, results, attempts=attempts)
         return SearchedSources(query=query, hits=tuple(results or ()))
 
     def open(
@@ -183,6 +189,10 @@ class ResearchSourceGateway:
         return None
 
     def _receive_capture(self, url: str, page: dict[str, object], *, pages: str) -> OpenedSource:
+        if page.get("observation") == "current_page":
+            from codey.research.browser_page import validate_browser_capture
+
+            page = validate_browser_capture(page)
         direct = source_url_key(url) in self.direct_urls
         acquisition = acquisition_observation(page["acquisition"]) if "acquisition" in page else {}
         page_url = str(page.get("url") or url)

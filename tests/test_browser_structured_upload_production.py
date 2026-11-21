@@ -9,11 +9,10 @@ from pathlib import Path
 
 import pytest
 
-from codey.automation.browser_session import BrowserSession
-from codey.research.browser_search import BrowserSearchProvider
 from codey.storage.input_attachments import InputAttachmentStore
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tests.test_receipt_bound_edit_surface_probe import install_http
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 from tools.browser_production_live_gate import HTML, URL, run_case
 from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import Target
@@ -83,7 +82,7 @@ def test_observed_file_controls_are_selected_without_model_javascript(
             yield action("select", attachment_id=identity, target={"name": "Attachment"})
             target = {"id": controls[1]["id"]}
         elif case == "expired":
-            assert provider is not None and BrowserSession.from_provider(provider).navigate(URL).ok
+            assert provider is not None and provider.browser.navigate(URL).ok
             yield action("select", attachment_id=identity, target={"id": controls[0]["id"]})
             yield action("observe", url=URL)
             yield action("select", attachment_id=identity, target={"id": controls[0]["id"]})

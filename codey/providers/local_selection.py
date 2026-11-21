@@ -1,16 +1,17 @@
 """Bounded model metadata and immutable per-chat local run selection."""
 from __future__ import annotations
 
-import json
 import re
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import replace
-from typing import Any
+from email.message import Message
+from typing import IO
 
 from codey.providers.local_config import LocalProviderConfig, load_local_config, select_local_target
 from codey.runtime.core.reasoning import REASONING_EFFORTS
+from codey.types.json_value import JsonObject, parse_json_object
 
 
 def thinking_options_from_metadata(props: object, version: object, model: str) -> list[str]:
@@ -32,19 +33,19 @@ def thinking_options_from_metadata(props: object, version: object, model: str) -
     return ["off", "high"]
 
 
-def _metadata_json(url: str, api_key: str) -> dict[str, Any]:
+def _metadata_json(url: str, api_key: str) -> JsonObject:
     request = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}"} if api_key else {})
     # Never forward a saved credential across an HTTP redirect.
     class NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, req: Any, fp: Any, code: Any, msg: Any, headers: Any, newurl: Any) -> None:
+        def redirect_request(self, req: urllib.request.Request, fp: IO[bytes], code: int, msg: str,
+                             headers: Message, newurl: str) -> None:
             return None
     try:
         with urllib.request.build_opener(NoRedirect).open(request, timeout=0.8) as response:
             raw = response.read(262145)
         if len(raw) > 262144:
             return {}
-        data = json.loads(raw)
-        return data if isinstance(data, dict) else {}
+        return parse_json_object(raw.decode("utf-8"))
     except (OSError, ValueError):
         return {}
 
@@ -54,15 +55,17 @@ def model_metadata(base_url: str, model: str, *, api_key: str = "", display_name
     short = re.match(r"^([A-Za-z][\w.]*?)[-_](\d+(?:\.\d+)?[Bb])(?=[-_]|$)", leaf)
     name = display_name or (f"{short[1]} {short[2].upper()}" if short else leaf) or "Local"
     options: list[str] = []
+    vision = False
     parsed = urllib.parse.urlsplit(base_url)
     # Only the standard /v1 sibling endpoints have a known metadata contract;
     # arbitrary reverse-proxy paths must not receive credentials at their root.
     if parsed.scheme in {"http", "https"} and parsed.path.rstrip("/") == "/v1":
         root = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
         version = _metadata_json(root + "/api/extra/version", api_key)
+        vision = version.get("result") == "KoboldCpp" and version.get("vision") is True
         if version.get("result") == "KoboldCpp" and version.get("jinja") is True:
             options = thinking_options_from_metadata(_metadata_json(root + "/props", api_key), version, model)
-    return {"display_name": name, "thinking_options": options}
+    return {"display_name": name, "thinking_options": options, "supports_images": vision}
 
 
 def capture_local_run_config(selection: object) -> LocalProviderConfig:

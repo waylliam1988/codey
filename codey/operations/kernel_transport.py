@@ -52,8 +52,8 @@ def _native_tool_results(
         if not call_id:
             raise ValueError("native result has no original call id")
         content = result_context(result) if result_context else _result_context(result, session)
-        messages.append(ProviderToolResult(call_id, content))
+        messages.append(ProviderToolResult(call_id, content, images=result.images))
     if boundary_prompt and messages:
         last = messages[-1]
-        messages[-1] = ProviderToolResult(last.call_id, last.content, user_content=boundary_prompt)
+        messages[-1] = ProviderToolResult(last.call_id, last.content, user_content=boundary_prompt, images=last.images)
     return messages

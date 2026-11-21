@@ -35,6 +35,7 @@ export interface ProcessToolRecord {
   result?: string;
   output?: string;
   elapsedMs?: number;
+  phase?: string;
   streamId?: string;
   streamState?: string;
   approval?: Pick<ApprovalState, 'decision' | 'execution' | 'continuation'>;

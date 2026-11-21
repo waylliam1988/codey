@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from codey.automation.browser_session import BrowserSession, _browser_call
-from codey.research.browser_search import BrowserSearchProvider
+from codey.automation.browser_session import BrowserSession
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 from tools.completion_explanation_ab import Target
 from tools.navigation_candidate_ab import (
     Arm,
@@ -94,7 +94,7 @@ def test_fixed_url_typo_changes_only_address_transport(tmp_path: Path, arm: Arm)
 def detail(tmp_path: Path) -> Generator[tuple[BrowserSession, Candidates]]:
     case, _ = fixtures()[2]
     browser = BrowserSearchProvider(engine="bing", headless=True, profile_dir=tmp_path / "profile")
-    session = BrowserSession(browser)
+    session = browser.browser
     try:
         with source_fixture(browser, case, tmp_path):
             assert session.navigate(case.entry).ok
@@ -109,11 +109,8 @@ def test_detail_reference_rejected_after_document_or_link_change(tmp_path: Path,
         if mutation == "reload":
             assert session.navigate(fixtures()[2][0].entry).ok
         else:
-            def mutate() -> object:
-                raw: object = session._page_on_browser_thread().evaluate("document.querySelector('a').href='/changed-detail'")
-                return raw
+            assert session.evaluate("document.querySelector('a').href='/changed-detail'").ok
 
-            _browser_call(mutate)
         with pytest.raises(ValueError, match="Stale|changed"):
             candidates.resolve({"candidate_id": candidates.rows[0]["candidate_id"], "reason": "详情"}, "B", session)
 
@@ -147,11 +144,11 @@ def test_address_characters_and_observation_scope_are_preserved(tmp_path: Path) 
     first = Candidates.observe("search", [{"title": "same", "url": url, "snippet": "one"}])
     second = Candidates.observe("search", [{"title": "same", "url": url, "snippet": "two"}])
     browser = BrowserSearchProvider(engine="bing", headless=True)
-    session = BrowserSession(browser)
+    session = browser.browser
     try:
         selected = {"candidate_id": first.rows[0]["candidate_id"], "reason": "已观察来源"}
         assert first.resolve(selected, "B", session)[0] == url
-        assert browser._session is None  # resolving a search choice does not navigate
+        assert session.resource_binding() is None  # resolving a search choice does not navigate
         with pytest.raises(ValueError, match="Unknown"):
             second.resolve(selected, "B", session)
     finally:

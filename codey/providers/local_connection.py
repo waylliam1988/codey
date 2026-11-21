@@ -5,6 +5,7 @@ from codey.providers import local_config as _local_config
 from codey.providers import local_discovery as _local_discovery
 from codey.providers.api_provider import ApiProvider
 from codey.providers.local_response_codec import normalize_local_reply
+from codey.providers.local_selection import model_metadata
 from codey.providers.local_tool_compat import safe_native_tools
 from codey.providers.local_usage import configure_usage, parser_for
 from codey.runtime.core.api_selection import ApiRunSelection
@@ -119,6 +120,7 @@ def connect_local( *, config: _local_config.LocalProviderConfig | None = None,
         reasoning_effort=config.reasoning_effort if selection.base_url == config.base_url else None,
         api_protocol=config.api_protocol,
         native_tools=native_tools,
+        supports_images=model_metadata(effective.base_url, effective.model, api_key=effective.api_key).get("supports_images") is True,
         # Text tool compatibility changes framing, not transport ownership.
         # KoboldCpp only monitors client disconnects for streamed requests.
         stream=effective.native_tools,
@@ -173,7 +175,8 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
                            stream=requested_native,
                            output_tokens=budget.context_reserve_tokens, token_counter=counter,
                            budget_source="server" if budget.source == "server" else "server_and_configuration" if counter == "koboldcpp" else "configuration",
-                           text_tool_format=text_format)
+                           text_tool_format=text_format,
+                           supports_images=model_metadata(config.base_url, config.model, api_key=config.api_key).get("supports_images") is True)
 
 
 def _target_revision(config: _local_config.LocalProviderConfig) -> str:
@@ -214,6 +217,7 @@ def open_selection(selection: ApiRunSelection) -> ApiProvider:
     provider = ApiProvider(config.base_url, selection.model_id, api_key=config.api_key, api_protocol=selection.protocol,
                            text_tool_format=selection.text_tool_format,
                            native_tools=selection.native_tools, stream=selection.stream, tool_choice=selection.tool_choice,
+                           supports_images=selection.supports_images is True,
                            output_tokens=selection.output_tokens, context_window_tokens=selection.context_window_tokens,
                            context_reserve_tokens=selection.context_reserve_tokens, context_keep_recent_tokens=selection.context_keep_recent_tokens,
                            thinking_enabled=selection.thinking_enabled, reasoning_effort=selection.reasoning_effort,

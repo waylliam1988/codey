@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Literal
 from unittest.mock import patch
 
-from playwright.sync_api import Route
+from codey.automation.browser_contracts import RouteDecision as Route
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -35,9 +35,11 @@ from codey.policies.output_requirement import evaluate
 from codey.policies.tool_requirement import _contains_value, decode_answer, require_tool_success
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition
+from codey.providers.local_config import LocalContextBudget
 from codey.providers.local_discovery import probe_local_endpoint_detail
 from codey.providers.local_response_codec import normalize_local_reply
-from codey.research.browser_search import BrowserSearchProvider
+from codey.providers.local_selection import model_metadata
+from codey.providers.local_tokens import admitted_context_budget, counter_for
 from codey.runtime.core import cancellation
 from codey.types.json_value import (
     JsonObject,
@@ -46,6 +48,7 @@ from codey.types.json_value import (
     require_json_integer,
     require_json_string,
 )
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 from tools.completion_artifact_audit import rejection_audit
 
 Arm = Literal["A", "B"]
@@ -152,9 +155,13 @@ class ExperimentProvider(ApiProvider):
         self.proposals: list[JsonObject] = []
         self.fixed_acquisition = fixed_acquisition
         self.acquisition_action = acquisition_action
+        counter, budget = admitted_context_budget(target.base_url, "", "openai-completions",
+            LocalContextBudget(32768, 8192, 12000, source="configuration"))
         super().__init__(target.base_url, target.model, temperature=0, timeout=target.timeout, stream=stream,
-                         context_window_tokens=32768, context_reserve_tokens=8192,
-                         context_keep_recent_tokens=12000, native_tools=False, thinking_enabled=False,
+                         context_window_tokens=budget.context_window_tokens, context_reserve_tokens=budget.context_reserve_tokens,
+                         context_keep_recent_tokens=budget.context_keep_recent_tokens, native_tools=False, thinking_enabled=False,
+                         request_counter=counter_for(counter, target.base_url, target.model, "", budget.context_window_tokens),
+                         supports_images=model_metadata(target.base_url, target.model).get("supports_images") is True,
                          text_tool_format="json_schema", text_decoder=normalize_local_reply,
                          configure_request=self.configure_experiment)
 

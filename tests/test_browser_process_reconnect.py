@@ -45,29 +45,29 @@ def test_process_restart_uses_exact_committed_browser_and_page(tmp_path: Path, m
                              if page_binding(page, owned=False).target_id == user_target)
             assert user_page.locator("textarea").input_value() == "Unsaved draft survives Codey restart"
             assert user_page.locator("button").inner_text() == "Clicked 1"
-            assert len(browser.contexts[0].pages) == 5
+            assert len(browser.contexts[0].pages) == 4
             if missing == "browser":
                 browser.new_browser_cdp_session().send("Browser.close")
             elif missing == "tab":
                 user_page.close()
         if missing == "browser":
             with cdp_browser(tmp_path / "replacement", port=port):
-                run_process("recover", state, port, "original browser instance is gone")
+                run_process("recover", state, port, "original_browser_instance_lost")
             return
         if missing == "tab":
-            run_process("recover", state, port, "original tab is gone")
+            run_process("recover", state, port, "original_browser_target_lost")
         else:
             run_process("cleanup" if missing == "cleanup" else "recover", state, port)
         with sync_playwright() as observer:
             browser = observer.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
             if missing == "tab":
-                assert len(browser.contexts[0].pages) == 4
+                assert len(browser.contexts[0].pages) == 0  # Terminal cleanup releases the three owned tabs.
             else:
                 user_page = next(page for page in browser.contexts[0].pages
                                  if page_binding(page, owned=False).target_id == user_target)
                 assert user_page.locator("button").inner_text() == ("Clicked 1" if missing == "cleanup" else "Clicked 2")
                 assert user_page.locator("textarea").input_value() == "Unsaved draft survives Codey restart"
-                assert len(browser.contexts[0].pages) == 1  # Four owned tabs closed; borrowed draft kept.
+                assert len(browser.contexts[0].pages) == 1  # Three owned tabs closed; borrowed draft kept.
                 assert any(cookie["name"] == "reconnect_login" and cookie["value"] == "fixture-session"
                            for cookie in browser.contexts[0].cookies("https://example.com"))
 
@@ -95,7 +95,7 @@ def test_resource_binding_roundtrip_and_duplicate_targets() -> None:
 @pytest.mark.parametrize("status,body,error", [
     (503, "Service Unavailable", "HTTP 503"),
     (403, "Forbidden", "HTTP 403"),
-    (200, "Checking your browser… Please wait while we verify you are human.", "no usable visible content"),
+    (200, "Checking your browser… Please wait while we verify you are human.", "page_unavailable"),
 ])
 def test_reconnected_document_must_pass_original_source_quality_checks(
     tmp_path: Path, status: int, body: str, error: str,

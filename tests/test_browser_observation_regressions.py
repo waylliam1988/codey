@@ -8,8 +8,7 @@ from typing import NoReturn
 import pytest
 
 from codey.automation.browser_document import document_changed, same_document
-from codey.automation.browser_query import QueryObservationError
-from codey.automation.browser_session import BrowserSession, _browser_call
+from codey.automation.browser_session import BrowserSession
 from codey.operations import kernel_control
 from codey.operations.browser_followups import pending_click, query_click
 from codey.operations.browser_task_handoff import browser_task_handoff
@@ -35,10 +34,9 @@ from tools.browser_leaf_exposure_ab import evidence_checks
 
 
 def mutate(browser: BrowserSession, code: str) -> None:
-    """Simulate website changes without browser_eval's intentional ref invalidation."""
-    def run() -> None:
-        _value: object = browser._page_on_browser_thread().evaluate(code)
-    _browser_call(run)
+    """Simulate website changes through the same production worker."""
+    observed = browser.evaluate(code)
+    assert observed.ok, observed.model_text
 
 
 def start_query(session: TaskSession, tools: ResearchTools, browser: BrowserSession, html: str) -> JsonObject:
@@ -141,12 +139,11 @@ def test_background_changes_in_a_hidden_target_do_not_confirm_a_visible_result(
     baseline = start_query(session, tools, browser, f'''<button aria-controls="result" onclick="
         document.querySelector('#result').textContent='Updated CORRECT_173';">Query</button>
         <article id="result" {hidden}>Previous result</article><article>Visible copy: Updated CORRECT_173</article>''')
-    with pytest.raises(QueryObservationError) as caught:
-        browser.capture_query_result(baseline, pending='Unconfirmed')
-    assert caught.value.reason == 'query_update_unconfirmed'
+    page = browser.capture_query_result(baseline, pending='Unconfirmed')
+    assert page['query_confirmed'] is False and 'query_region' not in page
     read, ok, _ = ExecutionDelegate(session=session, research_tools=tools).execute(ToolCall('browser_read', {}))
-    assert not ok and 'read_passages' not in read.canonical
-    assert decode_json_object(read.canonical['query_read'])['reason'] == 'query_update_unconfirmed'
+    assert ok and read.canonical['read_passages']
+    assert 'query_click' not in read.audit
     assert pending_click(session._memory_results, browser.document_identity()) is not None
 
 

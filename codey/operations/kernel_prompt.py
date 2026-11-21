@@ -555,7 +555,7 @@ def format_results(results: list[ToolResult], session: TaskSession, *,
 
         reference = next((key for key, value in session._memory_results.items() if value is result), "")
         if reference:
-            spans.append(TextResultSpan(offset, offset + len(block), digest(block), reference, label, result.ok))
+            spans.append(TextResultSpan(offset, offset + len(block), digest(block), reference, label, result.ok, result.images))
         blocks.append(block)
         offset += len(block) + 2
     return FormattedToolResults("\n\n".join(blocks)

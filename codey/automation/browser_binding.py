@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
@@ -47,17 +49,27 @@ class BrowserBinding:
     browser_id: str
     active_target: str
     pages: tuple[PageBinding, ...]
+    selected_frame: str = ""
+    owned_browser: bool = False
+    owned_profile: str = ""
 
     def payload(self) -> JsonObject:
         pages: list[JsonValue] = [page.payload() for page in self.pages]
-        return {"version": 1, "port": self.port, "browser_id": self.browser_id,
-                "active_target": self.active_target, "pages": pages}
+        return {"version": 3, "port": self.port, "browser_id": self.browser_id,
+                "active_target": self.active_target, "pages": pages,
+                "selected_frame": self.selected_frame, "owned_browser": self.owned_browser,
+                "owned_profile": self.owned_profile}
 
     @classmethod
     def read(cls, value: object) -> BrowserBinding:
         row = decode_json_object(value)
-        if (set(row) != {"version", "port", "browser_id", "active_target", "pages"}
-                or require_json_integer(row["version"], "version") != 1):
+        version = require_json_integer(row.get("version"), "version")
+        fields = {"version", "port", "browser_id", "active_target", "pages"}
+        if version in {2, 3}:
+            fields |= {"selected_frame", "owned_browser"}
+        if version == 3:
+            fields.add("owned_profile")
+        if set(row) != fields or version not in {1, 2, 3}:
             raise ValueError("invalid browser resource binding")
         port = require_json_integer(row["port"], "port")
         identity = require_json_string(row["browser_id"], "browser_id")
@@ -67,9 +79,17 @@ class BrowserBinding:
             raise ValueError("invalid browser resource identity")
         pages = tuple(PageBinding.read(page) for page in raw)
         targets = {page.target_id for page in pages}
-        if len(targets) != len(pages) or active not in targets:
+        if len(targets) != len(pages) or (active not in targets if pages else bool(active)):
             raise ValueError("invalid active browser target")
-        return cls(port, identity, active, pages)
+        owned = require_json_boolean(row.get("owned_browser", False), "owned_browser")
+        profile = require_json_string(row.get("owned_profile", ""), "owned_profile")
+        if profile and (not owned or Path(profile).resolve().parent != Path(tempfile.gettempdir()).resolve()
+                        or not Path(profile).name.startswith("codey-task-browser-")):
+            raise ValueError("invalid owned temporary browser profile")
+        frame = require_json_string(row.get("selected_frame", ""), "selected_frame")
+        if frame and not active:
+            raise ValueError("a selected frame requires its original target")
+        return cls(port, identity, active, pages, frame, owned, profile)
 
 
 def browser_endpoint(port: int) -> str:

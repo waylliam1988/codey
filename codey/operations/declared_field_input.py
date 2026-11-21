@@ -1,6 +1,7 @@
 """Lower a frozen destination choice to the existing versioned read/edit leaves."""
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import replace
 from typing import TYPE_CHECKING, Literal
@@ -49,7 +50,8 @@ def free_program_required(task: str) -> bool:
 
 
 def model_spec(original: ToolSpec, paths: tuple[str, ...]) -> ToolSpec:
-    return freeze_spec_parameters(replace(original, required=("path",), declarations="", json_examples=(),
+    example = json.dumps({"tool": original.name, "args": {"path": paths[0]}}, separators=(",", ":"))
+    return freeze_spec_parameters(replace(original, required=("path",), declarations="", json_examples=(example,),
         parameters=(("path", {"type": "string", "enum": list(paths)}),),
         description="Copy the task-declared fields from their complete committed source receipts. "
         "Choose an allowed destination path. The fixed program reads the complete current file, "
@@ -105,13 +107,18 @@ def offer(session: TaskSession, snapshot: TurnSnapshot, context: CompletionConte
     original = next(spec for spec in snapshot.frozen_specs if spec.name == "codemode")
     witnesses = {ref for row in fields for ref in row.observation.evaluation.evidence_refs}
     sources = tuple(ref for ref in records if ref in witnesses)
-    offered = replace(snapshot, input_binding=ModelInputBinding("declared_fields", model_spec(original, tuple(retryable)), sources),
-                      tool_names=tuple(name for name in snapshot.tool_names if name in {"codemode", "ask_user"}),
-                      browser_followups=False, browser_references=None, browser_fill_text=None, task_navigation_url=None)
-    inventory = set(offered.inventory_names)
-    offered = replace(offered, frozen_specs=tuple(spec for spec in offered.frozen_specs if spec.name in inventory),
-                      custom_executors=tuple(row for row in offered.custom_executors if row[0] in inventory))
+    binding = ModelInputBinding("declared_fields", model_spec(original, tuple(retryable)), sources)
+    offered = replace(snapshot, input_binding=binding)
+    from codey.research.answer_contract import submitted_answer, whole_research
+
+    report = ("Report submission is still pending. Use submit_research_answer with the acquired evidence and citations; "
+              "if the task requests a report before editing, submit it before this copy. "
+              if whole_research(session) and submitted_answer(session) is None else "")
     return refresh_snapshot_contract(offered), (
-        "The declared source evidence is complete. Copy the pending fields with codemode using only an allowed path: "
-        + ", ".join(retryable) + ". The application supplies the read/edit program, values and outer receipt reference."
+        "The declared source evidence is complete. The requested file changes are still pending: "
+        + ", ".join(retryable) + ". A report submission does not perform these edits. " + report
+        + "Use the fixed copy entry to apply the pending file changes, for example: " + binding.model_spec.json_examples[0]
+        + ". Choose an allowed path: " + ", ".join(retryable)
+        + ". The application supplies the read/edit program, values and outer receipt reference. "
+        "Other authorized tools remain available. Preserve the user's ordering."
     )

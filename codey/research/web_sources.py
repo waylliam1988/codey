@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from codey.research.search_provenance import SearchAttempt, provider_search_attempts
 from codey.research.source_acquisition import combine_acquisitions, with_attempt
 from codey.research.source_download import fetch_http_document, finish_pdf_download
 from codey.runtime.core import cancellation
@@ -105,6 +106,10 @@ class WebSourceProvider:
     @property
     def last_search_errors(self) -> list[dict[str, str]]:
         return self._browser.last_search_errors if self._browser is not None else []
+
+    @property
+    def search_attempts(self) -> tuple[SearchAttempt, ...]:
+        return provider_search_attempts(self._browser)
 
     def fetch(self, url: str) -> dict[str, object]:
         with cancellation.deadline_scope(time.monotonic() + 30.0):

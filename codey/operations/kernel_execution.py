@@ -11,13 +11,16 @@ never import ``execute_turn`` back (no cycles).
 
 from __future__ import annotations
 
+import time
 from collections.abc import Collection, Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
+from codey.automation.browser_invocation import invocation_scope
 from codey.durable.session import DurableSession
+from codey.operations.browser_progress import browser_invocation
 from codey.operations.kernel_contracts import StopSignal, ToolExecutor
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_facts import bind_source_identity, project_execution_record, project_result_observation
@@ -772,9 +775,20 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
                                            caller_policy=session.policy)
                 results.append(settle(identity, call, result, ok=result.ok))
                 continue
-            result, ok, exit_code = execute_tool_operation(session, call, delegate=delegate, runnable=runnable,
-                turn=active_turn, tool_index=base_index + offset, project_path=project_path,
-                workspace_revision_store=workspace_revision_store)
+            browser_context = browser_invocation(identity, durable=durable if isinstance(durable, DurableSession) else None,
+                store=managed_outputs, session_id=durable.task(run_id).conversation_id if isinstance(durable, DurableSession) else "",
+                run_id=run_id)
+            started = time.monotonic()
+            with invocation_scope(browser_context):
+                result, ok, exit_code = execute_tool_operation(session, call, delegate=delegate, runnable=runnable,
+                    turn=active_turn, tool_index=base_index + offset, project_path=project_path,
+                    workspace_revision_store=workspace_revision_store)
+            if call.name.startswith("browser_"):
+                raw = result.canonical.get("value")
+                delivery = raw.get("delivery") if isinstance(raw, dict) else None
+                result = replace(result, audit={**result.audit, "browser_execution": {
+                    "effect_ref": identity, "elapsed_ms": int((time.monotonic() - started) * 1000),
+                    "phase": "unknown" if delivery == "uncertain" else "finished"}})
             # Single settlement per effect: edits defer settlement until the
             # authoritative bump decides the final result.
             edit_done = _settle_edit_with_workspace_bump(

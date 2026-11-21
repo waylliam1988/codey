@@ -9,7 +9,6 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import fields
-from typing import cast
 
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
 from codey.providers.requests import (
@@ -34,6 +33,7 @@ from codey.types.json_value import (
     require_json_integer,
     require_json_string,
 )
+from codey.types.tool_image import ToolImageRef
 
 _COMMON = frozenset({"timeout", "tool_call_observations", "tool_call_history_groups", "output_token_limit"})
 _TEXT = _COMMON | {"tool_call_json", "tool_call_schema", "tool_call_contract", "tool_call_results"}
@@ -60,9 +60,11 @@ def _tools(value: object) -> tuple[ProviderToolDefinition, ...] | None:
         if set(row) != {"name", "description", "parameters"}:
             raise ValueError("frozen provider declaration is invalid")
         schema = decode_json_object(row["parameters"])
+        frozen = _freeze_schema_value(schema)
+        if not isinstance(frozen, Mapping):
+            raise ValueError("tool parameters must be an object")
         tools.append(ProviderToolDefinition(require_json_string(row["name"], "name"),
-            require_json_string(row["description"], "description"),
-            cast(Mapping[str, object], _freeze_schema_value(schema))))
+            require_json_string(row["description"], "description"), frozen))
     return tuple(tools)
 
 
@@ -72,12 +74,15 @@ def _results(value: object) -> tuple[ProviderToolResult, ...]:
     results = []
     for raw in value:
         row = decode_json_object(raw)
-        if set(row) != {"call_id", "content", "user_content"}:
+        if set(row) not in ({"call_id", "content", "user_content"}, {"call_id", "content", "user_content", "images"}):
             raise ValueError("frozen provider result is invalid")
         user = row["user_content"]
+        images = row.get("images", [])
+        if not isinstance(images, list):
+            raise ValueError("invalid frozen tool images")
         results.append(ProviderToolResult(require_json_string(row["call_id"], "call_id"),
             require_json_string(row["content"], "content"),
-            None if user is None else require_json_string(user, "user_content")))
+            None if user is None else require_json_string(user, "user_content"), tuple(ToolImageRef.read(image) for image in images)))
     return tuple(results)
 
 

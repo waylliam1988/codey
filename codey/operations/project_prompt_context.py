@@ -2,6 +2,7 @@
 
 import logging
 
+from codey.completion.verification_policy import preferred_verification_candidate
 from codey.operations.completion_context import CompletionContextInput
 from codey.operations.project_completion_checks import project_completion_checks
 from codey.operations.project_verification import refresh_verification_candidates
@@ -29,7 +30,8 @@ def prepare_coding_context(session: TaskSession, *, completion_context: Completi
             verification_fresh=fresh,
             verification_failed=failed,
             verification_forbidden=session.verification_forbidden is True,
-            selected_verification=session.selected_verification,
+            selected_verification=(session.selected_verification or preferred_verification_candidate(session.verification_candidates)
+                if session.policy.allows("project.verify") and not session.verification_forbidden else None),
         )
     except Exception as exc:
         # This optional projection never decides completion. The completion

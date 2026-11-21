@@ -8,10 +8,10 @@ import pytest
 from codey.automation.browser_session import BrowserToolOutput
 from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.tool_task import ToolTaskInput
+from codey.operations.browser_resources import build_task_browser
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_protocol import TurnSnapshot, build_turn_snapshot, offer_browser_tools
 from codey.operations.tool_tasks import run_tool_task
-from codey.research.browser_search import _search_browser_call
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object, require_json_string
 from tests.test_browser_production_execution import (
@@ -32,6 +32,7 @@ def test_owned_browser_wait_keeps_worker_available_and_original_binding(
 ) -> None:
     session, tools, browser = production_browser
     runtime = open_runtime(tmp_path)
+    build_task_browser("r", runtime.app.durable.tool_resources, tools, browser=browser)
     snapshot = offer_browser_tools(build_turn_snapshot(session, native=True), session)
     worker: threading.Thread | None = None
 
@@ -56,14 +57,13 @@ def test_owned_browser_wait_keeps_worker_available_and_original_binding(
         ref = next(require_json_string(row["ref"], "ref") for row in elements
                    if isinstance(row, dict) and row.get("role") == "button")
         checked = threading.Event()
-        original = browser._check_wait_on_browser_thread
+        original = browser.wait
 
-        def check(condition: str, value: str, expected: JsonObject | None) -> BrowserToolOutput:
-            result = original(condition, value, expected)
+        def check(condition: str, value: str, timeout_ms: int, *, expected_document: JsonObject | None = None) -> BrowserToolOutput:
             checked.set()
-            return result
+            return original(condition, value, timeout_ms, expected_document=expected_document)
 
-        monkeypatch.setattr(browser, "_check_wait_on_browser_thread", check)
+        monkeypatch.setattr(browser, "wait", check)
         args: JsonObject = {"condition": "url_contains" if action == "url" else "text",
             "value": "?changed" if action == "url" else "37 grams",
             "timeout_ms": 300 if action == "timeout" else 5000, "run_in_background": True}
@@ -78,20 +78,15 @@ def test_owned_browser_wait_keeps_worker_available_and_original_binding(
         assert checked.wait(timeout=4), runtime.app.durable.task(ref_task)
         if action in {"click", "close"}:
             if action == "close":
-                browser.provider.close()  # The admitted task retains the original resource.
-                assert browser.provider._session is not None
+                browser.close()  # The admitted task retains the original resource.
+                assert not browser._process._released
             assert execute(ToolCall("browser_click", {"ref": ref}), 3).ok
         elif action in {"cancel", "cancel_close"}:
             if action == "cancel_close":
-                browser.provider.close()
+                browser.close()
             runtime.app.durable.request_cancel(ref_task)
         elif action not in {"timeout"}:
-            def navigate() -> None:
-                page = browser.provider._fetch_page
-                assert page is not None
-                page.goto(URL + ("?changed" if action == "url" else ""))
-
-            _search_browser_call(navigate)
+            assert browser.navigate(URL + ("?changed" if action == "url" else "")).ok
         worker.join(timeout=6)
         assert not worker.is_alive()
         observed = execute(ToolCall("task_output", {"task_ref": ref_task}), 4)
@@ -101,16 +96,13 @@ def test_owned_browser_wait_keeps_worker_available_and_original_binding(
         if action in {"click", "url", "close"}:
             assert payload["outcome"] == "succeeded", observed.model_text
         elif action == "reload":
-            assert payload["outcome"] == "failed" and "binding changed" in observed.model_text
+            assert payload["outcome"] == "failed" and "wait_document_changed" in observed.model_text
         elif action == "timeout":
             assert payload["outcome"] == "failed" and "timed out" in observed.model_text
         else:
             assert payload["status"] == "cancelled"
-        if action in {"close", "cancel_close"}:
-            assert browser.provider._session is None
-        else:
-            assert browser.snapshot().ok  # Cancelling the wait does not close its page.
-        assert browser.provider._leases == 0
+        assert browser.snapshot().ok  # Child cancellation and close requests retain the task owner.
+        assert browser._leases == 1
         assert not tools.ledger.opened_sources
         assert len(runtime.app.durable.effects(ref_task)) == 1
     finally:
@@ -127,6 +119,7 @@ def test_browser_binding_cleanup_before_dispatch(
 ) -> None:
     session, tools, browser = production_browser
     runtime = open_runtime(tmp_path)
+    build_task_browser("r", runtime.app.durable.tool_resources, tools, browser=browser)
     try:
         if boundary != "missing_page":
             assert browser.navigate(URL).ok
@@ -159,10 +152,12 @@ def test_browser_binding_cleanup_before_dispatch(
             assert accepted.ok and accepted.kind == "accepted", accepted.model_text
             ref = require_json_string(parse_json_object(accepted.model_text)["task_ref"], "task_ref")
             if boundary == "cancel":
-                browser.provider.close()
+                browser.close()
                 runtime.app.durable.request_cancel("r")
                 assert str(runtime.app.durable.task(ref).status) == "cancelled"
-                assert browser.provider._session is None
+                assert not browser._process._released  # The root cancellation has not settled yet.
+                runtime.app.durable.cancel_task("r")
+                assert browser._process._released
             else:
                 # Restart loses volatile handles; the worker must not create a replacement page.
                 runtime.app.durable.tool_resources.release_browser(ref)
@@ -174,6 +169,6 @@ def test_browser_binding_cleanup_before_dispatch(
                 assert "original browser resource is unavailable" in str(runtime.app.durable.task(ref).state)
                 assert not runtime.app.durable.effects(ref)
                 assert browser.document_identity() == before
-        assert browser.provider._leases == 0
+        assert browser._leases == (0 if boundary == "cancel" else 1)
     finally:
         assert runtime.app.close()

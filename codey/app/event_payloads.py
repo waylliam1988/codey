@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 import math
-from typing import Any, SupportsIndex, SupportsInt, TypeAlias, cast
+from collections.abc import Mapping
 
 from codey.agents.shell_approval import shell_command_event_fields
 from codey.providers.diagnostics import sanitize_failure_facts
 from codey.runtime.observe.events import MAX_EVENT_RESULT_CHARS, MAX_EVENT_TEXT_CHARS, clip_event_text
-from codey.utils.refs import strict_exit_code
+from codey.utils.refs import coerce_int, strict_exit_code
 
 SCHEMA_VERSION = 1
 MAX_FINAL_SUMMARY_CHARS = 64_000
-_INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
 
 
-def _payload_task_start(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
+def _payload_task_start(common: dict[str, object], event: Mapping[str, object]) -> dict[str, object]:
     return {
         **common,
         "project": clip_event_text(event.get("project") or "", 500),
@@ -25,21 +24,21 @@ def _payload_task_start(common: dict[str, object], event: dict[str, Any]) -> dic
     }
 
 
-def _payload_status(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
+def _payload_status(common: dict[str, object], event: Mapping[str, object]) -> dict[str, object]:
     return {
         **common,
         "status": clip_event_text(event.get("status") or event.get("text") or "", 80),
     }
 
 
-def _payload_info(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
+def _payload_info(common: dict[str, object], event: Mapping[str, object]) -> dict[str, object]:
     payload = {**common, "text": clip_event_text(event.get("text") or "")}
     if type(event.get("seq")) is int:
         payload["seq"] = event["seq"]
     return payload
 
 
-def _payload_shell_request(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
+def _payload_shell_request(common: dict[str, object], event: Mapping[str, object]) -> dict[str, object]:
     command_fields = shell_command_event_fields(event)
     payload = {
         **common,
@@ -61,16 +60,17 @@ def _payload_shell_request(common: dict[str, object], event: dict[str, Any]) -> 
     return payload
 
 
-def _payload_turn(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
+def _payload_turn(common: dict[str, object], event: Mapping[str, object]) -> dict[str, object]:
     payload = {**common, "turn": _int_or_zero(event.get("turn"))}
     if event.get("note"):
         payload["note"] = clip_event_text(event.get("note") or "")
-    if isinstance(event.get("reasoning"), str) and event["reasoning"].strip():
-        payload["reasoning"] = clip_event_text(event["reasoning"], 64_000)
+    reasoning = event.get("reasoning")
+    if isinstance(reasoning, str) and reasoning.strip():
+        payload["reasoning"] = clip_event_text(reasoning, 64_000)
     return payload
 
 
-def _payload_tool_started(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
+def _payload_tool_started(common: dict[str, object], event: Mapping[str, object]) -> dict[str, object]:
     payload = {
         **common,
         "turn": _int_or_zero(event.get("turn")),
@@ -86,7 +86,7 @@ def _payload_tool_started(common: dict[str, object], event: dict[str, Any]) -> d
     return payload
 
 
-def _payload_tool(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
+def _payload_tool(common: dict[str, object], event: Mapping[str, object]) -> dict[str, object]:
     payload = {
         **common,
         "turn": _int_or_zero(event.get("turn")),
@@ -108,6 +108,11 @@ def _payload_tool(common: dict[str, object], event: dict[str, Any]) -> dict[str,
     strict_exit = strict_exit_code(event.get("exit_code"))
     if strict_exit is not None:
         payload["exit_code"] = strict_exit
+    elapsed = event.get("elapsed_ms")
+    if type(elapsed) is int and elapsed >= 0:
+        payload["elapsed_ms"] = elapsed
+        for key in ("effect_ref", "phase"):
+            _copy_if_present(payload, event, key, limit=160)
     _copy_if_present(payload, event, "output_handle", limit=120)
     for key in ("output_bytes", "output_stored_bytes"):
         if event.get(key) is not None:
@@ -119,7 +124,7 @@ def _payload_tool(common: dict[str, object], event: dict[str, Any]) -> dict[str,
     return payload
 
 
-def _payload_task_done(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
+def _payload_task_done(common: dict[str, object], event: Mapping[str, object]) -> dict[str, object]:
     summary = str(event.get("summary") or "")
     payload = {
         **common,
@@ -158,7 +163,7 @@ def _payload_task_done(common: dict[str, object], event: dict[str, Any]) -> dict
     return payload
 
 
-def _payload_review(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
+def _payload_review(common: dict[str, object], event: Mapping[str, object]) -> dict[str, object]:
     payload = {**common, "text": clip_event_text(event.get("text") or "")}
     review = event.get("review")
     if isinstance(review, dict):
@@ -166,7 +171,7 @@ def _payload_review(common: dict[str, object], event: dict[str, Any]) -> dict[st
     return payload
 
 
-def _payload_headless_close(common: dict[str, object], event: dict[str, Any]) -> dict[str, object]:
+def _payload_headless_close(common: dict[str, object], event: Mapping[str, object]) -> dict[str, object]:
     return {
         **common,
         "stop_reason": clip_event_text(event.get("stop_reason") or "", 80),
@@ -305,15 +310,12 @@ def _bounded_research_value(value: object, budget: list[int], depth: int = 0) ->
 def _int_or_zero(value: object) -> int:
     if isinstance(value, bool):
         return 0
-    try:
-        return int(cast(_INT_INPUT, value))
-    except (TypeError, ValueError, OverflowError):
-        return 0
+    return coerce_int(value)
 
 
 def _copy_if_present(
     target: dict[str, object],
-    source: dict[str, Any],
+    source: Mapping[str, object],
     key: str,
     *,
     limit: int = MAX_EVENT_TEXT_CHARS,
@@ -323,7 +325,7 @@ def _copy_if_present(
         target[key] = clip_event_text(value, limit)
 
 
-def _receipt_display(receipt: dict[str, Any]) -> dict[str, object]:
+def _receipt_display(receipt: Mapping[str, object]) -> dict[str, object]:
     display = receipt.get("display")
     if not isinstance(display, dict):
         return {}
@@ -337,7 +339,7 @@ def _receipt_display(receipt: dict[str, Any]) -> dict[str, object]:
     return section
 
 
-def _receipt_work(receipt: dict[str, Any]) -> dict[str, object]:
+def _receipt_work(receipt: Mapping[str, object]) -> dict[str, object]:
     work = receipt.get("work")
     if not isinstance(work, dict):
         return {}
@@ -352,7 +354,7 @@ def _receipt_work(receipt: dict[str, Any]) -> dict[str, object]:
     return section
 
 
-def _receipt_verification(receipt: dict[str, Any]) -> dict[str, object]:
+def _receipt_verification(receipt: Mapping[str, object]) -> dict[str, object]:
     verification = receipt.get("verification")
     if not isinstance(verification, dict):
         return {}
@@ -375,7 +377,7 @@ def _receipt_verification(receipt: dict[str, Any]) -> dict[str, object]:
     return section
 
 
-def _receipt_integrity(receipt: dict[str, Any]) -> dict[str, object]:
+def _receipt_integrity(receipt: Mapping[str, object]) -> dict[str, object]:
     integrity = receipt.get("integrity")
     if not isinstance(integrity, dict):
         return {}
@@ -410,7 +412,7 @@ def _receipt_integrity(receipt: dict[str, Any]) -> dict[str, object]:
     return section
 
 
-def bounded_receipt(receipt: dict[str, Any]) -> dict[str, object]:
+def bounded_receipt(receipt: Mapping[str, object]) -> dict[str, object]:
     """Bounded schema-v1 receipt projection for the JSONL stream."""
 
     payload: dict[str, object] = {}
@@ -432,7 +434,7 @@ def bounded_receipt(receipt: dict[str, Any]) -> dict[str, object]:
     return payload
 
 
-def _bounded_deferred_tool_call(row: dict[str, Any]) -> dict[str, object]:
+def _bounded_deferred_tool_call(row: Mapping[str, object]) -> dict[str, object]:
     payload: dict[str, object] = {
         "tool_index": _int_or_zero(row.get("tool_index")),
         "tool_name": clip_event_text(row.get("tool_name") or "", 80),
@@ -442,9 +444,11 @@ def _bounded_deferred_tool_call(row: dict[str, Any]) -> dict[str, object]:
     return payload
 
 
-def _bounded_changes(changes: dict[str, Any]) -> dict[str, object]:
-    files = []
-    for item in list(changes.get("files") or [])[:3]:
+def _bounded_changes(changes: Mapping[str, object]) -> dict[str, object]:
+    files: list[dict[str, object]] = []
+    raw = changes.get("files")
+    rows: list[object] | tuple[object, ...] = raw if isinstance(raw, (list, tuple)) else ()
+    for item in rows[:3]:
         if not isinstance(item, dict):
             continue
         files.append({
@@ -458,7 +462,7 @@ def _bounded_changes(changes: dict[str, Any]) -> dict[str, object]:
     }
 
 
-def _bounded_provider_failure(failure: dict[str, Any]) -> dict[str, object]:
+def _bounded_provider_failure(failure: Mapping[str, object]) -> dict[str, object]:
     payload: dict[str, object] = {
         "kind": clip_event_text(failure.get("kind") or "", 80),
         "action": clip_event_text(failure.get("action") or "", 80),
@@ -470,7 +474,7 @@ def _bounded_provider_failure(failure: dict[str, Any]) -> dict[str, object]:
     return payload
 
 
-def _structured_provider_failure(failure: dict[str, Any], event: dict[str, Any]) -> dict[str, object]:
+def _structured_provider_failure(failure: Mapping[str, object], event: Mapping[str, object]) -> dict[str, object]:
     """Expose a bounded, finite action code alongside legacy diagnostics."""
     kind = str(failure.get("kind") or "transient")
     code = {
@@ -481,9 +485,9 @@ def _structured_provider_failure(failure: dict[str, Any], event: dict[str, Any])
         "response_missing": "provider.connection_failed",
     }.get(kind, "provider.connection_failed")
     facts_value = failure.get("facts")
-    facts: dict[str, Any] = {}
+    facts: Mapping[str, object] = {}
     if isinstance(facts_value, dict):
-        facts = cast(dict[str, Any], facts_value)
+        facts = facts_value
     return bounded_failure({
         "code": code,
         "category": "provider",
@@ -496,7 +500,7 @@ def _structured_provider_failure(failure: dict[str, Any], event: dict[str, Any])
     })
 
 
-def bounded_failure(failure: dict[str, Any]) -> dict[str, object]:
+def bounded_failure(failure: Mapping[str, object]) -> dict[str, object]:
     """Project a finite failure fact without exposing executable UI actions."""
     allowed_effects = {"not_started", "applied", "unknown", "not_applicable"}
     payload: dict[str, object] = {
@@ -532,7 +536,7 @@ def bounded_failure(failure: dict[str, Any]) -> dict[str, object]:
     return payload
 
 
-def _bounded_review(review: dict[str, Any]) -> dict[str, object]:
+def _bounded_review(review: Mapping[str, object]) -> dict[str, object]:
     payload: dict[str, object] = {
         "verdict": clip_event_text(review.get("verdict") or "", 40),
         "status": clip_event_text(review.get("status") or "", 40),

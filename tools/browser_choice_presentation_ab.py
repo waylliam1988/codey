@@ -29,7 +29,6 @@ from codey.operations.kernel_protocol import TurnSnapshot
 from codey.operations.task_session import TaskSession
 from codey.policies.tool_requirement import decode_answer
 from codey.providers.base import ProviderToolDefinition
-from codey.research.browser_search import _search_browser_call
 from codey.research.ledger import ResearchLedger
 from codey.research.passages import restore_passages
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -244,14 +243,7 @@ def run_arm(directory: Path, case: Case, arm: Arm, target: Target, *, max_turns:
         if browser is not None:
             generation = browser.generation
 
-            def passive_counts() -> JsonObject:
-                page = browser.provider._fetch_page
-                if page is None or page.is_closed():
-                    return {}
-                raw: object = page.evaluate("() => window.counts || {}")
-                return decode_json_object(raw)
-
-            state = _search_browser_call(passive_counts)
+            state = decode_json_object(browser.inspect_state("window.counts || {}"))
             assert generation == browser.generation, "Passive verifier changed control generations"
         append_json(directory / "presentation.jsonl", {"arm": arm, "turn": context.session.turn,
             "text": recording.presentation, "actual_tools": list(result[0].tool_names),

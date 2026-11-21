@@ -10,12 +10,12 @@ from codey.runtime.core.models import ToolCall
 from codey.toolchain.result_schema import schema_typescript, validate_output
 from codey.toolchain.tool_spec import tool_specs
 from codey.types.json_value import decode_json_object
-from tests.test_browser_production_execution import URL
+from tests.test_browser_production_execution import URL, BrowserFixture
 from tests.test_browser_production_execution import production_browser as production_browser
 
 
 @pytest.mark.parametrize("code", ["null", "true", "42", "'token'", "[1,null]", "({nested:{n:1}})"])
-def test_actual_browser_values_match_frozen_contract(production_browser, code: str) -> None:
+def test_actual_browser_values_match_frozen_contract(production_browser: BrowserFixture, code: str) -> None:
     session, tools, _ = production_browser
     delegate = ExecutionDelegate(session=session, research_tools=tools)
     calls = [ToolCall("browser_navigate", {"url": URL}), ToolCall("browser_snapshot", {}),
@@ -28,14 +28,14 @@ def test_actual_browser_values_match_frozen_contract(production_browser, code: s
         assert ok, result.model_text
         validate_output(call.name, tool_specs()[call.name].output_schema, result.canonical["value"])
         if call.name == "browser_tab_list":
-            assert result.canonical["value"]["page_url"] == URL
+            assert decode_json_object(result.canonical["value"])["page_url"] == URL
 
 
 def test_declared_browser_fields_are_typed_and_missing_data_is_rejected() -> None:
     specs = tool_specs()
     assert '"tabs": Array<' in schema_typescript(specs["browser_tab_list"].output_schema)
     assert '"value": unknown' in schema_typescript(specs["browser_eval"].output_schema)
-    assert '"path": string' in schema_typescript(specs["browser_download"].output_schema)
+    assert '"path"?: string' in schema_typescript(specs["browser_download"].output_schema)
     snapshot = specs["browser_snapshot"].output_schema
     assert 'boolean | null' in schema_typescript(snapshot)
     with pytest.raises(ValueError, match="missing required property 'tabs'"):

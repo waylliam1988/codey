@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from unittest.mock import patch
 
-from codey.app.headless_runner import HeadlessRequest, HeadlessResult, run_headless
+from codey.app.headless_runner import HeadlessConnector, HeadlessRequest, HeadlessResult, run_headless
 from codey.codemode.catalog import build_codemode_catalog, render_declarations
 from codey.operations.browser_completion import complete_page_passages, evaluate_research_sequence
 from codey.operations.kernel_context import KernelContext
@@ -25,10 +25,9 @@ from codey.toolchain.tool_spec import json_contract_text
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tools import browser_production_live_gate as gate
 from tools.browser_outcome_ab import DELAYED_HTML
-from tools.completion_artifact_audit import tool_receipts
+from tools.completion_artifact_audit import EffectReceipt, tool_receipts
 from tools.completion_explanation_ab import (
     Arm,
-    ExperimentProvider,
     Target,
     append_json,
     production_source_digest,
@@ -86,7 +85,7 @@ def narrow(snapshot: TurnSnapshot, step: Handoff) -> TurnSnapshot:
 
 
 @contextmanager
-def candidate(directory: Path, arm: Arm, *, rule: BrowserResearchSequence = RULE) -> Iterator[None]:
+def candidate(directory: Path, arm: Arm, *, rule: BrowserResearchSequence = RULE) -> Generator[None, None, None]:
     original = KernelContext.freeze
     inspect_handoff = handoff
 
@@ -126,7 +125,7 @@ def candidate(directory: Path, arm: Arm, *, rule: BrowserResearchSequence = RULE
 def run_arm(directory: Path, arm: Arm, target: Target, *, delayed: bool = False, max_turns: int = 10) -> JsonObject:
     before = production_source_digest()
     def run(request: HeadlessRequest, *, emit_jsonl: Callable[[dict[str, object]], None],
-            connect_provider: Callable[[str], ExperimentProvider]) -> HeadlessResult:
+            connect_provider: HeadlessConnector) -> HeadlessResult:
         return run_headless(replace(request, required_tools=(*request.required_tools, RULE.declaration)),
                             emit_jsonl=emit_jsonl, connect_provider=connect_provider)
 
@@ -137,12 +136,12 @@ def run_arm(directory: Path, arm: Arm, target: Target, *, delayed: bool = False,
             fixture_html=DELAYED_HTML if delayed else gate.HTML))
     stable = before == production_source_digest()
     handoffs = directory / "handoff.jsonl"
-    phases = [parse_json_object(line) for line in handoffs.read_text(encoding="utf-8").splitlines()] if handoffs.exists() else []
+    phases: list[JsonObject] = [parse_json_object(line) for line in handoffs.read_text(encoding="utf-8").splitlines()] if handoffs.exists() else []
     ready = next((entry["turn"] for entry in phases if entry["phase"] == "submit"), None)
-    receipts = tool_receipts(directory / "state") if (directory / "state" / "durable.sqlite3").exists() else []
+    receipts: list[EffectReceipt] = tool_receipts(directory / "state") if (directory / "state" / "durable.sqlite3").exists() else []
     submissions = [r.result for r in receipts if r.result.call.name == "submit_research_answer"]
     events = directory / "events.jsonl"
-    activity = [parse_json_object(line) for line in events.read_text(encoding="utf-8").splitlines()] if events.exists() else []
+    activity: list[JsonObject] = [parse_json_object(line) for line in events.read_text(encoding="utf-8").splitlines()] if events.exists() else []
     row.update(arm=arm, delayed=delayed, source_stable=stable, source_digest=before, required_sequence=RULE.declaration,
                passed=stable and row.get("passed") is True, ready_turn=ready,
                reads_after_ready=sum(entry.get("type") == "tool" and entry.get("tool_name") == "browser_read"

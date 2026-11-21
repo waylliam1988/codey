@@ -13,7 +13,7 @@ from codey.types.json_value import decode_json_object, parse_json_object
 endpoint = "chat/completions"
 
 
-def encode_context(messages: list[dict[str, object]]) -> list[dict[str, object]]:
+def encode_context(messages: list[dict[str, object]], *, protocol: str = "openai-completions") -> list[dict[str, object]]:
     """Encode canonical history without leaking internal recovery metadata."""
     result = copy.deepcopy(messages)
     for message in result:
@@ -62,9 +62,12 @@ def encode_tools(tools: list[ProviderToolDefinition] | None) -> list[dict[str, o
 
 
 def encode_results(results: list[ProviderToolResult]) -> list[dict[str, object]]:
+    from codey.providers.tool_images import TOOL_IMAGES_KEY
+
     encoded: list[dict[str, object]] = []
     for item in results:
-        encoded.append({"role": "tool", "tool_call_id": item.call_id, "content": item.content})
+        encoded.append({"role": "tool", "tool_call_id": item.call_id, "content": item.content,
+                        **({TOOL_IMAGES_KEY: [image.payload() for image in item.images]} if item.images else {})})
         if item.user_content:
             encoded.append({"role": "user", "content": item.user_content})
     return encoded
@@ -115,7 +118,10 @@ def checkpoint_item(text: str) -> dict[str, object]:
 
 def build_payload(messages: list[dict[str, object]], tools: list[ProviderToolDefinition] | None,
                   settings: GenerationSettings) -> dict[str, object]:
-    body: dict[str, object] = {"model": settings.model, "messages": messages, "temperature": settings.temperature, "stream": settings.stream}
+    from codey.providers.tool_images import materialize_messages
+
+    wire = materialize_messages(messages, protocol="openai-completions", pending_calls=pending_calls)
+    body: dict[str, object] = {"model": settings.model, "messages": wire, "temperature": settings.temperature, "stream": settings.stream}
     if settings.thinking is not None:
         body["chat_template_kwargs"] = {"enable_thinking": settings.thinking}
     if settings.effort is not None:

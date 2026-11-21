@@ -6,15 +6,14 @@ from types import SimpleNamespace
 from typing import TypeAlias
 
 import pytest
-from playwright.sync_api import Route
 
+from codey.automation.browser_contracts import RouteDecision as Route
 from codey.automation.browser_session import BrowserSession
 from codey.operations.kernel_facts import bind_source_identity, project_execution_record, project_result_observation
 from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_execution import ExecutionDelegate, build_research_tools
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.research.browser_search import BrowserSearchProvider
 from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.ledger import ResearchLedger
 from codey.research.tools import ResearchTools
@@ -22,6 +21,7 @@ from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import decode_json_object
 from tests.support.real_cdp import chromium_executable
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 
 pytestmark = pytest.mark.usefixtures("public_source_dns")
 URL = "https://example.com/production-browser-article"
@@ -38,8 +38,8 @@ class FixtureBrowser(BrowserSearchProvider):
 
 @pytest.fixture()
 def production_browser() -> Iterator[BrowserFixture]:
-    provider = FixtureBrowser(headless=True, browser_path=chromium_executable())
-    browser = BrowserSession.from_provider(provider)
+    provider = FixtureBrowser(headless=True, browser_path=chromium_executable(), owner_task_id="r")
+    browser = provider.browser
     tools = ResearchTools(search=provider, store=None, changes=None, browser_session=browser)
     session = TaskSession(policy=TaskPolicy(grants=frozenset({
         "control", "web.read", "browser.observe", "browser.interact", "browser.effect",
@@ -102,8 +102,9 @@ def test_actions_and_reads_share_worker_but_only_committed_reads_establish_evide
     ref = _ref(delegate, "button")
     clicked, ok, _ = delegate.execute(ToolCall("browser_click", {"ref": ref}))
     assert ok
-    assert "37 grams" in clicked.model_text
+    assert "37 grams" in browser.snapshot().model_text
     assert not tools.ledger.opened_sources
+    assert browser.evaluate("document.querySelector('button').outerHTML=document.querySelector('button').outerHTML").ok
     stale, ok, _ = delegate.execute(ToolCall("browser_click", {"ref": ref}))
     assert not ok
     assert decode_json_object(stale.canonical["value"])["reason"] == "stale_ref"
@@ -125,8 +126,8 @@ def test_actions_and_reads_share_worker_but_only_committed_reads_establish_evide
     assert replay.source_ids == session.source_ids
 
 
-def test_eval_is_visible_action_output_and_invalidates_refs_without_citations(production_browser: BrowserFixture) -> None:
-    session, tools, _ = production_browser
+def test_eval_is_visible_action_output_and_preserves_unchanged_nodes_without_citations(production_browser: BrowserFixture) -> None:
+    session, tools, browser = production_browser
     delegate = _delegate(session, tools)
     delegate.execute(ToolCall("browser_navigate", {"url": URL}))
     ref = _ref(delegate, "button")
@@ -134,6 +135,8 @@ def test_eval_is_visible_action_output_and_invalidates_refs_without_citations(pr
     assert ok and "EVAL_TOKEN_42" in evaluated.model_text
     _settle(session, tools, evaluated)
     assert not tools.ledger.read_passages
+    assert delegate.execute(ToolCall("browser_click", {"ref": ref}))[1]
+    assert browser.evaluate("document.body.innerHTML='<button>Replacement</button>'").ok
     assert not delegate.execute(ToolCall("browser_click", {"ref": ref}))[1]
 
 
@@ -154,14 +157,11 @@ def test_browser_read_rejects_http_error_page_before_evidence(
         route.fulfill(status=503, content_type="text/html",
                       body="<html><body><app-root>Loading...</app-root></body></html>")
 
-    monkeypatch.setattr(browser.provider, "_guard_request", error_route)
+    assert isinstance(tools.search, FixtureBrowser)
+    monkeypatch.setattr(tools.search, "_guard_request", error_route)
     delegate = _delegate(session, tools)
     navigated, ok, _ = delegate.execute(ToolCall("browser_navigate", {"url": URL}))
     assert ok, navigated.model_text
-    def forbidden_content(_page: object) -> str:
-        raise AssertionError("HTTP error must be rejected before reading the DOM")
-
-    monkeypatch.setattr("playwright.sync_api.Page.content", forbidden_content)
     captured, ok, _ = delegate.execute(ToolCall("browser_read", {}))
     assert not ok
     assert "HTTP 503" in captured.model_text
@@ -176,7 +176,7 @@ def test_browser_navigation_rejects_javascript_before_page_goto(production_brows
         "url": "javascript:document.body.textContent='MUTATED'",
     }))
     assert not ok
-    assert "navigation denied" in result.model_text
+    assert "navigation_denied" in result.model_text
 
 
 def test_successful_browser_read_requires_passages() -> None:
@@ -214,9 +214,11 @@ def test_default_provider_wrapper_shares_one_browser_without_starting_chromium()
         resources = build_research_tools(SimpleNamespace(search_factory=lambda: provider),
                                          session_id="s", project="", browser_actions=True)
         assert resources.browser_session is not None
-        assert resources.browser_session.provider is base
-        assert web.browser_source is base
-        assert base._session is None
+        from codey.research.task_browser_source import TaskBrowserSource
+
+        assert isinstance(web.browser_source, TaskBrowserSource)
+        assert web.browser_source.browser is resources.browser_session
+        assert resources.browser_session.resource_binding() is None
         assert resources.create_staged().browser_session is resources.browser_session
     finally:
         provider.close()

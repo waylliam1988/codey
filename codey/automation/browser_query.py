@@ -36,6 +36,19 @@ class QueryObservationError(RuntimeError):
         self.reason = reason
 
 
+def changed_query_region(before: JsonObject, after: JsonObject) -> str:
+    old, new = before.get("regions"), after.get("regions")
+    if not isinstance(old, list) or len(old) != 1 or not isinstance(new, list) or len(new) != 1:
+        return ""
+    previous, current = old[0], new[0]
+    if (isinstance(previous, dict) and isinstance(current, dict) and previous.get("key") == current.get("key")
+            and current.get("busy") is False and isinstance(body := current.get("text"), str)
+            and current.get("visible") is True
+            and (body != previous.get("text") or previous.get("visible") is False)):
+        return body
+    return ""
+
+
 def _send(cdp: CDPSession, method: str, params: dict[str, object] | None = None) -> JsonObject:
     raw: object = cdp.send(method, params)
     return decode_json_object(raw)

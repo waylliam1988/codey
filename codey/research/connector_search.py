@@ -13,7 +13,8 @@ import math
 import time
 import urllib.error
 import urllib.request
-from typing import Any, cast
+from contextlib import AbstractContextManager
+from typing import Protocol, runtime_checkable
 from urllib.parse import urlencode
 
 from codey.policies.network import check_fetch_url
@@ -33,6 +34,7 @@ from codey.research.http_redirects import (
 from codey.research.http_redirects import (
     redirect_target as _redirect_target,
 )
+from codey.research.search_provenance import SearchAttempt, filter_site_results, provider_search_attempts
 from codey.research.source_acquisition import acquisition_observation, attempt, with_attempt
 from codey.research.source_connectors import (
     CONNECTOR_AVAILABLE_STATUSES,
@@ -53,7 +55,7 @@ from codey.research.source_connectors import (
 from codey.research.source_gateway import _SearchProvider
 from codey.research.urls import canonical_key, full_key, host_key, parsed_url
 from codey.runtime.core import cancellation
-from codey.types.json_value import JsonValue
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 from codey.utils.refs import clip, coerce_float
 
 CONNECTOR_SEARCH_IDS = ("pubmed", "arxiv")
@@ -103,8 +105,10 @@ class ConnectorAwareSearchProvider:
         self.last_connector_errors: list[dict[str, str]] = []
         self.last_search_failures: list[dict[str, str]] = []
         self.last_search_failure: dict[str, str] = {}
+        self.search_attempts: tuple[SearchAttempt, ...] = ()
 
-    def search(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
+    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
+        self.search_attempts = ()
         query = " ".join((query or "").split())
         if not query:
             return []
@@ -124,7 +128,9 @@ class ConnectorAwareSearchProvider:
         except Exception:
             if not connector_results:
                 raise
-            base_results = list[dict[str, Any]]()  # Real connector hits survive a browser failure.
+            base_results = list[JsonObject]()  # Real connector hits survive a browser failure.
+        finally:
+            self.search_attempts += provider_search_attempts(self.base_provider)
         return _merge_results(connector_results, base_results, limit=result_limit)
 
     def fetch(self, url: str) -> dict[str, object]:
@@ -159,7 +165,7 @@ class ConnectorAwareSearchProvider:
         if callable(close):
             close()
 
-    def _base_search(self, query: str, *, limit: int) -> list[dict[str, Any]]:
+    def _base_search(self, query: str, *, limit: int) -> list[JsonObject]:
         try:
             return list(self.base_provider.search(query, limit=limit))
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
@@ -181,8 +187,8 @@ class ConnectorAwareSearchProvider:
         *,
         limit: int,
         safe_query: SafeConnectorQuery | None = None,
-    ) -> list[dict[str, Any]]:
-        results: list[dict[str, Any]] = []
+    ) -> list[JsonObject]:
+        results: list[JsonObject] = []
         safe_query = safe_query or safe_connector_query(query, limit=12)
         if not safe_query.terms:
             self._record_skip("connector", "search", safe_query.skip_reason or "connector_query_empty")
@@ -199,11 +205,16 @@ class ConnectorAwareSearchProvider:
                 if remaining <= 0:
                     break
                 connector_result = self._search_connector(connector_id, safe_query, remaining)
+                connector_rows = [_result_from_hit(hit) for hit in connector_result.hits if hit.canonical_url]
+                connector_rows, rejected = filter_site_results(query, connector_rows)
+                self.search_attempts += (SearchAttempt(query, connector_id,
+                    extraction_scope="connector_metadata", accepted_urls=tuple(str(row["url"]) for row in connector_rows),
+                    rejected_urls=rejected, failure_kind="; ".join(connector_result.errors)),)
                 for hit in connector_result.hits:
                     if hit.canonical_url:
                         self._hits_by_url[canonical_key(hit.canonical_url)] = hit
-                    row = _result_from_hit(hit)
-                    if row:
+                    row = next((row for row in connector_rows if row["url"] == hit.canonical_url), None)
+                    if row is not None:
                         results.append(row)
                     if len(results) >= limit:
                         break
@@ -228,6 +239,7 @@ class ConnectorAwareSearchProvider:
             raise
         except Exception as exc:
             self._record_error(connector_id, "search", exc)
+            return SourceConnectorResult(connector_id=connector_id, errors=(type(exc).__name__,))
         return SourceConnectorResult(connector_id=connector_id)
 
     def _search_pubmed(self, safe_query: SafeConnectorQuery, limit: int) -> SourceConnectorResult:
@@ -247,8 +259,11 @@ class ConnectorAwareSearchProvider:
                 "tool": _PUBMED_TOOL_NAME,
             }
         )
-        payload = json.loads(self._read_connector_url("pubmed", f"{_PUBMED_SEARCH_URL}?{params}"))
-        raw_ids = payload.get("esearchresult", {}).get("idlist", [])
+        payload: object = json.loads(self._read_connector_url("pubmed", f"{_PUBMED_SEARCH_URL}?{params}"))
+        result = decode_json_object(decode_json_object(payload)["esearchresult"])
+        raw_ids = result["idlist"]
+        if not isinstance(raw_ids, list):
+            raise ValueError("invalid PubMed idlist")
         return tuple(str(item).strip() for item in raw_ids if is_valid_pubmed_id(item))
 
     def _pubmed_fetch_ids(
@@ -416,7 +431,7 @@ def _connector_query(safe_terms: tuple[str, ...], connector_id: str) -> str:
     return " ".join(terms)
 
 
-def _result_from_hit(hit: SourceHit) -> dict[str, Any]:
+def _result_from_hit(hit: SourceHit) -> JsonObject:
     if not hit.canonical_url:
         return {}
     label = "PubMed" if hit.connector_id == "pubmed" else "arXiv"
@@ -439,8 +454,8 @@ def _page_from_fetched(fetched: FetchedSource) -> dict[str, object]:
     }
 
 
-def _merge_results(connector_results: list[dict[str, Any]], base_results: list[dict[str, Any]], *, limit: int) -> list[dict[str, Any]]:
-    merged: list[dict[str, Any]] = []
+def _merge_results(connector_results: list[JsonObject], base_results: list[JsonObject], *, limit: int) -> list[JsonObject]:
+    merged: list[JsonObject] = []
     seen_connector: set[str] = set()
     seen_base: set[str] = set()
     for row in connector_results:
@@ -484,11 +499,19 @@ def _merge_results(connector_results: list[dict[str, Any]], base_results: list[d
 
 _CONNECTOR_MAX_REDIRECTS = 5
 
-_CONNECTOR_OPENER = build_no_redirect_opener()
+_CONNECTOR_OPENER: urllib.request.OpenerDirector = build_no_redirect_opener()
 
 
-def _open_connector_url(req: Any, timeout: float) -> Any:
-    return _CONNECTOR_OPENER.open(req, timeout=timeout)
+@runtime_checkable
+class _ReadableResponse(Protocol):
+    def read(self, size: int) -> bytes: ...
+
+
+def _open_connector_url(req: urllib.request.Request, timeout: float) -> AbstractContextManager[object]:
+    response: object = _CONNECTOR_OPENER.open(req, timeout=timeout)
+    if not isinstance(response, AbstractContextManager):
+        raise TypeError("connector response requires a context manager")
+    return response
 
 
 
@@ -518,15 +541,18 @@ def _read_url_text(url: str, *, timeout: float) -> str:
         )
         try:
             with _open_connector_url(request, timeout=_remaining_timeout(deadline)) as response:
-                status = getattr(response, "status", getattr(response, "code", 200))
+                status: object = getattr(response, "status", getattr(response, "code", 200))
+                headers: object = getattr(response, "headers", None)
                 if _is_redirect_status(status):
-                    next_url = _redirect_target(current_url, response.headers)
+                    next_url = _redirect_target(current_url, headers)
                     if not next_url:
                         raise ValueError("redirect response missing Location header")
                     current_url = next_url
                     continue
+                if not isinstance(response, _ReadableResponse):
+                    raise TypeError("connector response requires a byte stream")
                 data = response.read(1024 * 1024)
-                return cast(str, data.decode(response_charset(response.headers), errors="replace"))
+                return data.decode(response_charset(headers), errors="replace")
         except urllib.error.HTTPError as exc:
             if _is_redirect_status(exc.code):
                 try:

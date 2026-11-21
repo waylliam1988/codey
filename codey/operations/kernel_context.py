@@ -96,13 +96,16 @@ class KernelContext:
         self.window = self.capabilities.window_ref
         self.completion_context = wiring._completion_context_with_ignores(
             self.observation.completion_context, self.execution.workspace_ignored_paths)
+        from codey.operations.browser_progress import restore_browser_progress
         from codey.operations.browser_resources import build_task_browser
         from codey.toolchain.tool_spec import tool_specs
 
-        if any(spec.executor == "browser" and session.policy.allows(spec.grant) for spec in tool_specs().values()):
+        if ((session.policy.allows("web.read") and self.execution.research_tools is not None)
+                or any(spec.executor == "browser" and session.policy.allows(spec.grant) for spec in tool_specs().values())):
             browser = build_task_browser(self.sink.run_id, self.durable.tool_resources,
                                          self.execution.research_tools, browser=self.execution.browser_session)
             self.execution = replace(self.execution, browser_session=browser)
+            restore_browser_progress(browser, durable=self.durable, store=self.sink.managed_outputs, run_id=self.sink.run_id)
         if self.execution.research_tools is not None:
             tools = self.execution.research_tools
             tools.direct_urls = session.required_source_urls
@@ -411,10 +414,15 @@ class KernelContext:
 
             snapshot = offer_memory_candidates(snapshot)
         browser = self.execution.browser_session
+        from codey.operations.browser_resources import resume_assistance_observation
         from codey.operations.task_handoff import task_handoff
 
-        return task_handoff(self.session, snapshot, self.completion_context, browser,
-                            delivered_results=delivered_results)
+        question = decode_json_object(thaw_json(self.durable.task(self.sink.run_id).state.get("question", {})))
+        assistance = (resume_assistance_observation(browser, question.get("continuation", {}), self.session._memory_results)
+                      if question.get("state") == "answered" else "")
+        snapshot, hint = task_handoff(self.session, snapshot, self.completion_context, browser,
+                                     delivered_results=delivered_results)
+        return snapshot, "\n\n".join(part for part in (assistance, hint) if part)
 
     def freeze(self, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int, prompt: str = "",
                messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
@@ -853,6 +861,10 @@ class KernelContext:
     def close(self, state: RuntimeOperationState, result: KernelResult, *, counters: RuntimeExecutionCounters | None = None) -> None:
         from codey.operations.explanation_repair import active
 
+        if result.stop_reason == "max_turns" and not result.completed:
+            draft = result.summary if result.summary != "max turns reached" else ""
+            result = replace(result, summary="max turns reached; the task is incomplete."
+                + ("\n\nUnaccepted draft:\n" + draft if draft else ""))
         if active((counters or state.counters).progress) and result.stop_reason in {"no_progress", "max_turns", "protocol"}:
             result = replace(result, stop_reason="answer_repair_exhausted")
         self.advance(state, operation_payload.LEAF_CLOSING, data=ClosingDecision(purpose="closing", result=result.to_payload()),

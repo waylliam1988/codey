@@ -9,6 +9,7 @@ import json
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 from urllib.parse import ParseResult, parse_qs, quote_plus, unquote, urlparse
@@ -36,6 +37,12 @@ from codey.research.extract import (
     _clean_space,
     _usable_fetch_page_text,
     extract_title,
+)
+from codey.research.search_provenance import (
+    SearchAttempt,
+    filter_site_results,
+    organic_search_selector,
+    query_consistency,
 )
 from codey.research.source_acquisition import with_attempt
 from codey.runtime.core import cancellation
@@ -170,6 +177,7 @@ class BrowserSearchProvider:
         self._last_worker_health: dict[str, object] = {}
         self.last_search_errors: list[dict[str, str]] = []
         self.last_search_failure: dict[str, str] = {}
+        self.search_attempts: tuple[SearchAttempt, ...] = ()
         self._lease_lock = threading.Lock()
         self._leases = 0
         self._close_requested = False
@@ -342,6 +350,7 @@ class BrowserSearchProvider:
 
     def search(self, query: str, limit: int = 8) -> list[JsonObject]:
         cancellation.check()
+        self.search_attempts = ()
         self.last_search_errors = []
         self.last_search_failure = {}
         try:
@@ -366,6 +375,7 @@ class BrowserSearchProvider:
                 if time.monotonic() >= engine_deadline:
                     break
                 page = None
+                self.search_attempts += (SearchAttempt(query, engine),)
                 try:
                     page = (
                         self._ensure_search_page_on_browser_thread()
@@ -425,6 +435,8 @@ class BrowserSearchProvider:
         deadline: float | None = None,
     ) -> list[JsonObject]:
         active_engine = engine or self.engine
+        if not self.search_attempts:
+            self.search_attempts = (SearchAttempt(query, active_engine),)
         active_profile = profile if isinstance(profile, dict) else self._profile
         if not isinstance(active_profile, dict):
             raise SearchUnavailableError("search_profile_missing", engine=active_engine, detail="search profile unavailable")
@@ -458,7 +470,8 @@ class BrowserSearchProvider:
             except Exception:
                 pass  # Inspect the page below, including explicit no-result/challenge text.
         results: list[JsonObject] = []
-        for block in page.query_selector_all(str(active_profile["result_selector"]))[: limit * 2]:
+        result_selector = organic_search_selector(str(active_profile["result_selector"]))
+        for block in page.query_selector_all(result_selector)[: limit * 2]:
             cancellation.check()
             link = block.query_selector(str(active_profile["link_selector"]))
             if link is None:
@@ -472,11 +485,20 @@ class BrowserSearchProvider:
             snippet_el = block.query_selector(str(active_profile["snippet_selector"]))
             snippet = _element_text(snippet_el) if snippet_el else _snippet_from_block(block, title)
             results.append({"title": title, "url": href, "snippet": snippet})
-            if len(results) >= limit:
-                break
+        scope = "result_regions" if results else "main_anchors"
         if not results:
             cancellation.check()
-            results = self._anchor_scan_results(page, limit)
+            results = self._anchor_scan_results(page, limit * 2)
+        captured_url = _page_url(page)
+        consistent = query_consistency(captured_url, query)
+        self.search_attempts = (*self.search_attempts[:-1], replace(self.search_attempts[-1],
+            final_url=captured_url, query_consistent=consistent, extraction_scope=scope))
+        if captured_url != final_url or consistent is False:
+            raise SearchUnavailableError("search_query_mismatch", engine=active_engine)
+        results, rejected = filter_site_results(query, results)
+        results = results[:limit]
+        self.search_attempts = (*self.search_attempts[:-1], replace(self.search_attempts[-1],
+            accepted_urls=tuple(str(row["url"]) for row in results), rejected_urls=rejected))
         if results:
             cancellation.check()
             return results
@@ -493,7 +515,8 @@ class BrowserSearchProvider:
     def _anchor_scan_results(self, page: Page, limit: int) -> list[JsonObject]:
         results: list[JsonObject] = []
         seen: set[str] = set()
-        for link in page.query_selector_all("a[href]"):
+        selector = organic_search_selector(":is(main,[role=main],#b_results,#links,.results) a[href]")
+        for link in page.query_selector_all(selector):
             cancellation.check()
             href = _normalize_result_url(link.get_attribute("href") or "")
             if href in seen or not _looks_like_public_result_url(href):
@@ -664,6 +687,9 @@ class BrowserSearchProvider:
         if observed_host:
             payload["observed_host"] = str(observed_host)[:120]
         self.last_search_errors.append(payload)
+        if self.search_attempts:
+            self.search_attempts = (*self.search_attempts[:-1], replace(self.search_attempts[-1],
+                failure_kind=failure_kind))
         del self.last_search_errors[:-8]
         self.last_search_failure = dict(payload)
 

@@ -1,75 +1,40 @@
-"""Research browser provider that retains a bound page for user-assisted resume."""
-
+"""Experiment adapters borrow the production task process and source receiver."""
 from __future__ import annotations
 
-from playwright.sync_api import Page
+from pathlib import Path
 
-from codey.research import source_download
-from codey.research.browser_search import (
-    _FETCH_TOTAL_TIMEOUT_SECONDS,
-    BrowserSearchProvider,
-    _fetch_page_content_after_settle,
-    _requires_login,
-    _search_browser_call,
-)
-from codey.research.extract import _MAX_PAGE_CHARS, _fetch_page_failure_kind, _usable_fetch_page_text, extract_title
+from codey.automation.browser_contracts import BrowserConfig, RouteDecision
+from codey.automation.browser_routes import route_policy
+from codey.automation.browser_session import BrowserSession
+from codey.policies.network import check_fetch_url
+from codey.research.browser_page import validate_browser_capture
 from codey.research.source_acquisition import with_attempt
 from codey.research.source_gateway import OpenedSource, ResearchSourceGateway
+from codey.research.task_browser_source import TaskBrowserSource
 
 
-class ResumableBrowserSearchProvider(BrowserSearchProvider):
-    """Keep the task page after a bounded failure and read it again in place."""
+class ResumableBrowserSearchProvider(TaskBrowserSource):
+    def __init__(self, *, headless: bool = True, browser_path: str | None = None, isolated: bool = True,
+                 launch: bool = True, cdp_port: int = 0, require_existing_session: bool = False,
+                 profile_dir: Path | None = None, bring_to_front: bool = False, owner_task_id: str = "",
+                 engine: str | None = None) -> None:
+        super().__init__(BrowserSession(BrowserConfig(browser_path=browser_path or "",
+            profile_dir=str(profile_dir) if profile_dir is not None else "", cdp_port=cdp_port,
+            headless=headless, isolated=isolated and not require_existing_session, launch=launch and not require_existing_session),
+            network_policy=route_policy(lambda reply: self._guard_request(reply)), owner_task_id=owner_task_id), engine=engine)
 
-    def _discard_fetch_page_on_browser_thread(self, page: Page | None) -> None:
-        """Retain the bound page; task cancellation still closes the session."""
-        if page is not self._fetch_page:
-            super()._discard_fetch_page_on_browser_thread(page)
+    def _guard_request(self, route: RouteDecision) -> None:
+        route.abort() if check_fetch_url(route.request.url) else route.continue_()
 
     def resume_fetch(self) -> dict[str, object]:
-        """Read the current bound page without navigating or acquiring a URL again."""
-        result = _search_browser_call(
-            self._resume_fetch_on_browser_thread,
-            timeout=_FETCH_TOTAL_TIMEOUT_SECONDS,
-        )
+        try:
+            result = validate_browser_capture(self.browser.capture())
+        except (OSError, RuntimeError, ValueError) as exc:
+            return {"status": "error", "failure_code": "snapshot_unavailable", "detail": str(exc)}
         return with_attempt(result, "browser", str(result.get("url") or ""))
 
-    def _resume_fetch_on_browser_thread(self) -> dict[str, object]:
-        page = self._fetch_page
-        if page is None or page.is_closed():
-            return source_download._fetch_failure(
-                "",
-                "the retained browser page is unavailable",
-                code="snapshot_unavailable",
-                delivery="not_attempted",
-            )
-        url = page.url
-        html, text = _fetch_page_content_after_settle(page)
-        if _requires_login(page, text):
-            return source_download._fetch_failure(
-                url,
-                "login_required: page requires authentication",
-                code="login_required",
-                delivery="confirmed",
-            )
-        if not _usable_fetch_page_text(text):
-            kind = _fetch_page_failure_kind(text)
-            return source_download._fetch_failure(
-                url,
-                f"page had no usable visible content after the current-page observation: {kind}",
-                code="page_unavailable" if kind == "page_unavailable" else "page_not_loaded",
-                delivery="confirmed",
-            )
-        truncated = len(text) > _MAX_PAGE_CHARS
-        if truncated:
-            text = text[:_MAX_PAGE_CHARS]
-        return {
-            "status": "ok",
-            "url": url,
-            "title": extract_title(html),
-            "text": text,
-            "truncated": truncated,
-            "observation": "current_page",
-        }
+    def close(self) -> None:
+        self.browser.close()
 
 
 class BrowserCaptureGateway(ResearchSourceGateway):

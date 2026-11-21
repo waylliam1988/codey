@@ -4,14 +4,10 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from unittest.mock import patch
 from urllib.request import urlopen
 
-from codey.automation.browser import CdpEndpoint
-from codey.research.browser_search import _search_browser_call
 from codey.research.ledger import ResearchLedger
 from codey.types.json_value import JsonObject, canonical_json_object, decode_json_value
-from tools.browser_experiment_interaction import BrowserInteraction
 from tools.browser_experiment_sources import BrowserCaptureGateway, ResumableBrowserSearchProvider
 
 URLS = ("https://zhuanlan.zhihu.com/p/399217412", "https://zhuanlan.zhihu.com/p/22937491675")
@@ -29,44 +25,36 @@ def targets(port: int) -> dict[str, str]:
 def run(directory: Path, port: int) -> JsonObject:
     initial = targets(port)
     provider = ResumableBrowserSearchProvider(cdp_port=port, isolated=False,
-                                              bring_to_front=False)
-
-    def endpoint(**kwargs: object) -> CdpEndpoint:
-        return CdpEndpoint(port, None)
+                                              bring_to_front=False, launch=False, require_existing_session=True)
 
     def binding() -> JsonObject:
-        session = provider._session
-        page = provider._fetch_page
-        if session is None or page is None:
-            raise ValueError("fetch did not retain a bound page")
-        return {"browser_token": id(session.browser), "context_token": id(page.context),
-                "page_token": id(page), "owns_browser": session.owns_browser,
-                "owns_context": session.owns_context, "owns_session_page": session.owns_page,
-                "fetch_is_session_page": page is session.page}
+        value = provider.browser.resource_binding()
+        if value is None:
+            raise ValueError("source did not retain an identified browser target")
+        return value
 
     rows: list[JsonObject] = []
     try:
-        with patch("codey.automation.browser._ensure_cdp_endpoint", endpoint):
-            for number, url in enumerate(URLS, 1):
-                navigation = provider.fetch(url)
-                (directory / f"navigation-{number}.json").write_text(
-                    json.dumps(navigation, ensure_ascii=False, indent=2), encoding="utf-8")
-                identity = _search_browser_call(binding)
-                interaction = BrowserInteraction(provider)
-                observed = interaction.snapshot()
-                capture = interaction.capture()
-                ledger = ResearchLedger()
-                outcome = BrowserCaptureGateway(provider, ledger).accept_capture(url, capture)
-                text = outcome.document.text if outcome.document is not None else ""
-                (directory / f"source-{number}.txt").write_text(text, encoding="utf-8")
-                row = canonical_json_object({"url": url, "navigation": navigation, "binding": identity,
-                    "observation": observed.observation, "capture_status": outcome.status,
-                    "failure_code": outcome.failure_code if outcome.status != "ok" else "", "text_chars": len(text),
-                    "binding_unchanged": _search_browser_call(binding) == identity})
-                rows.append(row)
-                (directory / f"source-{number}.json").write_text(json.dumps(row, ensure_ascii=False, indent=2), encoding="utf-8")
-                print(json.dumps({key: row[key] for key in ("url", "capture_status", "failure_code", "text_chars", "binding_unchanged")},
-                                 ensure_ascii=False), flush=True)
+        for number, url in enumerate(URLS, 1):
+            navigation = provider.fetch(url)
+            (directory / f"navigation-{number}.json").write_text(
+                json.dumps(navigation, ensure_ascii=False, indent=2), encoding="utf-8")
+            identity = binding()
+            interaction = provider.browser
+            observed = interaction.snapshot()
+            capture = interaction.capture()
+            ledger = ResearchLedger()
+            outcome = BrowserCaptureGateway(provider, ledger).accept_capture(url, capture)
+            text = outcome.document.text if outcome.document is not None else ""
+            (directory / f"source-{number}.txt").write_text(text, encoding="utf-8")
+            row = canonical_json_object({"url": url, "navigation": navigation, "binding": identity,
+                "observation": observed.observation, "capture_status": outcome.status,
+                "failure_code": outcome.failure_code if outcome.status != "ok" else "", "text_chars": len(text),
+                "binding_unchanged": binding() == identity})
+            rows.append(row)
+            (directory / f"source-{number}.json").write_text(json.dumps(row, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(json.dumps({key: row[key] for key in ("url", "capture_status", "failure_code", "text_chars", "binding_unchanged")},
+                             ensure_ascii=False), flush=True)
     finally:
         provider.close()
     remaining = targets(port)

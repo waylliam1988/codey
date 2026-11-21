@@ -19,10 +19,12 @@ from codey.research.ledger import (
     SourceQuality,
 )
 from codey.research.receipt_types import SourceSearchLocator, SourceSearchObservation
+from codey.research.search_provenance import decode_search_attempt
 from codey.research.source_document import SourceReadScope
 from codey.research.urls import parsed_url
 from codey.types.json_value import (
     JsonObject,
+    JsonValue,
     canonical_json_object,
     encode_transport_value,
     require_json_boolean,
@@ -49,6 +51,8 @@ def _record_fields(value: object, model: type[SearchRecord] | type[SearchResultR
     row = canonical_json_object(value)
     if model is OpenedSource and "read_scope" not in row:
         row["read_scope"] = None  # Sources captured before target ranges were recorded.
+    if model is SearchRecord and "attempts" not in row:
+        row["attempts"] = list[JsonValue]()  # Historical receipts did not observe search provenance.
     source_fields: tuple[Field[object], ...] = fields(model)
     if set(row) != {item.name for item in source_fields}:
         raise ValueError(f"invalid {model.__name__} observation fields")
@@ -98,7 +102,12 @@ def search_observation(observation: object) -> SearchRecord:
         results.append(SearchResultRecord(require_json_integer(hit["rank"], "rank"),
             require_json_string(hit["title"], "title"), require_json_string(hit["url"], "url"),
             require_json_string(hit["snippet"], "snippet")))
-    return SearchRecord(query=require_json_string(row["query"], "query"), timestamp=require_json_string(row["timestamp"], "timestamp"), results=tuple(results))
+    attempts = row["attempts"]
+    if not isinstance(attempts, list):
+        raise ValueError("invalid search attempts")
+    return SearchRecord(query=require_json_string(row["query"], "query"),
+        timestamp=require_json_string(row["timestamp"], "timestamp"), results=tuple(results),
+        attempts=tuple(decode_search_attempt(item) for item in attempts))
 
 
 def source_observation(observation: object) -> tuple[OpenedSource, str, dict[int, str]]:

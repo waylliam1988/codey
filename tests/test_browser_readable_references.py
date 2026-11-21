@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from codey.automation.browser_session import BrowserSession
-from codey.codemode.catalog import render_declarations, snapshot_catalog
+from codey.codemode.catalog import catalog_describe, render_declarations, snapshot_catalog
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.operations.browser_references import BrowserReferences
 from codey.operations.browser_task_handoff import bind_browser_references
@@ -137,8 +137,9 @@ def test_outer_and_nested_use_the_same_ref_schema_and_frozen_binding() -> None:
     properties = decode_json_object(canonical_json_object(nested.parameters)["properties"])
     assert canonical_json_object(dict(outer.parameters)["ref"]) == properties["ref"]
     assert "anyOf" in decode_json_object(properties["ref"])
-    choice: JsonObject = {"role": "textbox", "name": "备注", "context": "订单 A-173"}
-    assert json.dumps(choice, ensure_ascii=False) in render_declarations(snapshot_catalog(frozen))
+    choice: JsonObject = {"role": "textbox", "name": "备注"}
+    declaration = catalog_describe(snapshot_catalog(frozen), "tools.browser_fill")
+    assert declaration is not None and json.dumps(choice, ensure_ascii=False) in declaration.description
     action: JsonObject = {"tool": "browser_fill", "args": {"ref": {"role": "textbox", "name": "备注"}, "value": "x"}}
     assert not normalize_turn(decode_text_turn(json.dumps(action)), snapshot=frozen).protocol_error
 
@@ -199,7 +200,7 @@ def test_chromium_fill_never_resolves_ambiguity_by_discarding_a_disabled_neighbo
     assert len(fills) == int(context is not None)
 
 
-@pytest.mark.parametrize("change", ["name", "role", "disabled", "hidden", "replacement", "context", "generation", "page"])
+@pytest.mark.parametrize("change", ["name", "role", "disabled", "hidden", "replacement", "context", "page"])
 def test_chromium_rejects_changed_meaning_before_delivery(
     production_browser: tuple[TaskSession, ResearchTools, BrowserSession], change: str,
 ) -> None:
@@ -214,9 +215,7 @@ def test_chromium_rejects_changed_meaning_before_delivery(
         "hidden": "document.querySelector('button').hidden=true",
         "replacement": "document.querySelector('button').outerHTML='<button>Query</button>'",
         "context": "document.querySelector('section').setAttribute('aria-label','订单 A-174')"}
-    if change == "generation":
-        browser.snapshot()
-    elif change == "page":
+    if change == "page":
         assert browser.navigate(URL + "?new-document").ok
     else:
         mutate(browser, mutations[change])
@@ -227,8 +226,22 @@ def test_chromium_rejects_changed_meaning_before_delivery(
     clicks = [row for row in session._memory_results.values() if row.call.name == "browser_click"]
     assert len(clicks) == 1 and decode_json_object(clicks[0].canonical["value"])["delivery"] == "not_delivered"
     assert decode_json_object(clicks[0].canonical["value"])["reason"] == (
-        "disabled_control" if change == "disabled" else "stale_ref")
+        "disabled_control" if change == "disabled" else "control_not_visible" if change == "hidden" else "stale_ref")
     assert isinstance(clicks[0].call.args["ref"], str)
+
+
+def test_unchanged_control_binding_survives_a_new_observation(
+    production_browser: tuple[TaskSession, ResearchTools, BrowserSession],
+) -> None:
+    session, tools, browser = production_browser
+    assert ExecutionDelegate(session=session, research_tools=tools).execute(ToolCall("browser_navigate", {"url": URL}))[1]
+    install(browser, '<button onclick="window.delivered=(window.delivered||0)+1">Query</button>')
+    frozen = observed_snapshot(session, browser)
+    assert browser.snapshot().ok
+    result = program(session, tools, restore_snapshot(snapshot_description(frozen)),
+                     "return unwrap(await tools.browser_click({ref:{role:'button',name:'Query'}}));")
+    assert result.ok, result.model_text
+    assert browser.evaluate("window.delivered").observation["value"] == 1
 
 
 @pytest.mark.parametrize("same_document", [False, True])
