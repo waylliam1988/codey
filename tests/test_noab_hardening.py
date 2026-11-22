@@ -12,6 +12,7 @@ from codey.toolchain.runtime import (
     edit_file,
     retry_replacement_without_line_numbers,
 )
+from codey.types.json_value import parse_json_object
 
 
 def test_overflow_classification() -> None:
@@ -53,7 +54,7 @@ def test_receipts_persist_complete_large_results(tmp_path: Path) -> None:
         "schema_version": 2, "sha256": result["result_payload_sha256"]})
     payload = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     assert text_digest(payload) == result["result_payload_sha256"]
-    assert json.loads(payload)["model_text"] == "z" * 30_000
+    assert parse_json_object(payload)["model_text"] == "z" * 30_000
 
 
 def test_edit_line_prefix_retry(tmp_path: Path) -> None:

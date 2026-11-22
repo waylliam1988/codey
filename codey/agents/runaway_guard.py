@@ -56,8 +56,7 @@ def attempt_record(
     turn: int,
     edit_epoch: int = 0,
 ) -> ToolAttemptRecord:
-    audit = getattr(result, "audit", {})
-    changed = bool(audit.get("changed")) if isinstance(audit, dict) else False
+    changed = bool(result.audit.get("changed"))
     return ToolAttemptRecord(
         tool=(call.name or ""),
         call_fp=tool_fingerprint(call),
@@ -93,16 +92,6 @@ def detect_exact_repeat(
                 f"Do not repeat the same failing {tail[-1].tool} call with identical arguments. "
                 "Use a narrower read/grep offset, inspect the error, or explain the blocker."
             ),
-        )
-    reads = [
-        rec.call_fp
-        for rec in tail
-        if rec.tool == "read"
-    ]
-    if len(reads) == threshold and len(set(reads)) == 1:
-        return RunawayDecision(
-            block=True,
-            reason="Do not re-read the same file offset repeatedly. Advance the offset or switch to grep.",
         )
     return RunawayDecision(block=False)
 

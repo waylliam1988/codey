@@ -447,3 +447,33 @@ Q003 自有三个生产文件和深入检查的关联测试完成 Any/行为验�
 - durable 存储共享依赖修改后，Q008 最终重跑全部直接和调用方文件：`python -m pytest -q tests/test_project_audit_root_paths.py tests/test_agent_tools.py tests/test_agent_request_no_dead_fields.py tests/test_project_audit_tools_ownership.py tests/test_project_audit_advisor_kernel.py tests/test_audit_resolve_paths.py tests/test_consensus_audit_split.py tests/test_agent_effect_sandwich.py tests/test_tool_replay_policy.py tests/test_read_before_edit_ab.py tests/test_tool_runtime.py --tb=short` → **退出 0，161 passed / 42 subtests passed，12.44 秒**。不与先前重叠批次相加成唯一用例总数。
 - 四个 Q008 生产文件与 q008-final-full-types.json 保存的最终哈希一致；前述九文件加严 Any、当前 737 文件三类型门及精度检查仍有实际成功证据。Q008 原有四个文件完成，累计 **9 / 291 批、26 / 975 生产文件**；191 文件门禁仍未完整通过，三个未解决项按其实际模块保留。
 - Q008 准备独立提交 agent 工具契约、根目录链接修复、转发合并、四个相关测试文件和两份进度记录，不夹带其他工作区代码。下一批回到 Q008B：state.py / runaway_guard.py（状态与循环保护）。
+
+Q008 已本地提交：3213e921（fix(agents): normalize audit roots and type tool dispatch contracts）。durable 修复后的九文件加严 Any 命令再次退出 0。下一批 Q008B 尚未开始；总 goal 保持 active。
+
+
+### Q008B：有界信息去重与循环保护（进行中）
+
+- 上轮为实际进展：60f68f9b / 3213e921 已提交。恢复时 HEAD=f328a801（其他工作 browser 提交），工作区仅本进度记录有上一轮 hash 补记；保留。目标、根 AGENTS、构建/测试配置及当前结构文档已重读，无嵌套 AGENTS。
+- 声明范围保持原 state.py / runaway_guard.py；调用方 kernel_progress.py 与数据定义 runtime/core/progress.py 只按必要依赖追踪，不将它们算作全模块治理完成。state 的去重键/最大容量/插入顺序淘汰与内存快照使用一致，ToolAttemptRecord 按既有文档重导出 core 的同一类型。DEFAULT_CYCLE_PERIODS、detect_abab_cycle 等在 __all__ 中承诺公开，即使仓内调用少也保留；未以搜索无引用删除 API。_safe_int 对 bool 的行为不同于 coerce_int，不强行合并。
+- **确定性 bug**：相同 read 参数读取三次，只要名称为 read 就忽略返回指纹而拦截；返回 first/second/third 或 first/first/changed 都被判为停滞。独立依据：runaway_guard 模块公开约束“only intercepts provably stuck loops / AAA same tool + same args + same result”，以及 kernel_progress.observe 的“新输出不应仅因旧参数而停止”约束。新输出不能证明相同调用/结果的闭环。
+- 修改前 `python -m pytest -q tests/test_runaway_result_progress.py --tb=short` → **退出 1，2 failed / 7 passed，1.25 秒**；失败均为目标 read 行为，read_file/search 是对照，完全相同结果仍拦截的正向对照本来通过。生产修改后相同输入与断言通过。修复只删除忽略结果的特例，保留调用/结果双指纹的 AAA 和周期检测。
+- `attempt_record` 直接使用 ToolResult.audit 的已验证 Mapping 字段，去掉 getattr 引入的 Any；ToolResult.__post_init__ 已规范 audit 为 dict，保持 changed 的原有 truthiness，不改变执行状态。现有 malformed-result/status 负例未放宽断言：坏 callback 用有注解函数加显式方法故障注入，仍由 execute_turn 判为 receipted error；五个坏 bool 值通过 object.__setattr__ 注入实际 dataclass 后调用原 __post_init__，校验路径与自动生成构造器调用同一方法，不把坏输入声称为 bool。
+- 测试使用 JsonObject、明确回调/返回值、parse_json_object；原无类型 kernel_runtime helper 调用迁移到已有的 typed kernel_fixture 同一生产 driver 入口。该用例没有自定义 sink/审批/boundary observer，不涉及两 helper 的不同兼容分支；原畸形回复和 protocol 停止断言保留。旧 _State 的既有 arg-type ignore 未新增或扩展；不是 Any 逃逸的新手段。
+
+| 实际命令 | 退出码 | 结果 |
+| --- | --- | --- |
+| `python -m pytest -q tests/test_seen_info.py tests/test_abab_cycle.py tests/test_noab_hardening.py tests/test_tool_execution_status_is_not_display_text.py --tb=short` | 0 | 修改前 36 passed，3.89 秒 |
+| `python -m mypy codey/agents/state.py codey/agents/runaway_guard.py tests/test_seen_info.py tests/test_abab_cycle.py tests/test_noab_hardening.py tests/test_tool_execution_status_is_not_display_text.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` | 1 | 修改前 73 条 / 4 文件；state/test_seen_info 本来通过 |
+| `python -m pytest -q tests/test_runaway_result_progress.py tests/test_seen_info.py tests/test_abab_cycle.py tests/test_noab_hardening.py tests/test_tool_execution_status_is_not_display_text.py --tb=short` | 0 | 修改后 45 passed，4.38 秒；后续负例注入类型调整待扩大组复验 |
+| `python -m mypy codey/agents/state.py codey/agents/runaway_guard.py tests/test_seen_info.py tests/test_abab_cycle.py tests/test_noab_hardening.py tests/test_tool_execution_status_is_not_display_text.py tests/test_runaway_result_progress.py tests/support/kernel_fixture.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` | 1 → 0 | 首轮剩 mock.patch.dict 的隐式 dict[Any,Any] 和坏 bool 的静态合同冲突两条；显式故障注入/原校验方法替代后，8 个完整文件通过，无新增 cast/ignore 或关闭检查 |
+
+依赖债务：runtime/core/progress.py 的持久快照 decoder 有 dict/list 运行时收窄后的隐式 Any 传播与 **record，原 Q190 尚未治理，不计完成；kernel_progress/progress_comparison 的其余业务仍归 Q102，不扩展当前批次。原 191 文件门禁与三个 CodeMode 待确认项保持未解决。当前完成计数仍 9 / 291、26 / 975，待本批最终验证、diff 和提交。
+
+
+Q008B 最终验收：
+
+- `python -m pytest -q tests/test_runaway_result_progress.py tests/test_seen_info.py tests/test_abab_cycle.py tests/test_noab_hardening.py tests/test_tool_execution_status_is_not_display_text.py tests/test_kernel_rejected_completion_progress.py tests/test_codemode_observation_progress.py tests/test_browser_action_progress.py tests/test_runtime_helper_boundaries.py --tb=short` → **退出 0，133 passed，70.29 秒**，包括持久恢复、周期/重复拦截、完成拒绝、CodeMode 与浏览器进度调用方；无 skip。
+- 八路径 scoped Pyrefly / ty / Ruff 首轮分别 0 / 1 / 0。ty 暴露旧 _State 不是有效 TaskState（原 mypy arg-type ignore 不约束 ty）。独立依据为 build_conversation_plan 的 TaskState 契约及当前 durable 只读上下文要求：改为隔离 AppContext，关闭 scheduler/memory，设置相同 local/s 会话绑定、保持无历史上下文；四条 API 预算和 plan 身份断言不变，finally 关闭资源，删除原 ignore。`python -m pytest -q tests/test_abab_cycle.py::test_conversation_plan_applies_selected_api_budget --tb=short` → **退出 0，1 passed，1.52 秒**。这是旧 fixture 合同问题，不更改正确生产接口以迁就它。
+- 修改 fixture 后，前述八完整路径的加严 Any mypy / Pyrefly / ty / Ruff **全部退出 0**，Pyrefly scoped 0 errors、0 suppressed；完整命令/输出保存在 q008b-scope-final.json。生产源码未再改动，不机械重跑此前未受影响的 133 例。
+- `python -m mypy codey --python-version 3.11` → **0，737 文件通过**；`pyrefly check codey --python-version 3.11` → **0，0 errors，既有 35 suppressed/165 warnings 保留**；`ty check codey --python-version 3.11` → **0**；`python -m tools.kernel_type_precision_gate` → **0**。各命令串行、737 文件哈希前后一致，changed_during_checks=[]，记录 q008b-validation.json（该文件保留 scoped ty 首次失败，最终修复见 scope-final）。
+- Q008B 两个生产文件完成；累计 **10 / 291 批、28 / 975 个生产文件**。本批仅提交 runaway_guard、三份既有测试、一份新增回归及两份进度记录，共七路径；state 源码无需修改，不制造空变更。下批 Q008C：handoff.py 的有界会话交接，先验证基线再改动。相关 Q190 快照类型债务、CodeMode 三个失败及其余原队列仍未完成。

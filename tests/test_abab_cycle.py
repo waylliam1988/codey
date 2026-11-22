@@ -11,9 +11,10 @@ from codey.agents.runaway_guard import (
 from codey.agents.state import ToolAttemptRecord
 from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.types.json_value import JsonObject
 
 
-def _ok(name: str, args: dict, text: str, *, turn: int = 0) -> ToolAttemptRecord:
+def _ok(name: str, args: JsonObject, text: str, *, turn: int = 0) -> ToolAttemptRecord:
     return attempt_record(ToolCall(name=name, args=args), ToolResult(ok=True, call=ToolCall(name, args), model_text=text), turn=turn)
 
 
@@ -135,13 +136,17 @@ def test_repeated_malformed_tool_response_stops_at_protocol_limit(tmp_path: Path
 
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
-    from tests.support.kernel_runtime import run_task_kernel
+    from codey.providers.requests import ProviderRequest
+    from codey.providers.transport import ProviderTransport
+    from tests.support.kernel_fixture import run_task_kernel
 
     policy = TaskPolicy(grants=frozenset({"control"}))
     session = TaskSession(policy=policy, task_kind="project", project="", max_turns=3, task_text="hi")
 
-    class _BadProvider:
-        def send(self, prompt: str, timeout: object = None) -> str:
+    class _BadProvider(ProviderTransport):
+        provider: object = None
+
+        def execute_request(self, request: ProviderRequest) -> object:
             return '{"tool":'
 
     with patch("codey.operations.kernel_transport.provider_uses_native", return_value=False):
@@ -246,32 +251,31 @@ def test_local_context_defaults_belong_to_connection_configuration() -> None:
     assert provider.context_budget.keep_recent_tokens == 12_000
 
 
-def test_conversation_plan_applies_selected_api_budget() -> None:
+def test_conversation_plan_applies_selected_api_budget(tmp_path: Path) -> None:
     from codey.agents.handoff import ConversationContext
+    from codey.app.context import AppContext
     from codey.operations.conversation_plan import build_conversation_plan
     from codey.providers.api_provider import ApiProvider
 
-    class _State:
-        def provider_session_changed(self, provider_id: str, session_id: str) -> bool:
-            return False
-
-        def visible_session_excerpt(self, session_id: str, current_request: str = "") -> str:
-            return ""
-
+    state = AppContext(tmp_path, start_scheduler=False, memory_enabled=False)
     conversation = ConversationContext()
-    plan = build_conversation_plan(
-        state=_State(),  # type: ignore[arg-type]
-        session_id="s",
-        provider_id="local",
-        provider=ApiProvider("http://localhost:9/v1", "fixture"),
-        conversation=conversation,
-        task_kind="project",
-        project=None,
-        task="do work",
-        continue_task=False,
-        trace=None,
-    )
-    assert conversation.hard_limit == 32_768 - 8_192
-    assert conversation.reserve_tokens == 8_192
-    assert conversation.keep_recent_tokens == 12_000
-    assert plan.conversation is conversation
+    try:
+        state.set_provider_session("local", "s")
+        plan = build_conversation_plan(
+            state=state,
+            session_id="s",
+            provider_id="local",
+            provider=ApiProvider("http://localhost:9/v1", "fixture"),
+            conversation=conversation,
+            task_kind="project",
+            project=None,
+            task="do work",
+            continue_task=False,
+            trace=None,
+        )
+        assert conversation.hard_limit == 32_768 - 8_192
+        assert conversation.reserve_tokens == 8_192
+        assert conversation.keep_recent_tokens == 12_000
+        assert plan.conversation is conversation
+    finally:
+        assert state.close()

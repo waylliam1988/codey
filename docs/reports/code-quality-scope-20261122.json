@@ -1575,10 +1575,24 @@
         "codey/agents/runaway_guard.py"
       ],
       "id": "Q008B",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": "recompute at entry; initial combined count 73"
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/agents/state.py",
+        "codey/agents/runaway_guard.py"
+      ],
+      "verified_files": [
+        "codey/agents/state.py",
+        "codey/agents/runaway_guard.py"
+      ],
+      "candidate_test_count": "recompute at entry; initial combined count 73",
+      "tests": [
+        "tests/test_seen_info.py",
+        "tests/test_abab_cycle.py",
+        "tests/test_noab_hardening.py",
+        "tests/test_tool_execution_status_is_not_display_text.py",
+        "tests/test_runaway_result_progress.py"
+      ],
+      "result": "Read-only result-changing false repeat reproduced before fix (2 failed / 7 passed), then fixed by retaining call+result identity rule. Baseline 36 passed; post-fix direct 45 passed; caller group 133 passed. Eight whole files pass strong Any/mypy, pyrefly, ty and Ruff. Old incomplete TaskState test double replaced with isolated AppContext; original budget assertions preserved, prior ignore removed, target test passed. Normal production mypy/pyrefly/ty and precision gate passed; no public export removals."
     },
     {
       "responsibility": "Provider-neutral conversation handoff state",
@@ -4094,7 +4108,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 45
+      "candidate_test_count": 45,
+      "follow_up": [
+        "Q008B call-path inspection: runtime/core/progress.py from_payload uses unparameterized dict/list narrowing and **record in persisted ProgressSnapshot decoder; whole-file strict Any migration still pending. No edits made in Q008B."
+      ]
     },
     {
       "responsibility": "codey/runtime/core: provider connection and selection",
