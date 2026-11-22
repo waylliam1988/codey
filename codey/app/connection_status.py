@@ -5,10 +5,12 @@ from __future__ import annotations
 import contextlib
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Protocol, runtime_checkable
+
+from codey.utils.object_fields import object_fields
 
 STATUS_TTL_S = 3.0
 
@@ -30,13 +32,13 @@ class ConnectionSnapshot:
     source: str = ""
     checked_at: float = 0.0
     error: str = ""
-    data: dict[str, Any] = field(default_factory=dict)
+    data: dict[str, object] = field(default_factory=dict)
 
     @property
     def available(self) -> bool:
         return self.state == "ready"
 
-    def payload(self, label: str) -> dict[str, Any]:
+    def payload(self, label: str) -> dict[str, object]:
         return {
             "id": self.provider_id,
             "label": label,
@@ -49,6 +51,16 @@ class ConnectionSnapshot:
         }
 
 
+@runtime_checkable
+class _RevisionCallback(Protocol):
+    def __call__(self) -> object: ...
+
+
+@runtime_checkable
+class _ProbeCallback(Protocol):
+    def __call__(self, request: ProbeRequest, /) -> object: ...
+
+
 class ConnectionStatusCoordinator:
     """Coordinate connector probes without owning connector-specific logic."""
 
@@ -58,8 +70,8 @@ class ConnectionStatusCoordinator:
         provider_ids: Callable[[], Iterable[str]],
         labels: Callable[[], dict[str, str]],
         enabled: Callable[[str], bool],
-        connector: Callable[[str], Any],
-        emit: Callable[[dict[str, Any]], None] | None = None,
+        connector: Callable[[str], object],
+        emit: Callable[[dict[str, object]], None] | None = None,
         ttl_s: float = STATUS_TTL_S,
     ) -> None:
         self._provider_ids = provider_ids
@@ -80,8 +92,8 @@ class ConnectionStatusCoordinator:
     def _revision(self, provider_id: str) -> str:
         try:
             connector = self._connector(provider_id)
-            status_key = getattr(connector, "status_key", None)
-            if callable(status_key):
+            status_key: object = getattr(connector, "status_key", None)
+            if isinstance(status_key, _RevisionCallback):
                 value = status_key()
                 if value:
                     return str(value)
@@ -113,16 +125,16 @@ class ConnectionStatusCoordinator:
             request = ProbeRequest(provider_id, revision, force=force)
             future = self._executor.submit(self._run_probe, request)
             self._futures[provider_id] = future
-            future.add_done_callback(lambda done: self._publish(provider_id, revision, generation, done))
+        future.add_done_callback(lambda done: self._publish(provider_id, revision, generation, done))
 
     def _run_probe(self, request: ProbeRequest) -> ConnectionSnapshot:
         try:
             connector = self._connector(request.provider_id)
-            probe = getattr(connector, "probe_status", None)
-            if not callable(probe):
+            probe: object = getattr(connector, "probe_status", None)
+            if not isinstance(probe, _ProbeCallback):
                 raise RuntimeError("provider does not expose a status probe")
             raw = probe(request)
-            if not isinstance(raw, dict):
+            if not object_fields(raw):
                 raise ValueError("provider status probe returned an invalid payload")
             state = str(raw.get("state") or ("ready" if raw.get("available") is True else "unavailable"))
             if state not in {"ready", "unavailable", "blocked"}:
@@ -182,7 +194,7 @@ class ConnectionStatusCoordinator:
         self._submit(provider_id, revision, force=force)
         return self._current(provider_id)
 
-    def observe_catalog(self, provider_id: str, payload: dict[str, Any]) -> None:
+    def observe_catalog(self, provider_id: str, payload: Mapping[str, object]) -> None:
         """Publish explicit discovery without letting an older probe replace it."""
         revision = self._revision(provider_id)
         models = payload.get("models", [])
@@ -232,7 +244,7 @@ class ConnectionStatusCoordinator:
         with self._lock:
             return self._current(provider_id)
 
-    def data(self, provider_id: str) -> dict[str, Any]:
+    def data(self, provider_id: str) -> dict[str, object]:
         with self._lock:
             return dict(self._current(provider_id).data)
 

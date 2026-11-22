@@ -64,6 +64,7 @@ def test_conditional_release_keeps_started_worker_and_only_wakes_after_a_release
     assert woken == []
     assert registry.finish(run.run_id, {"type": "task_done", "stop_reason": "done"}) is not None
     run = coordinator.reserve_run(session_id="chat", project=None, task="work", provider_id="local")
+    assert run is not None
     coordinator.release_unstarted_run(run.run_id)
     coordinator.release_unstarted_run(run.run_id)
     assert not registry.is_busy()
