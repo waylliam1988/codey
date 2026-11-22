@@ -872,3 +872,13 @@ Q015E 已提交：`73a12095`（fix(service): release completed ownership when di
 - 当前基线workspace paths+edit fidelity **0，45 passed/2 skipped，2.77秒**，q004-revalidation.json。新增与公开docstring一致的LF/CRLF/CR/混合BOM四个边界，证明True保留原内容、缺省/False仍保持universal-newline语义；不改生产实现，不宣称发现新bug。
 - 最终 `python -m pytest -q tests/test_workspace_paths.py tests/test_edit_text_fidelity.py tests/test_followup_semantic_definition.py --tb=short` → **0，49 passed/2 skipped/4 subtests passed，3.01秒**。两skip为Windows无O_NOFOLLOW原测试，不新增skip，不隐藏失败。两完整文件加严Any/Pyrefly/ty/Ruff全0；逐命令退出码/输出见q004-revalidation-final.json。当前未修改生产源，Q015E已通过的749文件生产类型门不因测试新增机械重跑。
 - Q004恢复完成；当前 **23 / 305批完整完成、48 / 995生产文件属于完整完成批次**，另有部分批次中2个已独立验证文件，共50个当前已验证文件；不将部分批次的verified混计完整完成。下一唯一主批Q015C重新核验API外部intent推断转交变更，之后Q015F。
+
+
+Q004 重新核验已提交：`135d8e7a`（test(paths): verify raw newline hashes and edit caller boundaries）。
+
+### Q015C 外部 API 入场 intent 变更重新核验（完成）
+
+- 外部变更仅为run_submit_response末尾7参数元组中的intent：新的auto任务转交entry_auth.inferred_intent，显式intent和resume仍按原值。定位唯一改动与相关TaskSubmitter/EntryAuth契约；未为可选优化重新处理无关API行为。当前原范围基线 **0，26 passed，2.36秒**，q015c-revalidation-baseline.json。
+- 六个新增边界直接使用有类型captured EntryAuth：缺省/显式auto采纳hybrid、无推断保留auto、显式project/research不覆盖、resume不改auto；同时断言denied project.write、严格研究/开源要求、无写入要求和源run身份原样转交，防止仅改模式而扩大权限。未修改生产或放宽已有断言，没有把测试新增声称为新的生产bug修复。
+- 最终 `python -m pytest -q tests/test_task_input_contract.py tests/test_conversation_entry_auth.py tests/test_edit_api.py tests/test_task_input_and_output_contracts.py::test_api_passes_explicit_contract_and_rejects_invalid_contract tests/durable/test_question_authority.py --tb=short` → **0，32 passed，2.47秒**，无skip。两完整文件严格Any/Pyrefly/ty/Ruff全0；Pyrefly原5 warnings保留，q015c-revalidation-final.json。执行但未修改的共享测试不宣称整文件Any完成，归原owning批次；test_conversation_entry_auth.py旧Mock/无注解在其测试支持队列仍未治理。
+- Q015C恢复完成。当前 **24 / 305批完整完成，49 / 995生产文件属于完整完成批次**，另有部分批次中2文件已独立验证，共51个当前已验证文件。两个实际被外部修改的已完成源已重验；生产三个类型门已在当前749文件通过后无生产变更，不机械重复。下一主批Q015F server.py与其测试支持债务。

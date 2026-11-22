@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from codey.app.submission_types import TaskSubmitter
+from codey.task.entry_auth import EntryAuth
 from codey.types.json_value import JsonValue
 
 
@@ -87,6 +88,49 @@ def test_resume_instruction_uses_the_declared_default_when_omitted(
 
 
 INVALID_SOURCES: list[JsonValue] = [None, True, False, 42, [], {}, ["run-1"], {"id": "run-1"}]
+
+
+@pytest.mark.parametrize("intent,inferred,resume,expected", [
+    (None, "hybrid", False, "hybrid"),
+    ("auto", "hybrid", False, "hybrid"),
+    ("auto", "", False, "auto"),
+    ("project", "hybrid", False, "project"),
+    ("research", "hybrid", False, "research"),
+    ("auto", "hybrid", True, "auto"),
+])
+def test_captured_intent_inference_applies_only_to_new_automatic_tasks(
+    tmp_path: Path, intent: str | None, inferred: str, resume: bool, expected: str,
+) -> None:
+    from codey.app.api import run_submit_response
+
+    calls: list[tuple[bool, str, dict[str, object]]] = []
+
+    def submit(
+        session_id: str, project: str | None, task: str, max_turns: int,
+        continue_task: bool, provider_id: str, intent: str, **kwargs: object,
+    ) -> str:
+        calls.append((continue_task, intent, kwargs))
+        return "run-2"
+
+    body: dict[str, object] = {"project": str(tmp_path), "provider": "deepseek", "task": "Inspect"}
+    if intent is not None:
+        body["intent"] = intent
+    if resume:
+        body["input"] = {"kind": "resume_run", "source_run_id": "run-1"}
+    auth = EntryAuth(
+        strict_research=True, sources_open_required=True,
+        denied_capabilities=("project.write",), inferred_intent=inferred,
+    )
+    status, payload = run_submit_response(body, submit, captured_auth=auth)
+    assert status == 200 and payload["run_id"] == "run-2"
+    assert len(calls) == 1
+    continued, submitted_intent, options = calls[0]
+    assert continued is resume and submitted_intent == expected
+    assert options["denied_capabilities"] == ("project.write",)
+    assert options["strict_research"] is True
+    assert options["sources_open_required"] is True
+    assert options["project_changes_required"] is False
+    assert options.get("previous_run_id", "") == ("run-1" if resume else "")
 
 
 @pytest.mark.parametrize("source", INVALID_SOURCES)
