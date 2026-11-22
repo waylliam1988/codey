@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 975,
   "region_count": 40,
-  "batch_count": 288,
+  "batch_count": 291,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -33,6 +33,9 @@
       "batches": [
         "Q007",
         "Q008",
+        "Q008B",
+        "Q008C",
+        "Q008D",
         "Q009",
         "Q010",
         "Q011",
@@ -1471,10 +1474,20 @@
         "codey/__init__.py"
       ],
       "id": "Q005",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_unchanged",
+      "reviewed_files": [
+        "codey/__init__.py"
+      ],
+      "verified_files": [
+        "codey/__init__.py"
+      ],
+      "candidate_test_count": 0,
+      "tests": [
+        "tests/test_env_names.py",
+        "tests/test_http_plumbing.py",
+        "tests/test_cli.py"
+      ],
+      "result": "source unchanged; package/version/import and real CLI help verified; entire source and env test pass strict Any checks; env reflection test keeps original equality/identity checks with runtime string validation"
     },
     {
       "responsibility": "codey/entry: shared contracts and module services",
@@ -1483,10 +1496,22 @@
         "codey/env_names.py"
       ],
       "id": "Q006",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 21
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/__main__.py",
+        "codey/env_names.py"
+      ],
+      "verified_files": [
+        "codey/__main__.py",
+        "codey/env_names.py"
+      ],
+      "candidate_test_count": 21,
+      "tests": [
+        "tests/test_env_names.py",
+        "tests/test_http_plumbing.py",
+        "tests/test_cli.py"
+      ],
+      "result": "source unchanged; package/version/import and real CLI help verified; entire source and env test pass strict Any checks; env reflection test keeps original equality/identity checks with runtime string validation"
     },
     {
       "responsibility": "codey/agents: package entry and composition",
@@ -1494,28 +1519,64 @@
         "codey/agents/__init__.py"
       ],
       "id": "Q007",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_unchanged",
+      "reviewed_files": [
+        "codey/agents/__init__.py"
+      ],
+      "verified_files": [
+        "codey/agents/__init__.py"
+      ],
+      "candidate_test_count": 0,
+      "tests": [],
+      "result": "source unchanged; package/version/import and real CLI help verified; entire source and env test pass strict Any checks; env reflection test keeps original equality/identity checks with runtime string validation"
     },
     {
-      "responsibility": "codey/agents: shared contracts and module services",
+      "responsibility": "Typed agent request and tool dispatch contracts",
       "files": [
-        "codey/agents/consensus.py",
-        "codey/agents/handoff.py",
         "codey/agents/request.py",
         "codey/agents/tools.py",
-        "codey/agents/project_audit_tools.py",
-        "codey/agents/runaway_guard.py",
-        "codey/agents/state.py",
-        "codey/agents/tool_execution.py"
+        "codey/agents/tool_execution.py",
+        "codey/agents/project_audit_tools.py"
       ],
       "id": "Q008",
+      "status": "in_progress",
+      "reviewed_files": [],
+      "verified_files": [],
+      "candidate_test_count": "recompute at entry; initial combined count 73"
+    },
+    {
+      "responsibility": "Bounded seen-information and runaway loop guards",
+      "files": [
+        "codey/agents/state.py",
+        "codey/agents/runaway_guard.py"
+      ],
+      "id": "Q008B",
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 73
+      "candidate_test_count": "recompute at entry; initial combined count 73"
+    },
+    {
+      "responsibility": "Provider-neutral conversation handoff state",
+      "files": [
+        "codey/agents/handoff.py"
+      ],
+      "id": "Q008C",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "candidate_test_count": "recompute at entry; initial combined count 73"
+    },
+    {
+      "responsibility": "Read-only multi-model advisory consensus",
+      "files": [
+        "codey/agents/consensus.py"
+      ],
+      "id": "Q008D",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "candidate_test_count": "recompute at entry; initial combined count 73"
     },
     {
       "responsibility": "codey/agents: shared contracts and module services",
@@ -7344,6 +7405,16 @@
       "path": "codey/operations/browser_result_evidence.py",
       "batch": "Q084",
       "reason": "new owned production module added concurrently by external work; include without touching it or shrinking scope"
+    },
+    {
+      "batch": "Q008",
+      "reason": "entry inspection of actual module responsibilities splits tool contracts, loop guards, conversation handoff and advisory consensus into four independent verification units; all 8 files retained; other batch IDs unchanged",
+      "replacement": [
+        "Q008",
+        "Q008B",
+        "Q008C",
+        "Q008D"
+      ]
     }
   ]
 }

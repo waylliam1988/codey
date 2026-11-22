@@ -323,3 +323,32 @@ Q003 自有三个生产文件和深入检查的关联测试完成 Any/行为验�
 本批只有测试类型改动，没有使已通过的生产调用方测试失效，不机械扩大/重复此前验证。全树最新结果仍为 Q003 的外部源码错误，未凭本批定向通过宣称修复它们。当前 **4 / 288 批完成，16 / 975 个生产文件验收完成**；本轮累计执行 **28 个不同 pytest 文件**，knowledge 仍只算一个精确用例的覆盖。历史六测试文件的 Any 债务中，本批三个文件已完成；coldstart/project_facts 等其余文件及 conftest/kernel_runtime 义务仍保留。
 
 下一批固定为 Q005、Q006 的顶层包版本和启动/环境入口，再按清单进入 agents/app。不重新打开已完成基础工具批次，除非有新增复现或后续依赖变化证据；Q189 的两项进程夹具问题、Q096/Q106/Q161 的三项研究失败及外部全树类型错误继续留在所属队列。总 goal 未完成，继续 active。
+
+## 续轮：顶层入口与 agents
+
+- 上一 goal turn 有实际修复、验证与六个提交，属于 progress；本轮从 `0b999da8` 核对记录继续。暂存区为空，浏览器/研究等外部改动仍在，保留不动。没有创建或复制 worktree。
+- Q004 提交为 `0b999da8`。
+
+### Q005 / Q006 / Q007 已完成：版本、启动和包入口
+
+- 完整检查 codey/__init__、__main__、env_names 和 agents/__init__，以及整个 test_env_names。__version__ 是 pyproject 动态版本读取入口；__main__ 是 README 的 python -m 入口；两个包 init 对当前 setuptools namespaces=false 的打包发现有必要。环境常量由公开导出和浏览器/provider/HTTP/shell/工具调用使用，不因文件短或导出看似未用而删除。
+- 生产代码无需修改；未发现准入充分的 bug 或同语义重复实现。Q005/Q007 为“检查完成，无需修改”，不创建空提交。CLI 实现只定位参数分发，未将整个 app/cli.py 算作已深入治理。
+- 环境测试原有 6 条类型诊断：反射 Any、空/排序容器上下文，以及严格 mypy 禁止隐式重导出导致的属性诊断。测试只检查导入常量身份，不代表消费者模块承诺公开导出，故不为测试增加生产导出。反射边界以 ModuleType、object 和运行时字符串检查收窄，继续使用原 assertEqual/assertIs；已消除整文件 Any，没有改弱预期。
+
+| 实际命令（仓库根目录） | 退出码 | 结果 |
+| --- | --- | --- |
+| `python -m pytest -q tests/test_env_names.py tests/test_http_plumbing.py tests/test_cli.py --tb=short` | 0 | 修改前 21 passed、14 subtests passed，无 skip |
+| `python -m codey --help` | 0 | 实际 CLI 帮助正常，不启动服务/浏览器 |
+| `python -m mypy codey/__init__.py codey/__main__.py codey/env_names.py tests/test_env_names.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` | 1 → 0 | 基线 6 条，修整后中间剩 1 条，最终通过 |
+| `python -m pytest -q tests/test_env_names.py --tb=short` | 0 | 最终 4 passed、14 subtests passed，原断言不变；未机械重跑未改动的 CLI/HTTP 测试 |
+| `python -c "import codey; import codey.agents; print(codey.__version__); print('package imports passed')"` | 0 | 0.5.11；两个包实际导入成功 |
+| `python -m mypy codey/__init__.py codey/__main__.py codey/env_names.py codey/agents/__init__.py tests/test_env_names.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` | 0 | 五个完整文件强 Any 检查通过 |
+| `pyrefly check codey/__init__.py codey/__main__.py codey/env_names.py codey/agents/__init__.py tests/test_env_names.py --python-version 3.11` | 0 | 0 errors |
+| `ty check codey/__init__.py codey/__main__.py codey/env_names.py codey/agents/__init__.py tests/test_env_names.py --python-version 3.11` | 0 | 通过 |
+| `python -m ruff check codey/__init__.py codey/__main__.py codey/env_names.py codey/agents/__init__.py tests/test_env_names.py` | 0 | 通过 |
+
+本轮生产代码未改，不重复全树检查来掩盖上轮未解决错误；历史五项跨区域测试失败和外部全树类型错误仍留在队列。累计实际覆盖 **31 个不同 pytest 文件**，仍包含 knowledge 的单 nodeid，不能将部分执行写为整个文件通过。
+
+进入 Q008 时，按模块 docstring/声明核对发现原“shared contracts”自动分组包含四种独立职责，现拆为 Q008（请求/工具分发，4 文件）、Q008B（状态与循环守卫，2 文件）、Q008C（对话 handoff，1 文件）、Q008D（只读多模型顾问，1 文件）。两个单文件各有独立的完整状态/顾问契约和专用测试，适合独立验收。原 8 文件全部保留，其他批次 ID 不变；总批数 **288 → 291**，不是缩小源码范围或制造完成率。清单归属/去重断言通过。
+
+当前 **7 / 291 批完成，20 / 975 个生产文件验收完成**。下一主要批次 Q008；其他三个子批次未开始，未把 AST 声明盘点算作深入检查。总 goal 继续 active。

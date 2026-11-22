@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+from types import ModuleType
 
 from codey import env_names
 
@@ -39,6 +40,13 @@ _SKIP_DIRS = frozenset({
 })
 
 
+def _string_attribute(module: ModuleType, name: str) -> str:
+    value: object = getattr(module, name)
+    if not isinstance(value, str):
+        raise AssertionError(f"{module.__name__}.{name} must be a string")
+    return value
+
+
 class EnvNameValueTests(unittest.TestCase):
     def test_canonical_values_have_no_brand_prefix(self) -> None:
         expected = {
@@ -57,18 +65,18 @@ class EnvNameValueTests(unittest.TestCase):
         }
         for attr, value in expected.items():
             with self.subTest(attr=attr):
-                self.assertEqual(getattr(env_names, attr), value)
+                self.assertEqual(_string_attribute(env_names, attr), value)
         self.assertEqual(env_names.APP_VERSION_PLACEHOLDER, "__APP_VERSION__")
 
     def test_module_constants_match_single_source(self) -> None:
         from codey.automation import browser
         from codey.providers import catalog, local_config
 
-        self.assertIs(browser.BROWSER_PATH_ENV, env_names.BROWSER_PATH_ENV)
+        self.assertIs(_string_attribute(browser, "BROWSER_PATH_ENV"), env_names.BROWSER_PATH_ENV)
         self.assertIs(catalog.WORKER_CHILD_ENV, env_names.PROVIDER_WORKER_CHILD_ENV)
-        self.assertIs(local_config.LOCAL_OPENAI_BASE_URL_ENV, env_names.LOCAL_OPENAI_BASE_URL_ENV)
-        self.assertIs(local_config.LOCAL_OPENAI_MODEL_ENV, env_names.LOCAL_OPENAI_MODEL_ENV)
-        self.assertIs(local_config.LOCAL_OPENAI_API_KEY_ENV, env_names.LOCAL_OPENAI_API_KEY_ENV)
+        self.assertIs(_string_attribute(local_config, "LOCAL_OPENAI_BASE_URL_ENV"), env_names.LOCAL_OPENAI_BASE_URL_ENV)
+        self.assertIs(_string_attribute(local_config, "LOCAL_OPENAI_MODEL_ENV"), env_names.LOCAL_OPENAI_MODEL_ENV)
+        self.assertIs(_string_attribute(local_config, "LOCAL_OPENAI_API_KEY_ENV"), env_names.LOCAL_OPENAI_API_KEY_ENV)
 
     def test_native_gate_reads_canonical_name(self) -> None:
         import inspect
@@ -119,7 +127,9 @@ class EnvNameValueTests(unittest.TestCase):
                 continue
             if "CODEY_" in text:
                 offenders.append(rel)
-        self.assertEqual(sorted(offenders), [])
+        expected: list[str] = []
+        actual: list[str] = sorted(offenders)
+        self.assertEqual(actual, expected)
 
 
 if __name__ == "__main__":
