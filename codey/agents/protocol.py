@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 
 from codey.protocols import ProtocolCodec
 from codey.protocols.json_scanner import extract_candidate_json_objects
@@ -19,6 +20,13 @@ from codey.protocols.protocol_errors import (
 )
 from codey.runtime.core.models import ToolCall, ToolPlan
 from codey.toolchain.runtime import safe_join
+from codey.utils.object_fields import object_fields
+
+
+@runtime_checkable
+class _ExampleCallback(Protocol):
+    def __call__(self, tool_name: str, /) -> object: ...
+
 
 VERIFICATION_NEGATION_CANCEL_RE = re.compile(
     r"\b(?:do\s+not|don't|dont|never)\s+$",
@@ -70,7 +78,8 @@ def protocol_repair_prompt(
 ) -> str:
     error = (plan.protocol_error or "invalid JSON tool call")
     kind = (plan.protocol_error_kind or "").strip()
-    native = str(getattr(codec, "name", "") or "") == "native_openai"
+    codec_name: object = getattr(codec, "name", "")
+    native = str(codec_name or "") == "native_openai"
     previous = previous_tool_object(previous_reply, codec, kind, error)
     lines = [
         f"Protocol error: {repair_error_summary(error, kind)}",
@@ -183,7 +192,10 @@ def protocol_repair_prompt(
 
 def unknown_tool_from_error(error: str) -> str:
     match = re.search(r"unknown tool:\s*([A-Za-z0-9_-]+)", error)
-    return match.group(1).strip().lower() if match else ""
+    if match is None:
+        return ""
+    tool: object = match.group(1)
+    return tool.strip().lower() if isinstance(tool, str) else ""
 
 
 def repair_error_summary(error: str, kind: str) -> str:
@@ -301,8 +313,8 @@ def _native_invalid_args_lines(error: str) -> list[str]:
 
 
 def codec_public_example(codec: ProtocolCodec | None, tool_name: str) -> str:
-    getter = getattr(codec, "public_example", None)
-    if callable(getter):
+    getter: object = getattr(codec, "public_example", None)
+    if isinstance(getter, _ExampleCallback):
         try:
             return str(getter(tool_name) or "")
         except (TypeError, ValueError):
@@ -455,10 +467,10 @@ def nested_tool_repair_example(
     if not isinstance(summary, str):
         return ""
     try:
-        nested = json.loads(summary)
+        nested: object = json.loads(summary)
     except json.JSONDecodeError:
         return ""
-    if not isinstance(nested, dict):
+    if not object_fields(nested):
         return ""
     nested_tool = str(nested.get("tool") or nested.get("name") or "").strip()
     if not nested_tool:

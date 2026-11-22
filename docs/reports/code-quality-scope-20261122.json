@@ -1685,15 +1685,24 @@
       "result": "Removed unreachable previous-group append by maximal-adjacent-tools invariant; public API and exact ID validation unchanged. 10 initial pairing/native baseline; 15 grouping/pairing baseline and same 15 post-deletion tests passed. API compaction/history callers 41 passed; context assembly callers 8 passed. Four whole files strong Any/Pyrefly/ty/Ruff passed, test debt 16 -> 1 -> 0; normal production mypy/Pyrefly/ty and precision gates passed with stable hashes. context.py required no code change. No new deterministic bug claimed."
     },
     {
-      "responsibility": "codey/agents: task kernel and execution",
+      "responsibility": "Protocol repair examples, project path canonicalization and explicit verification denials",
       "files": [
         "codey/agents/protocol.py"
       ],
       "id": "Q011",
-      "status": "not_started",
-      "reviewed_files": [],
+      "status": "in_progress",
+      "reviewed_files": [
+        "codey/agents/protocol.py"
+      ],
       "verified_files": [],
-      "candidate_test_count": 5
+      "candidate_test_count": 5,
+      "tests": [
+        "tests/test_explicit_verification_denial.py",
+        "tests/test_json_scanner_candidate_extraction.py",
+        "tests/test_coding_repair_prompt_ab.py",
+        "tests/test_canonical_project_path_roots.py"
+      ],
+      "result": "Five whole files strong Any/Pyrefly/ty/Ruff passed, normal full-production and precision gates passed with stable hashes. Shared JSON extraction loops consolidated preserving strict flags/think filtering/duplicate/NaN/deep values; 34 codec/path/snapshot tests plus 15 structured/numeric callers passed. Canonical tilde-root mismatch discovered independently: 3 failed/5 passed before normalization; fixed at root expansion boundary, 25 root/read/edit caller tests passed afterward. Independent type/decoder refactor and root bug fix to be split into local commits; completion pending commit review."
     },
     {
       "responsibility": "codey/agents: shell execution and authorization",
@@ -3202,10 +3211,15 @@
         "codey/protocols/text_turn.py"
       ],
       "id": "Q118",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 56
+      "status": "partial_follow_up",
+      "reviewed_files": [
+        "codey/protocols/json_scanner.py"
+      ],
+      "verified_files": [
+        "codey/protocols/json_scanner.py"
+      ],
+      "candidate_test_count": 56,
+      "result": "Q011 owned dependency json_scanner.py fully reviewed/typed; shared decode loop uses strict parameter and existing object_fields boundary. Baseline 7 scanner controls passed; 34 codec/path/snapshot group and 15 text/native/numeric callers passed; whole-file strong Any and all production gates passed with stable hashes. base.py and text_turn.py are still unreviewed, so Q118 remains partial."
     },
     {
       "responsibility": "codey/protocols: completion review and edit validation",

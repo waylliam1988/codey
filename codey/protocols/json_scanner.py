@@ -8,7 +8,8 @@ keep their own protocol semantics.
 from __future__ import annotations
 
 import json
-from typing import Any
+
+from codey.utils.object_fields import object_fields
 
 
 def balanced_json_spans(text: str) -> list[tuple[int, int]]:
@@ -43,20 +44,24 @@ def balanced_json_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def extract_json_objects(text: str) -> list[dict[str, Any]]:
-    """Decode balanced top-level JSON objects from a model reply."""
-    objects: list[dict[str, Any]] = []
+def _extract_objects(text: str, *, strict: bool) -> list[dict[str, object]]:
+    objects: list[dict[str, object]] = []
     for start, end in balanced_json_spans(text or ""):
         try:
-            value = json.loads(text[start:end], strict=False)
+            value: object = json.loads(text[start:end], strict=strict)
         except json.JSONDecodeError:
             continue
-        if isinstance(value, dict):
+        if object_fields(value):
             objects.append(value)
     return objects
 
 
-def extract_candidate_json_objects(text: str) -> list[dict[str, Any]]:
+def extract_json_objects(text: str) -> list[dict[str, object]]:
+    """Decode balanced top-level JSON objects from a model reply."""
+    return _extract_objects(text, strict=False)
+
+
+def extract_candidate_json_objects(text: str) -> list[dict[str, object]]:
     """Extract balanced candidates after removing provider think blocks.
 
     This preserves the narrow repair-prompt lookup behavior that used to live
@@ -96,16 +101,8 @@ def extract_candidate_json_objects(text: str) -> list[dict[str, Any]]:
         elif char == "}" and depth:
             depth -= 1
         index += 1
-    objects: list[dict[str, Any]] = []
     cleaned_text = "".join(cleaned)
-    for start, end in balanced_json_spans(cleaned_text):
-        try:
-            value = json.loads(cleaned_text[start:end])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict):
-            objects.append(value)
-    return objects
+    return _extract_objects(cleaned_text, strict=True)
 
 
 __all__ = ["balanced_json_spans", "extract_candidate_json_objects", "extract_json_objects"]
