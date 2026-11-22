@@ -1980,11 +1980,14 @@
         "codey/app/control_queries.py"
       ],
       "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93",
-      "result": "Query-side fixes and typing verified, overall batch in progress. Digest pre-fix 4 failed/1 passed (missing/file roots, included dir symlink, unreadable child); rendered answer flag pre-fix 1 failed/3 passed including nested-evidence fixture. Final query group 14 passed, no skips; 4 whole paths strong Any/Pyrefly/ty/Ruff pass; query source 114 -> 0, production/precision gates pass (35 suppressed/165 warnings). ControlService remains unchanged and has 396 strict Any diagnostics (initial 401); full two-source initial 515. Independent query commits pending. Published-runtime-dependent HTTP transport tests not rerun under known Q078 inventory failure.",
+      "result": "Query-side fixes and typing verified, overall batch in progress. Digest pre-fix 4 failed/1 passed (missing/file roots, included dir symlink, unreadable child); rendered answer flag pre-fix 1 failed/3 passed including nested-evidence fixture. Final query group 14 passed, no skips; 4 whole paths strong Any/Pyrefly/ty/Ruff pass; query source 114 -> 0, production/precision gates pass (35 suppressed/165 warnings). ControlService remains unchanged and has 396 strict Any diagnostics (initial 401); full two-source initial 515. Answer/typed query committed as c2bf9364; digest coverage committed separately. Original cb43afb5 query source with new typed fixtures: 9 baseline cases passed; restored exact validated final source hash. Published-runtime-dependent HTTP transport tests not rerun under known Q078 inventory failure.",
       "tests": [
         "tests/test_control_candidate_digest_coverage.py",
         "tests/test_control_evidence_budget.py",
         "tests/test_control_run_snapshot_bounds.py"
+      ],
+      "commits": [
+        "c2bf9364"
       ]
     },
     {

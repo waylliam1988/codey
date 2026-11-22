@@ -8,7 +8,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import asdict
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NoReturn
 
 from codey.control.protocol import ControlError, fingerprint
 from codey.durable.model import TaskCheckpoint, thaw_json
@@ -21,6 +21,8 @@ IGNORED_DIRS = frozenset({".git", ".codey", "node_modules", ".venv", "__pycache_
                           ".mypy_cache", ".ruff_cache", "reference-projects", "build", "dist", ".e2e-artifacts", "artifacts"})
 
 
+def _digest_walk_error(error: OSError) -> NoReturn:
+    raise ControlError("EVIDENCE_UNAVAILABLE", "Candidate directory could not be observed") from error
 
 
 def project_digest(project: str) -> str:
@@ -29,8 +31,12 @@ def project_digest(project: str) -> str:
     total = 0
     count = 0
     root = Path(project).resolve()
-    for directory, dirs, files in os.walk(root):
-        dirs[:] = sorted(name for name in dirs if name not in IGNORED_DIRS and not name.startswith(".tmp-") and not Path(directory, name).is_symlink())
+    if not root.is_dir():
+        raise ControlError("EVIDENCE_UNAVAILABLE", "Candidate directory does not exist")
+    for directory, dirs, files in os.walk(root, onerror=_digest_walk_error):
+        dirs[:] = sorted(name for name in dirs if name not in IGNORED_DIRS and not name.startswith(".tmp-"))
+        if any(Path(directory, name).is_symlink() for name in dirs):
+            raise ControlError("EVIDENCE_UNAVAILABLE", "Candidate contains a symbolic link")
         for name in sorted(files):
             path = Path(directory, name)
             if path.is_symlink():

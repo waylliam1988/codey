@@ -814,3 +814,10 @@ Q015D 查询侧独立验收（主批未完成）：
 - 查询源码的生产 mypy **0，737文件**、Pyrefly **0，原35 suppressed/165 warnings**、ty/精度门 **0**，q015d-query-validation-first.json；最终只扩展测试，源码未变，hash稳定。ControlService未改，完整加严 Any 当前 **396 条**（原401；task_for精确类型隔离了5条传播）；q015d-service-any.json。两源码初始总515，不将query的零Any虚报为整个控制批次已完成。
 - 只读查询的回答修复/类型与候选coverage修复可以独立验收，按两个本地commits处理；先暂存不含digest修复的已验证版本，再恢复当前最终字节提交digest部分。每个中间版本都实际执行明确范围检查，不创建或复制worktree。主批status保持in_progress，完成统计仍 **22 / 298、46 / 975**，查询文件另计已验证部分。
 - 其余控制命令/待机/去重/授权预算与本轮未更改的control_conversations/control协议等仍待后续治理；有发布清单依赖的external_control/release集成尚未重跑，不报通过。下一步继续主批control_service.py的396条Any和直接控制服务行为基线，不回到已完成API/provider文件做可选优化。
+
+
+Q015D 回答裁剪和完整query类型边界已提交：`c2bf9364`（fix(control): count rendered separators in answer truncation）。实际暂存的中间源码保留原digest函数且没有新增未使用helper/import；独立运行 evidence/snapshot两文件 **0，7 passed，1.73 秒**，同源加两完整测试的加严Any/Pyrefly/ty/Ruff均 **0**，q015d-answer-commit-validation.json。随后 finally 精确恢复最终digest修复字节。
+
+最终fixture独立基线：将本目录单个query源临时替换为cb43afb5原版，实际执行三evidence（含新跨run通道校验）、两非失败回答边界、candidate空projection和三原有效digest场景 → **0，9 passed，1.47 秒**，q015d-query-fixture-baseline.json；finally恢复当前最终字节，其sha256与此前14例及完整类型验证时一致。未将四个旧coverage错误或旧16001裁剪错误计为通过，也没有复制worktree。
+
+候选摘要coverage修复已按独立变更准备提交；diff只有根目录存在性、onerror、声明覆盖内目录链接拒绝以及七场景测试。此后主批仍进行中，下一步唯一主线为control_service.py 的396条Any与直接行为基线；control_queries已完成的检查不因可选优化重新打开。全批完成数仍 **22 / 298、46 / 975**，另有本批1个查询源已单独验证。原Q008D/shared server、Q018临时锁清理、Q078发布库存及其他登记事项全部保留，总goal继续active。
