@@ -906,3 +906,14 @@ Q015F JSON与类型边界独立验收（主批仍进行中）：
 - 当前JSON/类型变更可独立验收先提交；socket构造泄漏原复现保留，下一步立即按独立commit修复，不将主批或server文件标记全部问题已完。新http_response源已独立验证。没有已知本轮引入的测试/导入/构建失败；新增构造回归尚未加入本次提交，原构造缺口是已记录后续待修bug。
 
 提交前人工检查补齐event dict的Mapping[object,object]显式边界，避免工具条件推断掩盖内部Any，同时保留非字符串额外键的旧event判定语义；移除本次全局Actor类型导入使其重复的局部导入，整理本次新增imports。受影响SSE五node+服务生命周期 **0，21 passed，4.05秒**；五完整文件严格Any/三类型/Ruff及750文件生产三类型/precision再次全0，35 suppressed/168 warnings不变，q015f-json-final-polish.json。JSON/路由函数没有后续行为修改，39/31/45/19结果按其实际影响保留，不虚构重跑。
+
+
+Q015F JSON/type/shared response独立成果已提交：`5bc0a43c`（fix(http): validate object request envelopes and typed route boundaries）。
+
+Q015F 构造资源修复与批次移交：
+
+- 独立构造文件在5bc0a43c当前源先实际执行 **1，1 failed，1.66秒**，关键断言仍是校验失败后bound listener未关闭，q015f-construction-before.json。不是导入、参数或环境失败。
+- 保留原绑定/验证/操作员认证初始化顺序，在父构造成功之后包住验证及认证初始化；任何BaseException明确server_close后重抛原错误。没有依赖GC、吞异常、隐式重试或改变正常HTTP启动。资源所有权仅覆盖已经成功绑定的父对象，父构造自己的异常清理由标准库继续负责。
+- 最终 `python -m pytest -q tests/test_server_construction.py tests/test_service_lifecycle.py tests/test_control_runtime_ownership.py --tb=short` → **0，21 passed，3.11秒**，无skip。相同失败输入现在fileno=-1；真实正常初始化/认证/激活/关闭、初始化前拒绝release以及drain期间保留所有权边界同时通过。两完整文件加严Any/Pyrefly/ty/Ruff全0；生产750文件mypy/Pyrefly/ty/precision再次全0，35 suppressed/168 warnings不变，q015f-construction-final.json，hash稳定。
+- Q015F两个生产源和本轮修改的直接测试已完成本身的类型/行为验收；**整个Q015F标记部分完成，拆出共享test_server.py的1673诊断债务**，不把6727行跨provider/review/kernel/research脚本的欠账隐藏在“生产零Any”后面。此脚本本批未修改；保留已验证的独立生产成果，按生产职责分配支持脚本后续治理，不无限停留在server同一实现。
+- 当前 **24 / 305批完整完成，49 / 996生产文件属于完整完成批次**；Q015F两个源加其他部分批次两个源均独立验证，累计53个当前已验证生产文件，统计明确区分。原共享测试3个lazy import失败、Q018清理警告、Q078库存等仍保持原处置，未全量pytest。下一主批Q016先依实际职责进一步拆分注册表/投影、tracking、CLI、desktop、headless，优先基础注册表，未缩减总范围。总goal active。

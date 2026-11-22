@@ -2047,17 +2047,19 @@
         "codey/app/server.py",
         "codey/app/http_response.py"
       ],
-      "status": "in_progress",
+      "status": "partial_follow_up",
       "reviewed_files": [
         "codey/app/server.py",
         "codey/app/http_response.py"
       ],
       "verified_files": [
+        "codey/app/server.py",
         "codey/app/http_response.py"
       ],
       "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93",
       "followups": [
-        "Q008D repaired only ConsensusConnectionTests timeout fixture, preserving sibling-tab/new_chat/close expectations and asserting numeric 60/90s fallback. tests/test_server.py whole-file extra Any has 1709 diagnostics (q008d-server-any.log); shared script migration remains open. Q008D stays partial until coordinated verification."
+        "Q008D repaired only ConsensusConnectionTests timeout fixture, preserving sibling-tab/new_chat/close expectations and asserting numeric 60/90s fallback. tests/test_server.py whole-file extra Any has 1709 diagnostics (q008d-server-any.log); shared script migration remains open. Q008D stays partial until coordinated verification.",
+        "Current strict shared test audit: tests/test_server.py 6727 lines / 1673 diagnostics, q015f-shared-support-validation.json. Includes untyped provider, agent and mock callbacks, unconstrained dicts and dynamic server exports. Route subsets execute successfully but do not prove whole-file typing. Keep Q008D and Q015F partially complete until this test-support debt is resolved by production responsibility. Do not reopen verified production server solely for optional cleanup."
       ],
       "tests": [
         "tests/test_server_boundaries.py",
@@ -2071,7 +2073,17 @@
         "tests/test_server.py::ResearchGraphApiTests",
         "tests/test_server.py::ResearchServerHelperTests"
       ],
-      "result": "JSON boundary fixed; original six object-input contract violations now pass. Production server/shared response and affected API plus two complete direct test scripts strict Any/scoped tools pass. HTTP direct 39 passed/15 subtests; selected server classes 31; API/service/lease 45; SSE/execution/transcript 19. Production mypy 750/Pyrefly/ty/precision pass. Known constructor listener leak remains queued for an independent fix. Shared tests/test_server.py remains 1673 strict diagnostics; script not modified in this batch, Q008D/Q015F support followup stays open. Do not mark batch complete."
+      "result": "Both admitted production defects fixed and whole production files/modified direct tests zero strict Any. JSON original 6 failures -> pass; failed constructor original bound socket failure -> pass with explicit server_close and rethrow. JSON/direct 39 passed+15 subtests; selected routes 31; API/service/lease 45; SSE/output/transcript 19; final construction/lifecycle/owner 21. Scoped strict Any/Pyrefly/ty/Ruff and production mypy750/Pyrefly/ty/precision pass (35 suppressed/168 warnings). Batch remains partial because original shared tests/test_server.py whole-file Any debt has 1673 current diagnostics; no test assertions removed/ignored, script unchanged. Followup to migrate test classes with their production owners, not loop on server implementation.",
+      "evidence": [
+        "q015f-bugs-before.json",
+        "q015f-behavior-baseline.json",
+        "q015f-ownership-fixture-baseline.json",
+        "q015f-json-validation-final.json",
+        "q015f-json-final-polish.json",
+        "q015f-shared-support-validation.json",
+        "q015f-construction-before.json",
+        "q015f-construction-final.json"
+      ]
     },
     {
       "responsibility": "codey/app: shared contracts and module services",

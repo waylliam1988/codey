@@ -119,8 +119,12 @@ class CodeyHTTPServer(ThreadingHTTPServer):
 
     def __init__(self, server_address: tuple[str, int], request_handler_class: type[BaseHTTPRequestHandler]) -> None:
         super().__init__(server_address, request_handler_class)
-        validate_web_root()
-        self.operator_auth = OperatorAuth(self.server_address[1])
+        try:
+            validate_web_root()
+            self.operator_auth = OperatorAuth(self.server_address[1])
+        except BaseException:
+            self.server_close()
+            raise
         self.control_service: ControlService | None = None
         self.control_auth: Callable[[str], Actor | None] | None = None
         self.lifecycle: Callable[[Actor, str, object], dict[str, object]] | None = None
