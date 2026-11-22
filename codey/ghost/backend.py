@@ -64,6 +64,11 @@ class GhostMemory:
             found = scoped_rows(connection, "items", scopes)
         return tuple(record for raw in found if (record := record_from_payload(raw)).item.scope in scopes)
 
+    def confirmation_available(self, ref: str) -> bool:
+        with self.database.connect() as connection:
+            decision = load(connection, "decisions", ref)
+            return decision is not None and decision.get("accepted") is True and decision.get("scope") == "user"
+
     def retrieve(self, query: MemoryQuery) -> MemoryResult:
         if not query.scopes or query.max_items <= 0:
             return MemoryResult()
@@ -120,6 +125,11 @@ class GhostMemory:
             return -row[0], row[1].item.item_id
 
         candidates.sort(key=rank)
+        reserved = next((row for row in candidates if row[1].item.kind == "preference" and not row[1].item.expires_at
+                         and row[1].item.scope == "user"), None)
+        if reserved is not None:
+            candidates.remove(reserved)
+            candidates.insert(0, reserved)
         selected = []
         for index, (score, record) in enumerate(candidates, 1):
             reason = "candidate" if index <= query.max_items else "result_limit"

@@ -126,6 +126,39 @@ def _decide(ctx: AppContext, payload: JsonObject, session_id: str, scope: str, a
         return {"ok": True}
 
 
+def _confirm_user_preference(ctx: AppContext, payload: JsonObject, session_id: str, scope: str) -> dict[str, object]:
+    proposal_id = require_json_string(payload.get("proposal_id"), "proposal_id")
+    version = require_json_string(payload.get("version"), "version")
+    text = require_json_string(payload.get("text"), "confirmed preference text")
+    request_id = require_json_string(payload.get("request_id"), "request_id")
+    if not request_id:
+        raise ValueError("cross-project preference confirmation requires request_id")
+    with ctx.durable.control_line():
+        command: JsonObject
+        prior = next((entry for entry in ctx.durable.entries(session_id) if entry.kind == "memory_user_confirmation"
+                      and entry.payload.get("request_id") == request_id), None)
+        if prior is not None:
+            command = decode_json_object(thaw_json(prior.payload.get("command")))
+            if (command.get("proposal_id"), command.get("version"), command.get("text")) != (proposal_id, version, text):
+                raise ValueError("request_id already names a different preference confirmation")
+            entry = prior
+        else:
+            proposal = next((item for item in ctx.memory.proposals(scope) if item.proposal_id == proposal_id
+                             and item.version == version), None)
+            if proposal is None or proposal.item.kind != "preference" or proposal.item.text != text:
+                raise ValueError("The displayed preference changed. Review the current text before confirming.")
+            item = proposal.item
+            command = {"proposal_id": proposal_id, "version": version, "text": text, "scope": "user",
+                       "kind": item.kind, "slot": item.slot, "value": item.value, "context": item.context,
+                       "expires_at": item.expires_at}
+            entry = record_command(ctx, session_id, "memory_user_confirmation", command, request_id)
+        ref = "user-confirmed:" + entry.entry_id
+        if not ctx.memory.observe(MemoryEvent(ref, "memory.user_confirmed", command_time(entry), "", "", "", "user",
+                                             command, (ref,), ("user",))):
+            raise OSError("preference projection failed; retry the same request_id")
+        return {"ok": True, "item_id": ref, "text": text, "scope": "user"}
+
+
 def _manage(ctx: AppContext, payload: JsonObject, session_id: str, scope: str) -> dict[str, object]:
     action = payload.get("action")
     entry = record_command(ctx, session_id, "memory_management", payload,
@@ -208,6 +241,8 @@ def memory_action(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[s
             raise ValueError("an existing session_id is required")
         if action == "propose":
             return 200, _propose(ctx, payload, session_id, project, scope)
+        if action == "confirm_user_preference":
+            return 200, _confirm_user_preference(ctx, payload, session_id, scope)
         if action in {"accept", "reject"}:
             return 200, _decide(ctx, payload, session_id, scope, action == "accept")
         if action in {"control", "revoke", "quarantine", "restore", "feedback", "predict", "review", "family", "compact", "evaluate", "repair"}:

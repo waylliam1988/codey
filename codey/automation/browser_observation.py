@@ -81,7 +81,7 @@ ELEMENT_METADATA = """el => {
         contextNode = node;
         break;
     }
-    return {contextNode, metadata: {
+    return {contextNode, queryNode: query.node, metadata: {
         actionable: el.matches(""" + json.dumps(ACTIONABLE_CANDIDATES) + """),
         tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || '',
         name: el.getAttribute('aria-label') || el.getAttribute('title') ||

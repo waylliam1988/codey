@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.model import thaw_json
 from codey.durable.session import DurableSession
@@ -14,8 +16,11 @@ from codey.providers.response_record import decode_reply
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 
+if TYPE_CHECKING:
+    from codey.operations.kernel_contracts import DoneDecision
 
-def accepted_completion(durable: DurableSession, outputs: ManagedOutputStore, run_id: str) -> tuple[JsonObject | None, str]:
+
+def accepted_done_decision(durable: DurableSession, outputs: ManagedOutputStore, run_id: str) -> tuple[DoneDecision | None, str]:
     """Read the last committed done decision; terminal checkpoints clear caches."""
     from codey.operations.kernel_control import validate_decision
 
@@ -36,8 +41,13 @@ def accepted_completion(durable: DurableSession, outputs: ManagedOutputStore, ru
             raise ValueError("invalid completion observation envelope")
         decision = validate_decision(envelope.get("data"), schema_version=version)
         if decision["purpose"] == "done":
-            return decode_json_object(decision["result"]), state.work_ref
+            return decision, state.work_ref
     return None, ""
+
+
+def accepted_completion(durable: DurableSession, outputs: ManagedOutputStore, run_id: str) -> tuple[JsonObject | None, str]:
+    decision, ref = accepted_done_decision(durable, outputs, run_id)
+    return (decode_json_object(decision["result"]) if decision is not None else None), ref
 
 
 def accepted_response_ref(durable: DurableSession, outputs: ManagedOutputStore, run_id: str) -> str:

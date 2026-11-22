@@ -247,14 +247,14 @@ def test_numbered_fragment_preserves_mixed_endings(tmp_path: Path) -> None:
     assert path.read_bytes() == source.replace(b"value = 10", b"value = 30")
 
 
+@pytest.mark.parametrize("external", [b"old\r\nexternal\n", b"old\nkeep\n"])
 def test_exact_edit_does_not_overwrite_a_concurrent_content_change(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, external: bytes,
 ) -> None:
     from codey.toolchain import runtime
 
     path = tmp_path / "app.txt"
     path.write_bytes(b"old\r\nkeep\n")
-    external = b"old\r\nexternal\n"
     original_write = runtime._write_text_after_final_path_check
 
     def concurrent_write(root: Path, rel: str, content: str, *, tool: str,
@@ -268,6 +268,29 @@ def test_exact_edit_does_not_overwrite_a_concurrent_content_change(
 
     assert not result.ok and result.error_code == "stale_read_reference"
     assert path.read_bytes() == external
+
+
+def test_edit_line_end_space_assistance_preserves_untouched_bytes(tmp_path: Path) -> None:
+    path = tmp_path / "settings.txt"
+    path.write_bytes(b"head\r\nvalue = old \t\ncontext\r\nlast")
+
+    result = edit_file(tmp_path, path.name, [EditBlock("value = old\ncontext", "value = new\ncontext")])
+
+    assert result.ok, result.model_text
+    assert result.audit["line_end_space_adjusted"] == 1
+    assert path.read_bytes() == b"head\r\nvalue = new\ncontext\r\nlast"
+
+
+def test_edit_line_end_space_ambiguity_lists_real_lines_and_writes_nothing(tmp_path: Path) -> None:
+    path = tmp_path / "settings.txt"
+    original = b"value = old \r\ncontext\nseparator\nvalue = old\t\ncontext"
+    path.write_bytes(original)
+
+    result = edit_file(tmp_path, path.name, [EditBlock("value = old\ncontext", "value = new\ncontext")])
+
+    assert not result.ok
+    assert "Matches after ignoring line-end space start at lines: 1, 4." in result.model_text
+    assert path.read_bytes() == original
 
 
 def test_hint_remains_a_failed_kernel_receipt(tmp_path: Path) -> None:

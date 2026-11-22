@@ -20,6 +20,7 @@ class ContextSnapshot:
     token_count: int
     digest: str
     omitted_entry_ids: tuple[str, ...]
+    omitted_handoff: str = ""
 
 
 def build_context(
@@ -82,7 +83,30 @@ def build_context(
         token_count=token_count,
         digest=hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
         omitted_entry_ids=omitted,
+        omitted_handoff=_omitted_handoff(candidates, selected_sources, min(1100, token_budget // 4)),
     )
+
+
+def _omitted_handoff(candidates: Sequence[EntryDraft], selected_sources: set[str], limit: int) -> str:
+    omitted = [entry for entry in candidates if _source_entry_id(entry.entry_id) not in selected_sources]
+    if not omitted or limit < 120:
+        return ""
+    lines = [f"The target context budget omitted {len(omitted)} earlier entries. Bounded excerpts from that history:"]
+    used = len(lines[0])
+    # The folded candidates already honor explicit context replacements and omissions.
+    for kind, label in (("user_message", "User"), ("compaction", "Prior handoff"), ("assistant_message", "Assistant"),
+                        ("tool_result", "Settled tool output")):
+        latest = next((entry for entry in reversed(omitted) if entry.kind == kind), None)
+        if latest is None or used + 80 >= limit:
+            continue
+        message = _message_for(latest)
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            body = " ".join(content.split())
+            line = f"{label} ({_source_entry_id(latest.entry_id)}): {body[:min(280, limit - used - 70)]}"
+            lines.append(line)
+            used += len(line) + 1
+    return "\n".join(lines)
 
 
 def _message_for(entry: EntryDraft) -> Mapping[str, object]:

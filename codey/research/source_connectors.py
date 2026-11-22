@@ -39,7 +39,7 @@ from codey.research.guards import (
 from codey.research.identity import (
     sanitize_research_url_ref,
 )
-from codey.research.source_document import SourceDocument
+from codey.research.source_document import PublicationMetadata, SourceDocument, normalized_doi, normalized_pmcid
 from codey.research.urls import host_key, parsed_url
 from codey.utils.refs import (
     bounded_refs,
@@ -308,6 +308,7 @@ class SourceHit:
     score: float = 0.0
     published_at: str = ""
     metadata_refs: tuple[str, ...] = ()
+    publication: PublicationMetadata | None = None
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -893,7 +894,13 @@ def parse_pubmed_fixture(xml_text: str, *, query: str = "", limit: int = MAX_CON
         source_ref = _source_ref_for_url("pubmed", canonical)
         source_id = stable_ref("connector_source", "pubmed", source_ref)
         hit_id = stable_ref("source_hit", "pubmed", source_ref, title, pmid)
-        doi = _article_id(article, "doi")
+        doi = normalized_doi(_article_id(article, "doi"))
+        pmcid = normalized_pmcid(_article_id(article, "pmc"))
+        kinds = {_clean_text(node.text) for node in article.findall("./MedlineCitation/Article/PublicationTypeList/PublicationType")}
+        corrections = {node.get("RefType") for node in article.findall("./MedlineCitation/CommentsCorrectionsList/CommentsCorrections")}
+        status = ("retracted" if "Retracted Publication" in kinds or "RetractionIn" in corrections else
+                  "retraction_notice" if "Retraction of Publication" in kinds or "RetractionOf" in corrections else "")
+        publication = PublicationMetadata(doi, pmcid, status) if doi or pmcid or status else None
         metadata = [f"pmid:{pmid}"]
         if doi:
             metadata.append("doi:" + identifier(doi, 80))
@@ -909,6 +916,7 @@ def parse_pubmed_fixture(xml_text: str, *, query: str = "", limit: int = MAX_CON
             canonical_url=canonical,
             published_at=_pubmed_year(article),
             metadata_refs=tuple(metadata),
+            publication=publication,
             score=max(0.0, 1.0 - (len(hits) * 0.05)),
         ))
     return source_result_from_hits("pubmed", query=query, hits=hits)
@@ -939,6 +947,7 @@ def fetch_recorded_hit(hit: SourceHit) -> FetchedSource:
         mime_type="application/xml",
         text=text,
         truncated=False,
+        publication=hit.publication,
     )
     return FetchedSource.from_document(
         connector_id=connector_id,

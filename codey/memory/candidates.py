@@ -29,8 +29,25 @@ def candidate_schema() -> JsonObject:
     }
     return {"type": "array", "maxItems": MEMORY_CANDIDATE_LIMIT, "items": {
         "type": "object", "additionalProperties": False, "properties": properties,
-        "required": ["kind", "text", "quote", "quote_start", "quote_end"],
+        "required": ["kind", "text", "quote"],
+        "dependentRequired": {"quote_start": ["quote_end"], "quote_end": ["quote_start"]},
     }}
+
+
+def locate_candidate_quote(user_text: str, quote: str, *, legacy_span: tuple[int, int] | None = None) -> tuple[int, int]:
+    if not quote.strip():
+        raise ValueError("memory candidate quote is empty")
+    if legacy_span is not None:
+        start, end = legacy_span
+        if 0 <= start < end <= len(user_text) and user_text[start:end] == quote:
+            return start, end
+        raise ValueError("memory candidate does not quote the bound user input")
+    start = user_text.find(quote)
+    if start < 0:
+        raise ValueError("memory candidate does not quote the bound user input")
+    if user_text.find(quote, start + 1) >= 0:
+        raise ValueError("memory candidate quote is ambiguous")
+    return start, start + len(quote)
 
 
 def candidate_from_payload(value: object, *, user_text: str, scope: str, at: str) -> MemoryCandidateDraft:
@@ -41,14 +58,14 @@ def candidate_from_payload(value: object, *, user_text: str, scope: str, at: str
     required = set(require_json_strings(item_schema["required"], "required"))
     if not required <= row.keys() or row.keys() - properties.keys():
         raise ValueError("invalid memory candidate fields")
-    start = require_json_integer(row["quote_start"], "quote_start")
-    end = require_json_integer(row["quote_end"], "quote_end")
     quote = require_json_string(row["quote"], "quote")
     text = require_json_string(row["text"], "text")
-    if not 0 <= start < end <= len(user_text) or user_text[start:end] != quote:
-        raise ValueError("memory candidate does not quote the bound user input")
     if not text.strip() or max(len(text), len(quote)) > MEMORY_CANDIDATE_TEXT_LIMIT:
         raise ValueError("memory candidate exceeds its text limit")
+    if ("quote_start" in row) != ("quote_end" in row):
+        raise ValueError("memory candidate quote offsets must be paired")
+    span = (require_json_integer(row["quote_start"], "quote_start"), require_json_integer(row["quote_end"], "quote_end")) if "quote_start" in row else None
+    start, end = locate_candidate_quote(user_text, quote, legacy_span=span)
     item = item_from_payload({**row, "item_id": "candidate", "scope": scope,
                               "created_at": at, "source_refs": ["bound-user-input"]})
     if item.kind == "experience" or item.context not in {"", "chat", "project", "research"}:

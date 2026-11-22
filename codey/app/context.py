@@ -287,7 +287,8 @@ class AppContext:
             ),
         )
         if start_scheduler:
-            self.durable_scheduler.set_idle_callback(MemoryMaintenance(self.memory, self.durable, self.managed_outputs))
+            self.durable_scheduler.set_idle_callback(MemoryMaintenance(self.memory, self.durable, self.managed_outputs,
+                knowledge_store=lambda: self.knowledge_store))
             self.durable_scheduler.start()
 
     def _delete_session_memory(self, session_id: str) -> None:
@@ -507,6 +508,12 @@ class AppContext:
         self.task_runtime.release_run(run_id)
 
     def finish_run(self, run_id: str, event: dict[str, object]) -> bool:
+        from codey.app.knowledge_observation import observe_knowledge
+
+        store = self.knowledge_store
+        if (store is not None and self.managed_outputs is not None
+                and not observe_knowledge(store, self.durable, self.managed_outputs, run_id)):
+            event["knowledge_projection_error"] = "Terminal knowledge projection failed and is pending retry."
         finished = self.task_lifecycle.finish_run(run_id, decode_json_object(encode_transport_value(event)))
         if finished:
             observe_terminal(self.memory, self.durable, run_id, self.managed_outputs)

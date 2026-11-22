@@ -7,6 +7,7 @@ UI ledger payloads (which deliberately clip excerpts and counts).
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import Field, fields
 from datetime import datetime
 
@@ -20,7 +21,7 @@ from codey.research.ledger import (
 )
 from codey.research.receipt_types import SourceSearchLocator, SourceSearchObservation
 from codey.research.search_provenance import decode_search_attempt
-from codey.research.source_document import SourceReadScope
+from codey.research.source_document import PublicationMetadata, SourceReadScope
 from codey.research.urls import parsed_url
 from codey.types.json_value import (
     JsonObject,
@@ -49,8 +50,10 @@ def _record_fields(value: object, model: type[SearchRecord] | type[SearchResultR
     if not isinstance(value, dict):
         raise ValueError(f"invalid {model.__name__} observation fields")
     row = canonical_json_object(value)
-    if model is OpenedSource and "read_scope" not in row:
-        row["read_scope"] = None  # Sources captured before target ranges were recorded.
+    if model is OpenedSource:
+        row.setdefault("read_scope", None)
+        row.setdefault("publication", None)
+        row.setdefault("pdf_sha256", "")
     if model is SearchRecord and "attempts" not in row:
         row["attempts"] = list[JsonValue]()  # Historical receipts did not observe search provenance.
     source_fields: tuple[Field[object], ...] = fields(model)
@@ -134,6 +137,10 @@ def source_observation(observation: object) -> tuple[OpenedSource, str, dict[int
     if (type(row["truncated"]) is not bool or type(row["page_count"]) is not int or row["page_count"] < 0
             or any(type(row[key]) is not str for key in ("title", "content_kind", "mime_type", "text_hash"))):
         raise ValueError("invalid source observation metadata")
+    pdf_sha256 = row["pdf_sha256"]
+    if not isinstance(pdf_sha256, str) or pdf_sha256 and (
+            row["content_kind"] != "pdf" or re.fullmatch(r"[0-9a-f]{64}", pdf_sha256) is None):
+        raise ValueError("invalid PDF document hash")
     source = OpenedSource(
         requested_url=require_json_string(row["requested_url"], "requested_url"),
         final_url=require_json_string(row["final_url"], "final_url"),
@@ -145,7 +152,9 @@ def source_observation(observation: object) -> tuple[OpenedSource, str, dict[int
         page_count=require_json_integer(row["page_count"], "page_count"),
         pages_read=tuple(require_json_integer(page, "page") for page in pages_read),
         truncated=require_json_boolean(row["truncated"], "truncated"),
-        read_scope=_read_scope(row["read_scope"], observation["text"]))
+        read_scope=_read_scope(row["read_scope"], observation["text"]),
+        publication=PublicationMetadata.decode(row["publication"]) if row["publication"] is not None else None,
+        pdf_sha256=pdf_sha256)
     text = observation["text"]
     if (type(text) is not str or not text.strip()
             or hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:16] != source.text_hash):

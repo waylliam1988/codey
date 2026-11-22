@@ -10,7 +10,7 @@ from unittest.mock import patch
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.automation.browser_contracts import RouteDecision as Route
 from codey.policies.tool_requirement import require_browser_report_field
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
 from tools.browser_production_live_gate import select_target
 from tools.completion_artifact_audit import tool_receipts
@@ -33,6 +33,7 @@ class QueryCase:
     required_tools: tuple[str, ...] = ()
     subject: str = ""
     context: str = ""
+    additional_pages: tuple[tuple[str, str], ...] = ()
 
     @property
     def url(self) -> str:
@@ -75,10 +76,12 @@ def run_case(directory: Path, case: QueryCase, target: Target, *, max_turns: int
     browser = BrowserSearchProvider(headless=True)
     provider = ExperimentProvider(target, directory, fixed_acquisition=False)
     events: list[JsonObject] = []
+    pages = {case.url: case.html, **dict(case.additional_pages)}
 
     def route(request: Route) -> None:
-        request.fulfill(status=200 if request.request.url == case.url else 404,
-            content_type='text/html; charset=utf-8', body=case.html if request.request.url == case.url else 'Unavailable')
+        body = pages.get(request.request.url)
+        request.fulfill(status=200 if body is not None else 404,
+            content_type='text/html; charset=utf-8', body=body if body is not None else 'Unavailable')
 
     def observe(event: dict[str, object]) -> None:
         value = decode_json_object(event)
@@ -89,6 +92,8 @@ def run_case(directory: Path, case: QueryCase, target: Target, *, max_turns: int
         return provider
 
     task = f'帮我看看 {case.url}，{case.question}' if source_access_wording else case.question + '\n' + case.url
+    if case.additional_pages:
+        task += '\nRead these additional sources once:\n' + '\n'.join(url for url, _ in case.additional_pages)
     availability: dict[str, bool] = {'local': True}
     tabs: dict[str, bool] = {}
     model_selection: dict[str, object] = {'model': target.model, 'base_url': target.base_url}
@@ -114,6 +119,8 @@ def run_case(directory: Path, case: QueryCase, target: Target, *, max_turns: int
     reads = [row for row in receipts if row.ok and row.call.name == 'browser_read' and row.audit.get('query_click')]
     submissions = [decode_json_object(row.canonical['research_submission']) for row in receipts
                    if row.ok and row.call.name == 'submit_research_answer']
+    evidence_checks: list[JsonValue] = [decode_json_object(row.canonical['research_evidence_check']) for row in receipts
+                                      if row.ok and row.call.name == 'submit_research_answer' and 'research_evidence_check' in row.canonical]
     cited: set[str] = set()
     for submission in submissions[-1:]:
         citations = submission.get('citations')
@@ -131,7 +138,7 @@ def run_case(directory: Path, case: QueryCase, target: Target, *, max_turns: int
                       and (query_cited if 'aria-controls' in case.html else True),
         'stop_reason': result.stop_reason, 'answer': answer, 'source_stable': stable, 'query_cited': query_cited,
         'clicks': sum(row.call.name == 'browser_click' and row.ok for row in receipts),
-        'query_reads': len(reads), **provider_metrics(directory / 'provider.jsonl')}
+        'query_reads': len(reads), 'citation_checks': evidence_checks, **provider_metrics(directory / 'provider.jsonl')}
     write_json(directory / 'summary.json', row)
     return row
 

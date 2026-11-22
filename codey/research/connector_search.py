@@ -451,6 +451,7 @@ def _page_from_fetched(fetched: FetchedSource) -> dict[str, object]:
         "content_kind": document.content_kind,
         "mime_type": document.mime_type,
         "truncated": document.truncated,
+        "publication": document.publication,
     }
 
 

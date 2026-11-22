@@ -59,8 +59,8 @@ def test_outside_update_never_confirms_an_unchanged_shadow_query(
     clicked = browser.click(ref, query=True)
     assert clicked.ok, clicked.model_text
     baseline = decode_json_object(clicked.observation['query_baseline'])
-    current = browser.capture_query_result(baseline, pending='Unconfirmed')
-    assert current['query_confirmed'] is False
+    with pytest.raises(QueryObservationError, match='bound result region has not shown a confirmed update'):
+        browser.capture_query_result(baseline, pending='Unconfirmed')
     assert browser.evaluate('window.clicks').observation['value'] == 1
 
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from codey.codemode.catalog import build_codemode_catalog, render_declarations
+from codey.codemode.catalog import render_declarations, snapshot_catalog
 from codey.codemode.replay import repair_catalog_digest
 from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
@@ -19,10 +19,7 @@ def test_restored_browser_contract_preserves_mutations_evidence_and_repair_ident
     original = build_turn_snapshot(session, native=native)
     restored = restore_snapshot(snapshot_description(original))
     assert restored == original
-    catalogs = [build_codemode_catalog(
-        [spec for spec in snapshot.frozen_specs if spec.name in snapshot.nested_tool_names],
-        allow_writes=True, allow_project_run="run" in snapshot.nested_tool_names,
-    ) for snapshot in (original, restored)]
+    catalogs = [snapshot_catalog(snapshot) for snapshot in (original, restored)]
     assert catalogs[0].digest == catalogs[1].digest
     assert repair_catalog_digest(catalogs[0], ["browser_click"]) == repair_catalog_digest(catalogs[1], ["browser_click"])
     specs = {spec.name: spec for spec in restored.frozen_specs}

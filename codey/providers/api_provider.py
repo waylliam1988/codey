@@ -11,7 +11,7 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, replace
 from functools import partial
-from typing import Any, cast
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from codey.providers import api_context, api_generation
@@ -33,11 +33,17 @@ from codey.providers.api_request_policy import (
 )
 from codey.providers.base import AssistantTurn, ProviderToolDefinition, ProviderToolResult, TurnFinish
 from codey.providers.compaction import CompactionCoordinator
+from codey.providers.compat_transport import optional_callable
 from codey.providers.context_checkpoint import output_reduction_ready
 from codey.providers.context_ledger import ContextLedger
 from codey.providers.display_stream import DisplayStream
 from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget, RequestContextCount
 from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
+from codey.types.json_value import JsonObject, decode_json_object
+
+if TYPE_CHECKING:
+    from codey.durable.session import DurableSession
+    from codey.providers.api_transport import AttemptControl
 
 DEFAULT_TIMEOUT = 600.0
 DEFAULT_TEMPERATURE = 0.3
@@ -80,7 +86,7 @@ class ApiProvider:
         stream: bool = False,
         tool_choice: str = "auto",
         output_tokens: int | None = None,
-        request_headers: Any = None,
+        request_headers: Callable[[str], Mapping[str, str]] | None = None,
         request_context_headers: Callable[[RequestContext], Mapping[str, str]] | None = None,
         codec: ApiCodec | None = None,
         codec_revision: str = "",
@@ -89,13 +95,13 @@ class ApiProvider:
         text_decoder: Callable[[str], str | AssistantTurn] | None = None,
         request_counter: RequestCounter = estimate_request,
         usage_parser: UsageParser = no_reported_usage,
-        configure_request: Callable[[dict[str, Any]], None] = lambda payload: None,
+        configure_request: Callable[[dict[str, object]], None] = lambda payload: None,
         budget_source: str = "configuration",
         input_limit_tokens: int | None = None,
         purpose: str = "conversation",
         request_policy: RequestPolicy | None = None,
-        transport_options: Any = None,
-        http_session: Any = None,
+        transport_options: Mapping[str, object] | None = None,
+        http_session: object = None,
         connection_revision: str = "runtime-v1",
     ) -> None:
         """Runtime only: the target is already resolved (no env/discovery)."""
@@ -114,26 +120,27 @@ class ApiProvider:
         self.transport_options = transport_options
         self.http_session = http_session
         self._session_released = False
-        if self.http_session is not None and hasattr(self.http_session, "retain"):
-            self.http_session.retain()
+        retain = optional_callable(self.http_session, "retain")
+        if retain is not None:
+            retain()
         self._pending_request: PendingRequest | None = None
         self._request_context: RequestContext | None = None
         self._request_receipt: object | None = None
         self.context_ledger = ContextLedger()
         self._context_session = ""
-        self._durable: Any = None
+        self._durable: DurableSession | None = None
         self._durable_session_id = ""
         self._attachment_task_id, self.supports_images = "", supports_images
         self._durable_source_entry_ids: tuple[str | None, ...] = ()
-        self._attempt_gate: Callable[[ApiProvider, dict[str, Any]], None] | None = None
+        self._attempt_gate: Callable[[ApiProvider, dict[str, object]], None] | None = None
         self._attempt_gate_prompt = ""
         self._parent_cancelled: Callable[[], bool] = lambda: False
-        self._task_stop_event: Any = None
+        self._task_stop_event: threading.Event | None = None
         self._result_refs: frozenset[str] = frozenset()
         self._auxiliary: ApiProvider | None = None
         self._history_revision = 0
         self.auxiliary_connection: Callable[[ApiProvider], AuxiliaryConnection] = lambda client: client
-        self.summarize_context: Callable[[list[dict[str, Any]], float], str] = partial(api_context.summarize_context, self)
+        self.summarize_context: Callable[[list[dict[str, object]], float], str] = partial(api_context.summarize_context, self)
         self.base_url = base_url.strip().rstrip("/")
         self.model = model.strip()
         self.api_key = api_key
@@ -151,7 +158,7 @@ class ApiProvider:
 
         if codec is not None and not codec_revision:
             raise ValueError("custom API codec requires a revision")
-        self._codec = codec or cast(ApiCodec, {"openai-completions": api_chat, "openai-responses": api_responses}[api_protocol])
+        self._codec: ApiCodec = codec or (api_chat if api_protocol == "openai-completions" else api_responses)
         self.codec_revision = codec_revision
         self.api_protocol = api_protocol
         self.stream = stream
@@ -160,7 +167,7 @@ class ApiProvider:
         self.usage_parser = usage_parser
         self.configure_request = configure_request
         self.on_usage: Callable[[ApiExchangeUsage], None] = lambda record: None
-        self._on_display: Callable[[dict[str, Any]], None] = lambda event: None
+        self._on_display: Callable[[dict[str, object]], None] = lambda event: None
         self._display_stream: DisplayStream | None = None
         self.connection_id = ""
         self.connection_revision = connection_revision
@@ -169,15 +176,14 @@ class ApiProvider:
         self._last_output_estimate = 0
         self.request_headers = request_headers
         self.request_context_headers = request_context_headers
-        self.native_tools = native_tools
-        self._text_decoder = text_decoder
+        self.native_tools, self._text_decoder = native_tools, text_decoder
         self._last_reasoned_reply: tuple[str, str] | None = None
-        self._messages: list[dict[str, Any]] = []
+        self._messages: list[dict[str, object]] = []
         self._state_lock = threading.RLock()
         self._send_lock = threading.Lock()
         self._generation = 0
-        self._active_response: Any = None
-        self._active_control: Any = None
+        self._active_response: object = None
+        self._active_control: AttemptControl | None = None
         self._inflight_generation = 0
         self._declared_tools: list[ProviderToolDefinition] = []
         self._compaction = CompactionCoordinator(codec=self._codec, snapshot=partial(api_context.context_snapshot, self),
@@ -221,8 +227,9 @@ class ApiProvider:
         self._invalidate_inflight(reset_view=False)
         if self.http_session is not None and not self._session_released:
             self._session_released = True
-            if hasattr(self.http_session, "release"):
-                self.http_session.release()
+            release = optional_callable(self.http_session, "release")
+            if release is not None:
+                release()
 
     def normalize_reply(self, reply: str) -> object:
         """Normalize provider-specific text frames before kernel parsing."""
@@ -257,6 +264,15 @@ class ApiProvider:
         )
 
     def reset_window(self, expected_ref: ProtocolWindowRef | None = None) -> ProtocolWindowRef:
+        return self._open_window(expected_ref=expected_ref)
+
+    def activate_durable_window(self, messages: list[dict[str, object]], *, source_entry_ids: tuple[str, ...],
+                                reason: str) -> ProtocolWindowRef:
+        candidate, ids = self._replayed_view(messages, source_entry_ids)
+        return self._open_window(seed=candidate, source_entry_ids=ids, reason=reason)
+
+    def _open_window(self, *, expected_ref: ProtocolWindowRef | None = None, seed: list[dict[str, object]] | None = None,
+                     source_entry_ids: tuple[str | None, ...] = (), reason: str = "provider_reset") -> ProtocolWindowRef:
         if not self._send_lock.acquire(blocking=False):
             raise RuntimeError("API provider busy: cannot reset protocol window")
         try:
@@ -272,14 +288,16 @@ class ApiProvider:
                 next_ref = ProtocolWindowRef.new(self._context_session or "unbound", self._binding())
                 self.context_ledger.open_window(
                     next_ref,
+                    seed=seed,
                     expected_ref=current,
                     expected_revision=self.context_ledger.revision,
                     reset_permit=True,
-                    reason="provider_reset",
+                    reason=reason,
                 )
                 self._generation += 1
                 self._window_ref = next_ref
-                self._messages = []
+                self._messages = seed or []
+                self._durable_source_entry_ids = source_entry_ids
                 self._history_revision += 1
                 self._declared_tools = []
                 self._last_reasoned_reply = None
@@ -311,7 +329,7 @@ class ApiProvider:
             with self._state_lock:
                 self.context_ledger.commit([])
 
-    def _opened_response(self, response: Any) -> None:
+    def _opened_response(self, response: object) -> None:
         from codey.providers.api_transport import abort_response
 
         with self._state_lock:
@@ -321,7 +339,7 @@ class ApiProvider:
         if stale:
             abort_response(response)
 
-    def _opened_control(self, control: Any) -> None:
+    def _opened_control(self, control: AttemptControl) -> None:
         with self._state_lock:
             stale = self._inflight_generation != self._generation
             if not stale:
@@ -331,14 +349,14 @@ class ApiProvider:
                 control.cancel()
 
     def send(self, text: str, timeout: float | None = None, *, tool_call_json: bool = False,
-             tool_call_schema: dict[str, Any] | None = None, tool_call_contract: str = "",
-             tool_call_results: list[dict[str, Any]] | None = None, tool_call_observations: str = "",
+             tool_call_schema: dict[str, object] | None = None, tool_call_contract: str = "",
+             tool_call_results: list[dict[str, object]] | None = None, tool_call_observations: str = "",
              tool_call_history_groups: int = 0, output_token_limit: int = 0) -> str:
         if tool_call_json and self.text_tool_format != "json_schema":
             raise ValueError("JSON tool format is not enabled for this provider")
         if tool_call_schema is not None and not tool_call_json:
             raise ValueError("tool schema requires JSON tool format")
-        pending: dict[str, Any] = {"role": "user", "content": text}
+        pending: dict[str, object] = {"role": "user", "content": text}
         if tool_call_results is not None:
             from codey.providers.text_result_views import TEXT_RESULTS_KEY, validate_text_results
 
@@ -348,7 +366,7 @@ class ApiProvider:
                               tool_call_contract=tool_call_contract, tool_call_observations=tool_call_observations,
                               tool_call_history_groups=tool_call_history_groups, output_token_limit=output_token_limit).text
 
-    def bind_durable_context(self, durable: Any, conversation_id: str) -> None:
+    def bind_durable_context(self, durable: DurableSession, conversation_id: str) -> None:
         if durable is None or not conversation_id:
             raise ValueError("durable context binding requires a session and conversation")
         if not callable(getattr(durable, "admit_write", None)):
@@ -357,7 +375,7 @@ class ApiProvider:
             self._durable = durable
             self._durable_session_id = conversation_id
 
-    def bind_attempt_gate(self, gate: Callable[[ApiProvider, dict[str, Any]], None] | None) -> None:
+    def bind_attempt_gate(self, gate: Callable[[ApiProvider, dict[str, object]], None] | None) -> None:
         """Bind the single final payload gate used immediately before HTTP."""
         if gate is not None and not callable(gate):
             raise TypeError("attempt gate must be callable")
@@ -368,44 +386,51 @@ class ApiProvider:
         with self._state_lock:
             self._attempt_gate_prompt = str(prompt or "")
 
-    def bind_input_attachments(self, durable: Any, session_id: str, task_id: str) -> None:
+    def bind_input_attachments(self, durable: DurableSession, session_id: str, task_id: str) -> None:
         if self._durable is not durable or self._durable_session_id != session_id:
             raise ValueError("Attachment binding requires the matching durable chat context.")
         self._attachment_task_id = task_id
 
-    def _attachment_message(self, message: dict[str, Any]) -> dict[str, Any]:
+    def _attachment_message(self, message: dict[str, object]) -> dict[str, object]:
         from codey.providers.input_attachments import with_attachment_content
 
         return with_attachment_content(message, protocol=self.api_protocol, images=self.supports_images)
 
-    def load_durable_context(self, messages: list[dict[str, Any]], *,
+    def load_durable_context(self, messages: list[dict[str, object]], *,
                              source_entry_ids: tuple[str, ...] = ()) -> None:
         """Seed a fresh local protocol window from the canonical session path."""
+        candidate, ids = self._replayed_view(messages, source_entry_ids)
+        with self._state_lock:
+            if self._messages:
+                if self._messages == candidate and self._durable_source_entry_ids == ids:
+                    return
+                raise ValueError("durable context activation conflicts with the current protocol window")
+            self.context_ledger.commit(candidate)
+            self._messages = candidate
+            self._durable_source_entry_ids = ids
+            self._history_revision += 1
+
+    def _replayed_view(self, messages: list[dict[str, object]], source_entry_ids: tuple[str, ...], *,
+                       tools: list[ProviderToolDefinition] | None = None) -> tuple[list[dict[str, object]], tuple[str | None, ...]]:
+        from codey.providers.replay import transform_replay_messages
+
         if not isinstance(messages, list):
             raise TypeError("durable context must be a list")
         if source_entry_ids and len(source_entry_ids) != len(messages):
             raise ValueError("durable source IDs must match semantic context messages")
-        encoded: list[dict[str, Any]] = []
+        encoded: list[dict[str, object]] = []
         encoded_ids: list[str | None] = []
-        for message, entry_id in zip(messages, source_entry_ids or (None,) * len(messages), strict=True):
-            part = self._codec.encode_context([self._attachment_message(message)])
+        for index, message in transform_replay_messages(messages, self._binding(), supports_images=self.supports_images):
+            entry_id = source_entry_ids[index] if source_entry_ids else None
+            part = self._codec.encode_context([self._attachment_message(dict(message))])
             encoded.extend(part)
             encoded_ids.extend([entry_id] * len(part))
-        with self._state_lock:
-            candidate = self._codec.prepare([], encoded,
-                                            system=self.system_prompt, tools=self._declared_tools or None)
-            if self._messages:
-                if self._messages == candidate:
-                    return
-                raise ValueError("durable context activation conflicts with the current protocol window")
-            self._codec.validate_view(candidate)
-            self.context_ledger.commit(candidate)
-            self._messages = candidate
-            prefix = len(candidate) - len(encoded)
-            if prefix not in {0, 1} or candidate[prefix:] != encoded:
-                raise ValueError("durable source IDs do not match the encoded provider view")
-            self._durable_source_entry_ids = (None,) * prefix + tuple(encoded_ids)
-            self._history_revision += 1
+        candidate = self._codec.prepare([], encoded, system=self.system_prompt, tools=tools)
+        self._codec.validate_view(candidate)
+        prefix = len(candidate) - len(encoded)
+        if prefix not in {0, 1} or candidate[prefix:] != encoded:
+            raise ValueError("durable source IDs do not match the encoded provider view")
+        return candidate, (None,) * prefix + tuple(encoded_ids)
 
     def restore_protocol_window(self, ref: ProtocolWindowRef) -> None:
         """Bind a cold durable projection to its original request's identity.
@@ -454,7 +479,7 @@ class ApiProvider:
     def send_tool_results_bound(self, results: list[ProviderToolResult], window_ref: ProtocolWindowRef,
                                 tools: list[ProviderToolDefinition] | None = None,
                                 timeout: float | None = None,
-                                delivery_commit: dict[str, Any] | None = None,
+                                delivery_commit: dict[str, object] | None = None,
                                 tool_call_observations: str = "", tool_call_history_groups: int = 0,
                                 output_token_limit: int = 0, require_tool_call: bool = False) -> AssistantTurn:
         """Deliver native results only to the exact protocol window that created them."""
@@ -463,8 +488,8 @@ class ApiProvider:
                               tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups,
                               output_token_limit=output_token_limit, require_tool_call=require_tool_call)
 
-    def _prepare_exchange(self, pending: list[dict[str, Any]],
-                          tools: list[ProviderToolDefinition] | None) -> list[dict[str, Any]]:
+    def _prepare_exchange(self, pending: list[dict[str, object]],
+                          tools: list[ProviderToolDefinition] | None) -> list[dict[str, object]]:
         """Replace restored receipt projections when delivering their original result.
 
         A durable receipt can already appear in a cold protocol view before its
@@ -473,7 +498,7 @@ class ApiProvider:
         Live transport results have no durable source ID and remain subject to
         the codec's ordinary duplicate-ID rejection.
         """
-        def result_id(item: dict[str, Any]) -> object:
+        def result_id(item: dict[str, object]) -> object:
             if item.get("role") == "tool":
                 return item.get("tool_call_id")
             if item.get("type") == "function_call_output":
@@ -498,17 +523,17 @@ class ApiProvider:
                 seen.add(identity)
         return self._codec.prepare(history, additions, system=self.system_prompt, tools=tools)
 
-    def _exchange(self, pending: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
+    def _exchange(self, pending: list[dict[str, object]], tools: list[ProviderToolDefinition] | None,
                   *, timeout: float | None = None, text_only: bool = False,
                    tool_call_json: bool = False,
-                   tool_call_schema: dict[str, Any] | None = None,
+                   tool_call_schema: dict[str, object] | None = None,
                    tool_call_contract: str = "",
                    tool_call_observations: str = "",
                    tool_call_history_groups: int = 0,
                    output_token_limit: int = 0,
                    require_tool_call: bool = False,
                    expected_window_ref: ProtocolWindowRef | None = None,
-                   delivery_commit: dict[str, Any] | None = None) -> AssistantTurn:
+                   delivery_commit: dict[str, object] | None = None) -> AssistantTurn:
         """One atomic lifecycle for both codecs, with no protocol-specific commit path."""
         from codey.providers.error_classification import OutputLengthError
 
@@ -533,16 +558,11 @@ class ApiProvider:
 
                 pending = enrich_pending(self, pending)
                 candidate = self._prepare_exchange(pending, tools)
-            checkpoints: list[dict[str, Any]] = []
-            generation_options: dict[str, Any] = {"output_token_limit": output_token_limit,
-                                                  **({"require_tool_call": True} if require_tool_call else {}),
-                                                  **({"tool_call_json": True} if tool_call_json else {})}
-            if tool_call_schema is not None:
-                generation_options["tool_call_schema"] = tool_call_schema
-            generation_options.update({key: value for key, value in (
-                ("tool_call_contract", tool_call_contract), ("tool_call_observations", tool_call_observations),
-                ("tool_call_history_groups", tool_call_history_groups)) if value})
-            body = self._generate(candidate, tools, timeout=timeout, checkpoints=checkpoints, **generation_options)
+            checkpoints: list[dict[str, object]] = []
+            body = self._generate(candidate, tools, timeout=timeout, checkpoints=checkpoints,
+                output_token_limit=output_token_limit, require_tool_call=require_tool_call, tool_call_json=tool_call_json,
+                tool_call_schema=tool_call_schema, tool_call_contract=tool_call_contract,
+                tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups)
             try:
                 turn, output = self._codec.decode_exchange(body, text_only=text_only,
                                                            text_decoder=self._text_decoder)
@@ -600,11 +620,11 @@ class ApiProvider:
             if settle_error is not None and main_error is None:
                 raise settle_error
 
-    def _commit_exchange(self, generation: int, base_revision: int, candidate: list[dict[str, Any]],
-                         pending: list[dict[str, Any]], output: list[dict[str, Any]],
-                         tools: list[ProviderToolDefinition] | None, checkpoints: list[dict[str, Any]],
+    def _commit_exchange(self, generation: int, base_revision: int, candidate: list[dict[str, object]],
+                         pending: list[dict[str, object]], output: list[dict[str, object]],
+                         tools: list[ProviderToolDefinition] | None, checkpoints: list[dict[str, object]],
                          reasoned_reply: tuple[str, str] | None = None,
-                         delivery_commit: dict[str, Any] | None = None) -> None:
+                         delivery_commit: dict[str, object] | None = None) -> None:
         from codey.providers import api_transport
 
         with self._state_lock:
@@ -643,12 +663,12 @@ class ApiProvider:
                 self._declared_tools = list(tools)
             self._last_reasoned_reply = reasoned_reply
 
-    def _generate(self, messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None = None,
-                  *, timeout: float | None = None, checkpoints: list[dict[str, Any]] | None = None,
-                  tool_call_json: bool = False, tool_call_schema: dict[str, Any] | None = None,
+    def _generate(self, messages: list[dict[str, object]], tools: list[ProviderToolDefinition] | None = None,
+                  *, timeout: float | None = None, checkpoints: list[dict[str, object]] | None = None,
+                  tool_call_json: bool = False, tool_call_schema: dict[str, object] | None = None,
                   tool_call_contract: str = "", tool_call_observations: str = "",
                   tool_call_history_groups: int = 0, output_token_limit: int = 0,
-                  require_tool_call: bool = False) -> dict[str, Any]:
+                  require_tool_call: bool = False) -> dict[str, object]:
         from codey.providers import api_transport
 
         if type(require_tool_call) is not bool or require_tool_call and not tools:
@@ -709,16 +729,16 @@ class ApiProvider:
                     lease.release()
         raise AssertionError("unreachable generation retry state")
 
-    def _generate_attempt(self, payload: dict[str, Any], deadline: float, connection_id: str,
-                          sink: Callable[[ApiExchangeUsage], None], budget: AttemptBudget) -> dict[str, Any]:
+    def _generate_attempt(self, payload: dict[str, object], deadline: float, connection_id: str,
+                          sink: Callable[[ApiExchangeUsage], None], budget: AttemptBudget) -> dict[str, object]:
         from codey.providers import api_transport
 
         exchange_id = uuid4().hex
         collector = UsageCollector(self.usage_parser)
-        def observe(event: dict[str, Any]) -> None:
-            collector.observe(event)
+        def observe(event: JsonObject) -> None:
+            collector.observe(dict(event))
             if self._display_stream is not None and not self._is_cancelled():
-                self._display_stream.observe(event)
+                self._display_stream.observe(dict(event))
         count, context_budget, outcome = self.last_context_count, self.context_budget, "unknown"
         try:
             gate = self._attempt_gate
@@ -731,21 +751,25 @@ class ApiProvider:
                     raise
                 except Exception as exc:
                     raise RequestPrepError(f"provider payload admission failed: {exc}") from exc
-            transport_options = dict(self.transport_options) if isinstance(self.transport_options, dict) else {}
-            transport_options.update(getattr(self._request_receipt, "transport_options", {}))
+            from codey.utils.object_fields import mapping_fields
+
+            transport_options = dict(self.transport_options or {})
+            receipt_options: object = getattr(self._request_receipt, "transport_options", None)
+            if mapping_fields(receipt_options):
+                transport_options.update(receipt_options)
+            idle = (self.transport_options or {}).get("body_idle_timeout")
             body = api_generation.generate(
                 f"{self.base_url}/{self._codec.endpoint}", payload, self._headers(self._request_context),
                 timeout=max(0.001, deadline - time.monotonic()), observe=self._notify_http_attempt,
                 cancelled=self._is_cancelled, opened=self._opened_response, on_control=self._opened_control,
                 on_event=observe,
                 attempt_budget=budget,
-                idle_timeout=(self.transport_options or {}).get("body_idle_timeout")
-                if isinstance(self.transport_options, dict) else None,
+                idle_timeout=idle if isinstance(idle, (int, float)) else None,
                 http_session=self.http_session,
                 transport_options=transport_options or None,
             )
             outcome = "response"
-            return body
+            return dict(body)
         except api_transport.GenerationNotSentError:
             outcome = "not_sent"
             raise
@@ -762,11 +786,11 @@ class ApiProvider:
     def bind_usage(self, connection_id: str, sink: Callable[[ApiExchangeUsage], None]) -> None:
         self.connection_id, self.on_usage = connection_id, sink
 
-    def bind_display(self, sink: Callable[[dict[str, Any]], None]) -> None:
+    def bind_display(self, sink: Callable[[dict[str, object]], None]) -> None:
         self._on_display = sink
 
-    def _payload(self, messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
-                 settings: GenerationSettings, *, clock: str | None = None) -> dict[str, Any]:
+    def _payload(self, messages: list[dict[str, object]], tools: list[ProviderToolDefinition] | None,
+                 settings: GenerationSettings, *, clock: str | None = None) -> dict[str, object]:
         from codey.providers.request_context import clock_context
 
         view = messages
@@ -782,25 +806,25 @@ class ApiProvider:
         from codey.providers.text_result_views import TEXT_RESULTS_KEY
 
         # View provenance is local metadata, never an API message property.
-        payload[key] = [{name: value for name, value in item.items() if name not in {TEXT_RESULTS_KEY, "_codey_attachment_entries"}}
-                        for item in payload[key]]
+        raw_items = payload.get(key)
+        if not isinstance(raw_items, list):
+            raise ValueError("API codec did not produce its history array")
+        items: list[dict[str, object]] = [
+            {name: value for name, value in decode_json_object(item).items()
+             if name not in {TEXT_RESULTS_KEY, "_codey_attachment_entries"}} for item in raw_items]
         if settings.text_tool_contract:
             # Frozen request declarations, like native tools, belong to this
             # payload only. Never append obsolete tool catalogs to history.
-            items = [dict(item) for item in payload[key]]
-            if items and items[0].get("role") == "system" and isinstance(items[0].get("content"), str):
-                items[0]["content"] += "\n\n" + settings.text_tool_contract
+            if items and items[0].get("role") == "system" and isinstance(content := items[0].get("content"), str):
+                items[0]["content"] = content + "\n\n" + settings.text_tool_contract
             else:
                 items.insert(0, {"role": "system", "content": settings.text_tool_contract})
-            payload[key] = items
         if settings.text_tool_observations:
             # A receipt-derived snapshot describes this request. Keep it
             # separate from history and before the current result or repair.
-            items = list(payload[key])
             index = len(items) - 1 if items and items[-1].get("role") == "user" else len(items)
             items.insert(index, {"role": "user", "content": settings.text_tool_observations})
-            payload[key] = items
-        payload[key] = [*payload[key], {"role": "user", "content": clock if clock is not None else clock_context()}]
+        payload[key] = [*items, {"role": "user", "content": clock if clock is not None else clock_context()}]
         if settings.text_tool_json:
             payload["response_format"] = {"type": "json_schema", "json_schema": {
                 "name": "text_tool_call", "strict": True, "schema": settings.text_tool_schema or {"type": "object", "properties": {
@@ -809,15 +833,15 @@ class ApiProvider:
         self.configure_request(payload)
         return payload
 
-    def _admit_request(self, messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
+    def _admit_request(self, messages: list[dict[str, object]], tools: list[ProviderToolDefinition] | None,
                        settings: GenerationSettings, deadline: float,
-                       checkpoints: list[dict[str, Any]] | None) -> dict[str, Any]:
+                       checkpoints: list[dict[str, object]] | None) -> dict[str, object]:
         from codey.providers.error_classification import ContextOverflowError, RequestPrepError
         from codey.providers.request_context import clock_context
 
         candidate = copy.deepcopy(messages)
         clock = clock_context()
-        staged: list[dict[str, Any]] = checkpoints if checkpoints is not None else []
+        staged: list[dict[str, object]] = checkpoints if checkpoints is not None else []
         while True:
             if self._is_cancelled() or time.monotonic() >= deadline:
                 raise RequestPrepError("context counting cancelled or deadline exceeded before generation")
@@ -854,7 +878,7 @@ class ApiProvider:
             try:
                 snapshot = api_context.context_snapshot(self)
                 snapshot = replace(snapshot, checkpoints=snapshot.checkpoints | frozenset(
-                    checkpoint["item_digest"] for checkpoint in staged if checkpoint.get("item_digest")))
+                    item_digest for checkpoint in staged if isinstance(item_digest := checkpoint.get("item_digest"), str) and item_digest))
                 compacted = self._compaction.compact(candidate, tools, deadline, snapshot,
                                                     merge_checkpoints=True, staged=staged)
             except ContextOverflowError:
@@ -891,12 +915,9 @@ class ApiProvider:
         items = self._codec.prepare([], [{"role": "user", "content": text}], system=self.system_prompt, tools=tools)
         return api_context.count_context(self, items, tools, deadline)
 
-    def count_context_messages(self, messages: tuple[dict[str, Any], ...]) -> int:
+    def count_context_messages(self, messages: tuple[Mapping[str, object], ...]) -> int:
         """Count a reconstructed durable context with this provider's request envelope."""
-        items = self._codec.prepare(
-            [], self._codec.encode_context([self._attachment_message(dict(message)) for message in messages]),
-            system=self.system_prompt, tools=self._declared_tools or None,
-        )
+        items, _ = self._replayed_view([dict(message) for message in messages], (), tools=self._declared_tools or None)
         count = api_context.count_context(self, items, self._declared_tools or None, time.monotonic() + self.timeout)
         if count.value is None:
             raise ValueError("provider context token count is unavailable")

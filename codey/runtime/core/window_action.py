@@ -14,6 +14,7 @@ class WindowOpenReason(StrEnum):
     USER_RESET = "user_reset"
     HISTORY_EDIT = "history_edit"
     MODEL_CHANGE = "model_change"
+    TRANSPORT_RECOVERY = "transport_recovery"
     CONTEXT_ROLLOVER = "context_rollover"
 
 

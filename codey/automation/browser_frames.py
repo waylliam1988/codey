@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from uuid import uuid4
 
-from playwright.async_api import CDPSession, ElementHandle, Error, Frame, Page
+from playwright.async_api import CDPSession, ElementHandle, Error, Frame, JSHandle, Page
 
 from codey.types.json_value import JsonObject, decode_json_object, require_json_integer, require_json_string
 
@@ -104,6 +104,39 @@ async def backend_node(context: FrameContext, node: ElementHandle) -> int:
         object_id = require_json_string(decode_json_object(remote["result"]).get("objectId"), "node object")
         observed = await context.send("DOM.describeNode", {"objectId": object_id})
         return require_json_integer(decode_json_object(observed["node"])["backendNodeId"], "backend node")
+    finally:
+        with suppress(Error):
+            await context.frame.evaluate("key => {delete globalThis[key]}", key)
+        await context.send("Runtime.releaseObjectGroup", {"objectGroup": group})
+
+
+async def backend_nodes(context: FrameContext, nodes: JSHandle) -> dict[str, int]:
+    """Resolve the exact observed handles in one world, keeping array indices paired."""
+    key = "__codey_nodes_" + uuid4().hex
+    group = "codey-nodes-" + uuid4().hex
+    try:
+        await nodes.evaluate("(nodes,key) => Object.defineProperty(globalThis,key,{value:nodes,configurable:true})", key)
+        expression = f"(() => {{const nodes=globalThis[{json.dumps(key)}];delete globalThis[{json.dumps(key)}];return nodes}})()"
+        remote = await context.send("Runtime.evaluate", {"expression": expression,
+            "contextId": context.context_id, "objectGroup": group})
+        object_id = require_json_string(decode_json_object(remote["result"])["objectId"], "node array")
+        raw = await context.send("Runtime.getProperties", {"objectId": object_id, "ownProperties": True})
+        properties = raw.get("result")
+        if not isinstance(properties, list):
+            raise ValueError("invalid Chromium node array")
+
+        async def describe(name: str, remote_id: str) -> tuple[str, int]:
+            row = await context.send("DOM.describeNode", {"objectId": remote_id})
+            return name, require_json_integer(decode_json_object(row["node"])["backendNodeId"], "backend node")
+
+        pending = []
+        for item in properties:
+            prop = decode_json_object(item)
+            name = require_json_string(prop["name"], "node index")
+            if name.isdecimal():
+                remote_id = require_json_string(decode_json_object(prop["value"])["objectId"], "node object")
+                pending.append(describe(name, remote_id))
+        return dict(await asyncio.gather(*pending))
     finally:
         with suppress(Error):
             await context.frame.evaluate("key => {delete globalThis[key]}", key)

@@ -21,7 +21,8 @@ re-implementing policy; behavior modules must not import run projections
 from __future__ import annotations
 
 import contextlib
-from dataclasses import dataclass, field
+import hashlib
+from dataclasses import dataclass, field, replace
 from typing import Protocol, runtime_checkable
 
 from codey.policies.network import check_fetch_url
@@ -34,8 +35,15 @@ from codey.research.pdf_extract import (
     extract_pdf_document,
 )
 from codey.research.search_provenance import SearchAttempt, filter_site_results, provider_search_attempts
-from codey.research.source_acquisition import SourceFailureCode, acquisition_observation, source_failure_code
-from codey.research.source_document import SourceDocument, SourceReadScope
+from codey.research.source_acquisition import (
+    SourceFailureCode,
+    acquisition_observation,
+    combine_acquisitions,
+    source_failure_code,
+    with_attempt,
+)
+from codey.research.source_connectors import is_valid_arxiv_id
+from codey.research.source_document import PublicationMetadata, SourceDocument, SourceReadScope
 from codey.research.source_search import (
     SOURCE_SEARCH_DEFAULT_LIMIT,
     SourceSearchHit,
@@ -45,6 +53,7 @@ from codey.research.source_search import (
 )
 from codey.research.source_snapshots import captured_source, document_snapshot
 from codey.research.url_selection import source_candidate_skip_reason
+from codey.research.urls import parsed_url
 from codey.runtime.core import cancellation
 from codey.task.web_intent import source_url_key
 from codey.types.json_value import JsonObject
@@ -54,6 +63,20 @@ OPEN_MAX_LIMIT = 12000
 OPEN_MIN_LIMIT = 500
 SEARCH_LIMIT = 8
 PDF_SOURCE_SEARCH_MAX_PAGES = 30
+
+
+def _full_text_candidate(page: dict[str, object]) -> tuple[str, str] | None:
+    if page.get("status") != "ok" or page.get("content_kind") != "abstract":
+        return None
+    parsed = parsed_url(page.get("url"))
+    if parsed.scheme == "https" and parsed.netloc == "arxiv.org" and parsed.path.startswith("/abs/"):
+        identity = parsed.path.removeprefix("/abs/")
+        if is_valid_arxiv_id(identity):
+            return f"https://arxiv.org/pdf/{identity}", "pdf"
+    publication = page.get("publication")
+    if parsed.scheme == "https" and parsed.netloc == "pubmed.ncbi.nlm.nih.gov" and isinstance(publication, PublicationMetadata) and publication.pmcid:
+        return f"https://pmc.ncbi.nlm.nih.gov/articles/{publication.pmcid}/", "html"
+    return None
 
 
 @runtime_checkable
@@ -159,7 +182,41 @@ class ResearchSourceGateway:
             return OpenedSource(status="error", detail=f"open failed: {exc}",
                                 failure_code="execution_failed")
         cancellation.check()
+        if candidate := _full_text_candidate(page):
+            full_url, kind = candidate
+            upgraded = self._open_full_text(url, full_url, kind, page, pages=pages)
+            if upgraded is not None:
+                return upgraded
         return self._receive_capture(url, page, pages=pages)
+
+    def _open_full_text(self, url: str, candidate: str, kind: str, abstract: dict[str, object], *, pages: str) -> OpenedSource | None:
+        reason = check_fetch_url(candidate, use_cache=True)
+        if reason:
+            self._fail("browser", "open_full_text", reason, candidate)
+            return None
+        fetched: dict[str, object]
+        try:
+            fetched = self.search_provider.fetch(candidate)
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except Exception as exc:
+            fetched = {"status": "error", "failure_code": "request_failed", "detail": str(exc) or type(exc).__name__}
+        cancellation.check()
+        final_url = fetched.get("url")
+        expected = {candidate, candidate + ".pdf"} if kind == "pdf" else {candidate, candidate.rstrip("/")}
+        if fetched.get("status") == "ok" and (fetched.get("content_kind", "html") != kind
+                or not isinstance(final_url, str) or final_url not in expected):
+            fetched = {"status": "error", "url": final_url if isinstance(final_url, str) else candidate,
+                       "failure_code": "document_unreadable", "detail": "The candidate did not return the identified full-text article."}
+        fetched["publication"] = abstract.get("publication")
+        original = with_attempt(abstract, "connector", url)
+        acquired = with_attempt(fetched, "browser", candidate)
+        preferred = self._receive_capture(url, combine_acquisitions(original, acquired), pages=pages)
+        if preferred.status == "ok":
+            return preferred
+        self._fail("browser", "open_full_text", preferred.detail, candidate)
+        fallback = self._receive_capture(url, original, pages=pages)
+        return replace(fallback, acquisition=preferred.acquisition) if preferred.acquisition else fallback
 
     def capture(self, url: str, page: dict[str, object], *, pages: str = "") -> OpenedSource:
         """Admit an already captured page through the ordinary source receiver."""
@@ -251,15 +308,20 @@ class ResearchSourceGateway:
         final_url = str(page.get("url") or requested_url)
         content_kind = str(page.get("content_kind") or "").lower()
         mime_type = str(page.get("mime_type") or "")
+        publication = page.get("publication")
         if content_kind == "pdf":
-            return extract_pdf_document(
-                _fetch_bytes(page.get("bytes")),
+            pdf_bytes = _fetch_bytes(page.get("bytes"))
+            document = extract_pdf_document(
+                pdf_bytes,
                 requested_url=requested_url,
                 final_url=final_url,
                 title=str(page.get("title") or ""),
                 mime_type=mime_type or "application/pdf",
                 pages=pages or PDF_DEFAULT_PAGES,
             )
+            if isinstance(document, PdfSkipped):
+                return document
+            return replace(document, pdf_sha256=hashlib.sha256(pdf_bytes).hexdigest())
         text = str(page.get("text") or "")
         region = page.get("query_region")
         target = region.get("text") if isinstance(region, dict) else None
@@ -272,6 +334,7 @@ class ResearchSourceGateway:
             mime_type=mime_type or "text/html",
             truncated=bool(page.get("truncated")),
             read_scope=SourceReadScope.locate(text, target) if isinstance(target, str) else None,
+            publication=publication if isinstance(publication, PublicationMetadata) else None,
         )
 
     def search_inside(

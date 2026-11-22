@@ -233,7 +233,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             version_check_reached = True
         if (stale_edit and not changed_after_read and result_file is not None and expected_version is not None
                 and (root / rel).resolve() == result_file.resolve()
-                and path_hash(result_file) == expected_version):
+                and path_hash(result_file, preserve_newlines=tool == "edit" or expected_version.startswith("raw:"))
+                == expected_version.removeprefix("raw:")):
             changed: dict[str, object] = {"amount": -1, "code": "externally_changed"}
             if preserve_external_field:
                 changed["external_revision"] = EXTERNAL_FIELD
@@ -254,8 +255,12 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             route.fulfill(status=200 if matches else 404, content_type="text/html",
                           body=f"<article>Required source record: {SOURCE_SUCCESS_MARKER}</article>" if matches else "Fixture URL unavailable")
             return
+        body = fixture_html
+        if stale_ref:
+            body = body.replace('<input id="city">', '<input id="city" oninput="'
+                "const button = document.querySelector('button'); button.replaceWith(button.cloneNode(true));\">")
         route.fulfill(status=403 if source_failure else 200 if route.request.url == URL else 404, content_type="text/html",
-                      body="HTTP 403: fixture access denied" if source_failure else fixture_html if route.request.url == URL else "Fixture URL unavailable")
+                      body="HTTP 403: fixture access denied" if source_failure else body if route.request.url == URL else "Fixture URL unavailable")
 
     def source_factory() -> BrowserSearchProvider:
         return provider

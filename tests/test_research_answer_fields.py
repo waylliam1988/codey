@@ -35,11 +35,27 @@ from tests.test_declared_work_continuation import declared_session, record
 from tests.test_research_dynamic_queries import query_choices
 from tests.test_research_submission_handoff_production import NativeExperimentProvider, install_http, requests
 from tools import research_query_delivery_live_gate as live
-from tools.completion_artifact_audit import tool_receipts
+from tools.completion_artifact_audit import artifacts, tool_receipts
 from tools.completion_explanation_ab import Target
 
 URL = 'https://example.com/record/UN-097'
 DOCUMENT: JsonObject = {'url': URL, 'loader_id': 'original'}
+
+
+def latest_result_citation(directory: Path) -> str:
+    state = directory / 'state'
+    receipt = next(row.result for row in reversed(tool_receipts(state))
+                   if row.result.ok and row.result.call.name == 'browser_read' and row.result.audit.get('query_click'))
+    from codey.research.passages import read_passage_refs
+
+    refs = read_passage_refs(receipt.canonical.get('read_passages'))
+    for _, artifact in reversed(artifacts(state)):
+        if artifact.get('kind') == 'provider_request':
+            request = decode_json_object(artifact['payload'])
+            snapshot = decode_json_object(request['snapshot'])
+            scope = AnswerScope.from_payload(snapshot['research_scope'])
+            return next(f'[{label}]' for label, ref in scope.aliases if ref in refs)
+    raise AssertionError('Expected the next frozen request to include the post-action read')
 
 
 def test_ready_hybrid_handoff_delivers_actual_bound_values_after_the_file_result(tmp_path: Path) -> None:
@@ -483,7 +499,8 @@ def test_initial_open_field_is_invalidated_only_by_its_own_observed_dom_target(
         targets = decode_json_object(regions[0])['query_targets']
         assert isinstance(targets, list) and len(targets) == 2
         yield decode_json_object(chosen['call'])
-        yield {'tool': 'submit_research_answer', 'args': {'markdown': '已检查指定记录。\n{{field:/quantity}}',
+        result_text = '' if same_target else '\n状态区域现已显示 No longer available. ' + latest_result_citation(directory)
+        yield {'tool': 'submit_research_answer', 'args': {'markdown': '已检查指定记录。\n{{field:/quantity}}' + result_text,
                                                        'state': 'partial' if same_target else 'answered'}}
 
     install_http(monkeypatch, replies(), native=False)
@@ -603,7 +620,7 @@ def test_missing_field_and_wrong_old_citation_recover_without_rereading_or_recli
         assert 'required source version' in json.dumps(current['messages'])
         schema = json.dumps(current.get('response_format', current.get('tools')))
         assert 'browser_read' in schema and 'browser_click' in schema
-        assert 'No new click or source read is needed' in json.dumps(current['messages'])
+        assert 'no new click or edit is needed' in json.dumps(current['messages'])
         yield {'tool': 'submit_research_answer', 'args': {'markdown': '已核对 ZX-581 的查询结果。\n{{field:/arrival}}', 'state': 'answered'}}
 
     install_http(monkeypatch, replies(), native=False)
@@ -682,7 +699,7 @@ def test_inferred_tool_workflow_keeps_real_candidates_and_native_details_after_e
         chosen = next(row for row in choices if decode_json_object(row['context'])['label'] == 'Parcel ZX-581')
         yield decode_json_object(chosen['call'])
         yield {'tool': 'submit_research_answer', 'args': {
-            'markdown': 'ZX-581 is In transit. Arrival: Friday 18:37. [e2]', 'state': 'answered'}}
+            'markdown': 'ZX-581 is In transit. Arrival: Friday 18:37. ' + latest_result_citation(directory), 'state': 'answered'}}
 
     install_http(monkeypatch, replies(), native=native)
     result = live.run_case(directory, case, Target('http://scripted.test/v1', 'fixture', 123456789, 10))

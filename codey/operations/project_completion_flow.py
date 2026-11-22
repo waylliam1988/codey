@@ -10,7 +10,6 @@ from __future__ import annotations
 import contextlib
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
 
 from codey.agents.consensus import render_project_context
 from codey.knowledge.brief import KnowledgeBriefBuilder
@@ -31,6 +30,8 @@ from codey.operations.prompting import (
 from codey.operations.research_flow import research_payload as _research_payload
 from codey.operations.result import ModeOutcome
 from codey.operations.task_context import ProjectTaskContextBuilder
+from codey.research.pipeline import ResearchPipelineResult
+from codey.research.run_result import ResearchRunResult
 from codey.runs.receipt import VERIFICATION_TRUST_TRUSTED, build_task_receipt
 from codey.runtime.core import cancellation
 from codey.runtime.observe.execution_evidence import CheckEvidence
@@ -202,16 +203,6 @@ def _persist_verified_project_facts(ctx: ProjectRun) -> bool:
         )
     except (OSError, ValueError):
         return False
-    if succeeded:
-        record_project_memory(
-            ctx.deps,
-            project=ctx.project,
-            session_id=ctx.request.session_id,
-            task=ctx.request.task,
-            files=ctx.files,
-            receipt=ctx.receipt.display.summary,
-            checks=ctx.work.evidence.successful_checks,
-        )
     return succeeded
 
 
@@ -232,7 +223,7 @@ def _settle_work_checkpoint(ctx: ProjectRun, facts_write_succeeded: bool) -> Non
         )
 
 
-def _build_project_done_event(ctx: ProjectRun) -> dict[str, Any]:
+def _build_project_done_event(ctx: ProjectRun) -> dict[str, object]:
     assert ctx.result is not None
     changes_payload = None
     if ctx.task_changed and ctx.task_changes and ctx.task_changes.get("ok"):
@@ -314,8 +305,8 @@ def run_project_mode(
     hooks: RunHooks,
     *,
     config_result: ProjectConfigLoadResult | None = None,
-    research_result: Any = None,
-    research_pipeline_result: Any = None,
+    research_result: ResearchRunResult | None = None,
+    research_pipeline_result: ResearchPipelineResult | None = None,
 ) -> ModeOutcome:
     project = frame.request.project
     if project is None:

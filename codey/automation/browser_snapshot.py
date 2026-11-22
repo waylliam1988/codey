@@ -7,15 +7,48 @@ from collections.abc import Awaitable, Callable, Mapping
 from playwright.async_api import ElementHandle
 
 from codey.automation.browser_document import same_document
-from codey.automation.browser_frames import FrameContext, backend_node, frame_context, resolve_backend
+from codey.automation.browser_frames import FrameContext, backend_node, backend_nodes, frame_context, resolve_backend
 from codey.automation.browser_observation import ACTIONABLE_CANDIDATES, ELEMENT_METADATA, VISIBLE_TEXT
-from codey.automation.browser_query_async import bind_query_target
 from codey.automation.browser_refs import ElementRecord, ElementRegistry
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer
 
 MAX_ELEMENTS = 80
 MAX_TEXT = 12_000
 AX_CONTROL_ROLES = frozenset({"button", "link", "textbox", "checkbox", "combobox", "menuitem"})
+
+_DOM_SNAPSHOT = """(root, limit) => {
+    const selector = """ + json.dumps(ACTIONABLE_CANDIDATES) + """;
+    const observe = (""" + ELEMENT_METADATA + """);
+    const visibleText = (""" + VISIBLE_TEXT + """);
+    function* descendants(scope) {
+        yield* scope.querySelectorAll(selector);
+        if (scope.shadowRoot) yield* descendants(scope.shadowRoot);
+        for (const node of scope.querySelectorAll('*'))
+            if (node.shadowRoot) yield* descendants(node.shadowRoot);
+    }
+    const nodes = [], rows = [], identities = new Map();
+    const index = node => {
+        if (!node) return -1;
+        if (!identities.has(node)) { identities.set(node, nodes.length); nodes.push(node); }
+        return identities.get(node);
+    };
+    function* candidates() {
+        if (root.matches(selector)) yield root;
+        yield* descendants(root);
+    }
+    let truncated = false;
+    for (const node of candidates()) {
+        const rect = node.getBoundingClientRect();
+        if (!rect.width || !rect.height || getComputedStyle(node).visibility !== 'visible') continue;
+        const closed = node.closest('details:not([open])');
+        if (closed && node !== closed && !closed.querySelector(':scope > summary')?.contains(node)) continue;
+        if (rows.length === limit) { truncated = true; break; }
+        const {metadata, contextNode, queryNode} = observe(node);
+        rows.push({node: index(node), owner: index(contextNode), query: index(queryNode), metadata,
+            box: {x: rect.x, y: rect.y, width: rect.width, height: rect.height}});
+    }
+    return {nodes, view: {rows, text: visibleText(root), truncated}};
+}"""
 
 
 def _evaluate(handle: ElementHandle, expression: str, argument: object = None) -> Awaitable[object]:
@@ -71,8 +104,9 @@ async def file_control_details(handle: ElementHandle) -> JsonObject:
         for key in ("name", "dom_id", "field_name", "group")}}
 
 
-async def collect_ax_tree(context: FrameContext) -> dict[int, JsonObject]:
-    raw = await context.send("Accessibility.getFullAXTree", {"frameId": context.document["frame_id"]})
+async def collect_ax_tree(context: FrameContext, *, root_id: int | None = None) -> dict[int, JsonObject]:
+    raw = (await context.send("Accessibility.queryAXTree", {"backendNodeId": root_id}) if root_id is not None
+           else await context.send("Accessibility.getFullAXTree", {"frameId": context.document["frame_id"]}))
     nodes = raw.get("nodes")
     if not isinstance(nodes, list):
         raise ValueError("invalid accessibility tree")
@@ -111,35 +145,52 @@ async def _scope_root(context: FrameContext, registry: ElementRegistry[ElementHa
     return root
 
 
+async def _dom_snapshot(context: FrameContext, root: ElementHandle, limit: int) -> tuple[
+    JsonObject, dict[str, int], dict[str, ElementHandle],
+]:
+    batch = await root.evaluate_handle(_DOM_SNAPSHOT, limit)
+    nodes = await batch.get_property("nodes")
+    view = await batch.get_property("view")
+    try:
+        read_value: Callable[[], Awaitable[object]] = view.json_value
+        data = decode_json_object(await read_value())
+        identities = await backend_nodes(context, nodes)
+        properties = await nodes.get_properties()
+        elements = {key: element for key, handle in properties.items() if (element := handle.as_element()) is not None}
+        return data, identities, elements
+    finally:
+        await view.dispose()
+        await nodes.dispose()
+        await batch.dispose()
+
+
 async def collect_snapshot(context: FrameContext, registry: ElementRegistry[ElementHandle], *,
                            revision: int, max_elements: int = MAX_ELEMENTS, max_text: int = MAX_TEXT,
                            scope_ref: str = "", selector: str = "") -> JsonObject:
     root = await _scope_root(context, registry, scope_ref, selector)
-    raw_text: object = await _evaluate(root, VISIBLE_TEXT)
-    if not isinstance(raw_text, str):
-        raise ValueError("invalid observed text")
     max_elements, max_text = max(1, min(max_elements, MAX_ELEMENTS)), max(1, min(max_text, MAX_TEXT))
-    handles = await root.query_selector_all(ACTIONABLE_CANDIDATES)
-    root_matches: object = await _evaluate(root, "(el,selector) => el.matches(selector)", ACTIONABLE_CANDIDATES)
-    if root_matches is True:
-        handles.insert(0, root)
-    ax = await collect_ax_tree(context)
+    dom, identities, handles = await _dom_snapshot(context, root, max_elements)
+    raw_text, dom_rows = dom["text"], dom["rows"]
+    if not isinstance(raw_text, str) or not isinstance(dom_rows, list):
+        raise ValueError("invalid DOM observation")
+    root_id = (registry.resolve(scope_ref, context.document).backend_node_id if scope_ref else
+               await backend_node(context, root) if selector else None)
+    ax = await collect_ax_tree(context, root_id=root_id)
     known: set[int] = set()
     rows: list[JsonValue] = []
     contexts: list[JsonValue] = []
     contexts_by_node: dict[int, str] = {}
-    elements_truncated = False
-    for handle in handles:
-        if not await handle.is_visible():
-            await handle.dispose()
-            continue
-        if len(rows) >= max_elements:
-            elements_truncated = True
-            await handle.dispose()
-            continue
-        node = await backend_node(context, handle)
+    elements_truncated = dom["truncated"] is True
+    retained: set[str] = set()
+    for raw in dom_rows:
+        entry = decode_json_object(raw)
+        key = str(require_json_integer(entry["node"], "control index"))
+        owner_key = str(require_json_integer(entry["owner"], "owner index"))
+        query_key = str(require_json_integer(entry["query"], "query index"))
+        handle, node = handles[key], identities[key]
+        retained.add(key)
         known.add(node)
-        metadata, owner = await element_metadata(handle)
+        metadata, owner = decode_json_object(entry["metadata"]), handles.get(owner_key)
         role = str(ax.get(node, {}).get("role") or element_role(metadata))
         name = " ".join(str(ax.get(node, {}).get("name") or metadata.get("name") or "").split())[:240]
         owner_data = metadata.get("context")
@@ -147,23 +198,28 @@ async def collect_snapshot(context: FrameContext, registry: ElementRegistry[Elem
         context_id = ""
         owner_id = 0
         if owner is not None and owner_json is not None:
-            owner_id = await backend_node(context, owner)
+            retained.add(owner_key)
+            owner_id = identities[owner_key]
             context_id = contexts_by_node.get(owner_id, "")
             if not context_id:
                 context_id = f"region-{owner_id}"
                 contexts_by_node[owner_id] = context_id
                 contexts.append({"id": context_id, **owner_json})
         semantics = semantic_fingerprint(metadata)
-        target = await bind_query_target(context, handle) if metadata.get("query_relation") else None
+        target: JsonObject | None = ({"backend_node_id": identities[query_key], "relation": metadata["query_relation"]}
+                                    if query_key in identities else None)
         ref = registry.observe_node(ElementRecord(handle, context.document, node, role, name,
             owner_json, owner, target, revision, semantics, owner_id))
-        box_raw: object = await handle.bounding_box()
+        box_raw: object = entry["box"] if context.frame.parent_frame is None else await handle.bounding_box()
         row: JsonObject = {"ref": ref, "role": role, "name": name, "context_id": context_id,
                            "disabled": metadata.get("disabled") is True, "value": metadata.get("value"),
                            "checked": metadata.get("checked"), "query_relation": metadata.get("query_relation", "")}
         if isinstance(box_raw, dict):
             row["box"] = decode_json_object(box_raw)
         rows.append(row)
+    for key, handle in handles.items():
+        if key not in retained:
+            await handle.dispose()
     # AX-only actionable nodes are real DOM identities, not guessed selectors.
     for node, data in ax.items():
         if node in known or data.get("role") not in AX_CONTROL_ROLES:
@@ -189,7 +245,7 @@ async def collect_snapshot(context: FrameContext, registry: ElementRegistry[Elem
         if connected is not True or not same_document(context.document, after.document):
             registry.invalidate_document(context.document)
             raise RuntimeError("snapshot_document_changed")
-    if not scope_ref and root_matches is not True:
+    if not scope_ref:
         await root.dispose()
     return {"page_id": context.document["target_id"], "page_url": context.document["url"],
             "generation": revision, "revision": revision, "document": context.document,

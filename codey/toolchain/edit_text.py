@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 
 _NEWLINE = re.compile(r"\r\n|\r|\n")
+_LINE_TAIL = re.compile(r"[ \t]+(?=\n)")
 
 
 def normalized_text(source: str) -> str:
@@ -21,6 +22,45 @@ def count_matches(content: str, search: str) -> int:
         count += 1
         offset = position + 1
     return count
+
+
+def trailing_space_matches(content: str, search: str) -> list[tuple[int, int]]:
+    """Find LF-coordinate spans while ignoring horizontal space before line breaks."""
+    if "\n" not in search:
+        return []
+    needle = _LINE_TAIL.sub("", search)
+    if not needle.strip():
+        return []
+    removed: list[int] = []
+    shifts: list[int] = []
+    shift = 0
+    for match in _LINE_TAIL.finditer(content):
+        removed.append(match.start() - shift)
+        shift += match.end() - match.start()
+        shifts.append(shift)
+    view = _LINE_TAIL.sub("", content)
+
+    def source_index(index: int) -> int:
+        skipped = bisect_left(removed, index + 1)
+        return index + (shifts[skipped - 1] if skipped else 0)
+
+    matches: list[tuple[int, int]] = []
+    offset = 0
+    while (position := view.find(needle, offset)) >= 0:
+        span = source_index(position), source_index(position + len(needle) - 1) + 1
+        matches.append(span)
+        offset = position + 1
+    return matches
+
+
+def exact_raw_edit(source: str, view: str, search: str, replacement: str) -> TextEdit | None:
+    if source == view or count_matches(source, search) != 1:
+        return None
+    start = source.find(search)
+    end = start + len(search)
+    if any(offset > 0 and source[offset - 1:offset + 1] == "\r\n" for offset in (start, end)):
+        return None
+    return TextEdit(len(normalized_text(source[:start])), len(normalized_text(source[:end])), replacement)
 
 
 def _region_endings(region: str, replacement: str, fallback: str) -> str:

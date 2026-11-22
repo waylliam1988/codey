@@ -84,6 +84,8 @@ def _metadata_lines(document: SourceDocument) -> list[str]:
         lines.append(f"Title: {title}")
     if final_url:
         lines.append(f"URL: {final_url}")
+    if document.publication is not None and document.publication.status:
+        lines.append("PubMed publication status: " + document.publication.status.replace("_", " "))
     if document.read_scope is not None:
         scope = document.read_scope
         lines.append(f"Target range: confirmed, offset={scope.start}, end={scope.end} (exclusive)."

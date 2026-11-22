@@ -170,14 +170,14 @@ def content_hash(content: str | None) -> str:
     return "sha256:" + hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
-def path_hash(path: str | Path) -> str:
+def path_hash(path: str | Path, *, preserve_newlines: bool = False) -> str:
     """Hash a text file without following a trailing symlink.
 
     Opens with ``O_NOFOLLOW`` (POSIX) so a swapped-in link fails with
     ``ELOOP`` instead of hashing another file's content; the ``lstat`` pre-check covers
     Windows, where ``O_NOFOLLOW`` is unavailable. Reads through the fd in
-    bounded text chunks with universal-newline semantics, matching
-    :func:`content_hash`.
+    bounded text chunks with universal-newline semantics by default. Use
+    ``preserve_newlines`` when the caller will write the original byte layout.
     """
     target = Path(path)
     try:
@@ -185,7 +185,7 @@ def path_hash(path: str | Path) -> str:
     except FileNotFoundError:
         return "missing"
     try:
-        handle = os.fdopen(fd, "r", encoding="utf-8", newline=None)
+        handle = os.fdopen(fd, "r", encoding="utf-8", newline="" if preserve_newlines else None)
     except OSError as exc:
         os.close(fd)
         raise ValueError(f"not a file: {target}") from exc

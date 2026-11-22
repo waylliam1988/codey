@@ -6,8 +6,10 @@ import inspect
 from collections.abc import Mapping
 
 from codey.durable.model import thaw_json
+from codey.providers.compat_transport import declared_callable
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.core.window_action import OpenWindow, ReuseWindow, WindowAction, WindowOpenReason
+from codey.utils.object_fields import object_fields
 
 
 class WindowActivationError(RuntimeError):
@@ -35,6 +37,15 @@ def activate_window(provider: object, action: WindowAction | None) -> ProtocolWi
         if not isinstance(current, ProtocolWindowRef) or current != action.ref:
             raise WindowActivationError("protocol window reference mismatch")
         return current
+    activate = declared_callable(provider, "activate_durable_window") if action.context is not None else None
+    if activate is not None and action.context is not None:
+        try:
+            opened = activate(_durable_messages(action), source_entry_ids=action.context.entry_ids, reason=action.reason.value)
+        except Exception as exc:
+            raise WindowActivationError(f"durable context activation failed: {exc}") from exc
+        if not isinstance(opened, ProtocolWindowRef):
+            raise WindowActivationError("provider returned an invalid protocol window reference")
+        return opened
     # Window lifecycle is a declared provider capability. Do not infer it
     # from dynamic attributes on adapters or test doubles.
     # A concrete injected provider may declare its capability on the instance
@@ -82,7 +93,7 @@ def _restore_context(provider: object, action: OpenWindow) -> None:
     if not callable(load):
         raise WindowActivationError("provider cannot load planned durable context")
     try:
-        messages = [thaw_json(message) for message in action.context.messages]
+        messages = _durable_messages(action)
         parameters: Mapping[str, inspect.Parameter]
         try:
             parameters = inspect.signature(load).parameters
@@ -94,6 +105,17 @@ def _restore_context(provider: object, action: OpenWindow) -> None:
             load(messages)
     except Exception as exc:
         raise WindowActivationError(f"durable context activation failed: {exc}") from exc
+
+
+def _durable_messages(action: OpenWindow) -> list[dict[str, object]]:
+    messages: list[dict[str, object]] = []
+    if action.context:
+        for message in action.context.messages:
+            thawed = thaw_json(message)
+            if not object_fields(thawed):
+                raise ValueError("durable context message is not an object")
+            messages.append(thawed)
+    return messages
 
 
 __all__ = ["OpenWindow", "ReuseWindow", "WindowAction", "WindowOpenReason", "WindowActivationError", "activate_window"]

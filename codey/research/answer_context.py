@@ -198,7 +198,9 @@ def _render_context(session: TaskSession, ledger: ResearchLedger | None, scope: 
         if passage is None:
             raise ValueError("frozen research evidence is unavailable")
         kind = " (abstract only)" if passage.source.content_kind == "abstract" else ""
-        lines.append(f"[{label}] {passage.source.title}{kind} — {passage.source.final_url}\n{passage.excerpt}")
+        publication = passage.source.publication
+        status = f" (PubMed status: {publication.status.replace('_', ' ')})" if publication and publication.status else ""
+        lines.append(f"[{label}] {passage.source.title}{kind}{status} — {passage.source.final_url}\n{passage.excerpt}")
         items = [match.group(1) for match in re.finditer(r"(?m)^[ \t]*[-*+] (.+)$", passage.excerpt)]
         if items:
             source_lists.append({"label": label, "item_count": len(items), "items": items})
@@ -234,6 +236,9 @@ def _render_context(session: TaskSession, ledger: ResearchLedger | None, scope: 
     from codey.operations.kernel_prompt import operation_receipts
 
     operations = operation_receipts(session)
+    from codey.research.evidence_gaps import same_source_groups
+
+    related_sources: list[list[str]] = same_source_groups(ledger.read_passages, scope.aliases) if ledger is not None else []
     locators = projection["locators"]
     assert isinstance(locators, list)
     lines.append(canonical_json({"source_locators": [
@@ -241,6 +246,7 @@ def _render_context(session: TaskSession, ledger: ResearchLedger | None, scope: 
         for row in (decode_json_object(item) for item in locators)],
         "previously_read_snapshots": retained,
         "investigation_attempts": investigation_history(session),
+        **({"shared_source_groups": related_sources} if related_sources else {}),
         "latest_error": [result.model_text[:1600] for result in latest if not result.ok],
         **({"operation_receipts": operations} if operations else {})}))
     if operations:
@@ -257,6 +263,9 @@ def _render_context(session: TaskSession, ledger: ResearchLedger | None, scope: 
                  "offset or source_search for its title. Calling open_url without offset reads the beginning again. "
                  "For knowledge_source locators use knowledge_read(id, revision, offset) to keep the exact stored version. "
                  "next_offset is the first unread position, not the furthest observed end.")
+    if related_sources:
+        lines.append("Shared source groups list read labels with the same source identity or identical reposted text. "
+                     "Count each group once when describing independent support and keep its citations selectable.")
     # When comparing prior work, keep the actual originals nearest the task.
     lines = [*lines, *originals] if prior else [*originals, *lines]
     lines.extend(["Complete user task (verbatim):\n" + session.task_text, ANSWER_GUIDANCE])

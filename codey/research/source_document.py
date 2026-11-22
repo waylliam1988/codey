@@ -5,6 +5,35 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from codey.types.json_value import decode_json_object
+
+
+def normalized_doi(value: object) -> str:
+    return value.casefold() if isinstance(value, str) and re.fullmatch(r"10\.\d{4,9}/[!-~]{1,200}", value) else ""
+
+
+def normalized_pmcid(value: object) -> str:
+    return value.upper() if isinstance(value, str) and re.fullmatch(r"PMC[1-9][0-9]{0,11}", value, re.I) else ""
+
+
+@dataclass(frozen=True)
+class PublicationMetadata:
+    doi: str = ""
+    pmcid: str = ""
+    status: str = ""
+
+    @classmethod
+    def decode(cls, value: object) -> PublicationMetadata:
+        row = decode_json_object(value)
+        if set(row) != {"doi", "pmcid", "status"}:
+            raise ValueError("invalid publication metadata fields")
+        doi, pmcid, status = row["doi"], row["pmcid"], row["status"]
+        if (not isinstance(doi, str) or doi != normalized_doi(doi) or not isinstance(pmcid, str)
+                or pmcid != normalized_pmcid(pmcid)
+                or not isinstance(status, str) or status not in {"", "retracted", "retraction_notice"}):
+            raise ValueError("invalid publication metadata")
+        return cls(doi, pmcid, status)
+
 
 @dataclass(frozen=True)
 class SourceReadScope:
@@ -50,6 +79,8 @@ class SourceDocument:
     pages_read: tuple[int, ...] = ()
     page_texts: tuple[SourcePage, ...] = ()
     read_scope: SourceReadScope | None = None
+    publication: PublicationMetadata | None = None
+    pdf_sha256: str = ""
 
     @property
     def read_bounds(self) -> tuple[int, int]:

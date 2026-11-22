@@ -74,6 +74,8 @@ def build_memory(state_home: Path | None, durable: DurableSession, *, enabled: b
         else:
             backend = GhostMemory(MemoryHost(state_home / "memory" / "ghost", utc_now, check))
             capabilities = MemoryCapabilities(backend, backend, backend, backend, backend, backend, backend, backend, backend)
+            return MemoryService(capabilities, source_available=lambda ref: (
+                backend.confirmation_available(ref) if ref.startswith("user-confirmed:") else source_available(durable, ref)))
     return MemoryService(capabilities, source_available=lambda ref: source_available(durable, ref))
 
 

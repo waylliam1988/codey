@@ -12,8 +12,7 @@ from codey.research.ledger_receipts import source_observation
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import spec_for_tool
-from codey.types.json_value import JsonObject, decode_json_object, require_json_integer, require_json_string
-from codey.utils.citation_scanner import mask_markdown_code
+from codey.types.json_value import JsonObject, decode_json_object
 
 
 def browser_actions(records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult]) -> list[tuple[str, ToolResult]]:
@@ -67,8 +66,34 @@ def current_result_passages(records: Mapping[str, ExecutionRecord], results: Map
     passages: set[str] = set()
     for ref, row in committed_results(records, results, frozenset({"browser_read"})):
         if positions[ref] > positions[latest] and same_document(row.audit.get("browser_document"), document):
-            passages.update(complete_page_passages(row, str(document.get("url", ""))))
+            url = str(document.get("url", ""))
+            passages.update(complete_page_passages(row, url) or _confirmed_region_passages(row, latest, url))
     return latest, frozenset(passages)
+
+
+def _confirmed_region_passages(result: ToolResult, click: str, url: str) -> set[str]:
+    region = result.audit.get("query_region")
+    raw = result.canonical.get("read_passages")
+    if (result.truncated or result.audit.get("query_click") != click or not isinstance(region, dict)
+            or region.get("visible") is not True or not isinstance(raw, list)):
+        return set()
+    source, text, _ = source_observation(result.canonical.get("research_observation"))
+    scope = source.read_scope
+    if source.final_url != url or source.truncated or scope is None or scope.start is None or scope.end is None:
+        return set()
+    if " ".join(text[scope.start:scope.end].split()) != region.get("text"):
+        return set()
+    start = scope.start
+    refs: set[str] = set()
+    for item in raw:
+        row = decode_json_object(item)
+        lower, upper, ref = row.get("start"), row.get("end"), row.get("ref")
+        if (type(lower) is not int or type(upper) is not int or not isinstance(ref, str)
+                or not start <= lower < upper <= scope.end or text[start:lower].strip()):
+            return set()
+        refs.add(ref)
+        start = upper
+    return refs if not text[start:scope.end].strip() else set()
 
 
 def validate_current_result(records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],
@@ -77,28 +102,9 @@ def validate_current_result(records: Mapping[str, ExecutionRecord], results: Map
     if not action:
         return
     labels = {label for label, passage in aliases if passage in current}
-    if state == "answered" and (not current or not any(f"[{label}]" in markdown for label in labels)):
+    from codey.research.answer_contract import citation_occurrences
+
+    if state == "answered" and (not current or not any(row["label"] in labels for row in citation_occurrences(markdown))):
         raise ValueError("browser_result_evidence_missing: cite a complete formal browser_read after the latest page action. "
             "Earlier sources remain background evidence. Read the current result without repeating the action, "
             "or describe the actual acquisition gap as partial/unresolved.")
-    texts: dict[str, str] = {}
-    for row in results.values():
-        passages = row.canonical.get("read_passages")
-        if not row.ok or not isinstance(passages, list) or "research_observation" not in row.canonical:
-            continue
-        _source, text, _pages = source_observation(row.canonical["research_observation"])
-        for raw in passages:
-            passage = decode_json_object(raw)
-            start, end = require_json_integer(passage["start"], "start"), require_json_integer(passage["end"], "end")
-            texts[require_json_string(passage["ref"], "passage ref")] = " ".join(text[start:end].split())
-    by_label = dict(aliases)
-    prose = mask_markdown_code(markdown)
-    patterns = (r'["“「](?P<quote>[^"”」\n]+)["”」][\s*_，。,.;:：]*\[(?P<label>e[1-9][0-9]*)\]',
-                r'\[(?P<label>e[1-9][0-9]*)\][ \t*_：:]*["“「](?P<quote>[^"”」\n]+)["”」]')
-    for pattern in patterns:
-        for match in re.finditer(pattern, prose):
-            label = require_json_string(match.group("label"), "quote label")
-            quote = " ".join(require_json_string(match.group("quote"), "quote text").split())
-            if quote not in texts.get(by_label.get(label, ""), ""):
-                raise ValueError(f"browser_quote_not_in_source: the explicit quotation for [{label}] is absent from its passage. "
-                    "Repair the quotation or cite the actual post-action source; do not repeat the page action.")

@@ -28,7 +28,7 @@ _TARGET_KINDS = {
     "supersedes": {"claim", "inference", "source"}, "same_study": {"source"},
 }
 _SOURCE_KINDS = {
-    "from_source": {"evidence"}, "about": {"claim", "inference", "question", "observation", "evidence"},
+    "from_source": {"evidence", "observation"}, "about": {"claim", "inference", "question", "observation", "evidence"},
     "supported_by": {"claim"}, "refuted_by": {"claim"}, "limited_by": {"claim"},
     "depends_on": {"inference"}, "uses": {"answer"},
     "motivated_by": {"question"}, "supersedes": {"claim", "inference", "source"}, "same_study": {"source"},

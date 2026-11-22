@@ -118,6 +118,7 @@ def connect_and_build_frame(
         task=request.task,
         continue_task=request.continue_task,
         trace=trace,
+        managed_outputs=deps.managed_outputs,
     )
     conversation_plan.apply()
     conversation_plan = conversation_plan.activate_model_summary(provider, trace)

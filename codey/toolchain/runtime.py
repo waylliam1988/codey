@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -11,7 +12,7 @@ import shutil
 import subprocess
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -46,7 +47,7 @@ from codey.toolchain.constants import (
     STALE_READ_REFERENCE_CODE,
     STALE_READ_REFERENCE_ERROR,
 )
-from codey.toolchain.edit_text import TextEdit, count_matches, normalized_text
+from codey.toolchain.edit_text import TextEdit, count_matches, exact_raw_edit, normalized_text, trailing_space_matches
 from codey.toolchain.indentation import align_replacement, boundary_replacement, valid_python
 from codey.toolchain.line_prefix import strip_line_number_prefixes as _strip_line_number_prefixes
 from codey.toolchain.presentation import edit_preview
@@ -402,7 +403,8 @@ def _write_text_after_final_path_check(
     if expected_version is not None:
         from codey.workspace.paths import path_hash
 
-        if path_hash(path) != expected_version:
+        preserve_newlines = tool == "edit" or expected_version.startswith("raw:")
+        if path_hash(path, preserve_newlines=preserve_newlines) != expected_version.removeprefix("raw:"):
             return ToolOutcome.error(STALE_READ_REFERENCE_ERROR, error_code=STALE_READ_REFERENCE_CODE)
     if tool == "edit":
         # Edit coordinates already preserve source endings; text-mode encoding
@@ -426,9 +428,10 @@ def write_file(root: Path, rel: str, content: str, *, expected_version: str | No
                 before = path.read_text(encoding="utf-8")
                 if before == content:
                     if expected_version is not None:
-                        from codey.workspace.paths import content_hash
+                        from codey.workspace.paths import path_hash
 
-                        if content_hash(before) != expected_version:
+                        raw = expected_version.startswith("raw:")
+                        if path_hash(path, preserve_newlines=raw) != expected_version.removeprefix("raw:"):
                             return ToolOutcome.error(STALE_READ_REFERENCE_ERROR, error_code=STALE_READ_REFERENCE_CODE)
                     return ToolOutcome(f"wrote {rel} (no changes)", True)
             except (OSError, UnicodeDecodeError, ValueError):
@@ -584,13 +587,15 @@ def _first_match_start_lines(
 
 def _render_multiple_match_context(
     content: str,
-    search: str,
     match_count: int,
+    positions: list[int],
+    *,
+    exact: bool = True,
 ) -> str:
-    positions = _first_match_start_lines(content, search)
     if not positions:
         return ""
-    lines = ["Exact matches start at lines: " + ", ".join(map(str, positions)) + "."]
+    label = "Exact matches" if exact else "Matches after ignoring line-end space"
+    lines = [label + " start at lines: " + ", ".join(map(str, positions)) + "."]
     if match_count > len(positions):
         lines.append("Additional matches omitted.")
     lines.append(EXACT_REPLACEMENT_CONTEXT_HINT)
@@ -652,10 +657,9 @@ def _multiple_matches(
     note = _replacement_failure_note(replacement_index, replacement_count)
     if note:
         lines.append(note)
-    original_search = search
-    original_count = count_matches(original_content, original_search)
+    original_count = count_matches(original_content, search)
     context = (
-        _render_multiple_match_context(original_content, original_search, match_count)
+        _render_multiple_match_context(original_content, match_count, _first_match_start_lines(original_content, search))
         if original_count == match_count
         else ""
     )
@@ -705,15 +709,34 @@ def _python_syntax_regression_hint(rel: str, before: str, after: str) -> str:
     return ""
 
 
-def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
+def _line_end_space_edit(rel: str, view: str, old: str, new: str, index: int, count: int) -> TextEdit | ToolOutcome | None:
+    matches = trailing_space_matches(view, old)
+    if len(matches) > 1:
+        positions = [view.count("\n", 0, start) + 1 for start, _ in matches[:EDIT_FAILURE_MAX_MATCHES]]
+        return ToolOutcome.error(_bounded_failure_output([
+            f"SEARCH text matched {len(matches)} times in {rel} after ignoring line-end space; replacement was not applied.",
+            *_render_multiple_match_context(view, len(matches), positions, exact=False).splitlines(),
+            _replacement_failure_note(index, count),
+        ]))
+    if matches:
+        start, end = matches[0]
+        return TextEdit(start, end, new)
+    return None
+
+
+def _edit_block_error(blocks: list[EditBlock]) -> str:
     if not blocks:
-        return ToolOutcome.error("edit requires at least one replacement")
+        return "edit requires at least one replacement"
     if len(blocks) > MAX_REPLACEMENTS:
-        return ToolOutcome.error(
-            f"edit supports at most {MAX_REPLACEMENTS} replacements"
-        )
+        return f"edit supports at most {MAX_REPLACEMENTS} replacements"
     if any(not block.old_string for block in blocks):
-        return ToolOutcome.error("edit SEARCH text cannot be empty")
+        return "edit SEARCH text cannot be empty"
+    return ""
+
+
+def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
+    if problem := _edit_block_error(blocks):
+        return ToolOutcome.error(problem)
 
     path, error = _checked_tool_path(root, rel, tool="edit")
     if error is not None or path is None:
@@ -732,11 +755,23 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
     updated = content
     aligned = 0
     boundary_adjusted = 0
+    whitespace_adjusted = 0
     for index, block in enumerate(blocks, start=1):
         view = normalized_text(updated)
         old, new = normalized_text(block.old_string), normalized_text(block.new_string)
+        raw_edit = exact_raw_edit(updated, view, block.old_string, new)
+        if raw_edit is not None:
+            updated = raw_edit.apply(updated)
+            continue
         total = count_matches(view, old)
         if total == 0:
+            spacing = _line_end_space_edit(rel, view, old, new, index, len(blocks))
+            if isinstance(spacing, ToolOutcome):
+                return spacing
+            if spacing is not None:
+                updated = spacing.apply(updated)
+                whitespace_adjusted += 1
+                continue
             retried = retry_replacement_without_line_numbers(view, EditBlock(old, new))
             if retried is not None:
                 start = view.find(retried.old_string)
@@ -777,24 +812,26 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
         return ToolOutcome(f"edited {rel} (no changes)", True)
     if len(updated.encode("utf-8")) > WRITE_MAX_FILE_BYTES:
         return ToolOutcome.error(f"file too large to write: {rel}")
-    if (aligned or boundary_adjusted) and not valid_python(normalized_text(updated)):
+    if (aligned or boundary_adjusted or (whitespace_adjusted and Path(rel).suffix.lower() == ".py")) and not valid_python(normalized_text(updated)):
         return ToolOutcome.error("automatic edit assistance cannot safely apply this batch: resulting Python is invalid; no replacements written")
     syntax_hint = _python_syntax_regression_hint(rel, content, updated)
     from codey.workspace.paths import content_hash
 
     write_error = _write_text_after_final_path_check(root, rel, updated, tool="edit",
-        expected_version=content_hash(normalized_text(content)))
+        expected_version=content_hash(content))
     if write_error is not None:
         return write_error
     count = len(blocks)
     label = "replacement" if count == 1 else "replacements"
     assistance_audit: dict[str, object] = {
-        key: value for key, value in (("indentation_adjusted", aligned), ("boundary_adjusted", boundary_adjusted)) if value
+        key: value for key, value in (("indentation_adjusted", aligned), ("boundary_adjusted", boundary_adjusted),
+                                      ("line_end_space_adjusted", whitespace_adjusted)) if value
     }
     return ToolOutcome(
         f"edited {rel} ({count} {label})"
         + (f"\nAutomatically aligned outer indentation for {aligned} replacement(s)." if aligned else "")
         + (f"\nAutomatically adjusted fragment boundary for {boundary_adjusted} replacement(s)." if boundary_adjusted else "")
+        + (f"\nMatched {whitespace_adjusted} replacement(s) after ignoring line-end space." if whitespace_adjusted else "")
         + syntax_hint,
         True,
         changed=True,
@@ -865,14 +902,16 @@ def read_file(
     # A single over-long line is still read fully before preview cut.
     lines: list[str] = []
     total = 0
+    digest = hashlib.sha256()
     try:
-        with path.open("r", encoding="utf-8", errors="strict") as handle:
+        with path.open("r", encoding="utf-8", errors="strict", newline="") as handle:
             for raw in handle:
+                digest.update(raw.encode("utf-8"))
                 total += 1
                 if total % 500 == 0:
                     cancellation.check()
                 if start_line <= total < start_line + line_limit:
-                    lines.append(raw)
+                    lines.append(normalized_text(raw))
         cancellation.check()
     except UnicodeDecodeError:
         return ToolOutcome.error(f"not utf-8 text: {rel}")
@@ -880,7 +919,10 @@ def read_file(
         return ToolOutcome.error(str(exc))
     except OSError:
         return ToolOutcome.error(f"cannot read file: {rel}")
-    return _format_read_file_page(rel, start_line, line_limit, total, lines)
+    result = _format_read_file_page(rel, start_line, line_limit, total, lines)
+    if result.ok:
+        return replace(result, canonical={**result.canonical, "file_version": "raw:sha256:" + digest.hexdigest()})
+    return result
 
 
 def _format_read_file_page(

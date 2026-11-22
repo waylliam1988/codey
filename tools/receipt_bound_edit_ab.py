@@ -37,7 +37,6 @@ from codey.operations import kernel_protocol
 from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
 from codey.policies.tool_requirement import require_tool_success
 from codey.runtime.core import cancellation
-from codey.toolchain.tool_prompt import json_contract_text
 from codey.toolchain.tool_spec import is_text_batch_tool
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object, require_json_integer
 from tools import local_model_gate_attempts as attempts
@@ -131,10 +130,11 @@ def codemode_only_surface(snapshot: TurnSnapshot) -> TurnSnapshot:
     inventory = tuple(inventory_names)
     by_name = {spec.name: spec for spec in snapshot.frozen_specs}
     executors = dict(snapshot.custom_executors)
-    return replace(snapshot, tool_names=outer,
-                   contract_text=json_contract_text(by_name[name] for name in outer),
-                   frozen_specs=tuple(by_name[name] for name in inventory),
-                   custom_executors=tuple((name, executors[name]) for name in inventory))
+    return kernel_protocol.refresh_snapshot_contract(replace(
+        snapshot, tool_names=outer,
+        frozen_specs=tuple(by_name[name] for name in inventory),
+        custom_executors=tuple((name, executors[name]) for name in inventory),
+    ))
 
 
 def helper_metrics(directory: Path) -> JsonObject:
@@ -174,11 +174,16 @@ def prototype_helper(directory: Path, *, enabled: bool, helper: str = HELPER,
     def probe_snapshot(session: KernelSessionView, *, native: bool = False) -> TurnSnapshot:
         return codemode_only_surface(build_snapshot(session, native=native))
 
-    def helper_declarations(snapshot: ToolCatalogSnapshot) -> str:
+    def helper_declarations(
+        snapshot: ToolCatalogSnapshot, *, budget_bytes: int = codemode_catalog.MODEL_CATALOG_BUDGET_BYTES,
+        outer_descriptions: Mapping[str, str] | None = None,
+    ) -> str:
         if not any(entry.name == "edit" for entry in snapshot.entries):
-            return declarations(snapshot)
+            return declarations(snapshot, budget_bytes=budget_bytes, outer_descriptions=outer_descriptions)
         visible = replace(snapshot, entries=tuple(entry for entry in snapshot.entries if entry.name != "edit"))
-        return declarations(visible).replace("\n};", "\n" + declaration + "};")
+        return declarations(visible, budget_bytes=budget_bytes, outer_descriptions=outer_descriptions).replace(
+            "\n};", "\n" + declaration + "};", 1,
+        )
 
     def recorded_execute(
         runtime: NodeWorkerRuntime, code: str, *, catalog: Sequence[ToolCatalogEntry], invoke: ToolInvoker,

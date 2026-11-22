@@ -216,6 +216,13 @@ def compile_answer_report(session: TaskSession, ledger: ResearchLedger, store: K
 
     if submit_answer(AnswerScope.from_payload(submission["scope"]), result.call.args) != submission:
         raise ValueError("settled submission differs from the original tool arguments")
+    if "research_evidence_check" in result.canonical:
+        from codey.research.report_evidence import check_report_evidence
+
+        checked = decode_json_object(result.canonical["research_evidence_check"])
+        actual = check_report_evidence(submission, ledger.read_passages)
+        if {key: actual[key] for key in checked if key in actual} != checked:
+            raise ValueError("citation validation differs from the original submission receipt")
     scope = submission["scope"]
     # A receipt may never invent investigations just by carrying a matching digest.
     from codey.research.questions import is_investigation_tool

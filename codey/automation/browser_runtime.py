@@ -696,7 +696,11 @@ class BrowserRuntime:
         await self._mark(invocation, "input_dispatch", dispatch="unknown")
         observed: JsonObject = {"action": action.value, "ref": ref, "page_url": context.document["url"]}
         if action == BrowserAction.CLICK:
-            await record.handle.click(timeout=5000, no_wait_after=True)
+            position = decode_json_object(ready["position"])
+            x, y = position["x"], position["y"]
+            if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+                raise ValueError("invalid verified click position")
+            await record.handle.click(timeout=5000, no_wait_after=True, position={"x": x, "y": y})
         elif action == BrowserAction.FILL:
             await record.handle.fill(require_json_string(args["value"], "value"), timeout=5000)
         elif action == BrowserAction.PRESS:
@@ -729,6 +733,10 @@ class BrowserRuntime:
             observed.update(value_length=len(require_json_string(args["value"], "value")),
                             delivery="verified" if verified else "unverified", effect_verified=verified)
             return BrowserToolOutput("Filled and verified " + ref if verified else "Fill readback differed.", verified, observed)
+        if action == BrowserAction.CHECK:
+            verified = observed["checked"] == args["checked"]
+            observed.update(delivery="verified" if verified else "unverified", effect_verified=verified)
+            return BrowserToolOutput("Checked state verified " + ref if verified else "Check readback differed.", verified, observed)
         if baseline is not None:
             observed["query_baseline"] = baseline
         return BrowserToolOutput("Delivered " + action.value + " to " + ref, True, observed)

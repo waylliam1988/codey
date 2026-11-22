@@ -159,15 +159,15 @@ def _decide(connection: sqlite3.Connection, event: MemoryEvent) -> None:
         if targets:
             raise ValueError("correction target is missing")
         controls = tuple(require_json_strings(proposal.get("control_scopes"), "control_scopes"))
-        _store_item(connection, MemoryRecord(replace(item, source_refs=(*item.source_refs, *event.provenance)),
-                                            control_scopes=controls))
+        confirmed = replace(item, source_refs=tuple(dict.fromkeys((*item.source_refs, *event.provenance))))
+        _store_item(connection, MemoryRecord(confirmed, control_scopes=controls))
         if item.slot == "code.language":
             from datetime import timedelta
 
             due = (timestamp(event.occurred_at) + timedelta(days=7)).isoformat()
             save(connection, "predictions", "adaptation:" + item.item_id, item.scope, {
                 "id": "adaptation:" + item.item_id, "item_id": item.item_id, "scope": item.scope,
-                "item_version": digest(replace(item, source_refs=(*item.source_refs, *event.provenance)).to_payload()),
+                "item_version": digest(confirmed.to_payload()),
                 "statement": "Future exposed answers will label code examples as " + item.value,
                 "expected_rating": "helpful", "target_kind": "behavior", "target_key": "code_fence_language",
                 "expected_value": item.value, "workspace_revision": "", "created_at": event.occurred_at,
@@ -177,6 +177,23 @@ def _decide(connection: sqlite3.Connection, event: MemoryEvent) -> None:
     save(connection, "proposals", proposal_id, item.scope, proposal)
     save(connection, "decisions", proposal_id, item.scope, {"id": proposal_id, "scope": item.scope,
         "version": version, "accepted": event.payload.get("accepted"), "source_ref": event.provenance[0]})
+
+
+def _confirm_user_preference(connection: sqlite3.Connection, event: MemoryEvent) -> None:
+    original_id = require_json_string(event.payload.get("proposal_id"), "proposal_id")
+    original = load(connection, "proposals", original_id)
+    if original is not None and (original.get("decision") or digest(original.get("item")) != event.payload.get("version")):
+        raise ValueError("the original preference changed or was already decided")
+    _observe(connection, replace(event, kind="memory.proposed", payload={
+        key: event.payload[key] for key in ("kind", "text", "slot", "value", "context", "expires_at")}))
+    confirmed = load(connection, "proposals", event.event_id)
+    if confirmed is None:
+        raise ValueError("user-confirmed preference could not be stored")
+    _decide(connection, replace(event, payload={"proposal_id": event.event_id,
+        "version": digest(confirmed.get("item")), "accepted": True}))
+    if original is not None:
+        original["decision"] = event.event_id
+        save(connection, "proposals", original_id, item_from_payload(original.get("item")).scope, original)
 
 
 def _delete(connection: sqlite3.Connection, event: MemoryEvent) -> None:
@@ -230,6 +247,12 @@ def _change(connection: sqlite3.Connection, event: MemoryEvent) -> None:
         for value in rows(connection, "items")):
         raise ValueError("restore conflicts with confirmed memory; use a new proposal")
     _store_item(connection, replace(record, state=state, state_changed_at=event.occurred_at), require_json_string(raw.get("run_id"), "run_id"))
+    if state == "revoked":
+        for collection in ("feedback", "predictions", "judgments", "learning", "repairs"):
+            for row in rows(connection, collection):
+                if row.get("item_id") == identity:
+                    connection.execute("DELETE FROM projections WHERE collection = ? AND identity = ?",
+                        (collection, require_json_string(row.get("id"), "id")))
 
 
 def _control(connection: sqlite3.Connection, event: MemoryEvent) -> None:
@@ -257,6 +280,8 @@ def project_event(connection: sqlite3.Connection, event: MemoryEvent) -> None:
             _candidate_proposals(connection, event)
     elif event.kind == "memory.decided":
         _decide(connection, event)
+    elif event.kind == "memory.user_confirmed":
+        _confirm_user_preference(connection, event)
     elif event.kind == "memory.deleted":
         _delete(connection, event)
     elif event.kind == "memory.changed":

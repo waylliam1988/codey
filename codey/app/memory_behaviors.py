@@ -8,6 +8,7 @@ from codey.durable.model import EffectRecord
 from codey.memory.codec import digest
 from codey.memory.contracts import MemoryBehavior
 from codey.operations.kernel_receipts import restore_result_receipt
+from codey.runtime.core.models import ToolResult
 from codey.runtime.effects.effect_records import RuntimeEffectIntent, RuntimeEffectProjection, RuntimeEffectSettlement
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import JsonObject, JsonValue
@@ -23,23 +24,29 @@ def answer_behaviors(answer: str, *, run_id: str, request_ref: str, observation_
     return values
 
 
-def tool_outcome(effect: EffectRecord, outputs: ManagedOutputStore | None, *, session_id: str,
-                 run_id: str) -> JsonObject:
+def terminal_tool_result(effect: EffectRecord, outputs: ManagedOutputStore | None, *,
+                         session_id: str) -> tuple[ToolResult, RuntimeEffectSettlement]:
     settled = effect.settlement
     if settled is None:
         raise ValueError("tool outcome has no settlement")
     intent_payload: dict[str, object] = dict(effect.intent)
     settlement_payload: dict[str, object] = dict(settled)
-    projection = RuntimeEffectProjection(RuntimeEffectIntent.from_payload(intent_payload),
-                                         RuntimeEffectSettlement.from_payload(settlement_payload))
+    settlement = RuntimeEffectSettlement.from_payload(settlement_payload)
+    projection = RuntimeEffectProjection(RuntimeEffectIntent.from_payload(intent_payload), settlement)
     receipt = restore_result_receipt(projection, store=outputs, session_id=session_id, run_id=effect.task_id)
+    return receipt, settlement
+
+
+def tool_outcome(effect: EffectRecord, outputs: ManagedOutputStore | None, *, session_id: str,
+                 run_id: str) -> JsonObject:
+    receipt, settled = terminal_tool_result(effect, outputs, session_id=session_id)
     identity = receipt.canonical.get("workspace_identity")
     revision = identity.get("workspace_fingerprint", "") if isinstance(identity, dict) else ""
     command = receipt.call.args.get("command", "")
     return {"effect_id": effect.effect_id, "run_id": run_id, "category": effect.category,
-            "at": projection.settlement.created_at if projection.settlement is not None else "",
+            "at": settled.created_at,
             "tool_name": receipt.call.name, "status": "ok" if receipt.ok else "error",
-            "result_ref": projection.settlement.result_ref if projection.settlement is not None else "",
+            "result_ref": settled.result_ref,
             "action_digest": effect.args_digest, "command": command if isinstance(command, str) and len(command) <= 256 else "",
             "workspace_revision": revision if isinstance(revision, str) else "",
             "value": "unknown", "reason": "tool_success_is_not_verification"}

@@ -262,21 +262,24 @@ def test_codemode_browser_children_use_kernel_receipts_and_original_answer_scope
     scope = answer_scope(session)
     assert scope.aliases and scope.attempt_refs
     children = result.canonical["child_effect_ids"]
-    assert isinstance(children, list) and len(children) == 7
+    assert isinstance(children, list)
     assert "read_passages" not in result.canonical  # The parent references, never rewrites, child evidence.
 
     from codey.operations.kernel_prompt import operation_receipts, working_context
     from codey.research.answer_context import answer_context
 
     receipts = operation_receipts(session)
+    automatic_read = ["browser_read"] if kind == "research" else []
     assert [row["tool"] for row in receipts] == [
-        "browser_navigate", "browser_snapshot", "browser_fill", "browser_snapshot",
-        "browser_click", "browser_wait", "browser_read",
+        "browser_navigate", "browser_snapshot", "browser_fill", *automatic_read, "browser_snapshot",
+        "browser_click", *automatic_read, "browser_wait", "browser_read",
     ]
+    assert [row["result_ref"] for row in receipts] == children
     assert all(row["result_ref"] in session.executed for row in receipts)
     assert all(row["ok"] is True for row in receipts)
     assert receipts[2]["delivery"] == "verified"
-    assert receipts[4]["effect_verified"] is False  # Delivered does not certify a click's effect.
+    click, = (row for row in receipts if row["tool"] == "browser_click")
+    assert click["effect_verified"] is False
     assert "Fuzhou" not in str(receipts) and "37 grams" not in str(receipts)
     assert "operation_receipts" in working_context(session)
     if kind == "research":

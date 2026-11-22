@@ -21,7 +21,7 @@ from codey.research.passages import ReadPassage
 from codey.research.receipt_types import InvestigationRecord, SourceSearchLocator, SourceSearchObservation
 from codey.research.reference import ResearchReference
 from codey.research.search_provenance import SearchAttempt
-from codey.research.source_document import SourceDocument, SourceReadScope
+from codey.research.source_document import PublicationMetadata, SourceDocument, SourceReadScope
 from codey.research.urls import host_key, opened_url, parsed_url
 from codey.types.json_value import JsonObject, canonical_json_object, encode_transport_value
 from codey.utils.refs import coerce_int, parse_int
@@ -91,6 +91,8 @@ class OpenedSource:
     pages_read: tuple[int, ...] = ()
     truncated: bool = False
     read_scope: SourceReadScope | None = None
+    publication: PublicationMetadata | None = None
+    pdf_sha256: str = ""
 
     def to_dict(self) -> JsonObject:
         data = canonical_json_object(encode_transport_value(self))
@@ -98,6 +100,11 @@ class OpenedSource:
         data["quality"] = self.quality.to_dict()
         data["pages_read"] = list(self.pages_read)
         return data
+
+
+def _same_pdf(a: OpenedSource, b: OpenedSource) -> bool:
+    return (a.content_kind == b.content_kind == "pdf" and a.pdf_sha256 == b.pdf_sha256
+            and (bool(a.pdf_sha256) or a.final_url == b.final_url))
 
 
 @dataclass(frozen=True)
@@ -239,13 +246,12 @@ class ResearchLedger:
             quality=classify_source_quality(final_url, text),
             content_kind=(document.content_kind or "html"),
             mime_type=(document.mime_type or (existing.mime_type if existing is not None else "")),
-            page_count=max(
-                _safe_count(document.page_count),
-                _safe_count(existing.page_count) if existing is not None else 0,
-            ),
+            page_count=_safe_count(document.page_count),
             pages_read=pages_read,
-            truncated=(document.truncated or (existing.truncated if existing is not None else False)),
+            truncated=document.truncated,
             read_scope=document.read_scope,
+            publication=document.publication,
+            pdf_sha256=document.pdf_sha256,
         )
         self.merge_opened_source(opened, text, page_map)
         return opened
@@ -253,8 +259,8 @@ class ResearchLedger:
     def merge_opened_source(self, source: OpenedSource, text: str, pages: dict[int, str]) -> None:
         """One acquisition/replay merge. Page versions derive only from observations.
 
-        Independent PDF reads form a union. Overlapping pages use acquisition
-        time, with a body digest as a deterministic tie break, never replay order.
+        Page reads of the same PDF form a union. Overlapping pages use acquisition
+        time, with a body digest as a deterministic tie break.
         The version map is disposable projection state, not another journal.
         """
         aliases = {source.final_url, source.requested_url}
@@ -267,41 +273,26 @@ class ResearchLedger:
         acquired_at = datetime.fromisoformat(source.retrieved_at).astimezone(UTC).isoformat()
         versions = {number: (acquired_at, hashlib.sha256(body.encode("utf-8")).hexdigest())
                     for number, body in pages.items()}
+        latest = max((*previous, source), key=lambda item: (datetime.fromisoformat(item.retrieved_at), item.final_url, item.text_hash))
+        if latest is not source and not _same_pdf(source, latest):
+            return
         read_pages = set(source.pages_read)
         for item in previous:
             aliases.update((item.final_url, item.requested_url))
-            if item.content_kind == source.content_kind == "pdf":
+            if _same_pdf(item, latest):
                 read_pages.update(item.pages_read)
                 for number, body in self._source_pages.get(item.final_url, {}).items():
                     stamp = self._source_page_versions[item.final_url][number]
                     if number not in versions or stamp > versions[number]:
                         page_map[number], versions[number] = body, stamp
-                candidates: tuple[OpenedSource, ...] = (item, source)
-                def page_order(row: OpenedSource) -> tuple[datetime, str, str, str]:
-                    return datetime.fromisoformat(row.retrieved_at), row.final_url, row.title, row.requested_url
-                latest = max(candidates, key=page_order)
                 source = replace(latest, pages_read=tuple(sorted(read_pages)),
                                  page_count=max(item.page_count, source.page_count),
                                  truncated=item.truncated or source.truncated)
                 text = "\n\n".join(page_map[number] for number in sorted(page_map))
                 source = replace(source, text_hash=hashlib.sha256(
                     text.encode("utf-8", errors="replace")).hexdigest()[:16])
-        # A historical hit may be opened after a newer acquisition.  Keep the
-        # latest source projection as the current source; the historical bytes
-        # remain owned by the read passage that referenced them.
-        if previous and source.content_kind != "pdf":
-            candidates = (*previous, source)
-            def source_order(item: OpenedSource) -> tuple[str, str, str]:
-                return item.retrieved_at, item.final_url, item.text_hash
-            latest = max(candidates, key=source_order)
-            self.opened_sources = [item for item in self.opened_sources if item not in previous]
-            self.opened_sources.append(latest)
-            if latest is not source:
-                return
-            source = latest
-        else:
-            self.opened_sources = [item for item in self.opened_sources if item not in previous]
-            self.opened_sources.append(source)
+        self.opened_sources = [item for item in self.opened_sources if item not in previous]
+        self.opened_sources.append(source)
         self.opened_sources.sort(key=lambda item: (datetime.fromisoformat(item.retrieved_at), item.final_url))
         for url in aliases:
             self._source_texts[url] = text

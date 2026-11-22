@@ -923,13 +923,16 @@ class ExecutionDelegate:
         if not isinstance(self._research_scope, AnswerScope):
             raise ValueError("submit_research_answer requires an original frozen whole-answer scope")
         declared = submit_answer(self._research_scope, call.args)
+        from codey.research.report_evidence import check_report_evidence
+
+        evidence_check = check_report_evidence(declared, tools.ledger.read_passages)
         if self.session is not None:
             from codey.operations.browser_result_evidence import validate_current_result
 
             validate_current_result(self.session.executed, self.session._memory_results,
                 declared["markdown"], declared["state"], self._research_scope.aliases)
         return ToolResult(call, "Whole answer recorded. The application will validate and publish this submission.",
-                          ok=True, canonical={"research_submission": declared}), True, None
+                          ok=True, canonical={"research_submission": declared, "research_evidence_check": evidence_check}), True, None
 
     def _execute_research_write(self, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
         name, args = call.name, dict(call.args or {})

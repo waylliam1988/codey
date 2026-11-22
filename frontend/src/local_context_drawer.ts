@@ -283,6 +283,17 @@ function render(data: Summary): void {
         }),
       );
     }
+    if (proposal.item.kind === 'preference' && proposal.item.scope !== 'user') {
+      actions.append(
+        button('Save as cross-project preference', () => {
+          void postAction('confirm_user_preference', {
+            proposal_id: proposal.proposal_id,
+            version: proposal.version,
+            text: proposal.item.text,
+          });
+        }),
+      );
+    }
     node.append(actions);
     pending.appendChild(node);
   }

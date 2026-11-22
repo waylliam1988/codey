@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from codey.durable import CommitConflict, DurableSession, MemoryDurableStore
+from codey.durable.model import EntryDraft
 from codey.providers import api_context
 from codey.providers.api_provider import ApiProvider
 from codey.providers.context_checkpoint import ContextRange
@@ -10,14 +11,20 @@ from codey.providers.context_ledger import digest
 from codey.providers.token_accounting import RequestContextCount
 
 
-def _provider_with_source():
+def _count_history(payload: dict[str, object], *, deadline: float) -> RequestContextCount:
+    messages = payload["messages"]
+    assert isinstance(messages, list)
+    return RequestContextCount(len(messages) * 20, "estimated")
+
+
+def _provider_with_source() -> tuple[DurableSession, ApiProvider, EntryDraft, EntryDraft]:
     durable = DurableSession(MemoryDurableStore())
     durable.create_conversation("chat")
     first = durable.append_message("chat", "user_message", {"text": "early fact"})
     second = durable.append_message("chat", "assistant_message", {"text": "old answer"})
     provider = ApiProvider("http://localhost:9/v1", "fixture", context_window_tokens=1000,
                            context_reserve_tokens=100, context_keep_recent_tokens=100,
-                           request_counter=lambda _payload, *, deadline: RequestContextCount(1, "estimated"))
+                           request_counter=_count_history)
     provider.bind_context("chat")
     provider.bind_durable_context(durable, "chat")
     provider.load_durable_context([
@@ -27,13 +34,13 @@ def _provider_with_source():
     return durable, provider, first, second
 
 
-def test_compaction_commit_writes_the_canonical_range_edit_before_view_commit():
+def test_compaction_commit_writes_the_canonical_range_edit_before_view_commit() -> None:
     durable, provider, first, second = _provider_with_source()
     try:
         snapshot = api_context.context_snapshot(provider)
         items = list(provider._messages)
         selected = ContextRange(0, 2, digest(items))
-        checkpoint = {"kind": "work_state", "text": "retained early fact and decision"}
+        checkpoint: dict[str, object] = {"kind": "work_state", "text": "retained early fact and decision"}
         assert api_context.commit_context(provider, selected, [{"role": "assistant", "content": "retained early fact and decision"}],
                                         checkpoint, snapshot, None, 10.0)
         assert durable.context_snapshot("chat", token_budget=100).messages == (
@@ -45,14 +52,14 @@ def test_compaction_commit_writes_the_canonical_range_edit_before_view_commit():
         durable.close()
 
 
-def test_compaction_source_change_refuses_the_durable_edit_and_keeps_provider_view():
+def test_compaction_source_change_refuses_the_durable_edit_and_keeps_provider_view() -> None:
     durable, provider, first, _second = _provider_with_source()
     try:
         snapshot = api_context.context_snapshot(provider)
         items = list(provider._messages)
         selected = ContextRange(0, 2, digest(items))
         durable.append_message("chat", "user_message", {"text": "concurrent tail"})
-        checkpoint = {"kind": "work_state", "text": "stale summary"}
+        checkpoint: dict[str, object] = {"kind": "work_state", "text": "stale summary"}
         try:
             api_context.commit_context(provider, selected, [{"role": "assistant", "content": "stale summary"}],
                                      checkpoint, snapshot, None, 10.0)
@@ -68,14 +75,14 @@ def test_compaction_source_change_refuses_the_durable_edit_and_keeps_provider_vi
 
 
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
-def test_durable_sources_follow_semantic_messages_when_codec_expands_tool_calls(protocol):
+def test_durable_sources_follow_semantic_messages_when_codec_expands_tool_calls(protocol: str) -> None:
     durable = DurableSession(MemoryDurableStore())
     durable.create_conversation("chat")
     provider = ApiProvider("http://localhost:9/v1", "fixture", api_protocol=protocol)
     try:
         provider.bind_context("chat")
         provider.bind_durable_context(durable, "chat")
-        messages = [
+        messages: list[dict[str, object]] = [
             {"role": "user", "content": "read x"},
             {"role": "assistant", "tool_calls": [{"id": "call-1", "type": "function",
                                                         "function": {"name": "read", "arguments": "{}"}}]},

@@ -97,7 +97,7 @@ def fork_auxiliary(self: ApiProvider) -> ApiProvider:
 
     budget = self.context_budget
     generation = self._generation
-    headers: object = self.request_headers
+    headers = self.request_headers
     configure: Callable[[dict[str, object]], None] = self.configure_request
     client = ApiProvider(self.base_url, self.model, api_key=self.api_key, timeout=min(120.0, self.timeout),
         temperature=0.0, api_protocol=self.api_protocol, stream=self.stream,
@@ -110,8 +110,7 @@ def fork_auxiliary(self: ApiProvider) -> ApiProvider:
         request_context_headers=self.request_context_headers, codec=self._codec if self.codec_revision else None,
         codec_revision=self.codec_revision, connection_revision=self.connection_revision)
     client.request_policy = self.request_policy
-    options: object = self.transport_options
-    client.transport_options = options
+    client.transport_options = self.transport_options
     http_session: object = self.http_session
     client.http_session = http_session
     from codey.providers.compat_transport import optional_callable
@@ -207,8 +206,10 @@ def commit_context(self: ApiProvider, selected: ContextRange, replacement: list[
         if (not durable_ids or durable_revision is None or durable_head is None
                 or len(durable_ids) != len(messages)):
             return False
-        source_ids = durable_ids[selected.start:selected.end]
+        source_ids = tuple(dict.fromkeys(durable_ids[selected.start:selected.end]))
         if not source_ids or any(not isinstance(entry_id, str) or not entry_id for entry_id in source_ids):
+            return False
+        if set(source_ids).intersection(durable_ids[:selected.start] + durable_ids[selected.end:]):
             return False
         summary = checkpoint.get("text")
         if not isinstance(summary, str) or not summary.strip():
@@ -237,6 +238,10 @@ def commit_context(self: ApiProvider, selected: ContextRange, replacement: list[
     count = count_context(self, live, tools, deadline)
     if count.value is None or count.value > self.context_budget.input_limit:
         return False
+    if durable_edit is not None:
+        previous_count = count_context(self, messages, tools, deadline)
+        if previous_count.value is None or count.value >= previous_count.value:
+            return False
     with self._state_lock:
         if (revision != self._history_revision or snapshot.generation != self._generation
                 or snapshot.result_refs != self._result_refs):
@@ -253,6 +258,10 @@ def commit_context(self: ApiProvider, selected: ContextRange, replacement: list[
             )
         else:
             self.context_ledger.commit(live, checkpoint=checkpoint)
+        if len(durable_ids) == len(messages):
+            source_id = durable_ids[selected.start] if durable_edit is not None else None
+            self._durable_source_entry_ids = (durable_ids[:selected.start] + (source_id,) * len(replacement)
+                                              + durable_ids[selected.end:])
         self._messages = live
         self._history_revision += 1
         return True

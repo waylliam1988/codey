@@ -51,6 +51,16 @@ def task_working_context(session: TaskSession, research_ledger: ResearchLedger |
         parts.append(failure_context)
     if session.policy.strict_research or session.task_kind == "evidence_followup":
         parts.append(render_research_observations(session, research_ledger, knowledge_store, session_id=knowledge_session_id))
+        if research_ledger is not None and tool_names is not None and "web_search" in tool_names:
+            from codey.knowledge.model import canonical_json
+            from codey.research.evidence_gaps import gap_search_candidates
+
+            limits = session.research_acquisition_limits
+            used = sum(value == "search" for value in session.research_acquisition_slots.values())
+            candidates = gap_search_candidates(research_ledger, max_queries=1 if limits is None else min(1, limits[0] - used))
+            if candidates:
+                parts.append("One suggested follow-up search for an open evidence gap. Reuse its question_ref and query if useful:\n"
+                             + canonical_json(candidates))
         if session.policy.strict_research and session.task_text.strip():
             from codey.knowledge.model import canonical_json
             from codey.research.task_requirements import task_requirement_context
