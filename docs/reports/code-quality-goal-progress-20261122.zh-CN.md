@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：用户要求暂停 goal，收尾已开始的两批改动、更新记录并提交。以下未完成项目留待用户恢复 goal 后继续，不将本次提交视为全仓治理完成。
+当前状态：goal 已恢复。以下第一、二批是恢复前的历史证据；本轮从干净的 `7555d488` 继续，按文末全仓分区队列推进。历史未完成项仍保留，不将历史提交或本轮局部验收视为全仓治理完成。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -174,3 +174,26 @@ python -m pytest -q tests/test_atomic_io.py tests/test_fact_checkpoint_payload_b
 ```
 
 未运行全量 pytest、没有新增 skip/xfail，没有创建或复制 worktree，也没有将本次阶段提交标记为全仓 goal complete。
+
+## 本轮恢复：全仓分区和固定队列
+
+- 本轮基准：`master` / `7555d4887d5a9a73b149e098312a0917f4a5b2b0`，工作区和暂存区均干净；旧记录中的用户修改已经进入当前历史，本轮不将其当作待提交内容。
+- 目标来自外部 `goal-objective.md`，包括全仓检查、分批提交和禁止复制 worktree；仍使用原总 goal，不新建或缩小目标。
+- 已重新核对唯一适用 AGENTS.md、README、当前项目职责地图、runtime 架构、pyproject、MANIFEST、CI、前端 package/tsconfig、类型检查说明。版本：Python 3.12.8、mypy 1.18.2、Pyrefly 1.3.2、ty 0.0.87。
+- 完整归属清单：[code-quality-scope-20261122.json](code-quality-scope-20261122.json)。盘点 **974 个自有源码文件、40 个生产/工具区域、288 个初始批次**。每个源码文件恰好归属一个批次，集合比较及去重断言已实际运行通过，退出码 0；这不是源码审查或测试通过。
+- 包含 Python、源码 TS/JS/MJS、PS1、Go、UI HTML/CSS 和工具。测试/夹具另列为验证支持；排除第三方 QuickJS、发布生成的 codey/web、依赖/缓存/构建目录以及未作为运行入口的设计原型。发布工具仍在治理范围。
+- 按实际包职责分区；大包再按任务执行、上下文、会话、来源、模型连接、证据投影等职责拆分。超过约 900 行的文件独立成批；其余按相关导入组织，每批不超过 8 个生产文件。初始自动分组仅用于排队，进入批次时核对语义和动态入口；必要调整必须保留全部文件并记录原因。
+- JSON 清单的静态测试候选数量仅是路由提示，不表示已收集或运行；每批明确选定实际命令。区域依赖与调用方来自 AST 导入分析，仍须补查动态使用。
+- 通用验收：整文件审查、契约证据、Any 审计、相关明确范围测试/类型检查、diff 审查、记录、独立本地提交。测试/类型重型命令串行，不运行全量 pytest，不创建或复制 worktree。
+
+| 顺序 | 批次 | 范围 | 当前状态 / 验证目标 |
+| --- | --- | --- | --- |
+| 1 | Q001 | types/json_value、types/__init__、utils/object_fields | 进行中；严格 JSON 与 transport 的输入边界、资源预算、容器类型收窄；先跑 test_json_value_contract |
+| 2 | Q002 | text_budget、failure_output、scan_report、positive_int、utils/__init__ | 未开始；输出边界和整数转换；完成旧记录遗留的整文件 Any 项 |
+| 3 | Q003 | citation_scanner、references、refs | 未开始；有界引用及调用方；不扩大为全仓引用重构 |
+| 4 | Q004 | atomic_io、local_store、workspace/paths、change_paths、storage/__init__ | 未开始；核对历史成果和剩余测试 Any；无影响不机械重跑历史批次 |
+| 后续 | Q005～Q288 | 启动、agents/app、automation、codemode、completion/control/durable、knowledge/memory、operations/policies/protocols/providers、research/runtime、workspace、frontend、tools | 全部未开始；逐批入口核对后执行，详见清单文件 |
+
+历史未完成类型事项归入所属区域：model_preferences、zen/access/catalog、context_ledger、file_index、control/client、app/service、knowledge/store；历史测试 Any 40 条及 conftest/kernel_runtime 作为关联验证债务保留，未计为已完成。
+
+本轮进度：**0 / 288 批完成，0 / 974 个生产文件验收完成**。已阅读 Q001 三文件及其旧测试；为后续路由阅读的 failure_output、scan_report、refs、references 和 positive_int 未验收，类型义务仍归 Q002/Q003。
