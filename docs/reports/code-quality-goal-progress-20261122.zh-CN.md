@@ -560,3 +560,5 @@ Q008C 已提交：`7edc3897`（fix(agents): bound unusable handoff summaries and
 | `python -m tools.kernel_type_precision_gate` | 0 | 通过 |
 
 此前 53 例直接验证和五文件加严 Any 成功仍有效，生产源未再修改。确定性修复按零预算、取消传播与端口类型两份本地提交拆分；本批仍为 partial_follow_up，累计完整完成 **11 / 291 批、29 / 975 文件**，不把共享脚本待办算已完成。下一主批 Q009：writer_failover.py，接着 Q010 上下文、Q011 协议、Q012 shell 审批；原 191 文件门禁未完整通过、CodeMode 三失败与 SQLite 类型债务继续保留。
+
+Q008D 零预算修复已提交：`94f1cfad`（fix(agents): honor zero consensus advisor budget）。取消传播、类型端口与必要 fixture 的独立验证已完成，以下提交继续保存这部分；没有夹带浏览器或 durable 生产修改。

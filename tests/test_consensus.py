@@ -1,30 +1,43 @@
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import TypedDict
 from unittest import mock
 
 from codey.agents import consensus
 from codey.agents.handoff import ConversationSnapshot
+from codey.durable import DurableSession, MemoryDurableStore
 from codey.operations import project_audit_advisor
 from codey.policies.task_policy import TaskPolicy
 from codey.runs.trace import RunTraceStore
+from codey.runtime.write.mutation_line import RuntimeMutationLine
+from codey.storage.managed_outputs import ManagedOutputStore
+from codey.types.json_value import JsonObject, parse_json_object, require_json_strings
+
+
+class AuditRuntime(TypedDict):
+    durable: DurableSession
+    runtime_mutations: RuntimeMutationLine
+    managed_outputs: ManagedOutputStore
 
 
 class FakeProvider:
     name = "Fake"
+    location = "fixture"
+    timeout: float | None
 
-    def __init__(self, replies: list[str] | None = None, *, fail: bool = False) -> None:
+    def __init__(self, replies: Sequence[str | Exception] | None = None, *, fail: bool = False) -> None:
         self.replies = list(replies or [])
         self.fail = fail
         self.sent: list[str] = []
-        self.timeouts: list[object] = []
+        self.timeouts: list[float | None] = []
         self.new_chat_count = 0
         self.closed = False
 
-    def new_chat(self) -> None:
+    def new_chat(self, timeout: float | None = None) -> None:
         self.new_chat_count += 1
 
     def send(self, text: str, timeout: float | None = None) -> str:
@@ -46,10 +59,12 @@ class TraceRecorder:
         self.sections: list[dict[str, object]] = []
         self.warnings: list[str] = []
 
-    def record_prompt_section(self, name, text, **kwargs) -> None:
+    def record_prompt_section(self, name: str, text: object, **kwargs: object) -> None:
         self.sections.append({"name": name, "text": text, **kwargs})
 
-    def record_provider_prompt_boundary(self, section_args, surface_payload=None) -> None:
+    def record_provider_prompt_boundary(
+        self, section_args: Mapping[str, object], surface_payload: Mapping[str, object] | None = None,
+    ) -> None:
         del surface_payload
         payload = dict(section_args)
         payload.setdefault("model_visible", True)
@@ -62,17 +77,15 @@ class TraceRecorder:
 
 
 class ConsensusTests(unittest.TestCase):
-    def setUp(self):
-        from codey.durable import DurableSession, MemoryDurableStore
-        from codey.runtime.write.mutation_line import RuntimeMutationLine
-        from codey.storage.managed_outputs import ManagedOutputStore
-
+    def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         durable = DurableSession(MemoryDurableStore())
         self.addCleanup(durable.close)
-        self.audit_runtime = dict(durable=durable, runtime_mutations=RuntimeMutationLine(durable=durable),
-                                  managed_outputs=ManagedOutputStore(Path(temporary.name)))
+        self.audit_runtime: AuditRuntime = {
+            "durable": durable, "runtime_mutations": RuntimeMutationLine(durable=durable),
+            "managed_outputs": ManagedOutputStore(Path(temporary.name)),
+        }
 
     def test_read_only_kernel_contract_does_not_offer_writer_tools(self) -> None:
         # 统一内核的只读契约取代旧顾问 codec：同一快照 gate read-only 工具。
@@ -133,7 +146,8 @@ class ConsensusTests(unittest.TestCase):
         self.assertEqual(glm.new_chat_count, 1)
         self.assertTrue(qwen.closed)
         self.assertTrue(glm.closed)
-        self.assertEqual(cleared, ["qwen", "glm"])
+        expected_cleared = ["qwen", "glm"]
+        self.assertEqual(cleared, expected_cleared)
         self.assertIn("qwen advice", selected.sent[0])
         self.assertIn("glm advice", selected.sent[0])
         self.assertNotIn("tool", selected.sent[0].lower())
@@ -161,9 +175,11 @@ class ConsensusTests(unittest.TestCase):
 
         self.assertIsNotNone(result)
         # owner draft + aggregate ride the slow provider's own timeout.
-        self.assertEqual(selected.timeouts, [180.0, 180.0])
+        expected_owner_timeouts = [180.0, 180.0]
+        self.assertEqual(selected.timeouts, expected_owner_timeouts)
         # advisor ditto instead of the retired fixed 60s abandon.
-        self.assertEqual(slow.timeouts, [180.0])
+        expected_advisor_timeouts = [180.0]
+        self.assertEqual(slow.timeouts, expected_advisor_timeouts)
 
     def test_fixed_caps_stay_without_provider_timeout(self) -> None:
         selected = FakeProvider(["final answer"])
@@ -181,10 +197,12 @@ class ConsensusTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(result)
-        self.assertEqual(advisor.timeouts, [consensus.CONSENSUS_ADVISOR_TIMEOUT])
+        expected_advisor_timeouts = [consensus.CONSENSUS_ADVISOR_TIMEOUT]
+        self.assertEqual(advisor.timeouts, expected_advisor_timeouts)
+        expected_owner_timeouts = [consensus.CONSENSUS_AGGREGATE_TIMEOUT] * 2
         self.assertEqual(
             selected.timeouts,
-            [consensus.CONSENSUS_AGGREGATE_TIMEOUT] * 2,
+            expected_owner_timeouts,
         )
 
     def test_advisor_deadline_replaced_by_bounded_kernel_turns(self) -> None:
@@ -220,7 +238,7 @@ class ConsensusTests(unittest.TestCase):
         )
 
         self.assertIsNone(result)
-        self.assertEqual(selected.sent, [])
+        self.assertEqual(selected.sent, list[str]())
 
     def test_advisor_failure_degrades_to_remaining_models(self) -> None:
         selected = FakeProvider(["final"])
@@ -323,15 +341,12 @@ class ConsensusTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(result)
-        self.assertEqual(
-            [item["name"] for item in trace.sections],
-            [
-                "consensus_owner_draft_prompt",
-                "consensus_advisor_prompt",
-                "consensus_advisor_prompt",
-                "consensus_aggregate_prompt",
-            ],
-        )
+        names = [item["name"] for item in trace.sections]
+        expected_names = [
+            "consensus_owner_draft_prompt", "consensus_advisor_prompt",
+            "consensus_advisor_prompt", "consensus_aggregate_prompt",
+        ]
+        self.assertEqual(names, expected_names)
         self.assertTrue(all(item["model_visible"] for item in trace.sections))
         self.assertTrue(all(str(item["freshness"]) == "provider_send" for item in trace.sections))
 
@@ -349,10 +364,9 @@ class ConsensusTests(unittest.TestCase):
             )
 
         self.assertIn("audit report", report)
-        self.assertEqual(
-            [item["name"] for item in trace.sections],
-            ["project_audit_prompt", "project_audit_result"],
-        )
+        names = [item["name"] for item in trace.sections]
+        expected_names = ["project_audit_prompt", "project_audit_result"]
+        self.assertEqual(names, expected_names)
         self.assertTrue(trace.sections[0]["model_visible"])
 
     def test_project_audit_records_distinct_advisor_source_refs(self) -> None:
@@ -385,27 +399,27 @@ class ConsensusTests(unittest.TestCase):
                 trace_recorder=trace, **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
             trace.finish(status="done")
-            payload = json.loads(
+            payload = parse_json_object(
                 trace_store.path_for(
                     "session-project-audit",
                     "run-project-audit",
                 ).read_text(encoding="utf-8")
             )
 
-        self.assertEqual([item.provider_id for item in reports], ["qwen", "glm"])
-        audit_sections = [
-            item
-            for item in payload["prompt_sections"]
-            if item["name"] == "project_audit_prompt"
-        ]
+        provider_ids = [item.provider_id for item in reports]
+        expected_provider_ids = ["qwen", "glm"]
+        self.assertEqual(provider_ids, expected_provider_ids)
+        sections = payload["prompt_sections"]
+        assert isinstance(sections, list)
+        audit_sections: list[JsonObject] = []
+        for item in sections:
+            assert isinstance(item, dict)
+            if item["name"] == "project_audit_prompt":
+                audit_sections.append(item)
         self.assertEqual(len(audit_sections), 2)
-        self.assertEqual(
-            {tuple(item["source_refs"]) for item in audit_sections},
-            {
-                ("provider_send:project_audit:qwen",),
-                ("provider_send:project_audit:glm",),
-            },
-        )
+        refs = {tuple(require_json_strings(item["source_refs"], "source_refs")) for item in audit_sections}
+        expected_refs = {("provider_send:project_audit:qwen",), ("provider_send:project_audit:glm",)}
+        self.assertEqual(refs, expected_refs)
 
     def test_owner_draft_prompt_keeps_current_request_after_long_handoff(self) -> None:
         marker = "CURRENT_REQUEST_MARKER"
@@ -841,7 +855,9 @@ class ConsensusTests(unittest.TestCase):
                 connect_existing=lambda provider_id: providers[provider_id], **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
-        self.assertEqual([report.text for report in reports], ["qwen report", "glm report"])
+        texts = [report.text for report in reports]
+        expected_texts = ["qwen report", "glm report"]
+        self.assertEqual(texts, expected_texts)
         self.assertTrue(qwen.closed)
         self.assertTrue(glm.closed)
 
@@ -862,7 +878,9 @@ class ConsensusTests(unittest.TestCase):
                 connect_existing=lambda provider_id: providers[provider_id], **self.audit_runtime, parent_policy=TaskPolicy(grants=frozenset({"control", "project.read"}))
             )
 
-        self.assertEqual([report.text for report in reports], ["glm report"])
+        texts = [report.text for report in reports]
+        expected_texts = ["glm report"]
+        self.assertEqual(texts, expected_texts)
 
 
 if __name__ == "__main__":

@@ -7,14 +7,13 @@ to the selected provider, which produces the single answer shown to the user.
 
 from __future__ import annotations
 
-import contextlib
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Protocol, runtime_checkable
 
 from codey.agents.handoff import ConversationSnapshot
-from codey.providers import controls as provider_controls
+from codey.providers.assistance import suppress_assistance
 from codey.providers.base import ChatProvider
 from codey.runtime.core import cancellation
 from codey.runtime.observe.prompt_envelope import record_provider_send_prompt
@@ -26,6 +25,31 @@ MAX_COMBINED_ADVICE_CHARS = 12_000
 MAX_CONTEXT_CHARS = 8_000
 CONSENSUS_ADVISOR_TIMEOUT = 60.0
 CONSENSUS_AGGREGATE_TIMEOUT = 90.0
+
+
+class ConsensusSender(Protocol):
+    def send(self, text: str, timeout: float | None = None) -> str: ...
+
+
+@runtime_checkable
+class _WarningCallback(Protocol):
+    def __call__(self, reason_code: str, /) -> object: ...
+
+
+def _provider_timeout(provider: object, fallback: float) -> float | None:
+    timeout: object = getattr(provider, "timeout", fallback)
+    if timeout is None or isinstance(timeout, (int, float)):
+        return timeout
+    raise TypeError("provider timeout must be numeric or None")
+
+
+def _close_advisor(advisor: ChatProvider) -> None:
+    try:
+        advisor.close()
+    except cancellation.TaskCancelled:
+        raise
+    except Exception:
+        pass
 
 
 @dataclass(frozen=True)
@@ -81,11 +105,13 @@ def _degraded_reason(provider_id: str, reason_code: str) -> str:
 
 
 def _trace_warning(trace_recorder: object | None, reason_code: str, provider_id: str) -> None:
-    warn = getattr(trace_recorder, "warn", None)
-    if not callable(warn):
+    warn: object = getattr(trace_recorder, "warn", None)
+    if not isinstance(warn, _WarningCallback):
         return
     try:
         warn(_degraded_reason(provider_id, reason_code))
+    except cancellation.TaskCancelled:
+        raise
     except Exception:
         return
 
@@ -243,7 +269,7 @@ def render_aggregator_prompt(
 
 def run_consensus(
     *,
-    selected_provider: Any,
+    selected_provider: ConsensusSender,
     selected_provider_id: str,
     task: str,
     provider_ids: Sequence[str],
@@ -262,6 +288,8 @@ def run_consensus(
     cancellation.check()
     try:
         statuses = dict(availability())
+    except cancellation.TaskCancelled:
+        raise
     except Exception:
         statuses = dict[str, bool]()
     candidates = advisor_ids(
@@ -288,13 +316,11 @@ def run_consensus(
             purpose="consensus owner-draft prompt sent to provider",
             source_ref="provider_send:consensus_owner_draft",
         )
-        with provider_controls.suppress_assistance():
+        with suppress_assistance():
             owner_draft = _clip(
                 selected_provider.send(
                     prompt,
-                    timeout=getattr(
-                        selected_provider, "timeout", CONSENSUS_AGGREGATE_TIMEOUT,
-                    ),
+                    timeout=_provider_timeout(selected_provider, CONSENSUS_AGGREGATE_TIMEOUT),
                 ),
                 12_000,
             )
@@ -324,10 +350,10 @@ def run_consensus(
                 purpose=f"consensus advisor prompt for {advisor_id}",
                 source_ref=f"provider_send:consensus_advisor:{advisor_id}",
             )
-            with provider_controls.suppress_assistance():
+            with suppress_assistance():
                 text = advisor.send(
                     prompt,
-                    timeout=getattr(advisor, "timeout", CONSENSUS_ADVISOR_TIMEOUT),
+                    timeout=_provider_timeout(advisor, CONSENSUS_ADVISOR_TIMEOUT),
                 )
             clipped = _clip(text, MAX_ADVICE_CHARS)
             if clipped:
@@ -347,8 +373,7 @@ def run_consensus(
             continue
         finally:
             if advisor is not None:
-                with contextlib.suppress(Exception):
-                    advisor.close()
+                _close_advisor(advisor)
 
     if not advices:
         if draft_first and owner_draft:
@@ -375,12 +400,10 @@ def run_consensus(
         source_ref="provider_send:consensus_aggregate",
     )
     try:
-        with provider_controls.suppress_assistance():
+        with suppress_assistance():
             answer = selected_provider.send(
                 prompt,
-                timeout=getattr(
-                    selected_provider, "timeout", CONSENSUS_AGGREGATE_TIMEOUT,
-                ),
+                timeout=_provider_timeout(selected_provider, CONSENSUS_AGGREGATE_TIMEOUT),
             )
     except cancellation.TaskCancelled:
         raise

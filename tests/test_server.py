@@ -2189,9 +2189,11 @@ class ConsensusConnectionTests(unittest.TestCase):
         selected = mock.Mock()
         selected.session.page = object()
         selected.send.return_value = "combined answer"
+        del selected.timeout
         advisor = mock.Mock()
         advisor.name = "StepFun"
         advisor.send.return_value = "advisor note"
+        del advisor.timeout
 
         with (
             mock.patch.object(provider_services, "provider_availability",
@@ -2215,7 +2217,8 @@ class ConsensusConnectionTests(unittest.TestCase):
         borrowed.assert_called_once_with("stepfun", selected.session.page)
         advisor.new_chat.assert_called_once_with()
         advisor.close.assert_called_once_with()
-        selected.send.assert_called_once()
+        advisor.send.assert_called_once_with(mock.ANY, timeout=60.0)
+        selected.send.assert_called_once_with(mock.ANY, timeout=90.0)
 
     def test_project_audit_borrows_sibling_tab_from_selected_provider(self) -> None:
         state = make_app_state(self)
