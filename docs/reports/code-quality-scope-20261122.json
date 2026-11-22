@@ -1690,11 +1690,13 @@
         "codey/agents/protocol.py"
       ],
       "id": "Q011",
-      "status": "in_progress",
+      "status": "completed_changed",
       "reviewed_files": [
         "codey/agents/protocol.py"
       ],
-      "verified_files": [],
+      "verified_files": [
+        "codey/agents/protocol.py"
+      ],
       "candidate_test_count": 5,
       "tests": [
         "tests/test_explicit_verification_denial.py",
@@ -1702,7 +1704,7 @@
         "tests/test_coding_repair_prompt_ab.py",
         "tests/test_canonical_project_path_roots.py"
       ],
-      "result": "Five whole files strong Any/Pyrefly/ty/Ruff passed, normal full-production and precision gates passed with stable hashes. Shared JSON extraction loops consolidated preserving strict flags/think filtering/duplicate/NaN/deep values; 34 codec/path/snapshot tests plus 15 structured/numeric callers passed. Canonical tilde-root mismatch discovered independently: 3 failed/5 passed before normalization; fixed at root expansion boundary, 25 root/read/edit caller tests passed afterward. Independent type/decoder refactor and root bug fix to be split into local commits; completion pending commit review."
+      "result": "Canonical root bug: 3 failed/5 passed before normalization; 25 root/read/edit caller tests passed afterward. Decoder refactor preserves strict/think/duplicate/NaN/depth behavior, initial baseline 7 scanner + 32 contract tests passed; post group 34 codec/path/snapshot and 15 structured/numeric callers passed. Five whole files strong Any/Pyrefly/ty/Ruff and full-production/precision gates passed with stable hashes. JSON consolidation already committed separately; path fix staged independently. Q118 scanner file verified, remaining two Q118 files pending."
     },
     {
       "responsibility": "codey/agents: shell execution and authorization",

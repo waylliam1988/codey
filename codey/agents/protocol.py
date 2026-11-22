@@ -53,8 +53,9 @@ def edit_has_content(call: ToolCall) -> bool:
 
 
 def canonical_project_path(root: Path, rel: str) -> str:
+    root = root.expanduser().resolve()
     path = safe_join(root, rel)
-    return path.relative_to(root.resolve()).as_posix()
+    return path.relative_to(root).as_posix()
 
 
 def task_forbids_verification(task: str) -> bool:

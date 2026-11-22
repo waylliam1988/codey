@@ -622,3 +622,5 @@ Q010 已提交：`b05ae646`（refactor(agents): remove unreachable compaction gr
 - 入口先展开并解析 root，再把同一 root 交给安全拼接和 relative_to；保留路径越界检查。`python -m pytest -q tests/test_canonical_project_path_roots.py tests/test_edit_rejects_legacy_aliases_before_execution.py tests/test_tool_execution_status_is_not_display_text.py --tb=short` → **退出 0，25 passed，2.78 秒**；相同输入/断言及 read/edit 状态消费者均通过。未宣称修复路径 TOCTOU 或竞态。
 - 根路径修改后，五完整文件（上述四份加 root 新回归）的加严 Any / scoped Pyrefly / scoped ty / Ruff **全部退出 0**；生产 mypy **0，737 文件**、Pyrefly **0，原 35 suppressed/165 warnings**、ty **0**、精度门 **0**。所有命令串行且代码/测试哈希前后一致，changed_during_checks=[]；q011-validation.json 为最后结果，q011-validation-before-root-fix.json 是此前类型重构时的结果，两者未混同。
 - 将类型/decoder 合并与根路径 bug 拆成两个职责清楚的本地提交；当前仍按 **13 / 291、32 / 975** 统计，待最后提交验收。Q118 scanner 文件虽已验收，未把该批其余两个文件或全仓扫描器声称完成。
+
+Q011 类型与解码收敛已提交：`f7ac1ac6`（refactor(protocols): consolidate typed JSON object extraction）。根路径修复 diff 仅统一 root 展开/解析与使用同一基准，加八个已验证边界回归；暂存前核对没有其他工作修改。本批验收完成，累计 **14 / 291 批、33 / 975 生产文件**（scanner 在 Q118 仅计文件级验证，不加到完整批次覆盖数）。下一主批 Q012：shell_approval.py 的审批输入、事件通知与停止/超时边界。原 Q008D、Q118 其余文件和所有已记录阻碍保留，总 goal 仍 active。
