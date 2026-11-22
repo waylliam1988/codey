@@ -792,3 +792,25 @@ Q015C 最终验收：
 - 最终生产 mypy **0，737文件**、Pyrefly **0，原35 suppressed/165 warnings**、ty/精度门 **0**，q015c-validation-final-all.json（最终只再明确测试 metadata 类型）；代码/测试检查中hash稳定。旧四用例的typed回调在 HEAD 原API上 **0，4 passed，1.24 秒**，真实 question guard 在同一原API上 **0，1 passed，1.19 秒**；q015c-fixture-baseline.json、q015c-question-baseline.json 均 finally 精确恢复源字节，没有 worktree复制。
 - 没有确认可删的公开/动态入口或相同职责实现，不为制造重构移走844行门面的无关功能。scope 中的共享 test_server 等只按指定node验证，未宣称全脚本Any治理；跨模块模型/审查/source authority的 legacy Any 仍在其owning批次，不将本文边界隔离视为这些模块已完成。
 - 本批两生产bug的入口条件都保留改前失败和改后关键断言证据，diff和暂存区已核对，仅API、完整契约测试与两记录。本批完成后累计 **22 / 298 批、46 / 975 生产文件**。下一主批 Q015D control_queries.py / control_service.py；原 Q018临时锁清理警告、Q078生成库存等未解决项继续留队。总 goal仍 active。
+
+
+Q015C 已提交：`cb43afb5`（fix(api): preserve resume field types and the default instruction）。
+
+### Q015D：控制观察与控制服务（进行中）
+
+- control_queries.py / control_service.py 已完整检查；外部控制 implementation 当前文档要求 get_run_result 提供实际运行/候选摘要，record_review 绑定该摘要，摘要函数明确承诺拒绝符号链接与不完整证据。完整两源码加严 Any 初始 **515 条**，q015d-baseline.json。命令侧 execute 已串行 durable/control barrier，wait 用 change_sequence 防丢通知；未凭猜测改锁/收据去重或状态策略。
+- **确定性 bug：摘要扫描覆盖失败仍返回标识。** 缺失目录和普通文件被 os.walk 当空树，普通包含目录的链接被静默滤掉，os.walk 默认吞目录 PermissionError。当前有效函数契约是有界且覆盖完整才给候选身份，不能把看不到内容的路径等同空工作区。新增真实临时树/目录链接与定点 scandir PermissionError 回归；改生产前 **1，4 failed / 1 passed，1.22 秒**，四种不完整输入均未抛错而成功返回摘要，有效空目录对照通过。q015d-baseline.json；这是扫描覆盖缺口，无锁环或竞态证据。
+- **确定性 bug：回答裁剪标志没计消息分隔符。** 两条 assistant text 各8000字符，渲染加换行合计16001、answer实际只保留16000，但 answer_truncated=False。元数据应描述实际暴露的有界文本是否裁剪，不应仅计正文成员长度。原生 EntryDraft + 真实 AppContext/task 复现，前后边界16000/16002对照保留。改生产前 `python -m pytest -q tests/test_control_evidence_budget.py tests/test_control_run_snapshot_bounds.py --tb=short` → **1，1 failed / 3 passed，1.75 秒**；目标flag断言实际False/应True，q015d-snapshot-before.json。
+- 原嵌套 evidence byte budget 基线 **0，1 passed，1.08 秒**；将其SimpleNamespace改真实 AppContext/task 与原生EntryDraft，保持1.8MB嵌套证据、有标记裁剪和原128KiB断言，新 fixture在原生产上仍通过。源尚未修改，不计本批完成；优先完成只读查询再处理命令侧515条中的剩余源，发布库存依赖的测试仍须明确区分环境状态。
+
+
+Q015D 查询侧独立验收（主批未完成）：
+
+- 候选摘要要求根是实际目录，使用 os.walk onerror 将被吞的目录错误转为 EVIDENCE_UNAVAILABLE；对声明覆盖的普通目录链接明确拒绝，仍保留 IGNORED_DIRS/.tmp- 的原排除范围，不跟随外部链接。未修竞态、未添加缓存或修改已验证文件内容的哈希算法。有效空目录、正常内容修改导致摘要变化、忽略目录不影响摘要、已有文件链接拒绝均保留。
+- 回答仅 join 一次，用同一完整渲染文本的长度计算 answer_truncated，再保留原末16000字符，消息顺序、答案文本和16000上限不变；16000/16001/16002 三边界回归保留。
+- task_for 使用真实 TaskCheckpoint，查询 context 明确为 AppContext；问题/审批/持久 control review/执行通道在边界验证序列和 string-key dict。evidence 的 string ID/integer 参数与有效公开 command catalogue 类型一致，数量/8192预览/96KiB总预算不变；未引入新JSON深度/裁剪政策。反射记录输出先入object再验证dict，保留原asdict。
+- 新增有效 candidate=True 的项目范围/空projection对照，执行输出文本/退出码/完整状态/截断和跨run拒绝测试；嵌套1.8MB evidence 仍满足原128KiB断言，没有减小fixture绕过预算。
+- `python -m pytest -q tests/test_control_candidate_digest_coverage.py tests/test_control_evidence_budget.py tests/test_control_run_snapshot_bounds.py --tb=short` → **0，14 passed，2.14 秒**，无skip，q015d-query-validation-final.json。四完整路径加严 mypy/scoped Pyrefly/ty/Ruff均 **0**；单query源码初始 **114 → 1 → 0**，同组初次1条来自asdict三元分支的库Any，已明确对象边界与运行时收窄。
+- 查询源码的生产 mypy **0，737文件**、Pyrefly **0，原35 suppressed/165 warnings**、ty/精度门 **0**，q015d-query-validation-first.json；最终只扩展测试，源码未变，hash稳定。ControlService未改，完整加严 Any 当前 **396 条**（原401；task_for精确类型隔离了5条传播）；q015d-service-any.json。两源码初始总515，不将query的零Any虚报为整个控制批次已完成。
+- 只读查询的回答修复/类型与候选coverage修复可以独立验收，按两个本地commits处理；先暂存不含digest修复的已验证版本，再恢复当前最终字节提交digest部分。每个中间版本都实际执行明确范围检查，不创建或复制worktree。主批status保持in_progress，完成统计仍 **22 / 298、46 / 975**，查询文件另计已验证部分。
+- 其余控制命令/待机/去重/授权预算与本轮未更改的control_conversations/control协议等仍待后续治理；有发布清单依赖的external_control/release集成尚未重跑，不报通过。下一步继续主批control_service.py的396条Any和直接控制服务行为基线，不回到已完成API/provider文件做可选优化。

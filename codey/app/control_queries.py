@@ -5,15 +5,22 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 from codey.control.protocol import ControlError, fingerprint
-from codey.durable.model import thaw_json
+from codey.durable.model import TaskCheckpoint, thaw_json
+from codey.utils.object_fields import object_fields, sequence_items
+
+if TYPE_CHECKING:
+    from codey.app.context import AppContext
 
 IGNORED_DIRS = frozenset({".git", ".codey", "node_modules", ".venv", "__pycache__", ".pytest_cache",
                           ".mypy_cache", ".ruff_cache", "reference-projects", "build", "dist", ".e2e-artifacts", "artifacts"})
+
+
 
 
 def project_digest(project: str) -> str:
@@ -47,7 +54,7 @@ def project_digest(project: str) -> str:
     return digest.hexdigest()
 
 
-def task_for(ctx: Any, session_id: str, run_id: str) -> Any:
+def task_for(ctx: AppContext, session_id: str, run_id: str) -> TaskCheckpoint:
     try:
         task = ctx.durable.task(run_id)
     except KeyError as exc:
@@ -57,13 +64,21 @@ def task_for(ctx: Any, session_id: str, run_id: str) -> Any:
     return task
 
 
-def run_snapshot(ctx: Any, session_id: str, run_id: str, *, candidate: bool = False) -> dict[str, Any]:
+def run_snapshot(ctx: AppContext, session_id: str, run_id: str, *, candidate: bool = False) -> dict[str, object]:
     task = task_for(ctx, session_id, run_id)
-    question = ctx.user_questions.pending(session_id)
-    attention: list[dict[str, Any]] = []
-    if question and question["run_id"] == run_id:
-        attention.append({"kind": "question", **question, "audience": question.get("audience", "owner")})
-    for approval in ctx.shell_approval_workflow.list_statuses(session_id=session_id):
+    question: object = ctx.user_questions.pending(session_id)
+    attention: list[dict[str, object]] = []
+    if question:
+        if not object_fields(question):
+            raise TypeError("pending question must be an object")
+        if question["run_id"] == run_id:
+            attention.append({"kind": "question", **question, "audience": question.get("audience", "owner")})
+    statuses: object = ctx.shell_approval_workflow.list_statuses(session_id=session_id)
+    if not sequence_items(statuses):
+        raise TypeError("approval statuses must be a sequence")
+    for approval in statuses:
+        if not object_fields(approval):
+            raise TypeError("approval status must be an object")
         if approval["source_run_id"] == run_id and approval["decision"] == "pending":
             attention.append({"kind": "approval", **approval, "audience": "user"})
     entries = ctx.durable.entries(session_id)
@@ -73,15 +88,17 @@ def run_snapshot(ctx: Any, session_id: str, run_id: str, *, candidate: bool = Fa
     terminal = status in {"completed", "failed", "cancelled"}
     if terminal:
         attention = []
-    result: dict[str, Any] = {
+    answer = "\n".join(answers)
+    revision: dict[str, object] = {"task": task.revision, "attention": attention}
+    result: dict[str, object] = {
         "conversation_id": session_id, "run_id": run_id, "execution": status, "phase": task.phase,
         "terminal": terminal, "cleanup_pending": any(run.run_id == run_id for run in ctx.active_runs()) and terminal,
-        "answer": "\n".join(answers)[-16_000:], "answer_truncated": sum(map(len, answers)) > 16_000,
+        "answer": answer[-16_000:], "answer_truncated": len(answer) > 16_000,
         "attention": attention, "attention_token": fingerprint(attention),
         "database_id": ctx.durable.database_id,
         "admitted_runtime": thaw_json(task.state.get("admitted_runtime")),
         "execution_runtime": thaw_json(task.state.get("execution_runtime")),
-        "revision": fingerprint({"task": task.revision, "attention": attention}),
+        "revision": fingerprint(revision),
     }
     if candidate:
         project = str(task.state.get("project") or "")
@@ -89,44 +106,70 @@ def run_snapshot(ctx: Any, session_id: str, run_id: str, *, candidate: bool = Fa
         from codey.runs.ledger_projection import load_run_projection
 
         projection = load_run_projection(ctx.run_ledgers, session_id, run_id)
-        result["verification"] = [asdict(item) for item in projection.verified_commands[-20:]] if projection else list[dict[str, Any]]()
+        verification: list[dict[str, object]] = []
+        if projection:
+            for command in projection.verified_commands[-20:]:
+                fields: object = asdict(command)
+                if not object_fields(fields):
+                    raise TypeError("verification record must be an object")
+                verification.append(fields)
+        result["verification"] = verification
         result["changed_files"] = list(projection.changed_files_observed[:200]) if projection else list[str]()
-        result["receipt"] = asdict(projection.final_changes.receipt) if projection and projection.final_changes and projection.final_changes.receipt else None
-        reviews = []
+        receipt: dict[str, object] | None = None
+        if projection and projection.final_changes and projection.final_changes.receipt:
+            raw_receipt: object = asdict(projection.final_changes.receipt)
+            if not object_fields(raw_receipt):
+                raise TypeError("changes receipt must be an object")
+            receipt = raw_receipt
+        result["receipt"] = receipt
+        reviews: list[dict[str, object]] = []
         for entry in entries:
             payload = thaw_json(entry.payload)
-            if entry.kind == "control_review" and isinstance(payload, dict):
+            if entry.kind == "control_review" and object_fields(payload):
                 data = payload.get("data")
-                if isinstance(data, dict) and data.get("run_id") == run_id:
+                if object_fields(data) and data.get("run_id") == run_id:
                     reviews.append(data)
         result["reviews"] = [{**item, "stale": item["candidate_digest"] != result["candidate_digest"]} for item in reviews[-10:]]
     return result
 
 
-def evidence_page(ctx: Any, params: dict[str, Any]) -> dict[str, Any]:
+def evidence_page(ctx: AppContext, params: Mapping[str, object]) -> dict[str, object]:
     session_id, run_id = params["conversation_id"], params["run_id"]
+    if not isinstance(session_id, str) or not isinstance(run_id, str):
+        raise ControlError("INVALID_ARGUMENT", "Conversation and run IDs must be strings")
     task_for(ctx, session_id, run_id)
     offset = params.get("offset", 0)
     limit = params.get("limit", 100)
-    if offset < 0 or not 1 <= limit <= 200:
+    if type(offset) is not int or type(limit) is not int or offset < 0 or not 1 <= limit <= 200:
         raise ControlError("INVALID_ARGUMENT", "Invalid evidence page bounds")
-    if params.get("execution_id"):
+    execution_id = params.get("execution_id")
+    if execution_id:
+        if not isinstance(execution_id, str):
+            raise ControlError("INVALID_ARGUMENT", "Execution ID must be a string")
         try:
-            snapshot = ctx.execution_outputs.snapshot(params["execution_id"])
+            snapshot: object = ctx.execution_outputs.snapshot(execution_id)
         except KeyError as exc:
             raise ControlError("NOT_FOUND", "Execution evidence unavailable") from exc
+        if not object_fields(snapshot):
+            raise TypeError("execution output snapshot must be an object")
         if snapshot["session_id"] != session_id or snapshot["run_id"] != run_id:
             raise ControlError("NOT_FOUND", "Execution evidence unavailable")
-        text = "\n".join(str(snapshot[channel]["text"]) for channel in ("stdout", "stderr"))
-        return {"execution_id": params["execution_id"], "text": text[offset:offset + min(limit * 100, 16_000)],
+        channels: list[dict[str, object]] = []
+        for name in ("stdout", "stderr"):
+            channel = snapshot[name]
+            if not object_fields(channel):
+                raise TypeError("execution output channel must be an object")
+            channels.append(channel)
+        text = "\n".join(str(channel["text"]) for channel in channels)
+        return {"execution_id": execution_id, "text": text[offset:offset + min(limit * 100, 16_000)],
                 "complete": snapshot["execution_state"] == "settled", "total_chars": len(text),
                 "execution_state": snapshot["execution_state"], "exit_code": snapshot["exit_code"],
-                "truncated": any(snapshot[channel]["truncated"] for channel in ("stdout", "stderr"))}
-    items: list[dict[str, Any]] = []
+                "truncated": any(channel["truncated"] for channel in channels)}
+    items: list[dict[str, object]] = []
     for entry in ctx.durable.entries(session_id):
         if entry.by_task_id == run_id:
             items.append({"id": entry.entry_id, "kind": entry.kind, "payload": thaw_json(entry.payload)})
-    selected: list[dict[str, Any]] = []
+    selected: list[dict[str, object]] = []
     size = 0
     for item in items[offset:offset + limit]:
         raw = json.dumps(item["payload"], ensure_ascii=False, separators=(",", ":")).encode()
