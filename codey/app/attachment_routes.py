@@ -1,6 +1,7 @@
 """Operator-authenticated file import and model input validation."""
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from codey.app.submission_types import TaskSubmitOptions
@@ -16,7 +17,7 @@ from codey.task.attachments import IMAGE_UNSUPPORTED, public_attachment, validat
 
 def _store(ctx: AppContext, session_id: object) -> InputAttachmentStore:
     value = ctx.load_ui_state().get("sessions", [])
-    sessions: list[object] = value if isinstance(value, list) else []
+    sessions: Sequence[object] = value if isinstance(value, list) else ()
     if not isinstance(session_id, str) or not any(object_fields(s) and s.get("id") == session_id for s in sessions):
         raise ValueError("Chat not found. Save the chat before attaching files.")
     if ctx.state_home is None:
@@ -55,7 +56,7 @@ def capabilities_response(ctx: AppContext, body: dict[str, object]) -> tuple[int
         session_id = str(body.get("session_id") or "")
         _store(ctx, session_id)
         selection: object = body.get("model_selection") or {}
-        if not isinstance(selection, dict):
+        if not object_fields(selection):
             raise ValueError("Invalid model selection.")
         images = image_support(ctx, session_id, str(body.get("provider") or ""), str(selection.get("model") or ""))
         return 200, {"ok": True, "images": images}
@@ -63,10 +64,23 @@ def capabilities_response(ctx: AppContext, body: dict[str, object]) -> tuple[int
         return 400, {"ok": False, "error": str(exc)}
 
 
+def _attachment_rows(value: object, *, error: str) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        raise ValueError(error) from None
+    rows: Sequence[object] = value
+    result: list[dict[str, object]] = []
+    for row in rows:
+        if not object_fields(row):
+            raise ValueError(error) from None
+        result.append(row)
+    return result
+
+
 def resolve_input_attachments(ctx: AppContext, session_id: str, refs: object, *, selection: ApiRunSelection | None = None, steer: bool = False) -> list[dict[str, object]]:
-    if not isinstance(refs, list) or len(refs) > 4 or any(not isinstance(ref, dict) for ref in refs):
+    if not isinstance(refs, list) or len(refs) > 4:
         raise ValueError("Invalid attachment references.")
-    items = validate_attachments([_read(ctx, session_id, ref.get("id")) for ref in refs])
+    references = _attachment_rows(refs, error="Invalid attachment references.")
+    items = validate_attachments([_read(ctx, session_id, ref.get("id")) for ref in references])
     supported = bool(selection is not None and selection.supports_images)
     if steer:
         active = ctx.active_run_for(session_id=session_id)
@@ -91,11 +105,9 @@ def _read(ctx: AppContext, session_id: str, identity: object) -> dict[str, objec
             for entry in ctx.durable.context(session_id):
                 if entry.kind == "user_message":
                     payload = thaw_json(entry.payload)
-                    if not isinstance(payload, dict):
+                    if not object_fields(payload):
                         raise ValueError("invalid durable user message") from None
-                    attachments = payload.get("attachments", [])
-                    if not isinstance(attachments, list) or any(not isinstance(row, dict) for row in attachments):
-                        raise ValueError("invalid durable attachments") from None
+                    attachments = _attachment_rows(payload.get("attachments", []), error="invalid durable attachments")
                     for item in attachments:
                         if item.get("id") == identity:
                             return validate_attachments([item])[0]

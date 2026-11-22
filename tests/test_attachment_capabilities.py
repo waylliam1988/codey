@@ -7,12 +7,13 @@ import pytest
 from codey.app.attachment_routes import image_support
 from codey.app.context import AppContext
 from codey.providers import api_connections
+from codey.providers.catalog import API_CONNECTIONS
 from codey.runtime.core.api_selection import ApiRunSelection
 from codey.types.json_value import JsonObject
 
 
 def test_removed_connector_is_not_imported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delitem(api_connections.API_CONNECTIONS, "cline")
+    monkeypatch.delitem(API_CONNECTIONS, "cline")
 
     def forbidden_import(connection_id: str) -> ModuleType:
         raise AssertionError(f"removed connector imported: {connection_id}")
@@ -34,7 +35,11 @@ def test_cached_model_capability_requires_explicit_support(
             return {"models": [{"id": "model", "supports_images": supports_images}]}
 
     connector = Connector("fixture")
-    monkeypatch.setattr(api_connections, "connection_for", lambda connection_id: connector)
+
+    def connection(connection_id: str) -> ModuleType:
+        return connector
+
+    monkeypatch.setattr(api_connections, "connection_for", connection)
     ctx = AppContext(tmp_path, start_scheduler=False)
     try:
         assert image_support(ctx, "chat", "local", "model") is (supports_images is True)
@@ -44,7 +49,10 @@ def test_cached_model_capability_requires_explicit_support(
 
 
 def test_connector_without_cached_capability_port_is_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(api_connections, "connection_for", lambda connection_id: ModuleType("fixture"))
+    def connection(connection_id: str) -> ModuleType:
+        return ModuleType("fixture")
+
+    monkeypatch.setattr(api_connections, "connection_for", connection)
     assert api_connections.cached_model_supports_images("local", "model") is False
 
 

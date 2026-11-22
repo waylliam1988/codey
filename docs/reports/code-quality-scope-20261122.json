@@ -1904,7 +1904,7 @@
         "codey/app/attachment_routes.py",
         "codey/app/documents.py"
       ],
-      "status": "in_progress",
+      "status": "completed_changed",
       "reviewed_files": [
         "codey/app/attachment_routes.py",
         "codey/app/documents.py"
@@ -1914,12 +1914,15 @@
         "codey/app/documents.py"
       ],
       "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93",
-      "result": "Verified; pending separate document bug/type and attachment row/type commits. Representation containers pre-fix 4 failed/4 passed; final direct 47 passed (RAM-disk lock cleanup warning persists from 39-pass baseline). Two whole sources 68 Any diagnostics -> 0, five whole files 192 -> 0; scoped/full-production type and precision gates pass, stable hashes. Updated typed fixtures on original HEAD sources 20 passed, exact restoration. Shared attachment row structure check preserves complete validation-before-read, cap 4, error strings and suppressed context. Input attachments file only executed/routed, no whole-file typing claim; no browser UI/worktree tests executed.",
+      "result": "Completed; document bug/type committed and attachment row/type convergence submitted separately. Representation containers pre-fix 4 failed/4 passed; final direct 47 passed (RAM-disk lock cleanup warning persists from 39-pass baseline). Two whole sources 68 Any diagnostics -> 0, five whole files 192 -> 0; scoped/full-production type and precision gates pass, stable hashes. Updated typed fixtures on original HEAD sources 20 passed, exact restoration. Shared attachment row structure check preserves complete validation-before-read, cap 4, error strings and suppressed context. Input attachments file only executed/routed, no whole-file typing claim; no browser UI/worktree tests executed.",
       "tests": [
         "tests/test_document_representation_validation.py",
         "tests/test_document_preview.py",
         "tests/test_attachment_capabilities.py",
         "tests/test_input_attachments.py"
+      ],
+      "commits": [
+        "c9b7f811"
       ]
     },
     {

@@ -767,3 +767,6 @@ Q015B 验收与提交准备：
 - 两源码完整 Any **68 → 0**，加三完整测试 **192 → 0**，加严 mypy/scoped Pyrefly/ty/Ruff 全部 **0**。生产 mypy **0，737 文件**、Pyrefly **0，原35 suppressed/165 warnings**、ty/精度门 **0**；q015b-validation-first.json 持续逐命令写入完整命令/结果，全部完成，changed_during_checks=[]。
 - 引用/语义分析：两个生产文件的公开响应/准备函数均有 API/server/控制提交或直接测试用途，不以搜索无外部引用删除私有或公开入口。重复仅合并同为列表+字符串键dict的附件结构校验，正常 request 与 durable fallback 分别保留自己的错误信息、数量上限和 from None，先全部结构验证再读取，未混合存储内容验证与模型能力策略。
 - 已检查 diff/暂存路径；按 documents 输入 bug+类型与 attachment routes 类型/行校验收敛拆独立 commits。本批待提交完毕再计完成，仍 **20 / 298、43 / 975**。Q018 清理警告和 Q078 库存失配保留为独立未完事项，不将其误报修复。
+
+
+Q015B 文档非字符串表示修复与文档类型边界已提交：`c9b7f811`（fix(documents): reject non-string representations before membership lookup）。附件 routes 的独立类型/结构校验收敛单独提交，全部必要验收通过；本批完成后累计 **21 / 298 批、45 / 975 生产文件**。下一主批 Q015C 为 api.py 单个844行请求/提交门面，先建立相关行为/类型基线再改动；Q015D 控制服务、Q015E 生命周期、Q015F server 继续留队。全仓总 goal 仍 active，未完成事项未缩减。
