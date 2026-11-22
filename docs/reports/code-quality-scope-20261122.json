@@ -1621,10 +1621,25 @@
         "codey/agents/consensus.py"
       ],
       "id": "Q008D",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": "recompute at entry; initial combined count 73"
+      "status": "partial_follow_up",
+      "reviewed_files": [
+        "codey/agents/consensus.py"
+      ],
+      "verified_files": [
+        "codey/agents/consensus.py"
+      ],
+      "candidate_test_count": "recompute at entry; initial combined count 73",
+      "tests": [
+        "tests/test_consensus.py",
+        "tests/test_consensus_advisor_limits.py",
+        "tests/test_consensus_cancellation.py",
+        "tests/test_consensus_provider_ports.py"
+      ],
+      "result": "Confirmed cap=0 launches one advisor (3 failed/3 passed before fix) and swallowed TaskCancelled at availability/warning/close (3 failed/3 passed before fix). Both repaired; 53 direct + 15 audit + 24 service tests passed. Five whole files passed extra Any/mypy/Pyrefly/ty/Ruff; normal full-production gates passed with stable hashes. test_server.py timeout fixture repaired against ChatProvider numeric/None contract, with stronger send assertions. This shared test script still has 1709 strict Any diagnostics, so this batch is partial, not complete. Lazy import failures are identical with HEAD consensus; traced to browser_progress -> browser_binding -> Playwright and routed Q085/Q097/Q017.",
+      "followups": [
+        "Whole-file tests/test_server.py Any remains: unparameterized dict at line 68, untyped callback at line 83, json.loads and Mock propagation throughout, including ConsensusConnectionTests at lines 2190-2221; q008d-server-any.log has all 1709 diagnostics. Coordinate Q015 test migration; no claim of full governance.",
+        "Three existing lazy import failures need browser boundary repair; exact traced chain and original-source reproduction in q008d-lazy-import-chain.json and q008d-lazy-baseline.json."
+      ]
     },
     {
       "responsibility": "codey/agents: shared contracts and module services",
@@ -1715,7 +1730,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 93
+      "candidate_test_count": 93,
+      "followups": [
+        "Q008D repaired only ConsensusConnectionTests timeout fixture, preserving sibling-tab/new_chat/close expectations and asserting numeric 60/90s fallback. tests/test_server.py whole-file extra Any has 1709 diagnostics (q008d-server-any.log); shared script migration remains open. Q008D stays partial until coordinated verification."
+      ]
     },
     {
       "responsibility": "codey/app: shared contracts and module services",
@@ -1749,7 +1767,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 8
+      "candidate_test_count": 8,
+      "followups": [
+        "Q008D caller verification: tests/test_server_lazy_state.py has same 3 failures with HEAD consensus source (3 failed/8 passed/4 subtests). Actual import trace consensus_service -> project_audit_advisor -> task_loop -> kernel_driver -> kernel_context -> kernel_actions -> kernel_execution -> browser_progress -> browser_binding -> Playwright violates consensus_service import-light doc contract. q008d-lazy-import-chain.json; preserve regression assertions and repair at owning import boundary."
+      ]
     },
     {
       "responsibility": "codey/app: context and checkpoint boundaries",
@@ -2680,7 +2701,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 16
+      "candidate_test_count": 16,
+      "followups": [
+        "Q008D caller verification: tests/test_server_lazy_state.py has same 3 failures with HEAD consensus source (3 failed/8 passed/4 subtests). Actual import trace consensus_service -> project_audit_advisor -> task_loop -> kernel_driver -> kernel_context -> kernel_actions -> kernel_execution -> browser_progress -> browser_binding -> Playwright violates consensus_service import-light doc contract. q008d-lazy-import-chain.json; preserve regression assertions and repair at owning import boundary."
+      ]
     },
     {
       "responsibility": "codey/operations: answer and report projection",
@@ -2872,7 +2896,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 117
+      "candidate_test_count": 117,
+      "followups": [
+        "Q008D caller verification: tests/test_server_lazy_state.py has same 3 failures with HEAD consensus source (3 failed/8 passed/4 subtests). Actual import trace consensus_service -> project_audit_advisor -> task_loop -> kernel_driver -> kernel_context -> kernel_actions -> kernel_execution -> browser_progress -> browser_binding -> Playwright violates consensus_service import-light doc contract. q008d-lazy-import-chain.json; preserve regression assertions and repair at owning import boundary."
+      ]
     },
     {
       "responsibility": "codey/operations: task kernel and execution",

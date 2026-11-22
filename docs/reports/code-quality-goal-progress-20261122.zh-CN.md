@@ -503,3 +503,60 @@ Q008C 最终验收：
 - 四完整文件的 scoped Pyrefly / ty / Ruff → **全部退出 0**。`python -m mypy codey --python-version 3.11` → **0，737 文件**；`pyrefly check codey --python-version 3.11` → **0，既有 35 suppressed/165 warnings 保留**；`ty check codey --python-version 3.11` → **0**；`python -m tools.kernel_type_precision_gate` → **0**。命令串行，源码哈希前后一致，changed_during_checks=[]，记录 q008c-validation.json。先前直接组 35 例和四文件加严 Any 的最终成功仍有效，未放宽或删掉断言。
 - Codec 核对：默认值、严格已知字段、changed_files 列表/元组、summary 字符串/数组/元组/字典、未知额外元数据的忽略和错误通道均保留。没有删除公开接口或将计划激活与模型摘要的不同职责强行合并。类型改动没有增加 JSON 预算/未知键限制；只修复已证明的解析回退与字段预算问题。
 - Q008C 的 handoff.py 完成；累计 **11 / 291 批、29 / 975 个生产文件**。六个明确路径提交（生产一份、测试三份、记录两份）。下一批 Q008D：consensus.py 的只读顾问请求、报告归一与投票；原全仓队列、SQLite/运行时类型债务与 CodeMode 三个失败仍未完成，总 goal 不变。
+
+
+Q008C 已提交：`7edc3897`（fix(agents): bound unusable handoff summaries and type snapshot decoding）。
+
+### Q008D 已进入：只读顾问共识（基线完成，治理未完成）
+
+- consensus.py 全文件已读；公开入口调用自 app/consensus_service、task_run 和 project 顾问/完成流程，提示/顾问/聚合预算和资源关闭需保留。该文件 413 行，原测试 test_consensus.py 混合共识与项目只读审计，仍按相关生产职责治理，不以测试文件作为新生产分区。
+- `python -m pytest -q tests/test_consensus.py --tb=short` → **退出 0，34 passed，9.66 秒**；不能据此认为其类型已完成。
+- `python -m mypy codey/agents/consensus.py tests/test_consensus.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` → **退出 1，119 条 / 2 文件**。生产源：selected_provider 的显式 Any、warn 与 timeout 的 getattr 动态端口；测试源：FakeProvider 的 reply/timeout/location/new_chat 合同、trace 回调、audit_runtime 宽字典展开及无类型 JSON/空容器。尚未修改这两个文件，不把这些错误归为本轮引入。
+- 下一步先针对 max_advisors=0 的候选数量上限建立有效复现（目前只是候选，未宣称确认或修复），再处理发送者/告警/超时端口和必要测试 fixture；不改不同语义的 provider 兼容层、不复查已完成批次的可选优化。
+- 本轮已完成 Q008B/Q008C，累计仍 **11 / 291 批、29 / 975 文件**。Q008D 进行中，当前没有活跃测试/类型进程，也没有未提交的生产改动；只有这份进度记录和队列状态的持久化更新待下一次记录提交。总 goal 保持 active，不调用 complete。
+
+
+### Q008D 修复与类型治理（进行中）
+
+- 恢复时 HEAD=7edc3897，只有上轮两份进度补记未提交，保留。目标、AGENTS 与当前源码已重核；原 Q008D 34 passed 基线和 119 条加严类型诊断仍为当前未改源码/测试的实际结果。
+- **bug：零顾问预算仍发送请求。** max_advisors 是调用方给定的数量上限，0 的可论证不变量是不能选出/启动顾问。`python -m pytest -q tests/test_consensus_advisor_limits.py --tb=short` 在生产改动前 **退出 1，3 failed / 3 passed，1.23 秒**；选择器实际返回 ('a',)，入口在 draft_first=False/True 都返回 advisor_count=1 并发送消息，违反上限；1/2/10 上限是对照。随后入口选择函数对 0 返回空候选，沿原无候选路径返回 None，保留正数行为。未给未定义的负数预算另设新策略。
+- 修复上限后原文件与新回归：`python -m pytest -q tests/test_consensus_advisor_limits.py tests/test_consensus.py --tb=short` → **退出 0，40 passed，9.91 秒**。
+- **bug：用户停止被可选错误降级吞掉。** TaskCancelled 在 cancellation.py 的有效契约为“user stops the active task”，共识自身在发送/连接路径也明确传播该类，不能将同一停止事件在其他路径变成正常返回。`python -m pytest -q tests/test_consensus_cancellation.py --tb=short` 在对应生产改动前 **退出 1，3 failed / 3 passed，1.58 秒**；availability、warning、advisor_close 未抛出停止，连接/发送/最终拥有者发送是对照。随后这三处明确重抛 TaskCancelled，清理仍执行；普通 RuntimeError 保持原降级/尽力清理。DeadlineExceeded 代表有界 provider 操作预算，可能是可选顾问自己的预算，不据偏好统一改成任务停止。
+- 类型端口：拥有者只需 ConsensusSender.send；连接的顾问保持原 ChatProvider 契约。timeout 通过 object 边界验证为数字或 None，保留缺省的 60/90 秒、显式 None/0/180，不做额外正数/有限性或字符串转换策略；非法元数据在发送前报类型错误。告警按原 getattr 查出钩子后，验证可调用协议（单个 str 参数、忽略其返回值），保留动态代理。
+- 中间用 trace 对象整体 Protocol 检查时，动态 __getattr__ 的 warn 代理在 Python 3.12 被遗漏；新增原行为回归实际 **1 failed / 5 deselected**。该问题是本轮类型尝试引入，已改为对取出的回调本身验证，并随最终直接组通过；未为了收窄类型牺牲代理兼容性。
+- 测试全文件：FakeProvider 的 Sequence[str|Exception] 与真实错误用例匹配；补齐 location/new_chat(timeout) 合同；timeout 只声明、不设默认，保留原“不存在此属性”语义。audit_runtime 用三个具体资源字段的 TypedDict，trace 收集端口和 JSON 读取有类型，容器与原 source_refs/降级/发送次数断言不变，增加收窄而非跳过坏行。加严检查由 **119 → 37 → 0**，无新增 cast/ignore 或关闭检查。
+- 依赖收敛：suppress_assistance 原由 provider_controls 从 providers.assistance 重导出，现直接依赖唯一计数器所有者；三个调用位置、同一个函数和退出/恢复行为不变，旧 controls 公共重导出未删除。全树未发现调用 consensus.provider_controls 的配置/脚本或接口约定。_provider_send_ref 实际被 project_audit_advisor 导入调用，_clip/_trace_model_prompt 带本域合同，不按私有名或薄包装删除。
+- 原长 run_consensus 增加停止分支后 Ruff 实际报 C901=21、branches=22，未放宽门槛；将有独立职责的顾问清理抽成 _close_advisor，测试保留普通关闭错误不丢已完成建议，复验通过。
+
+最终直接与类型记录：
+
+| 命令 | 退出码 | 实际结果 |
+| --- | --- | --- |
+| `python -m pytest -q tests/test_consensus_provider_ports.py tests/test_consensus_cancellation.py tests/test_consensus_advisor_limits.py tests/test_consensus.py --tb=short` | 0 | 53 passed，10.73 秒，无 skip；含修复前相同输入/关键断言和端口边界 |
+| `python -m mypy codey/agents/consensus.py tests/test_consensus.py tests/test_consensus_advisor_limits.py tests/test_consensus_cancellation.py tests/test_consensus_provider_ports.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` | 0 | 五个完整文件通过 |
+| 同五路径 `python -m ruff check ...` | 0 | 复杂度/分支/风格门通过，未新增忽略 |
+
+当前进行 project audit、trace、lazy import 和 app 消费者验证。共同 provider assistance/trace 后端的旧动态字段未据消费者类型通过而标记治理完成，仍归原 providers/runtime 批次；当前完成计数保持 11 / 291、29 / 975。
+
+### Q008D 调用方结论与可独立提交成果（部分完成）
+
+- 恢复后读取完整目标、AGENTS、类型/测试配置和工作区；没有复制 worktree。用户强调的 SQLite 空 workflow 误读已在 `60f68f9b` 修复，原慢文件拆批执行证据见此前 durable 记录，不重复冒充新修复，也不把采样读取失败当竞态。
+- 调用方首批 `python -m pytest -q tests/test_project_audit_advisor_kernel.py tests/test_consensus_audit_split.py tests/test_change_brief.py tests/test_server_lazy_state.py --tb=short` → **退出 1，3 failed / 23 passed / 4 subtests passed，15.20 秒**。三处 lazy import 失败在 HEAD 原 consensus.py 上独立复跑 `python -m pytest -q tests/test_server_lazy_state.py --tb=short` → **退出 1，同样 3 failed / 8 passed / 4 subtests，11.85 秒**；finally 恢复本轮文件并验证字节，q008d-lazy-baseline.json。无完整绿色懒加载门禁。
+- 实际导入栈追到 consensus_service → project_audit_advisor → task_loop → kernel_driver → kernel_context → kernel_actions → kernel_execution → browser_progress → browser_binding → Playwright。有效依据是 consensus_service 模块的 import-light 文档；这是可定位的既有生产边界问题，不是错误测试。证据 q008d-lazy-import-chain.json；路由 Q085/Q097/Q017，未在 Q008D 扩展修改浏览器模块。不可宣称已修复该问题。
+- 服务首批 `python -m pytest -q tests/test_prompt_envelope.py tests/test_shared_task_service_consumers.py tests/test_server.py::ConsensusConnectionTests --tb=short` → **退出 1，1 failed / 23 passed，4.55 秒**。根因为无约束 Mock 的 getattr 自动合成 Mock timeout；ChatProvider.send 的公开契约为 float|None，web provider 本无此属性，API provider 构造器 timeout 为 float。fixture 改为明确删除动态 timeout，模拟真实缺省属性；保留 sibling-tab、返回内容、new_chat、close 断言，并加强发送断言为 60/90 秒。相同命令复验 **退出 0，24 passed，4.39 秒**；未为迁就 mock 放宽生产端口。
+- `tests/test_server.py` 全文件加严检查实际 **退出 1，1709 条 / 1 文件**（q008d-server-any.log）；来源包括 68 行无泛型 dict、83 行无类型回调、JSON/Mock 广泛传播，本次涉及的 2190–2221 行也仍有 Mock Any。完成全文件需要独立的共享 fixture/HTTP 场景迁移，超出本模块边界；准确路由 Q015。本脚本和 Q008D **不标记完全完成**，保留独立可验证成果后推进队列。
+
+最终串行验证（源码/相关测试哈希前后一致，changed_during_checks=[]；q008d-validation.json）：
+
+| 实际命令 | 退出码 | 结果 |
+| --- | --- | --- |
+| `python -m pytest -q tests/test_project_audit_advisor_kernel.py tests/test_consensus_audit_split.py tests/test_change_brief.py --tb=short` | 0 | 15 passed，5.03 秒 |
+| `pyrefly check codey/agents/consensus.py tests/test_consensus.py tests/test_consensus_advisor_limits.py tests/test_consensus_cancellation.py tests/test_consensus_provider_ports.py --python-version 3.11` | 0 | 五完整文件 0 errors |
+| 同五路径 `ty check ... --python-version 3.11` | 0 | 通过 |
+| `python -m ruff check` 同五路径加 `tests/test_server.py` | 0 | 六文件通过，无新忽略 |
+| `python -m mypy codey --python-version 3.11` | 0 | 737 文件通过 |
+| `pyrefly check codey --python-version 3.11` | 0 | 0 errors，原有 35 suppressed / 165 warnings 保留 |
+| `ty check codey --python-version 3.11` | 0 | 通过 |
+| `python -m tools.kernel_type_precision_gate` | 0 | 通过 |
+
+此前 53 例直接验证和五文件加严 Any 成功仍有效，生产源未再修改。确定性修复按零预算、取消传播与端口类型两份本地提交拆分；本批仍为 partial_follow_up，累计完整完成 **11 / 291 批、29 / 975 文件**，不把共享脚本待办算已完成。下一主批 Q009：writer_failover.py，接着 Q010 上下文、Q011 协议、Q012 shell 审批；原 191 文件门禁未完整通过、CodeMode 三失败与 SQLite 类型债务继续保留。

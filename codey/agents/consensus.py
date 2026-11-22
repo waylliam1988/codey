@@ -97,6 +97,8 @@ def advisor_ids(
     *,
     max_advisors: int = MAX_CONSENSUS_ADVISORS,
 ) -> tuple[str, ...]:
+    if max_advisors == 0:
+        return ()
     selected = (selected_provider_id or "").strip().lower()
     found: list[str] = []
     for provider_id in provider_ids:
