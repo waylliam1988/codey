@@ -355,6 +355,8 @@ class ExecutionDelegate:
         if call.name == "browser_scroll":
             return browser.action(BrowserAction.SCROLL, args)
         if call.name == "browser_wait":
+            if args.get("condition") == "text_changed":
+                return self._wait_for_observed_text(browser, call)
             if self._browser_wait_document is not None:
                 return browser.wait(str(args.get("condition") or ""), str(args.get("value") or ""),
                     require_json_integer(args.get("timeout_ms"), "timeout_ms"),
@@ -376,6 +378,16 @@ class ExecutionDelegate:
         if call.name == "browser_download":
             return self._browser_download(browser, ref)
         return browser.action(BrowserAction(call.name.removeprefix("browser_")), args)
+
+    def _wait_for_observed_text(self, browser: BrowserSession, call: ToolCall) -> BrowserToolOutput:
+        from codey.operations.browser_waits import snapshot_text_baseline
+
+        if self.session is None:
+            raise ValueError("text_changed requires the original task receipts")
+        text, document = snapshot_text_baseline(self.session, require_json_string(call.args.get("value"), "value"))
+        if self._browser_wait_document is not None and not same_document(self._browser_wait_document, document):
+            raise ValueError("text_changed snapshot does not belong to the original background wait document")
+        return browser.wait_for_text_change(text, document, require_json_integer(call.args.get("timeout_ms"), "timeout_ms"))
 
     def _persist_browser_image(self, output: BrowserToolOutput) -> tuple[ToolImageRef, ...]:
         if self.managed_outputs is None or not self.session_id or not self.run_id:

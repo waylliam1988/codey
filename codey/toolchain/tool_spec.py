@@ -277,11 +277,14 @@ def _browser_specs() -> dict[str, ToolSpec]:
             name="browser_wait", grant="browser.observe", executor="browser",
             supports_background=True,
             namespace="browser.observe", effect="read",
-            parameters=(("condition", {"type": "string", "enum": ["text", "text_absent", "selector", "selector_hidden", "selector_detached", "url_contains", "new_document", "popup", "dialog", "download"]}),
+            parameters=(("condition", {"type": "string", "enum": ["text", "text_absent", "text_changed", "selector", "selector_hidden", "selector_detached", "url_contains", "new_document", "popup", "dialog", "download"]}),
                         ("value", {"type": "string"}),
                         ("timeout_ms", {"type": "integer", "minimum": 100, "maximum": 30000})),
             required=("condition", "value"),
             description="Wait for one explicit bounded condition on the bound page. "
+                        "For text_changed, value is a committed full-page browser_snapshot result_ref: "
+                        "wait for its visible text to differ on the original document, then observe the page again. "
+                        "This is observation readiness, not confirmation of a requested business result. "
                         "timeout_ms is optional: preserve an explicit value, otherwise use the matching current-stage "
                         "declared timeout, or 5000 ms. Invalid timeouts are rejected.",
             json_examples=('{"tool":"browser_wait","args":{"condition":"text","value":"...","timeout_ms":5000}}',),

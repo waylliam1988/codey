@@ -1,17 +1,19 @@
 """Live operations and strict research select explicit production contracts."""
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Literal
 
 import pytest
 
+from codey.app.headless_runner import HeadlessConnector, HeadlessRequest, HeadlessResult
 from codey.automation.browser_contracts import RouteDecision
 from codey.types.json_value import JsonObject, parse_json_object
 from tests.test_research_submission_handoff_production import install_http
 from tools import unified_real_browser_probe as probe
 from tools.browser_experiment_sources import ResumableBrowserSearchProvider
+from tools.completion_artifact_audit import EffectReceipt
 from tools.completion_explanation_ab import Target
 
 URL = "https://example.com/real-probe-regression"
@@ -56,3 +58,27 @@ def test_probe_preserves_the_selected_contract_and_original_receipts(
     assert parse_json_object((directory / "summary.json").read_text(encoding="utf-8")) == summary
     with pytest.raises(FileExistsError):
         probe.run_live(directory, "Must not overwrite the first run.", Target("http://scripted.test/v1", "fixture", 0, 10))
+
+
+def test_probe_keeps_the_failed_run_summary_when_receipts_cannot_be_restored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def failed_run(request: HeadlessRequest, *, emit_jsonl: Callable[[dict[str, object]], None],
+                   connect_provider: HeadlessConnector) -> HeadlessResult:
+        emit_jsonl({"type": "task_done", "summary": "External outcome unknown; action was not replayed."})
+        return HeadlessResult(1, "failed-run", "failed-session", "error")
+
+    def unreadable_receipts(state: Path) -> list[EffectReceipt]:
+        raise ValueError("tool result receipt digest mismatch")
+
+    monkeypatch.setattr(probe, "run_headless", failed_run)
+    monkeypatch.setattr(probe, "tool_receipts", unreadable_receipts)
+    directory = tmp_path / "failed"
+    summary = probe.run_live(directory, "Preserve the unknown outcome.", Target("http://scripted.test/v1", "fixture", 0, 10))
+    assert summary["stop_reason"] == "error"
+    assert "not replayed" in str(summary["answer"])
+    assert summary["receipt_audit_error"] == "tool result receipt digest mismatch"
+    assert "not verified" in str(summary["quality_verdict"])
+    assert "receipts" not in summary
+    assert parse_json_object((directory / "summary.json").read_text(encoding="utf-8")) == summary
+    assert (directory / "request.json").exists() and (directory / "events.jsonl").exists()

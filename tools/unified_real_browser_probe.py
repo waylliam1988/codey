@@ -53,10 +53,12 @@ def run_live(directory: Path, task: str, target: Target, *, max_turns: int = 16,
     (directory / "request.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     started = time.monotonic()
     summary: JsonObject = dict(manifest)
+    native_environment: dict[str, str] = {NATIVE_TOOLS_ENV: "1"}
+    availability: dict[str, bool] = {"local": True}
     try:
         with ExitStack() as stack:
-            stack.enter_context(patch.dict(os.environ, {NATIVE_TOOLS_ENV: "1"}))
-            stack.enter_context(patch("codey.app.provider_services.provider_availability", return_value={"local": True}))
+            stack.enter_context(patch.dict(os.environ, native_environment))
+            stack.enter_context(patch("codey.app.provider_services.provider_availability", return_value=availability))
             stack.enter_context(patch("codey.research.search_factory.default_research_search_provider", source_factory))
             stack.enter_context(patch("codey.operations.task_phases.dispatch.default_research_search_provider", source_factory))
             result = run_headless(request, emit_jsonl=observe, connect_provider=connect)
@@ -68,13 +70,18 @@ def run_live(directory: Path, task: str, target: Target, *, max_turns: int = 16,
     finally:
         source.close()
         recording.close()
-    receipts = tool_receipts(directory / "state")
-    summary["receipts"] = [{"identity": row.identity, "tool": row.result.call.name,
-        "args": row.result.call.args, "ok": row.result.ok, "text": row.result.model_text,
-        "canonical": canonical_json_object(row.result.canonical), "audit": canonical_json_object(row.result.audit)}
-        for row in receipts]
+    try:
+        receipts = tool_receipts(directory / "state")
+        summary["receipts"] = [{"identity": row.identity, "tool": row.result.call.name,
+            "args": row.result.call.args, "ok": row.result.ok, "text": row.result.model_text,
+            "canonical": canonical_json_object(row.result.canonical), "audit": canonical_json_object(row.result.audit)}
+            for row in receipts]
+    except ValueError as exc:
+        summary["receipt_audit_error"] = str(exc)
     summary["seconds"] = round(time.monotonic() - started, 3)
-    summary["quality_verdict"] = "Review original sources, requested behavior and report; done alone is insufficient."
+    summary["quality_verdict"] = ("Receipt audit failed; this run is not verified."
+        if "receipt_audit_error" in summary else
+        "Review original sources, requested behavior and report; done alone is insufficient.")
     (directory / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     return summary
 
@@ -97,7 +104,8 @@ def main() -> None:
     options = parser.parse_args(namespace=Options())
     summary = run_live(options.directory, options.task, select_target(180, options.base_url),
                        max_turns=options.max_turns, intent=options.intent)
-    print(json.dumps({key: value for key, value in summary.items() if key != "receipts"}, ensure_ascii=False))
+    public_summary: JsonObject = {key: value for key, value in summary.items() if key != "receipts"}
+    print(json.dumps(public_summary, ensure_ascii=False))
 
 
 if __name__ == "__main__":

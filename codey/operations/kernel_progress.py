@@ -107,7 +107,8 @@ class KernelProgress:
                                              call.args.get("id") or ""), comparison.information)
             novel = self.seen.add(key)
             prior = next((item for item in reversed(list(self.attempts)[:-1]) if item.call_fp == record.call_fp), None)
-            observed_transition = ((call.name.startswith("browser_") or comparison.browser_observation) and prior is not None
+            observed_transition = (not comparison.reloaded
+                                   and (call.name.startswith("browser_") or comparison.browser_observation) and prior is not None
                                    and prior.result_fp != record.result_fp)
             if changed or (record.ok and (novel or observed_transition)):
                 progress = True

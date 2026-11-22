@@ -29,6 +29,7 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     from codey.operations.browser_detail import offer_page_details, offer_query_controls
     from codey.operations.browser_task_handoff import (
         bind_browser_references,
+        browser_control_wait_handoff,
         browser_observation_handoff,
         browser_task_handoff,
     )
@@ -44,6 +45,8 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
 
     hints: list[str] = []
     hints.append(browser_observation_handoff(session, snapshot, context, generation))
+    snapshot, control_wait = browser_control_wait_handoff(session, snapshot, context, generation)
+    hints.append(control_wait)
     from codey.codemode.verification import project_check_call
 
     run = next((spec for spec in snapshot.model_specs if spec.name == "run"), None)
@@ -76,4 +79,4 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     hints.append(hint)
     snapshot, hint = offer_page_details(session, snapshot, browser)
     hints.append(hint)
-    return snapshot, "\n\n".join(dict.fromkeys(hint for hint in hints if hint))
+    return snapshot, "\n\n".join(dict.fromkeys((hint for hint in hints if hint), ""))

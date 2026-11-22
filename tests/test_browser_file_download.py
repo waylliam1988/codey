@@ -1,10 +1,12 @@
 import base64
 import hashlib
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
-from playwright.sync_api import Route
 
+from codey.automation.browser_contracts import RouteDecision as Route
+from codey.automation.browser_routes import route_policy
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.runtime import NodeWorkerRuntime
 from codey.durable import DurableSession, SQLiteDurableStore
@@ -12,17 +14,18 @@ from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.recovery import record_entry_policy
 from codey.policies.action import MAX_MANAGED_OUTPUT_BYTES, MAX_MANAGED_OUTPUTS_PER_RUN
-from codey.runtime.core.models import ToolCall
+from codey.runtime.core.models import ToolCall, ToolResult
 from codey.storage.managed_outputs import ManagedOutputStore
-from tests.test_browser_production_execution import URL
+from codey.types.json_value import JsonObject, decode_json_object
+from tests.test_browser_production_execution import URL, BrowserFixture
 from tests.test_browser_production_execution import production_browser as production_browser
-from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
+from tests.test_tool_task_background import open_runtime
 
 PAYLOAD = b"\x00\xffdownloaded bytes\n"
 
 
 def test_real_download_settles_one_durable_artifact_and_replay_never_clicks_again(
-    production_browser, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    production_browser: BrowserFixture, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session, tools, browser = production_browser
 
@@ -30,42 +33,50 @@ def test_real_download_settles_one_durable_artifact_and_replay_never_clicks_agai
         data_url = "data:application/octet-stream;base64," + base64.b64encode(PAYLOAD).decode("ascii")
         route.fulfill(content_type="text/html", body=f'<a href="{data_url}" download="fixture.bin">Download fixture</a>')
 
-    browser.provider._guard_request = document
-    project, state, logdir = _dirs(tmp_path)
-    _, mutations, managed, revisions, _, sink = _open_runtime(logdir, state, "s", "r", project)
-    record_entry_policy(mutations, session_id="s", run_id="r", policy=session.policy, durable=mutations.durable)
+    monkeypatch.setattr(browser._process, "network_policy", route_policy(document))
+    runtime = open_runtime(tmp_path)
+    mutations, managed, sink = runtime.app.runtime_mutations, runtime.app.managed_outputs, runtime.sink
+    durable, state = runtime.app.durable, runtime.app.state_home
+    assert managed is not None and state is not None
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=session.policy, durable=durable)
     snapshot = build_turn_snapshot(session)
     parent = build_execute_turn_executor(session=session, snapshot=snapshot, run_id="r", effect_scope="outer", turn=0,
-        research_tools=tools, managed_outputs=managed, session_id="s", intent_sink=sink, durable=mutations.durable)
+        research_tools=tools, managed_outputs=managed, session_id="s", intent_sink=sink, durable=durable)
     call = ToolCall("codemode", {"code":
         "unwrap(await tools.browser_navigate({url:inputs.url})); "
         "const s=unwrap(await tools.browser_snapshot({})); "
         "return unwrap(await tools.browser_download({ref:s.elements.find(e=>e.name==='Download fixture').ref}));",
         "inputs": {"url": URL}}, call_id="download-parent")
-    options = dict(executors={"codemode": parent}, run_id="r", effect_scope="outer", turn=0, snapshot=snapshot,
-                   intent_sink=sink, durable=mutations.durable, managed_outputs=managed,
-                   session_id="s", research_tools=tools)
+    def execute() -> ToolResult:
+        return execute_turn(session, [call], executors={"codemode": parent}, run_id="r", effect_scope="outer", turn=0,
+            snapshot=snapshot, intent_sink=sink, durable=durable, managed_outputs=managed,
+            session_id="s", research_tools=tools)[0]
+
+    def restarted_vm(*args: object, **kwargs: object) -> NoReturn:
+        pytest.fail("download replay restarted VM")
+
     try:
-        result = execute_turn(session, [call], **options)[0]
+        result = execute()
         assert result.ok, result.model_text
-        value = result.canonical["value"]
-        artifacts = mutations.durable.artifacts_for_task("r")
+        value = decode_json_object(result.canonical["value"])
+        artifacts = durable.artifacts_for_task("r")
         files = [artifact for artifact in artifacts if artifact.metadata.get("kind") == "browser_download"]
         assert len(files) == 1
         file = files[0]
         assert file.handle == value["handle"] and file.sha256 == hashlib.sha256(PAYLOAD).hexdigest()
-        assert file.owner_effect_id in result.canonical["child_effect_ids"]
+        child_ids = result.canonical["child_effect_ids"]
+        assert isinstance(child_ids, list) and file.owner_effect_id in child_ids
         path = Path(file.storage_path)
         path.resolve().relative_to(managed.root.resolve())
-        browser.provider.close()
+        browser.close()
         assert path.read_bytes() == PAYLOAD
-        monkeypatch.setattr(NodeWorkerRuntime, "execute", lambda *_a, **_k: pytest.fail("download replay restarted VM"))
-        replay = execute_turn(session, [call], **options)[0]
+        monkeypatch.setattr(NodeWorkerRuntime, "execute", restarted_vm)
+        replay = execute()
         assert replay.ok and replay.canonical == result.canonical
-        assert mutations.durable.artifacts_for_task("r") == artifacts
+        assert durable.artifacts_for_task("r") == artifacts
         assert not tools.ledger.read_passages
     finally:
-        mutations.durable.close()
+        assert runtime.app.close()
     reopened = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
     try:
         assert reopened.artifacts_for_task("r") == artifacts
@@ -82,7 +93,7 @@ def test_binary_artifacts_reject_truncation_corruption_and_cross_scope(tmp_path:
         store.write_file_artifact(session_id="s", run_id="r", source=source, permission_profile="coding_writer")
     source.write_bytes(PAYLOAD)
     ref = store.write_file_artifact(session_id="s", run_id="r", source=source, permission_profile="coding_writer")
-    value = {"handle": ref.handle, "sha256": ref.sha256, "bytes": ref.stored_bytes, "path": str(ref.path)}
+    value: JsonObject = {"handle": ref.handle, "sha256": ref.sha256, "bytes": ref.stored_bytes, "path": str(ref.path)}
     assert store.file_artifact_record(value, session_id="s", run_id="r", owner_effect_id="e").byte_count == len(PAYLOAD)
     with pytest.raises(OSError):
         store.file_artifact_record(value, session_id="other", run_id="r", owner_effect_id="e")

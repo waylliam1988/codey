@@ -22,10 +22,12 @@ from uuid import uuid4
 
 from playwright.async_api import (
     Browser,
+    CDPSession,
     Dialog,
     Download,
     ElementHandle,
     Error,
+    Frame,
     Page,
     Playwright,
     Route,
@@ -73,6 +75,16 @@ from codey.types.json_value import (
 NetworkPolicy = Callable[[JsonObject], Awaitable[JsonObject]]
 Progress = Callable[[JsonObject], Awaitable[None]]
 _PROPERTY_RETURN = re.compile(r"\s*return[ \t]+(window\.[A-Za-z_$][\w$]*)(?:\s*;)?\s*", re.ASCII)
+
+
+def _evaluate(subject: Page | Frame | ElementHandle, expression: str) -> Awaitable[object]:
+    evaluate: Callable[[str], Awaitable[object]] = subject.evaluate
+    return evaluate(expression)
+
+
+def _send(cdp: CDPSession, method: str, arguments: JsonObject | None = None) -> Awaitable[object]:
+    send: Callable[[str, JsonObject | None], Awaitable[object]] = cdp.send
+    return send(method, arguments)
 
 
 @dataclass
@@ -269,7 +281,7 @@ class BrowserRuntime:
     async def _page_binding(page: Page, *, owned: bool) -> PageBinding:
         cdp = await page.context.new_cdp_session(page)
         try:
-            raw: object = await cdp.send("Target.getTargetInfo")
+            raw: object = await _send(cdp, "Target.getTargetInfo")
             info = decode_json_object(decode_json_object(raw)["targetInfo"])
             return PageBinding(require_json_string(info["targetId"], "targetId"),
                                require_json_string(info.get("browserContextId", ""), "contextId"), owned)
@@ -285,9 +297,15 @@ class BrowserRuntime:
         def dialog_opened(dialog: Dialog) -> None:
             self._dialogs[binding.target_id] = dialog
 
+        def popup_opened(popup: Page) -> None:
+            self._popups.setdefault(binding.target_id, []).append(popup)
+
+        def download_started(download: Download) -> None:
+            self._downloads[binding.target_id] = download
+
         page.on("dialog", dialog_opened)
-        page.on("popup", lambda popup: self._popups.setdefault(binding.target_id, []).append(popup))
-        page.on("download", lambda download: self._downloads.update({binding.target_id: download}))
+        page.on("popup", popup_opened)
+        page.on("download", download_started)
         return state
 
     async def _register_popups(self) -> None:
@@ -426,10 +444,11 @@ class BrowserRuntime:
                     return None, b""
                 world = await context.send("Page.createIsolatedWorld", {"frameId": context.document["frame_id"],
                                                                        "worldName": "codey-read-disclosure"})
-                result = await context.send("Runtime.evaluate", {"contextId": world["executionContextId"],
-                    "expression": "(" + DETAILS + ")(" + json.dumps({"task": args["task"], "selected": args["selected"]}) + ")",
+                selected: JsonObject = {"task": args["task"], "selected": args["selected"]}
+                disclosure = await context.send("Runtime.evaluate", {"contextId": world["executionContextId"],
+                    "expression": "(" + DETAILS + ")(" + json.dumps(selected) + ")",
                     "returnByValue": True})
-                return decode_json_object(result["result"]).get("value"), b""
+                return decode_json_object(disclosure["result"]).get("value"), b""
             if action in {BrowserAction.SNAPSHOT, BrowserAction.LOCATE, BrowserAction.INSPECT}:
                 return (await self._observe(invocation, context)).payload(), b""
             if action in {BrowserAction.CLICK, BrowserAction.FILL, BrowserAction.HOVER, BrowserAction.PRESS,
@@ -535,7 +554,7 @@ class BrowserRuntime:
             return await self._file_snapshot(context)
         if action == BrowserAction.INSPECT:
             record = await self._resolve(context, require_json_string(args["ref"], "ref"), purpose="inspect")
-            raw: object = await record.handle.evaluate("""el => ({tag:el.tagName.toLowerCase(),
+            raw: object = await _evaluate(record.handle, """el => ({tag:el.tagName.toLowerCase(),
                 attributes:Object.fromEntries(Array.from(el.attributes,a=>[a.name,a.value])),
                 text:(el.innerText||el.textContent||'').slice(0,4000),
                 ancestors:Array.from((function*(){for(let n=el.parentElement;n;n=n.parentElement) yield n;})()).slice(0,8)
@@ -587,14 +606,14 @@ class BrowserRuntime:
         return BrowserToolOutput(json.dumps(value, ensure_ascii=False), True, receipt)
 
     async def _capture(self, context: FrameContext) -> JsonObject:
-        raw: object = await context.frame.evaluate("""() => ({url:location.href,title:document.title,
+        raw: object = await _evaluate(context.frame, """() => ({url:location.href,title:document.title,
             text:(document.body?.innerText||'').slice(0,100001),content_type:document.contentType,
             http_status:performance.getEntriesByType('navigation')[0]?.responseStatus||null,
             password_visible:Array.from(document.querySelectorAll('input[type=password]')).some(el=>el.getClientRects().length),
             render_pending:Array.from(document.querySelectorAll('app-root,#root,#app,#__next')).some(el=>
                 !el.innerText.trim() || /^(loading|please wait|加载中|正在加载)[. 。…!]*$/i.test(el.innerText.trim()))})""")
         data = decode_json_object(raw)
-        visible_text: object = await context.frame.evaluate("(" + VISIBLE_TEXT + ")(document.body)")
+        visible_text: object = await _evaluate(context.frame, "(" + VISIBLE_TEXT + ")(document.body)")
         data["text"] = require_json_string(visible_text, "visible text")
         text = require_json_string(data["text"], "text")
         facts = self._navigation.get(self._document_key(context.document), {})
@@ -631,7 +650,7 @@ class BrowserRuntime:
             await self._mark(invocation, "script_dispatch", dispatch="unknown")
             code = require_json_string(args["code"], "code")
             property_return = _PROPERTY_RETURN.fullmatch(code)
-            raw: object = await context.frame.evaluate(property_return[1] if property_return else code)
+            raw: object = await _evaluate(context.frame, property_return[1] if property_return else code)
             await self._mark(invocation, "script_complete", dispatch="confirmed")
             value = decode_json_object({"value": raw})["value"]
             self._revision += 1
@@ -646,7 +665,7 @@ class BrowserRuntime:
             await input_state.release(state.page)
         record = await self._resolve(context, ref)
         await record.handle.scroll_into_view_if_needed(timeout=2000)
-        raw_ready: object = await record.handle.evaluate(_HIT_TEST)
+        raw_ready: object = await _evaluate(record.handle, _HIT_TEST)
         ready = decode_json_object(raw_ready)
         if ready.get("ready") is not True:
             return BrowserToolOutput("Input not dispatched: " + str(ready.get("reason", "unavailable")), False,
@@ -655,7 +674,7 @@ class BrowserRuntime:
         while ancestor.parent_frame is not None:
             owner = await ancestor.frame_element()
             try:
-                outer: object = await owner.evaluate(_HIT_TEST)
+                outer: object = await _evaluate(owner, _HIT_TEST)
                 readiness = decode_json_object(outer)
                 if readiness.get("ready") is not True:
                     return BrowserToolOutput("Input not dispatched: enclosing frame is occluded.", False,
@@ -698,7 +717,7 @@ class BrowserRuntime:
         observed["input_state"] = input_state.payload()
         observed["text"] = ""
         if action == BrowserAction.FILL:
-            actual: object = await record.handle.evaluate("el => 'value' in el ? el.value : el.textContent || ''")
+            actual: object = await _evaluate(record.handle, "el => 'value' in el ? el.value : el.textContent || ''")
             verified = actual == args["value"]
             observed.update(value_length=len(require_json_string(args["value"], "value")),
                             delivery="verified" if verified else "unverified", effect_verified=verified)
@@ -715,6 +734,9 @@ class BrowserRuntime:
         timeout_ms = require_json_integer(args.get("timeout_ms", 5000), "timeout_ms")
         if not 100 <= timeout_ms <= 30000:
             raise ValueError("invalid_wait_deadline")
+        baseline_text = require_json_string(args.get("baseline_text"), "baseline_text") if condition == "text_changed" else ""
+        if condition == "text_changed" and not isinstance(expected, dict):
+            raise ValueError("text_changed requires its original document")
         deadline = min(invocation.command.deadline, time.monotonic() + timeout_ms / 1000)
         while time.monotonic() < deadline:
             if condition in {"popup", "dialog", "download"}:
@@ -733,8 +755,14 @@ class BrowserRuntime:
                     raise RuntimeError("wait_document_changed")
                 matched = False
                 if condition in {"text", "text_absent"}:
-                    body: object = await context.frame.evaluate("() => document.body?.innerText || ''")
+                    body: object = await _evaluate(context.frame, "() => document.body?.innerText || ''")
                     matched = (value in str(body)) == (condition == "text")
+                elif condition == "text_changed":
+                    observed_text: object = await _evaluate(context.frame, "(" + VISIBLE_TEXT + ")(document.body)")
+                    matched = require_json_string(observed_text, "visible text") != baseline_text
+                    async with self._frame(state) as after:
+                        if not same_document(context.document, after.document):
+                            raise RuntimeError("wait_document_changed")
                 elif condition in {"selector", "selector_hidden", "selector_detached"}:
                     handle = await context.frame.query_selector(value)
                     matched = (handle is not None and await handle.is_visible()) if condition == "selector" else (
@@ -764,7 +792,7 @@ class BrowserRuntime:
             target = await bind_query_target(context, record.handle)
             if target != record.query_target:
                 raise ValueError("query_target_changed")
-            explicit: object = await record.handle.evaluate("el => el.hasAttribute('aria-controls') || el.matches('summary')")
+            explicit: object = await _evaluate(record.handle, "el => el.hasAttribute('aria-controls') || el.matches('summary')")
             if target is None and explicit is not True:
                 candidates = await context.frame.query_selector_all("article,[role=status],[role=region],[aria-live]")
                 visible = [node for node in candidates if await node.is_visible()]
@@ -785,7 +813,7 @@ class BrowserRuntime:
         if node is None:
             raise RuntimeError("query_target_unavailable")
         try:
-            raw: object = await node.evaluate("""el => ({text:(el.innerText||'').replace(/\\s+/g,' ').trim().slice(0,100001),
+            raw: object = await _evaluate(node, """el => ({text:(el.innerText||'').replace(/\\s+/g,' ').trim().slice(0,100001),
                 connected:el.isConnected && el.ownerDocument === document,
                 visible:!!el.getClientRects().length && getComputedStyle(el).visibility!=='hidden',
                 busy:!!el.closest('[aria-busy=true]') || !!el.querySelector('[aria-busy=true]')})""")
@@ -806,7 +834,8 @@ class BrowserRuntime:
             observed = await context.frame.evaluate_handle(_RECORDS, require_json_strings(args["labels"], "labels"))
             rows_handle, targets = await observed.get_property("rows"), await observed.get_property("targets")
             try:
-                raw: object = await rows_handle.json_value()
+                read_rows: Callable[[], Awaitable[object]] = rows_handle.json_value
+                raw: object = await read_rows()
                 if not isinstance(raw, list):
                     raise ValueError("invalid observed record regions")
                 rows: list[JsonValue] = []
@@ -889,7 +918,7 @@ class BrowserRuntime:
 
     @staticmethod
     async def _viewport(page: Page) -> JsonObject:
-        raw: object = await page.evaluate("""() => ({width:innerWidth,height:innerHeight,x:scrollX,y:scrollY,
+        raw: object = await _evaluate(page, """() => ({width:innerWidth,height:innerHeight,x:scrollX,y:scrollY,
             scale:visualViewport?.scale||1,offset_x:visualViewport?.offsetLeft||0,offset_y:visualViewport?.offsetTop||0})""")
         return decode_json_object(raw)
 
@@ -897,8 +926,9 @@ class BrowserRuntime:
     async def _capture_png(page: Page, clip: JsonObject) -> bytes:
         cdp = await page.context.new_cdp_session(page)
         try:
-            raw: object = await cdp.send("Page.captureScreenshot", {"format": "png", "fromSurface": True,
-                "captureBeyondViewport": True, "clip": {**clip, "scale": 1}})
+            capture_args: JsonObject = {"format": "png", "fromSurface": True,
+                "captureBeyondViewport": True, "clip": {**clip, "scale": 1}}
+            raw: object = await _send(cdp, "Page.captureScreenshot", capture_args)
             data = decode_json_object(raw)
             return base64.b64decode(require_json_string(data["data"], "captured pixels"), validate=True)
         finally:
@@ -906,7 +936,7 @@ class BrowserRuntime:
 
     async def _screenshot(self, invocation: Invocation, state: PageState, context: FrameContext) -> tuple[JsonValue, bytes]:
         args = invocation.command.arguments
-        await state.page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(null))))")
+        await _evaluate(state.page, "() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(null))))")
         viewport = await self._viewport(state.page)
         full_page = args.get("full_page") is True
         clip: JsonObject = {"x": viewport["x"], "y": viewport["y"], "width": viewport["width"], "height": viewport["height"]}
@@ -921,7 +951,7 @@ class BrowserRuntime:
             clip["y"] = image_number(clip["y"]) + image_number(viewport["y"])
             full_page = False
         elif full_page:
-            raw_size: object = await context.frame.evaluate("() => ({width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight})")
+            raw_size: object = await _evaluate(context.frame, "() => ({width:document.documentElement.scrollWidth,height:document.documentElement.scrollHeight})")
             size = decode_json_object(raw_size)
             clip.update(x=0, y=0, width=size["width"], height=size["height"])
         if "clip" in args:
@@ -1053,7 +1083,7 @@ class BrowserRuntime:
         name, mime = require_json_string(args["name"], "name"), require_json_string(args["mime_type"], "mime_type")
         await record.handle.set_input_files({"name": name, "mimeType": mime, "buffer": invocation.binary}, timeout=5000)
         await self._mark(invocation, "file_selection_complete", dispatch="confirmed")
-        raw: object = await record.handle.evaluate("el => Array.from(el.files||[],f=>({name:f.name,bytes:f.size,type:f.type}))")
+        raw: object = await _evaluate(record.handle, "el => Array.from(el.files||[],f=>({name:f.name,bytes:f.size,type:f.type}))")
         files = decode_json_object({"files": raw})["files"]
         verified = files == [{"name": name, "bytes": len(invocation.binary), "type": mime}]
         self._revision += 1
@@ -1065,7 +1095,7 @@ class BrowserRuntime:
 
     async def _resolve(self, context: FrameContext, ref: str, *, purpose: Literal["action", "scope", "inspect"] = "action") -> ElementRecord[ElementHandle]:
         record = self._registry.resolve(ref, context.document)
-        connected: object = await record.handle.evaluate("el => el.isConnected && el.ownerDocument === document")
+        connected: object = await _evaluate(record.handle, "el => el.isConnected && el.ownerDocument === document")
         if connected is not True:
             raise ValueError("stale_ref")
         metadata, owner = await element_metadata(record.handle)
@@ -1117,7 +1147,7 @@ class BrowserRuntime:
             if release and self._owns_browser:
                 with contextlib.suppress(Error):
                     cdp = await self._browser.new_browser_cdp_session()
-                    await cdp.send("Browser.close")
+                    await _send(cdp, "Browser.close")
             await self._browser.close()
         if self._playwright is not None:
             await self._playwright.stop()

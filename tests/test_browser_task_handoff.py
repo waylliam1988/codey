@@ -105,7 +105,10 @@ def test_wait_exposure_uses_the_existing_frozen_leaf(kind: str, required: bool, 
     assert ("browser_wait" in snapshot.tool_names) is (not denied)
     if not denied:
         spec = next(s for s in snapshot.frozen_specs if s.name == "browser_wait")
-        assert next(s for s in snapshot.model_specs if s.name == "browser_wait") == spec
+        offered = next(s for s in snapshot.model_specs if s.name == "browser_wait")
+        assert replace(offered, description=spec.description) == spec
+        assert offered.description.startswith(spec.description)
+        assert "child snapshot receipt" in offered.description
         invalid = decode_text_turn('{"tool":"browser_wait","args":{"condition":"invented","value":"Ready","timeout_ms":5000}}')
         assert normalize_turn(invalid, snapshot=snapshot).protocol_error
         valid = normalize_turn(decode_text_turn('{"tool":"browser_wait","args":{"condition":"text","value":"Ready"}}'),

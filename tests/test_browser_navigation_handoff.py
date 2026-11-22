@@ -155,13 +155,16 @@ def test_saved_wrong_url_reply_returns_through_the_offered_task_binding(
         yield json.dumps(next_step(handoffs[-1]))
         yield json.dumps(code_action("return unwrap(await tools.browser_snapshot({}));"))
         snapshots = [r.result for r in tool_receipts(directory / "state") if r.result.call.name == "browser_snapshot"]
-        empty, recovered = snapshots
+        empty, recovered = snapshots[0], snapshots[-1]
+        assert decode_json_object(empty.audit["browser_document"])["url"] == WRONG
+        assert decode_json_object(recovered.audit["browser_document"])["url"] == URL
         assert decode_json_object(empty.canonical["value"])["elements"] == []
         controls = decode_json_object(recovered.canonical["value"])["elements"]
         assert isinstance(controls, list) and any(isinstance(item, dict) and item.get("name") == "Locality"
                                                 for item in controls)
         yield json.dumps(code_action(LOAD + WAIT + f"return {READ};"))
-        yield json.dumps({"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}})
+        completed: JsonObject = {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}
+        yield json.dumps(completed)
 
     install_original_http(monkeypatch, replies())
     row = run_case(directory, "chat", TARGET, max_turns=5)

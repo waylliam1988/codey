@@ -51,7 +51,7 @@ from codey.operations.task_session import TaskSession, effect_coordinates, turn_
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
-from codey.types.json_value import JsonObject
+from codey.types.json_value import JsonObject, decode_json_object
 
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
@@ -785,7 +785,7 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
                     workspace_revision_store=workspace_revision_store)
             if call.name.startswith("browser_"):
                 raw = result.canonical.get("value")
-                delivery = raw.get("delivery") if isinstance(raw, dict) else None
+                delivery = decode_json_object(raw).get("delivery") if isinstance(raw, dict) else None
                 result = replace(result, audit={**result.audit, "browser_execution": {
                     "effect_ref": identity, "elapsed_ms": int((time.monotonic() - started) * 1000),
                     "phase": "unknown" if delivery == "uncertain" else "finished"}})
@@ -834,6 +834,15 @@ def _admit_background(context: ToolExecutionContext, identity: str, call: ToolCa
             return _error_result(call, "background browser wait requires durable execution")
         try:
             resource_binding = browser.capture_wait_binding()
+            if call.name == "browser_wait" and call.args.get("condition") == "text_changed":
+                from codey.automation.browser_document import same_document
+                from codey.operations.browser_waits import snapshot_text_baseline
+
+                if context.delegate.session is None:
+                    raise ValueError("text_changed requires the original task receipts")
+                _text, document = snapshot_text_baseline(context.delegate.session, str(call.args.get("value") or ""))
+                if not same_document(document, resource_binding["browser_document"]):
+                    raise ValueError("text_changed requires the original snapshot document")
             context.durable.tool_resources.bind_browser(tool_task_id(identity), browser, resource_binding)
         except ValueError as exc:
             return _error_result(call, str(exc))

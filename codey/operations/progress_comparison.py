@@ -7,7 +7,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from codey.automation.browser_document import same_document
+from codey.operations.browser_followups import NAVIGATE
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.toolchain.tool_spec import spec_for_tool
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer
 
 # Repeated observations do not establish whether another effect was required
@@ -110,14 +112,11 @@ class ProgressComparison:
     result: ToolResult
     information: str
     browser_observation: bool = False
+    reloaded: bool = False
 
 
-def _observation_program(result: ToolResult, receipts: Mapping[str, ToolResult]) -> str | None:
-    """Compare complete observed children and only their known ref substitutions.
-
-    This is progress telemetry, never replay or repair authority. In particular,
-    arbitrary computed values, numeric generations and unknown children survive.
-    """
+def _program_children(result: ToolResult, receipts: Mapping[str, ToolResult]) -> tuple[tuple[str, ToolResult], ...] | None:
+    """Only the complete ordered children of this original parent can be projected."""
     canonical = decode_json_object(result.canonical)
     refs = canonical.get("child_effect_ids")
     parent = result.audit.get("codemode_execution_id")
@@ -125,14 +124,26 @@ def _observation_program(result: ToolResult, receipts: Mapping[str, ToolResult])
             or not isinstance(parent, str) or not parent or not isinstance(refs, list) or not refs
             or result.audit.get("child_calls") != len(refs) or "value" not in result.canonical):
         return None
+    children: list[tuple[str, ToolResult]] = []
+    for index, ref in enumerate(refs):
+        if not isinstance(ref, str) or (child := receipts.get(ref)) is None or child.call.call_id != f"{parent}:child:{index}":
+            return None
+        children.append((ref, child))
     owned = {ref for ref, child in receipts.items() if child.call.call_id.startswith(parent + ":child:")}
-    if any(not isinstance(ref, str) for ref in refs) or set(refs) != owned or len(owned) != len(refs):
+    if {ref for ref, _child in children} != owned:
+        return None
+    return tuple(children)
+
+
+def _observation_program(result: ToolResult, receipts: Mapping[str, ToolResult]) -> str | None:
+    """Compare observed children, preserving arbitrary computed business values."""
+    rows = _program_children(result, receipts)
+    if rows is None:
         return None
     children: list[JsonValue] = []
     substitutions: dict[str, str] = {}
-    for index, ref in enumerate(refs):
-        child = receipts[str(ref)]
-        if (child.call.call_id != f"{parent}:child:{index}" or not child.ok or child.truncated
+    for index, (_ref, child) in enumerate(rows):
+        if (not child.ok or child.truncated
                 or child.call.name not in {"browser_snapshot", "browser_read"}
                 or (value := _browser_value(child)) is None
                 or not isinstance(document_raw := child.audit.get("browser_document"), dict)):
@@ -185,13 +196,102 @@ def _observation_program(result: ToolResult, receipts: Mapping[str, ToolResult])
         decode_json_object(result.canonical)["value"])})
 
 
+def _reload_snapshot(result: ToolResult, result_ref: str) -> JsonObject | None:
+    """Compare a complete observation in a document proven to come from the fixed wrapper."""
+    from codey.operations.browser_references import BrowserReferences
+
+    raw = result.canonical.get("value")
+    if not isinstance(raw, dict):
+        return None
+    raw = decode_json_object(raw)
+    if (result.call.name != "browser_snapshot" or not result.ok or result.truncated
+            or raw.get("kind") != "full" or raw.get("complete") is not True
+            or raw.get("text_truncated") is not False or not isinstance(document := raw.get("document"), dict)
+            or not same_document(document, result.audit.get("browser_document"))):
+        return None
+    contexts, elements = raw.get("contexts"), raw.get("elements")
+    if not isinstance(contexts, list) or not isinstance(elements, list):
+        return None
+    document = decode_json_object(document)
+    try:
+        BrowserReferences.observe(result_ref, raw, document)
+    except ValueError:
+        return None
+    observed = _browser_value(result)
+    if observed is None:
+        return None
+    # Reloading changes the loader and transport references. The complete visible
+    # observation, target/frame/URL and all business fields still participate.
+    observed["document"] = {key: value for key, value in document.items() if key != "loader_id"}
+    aliases: dict[str, str] = {}
+    normalized_contexts: list[JsonValue] = []
+    for index, value in enumerate(contexts):
+        row = decode_json_object(value)
+        alias = f"context-{index}"
+        aliases[str(row["id"])] = alias
+        normalized_contexts.append({**row, "id": alias})
+    normalized_elements: list[JsonValue] = []
+    for value in elements:
+        row = decode_json_object(value)
+        context_id = str(row.get("context_id", ""))
+        normalized_elements.append({**{key: item for key, item in row.items() if key != "ref"},
+                                    "context_id": aliases.get(context_id, context_id)})
+    observed["contexts"], observed["elements"] = normalized_contexts, normalized_elements
+    return observed
+
+
+def _navigation_program(result: ToolResult, receipts: Mapping[str, ToolResult]) -> ProgressComparison | None:
+    """Project the shared fixed navigation wrapper, never arbitrary guest programs."""
+    if result.call.args.get("code") != NAVIGATE or (rows := _program_children(result, receipts)) is None or len(rows) != 2:
+        return None
+    navigation, observation = rows[0][1], rows[1][1]
+    if (navigation.call.name != "browser_navigate" or not navigation.ok or navigation.truncated
+            or result.canonical.get("value") != navigation.canonical.get("value")
+            or not same_document(observation.audit.get("browser_document"), navigation.audit.get("browser_document"))):
+        return None
+    observed, action = _reload_snapshot(observation, rows[1][0]), _browser_value(navigation)
+    if observed is None or action is None:
+        return None
+    call = ToolCall("browser_navigate", navigation.call.args)
+    text = _encoded({"ok": True, "navigation": action, "observation": observed})
+    return ProgressComparison(call, ToolResult(call, text, ok=True, audit=result.audit), text, reloaded=True)
+
+
+def _navigation_snapshot(result: ToolResult, receipts: Mapping[str, ToolResult]) -> JsonObject | None:
+    """Keep an independent read after a known reload in the same comparison domain."""
+    if result.call.name != "browser_snapshot" or result.call.args:
+        return None
+    result_ref = next((ref for ref, row in receipts.items() if row is result), None)
+    if result_ref is None:
+        return None
+    for parent in reversed(tuple(receipts.values())):
+        if parent.call.name != "codemode" or parent.call.args.get("code") != NAVIGATE:
+            continue
+        rows = _program_children(parent, receipts)
+        if (rows is not None and len(rows) == 2
+                and same_document(result.audit.get("browser_document"), rows[1][1].audit.get("browser_document"))
+                and _navigation_program(parent, receipts) is not None):
+            order = tuple(receipts)
+            before, after = order.index(rows[1][0]), order.index(result_ref)
+            if before >= after or any((spec := spec_for_tool(receipts[ref].call.name)) is not None
+                    and spec.executor == "browser" and spec.effect != "read" for ref in order[before + 1:after]):
+                return None
+            return _reload_snapshot(result, result_ref)
+    return None
+
+
 def progress_comparison(result: ToolResult, receipts: Mapping[str, ToolResult]) -> ProgressComparison:
-    value = _browser_value(result)
+    value = _navigation_snapshot(result, receipts)
+    reloaded = value is not None
+    if value is None:
+        value = _browser_value(result)
     if value is not None:
         call = ToolCall(result.call.name, _target(result.call.args, receipts))
         text = _encoded({"ok": result.ok, "value": value, "truncated": result.truncated})
         return ProgressComparison(call, ToolResult(call, text, ok=result.ok, audit=result.audit), text,
-                                  result.ok and result.call.name in {"browser_snapshot", "browser_read"})
+                                  result.ok and result.call.name in {"browser_snapshot", "browser_read"}, reloaded)
+    if (navigation := _navigation_program(result, receipts)) is not None:
+        return navigation
     if (observed := _observation_program(result, receipts)) is not None:
         return ProgressComparison(result.call, ToolResult(result.call, observed, ok=result.ok, audit=result.audit), observed, True)
     # General CodeMode return values retain their own semantics.

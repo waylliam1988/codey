@@ -141,6 +141,10 @@ class BrowserSession:
     def navigate(self, url: str) -> BrowserToolOutput:
         return self.action(BrowserAction.NAVIGATE, {"url": url})
 
+    def wait_for_text_change(self, text: str, document: JsonObject, timeout_ms: int) -> BrowserToolOutput:
+        return self.action(BrowserAction.WAIT, {"condition": "text_changed", "value": "",
+            "baseline_text": text, "timeout_ms": timeout_ms, "expected_document": document})
+
     def evaluate(self, code: str) -> BrowserToolOutput:
         return self.action(BrowserAction.EVALUATE, {"code": code})
 

@@ -821,7 +821,10 @@ def _lower_bound_inputs(
                     code = browser_followups.DIRECT_REF + browser_followups.FILL + browser_followups.OBSERVE
                 elif name == "browser_navigate" and snapshot.navigation_observes:
                     inputs = dict(args)
-                    code = "const action=unwrap(await tools.browser_navigate(inputs));" + browser_followups.OBSERVE
+                    code = browser_followups.NAVIGATE
+                elif name == "browser_wait" and args.get("condition") == "text_changed" and args.get("run_in_background") is not True:
+                    inputs = dict(args)
+                    code = "const action=unwrap(await tools.browser_wait(inputs));" + browser_followups.OBSERVE
                 else:
                     lowered.append(("codemode", {"code": f"return unwrap(await tools.{name}(inputs));",
                                                   "inputs": dict(args)}, call_id))

@@ -79,8 +79,10 @@ def test_single_step_lowering_preserves_frozen_leaf_and_snapshot(name: str, args
     offered = offer_browser_call(base, session, name)
     assert offered.nested_tool_names == base.nested_tool_names
     assert restore_snapshot(snapshot_description(offered)) == offered
-    assert next(spec for spec in offered.model_specs if spec.name == name) == next(
-        spec for spec in base.frozen_specs if spec.name == name)
+    model_spec = next(spec for spec in offered.model_specs if spec.name == name)
+    leaf_spec = next(spec for spec in base.frozen_specs if spec.name == name)
+    assert replace(model_spec, description=leaf_spec.description) == leaf_spec
+    assert model_spec.description.startswith(leaf_spec.description)
     action: JsonObject = {"tool": name, "args": args}
     plan = normalize_turn(decode_text_turn(json.dumps(action)), snapshot=offered)
     assert not plan.protocol_error
