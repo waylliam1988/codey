@@ -862,3 +862,13 @@ Q015E 最终验收：
 - 依赖：`python -m pytest -q tests/durable/test_services_lifecycle.py tests/test_control_runtime_ownership.py tests/test_control_service_contract.py --tb=short` → **0，25 passed，3.26秒**，无skip/清理警告，q015e-dependencies.json。release复制/发布/切换与基于旧runtime清单的transport集成仍未执行，不声明覆盖。
 - 三完整文件加严mypy Any初始两文件 **138条诊断 → 中间10条 → 最终0**；新增测试也已纳入零Any最终检查。mypy严格Any/scoped Pyrefly/ty/Ruff退出均0，生产mypy **0，749文件**、Pyrefly **0，35 suppressed/168 warnings**、ty/精度门0；warnings是当前读数，不套用旧165或声明零警告。完整逐命令/退出码/原始输出/稳定hash见q015e-validation-final.json；初次失败保留q015e-validation-first.json，没有降低门禁。
 - 当前 **22 / 305批完整完成，43 / 995生产文件属于完整完成批次**；另有部分批次中6文件已独立验证，共49个当前已验证文件。Q004/Q015C因外部变更仍部分完成，下一步优先重验两个实际改动文件，再进入Q015F server。初始全仓机器门禁、Q008D/shared server、Q018锁清理、Q078库存、Q052 SQLite等未完事项继续留队，总goal active。
+
+
+Q015E 已提交：`73a12095`（fix(service): release completed ownership when discovery cleanup fails）。工作区提交后干净。
+
+### Q004 外部路径边界变更重新核验（完成）
+
+- 只重新打开实际改动的paths.py；当前完整文件和path_hash的raw模式调用关系已检查：semantic_definition版本验证、runtime edit/raw前提检查使用preserve_newlines=True；其余snapshot/tracker仍用False默认。没有将raw模式强推给所有调用方。
+- 当前基线workspace paths+edit fidelity **0，45 passed/2 skipped，2.77秒**，q004-revalidation.json。新增与公开docstring一致的LF/CRLF/CR/混合BOM四个边界，证明True保留原内容、缺省/False仍保持universal-newline语义；不改生产实现，不宣称发现新bug。
+- 最终 `python -m pytest -q tests/test_workspace_paths.py tests/test_edit_text_fidelity.py tests/test_followup_semantic_definition.py --tb=short` → **0，49 passed/2 skipped/4 subtests passed，3.01秒**。两skip为Windows无O_NOFOLLOW原测试，不新增skip，不隐藏失败。两完整文件加严Any/Pyrefly/ty/Ruff全0；逐命令退出码/输出见q004-revalidation-final.json。当前未修改生产源，Q015E已通过的749文件生产类型门不因测试新增机械重跑。
+- Q004恢复完成；当前 **23 / 305批完整完成、48 / 995生产文件属于完整完成批次**，另有部分批次中2个已独立验证文件，共50个当前已验证文件；不将部分批次的verified混计完整完成。下一唯一主批Q015C重新核验API外部intent推断转交变更，之后Q015F。

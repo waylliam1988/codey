@@ -1457,7 +1457,7 @@
         "codey/storage/__init__.py"
       ],
       "id": "Q004",
-      "status": "partially_completed",
+      "status": "completed_changed",
       "reviewed_files": [
         "codey/storage/atomic_io.py",
         "codey/storage/local_store.py",
@@ -1468,6 +1468,7 @@
       "verified_files": [
         "codey/storage/atomic_io.py",
         "codey/storage/local_store.py",
+        "codey/workspace/paths.py",
         "codey/utils/change_paths.py",
         "codey/storage/__init__.py"
       ],
@@ -1480,11 +1481,9 @@
         "tests/test_strict_store_loads.py"
       ],
       "result": "production baseline unchanged; 18 test Any diagnostics removed with typed containers, stdlib callable adapters and guarded OS constants; same 53 passed / 4 platform skips / 6 subtests before and after; native unittest preserves 2 skips; no production bug admitted",
-      "previous_status": "completed_changed",
-      "revalidation_required": [
-        "codey/workspace/paths.py"
-      ],
-      "reopen_reason": "External commits 008966a0..21601416 modified previously completed production files; prior results retained historically, current bytes require scoped revalidation."
+      "revalidation_required": [],
+      "reopen_reason": "External commits 008966a0..21601416 modified previously completed production files; prior results retained historically, current bytes require scoped revalidation.",
+      "revalidation_result": "External raw newline hash option reviewed with real callers semantic_definition/runtime. Added LF/CRLF/CR/mixed BOM boundary test, preserving normalized default. Current workspace/edit/semantic caller group 49 passed/2 existing O_NOFOLLOW Windows skips/4 subtests. Two whole files strict Any/Pyrefly/ty/Ruff pass; no production edits. q004-revalidation.json baseline 45 passed/2 skipped; q004-revalidation-final.json current proof."
     },
     {
       "responsibility": "codey/entry: package entry and composition",
@@ -8079,6 +8078,10 @@
         "Q004",
         "Q015C"
       ]
+    },
+    {
+      "batch": "Q004",
+      "reason": "External path_hash preserve_newlines change revalidated; restored completed status, no optional production refactor."
     }
   ]
 }

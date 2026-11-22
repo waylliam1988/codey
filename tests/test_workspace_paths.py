@@ -42,6 +42,19 @@ class WorkspacePathTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "file too large"):
                 read_text_bounded(path, max_bytes=1)
 
+    def test_path_hash_preserves_newlines_only_when_requested(self) -> None:
+        # Edit preconditions bind the original layout; snapshot callers keep
+        # the documented universal-newline default.
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "source.txt"
+            for text in ("a\nb\n", "a\r\nb\r\n", "a\rb\r", "\ufeffa\r\nb\nc\r"):
+                with self.subTest(text=text):
+                    path.write_bytes(text.encode("utf-8"))
+                    self.assertEqual(path_hash(path, preserve_newlines=True), content_hash(text))
+                    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+                    self.assertEqual(path_hash(path), content_hash(normalized))
+                    self.assertEqual(path_hash(path, preserve_newlines=False), content_hash(normalized))
+
     def test_bounded_directory_entries_consumes_one_probe_entry(self) -> None:
         seen = 0
 
