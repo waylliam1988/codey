@@ -132,6 +132,7 @@ class CodeModeKernelExecutor:
         bound_edit: Callable[[int, JsonObject], JsonObject] | None = None,
         browser_stage: Callable[[], int] | None = None,
         original_browser_wait: Callable[[int], JsonObject | None] | None = None,
+        plan_patch: Callable[[tuple[JsonObject, ...], tuple[int, ...]], tuple[JsonObject, ...]] | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
@@ -159,6 +160,7 @@ class CodeModeKernelExecutor:
         self.bound_edit = bound_edit
         self.browser_stage = browser_stage
         self.original_browser_wait = original_browser_wait
+        self.plan_patch = plan_patch
 
     def execute(self, call: ToolCall) -> ToolResult:
         try:
@@ -194,6 +196,7 @@ class CodeModeKernelExecutor:
             browser_stage=self.browser_stage,
             original_browser_wait=repair.original_wait_args if repair is not None else self.original_browser_wait,
             bound_edit=self.bound_edit,
+            plan_patch=self.plan_patch,
         )
         trace: ExecutionTrace | None = None
 
@@ -536,6 +539,26 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
         declared_copy = (binding is not None and binding.kind == "declared_fields" and bool(binding.source_refs)
             and (binding.model_spec.name == "codemode" or isinstance(inputs, dict) and set(inputs) == {"path"}
                  and original_args.get("code") == lower_declared_fields(inputs, specs["edit"])["code"]))
+        def plan_patch(files: tuple[JsonObject, ...], indices: tuple[int, ...]) -> tuple[JsonObject, ...]:
+            from codey.codemode.patch import preflight_patch
+
+            if project_path is None or not allow_writes or snapshot.input_binding is not None:
+                raise ValueError("patch requires the ordinary project write contract")
+
+            def receipt(index: int) -> ToolResult | None:
+                if repair_context is not None:
+                    original = next((child.effect_id for child in repair_context.children if child.position == index), "")
+                    return repair_context.receipts.get(original)
+                return session._memory_results.get(turn_effect_id(f"{run_id}:{child_scope}:child:{index}", turn, index))
+
+            prior_refs = tuple(ref for index, ref in child_effect_ids_by_index.items() if index < indices[0])
+            planned = preflight_patch(project_path, session, permission_profile, files, indices, receipt, prior_refs)
+            for args in planned:
+                _, error = _validate_tool_args("edit", args, frozen_specs=specs)
+                if error:
+                    raise ValueError(error)
+            return planned
+
         result = CodeModeKernelExecutor(
             execution_id=parent_id,
             catalog=catalog,
@@ -555,6 +578,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             browser_references=snapshot.browser_references,
             browser_stage=browser_stage,
             original_browser_wait=original_browser_wait,
+            plan_patch=plan_patch,
             bound_edit=bound_edit if declared_copy else None,
         ).execute(call)
         if repair_context is not None:

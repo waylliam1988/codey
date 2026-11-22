@@ -47,7 +47,7 @@ from codey.toolchain.tool_spec import (
 from codey.types.json_value import JsonValue, ToolArgs, canonical_json_object, decode_json_object
 
 MAX_NATIVE_CALLS_PER_TURN = 8
-InputContractVersion: TypeAlias = Literal[11, 12, 13, 14, 15]
+InputContractVersion: TypeAlias = Literal[11, 12, 13, 14, 15, 16]
 
 if TYPE_CHECKING:
     from codey.completion.verification_policy import VerificationCandidate
@@ -58,6 +58,9 @@ if TYPE_CHECKING:
 
 
 class KernelSessionView(Protocol):
+    @property
+    def project(self) -> str: ...
+
     @property
     def verification_candidates(self) -> tuple[VerificationCandidate, ...]: ...
 
@@ -396,8 +399,10 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
     from codey.operations.execution_claims import execution_claim_spec
     from codey.policies.output_requirement import explanation_spec, has_explanation
     from codey.research.answer_contract import answer_spec
+    from codey.research.finding_choices import finding_choices
     from codey.research.questions import requires_question_ref
     from codey.research.tool_contract import done_spec_for_purpose, question_bound_spec
+    from codey.toolchain.semantic_definition import pyright_server
 
     frozen = tuple(wait_spec(spec, session.policy.required_checks) if spec.name == "browser_wait" else spec
                    for spec in frozen)
@@ -414,6 +419,10 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
     question_refs = tuple(f"q{index}" for index in range(1, len(session.research_questions) + 1))
     selected: list[ToolSpec] = []
     for spec in frozen:
+        if spec.name == "semantic_definition" and (not session.project or pyright_server() is None):
+            continue
+        if spec.name == "workspace_diff" and (not session.project or not session.policy.allows("project.write")):
+            continue
         if (spec.name == "run" and session.policy.allows("project.verify") and not session.verification_forbidden
                 and not session.verification_candidates_refresh_failed):
             requirement = select_verification_requirement(session.verification_candidates, session.verification_paths)
@@ -436,6 +445,8 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
             if bound is None:
                 continue
             spec = bound
+        if spec.name == "save_finding" and scope is not None:
+            spec = finding_choices(spec, scope, session)
         selected.append(answer_spec(spec, scope) if scope is not None else spec)
     return tuple(selected)
 
@@ -472,7 +483,7 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     binding = None
     task_navigation_url: str | None = None
     task_source_url: str | None = None
-    input_version: InputContractVersion = 14
+    input_version: InputContractVersion = 16
     target = copy_target(session.task_text)
     frozen = _task_edit_specs(session, frozen)
     if "codemode" in names:
@@ -488,10 +499,9 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         if (upload is None and target is None
                 and any(spec.name in {"browser_navigate", "open_url"} for spec in frozen)):
             task_navigation_url = _task_navigation_url(session)
-            if task_navigation_url is not None and len(session.required_source_urls) > 1:
-                input_version = 15
-                if "open_url" in available:
-                    task_source_url = _other_task_source_url(session, task_navigation_url)
+            if task_navigation_url is not None and "open_url" in available:
+                task_source_url = (_other_task_source_url(session, task_navigation_url)
+                                   if len(session.required_source_urls) > 1 else task_navigation_url)
         catalog = build_codemode_catalog(frozen, task_navigation_url=task_navigation_url,
             task_source_url=task_source_url, task_source_selector=input_version < 15 or task_source_url is not None,
             allow_writes=session.policy.allows("project.write"),
@@ -516,6 +526,7 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
                            for spec in frozen)
     if "codemode" not in names and target is None and "open_url" in names:
         task_navigation_url = _task_navigation_url(session)
+        task_source_url = task_navigation_url
     browser_copy = None
     copy_tools = {"browser_navigate", "browser_eval", "read_file", "edit"}
     if (not session.policy.strict_research and "codemode" in names and "done" in names

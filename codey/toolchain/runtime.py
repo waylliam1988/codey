@@ -51,6 +51,7 @@ from codey.toolchain.edit_text import TextEdit, count_matches, exact_raw_edit, n
 from codey.toolchain.indentation import align_replacement, boundary_replacement, valid_python
 from codey.toolchain.line_prefix import strip_line_number_prefixes as _strip_line_number_prefixes
 from codey.toolchain.presentation import edit_preview
+from codey.types.json_value import JsonValue
 from codey.utils.failure_output import failure_excerpt
 from codey.utils.references import find_reference_hints
 from codey.utils.scan_report import render_scan_coverage
@@ -260,6 +261,20 @@ def _first_model_line(text: object, limit: int) -> str:
 class EditBlock:
     old_string: str
     new_string: str
+
+
+def replacement_blocks(replacements: JsonValue) -> list[EditBlock]:
+    if not isinstance(replacements, list) or not replacements:
+        raise ValueError("edit needs content or exact replacements")
+    blocks: list[EditBlock] = []
+    for item in replacements:
+        if not isinstance(item, dict) or set(item) != {"old_string", "new_string"}:
+            raise ValueError("edit replacement must be exactly old_string/new_string")
+        old, new = item["old_string"], item["new_string"]
+        if not isinstance(old, str) or not old or not isinstance(new, str):
+            raise ValueError("edit replacement requires text and a non-empty search")
+        blocks.append(EditBlock(old, new))
+    return blocks
 
 
 def _symlink_path_error(root: Path, rel: str, *, tool: str) -> ToolOutcome | None:
@@ -734,7 +749,15 @@ def _edit_block_error(blocks: list[EditBlock]) -> str:
     return ""
 
 
-def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
+@dataclass(frozen=True)
+class PreparedEdit:
+    text: str
+    version: str
+    outcome: ToolOutcome
+    syntax_regression: bool = False
+
+
+def prepare_edit(root: Path, rel: str, blocks: list[EditBlock]) -> PreparedEdit | ToolOutcome:
     if problem := _edit_block_error(blocks):
         return ToolOutcome.error(problem)
 
@@ -808,26 +831,23 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
         start = view.find(old)
         updated = TextEdit(start, start + len(old), new).apply(updated)
 
+    from codey.workspace.paths import content_hash
+
+    version = content_hash(content)
     if updated == content:
-        return ToolOutcome(f"edited {rel} (no changes)", True)
+        return PreparedEdit(updated, version, ToolOutcome(f"edited {rel} (no changes)", True))
     if len(updated.encode("utf-8")) > WRITE_MAX_FILE_BYTES:
         return ToolOutcome.error(f"file too large to write: {rel}")
     if (aligned or boundary_adjusted or (whitespace_adjusted and Path(rel).suffix.lower() == ".py")) and not valid_python(normalized_text(updated)):
         return ToolOutcome.error("automatic edit assistance cannot safely apply this batch: resulting Python is invalid; no replacements written")
     syntax_hint = _python_syntax_regression_hint(rel, content, updated)
-    from codey.workspace.paths import content_hash
-
-    write_error = _write_text_after_final_path_check(root, rel, updated, tool="edit",
-        expected_version=content_hash(content))
-    if write_error is not None:
-        return write_error
     count = len(blocks)
     label = "replacement" if count == 1 else "replacements"
     assistance_audit: dict[str, object] = {
         key: value for key, value in (("indentation_adjusted", aligned), ("boundary_adjusted", boundary_adjusted),
                                       ("line_end_space_adjusted", whitespace_adjusted)) if value
     }
-    return ToolOutcome(
+    outcome = ToolOutcome(
         f"edited {rel} ({count} {label})"
         + (f"\nAutomatically aligned outer indentation for {aligned} replacement(s)." if aligned else "")
         + (f"\nAutomatically adjusted fragment boundary for {boundary_adjusted} replacement(s)." if boundary_adjusted else "")
@@ -838,6 +858,23 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
         audit=assistance_audit,
         presentation={"preview": edit_preview(rel, content, updated)},
     )
+    return PreparedEdit(updated, version, outcome, syntax_regression=bool(syntax_hint))
+
+
+def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
+    return edit_file_at_version(root, rel, blocks)
+
+
+def edit_file_at_version(root: Path, rel: str, blocks: list[EditBlock], *, version: str = "") -> ToolOutcome:
+    prepared = prepare_edit(root, rel, blocks)
+    if isinstance(prepared, ToolOutcome):
+        return prepared
+    if version and prepared.version != version:
+        return ToolOutcome.error(STALE_READ_REFERENCE_ERROR, error_code=STALE_READ_REFERENCE_CODE)
+    if not prepared.outcome.changed:
+        return prepared.outcome
+    error = _write_text_after_final_path_check(root, rel, prepared.text, tool="edit", expected_version=prepared.version)
+    return error if error is not None else prepared.outcome
 
 
 def bounded_positive_int(

@@ -275,7 +275,7 @@ def _normalize_edit(
     args: Mapping[str, JsonValue],
     limits: ToolArgLimits,
 ) -> ToolArgsRepairResult:
-    _reject_unknown_args(args, {"path", "cwd", "content", "replacements", "base_result_ref"}, context="edit")
+    _reject_unknown_args(args, {"path", "cwd", "content", "replacements", "base_result_ref", "expected_version"}, context="edit")
     norm_path, rewrites, counts = _resolve_path_arg(
         args, missing_msg="edit requires a top-level path and can only edit one file",
     )
@@ -283,6 +283,8 @@ def _normalize_edit(
     if ("content" in args) == ("replacements" in args):
         raise ToolArgsRepairError("edit requires exactly one mode: content or replacements", repair_kind="invalid_args")
     if "content" in args:
+        if "expected_version" in args:
+            raise ToolArgsRepairError("expected_version requires replacements", repair_kind="invalid_args")
         if not isinstance(args["content"], str):
             raise ToolArgsRepairError("edit content must be a string", repair_kind="invalid_args")
         call_args["content"] = args["content"]
@@ -290,6 +292,9 @@ def _normalize_edit(
             ref, _ = _require_text_arg(args, ("base_result_ref",), "base_result_ref", allow_blank=False)
             call_args["base_result_ref"] = ref
     else:
+        if "expected_version" in args:
+            version, _ = _require_text_arg(args, ("expected_version",), "expected_version", allow_blank=False)
+            call_args["expected_version"] = version
         if "base_result_ref" in args:
             raise ToolArgsRepairError(
                 "base_result_ref requires content mode. For replacements, remove the base_result_ref key "

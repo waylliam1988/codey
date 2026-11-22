@@ -324,7 +324,8 @@ def close_protocol(context: KernelContext, view: SessionView) -> None:
             from codey.operations.kernel_transport import _native_tool_results
             context.sink.delivery_batch_id = batch.intent.batch_id
             if context.native:
-                messages = _native_tool_results(context.results(view, batch.intent.batch_id), context.session)
+                rows, observations = context.provider_delivery(context.results(view, batch.intent.batch_id), received.snapshot)
+                messages = _native_tool_results(rows, context.session, boundary_prompt=observations)
         if context.native and not messages:
             messages = [ProviderToolResult(identity, "ERROR: " + result.summary + "; tool call was not executed")
                         for identity in _ids(received.reply)]

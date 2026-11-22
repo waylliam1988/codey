@@ -449,7 +449,8 @@ class ExecutionDelegate:
             return ProjectPolicyCheck(True, f"policy unavailable: {exc}", False)
         try:
             runtime_name = {"list_dir": "ls", "read_file": "read", "grep": "search",
-                            "find_references": "references"}.get(call.name, call.name)
+                            "find_references": "references", "semantic_definition": "read",
+                            "workspace_diff": "ls"}.get(call.name, call.name)
             evaluated: tuple[ActionPolicyDecision | None, object] = evaluate_tool_call_policy_for(
                 ToolCall(runtime_name, dict(call.args or {}), call_id=call.call_id),
                 project=self.project_path,
@@ -497,6 +498,26 @@ class ExecutionDelegate:
         runtime_name = {"list_dir": "ls", "read_file": "read", "grep": "search",
                         "find_references": "references"}.get(name, name)
         try:
+            if name == "workspace_diff":
+                from codey.workspace.changes import ChangeTracker
+                from codey.workspace.task_changes import collect_task_changes
+
+                tracker = self.change_tracker
+                if not isinstance(tracker, ChangeTracker):
+                    result = ToolResult(call, "Workspace snapshot is unavailable for this task.", ok=False)
+                    return result, False, None
+                payload = decode_json_object(collect_task_changes(project_path, tracker))
+                ok = payload.get("ok") is True
+                result = ToolResult(call, str(payload.get("diff") or payload.get("error") or "No task-owned changes."),
+                                    ok=ok, canonical={"workspace_changes": payload})
+                return result, ok, None
+            if name == "semantic_definition":
+                from codey.toolchain.semantic_definition import semantic_definition
+
+                result = _tool_result(call, semantic_definition(project_path,
+                    require_json_string(call.args.get("path"), "path"), require_json_integer(call.args.get("line"), "line"),
+                    require_json_string(call.args.get("symbol"), "symbol")))
+                return result, result.ok, None
             if runtime_name in {"ls", "read", "search", "references"}:
                 from codey.agents.tool_execution import execute_information_tool_call
 
@@ -536,7 +557,7 @@ class ExecutionDelegate:
     def _execute_edit(self, call: ToolCall) -> ToolOutcome:
         from codey.agents.protocol import canonical_project_path
         from codey.agents.tool_execution import read_before_edit_outcome
-        from codey.toolchain.runtime import EditBlock, ToolOutcome, safe_join
+        from codey.toolchain.runtime import ToolOutcome, replacement_blocks, safe_join
 
         if self.project_path is None:
             return ToolOutcome.error("project path unavailable")
@@ -577,26 +598,19 @@ class ExecutionDelegate:
         for legacy in ("search", "replace"):
             if legacy in args:
                 return ToolOutcome.error(f"edit rejects legacy alias: {legacy}")
-        replacements = args.get("replacements")
-        if not isinstance(replacements, list) or not replacements:
-            return ToolOutcome.error("edit needs content or exact replacements")
-        blocks: list[dict[str, str]] = []
-        for item in replacements:
-            if not isinstance(item, dict):
-                return ToolOutcome.error("edit replacement must be a mapping")
-            if set(item) != {"old_string", "new_string"}:
-                return ToolOutcome.error("edit replacement must be exactly old_string/new_string")
-            search = str(item.get("old_string") or "")
-            replacement = str(item.get("new_string") or "")
-            if not search:
-                return ToolOutcome.error("edit replacement search must be non-empty")
-            blocks.append({"old_string": search, "new_string": replacement})
-        if not blocks:
-            return ToolOutcome.error("edit needs content or exact replacements")
-        edit_blocks = [EditBlock(old_string=b["old_string"], new_string=b["new_string"]) for b in blocks]
+        try:
+            edit_blocks = replacement_blocks(args.get("replacements"))
+        except ValueError as exc:
+            return ToolOutcome.error(str(exc))
         if self.change_tracker is not None:
             self.change_tracker.capture_before(path)
-        outcome = self.tool_fns.edit_file(self.project_path, path, edit_blocks)
+        version = args.get("expected_version")
+        if isinstance(version, str):
+            from codey.toolchain.runtime import edit_file_at_version
+
+            outcome = edit_file_at_version(project_path, path, edit_blocks, version=version)
+        else:
+            outcome = self.tool_fns.edit_file(project_path, path, edit_blocks)
         if outcome.ok and outcome.changed and self.change_tracker is not None:
             self.change_tracker.capture_after(path)
         return outcome

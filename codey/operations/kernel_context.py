@@ -31,7 +31,7 @@ from codey.operations.kernel_trace import record_outbound, record_turn
 from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.provider_request_context import ProviderRequestContext
 from codey.operations.task_guidance import task_result_context, task_working_context
-from codey.operations.task_session import TaskSession
+from codey.operations.task_session import TaskSession, turn_effect_id
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolDefinition, ProviderToolResult, TurnFinish, tools_from_specs
 from codey.providers.requests import (
@@ -68,6 +68,10 @@ if TYPE_CHECKING:
 
 class _ResearchProjector(Protocol):
     def project_urls(self, tools: ResearchTools) -> None: ...
+
+
+def _host_search_result(result: ToolResult) -> bool:
+    return result.call.name == "web_search" and not result.call.call_id
 
 
 class KernelContext:
@@ -758,8 +762,46 @@ class KernelContext:
                 self.close(state, KernelResult(False, f"workspace write blocked: {exc}", turn,
                     "project_write_busy" if isinstance(exc, ProjectWriteBusy) else "controller_failure"))
                 return None
+        if state.leaf == operation_payload.LEAF_PLAN_READY:
+            query = self.conflict_followup(received.snapshot, calls, turn)
+            if query is not None:
+                # Acquire before any submission freezes the current evidence.
+                calls.insert(0, query)
+        elif calls and all(call.name != "web_search" for call in calls):
+            # A settled host search occupies the original first batch slot.
+            # Recovery must preserve that slot when resuming its submission.
+            scope = f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id
+            first = self.session._memory_results.get(turn_effect_id(scope, turn, 0))
+            if first is not None and _host_search_result(first):
+                calls.insert(0, first.call)
         self._execute_calls(calls, received.snapshot, turn=turn)
         return None
+
+    def conflict_followup(self, snapshot: TurnSnapshot, calls: list[ToolCall], turn: int) -> ToolCall | None:
+        """Schedule host-selected acquisition only while the research surface is open."""
+        resources = self.execution.research_tools
+        if (resources is None or turn >= self.session.max_turns - 1 or "web_search" not in snapshot.tool_names
+                or not self.session.policy.strict_research
+                or not calls
+                or not all(call.name in {"save_finding", "save_inference", "open_url", "open_result", "source_search",
+                                         "submit_research_answer"}
+                           for call in calls)):
+            return None
+        from codey.research.evidence_gaps import conflict_search
+        from codey.research.questions import requires_question_ref
+
+        limits = self.session.research_acquisition_limits
+        used = sum(value == "search" for value in self.session.research_acquisition_slots.values())
+        findings = (result.call for ref, result in self.session._memory_results.items()
+                    if ref in self.session.executed and result.ok and result.call.name == "save_finding")
+        candidate = conflict_search(resources.ledger, remaining_searches=1 if limits is None else limits[0] - used,
+                                    findings=findings)
+        if candidate is None:
+            return None
+        args = {"query": candidate["query"]}
+        if requires_question_ref(self.session):
+            args["question_ref"] = candidate["question_ref"]
+        return ToolCall("web_search", args)
 
     def _execute_calls(self, calls: list[ToolCall], snapshot: TurnSnapshot, *, turn: int) -> None:
         kernel_events._emit_tool_starts(self.observation.on_event, self.session, turn, calls)
@@ -773,6 +815,16 @@ class KernelContext:
             on_event=self.observation.on_event, browser_session=self.execution.browser_session)
         if isinstance(result, KernelResult):
             raise RecoveryFailed(result.summary)
+
+    def provider_delivery(self, results: list[ToolResult], snapshot: TurnSnapshot, *,
+                          boundary_prompt: str = "") -> tuple[list[ToolResult], str]:
+        """Host searches are observations, never replies to invented native call IDs."""
+        if not self.native:
+            return results, boundary_prompt
+        supplemental = "\n\n".join(task_result_context(self.session, row, snapshot.research_scope,
+            tool_names=snapshot.tool_names) for row in results if _host_search_result(row))
+        return ([row for row in results if not _host_search_result(row)],
+                "\n\n".join(part for part in (boundary_prompt, supplemental) if part))
 
     def observe_progress(self, view: SessionView, action: RuntimeAction) -> None:
         results = self.results(view, action.delivery_batch_id)
@@ -803,8 +855,9 @@ class KernelContext:
         from codey.operations.task_handoff import report_completes_task
         from codey.research.answer_contract import submitted_answer
 
-        if (report_completes_task(self.session) and not self.cancelled() and len(results) == 1 and results[0].ok
-                and results[0].call.name == "submit_research_answer"
+        if (report_completes_task(self.session) and not self.cancelled() and results and results[-1].ok
+                and results[-1].call.name == "submit_research_answer"
+                and all(_host_search_result(row) for row in results[:-1])
                 and submitted_answer(self.session) is not None):
             self.advance(state, operation_payload.LEAF_COMPLETION_PENDING)
             return
@@ -824,8 +877,9 @@ class KernelContext:
             value: str = task_result_context(self.session, result, snapshot.research_scope, tool_names=snapshot.tool_names)
             return value
 
-        advance = wiring._advance_after_results(self.native, results, self.session, None,
-            completion_context=self.completion_context, boundary_prompt=self.boundary_text(),
+        transport_results, boundary_prompt = self.provider_delivery(results, snapshot, boundary_prompt=self.boundary_text())
+        advance = wiring._advance_after_results(self.native, transport_results, self.session, None,
+            completion_context=self.completion_context, boundary_prompt=boundary_prompt,
             result_context=result_context)
         messages, prompt, spans = advance.messages, advance.prompt, advance.spans
         observations = "" if self.request_scoped_observations else task_working_context(

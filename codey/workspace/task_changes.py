@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
+from codey.types.json_value import decode_json_object
 from codey.workspace.changes import ChangeTracker
 from codey.workspace.paths import path_hash, safe_join
 
 
-def collect_task_changes(project: str | Path, tracker: ChangeTracker | None) -> dict[str, Any]:
+def collect_task_changes(project: str | Path, tracker: ChangeTracker | None) -> dict[str, object]:
     root = Path(project).expanduser().resolve()
     if tracker is None:
         return {"ok": True, "mode": "snapshot", "root": str(root), "files": [],
@@ -21,4 +21,4 @@ def collect_task_changes(project: str | Path, tracker: ChangeTracker | None) -> 
         if path_hash(safe_join(root, rel)) != expected:
             return {"ok": False, "error": f"task output changed externally: {rel}",
                     "files": [], "changed_count": 0, "diff": ""}
-    return tracker.collect(paths=list(produced))
+    return dict[str, object](decode_json_object(tracker.collect(paths=list(produced))))

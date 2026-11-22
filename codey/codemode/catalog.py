@@ -8,6 +8,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from codey.codemode.navigation import TASK_SOURCE_TOOLS, task_navigation_schema, task_source_schema
+from codey.codemode.patch import MAX_PATCH_FILES, PATCH_DESCRIPTION
 from codey.codemode.types import (
     CatalogNamespaceSummary,
     CatalogSearchItem,
@@ -44,6 +45,7 @@ def snapshot_catalog(
         if snapshot.browser_followups else None,
         browser_result_reads=snapshot.research_scope is not None,
         browser_references=snapshot.browser_references if observed_choices else None,
+        browser_flows=snapshot.input_contract_version >= 16 and snapshot.browser_followups,
     )
 
 
@@ -128,6 +130,7 @@ def build_codemode_catalog(
     browser_followup_checks: tuple[str, ...] | None = None,
     browser_result_reads: bool = False,
     browser_references: BrowserReferences | None = None,
+    browser_flows: bool = False,
 ) -> ToolCatalogSnapshot:
     """Build the frozen CodeMode catalog for one permission snapshot.
 
@@ -172,6 +175,17 @@ def build_codemode_catalog(
                      or (entry.grant == "project.verify" and allow_project_run and entry.name == "run"))
             )
         ):
+            if entry.name == "edit":
+                parameters = canonical_json_object(entry.parameters)
+                properties = canonical_json_object(parameters.get("properties", {}))
+                if {"replacements", "expected_version"} <= properties.keys():
+                    patch_fields: JsonObject = {key: properties[key] for key in ("path", "base_result_ref", "replacements")}
+                    entry = replace(entry, parameters={**parameters, "x-codey-patch": {
+                        "type": "object", "properties": {"files": {"type": "array", "minItems": 2,
+                            "maxItems": MAX_PATCH_FILES, "items": {"type": "object", "properties": patch_fields,
+                                "required": ["path", "replacements"], "additionalProperties": False}}},
+                        "required": ["files"], "additionalProperties": False}},
+                        description=entry.description + " " + PATCH_DESCRIPTION)
             if entry.name == "browser_navigate" and task_navigation_url is not None:
                 entry = replace(entry, description='Use {target: "task"} to open the task URL at the chosen time. '
                     'Use {url: "..."} for other authorized pages. ' + entry.description,
@@ -196,6 +210,16 @@ def build_codemode_catalog(
             if entry.name == "browser_click":
                 allowed[index] = replace(entry, parameters={**canonical_json_object(entry.parameters),
                                                            "x-codey-click-plans": plans})
+    if browser_flows and any(entry.name == "browser_read" for entry in allowed):
+        from codey.codemode.browser_flow import flow_schema
+
+        entries = {entry.name: entry for entry in allowed}
+        for index, entry in enumerate(allowed):
+            if entry.name == "browser_snapshot":
+                allowed[index] = replace(entry, parameters={**canonical_json_object(entry.parameters),
+                    "x-codey-browser-flow": flow_schema(entries)}, description=entry.description +
+                    " Use browser_snapshot({flow: [{tool, args}, ...]}) for ordered browser observations. "
+                    "The flow stops at the first rejected step and returns the observed results in order.")
     return build_catalog_snapshot(allowed)
 
 
@@ -217,10 +241,16 @@ def _edit_guidance(snapshot: ToolCatalogSnapshot) -> str:
 def _entry_signatures(entry: ToolCatalogEntry, *, json_edit: bool) -> tuple[str, ...]:
     value = schema_typescript(entry.output_schema)
     ordinary = f"{entry.name}(args: {schema_typescript(entry.parameters)}): Result<{value}>;"
+    signatures = [ordinary]
     if entry.name == "edit" and json_edit:
-        return (f"edit(args: {{base_result_ref: string; changes: Record<string, JsonEditValue>}}): Result<{value}>;",
-                ordinary)
-    return (ordinary,)
+        signatures.append(f"edit(args: {{base_result_ref: string; changes: Record<string, JsonEditValue>}}): Result<{value}>;")
+    patch = canonical_json_object(entry.parameters).get("x-codey-patch")
+    if isinstance(patch, dict):
+        signatures.append(f"edit(args: {schema_typescript(patch)}): Result<{value}>;")
+    flow = canonical_json_object(entry.parameters).get("x-codey-browser-flow")
+    if isinstance(flow, dict):
+        signatures.append(f"browser_snapshot(args: {schema_typescript(flow)}): Result<{{steps: Array<{{tool: string; result_ref: string; value: unknown}}>}}>;")
+    return tuple(signatures)
 
 
 def _entry_declarations(entry: ToolCatalogEntry, *, json_edit: bool, include_description: bool = True) -> tuple[str, ...]:

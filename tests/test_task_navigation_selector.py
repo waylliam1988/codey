@@ -48,7 +48,7 @@ def offered(url: str = URL) -> tuple[TaskSession, TurnSnapshot]:
 def test_direct_selector_freezes_the_exact_source_and_preserves_other_navigation(native: bool, url: str) -> None:
     session, snapshot = offered(url)
     restored = restore_snapshot(parse_json_object(canonical_json(snapshot_description(snapshot))))
-    assert restored == snapshot and snapshot_description(restored)["schema_version"] == 14
+    assert restored == snapshot and snapshot_description(restored)["schema_version"] == 16
     spec = next(spec for spec in restored.model_specs if spec.name == "browser_navigate")
     assert spec.required == ("target",) and set(dict(spec.parameters)) == {"target"}
     reply = (AssistantTurn(tool_calls=(ProviderToolCall("navigate", "browser_navigate", {"target": "task"}),)) if native
@@ -75,15 +75,17 @@ def test_raw_url_and_ambiguous_arguments_are_rejected_before_an_effect(args: Jso
 
 def test_legacy_request_keeps_url_contract_and_new_request_cannot_change_its_presentation() -> None:
     _, current = offered()
-    legacy = refresh_snapshot_contract(replace(current, input_contract_version=11))
+    legacy = refresh_snapshot_contract(replace(current, input_contract_version=11, task_source_url=None))
     raw = snapshot_description(legacy)
     assert raw["schema_version"] == 11
     restored = restore_snapshot(parse_json_object(canonical_json(raw)))
     assert restored == legacy and not restored.task_navigation_selector
     plan = normalize_turn(decode_text_turn(canonical_json({"tool": "browser_navigate", "args": {"url": URL}})), snapshot=restored)
     assert not plan.protocol_error and plan.calls[0].name == "browser_navigate"
+    incompatible = snapshot_description(current)
+    incompatible.pop("task_source_url")
     with pytest.raises(ValueError, match="contract text differs"):
-        restore_snapshot({**snapshot_description(current), "schema_version": 11})
+        restore_snapshot({**incompatible, "schema_version": 11})
 
 
 def test_no_unique_source_keeps_url_input_and_denied_navigation_stays_denied() -> None:

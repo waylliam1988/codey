@@ -161,6 +161,29 @@ TOOL_DEFINITIONS = (
         side_effect="none",
     ),
     ToolDefinition(
+        "workspace_diff",
+        "workspace_diff",
+        read_only=True,
+        permission="project_read",
+        description="Compare this task's written files to their original snapshots. Reports external changes and the current task diff.",
+        examples=('{"tool":"workspace_diff","args":{}}',),
+        category="coding",
+        side_effect="none",
+    ),
+    ToolDefinition(
+        "semantic_definition",
+        "semantic_definition",
+        read_only=True,
+        permission="project_read",
+        description="Find a Python symbol's definition in this workspace. Supply the read file path, a one-based line and the identifier. This observation is scoped to the checked file version.",
+        examples=('{"tool":"semantic_definition","args":{"path":"app.py","line":12,"symbol":"run"}}',),
+        parameters=(("path", {"type": "string"}), ("line", {"type": "integer", "minimum": 1}),
+                    ("symbol", {"type": "string", "minLength": 1})),
+        required=("path", "line", "symbol"),
+        category="coding",
+        side_effect="none",
+    ),
+    ToolDefinition(
         "parallel",
         None,
         read_only=True,
@@ -202,6 +225,8 @@ TOOL_DEFINITIONS = (
             ("path", {"type": "string"}),
             ("content", {"type": "string", "description":
                 "Complete file text; preserve unrelated content. Prefer replacements for focused edits."}),
+            ("expected_version", {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$",
+                "description": "Raw file version for a preflighted replacement edit."}),
             ("base_result_ref", {
                 "type": "string",
                 "description": "Only for content mode; omit this field with replacements. " + FULL_READ_REFERENCE_HINT,

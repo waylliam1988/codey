@@ -65,6 +65,7 @@ class CodeModeHost:
         browser_stage: Callable[[], int] | None = None,
         original_browser_wait: Callable[[int], JsonObject | None] | None = None,
         bound_edit: Callable[[int, JsonObject], JsonObject] | None = None,
+        plan_patch: Callable[[tuple[JsonObject, ...], tuple[int, ...]], tuple[JsonObject, ...]] | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
@@ -90,6 +91,7 @@ class CodeModeHost:
         self._browser_stage = browser_stage
         self._original_browser_wait = original_browser_wait
         self._bound_edit = bound_edit
+        self._plan_patch = plan_patch
         self._next_child = 0
         self._complete_reads: dict[str, ToolResult] = {}
         self._control_snapshot_ref = browser_references.receipt_ref if browser_references is not None else ""
@@ -104,6 +106,10 @@ class CodeModeHost:
             raise ValueError("tool args must be an object")
         decoded_args: JsonObject = decode_json_object(args)
         index = self._current_child_index()
+        if tool_name == "edit" and "files" in decoded_args:
+            return self._patch(index, decoded_args)
+        if tool_name == "browser_snapshot" and "flow" in decoded_args:
+            return self._browser_flow(index, decoded_args)
         json_edit = tool_name == "edit" and "changes" in decoded_args
         click_args, query, steps = self._click_args(tool_name, decoded_args)
         if (canonical_json_object(self._catalog[tool_name].parameters).get("x-codey-result-read") is True
@@ -133,24 +139,77 @@ class CodeModeHost:
                 error = f"{STALE_READ_REFERENCE_ERROR} {JSON_FIELD_EDIT_GUIDANCE}"
             return {"ok": False, "error": error}
         value = successful_tool_value(raw, self._catalog[tool_name])
+        self._observe_result(tool_name, decoded_args, raw, value)
         output: dict[str, object] = {"ok": True, "value": value}
         if ref := raw.audit.get("result_ref"):
             output["result_ref"] = ref
+
+        return output
+
+    def _observe_result(self, tool_name: str, args: JsonObject, raw: ToolResult, value: object) -> None:
+        if ref := raw.audit.get("result_ref"):
             if tool_name == "browser_snapshot" and isinstance(ref, str) and isinstance(value, dict):
                 snapshot = decode_json_object(value)
                 scope = snapshot.get("scope")
                 if (snapshot.get("elements_truncated") is False and isinstance(scope, dict)
                         and decode_json_object(scope).get("root_ref") == "" and decode_json_object(scope).get("selector") == ""):
                     self._control_snapshot_ref = ref
+                    document = raw.audit.get("browser_document")
+                    if (not raw.truncated and isinstance(document, dict)
+                            and (snapshot.get("complete") is True or snapshot.get("text_truncated") is True)):
+                        self._browser_references = BrowserReferences.observe(ref, snapshot, decode_json_object(document))
             if (tool_name == "read_file" and "edit" in self._catalog
                     and isinstance(ref, str) and isinstance(value, dict) and not raw.truncated):
                 data = decode_json_object(value)
-                path, text = decoded_args.get("path"), data.get("text")
+                path, text = args.get("path"), data.get("text")
                 if (isinstance(path, str) and isinstance(text, str) and data.get("text_complete") is True
                         and data.get("start_line") == 1 and data.get("next_offset") == 0
                         and data.get("end_line") == data.get("total_lines")):
                     self._complete_reads[ref] = raw
-        return output
+
+    def _patch(self, index: int, args: JsonObject) -> JsonObject:
+        contract = canonical_json_object(self._catalog["edit"].parameters).get("x-codey-patch")
+        files = args.get("files")
+        if contract is None or self._plan_patch is None or self._bound_edit is not None or not isinstance(files, list):
+            return {"ok": False, "error": "Multi-file patch is unavailable for this edit contract."}
+        if error := _check_spec_value_against_schema("edit", "args", contract, args, strict=True):
+            return {"ok": False, "error": error}
+        indices = (index, *self._allocate_children(len(files) - 1))
+        try:
+            planned = self._plan_patch(tuple(decode_json_object(row) for row in files), indices)
+        except (OSError, ValueError) as exc:
+            return {"ok": False, "error": f"Patch preflight stopped before new writes: {exc}"}
+        written: list[str] = []
+        statuses: list[str] = []
+        for child_index, row in zip(indices, planned, strict=True):
+            receipt = self._invoke_one(child_index, "edit", row, query=False)
+            if not receipt.ok:
+                return {"ok": False, "error": f"Patch stopped after writing {', '.join(written) or 'no files'}. "
+                    f"{receipt.model_text} Read the failed and remaining files, then continue only the missing edits. "
+                    "The committed child receipts retain the written versions; do not repeat completed writes."}
+            if receipt.audit.get("changed") is True:
+                written.append(str(row["path"]))
+            statuses.append(receipt.model_text)
+        return {"ok": True, "value": "\n".join(statuses)}
+
+    def _browser_flow(self, index: int, args: JsonObject) -> JsonObject:
+        from codey.codemode.browser_flow import flow_steps
+
+        contract = canonical_json_object(self._catalog["browser_snapshot"].parameters).get("x-codey-browser-flow")
+        if not isinstance(contract, dict):
+            return {"ok": False, "error": "Browser flow is unavailable for this catalog."}
+        steps = flow_steps(args, contract)
+        indices = (index, *self._allocate_children(len(steps) - 1))
+        observed: list[JsonValue] = []
+        for child_index, (name, step_args) in zip(indices, steps, strict=True):
+            receipt = self._invoke_one(child_index, name, step_args, query=False)
+            if not receipt.ok:
+                return {"ok": False, "error": f"Browser flow stopped at {name}: {receipt.model_text}", "steps": observed}
+            value = successful_tool_value(receipt, self._catalog[name])
+            self._observe_result(name, step_args, receipt, value)
+            observed.append({"tool": name, "result_ref": str(receipt.audit.get("result_ref") or ""),
+                "value": decode_json_object({"value": value})["value"]})
+        return {"ok": True, "value": {"steps": observed}}
 
     def _current_child_index(self) -> int:
         index = rpc_child_index.get()

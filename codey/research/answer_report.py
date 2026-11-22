@@ -220,7 +220,8 @@ def compile_answer_report(session: TaskSession, ledger: ResearchLedger, store: K
         from codey.research.report_evidence import check_report_evidence
 
         checked = decode_json_object(result.canonical["research_evidence_check"])
-        actual = check_report_evidence(submission, ledger.read_passages)
+        actual = check_report_evidence(submission, ledger.read_passages,
+                                       verify_calculations="verified_calculations" in checked)
         if {key: actual[key] for key in checked if key in actual} != checked:
             raise ValueError("citation validation differs from the original submission receipt")
     scope = submission["scope"]

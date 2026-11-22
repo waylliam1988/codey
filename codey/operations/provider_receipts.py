@@ -274,10 +274,10 @@ def _snapshot_payload(raw: object) -> tuple[JsonObject, InputContractVersion]:
                 "nested_tool_names", "research_scope", "ignore_runtime_claims", "browser_copy", "input_binding",
                 "task_navigation_url", "browser_fill_text", "browser_followups", "browser_references"}
     version = require_json_integer(payload.get("schema_version"), "snapshot version")
-    if version == 15:
+    if version >= 15:
         expected.add("task_source_url")
     match version:
-        case 11 | 12 | 13 | 14 | 15:
+        case 11 | 12 | 13 | 14 | 15 | 16:
             if set(payload) != expected:
                 raise ValueError("invalid captured turn snapshot version/shape")
             return payload, version
@@ -315,7 +315,7 @@ def _restore_bound_source(
     from codey.policies.network import check_fetch_url
 
     source = require_json_string(value, "task_source_url")
-    if (not source or navigation_url is None or source == navigation_url
+    if (not source or navigation_url is None or (source == navigation_url and payload["schema_version"] == 15)
             or check_fetch_url(source, resolve=False) is not None
             or "open_url" not in (*names, *nested) or not policy.allows("web.read")):
         raise ValueError("invalid captured task source binding")
