@@ -48,7 +48,7 @@ def offered(url: str = URL) -> tuple[TaskSession, TurnSnapshot]:
 def test_direct_selector_freezes_the_exact_source_and_preserves_other_navigation(native: bool, url: str) -> None:
     session, snapshot = offered(url)
     restored = restore_snapshot(parse_json_object(canonical_json(snapshot_description(snapshot))))
-    assert restored == snapshot and snapshot_description(restored)["schema_version"] == 16
+    assert restored == snapshot and snapshot_description(restored)["schema_version"] == 17
     spec = next(spec for spec in restored.model_specs if spec.name == "browser_navigate")
     assert spec.required == ("target",) and set(dict(spec.parameters)) == {"target"}
     reply = (AssistantTurn(tool_calls=(ProviderToolCall("navigate", "browser_navigate", {"target": "task"}),)) if native

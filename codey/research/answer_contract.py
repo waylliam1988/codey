@@ -29,6 +29,7 @@ from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import (
+    JsonObject,
     ToolArgs,
     canonical_json_object,
     decode_json_object,
@@ -136,6 +137,7 @@ class AnswerScope:
     declared_fields_ready: bool = True
     execution_summary: str = ""
     execution_refs: tuple[str, ...] = ()
+    calculations: tuple[JsonObject, ...] = ()
 
     @property
     def passage_refs(self) -> tuple[str, ...]:
@@ -151,19 +153,23 @@ class AnswerScope:
         if self.schema_version >= 8:
             payload["execution_summary"] = self.execution_summary
             payload["execution_refs"] = list(self.execution_refs)
+        if self.schema_version >= 9:
+            payload["calculations"] = list(self.calculations)
         return payload
 
     @classmethod
     def from_payload(cls, raw: object) -> AnswerScope:
         raw = decode_json_object(raw)
         version = raw.get("schema_version")
-        if type(version) is not int or version not in {4, 5, 6, 7, ANSWER_SCOPE_VERSION}:
+        if type(version) is not int or version not in {4, 5, 6, 7, 8, 9}:
             raise ValueError("invalid whole-task research scope")
         expected = {"task_digest", "aliases", "attempt_refs", "schema_version"} | ({"fields"} if version >= 5 else set())
         if version >= 7:
             expected.add("declared_fields_ready")
         if version >= 8:
             expected.update(("execution_summary", "execution_refs"))
+        if version >= 9:
+            expected.add("calculations")
         if set(raw) != expected:
             raise ValueError("invalid whole-task research scope")
         task_digest = require_json_string(raw.get("task_digest"), "task_digest")
@@ -200,8 +206,12 @@ class AnswerScope:
         refs = tuple(require_json_string(ref, "execution ref") for ref in execution_refs)
         if len(set(refs)) != len(refs) or bool(refs) != bool(summary):
             raise ValueError("invalid frozen browser execution summary")
+        calculations = raw.get("calculations", [])
+        if not isinstance(calculations, list) or any(not isinstance(row, dict) for row in calculations):
+            raise ValueError("invalid frozen calculations")
         return cls(task_digest, tuple(bindings), attempt_refs, version, fields,
-                   require_json_boolean(raw.get("declared_fields_ready", True), "declared_fields_ready"), summary, refs)
+                   require_json_boolean(raw.get("declared_fields_ready", True), "declared_fields_ready"), summary, refs,
+                   tuple(decode_json_object(row) for row in calculations))
 
 
 def answer_scope(session: AnswerSessionView) -> AnswerScope:
@@ -237,8 +247,12 @@ def answer_scope(session: AnswerSessionView) -> AnswerScope:
     from codey.operations.browser_result_evidence import action_summary
 
     summary, execution_refs = action_summary(session.executed, results)
-    return AnswerScope(digest(session.task_text), aliases, tuple(attempts), fields=tuple(fields),
-                       declared_fields_ready=declared_fields_ready, execution_summary=summary, execution_refs=execution_refs)
+    from codey.research.calculation import calculation_fields
+
+    calculations = calculation_fields(session)
+    return AnswerScope(digest(session.task_text), aliases, tuple(attempts), schema_version=9 if calculations else ANSWER_SCOPE_VERSION,
+                       fields=tuple(fields), declared_fields_ready=declared_fields_ready, execution_summary=summary,
+                       execution_refs=execution_refs, calculations=calculations)
 
 
 def citation_occurrences(markdown: str) -> list[CitationOccurrence]:
@@ -268,6 +282,10 @@ def submit_answer(scope: AnswerScope, args: ToolArgs) -> AnswerSubmission:
             "Complete the intended query and read its actual result before submitting answered. "
             "A partial/unresolved report must describe the real gap. Do not invent values or repeat an unchanged read.")
     markdown = render_fields(scope.fields, markdown_value.strip(), state)
+    if scope.calculations or "{{calc:" in markdown:
+        from codey.research.calculation import render_calculations
+
+        markdown = render_calculations(markdown, scope.calculations, scope.aliases)
     if scope.execution_summary and not markdown.endswith(scope.execution_summary):
         markdown += "\n\n" + scope.execution_summary
     if len(markdown) > MAX_ANSWER_CHARACTERS:
@@ -335,6 +353,7 @@ def submitted_answer(session: TaskSession) -> AnswerSubmission | None:
 
 
 def answer_spec(spec: ToolSpec, scope: AnswerScope) -> ToolSpec:
+    from codey.research.calculation import calculation_choices
     from codey.toolchain.tool_spec import freeze_spec_parameters
 
     if spec.name == "done":
@@ -378,7 +397,11 @@ def answer_spec(spec: ToolSpec, scope: AnswerScope) -> ToolSpec:
                     "a report receipt alone does not complete a task with other obligations."
                     + (" Explicit receipt fields are available as {{field:/pointer}} slots. The application expands each "
                        "slot into its exact value and citation before publication; include all declared fields. "
-                       + canonical_json([field.to_payload() for field in scope.fields]) if scope.fields else ""),
+                       + canonical_json([field.to_payload() for field in scope.fields]) if scope.fields else "")
+                    + (" Computed results are available as complete Markdown slots below. Copy the exact slot, "
+                       "including braces; never use a tool result_ref or hash as the slot name. The host inserts "
+                       "the original result, unit and source citations. Calculations: " + canonical_json(calculation_choices(scope.calculations))
+                       if scope.calculations else ""),
         json_examples=(canonical_json({"tool": spec.name, "args": {"state": "partial" if scope.aliases else "unresolved",
             "markdown": ("Supported answer [" + scope.aliases[0][0] + "]. Remaining uncertainty: ...") if scope.aliases else
                         "The attempted investigation could not establish the answer. Remaining gap: ..."}}),)))

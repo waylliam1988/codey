@@ -229,7 +229,7 @@ def _validate_tool_args(
             return decode_json_object(question_args(args)), ""
         except ValueError as exc:
             return {}, str(exc)
-    if name in {"done", "semantic_definition", "workspace_diff"}:
+    if name in {"done", "semantic_definition", "workspace_diff", "syntax_query"}:
         # ``done`` is a control tool with no runtime executor. Its
         # canonical ToolSpec validation above is the complete contract.
         return dict(args), ""

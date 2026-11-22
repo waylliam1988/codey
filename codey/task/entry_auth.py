@@ -75,6 +75,11 @@ def _explicit_readonly_task(task: str) -> bool:
                             or marker in {"不要修改", "不要改", "不要改动", "不修改", "不改动"})
             clause = _constraint_fragment(suffix)
             prefix = _constraint_fragment(lowered[:match.start()], preceding=True)
+            if (marker in {"read-only", "readonly"} and re.match(r"plan\b", suffix)
+                    and re.search(r"\bapply\b", prefix) and re.search(r"\b(?:tools\.edit|patch)\b", clause)):
+                # A read-only plan is an observation. Applying that plan via
+                # the named edit path is an explicit, separate write request.
+                continue
             targets = clause + " " + (preceding.group() if preceding is not None else prefix)
             if (preservation and named_edit_scope and not re.search(_ALL_FILES, clause)
                     and named_edit_scope not in targets

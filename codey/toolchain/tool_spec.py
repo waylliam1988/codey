@@ -167,11 +167,14 @@ def _coding_specs() -> dict[str, ToolSpec]:
 
 
 def _research_specs() -> dict[str, ToolSpec]:
+    from codey.research.calculation import calculation_output_schema, data_output_schema
     from codey.research.knowledge_schema import schema_object, schema_strings
     from codey.research.tool_contract import TOOL_CONTRACTS
     from codey.types.json_value import canonical_json_object
 
     grant_by_tool = {
+        "read_data": "control",
+        "calculate": "control",
         "research_plan": "knowledge.read",
         "web_search": "web.read",
         "open_url": "web.read",
@@ -200,8 +203,10 @@ def _research_specs() -> dict[str, ToolSpec]:
             required=tuple(schema_strings(schema, "required")),
             json_examples=(contract.example,),
             description=contract.description,
-            executor="source" if grant == "web.read" else "knowledge",
-            replay_class="safe" if grant == "knowledge.read" or name in {"knowledge_commit", "save_finding", "save_inference", "submit_research_answer"} else "unsafe",
+            executor="receipt" if name in {"read_data", "calculate"} else "source" if grant == "web.read" else "knowledge",
+            replay_class="safe" if grant in {"knowledge.read", "control"} or name in {"knowledge_commit", "save_finding", "save_inference", "submit_research_answer"} else "unsafe",
+            output_schema=data_output_schema() if name == "read_data" else
+                calculation_output_schema() if name == "calculate" else text_output_schema(),
             parallel_safe=contract.parallel_safe,
             evidence_route="source_read" if name in SOURCE_READ_TOOL_NAMES else "none",
         )

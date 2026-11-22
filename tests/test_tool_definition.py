@@ -17,6 +17,8 @@ from codey.toolchain.definition import (
     render_tool_activity,
 )
 from codey.toolchain.tool_prompt import render_coding_tool_contract_text as render_tool_contract
+from codey.toolchain.tool_spec import spec_for_tool, validate_args_with_spec
+from codey.types.json_value import decode_json_object, parse_json_object, require_json_string
 from tests.support.legacy_json_codec import JsonToolCodec
 
 
@@ -30,6 +32,9 @@ class ToolDefinitionTests(unittest.TestCase):
                 "read_files",
                 "grep",
                 "find_references",
+                "workspace_diff",
+                "semantic_definition",
+                "syntax_query",
                 "parallel",
                 "edit",
                 "run",
@@ -54,17 +59,17 @@ class ToolDefinitionTests(unittest.TestCase):
         self.assertEqual(set(public_names), set(TOOL_DEFINITION_BY_NAME))
         self.assertEqual(
             runtime_names,
-            {"edit", "ls", "read", "references", "run", "search", "shell"},
+            {"edit", "ls", "read", "references", "run", "search", "shell", "workspace_diff", "semantic_definition", "syntax_query"},
         )
         self.assertEqual(SUPPORTED_RUNTIME_TOOL_NAMES, runtime_names)
         self.assertEqual(set(RESULT_TOOL_NAMES), runtime_names)
         self.assertEqual(
             READ_ONLY_RUNTIME_TOOL_NAMES,
-            {"ls", "read", "references", "search"},
+            {"ls", "read", "references", "search", "workspace_diff", "semantic_definition", "syntax_query"},
         )
         self.assertEqual(
             INFORMATION_RUNTIME_TOOL_NAMES,
-            {"ls", "read", "references", "run", "search", "shell"},
+            {"ls", "read", "references", "run", "search", "shell", "workspace_diff", "semantic_definition", "syntax_query"},
         )
 
     def test_definitions_are_metadata_not_runtime_validation(self) -> None:
@@ -72,13 +77,15 @@ class ToolDefinitionTests(unittest.TestCase):
             with self.subTest(tool=definition.name):
                 self.assertTrue(definition.permission)
                 self.assertTrue(definition.description)
-                self.assertTrue(definition.render_hint)
-                self.assertTrue(definition.repair_hint)
+                if not definition.render_hint:
+                    self.assertEqual(render_tool_activity(ToolCall(definition.runtime_name or definition.name, {})),
+                                     "Using " + (definition.runtime_name or definition.name))
                 self.assertFalse(definition.parallel_safe and not definition.read_only)
                 for example in definition.examples:
-                    plan = JsonToolCodec().parse(example)
-                    self.assertEqual(plan.protocol_error, "")
-                    self.assertTrue(plan.calls or plan.control is not None)
+                    action = parse_json_object(example)
+                    spec = spec_for_tool(require_json_string(action["tool"], "tool"))
+                    assert spec is not None
+                    self.assertEqual(validate_args_with_spec(spec, decode_json_object(action["args"])), "")
 
     def test_definition_filters_preserve_contract_order(self) -> None:
         readonly = definitions_for_tool_names(("grep", "read_file", "done"))

@@ -3,14 +3,17 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from codey.policies.tool_requirement import parse_tool_success_check
 from codey.research.answer_contract import AnswerScope, AnswerSessionView
+from codey.research.finding_stage import comparison_stage
 from codey.research.passages import read_passage_refs
 from codey.toolchain.tool_spec import ToolSpec, _check_spec_value_against_schema, freeze_spec_parameters
 from codey.types.json_value import JsonValue, canonical_json_object, decode_json_object, parse_json_object
 
 
-def finding_choices(spec: ToolSpec, scope: AnswerScope, session: AnswerSessionView) -> ToolSpec:
+def finding_choices(spec: ToolSpec, scope: AnswerScope, session: AnswerSessionView) -> ToolSpec | None:
+    rules, pending = comparison_stage(session)
+    if rules and not pending:
+        return None
     if not scope.passage_refs:
         return spec
     parameters = canonical_json_object(dict(spec.parameters))
@@ -32,15 +35,11 @@ def finding_choices(spec: ToolSpec, scope: AnswerScope, session: AnswerSessionVi
             "description": "Optional. The selected passage already identifies its original source."}
     choices: list[JsonValue] = []
     comparison = parameters["comparison"]
-    for check in session.policy.required_checks:
-        rule = parse_tool_success_check(check)
-        if rule is None or rule.tool != spec.name:
-            continue
+    for rule in pending:
         arguments = parse_json_object(rule.arguments_json)
         value = arguments.get("comparison")
         if (set(arguments) != {"comparison"} or not isinstance(value, dict)
-                or _check_spec_value_against_schema(spec.name, "comparison", comparison, value, strict=True)
-                or rule.observe(session.executed, results=session._memory_results).evaluation.passed):
+                or _check_spec_value_against_schema(spec.name, "comparison", comparison, value, strict=True)):
             continue
         if value not in choices:
             choices.append(value)

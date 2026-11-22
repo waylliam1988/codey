@@ -217,6 +217,16 @@ class ExecutionDelegate:
         except Exception:
             executor = ""
         if executor == "receipt":
+            if name in {"read_data", "calculate"}:
+                from codey.research.calculation import calculate, read_data
+
+                assert self.session is not None
+                try:
+                    value = calculate(call.args, self.session) if name == "calculate" else read_data(call.args, self.session, self._research_scope)
+                    result = ToolResult(call, str(value), ok=True, canonical={"value": value})
+                except (ValueError, KeyError, IndexError, ArithmeticError) as exc:
+                    result = ToolResult(call, "Calculation rejected: " + str(exc), ok=False)
+                return result, result.ok, None
             from codey.operations.tool_result_reader import ReceiptReader, read_tool_result
 
             assert self.session is not None
@@ -450,7 +460,7 @@ class ExecutionDelegate:
         try:
             runtime_name = {"list_dir": "ls", "read_file": "read", "grep": "search",
                             "find_references": "references", "semantic_definition": "read",
-                            "workspace_diff": "ls"}.get(call.name, call.name)
+                            "workspace_diff": "ls", "syntax_query": "read"}.get(call.name, call.name)
             evaluated: tuple[ActionPolicyDecision | None, object] = evaluate_tool_call_policy_for(
                 ToolCall(runtime_name, dict(call.args or {}), call_id=call.call_id),
                 project=self.project_path,
@@ -498,6 +508,13 @@ class ExecutionDelegate:
         runtime_name = {"list_dir": "ls", "read_file": "read", "grep": "search",
                         "find_references": "references"}.get(name, name)
         try:
+            if name == "syntax_query":
+                from codey.toolchain.syntax_query import syntax_query
+
+                result = _tool_result(call, syntax_query(project_path,
+                    require_json_string(call.args.get("path"), "path"), require_json_string(call.args.get("node_type"), "node_type"),
+                    limit=require_json_integer(call.args.get("limit", 40), "limit")))
+                return result, result.ok, None
             if name == "workspace_diff":
                 from codey.workspace.changes import ChangeTracker
                 from codey.workspace.task_changes import collect_task_changes
@@ -515,8 +532,10 @@ class ExecutionDelegate:
                 from codey.toolchain.semantic_definition import semantic_definition
 
                 result = _tool_result(call, semantic_definition(project_path,
-                    require_json_string(call.args.get("path"), "path"), require_json_integer(call.args.get("line"), "line"),
-                    require_json_string(call.args.get("symbol"), "symbol")))
+                    require_json_string(call.args.get("path"), "path"), require_json_integer(call.args.get("line", 1), "line"),
+                    require_json_string(call.args.get("symbol", ""), "symbol"),
+                    operation=require_json_string(call.args.get("operation", "definition"), "operation"),
+                    new_name=require_json_string(call.args.get("new_name", ""), "new_name")))
                 return result, result.ok, None
             if runtime_name in {"ls", "read", "search", "references"}:
                 from codey.agents.tool_execution import execute_information_tool_call
@@ -950,6 +969,11 @@ class ExecutionDelegate:
 
     def _execute_research_write(self, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
         name, args = call.name, dict(call.args or {})
+        if name == "save_finding" and self.session is not None:
+            from codey.research.finding_stage import finding_stage_error
+
+            if error := finding_stage_error(self.session, args):
+                return ToolResult(call, error, ok=False), False, None
         before = len(tools.ledger.evidence_items)
         created_before, updated_before = set(tools.created_ids), set(tools.updated_ids)
         links_before = tools.links_created

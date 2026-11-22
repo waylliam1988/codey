@@ -22,6 +22,7 @@ class AnswerScopePayload(TypedDict):
     declared_fields_ready: NotRequired[bool]
     execution_summary: NotRequired[str]
     execution_refs: NotRequired[list[str]]
+    calculations: NotRequired[list[JsonObject]]
 
 
 class UnsignedAnswerSubmission(TypedDict):

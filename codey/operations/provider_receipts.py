@@ -277,7 +277,7 @@ def _snapshot_payload(raw: object) -> tuple[JsonObject, InputContractVersion]:
     if version >= 15:
         expected.add("task_source_url")
     match version:
-        case 11 | 12 | 13 | 14 | 15 | 16:
+        case 11 | 12 | 13 | 14 | 15 | 16 | 17:
             if set(payload) != expected:
                 raise ValueError("invalid captured turn snapshot version/shape")
             return payload, version

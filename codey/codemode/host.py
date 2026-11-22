@@ -14,7 +14,7 @@ from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.constants import STALE_READ_REFERENCE_CODE, STALE_READ_REFERENCE_ERROR
 from codey.toolchain.result_schema import validate_output
 from codey.toolchain.tool_spec import _check_spec_value_against_schema
-from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_object
+from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_object, require_json_string
 
 
 class CodeModeHostProtocol(Protocol):
@@ -66,6 +66,7 @@ class CodeModeHost:
         original_browser_wait: Callable[[int], JsonObject | None] | None = None,
         bound_edit: Callable[[int, JsonObject], JsonObject] | None = None,
         plan_patch: Callable[[tuple[JsonObject, ...], tuple[int, ...]], tuple[JsonObject, ...]] | None = None,
+        semantic_plan: Callable[[str], tuple[JsonObject, ...]] | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
@@ -92,6 +93,7 @@ class CodeModeHost:
         self._original_browser_wait = original_browser_wait
         self._bound_edit = bound_edit
         self._plan_patch = plan_patch
+        self._semantic_plan = semantic_plan
         self._next_child = 0
         self._complete_reads: dict[str, ToolResult] = {}
         self._control_snapshot_ref = browser_references.receipt_ref if browser_references is not None else ""
@@ -106,6 +108,8 @@ class CodeModeHost:
             raise ValueError("tool args must be an object")
         decoded_args: JsonObject = decode_json_object(args)
         index = self._current_child_index()
+        if tool_name == "edit" and "semantic_result_ref" in decoded_args:
+            return self._semantic_edit(index, decoded_args)
         if tool_name == "edit" and "files" in decoded_args:
             return self._patch(index, decoded_args)
         if tool_name == "browser_snapshot" and "flow" in decoded_args:
@@ -191,6 +195,36 @@ class CodeModeHost:
                 written.append(str(row["path"]))
             statuses.append(receipt.model_text)
         return {"ok": True, "value": "\n".join(statuses)}
+
+    def _semantic_edit(self, index: int, args: JsonObject) -> JsonObject:
+        contract = canonical_json_object(self._catalog["edit"].parameters).get("x-codey-semantic-edit")
+        if contract is None or self._semantic_plan is None or self._plan_patch is None or self._bound_edit is not None:
+            return {"ok": False, "error": "Semantic edits are unavailable for this contract"}
+        if error := _check_spec_value_against_schema("edit", "args", contract, args, strict=True):
+            return {"ok": False, "error": error}
+        ref = args["semantic_result_ref"]
+        assert isinstance(ref, str)
+        try:
+            rows = self._semantic_plan(ref)
+            reads = (index, *self._allocate_children(len(rows) - 1))
+            files: list[JsonObject] = []
+            for position, row in zip(reads, rows, strict=True):
+                receipt = self._invoke_one(position, "read_file", {"path": row["path"]}, query=False)
+                if not receipt.ok or receipt.canonical.get("file_version") != "raw:" + str(row["expected_version"]):
+                    raise ValueError("semantic plan is stale; query the current workspace again")
+                files.append({"path": row["path"], "replacements": row["replacements"],
+                              "base_result_ref": require_json_string(receipt.audit["result_ref"], "read result_ref")})
+            indices = self._allocate_children(len(files))
+            planned = self._plan_patch(tuple(files), indices)
+            statuses: list[str] = []
+            for position, row in zip(indices, planned, strict=True):
+                receipt = self._invoke_one(position, "edit", row, query=False)
+                if not receipt.ok:
+                    return {"ok": False, "error": "Semantic patch partially stopped. Keep committed receipts; " + receipt.model_text}
+                statuses.append(receipt.model_text)
+            return {"ok": True, "value": "\n".join(statuses)}
+        except (OSError, ValueError) as exc:
+            return {"ok": False, "error": "Semantic patch preflight failed: " + str(exc)}
 
     def _browser_flow(self, index: int, args: JsonObject) -> JsonObject:
         from codey.codemode.browser_flow import flow_steps

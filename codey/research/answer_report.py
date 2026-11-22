@@ -202,6 +202,13 @@ def compile_answer_report(session: TaskSession, ledger: ResearchLedger, store: K
     from codey.research.answer_contract import AnswerScope
 
     original_scope = AnswerScope.from_payload(submission["scope"])
+    if original_scope.calculations:
+        from codey.research.calculation import calculation_fields
+
+        original_refs = {str(row["result_ref"]) for row in original_scope.calculations}
+        actual_fields = tuple(row for row in calculation_fields(session) if str(row["result_ref"]) in original_refs)
+        if actual_fields != original_scope.calculations:
+            raise ValueError("calculation fields differ from their original receipts")
     if original_scope.schema_version >= 8 and original_scope.execution_refs:
         summary, _refs = action_summary(session.executed, session._memory_results, original_scope.execution_refs)
         if summary != original_scope.execution_summary:

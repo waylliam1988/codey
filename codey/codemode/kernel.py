@@ -22,7 +22,7 @@ from codey.operations.browser_references import BrowserReferences
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import ToolSpec
-from codey.types.json_value import JsonObject
+from codey.types.json_value import JsonObject, decode_json_object
 
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
@@ -133,6 +133,7 @@ class CodeModeKernelExecutor:
         browser_stage: Callable[[], int] | None = None,
         original_browser_wait: Callable[[int], JsonObject | None] | None = None,
         plan_patch: Callable[[tuple[JsonObject, ...], tuple[int, ...]], tuple[JsonObject, ...]] | None = None,
+        semantic_plan: Callable[[str], tuple[JsonObject, ...]] | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
@@ -161,6 +162,7 @@ class CodeModeKernelExecutor:
         self.browser_stage = browser_stage
         self.original_browser_wait = original_browser_wait
         self.plan_patch = plan_patch
+        self.semantic_plan = semantic_plan
 
     def execute(self, call: ToolCall) -> ToolResult:
         try:
@@ -197,6 +199,7 @@ class CodeModeKernelExecutor:
             original_browser_wait=repair.original_wait_args if repair is not None else self.original_browser_wait,
             bound_edit=self.bound_edit,
             plan_patch=self.plan_patch,
+            semantic_plan=self.semantic_plan,
         )
         trace: ExecutionTrace | None = None
 
@@ -559,6 +562,15 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                     raise ValueError(error)
             return planned
 
+        def semantic_plan(ref: str) -> tuple[JsonObject, ...]:
+            source = session._memory_results.get(ref)
+            if ref not in session.executed or source is None or not source.ok or source.call.name != "semantic_definition":
+                raise ValueError("select a settled semantic rename receipt from this task")
+            rows = source.canonical.get("rename_plan")
+            if not isinstance(rows, list) or not 1 <= len(rows) <= 8:
+                raise ValueError("receipt has no bounded rename plan")
+            return tuple(decode_json_object(row) for row in rows)
+
         result = CodeModeKernelExecutor(
             execution_id=parent_id,
             catalog=catalog,
@@ -579,6 +591,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             browser_stage=browser_stage,
             original_browser_wait=original_browser_wait,
             plan_patch=plan_patch,
+            semantic_plan=semantic_plan,
             bound_edit=bound_edit if declared_copy else None,
         ).execute(call)
         if repair_context is not None:

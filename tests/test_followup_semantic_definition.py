@@ -25,7 +25,9 @@ def test_definition_uses_utf16_and_rejects_a_changed_document(
     target.write_text("SERVICE_LIMIT = 12\n", encoding="utf-8")
     monkeypatch.setattr(semantic, "pyright_server", lambda: sys.executable)
 
-    def lookup(argv: Sequence[str], root: Path, document: Path, source: str, line: int, character: int) -> JsonValue:
+    def lookup(argv: Sequence[str], root: Path, document: Path, source: str, line: int, character: int, *,
+               language: str, operation: str, new_name: str) -> JsonValue:
+        assert (language, operation, new_name) == ("python", "definition", "")
         assert root == project and document == path and source == text and line == 0
         assert character == len(text[:text.index("SERVICE_LIMIT")].encode("utf-16-le")) // 2
         if changed:

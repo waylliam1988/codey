@@ -6,6 +6,7 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 
+from codey.research.calculation import calculation_schema, data_schema
 from codey.research.knowledge_schema import (
     array_schema,
     comparison_schema,
@@ -72,6 +73,10 @@ class ContractResult:
 
 
 TOOL_CONTRACTS = {
+    "read_data": ToolContract("read_data", data_schema(),
+        description="Parse original task-read evidence (evidence=eN) or a complete read_file result_ref as quantities, csv or json. Quantities data is an array of {value,unit,start,end,context}; CSV data is an array of row objects; JSON data preserves exact numeric strings. Keep the OUTER Result.result_ref, inspect unwrap(result).data. A calculation operand is {result_ref: result.result_ref, pointer: '/data/0/value'} for a quantity, or '/data/0/column' for CSV. pointer starts with /data/ and never includes result_ref. Select actual indices from data; never invent named fields or retype numbers."),
+    "calculate": ToolContract("calculate", calculation_schema(),
+        description="Exact Decimal arithmetic over committed read_data/calculate values. operands and weights are {result_ref,pointer} references. CodeMode example: const receipt=await tools.read_data({evidence:inputs.evidence,format:'quantities'}); const rows=unwrap(receipt).data; const selected=rows.map((row,i)=>({result_ref:receipt.result_ref,pointer:'/data/'+i+'/value'})); return unwrap(await tools.calculate({operation:'sum',operands:selected})); Keep receipt separate from rows: result_ref is on receipt, never inside unwrap(receipt). growth_rate uses [baseline,new]; percentage_points uses percentages; weighted_mean needs aligned referenced weights. Unit conversion, missing policy, precision and half-even rounding are explicit. Results remain semantically unreviewed. Research reports can use the offered {{calc:cN}} slots."),
     "research_plan": ToolContract(
         name="research_plan", input_schema=object_schema({
             'questions': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': 8},

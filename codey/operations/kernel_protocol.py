@@ -47,7 +47,7 @@ from codey.toolchain.tool_spec import (
 from codey.types.json_value import JsonValue, ToolArgs, canonical_json_object, decode_json_object
 
 MAX_NATIVE_CALLS_PER_TURN = 8
-InputContractVersion: TypeAlias = Literal[11, 12, 13, 14, 15, 16]
+InputContractVersion: TypeAlias = Literal[11, 12, 13, 14, 15, 16, 17]
 
 if TYPE_CHECKING:
     from codey.completion.verification_policy import VerificationCandidate
@@ -402,7 +402,7 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
     from codey.research.finding_choices import finding_choices
     from codey.research.questions import requires_question_ref
     from codey.research.tool_contract import done_spec_for_purpose, question_bound_spec
-    from codey.toolchain.semantic_definition import pyright_server
+    from codey.toolchain.language_server import available_server
 
     frozen = tuple(wait_spec(spec, session.policy.required_checks) if spec.name == "browser_wait" else spec
                    for spec in frozen)
@@ -419,7 +419,15 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
     question_refs = tuple(f"q{index}" for index in range(1, len(session.research_questions) + 1))
     selected: list[ToolSpec] = []
     for spec in frozen:
-        if spec.name == "semantic_definition" and (not session.project or pyright_server() is None):
+        if spec.name == "read_data" and scope is not None and scope.aliases:
+            from dataclasses import replace
+
+            from codey.toolchain.tool_spec import freeze_spec_parameters
+
+            spec = freeze_spec_parameters(replace(spec, parameters=tuple((key,
+                {"type": "string", "enum": [label for label, _ in scope.aliases]} if key == "evidence" else value)
+                for key, value in spec.parameters)))
+        if spec.name == "semantic_definition" and (not session.project or not available_server()):
             continue
         if spec.name == "workspace_diff" and (not session.project or not session.policy.allows("project.write")):
             continue
@@ -446,7 +454,10 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
                 continue
             spec = bound
         if spec.name == "save_finding" and scope is not None:
-            spec = finding_choices(spec, scope, session)
+            finding = finding_choices(spec, scope, session)
+            if finding is None:
+                continue
+            spec = finding
         selected.append(answer_spec(spec, scope) if scope is not None else spec)
     return tuple(selected)
 
@@ -483,7 +494,7 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     binding = None
     task_navigation_url: str | None = None
     task_source_url: str | None = None
-    input_version: InputContractVersion = 16
+    input_version: InputContractVersion = 17
     target = copy_target(session.task_text)
     frozen = _task_edit_specs(session, frozen)
     if "codemode" in names:
@@ -502,7 +513,7 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
             if task_navigation_url is not None and "open_url" in available:
                 task_source_url = (_other_task_source_url(session, task_navigation_url)
                                    if len(session.required_source_urls) > 1 else task_navigation_url)
-        catalog = build_codemode_catalog(frozen, task_navigation_url=task_navigation_url,
+        catalog = build_codemode_catalog(frozen, semantic_edits=True, task_navigation_url=task_navigation_url,
             task_source_url=task_source_url, task_source_selector=input_version < 15 or task_source_url is not None,
             allow_writes=session.policy.allows("project.write"),
             allow_project_run=session.policy.allows("project.verify"))

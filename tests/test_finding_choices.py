@@ -39,6 +39,7 @@ def test_finding_choices_preserve_canonical_ids_without_alias_repair() -> None:
                                      strict_research=True), task_kind="research", task_text="Compare the measured inputs.")
     session._memory_results["read"] = result
     chosen = finding_choices(spec, scope, session)
+    assert chosen is not None
     properties = dict(chosen.parameters)
     assert canonical_json_object(properties["passage_ref"])["enum"] == [ref]
     assert canonical_json_object(properties["source_ref"])["enum"] == ["s1"]
@@ -68,6 +69,7 @@ def test_failed_and_unselected_read_receipts_cannot_extend_the_menu() -> None:
     session = TaskSession(TaskPolicy(frozenset({"control"})))
     session._memory_results.update({"read": result, "failed": replace(unselected, ok=False), "other": unselected})
     chosen = finding_choices(spec, scope, session)
+    assert chosen is not None
     properties = dict(chosen.parameters)
     assert canonical_json_object(properties["passage_ref"])["enum"] == [ref]
     assert other not in str(properties["source_ref"])
@@ -92,6 +94,7 @@ def test_declared_comparison_choices_use_only_unmet_original_predicates() -> Non
     spec = spec_for_tool("save_finding")
     assert spec is not None and "comparison" not in spec.required
     chosen = finding_choices(spec, scope, session)
+    assert chosen is not None
     assert "comparison" in chosen.required
     assert canonical_json_object(dict(chosen.parameters)["comparison"])["enum"] == values
     call = ToolCall("save_finding", {"claim": "Measured input was 24 kg.", "passage_ref": ref, "comparison": values[0]})
@@ -99,5 +102,40 @@ def test_declared_comparison_choices_use_only_unmet_original_predicates() -> Non
     session._memory_results["finding"] = result
     project_execution_record(session, "finding", call, result, ok=True)
     next_choice = finding_choices(spec, scope, session)
+    assert next_choice is not None
     assert canonical_json_object(dict(next_choice.parameters)["comparison"])["enum"] == [values[1]]
     assert validate_args_with_spec(next_choice, call.args), "completed predicate remained selectable"
+
+
+def test_completed_comparison_stage_closes_and_only_new_evidence_reopens() -> None:
+    from codey.research.finding_stage import finding_stage_error
+
+    comparison: JsonObject = {"subject": "Atlas", "factor": "A", "comparator": "B", "endpoint": "fuel",
+                              "direction": "lower", "uncertainty": "unknown"}
+    session = TaskSession(TaskPolicy(frozenset({"control"}), required_checks=(
+        require_tool_success("save_finding", arguments={"comparison": comparison}),)))
+    ref, read = read_receipt("https://example.org/first", "Measured input was 24 kg.")
+
+    def commit(identity: str, result: ToolResult) -> None:
+        session._memory_results[identity] = result
+        project_execution_record(session, identity, result.call, result, ok=result.ok)
+
+    commit("read", read)
+    args: JsonObject = {"claim": "Measured input was 24 kg.", "passage_ref": ref, "comparison": comparison}
+    commit("saved", ToolResult(ToolCall("save_finding", args), "saved", ok=True))
+    spec = spec_for_tool("save_finding")
+    assert spec is not None
+    scope = AnswerScope(digest("task"), (("e1", ref),), ("read",))
+    assert finding_choices(spec, scope, session) is None
+    assert finding_stage_error(session, args) == "", "exact committed retry must retain idempotence"
+    assert "finding_stage_complete" in finding_stage_error(session, {"claim": "again", "passage_ref": ref})
+    commit("repeated-read", read)
+    assert finding_choices(spec, scope, session) is None
+    narrowed = replace(read, canonical={**read.canonical, "read_passages": [{"ref": "narrowed", "start": 1, "end": 10}]})
+    commit("narrowed-read", narrowed)
+    assert finding_choices(spec, scope, session) is None, "a subrange of an already read source is not fresh evidence"
+    _, fresh = read_receipt("https://example.org/new", "Measured input was 31 kg.", "s2")
+    commit("fresh", fresh)
+    offered = finding_choices(spec, scope, session)
+    assert offered is not None and "comparison" in offered.required
+    assert "finding_stage_arguments" in finding_stage_error(session, {"claim": "missing comparison", "passage_ref": ref})

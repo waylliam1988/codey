@@ -2,6 +2,8 @@
 
 本指南保留审计基线时的设计建议。本轮实现、实机结果、首次失败及剩余边界见 [后续机制验证](reports/followup-mechanisms-validation-20261122.md)。
 
+CodeMode 来源计算、JS/TS/Python 语义查询、语义修改与 finding 阶段控制的追加实现和实测见 [计算与语义验证](reports/codemode-analysis-validation-20261122.md)。
+
 源码基线为 `1fb04490`。带「建议新增」的函数、字段和测试名是实施方案，其他函数均可从相对链接找到。七个参考仓库的版本和行为出处见 [源码审计](codey_deep_audit_and_benchmark.md)。全部改造沿现有单 Agent 工具循环完成，使用原有项目权限、工具回执、durable 会话、Ghost 和知识库。
 
 | 合并顺序 | 使用者看到的变化 | 过关条件 |

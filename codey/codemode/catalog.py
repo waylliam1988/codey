@@ -46,6 +46,7 @@ def snapshot_catalog(
         browser_result_reads=snapshot.research_scope is not None,
         browser_references=snapshot.browser_references if observed_choices else None,
         browser_flows=snapshot.input_contract_version >= 16 and snapshot.browser_followups,
+        semantic_edits=snapshot.input_contract_version >= 17,
     )
 
 
@@ -131,6 +132,7 @@ def build_codemode_catalog(
     browser_result_reads: bool = False,
     browser_references: BrowserReferences | None = None,
     browser_flows: bool = False,
+    semantic_edits: bool = False,
 ) -> ToolCatalogSnapshot:
     """Build the frozen CodeMode catalog for one permission snapshot.
 
@@ -169,6 +171,7 @@ def build_codemode_catalog(
             (entry.read_only and entry.namespace in {"project", "source", "knowledge"}
              and entry.grant in {"project.read", "web.read", "knowledge.read"})
             or entry.namespace in {"browser", "task_control"}
+            or entry.namespace == "receipt" and entry.name in {"read_data", "calculate"} and entry.grant == "control"
             or (
                 entry.namespace == "project"
                 and ((entry.grant == "project.write" and allow_project_edit and entry.name == "edit")
@@ -220,7 +223,16 @@ def build_codemode_catalog(
                     "x-codey-browser-flow": flow_schema(entries)}, description=entry.description +
                     " Use browser_snapshot({flow: [{tool, args}, ...]}) for ordered browser observations. "
                     "The flow stops at the first rejected step and returns the observed results in order.")
+    if semantic_edits and any(entry.name == "semantic_definition" for entry in allowed):
+        allowed = _semantic_edit_catalog(allowed)
     return build_catalog_snapshot(allowed)
+
+
+def _semantic_edit_catalog(entries: list[ToolCatalogEntry]) -> list[ToolCatalogEntry]:
+    contract: JsonObject = {"type": "object", "properties": {"semantic_result_ref": {"type": "string"}},
+                           "required": ["semantic_result_ref"], "additionalProperties": False}
+    return [replace(entry, parameters={**canonical_json_object(entry.parameters), "x-codey-semantic-edit": contract})
+            if entry.name == "edit" and "x-codey-patch" in entry.parameters else entry for entry in entries]
 
 
 _PINNED = ("read_file", "grep", "browser_snapshot", "edit")
@@ -247,6 +259,9 @@ def _entry_signatures(entry: ToolCatalogEntry, *, json_edit: bool) -> tuple[str,
     patch = canonical_json_object(entry.parameters).get("x-codey-patch")
     if isinstance(patch, dict):
         signatures.append(f"edit(args: {schema_typescript(patch)}): Result<{value}>;")
+    semantic = canonical_json_object(entry.parameters).get("x-codey-semantic-edit")
+    if isinstance(semantic, dict):
+        signatures.append(f"edit(args: {schema_typescript(semantic)}): Result<{value}>;")
     flow = canonical_json_object(entry.parameters).get("x-codey-browser-flow")
     if isinstance(flow, dict):
         signatures.append(f"browser_snapshot(args: {schema_typescript(flow)}): Result<{{steps: Array<{{tool: string; result_ref: string; value: unknown}}>}}>;")
