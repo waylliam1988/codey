@@ -1922,7 +1922,8 @@
         "tests/test_input_attachments.py"
       ],
       "commits": [
-        "c9b7f811"
+        "c9b7f811",
+        "b433873a"
       ]
     },
     {
@@ -1931,10 +1932,34 @@
       "files": [
         "codey/app/api.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93"
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/app/api.py"
+      ],
+      "verified_files": [
+        "codey/app/api.py"
+      ],
+      "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93",
+      "result": "Two ResumeRun API violations reproduced: omitted instruction becomes literal None (pre-fix 1 failed/7 passed); non-string source IDs coerced and submitted (4 failed/4 passed). Public DTO optional default/string constraints and absent-vs-explicit-default invariant justify fixes. Final whole contract script 17 passed; input/output/question group 33 passed; initial direct 41, API dependencies 39, lease 2 passed. Two whole files strict Any 33 -> 0; scoped tools passed (5 pre-existing warnings), final production/precision gates passed (35 suppressed/165 warnings), stable hashes. Legacy response objects and dataclass/result shapes validated at API boundary, no casting/budget relaxation. New question guard baseline on original HEAD 1 passed; old typed callback fixture baseline 4 passed; sources exactly restored. Shared test scripts only dependency verification, full typing ownership remains elsewhere.",
+      "tests": [
+        "tests/test_task_input_contract.py",
+        "tests/test_connection_status_cold_start.py",
+        "tests/test_conversation_entry_auth.py",
+        "tests/test_completion_output.py",
+        "tests/test_edit_api.py",
+        "tests/test_local_api_protocol_configuration_and_frozen_capabilities.py",
+        "tests/test_server.py::ResearchServerHelperTests",
+        "tests/test_server.py::ResearchGraphApiTests",
+        "tests/test_server.py::LocalProviderApiTests",
+        "tests/test_review_history_http_and_reuse_lineage.py",
+        "tests/test_review_submission_rejects_coerced_source_ids.py",
+        "tests/test_required_tool_submission.py::test_api_rejects_invalid_required_tools_before_submitting",
+        "tests/test_required_tool_submission.py::test_declaring_an_outcome_never_grants_permission",
+        "tests/test_recovery_ownership_regression.py::ChangesGetTests",
+        "tests/test_recovery_ownership_regression.py::RestoreLeaseTests",
+        "tests/test_task_input_and_output_contracts.py",
+        "tests/durable/test_question_authority.py"
+      ]
     },
     {
       "id": "Q015D",

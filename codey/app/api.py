@@ -5,12 +5,14 @@ import logging
 import os
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import Field, asdict, is_dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar, Protocol, TypeGuard
 
 if TYPE_CHECKING:
     from codey.app.context import AppContext
     from codey.knowledge.store import NoteDocumentMetadata
+    from codey.reviews.core import ReviewResult
 
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.app import provider_services
@@ -39,7 +41,7 @@ from codey.runtime.core.api_selection import ApiRunSelection
 from codey.storage.local_store import StoreCorruption
 from codey.task.entry_auth import EntryAuth, derive_entry_auth
 from codey.task.model import EditUserMessage
-from codey.utils.object_fields import object_fields
+from codey.utils.object_fields import object_fields, sequence_items
 from codey.utils.refs import coerce_int
 from codey.workspace.changes import (
     ChangeTracker,
@@ -50,6 +52,56 @@ from codey.workspace.changes import (
 )
 
 _SubmissionArgs = tuple[str, str | None, str, int, bool, str, str]
+_CLASS_TYPE: type[object] = type
+
+
+class _DataclassInstance(Protocol):
+    __dataclass_fields__: ClassVar[dict[str, Field[object]]]
+
+
+def _response_fields(value: object) -> dict[str, object]:
+    if not object_fields(value):
+        raise TypeError("response payload must be an object with string keys")
+    return value
+
+
+def _response_pair(value: object) -> tuple[int, dict[str, object]]:
+    if not sequence_items(value) or len(value) != 2:
+        raise TypeError("response must contain a status and object payload")
+    status = value[0]
+    if not isinstance(status, int):
+        raise TypeError("response status must be an integer")
+    return status, _response_fields(value[1])
+
+
+def _local_bootstrap(*, probe: bool) -> dict[str, object]:
+    value: object = local_bootstrap_payload(probe=probe)
+    return _response_fields(value)
+
+
+def _is_dataclass_instance(value: object) -> TypeGuard[_DataclassInstance]:
+    return is_dataclass(value) and not isinstance(value, _CLASS_TYPE)
+
+
+def _dataclass_fields(value: object) -> dict[str, object]:
+    if not _is_dataclass_instance(value):
+        raise TypeError("response value must be a dataclass instance")
+    fields: object = asdict(value)
+    return _response_fields(fields)
+
+
+def _is_review_result(value: object) -> TypeGuard[ReviewResult]:
+    from codey.reviews.core import ReviewResult
+
+    result_type: type[object] = ReviewResult
+    return isinstance(value, result_type)
+
+
+def _pending_question(ctx: AppContext | None, session_id: str) -> dict[str, object] | None:
+    if ctx is None:
+        return None
+    value: object = ctx.user_questions.pending(session_id)
+    return _response_fields(value) if value is not None else None
 
 
 def query_list(query: Mapping[str, Sequence[object]], key: str) -> list[str]:
@@ -177,7 +229,7 @@ def local_provider_response(ctx: AppContext | None = None) -> tuple[int, dict[st
         status_snapshot = coordinator.current("local")
         data: dict[str, object] = coordinator.data("local")
         cached_local = data.get("local")
-        local: dict[str, object] = dict(cached_local) if object_fields(cached_local) else local_bootstrap_payload(probe=False)
+        local = dict(cached_local) if object_fields(cached_local) else _local_bootstrap(probe=False)
         local.update({
             "state": status_snapshot.state,
             "freshness": status_snapshot.freshness,
@@ -185,13 +237,13 @@ def local_provider_response(ctx: AppContext | None = None) -> tuple[int, dict[st
             "status_error": status_snapshot.error,
         })
     else:
-        local = local_bootstrap_payload(probe=preferences_for(ctx).enabled("local"))
+        local = _local_bootstrap(probe=preferences_for(ctx).enabled("local"))
     _attach_local_metadata(local)
     return 200, {"ok": True, "local": local}
 
 
 def api_models_response(ctx: AppContext | None = None) -> tuple[int, dict[str, object]]:
-    from codey.app.model_settings import preferences_for
+    from codey.app.model_settings import _PayloadCallback, preferences_for
     from codey.providers.api_connections import connection_for
 
     preferences = preferences_for(ctx)
@@ -228,7 +280,10 @@ def api_models_response(ctx: AppContext | None = None) -> tuple[int, dict[str, o
                             "state": current.state})
             continue
         try:
-            item = connection_for(connection_id).model_payload()
+            model_payload: object = connection_for(connection_id).model_payload
+            if not isinstance(model_payload, _PayloadCallback):
+                raise TypeError("model_payload must be callable")
+            item = _response_fields(model_payload())
             preferences.observe_catalog(item)
             payload.append(item)
         except (OSError, ValueError, RuntimeError) as exc:
@@ -324,7 +379,8 @@ def save_local_provider_response(body: object) -> tuple[int, dict[str, object]]:
         endpoint.base_url,
         ((wanted,) if wanted else ()) + tuple(m for m in endpoint.models if m != wanted),
     )
-    local = assemble_bootstrap_payload(saved, saved_selection, ordered, [])
+    raw_local: object = assemble_bootstrap_payload(saved, saved_selection, ordered, [])
+    local = _response_fields(raw_local)
     _attach_local_metadata(local)
     return 200, {"ok": True, "local": local}
 
@@ -352,7 +408,8 @@ def research_graph_response(ctx: AppContext, query: dict[str, list[str]]) -> tup
         edge_limit=query_int(query, "edge_limit", 192, 8, 400),
         counterpoints=tuple(query_list(query, "counterpoint")[:8]),
     )
-    return 200, {"ok": True, "graph": graph.to_dict()}
+    graph_payload: object = graph.to_dict()
+    return 200, {"ok": True, "graph": _response_fields(graph_payload)}
 
 
 def research_notes_response(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
@@ -415,8 +472,6 @@ def run_details_response(ctx: AppContext, query: dict[str, list[str]]) -> tuple[
 
 def run_review_response(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, dict[str, object]]:
     """Structured cold read using the same authenticated run lookup as Details."""
-    from dataclasses import asdict
-
     from codey.reviews.core import review_result_payload
     from codey.reviews.persistence import load_recorded_review
     from codey.reviews.reuse import validate_source_run_id
@@ -430,15 +485,21 @@ def run_review_response(ctx: AppContext, query: dict[str, list[str]]) -> tuple[i
     except ValueError:
         return 400, {"ok": False, "error": "invalid run_id"}
     try:
-        recorded = load_recorded_review(ctx.state_home, session_id, run_id)
+        recorded: object = load_recorded_review(ctx.state_home, session_id, run_id)
     except (OSError, ValueError):
         recorded = None
     if recorded is None:
         return 200, {"ok": True, "available": False, "review": None}
-    _projection, result = recorded
-    payload = review_result_payload(result)
-    payload["findings"] = [asdict(finding) for finding in result.findings]
-    payload["scope"] = asdict(result.scope)
+    if not sequence_items(recorded) or len(recorded) != 2:
+        raise TypeError("recorded review must contain a projection and result")
+    result = recorded[1]
+    if not _is_review_result(result):
+        raise TypeError("recorded review result is invalid")
+    raw_payload: object = review_result_payload(result)
+    payload = _response_fields(raw_payload)
+    payload["findings"] = [_dataclass_fields(finding) for finding in result.findings]
+    scope: object = result.scope
+    payload["scope"] = _dataclass_fields(scope)
     payload["summary"] = result.summary
     return 200, {"ok": True, "available": True, "review": payload}
 
@@ -479,7 +540,8 @@ def changes_response(ctx: AppContext, project: object) -> tuple[int, dict[str, o
             if key
             else None
         )
-        payload: dict[str, object] = dict(collect_changes(project_text, tracker))
+        changes: object = collect_changes(project_text, tracker)
+        payload: dict[str, object] = dict(_response_fields(changes))
     except StoreCorruption:
         payload = {
             "ok": False,
@@ -498,7 +560,8 @@ def changes_file_response(ctx: AppContext, body: dict[str, object]) -> tuple[int
     if "\0" in project or "\0" in path:
         return 400, {"ok": False, "error": "project or path invalid", "path": path}
     try:
-        payload = collect_git_file_diff(project, path)
+        diff: object = collect_git_file_diff(project, path)
+        payload = _response_fields(diff)
     except (OSError, ValueError):
         return 400, {"ok": False, "error": "file path invalid", "path": path}
     return 200 if payload.get("ok") else 400, payload
@@ -533,7 +596,8 @@ def restore_changes_response(ctx: AppContext, body: dict[str, object]) -> tuple[
         )
         if tracker is not None and not tracker.has_snapshots:
             tracker = None
-        return restore_snapshot_changes(project, tracker, clean_paths)
+        response: object = restore_snapshot_changes(project, tracker, clean_paths)
+        return _response_pair(response)
     finally:
         if acquired:
             with contextlib.suppress(Exception):
@@ -637,16 +701,16 @@ def run_submit_response(  # noqa: C901, PLR0912
                     return 400, {"error": "input.expected_revision must be a non-negative integer"}
                 edit_input = EditUserMessage(entry_id, input_text.strip(), expected_revision)
         elif input_kind == "resume_run":
-            input_source_run = str(input_payload.get("source_run_id") or "").strip()
-            if not input_source_run:
+            source_run = input_payload.get("source_run_id")
+            if not isinstance(source_run, str) or not source_run.strip():
                 return 400, {"error": "input.source_run_id required"}
+            input_source_run = source_run.strip()
         else:
             return 400, {"error": "unsupported input.kind"}
     session_id = str(body.get("session_id") or "").strip() or "default"
-    if ctx is not None:
-        question = ctx.user_questions.pending(session_id)
-        if question is not None:
-            return 409, {"error": "Answer the pending question before starting another task.", "code": "question_pending", "question": question}
+    question = _pending_question(ctx, session_id)
+    if question is not None:
+        return 409, {"error": "Answer the pending question before starting another task.", "code": "question_pending", "question": question}
     input_source_run, approval_error = _approval_entry(ctx, session_id, input_source_run)
     if approval_error is not None:
         return approval_error
@@ -659,7 +723,7 @@ def run_submit_response(  # noqa: C901, PLR0912
     task = str(
         (input_payload or {}).get("text")
         if input_kind in {"start_task", "edit_user_message"} and input_payload is not None
-        else (input_payload or {}).get("instruction") if input_kind == "resume_run" and input_payload is not None
+        else (input_payload or {}).get("instruction", "") if input_kind == "resume_run" and input_payload is not None
         else body.get("task") or ""
     ).strip()
     continue_task = input_kind == "resume_run"

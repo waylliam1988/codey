@@ -770,3 +770,25 @@ Q015B 验收与提交准备：
 
 
 Q015B 文档非字符串表示修复与文档类型边界已提交：`c9b7f811`（fix(documents): reject non-string representations before membership lookup）。附件 routes 的独立类型/结构校验收敛单独提交，全部必要验收通过；本批完成后累计 **21 / 298 批、45 / 975 生产文件**。下一主批 Q015C 为 api.py 单个844行请求/提交门面，先建立相关行为/类型基线再改动；Q015D 控制服务、Q015E 生命周期、Q015F server 继续留队。全仓总 goal 仍 active，未完成事项未缩减。
+
+
+Q015B 附件校验类型收敛已提交：`b433873a`（refactor(attachments): validate typed rows at request and history boundaries）。
+
+### Q015C：HTTP API 请求与提交门面（进行中）
+
+- api.py 844行已全读。现有公开函数分别被 server/control 使用，未凭 __all__ 漏列就删入口。保存 local 配置仍只探一次，changes restore 使用项目 writer lease，审批/附件/显式 entry auth 调用关系已确认；无证据不猜改这些正确路径。完整单源加严 Any **33 条**，主要来自 legacy local/changes/review 返回和 pending question，不是缺参数注解。
+- **bug：HTTP resume 缺省 instruction 被改成文字 None。** 公开 ResumeRun DTO 的 instruction: str=""，当前活跃客户端允许省略该字段；省略和显式空默认值必须同义。HTTP 读缺失值 None 后先 str，产生伪造补充任务 "None"，绕过同入口已有的空说明默认续跑分支。该不变量来自可选字段契约，不仅拿另一个实现或当前测试断言当正确答案。
+- tests/test_task_input_contract.py 全脚本 Mock/无类型 lambda 改精确七主参数+有类型记录回调，保留源 run 转发和拒绝旧 continue_task；新增省略/空/全空白/显式补充四输入。在生产未修改时 `python -m pytest -q tests/test_task_input_contract.py --tb=short` → **1，1 failed / 7 passed，1.27 秒**，省略实际 calls=[("None","run-1")]，预期默认说明；其他对照通过。q015c-baseline.json。
+- 相关五文件冷启动/entry auth/completion output/edit/local protocol 基线 **0，33 passed，15.68 秒**，完整命令同证据。当前仅测试脚本和记录修改，生产修复/类型治理/最终验证尚未执行；不计完成。
+
+
+Q015C 最终验收：
+
+- **第二个独立确定性 bug：resume 源 ID 隐式转字符串。** 公开 ResumeRun.source_run_id 明确必须是非空 str，非字符串原本被 str(... or "") 强制变成看似合法来源，然后提交；HTTP 结构化输入应保持此类型契约，不让 bool/数字/列表/对象变成 run ID。新增八 JSON 输入在这项生产改动前 **1，4 failed / 4 passed，1.28 秒**，True / 42 / 非空列表 / 非空对象都实际200并调用submit，而应400且不调用；q015c-resume-source-before.json。仅在入口验证 str 后 strip，不新增 run ID 命名或格式限制。空容器/False/None仍原样拒绝，合法 run-1 兼容。
+- 原17个最终契约（含首个缺省说明bug、八非法source、新增真实 durable question 阻断基线）**0，17 passed，1.25 秒**；q015c-contract-final.json。首个 omitted instruction + entry auth/completion/edit/local protocol 组先前 **0，41 passed，16.07 秒**；图谱/notes/local/Review HTTP/review source/required_tools 指定组 **0，39 passed，15.10 秒**；ChangesGetTests/RestoreLeaseTests **0，2 passed，1.38 秒**。完整明确路径/node 命令 q015c-validation-first.json、q015c-lease-validation.json，未全量收集仓库。
+- source ID 修复后增加明确的 input/output 契约和 durable question：`python -m pytest -q tests/test_task_input_contract.py tests/test_task_input_and_output_contracts.py tests/durable/test_question_authority.py --tb=short` → **0，33 passed，5.73 秒**，包含真实储存的pending question保留同一身份且阻止submit；无skip。sourceID改动不影响已通过的 local/graph/restore 独立路径，不机械重跑它们。
+- 完整 API 与 task_input_contract 两文件加严 Any **33 → 13 → 1 → 0**。legacy local/graph/changes 输出先入 object 再检查 string-key dict，响应对检查status+payload；review loader 验证真实 ReviewResult，反射只接受 dataclass 实例，保留原 asdict 转换及异常、不加 JSON/深度/字段白名单。dataclass stdlib 的 class/instance 联合在第一次类型尝试未正确收窄，已用有运行时证据的 TypeGuard/Protocol 描述 Field[object] 元数据；没有 cast/ignore 或把整个 payload 换无约束 object。
+- source ID 增加校验导致 Ruff 81 statements，未增加 noqa；将现有 pending-question 的读取及 dict 运行时收窄归独立类型边界 _pending_question，保留 None/409/身份语义。新 question fixture 的 metadata 字面量首次引入1条 Any，已明确定义为 dict[str,object]。q015c-validation-resume-final.json 的 Ruff失败、q015c-validation-final-all.json 的该次mypy失败保留；最终 q015c-contract-final.json 加严 mypy/Pyrefly/ty/Ruff 均 **0**。Pyrefly 的原5个多余bool/str警告单列，不声称零warning。
+- 最终生产 mypy **0，737文件**、Pyrefly **0，原35 suppressed/165 warnings**、ty/精度门 **0**，q015c-validation-final-all.json（最终只再明确测试 metadata 类型）；代码/测试检查中hash稳定。旧四用例的typed回调在 HEAD 原API上 **0，4 passed，1.24 秒**，真实 question guard 在同一原API上 **0，1 passed，1.19 秒**；q015c-fixture-baseline.json、q015c-question-baseline.json 均 finally 精确恢复源字节，没有 worktree复制。
+- 没有确认可删的公开/动态入口或相同职责实现，不为制造重构移走844行门面的无关功能。scope 中的共享 test_server 等只按指定node验证，未宣称全脚本Any治理；跨模块模型/审查/source authority的 legacy Any 仍在其owning批次，不将本文边界隔离视为这些模块已完成。
+- 本批两生产bug的入口条件都保留改前失败和改后关键断言证据，diff和暂存区已核对，仅API、完整契约测试与两记录。本批完成后累计 **22 / 298 批、46 / 975 生产文件**。下一主批 Q015D control_queries.py / control_service.py；原 Q018临时锁清理警告、Q078生成库存等未解决项继续留队。总 goal仍 active。
