@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import unittest
 
 from codey.agents.handoff import (
@@ -10,6 +9,7 @@ from codey.agents.handoff import (
     render_handoff,
     render_recovered_handoff,
 )
+from codey.types.json_value import parse_json_object
 from codey.utils.text_budget import estimate_tokens
 
 
@@ -32,12 +32,15 @@ class HandoffTests(unittest.TestCase):
             latest_reply="x" * 3000,
         )
 
-        payload = json.loads(render_handoff(snapshot))
+        payload = parse_json_object(render_handoff(snapshot))
 
         self.assertEqual(payload["goal"], "Fix the calculator")
-        self.assertEqual(payload["changed_files"], ["app.py", "test_app.py"])
+        expected_files = ["app.py", "test_app.py"]
+        self.assertEqual(payload["changed_files"], expected_files)
         self.assertEqual(payload["checks"], "passed")
-        self.assertLess(len(payload["latest_model_reply"]), 2100)
+        reply = payload["latest_model_reply"]
+        assert isinstance(reply, str)
+        self.assertLess(len(reply), 2100)
         self.assertNotIn("handoff_summary", payload)
 
     def test_recovered_handoff_adds_bounded_visible_conversation(self) -> None:
@@ -49,14 +52,16 @@ class HandoffTests(unittest.TestCase):
             latest_reply="Earlier answer",
         )
 
-        payload = json.loads(render_recovered_handoff(
+        payload = parse_json_object(render_recovered_handoff(
             snapshot,
             "User: Discuss breathing app\nAssistant: Use a calm timer\n" + "x" * 20_000,
         ))
 
         self.assertEqual(payload["goal"], "Discuss app design")
-        self.assertIn("User: Discuss breathing app", payload["recent_visible_conversation"])
-        self.assertLessEqual(len(payload["recent_visible_conversation"]), 12_020)
+        visible = payload["recent_visible_conversation"]
+        assert isinstance(visible, str)
+        self.assertIn("User: Discuss breathing app", visible)
+        self.assertLessEqual(len(visible), 12_020)
 
     def test_soft_limit_prepares_one_overwritable_handoff(self) -> None:
         context = ConversationContext(hard_limit=100)
@@ -91,11 +96,14 @@ class HandoffTests(unittest.TestCase):
             'Here is the summary: {"goal":"Build an app","decisions":["Use SQLite"],'
             '"current_state":"Tests pass","ignored":"secret"}'
         ))
-        payload = json.loads(handoff)
+        payload = parse_json_object(handoff)
 
-        self.assertEqual(payload["conversation_summary"]["decisions"], ["Use SQLite"])
-        self.assertEqual(payload["conversation_summary"]["current_state"], "Tests pass")
-        self.assertNotIn("ignored", payload["conversation_summary"])
+        summary = payload["conversation_summary"]
+        assert isinstance(summary, dict)
+        expected_decisions = ["Use SQLite"]
+        self.assertEqual(summary["decisions"], expected_decisions)
+        self.assertEqual(summary["current_state"], "Tests pass")
+        self.assertNotIn("ignored", summary)
 
         context.begin_window("deepseek", "chat")
         self.assertEqual(context.snapshot.conversation_summary, "")

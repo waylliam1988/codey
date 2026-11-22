@@ -1600,10 +1600,20 @@
         "codey/agents/handoff.py"
       ],
       "id": "Q008C",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": "recompute at entry; initial combined count 73"
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/agents/handoff.py"
+      ],
+      "verified_files": [
+        "codey/agents/handoff.py"
+      ],
+      "candidate_test_count": "recompute at entry; initial combined count 73",
+      "tests": [
+        "tests/test_handoff.py",
+        "tests/test_handoff_summary_limits.py",
+        "tests/test_handoff_snapshot_codec.py"
+      ],
+      "result": "Model-summary and persisted-summary parser ValueErrors reproduced before each boundary fix; empty accepted summary field overflow 4019>2000 reproduced, now clipped consistently. 35 direct tests and 45 caller tests passed; original codec baseline 15 passed then final typed version passed same cases. Four-file strict Any, pyrefly/ty/Ruff and all normal production typing/precision gates passed. Legacy tuple/list and unknown metadata semantics retained; no whole-conversation-runtime completion claim."
     },
     {
       "responsibility": "Read-only multi-model advisory consensus",

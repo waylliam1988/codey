@@ -477,3 +477,29 @@ Q008B 最终验收：
 - 修改 fixture 后，前述八完整路径的加严 Any mypy / Pyrefly / ty / Ruff **全部退出 0**，Pyrefly scoped 0 errors、0 suppressed；完整命令/输出保存在 q008b-scope-final.json。生产源码未再改动，不机械重跑此前未受影响的 133 例。
 - `python -m mypy codey --python-version 3.11` → **0，737 文件通过**；`pyrefly check codey --python-version 3.11` → **0，0 errors，既有 35 suppressed/165 warnings 保留**；`ty check codey --python-version 3.11` → **0**；`python -m tools.kernel_type_precision_gate` → **0**。各命令串行、737 文件哈希前后一致，changed_during_checks=[]，记录 q008b-validation.json（该文件保留 scoped ty 首次失败，最终修复见 scope-final）。
 - Q008B 两个生产文件完成；累计 **10 / 291 批、28 / 975 个生产文件**。本批仅提交 runaway_guard、三份既有测试、一份新增回归及两份进度记录，共七路径；state 源码无需修改，不制造空变更。下批 Q008C：handoff.py 的有界会话交接，先验证基线再改动。相关 Q190 快照类型债务、CodeMode 三个失败及其余原队列仍未完成。
+
+
+Q008B 已提交：`0bafdae2`（fix(agents): distinguish new read results from runaway repeats）。
+
+### Q008C：有界会话交接（进行中）
+
+- 声明范围为 handoff.py。检查模型摘要提取/白名单/字段预算、快照恢复、会话窗口切换及取消/失败回退；公共 ConversationContext/Snapshot 被 app、operation、agents 使用，compact_text 等默认预算与通用 helper 不同，不以薄包装或引用少为由删除公开入口。prepare_model_handoff 与计划激活路径的 trace、窗口接线和记账语义不同，不强行合并。
+- 基线 `python -m pytest -q tests/test_handoff.py --tb=short` → **退出 0，11 passed，1.12 秒**。
+- 新摘要回归首轮 3 failed，其中一个错误地假定 2000 层嵌套在本机不能解析；实测 Python 3.12 可以解析它，此时前置 unknown 对象按既有“首个可解析对象”语义被选中，该测试的 ready 预期没有依据。生产代码未为此改变；将 fixture 改成按 JSON 语法确定非法的 BROKEN 字面量，原“找到后续合法对象”断言不变，该对照本来通过。其余两个是有效行为失败。
+- **bug 准入**：`python -m pytest -q tests/test_handoff_summary_limits.py --tb=short` 在生产改动前最终 **退出 1，2 failed / 1 passed，1.23 秒**。输入均在 6000 字符模型摘要预算内：current_state 为 5000 位整数时默认解码抛 ValueError，未走既有无效摘要回退；current_state 为不可用的深层列表时，所有候选项被丢弃，兜底把 4019 字符原文直接写进字段，突破其他 current_state/字符串项共用的 MAX_HANDOFF_TEXT_CHARS=2000。独立依据是既有有界字段策略与“模型摘要失败仍保留本地事实”的回退职责，而非现有测试断言。
+- 修复：两种 JSON 解析资源异常 ValueError/RecursionError 走原无效 JSON 的提取/文本回退；只在解码边界捕获，不捕获业务异常。无有效已知项时也以 compact_text 生成兜底字段。取消传播、原始 goal 和其他事实保留。
+- 同类第二边界先单独复现：`python -m pytest -q tests/test_handoff_summary_limits.py -k snapshot_preserves --tb=short` → **退出 1，1 failed / 1 passed / 3 deselected，1.22 秒**。持久快照 conversation_summary=5000 位整数字符串在 to_payload 的 json.loads 泄漏 ValueError，而普通无效文本会进入原文本回退。随后对该解析边界采用相同修复，保留原 MAX_MODEL_SUMMARY_CHARS 文本预算；不截断成功解码的旧 JSON 结构。
+- 类型基线（bug 最小修复后、类型迁移前）：`python -m mypy codey/agents/handoff.py tests/test_handoff.py tests/test_handoff_summary_limits.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` → **退出 1，47 条 / 2 文件**。
+- 类型迁移将 unknown 限定在 JSON 解码和 from_payload 入场：先校验/收窄各字符串、列表成员和检查标签，再以具体字段构造 dataclass，去掉 Any kwargs；保留 tuple/list、未知元数据忽略及原错误消息。任意 JSON summary 经原 json.loads/json.dumps 验证和序列化，未新加深度/有限浮点/未知键限制改变旧数据兼容性。异构序列化投影为项目既有 dict[str,object] 合同，消费者需继续收窄值；没有新增 cast、ignore 或无参数回调。dict.fromkeys 的库返回值 Any 改为同序字典推导，去重/前 20 项不变。
+- Codec 的新增测试补齐旧基线：在同一目录短暂使用 `0bafdae2` 的原 handoff.py 执行 `python -m pytest -q tests/test_handoff_snapshot_codec.py --tb=short` → **退出 0，15 passed，1.19 秒**；脚本 finally 恢复本轮字节并核对无并发改动，未建/复制 worktree。记录 q008c-codec-baseline.json，restored_own_source=true。该对照是在补充 codec 范围时实际执行，不冒充首轮 11 例已覆盖 codec。
+- 最终直接组 `python -m pytest -q tests/test_handoff.py tests/test_handoff_summary_limits.py tests/test_handoff_snapshot_codec.py --tb=short` → **退出 0，35 passed，1.96 秒**；新增 ValueError/RecursionError 精确边界注入、后续合法片段和快照文本回退检查。
+- 同三测试及 handoff.py 四完整文件的加严 Any mypy → **退出 0**。中间剩余的 dict.fromkeys 库默认 Any、JSONDecoder 类/回调库 Any 已以具体构造与有类型的边界替身消除，未增加宽泛忽略。
+- 未计完成的依赖仍在原队列：conversation_plan 的 provider/trace 动态端口、conversation_runtime.py 的 ctx/durable/事件 Any 不在当前修复范围，不因此称整个会话运行时完成。正在按窗口复用、持久恢复和 app 快照使用关系扩大验证；当前仍 10 / 291、28 / 975 完成。
+
+
+Q008C 最终验收：
+
+- 调用方 `python -m pytest -q tests/test_context_delta_session_window_vs_handoff.py tests/test_recovery_handoff_preserves_original_task_prompt.py tests/test_conversation_resume_reuses_bound_window.py tests/test_conversation_registry.py tests/durable/test_provider_context_authority.py tests/durable/test_conversation_plan_no_provider_export.py tests/durable/test_session.py --tb=short` → **退出 0，45 passed，9.57 秒**，覆盖窗口复用、原任务保留、durable 快照与 app 缓存，不计作全仓测试。
+- 四完整文件的 scoped Pyrefly / ty / Ruff → **全部退出 0**。`python -m mypy codey --python-version 3.11` → **0，737 文件**；`pyrefly check codey --python-version 3.11` → **0，既有 35 suppressed/165 warnings 保留**；`ty check codey --python-version 3.11` → **0**；`python -m tools.kernel_type_precision_gate` → **0**。命令串行，源码哈希前后一致，changed_during_checks=[]，记录 q008c-validation.json。先前直接组 35 例和四文件加严 Any 的最终成功仍有效，未放宽或删掉断言。
+- Codec 核对：默认值、严格已知字段、changed_files 列表/元组、summary 字符串/数组/元组/字典、未知额外元数据的忽略和错误通道均保留。没有删除公开接口或将计划激活与模型摘要的不同职责强行合并。类型改动没有增加 JSON 预算/未知键限制；只修复已证明的解析回退与字段预算问题。
+- Q008C 的 handoff.py 完成；累计 **11 / 291 批、29 / 975 个生产文件**。六个明确路径提交（生产一份、测试三份、记录两份）。下一批 Q008D：consensus.py 的只读顾问请求、报告归一与投票；原全仓队列、SQLite/运行时类型债务与 CodeMode 三个失败仍未完成，总 goal 不变。

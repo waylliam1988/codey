@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any
 
 from codey.runtime.core import cancellation
+from codey.utils.object_fields import object_fields, sequence_items
 from codey.utils.text_budget import clip_tail, estimate_tokens
 
 DEFAULT_HARD_CONTEXT_TOKENS = 200_000
@@ -32,16 +32,17 @@ def compact_text(value: str, limit: int = MAX_HANDOFF_TEXT_CHARS) -> str:
     return clip_tail(value, limit)
 
 
-def _extract_json_object(text: str) -> dict[str, Any] | None:
+def _extract_json_object(text: str) -> dict[str, object] | None:
     decoder = json.JSONDecoder()
     for index, char in enumerate(text):
         if char != "{":
             continue
         try:
-            value, _end = decoder.raw_decode(text[index:])
-        except json.JSONDecodeError:
+            decoded: tuple[object, int] = decoder.raw_decode(text[index:])
+        except (ValueError, RecursionError):
             continue
-        if isinstance(value, dict):
+        value, _end = decoded
+        if object_fields(value):
             return value
     return None
 
@@ -57,7 +58,7 @@ def _normalize_model_summary(text: str) -> str:
         item = value.get(key)
         if isinstance(item, str) and item.strip():
             summary[key] = compact_text(item)
-        elif isinstance(item, list):
+        elif sequence_items(item):
             items = [
                 compact_text(entry)
                 for entry in item
@@ -66,7 +67,7 @@ def _normalize_model_summary(text: str) -> str:
             if items:
                 summary[key] = items
     if not summary:
-        summary["current_state"] = source
+        summary["current_state"] = compact_text(source)
     return json.dumps(summary, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -84,7 +85,7 @@ class ConversationSnapshot:
     latest_reply: str = ""
     conversation_summary: str = ""
 
-    def to_payload(self) -> dict[str, Any]:
+    def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
             "mode": self.mode,
             "goal": compact_text(self.goal),
@@ -93,7 +94,7 @@ class ConversationSnapshot:
             payload["project"] = self.project
         if self.provider_id:
             payload["previous_model"] = self.provider_id
-        files = tuple(dict.fromkeys(self.changed_files))[:MAX_HANDOFF_FILES]
+        files = tuple({path: None for path in self.changed_files})[:MAX_HANDOFF_FILES]
         if files:
             payload["changed_files"] = list(files)
         if self.checks_passed is not None:
@@ -108,19 +109,21 @@ class ConversationSnapshot:
             payload["latest_model_reply"] = compact_text(self.latest_reply)
         if self.conversation_summary:
             try:
-                payload["conversation_summary"] = json.loads(self.conversation_summary)
-            except json.JSONDecodeError:
+                decoded: object = json.loads(self.conversation_summary)
+                payload["conversation_summary"] = decoded
+            except (ValueError, RecursionError):
                 payload["conversation_summary"] = compact_text(
                     self.conversation_summary,
                     MAX_MODEL_SUMMARY_CHARS,
                 )
-        return {key: value for key, value in payload.items() if value not in ("", [], None)}
+        return {key: value for key, value in payload.items() if value not in ("", list[object](), None)}
 
     @classmethod
     def from_payload(cls, payload: object) -> ConversationSnapshot:
         if not isinstance(payload, dict):
             raise ValueError("conversation snapshot must be an object")
-        mode = payload.get("mode", "chat")
+        fields: Mapping[object, object] = payload
+        mode = fields.get("mode", "chat")
         if not isinstance(mode, str) or not mode:
             raise ValueError("conversation snapshot mode must be a non-empty string")
         string_fields = {
@@ -132,30 +135,45 @@ class ConversationSnapshot:
             "latest_user_message": "latest_user",
             "latest_model_reply": "latest_reply",
         }
-        values: dict[str, Any] = {"mode": mode}
+        values: dict[str, str] = {}
         for source, target in string_fields.items():
-            value = payload.get(source, "")
+            value = fields.get(source, "")
             if not isinstance(value, str):
                 raise ValueError(f"conversation snapshot {source} must be a string")
             values[target] = value
-        files = payload.get("changed_files", [])
-        if not isinstance(files, (list, tuple)) or any(not isinstance(item, str) for item in files):
+        files = fields.get("changed_files", list[object]())
+        if not sequence_items(files):
             raise ValueError("conversation snapshot changed_files must be a string list")
-        values["changed_files"] = tuple(files)
-        checks = payload.get("checks")
+        changed_files: list[str] = []
+        for item in files:
+            if not isinstance(item, str):
+                raise ValueError("conversation snapshot changed_files must be a string list")
+            changed_files.append(item)
+        checks = fields.get("checks")
         if checks not in (None, "passed", "not passed"):
             raise ValueError("conversation snapshot checks must be passed or not passed")
-        values["checks_passed"] = None if checks is None else checks == "passed"
-        summary = payload.get("conversation_summary", "")
-        if isinstance(summary, (dict, list, tuple)):
+        summary = fields.get("conversation_summary", "")
+        if sequence_items(summary):
+            summary_items: Sequence[object]
             if isinstance(summary, tuple):
-                summary = list(summary)
-            values["conversation_summary"] = json.dumps(summary, ensure_ascii=False, separators=(",", ":"))
+                tuple_items: tuple[object, ...] = summary
+                summary_items = list(tuple_items)
+            else:
+                summary_items = summary
+            serialized_summary = json.dumps(summary_items, ensure_ascii=False, separators=(",", ":"))
+        elif isinstance(summary, dict):
+            summary_fields: Mapping[object, object] = summary
+            serialized_summary = json.dumps(summary_fields, ensure_ascii=False, separators=(",", ":"))
         elif isinstance(summary, str):
-            values["conversation_summary"] = summary
+            serialized_summary = summary
         else:
             raise ValueError("conversation snapshot summary must be JSON data")
-        return cls(**values)
+        return cls(
+            mode=mode, goal=values["goal"], project=values["project"], provider_id=values["provider_id"],
+            summary=values["summary"], blocker=values["blocker"], latest_user=values["latest_user"],
+            latest_reply=values["latest_reply"], changed_files=tuple(changed_files),
+            checks_passed=None if checks is None else checks == "passed", conversation_summary=serialized_summary,
+        )
 
 
 def render_handoff(snapshot: ConversationSnapshot) -> str:
