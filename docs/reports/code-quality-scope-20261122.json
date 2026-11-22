@@ -1540,9 +1540,28 @@
       ],
       "id": "Q008",
       "status": "in_progress",
-      "reviewed_files": [],
+      "reviewed_files": [
+        "codey/agents/request.py",
+        "codey/agents/tools.py",
+        "codey/agents/tool_execution.py",
+        "codey/agents/project_audit_tools.py"
+      ],
       "verified_files": [],
-      "candidate_test_count": "recompute at entry; initial combined count 73"
+      "candidate_test_count": "recompute at entry; initial combined count 73",
+      "result": "Direct/caller tests and 9-file strict Any checks passed. User-prioritized durable query root cause repaired and verified in Q053; original machine gate was stopped without final summary. Resume classification of its three early failures using explicit small file batches before committing Q008.",
+      "tests": [
+        "tests/test_project_audit_root_paths.py",
+        "tests/test_agent_tools.py",
+        "tests/test_agent_request_no_dead_fields.py",
+        "tests/test_project_audit_tools_ownership.py",
+        "tests/test_project_audit_advisor_kernel.py",
+        "tests/test_audit_resolve_paths.py",
+        "tests/test_consensus_audit_split.py",
+        "tests/test_agent_effect_sandwich.py",
+        "tests/test_tool_replay_policy.py",
+        "tests/test_read_before_edit_ab.py",
+        "tests/test_tool_runtime.py"
+      ]
     },
     {
       "responsibility": "Bounded seen-information and runaway loop guards",
@@ -2167,10 +2186,15 @@
         "codey/durable/sqlite.py"
       ],
       "id": "Q052",
-      "status": "not_started",
+      "status": "partial_follow_up",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 0
+      "candidate_test_count": 0,
+      "result": "User-prioritized settlement fix adds single-scan batch read from original workflow log; empty workflows skipped. Scoped storage/caller tests and normal full-production typing passed. Whole-file strict Any has 169 existing diagnostics from sqlite3.Row/cursor/JSON boundaries; new method has no diagnostics. Full transaction-engine review and boundary migration remain pending.",
+      "inspected_functions": [
+        "task_history",
+        "task_settlement_history"
+      ]
     },
     {
       "responsibility": "codey/durable: shared contracts and module services",
@@ -2179,10 +2203,25 @@
         "codey/durable/timeline.py"
       ],
       "id": "Q053",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/durable/store.py",
+        "codey/durable/timeline.py"
+      ],
+      "verified_files": [
+        "codey/durable/store.py",
+        "codey/durable/timeline.py"
+      ],
+      "candidate_test_count": 0,
+      "result": "Reviewed store/timeline contracts and historical settlement projection; deterministic pre-fix cost failure at 42 checkpoint reconstructions, post-fix at most 1 with identical settled result. Original slow file covered in disjoint 2+12 cases, all passed; cutoff/empty workflow/legacy/corruption/dedup/conflict/restart and concurrency callers verified. Whole-file strict Any and normal production gates passed. Cross-batch SQLite Any debt is explicitly retained in Q052; no whole-durable completion claim.",
+      "tests": [
+        "tests/durable/test_settlement_history_projection.py",
+        "tests/durable/test_settlement_projection_cost.py",
+        "tests/durable/test_workflow_timeline.py",
+        "tests/durable/test_effect_identity.py",
+        "tests/test_denied_probe_preserves_candidate_validation_evidence.py",
+        "tests/test_tool_task_next_stage.py"
+      ]
     },
     {
       "responsibility": "codey/durable: task kernel and execution",
@@ -2209,10 +2248,13 @@
         "codey/durable/task_queries.py"
       ],
       "id": "Q055",
-      "status": "not_started",
-      "reviewed_files": [],
+      "status": "partial_follow_up",
+      "reviewed_files": [
+        "codey/durable/task_queries.py"
+      ],
       "verified_files": [],
-      "candidate_test_count": 0
+      "candidate_test_count": 0,
+      "result": "task_queries.py settlement caller migrated and whole-file strict Any passed; cutoff, scope and conflict rules retained. task_projection.py remains unreviewed; do not count this batch complete."
     },
     {
       "responsibility": "codey/durable: context and checkpoint boundaries",
@@ -2286,10 +2328,16 @@
         "codey/durable/memory.py"
       ],
       "id": "Q061",
-      "status": "not_started",
+      "status": "partial_follow_up",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 0
+      "candidate_test_count": 0,
+      "inspected_functions": [
+        "task_history",
+        "task_settlement_history",
+        "queued_submissions"
+      ],
+      "result": "Memory settlement projection and typed queue ordering callback verified; whole-file strict Any passed. Full store business review remains pending; do not count this batch complete."
     },
     {
       "responsibility": "codey/durable: provider connection and selection",
@@ -2637,7 +2685,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 90
+      "candidate_test_count": 90,
+      "followups": [
+        "Q008 callback trace: managed_tool_fns.run_command returns Any at line 247; actual paths return ToolOutcome but surrounding file not fully governed. Retain whole-file Any obligation in owner batch."
+      ]
     },
     {
       "responsibility": "codey/operations: context and checkpoint boundaries",
@@ -4512,7 +4563,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 6
+      "candidate_test_count": 6,
+      "followups": [
+        "Q008 interface trace: whole-file extra Any audit found one implicit dict[Any, Any] expression at line 70 in next_call_hint json.dumps input; not edited; retain as pending owner work."
+      ]
     },
     {
       "responsibility": "codey/toolchain: task kernel and execution",
@@ -7110,7 +7164,8 @@
     "tests/work_checkpoint_smoke.py",
     "tools/go_contract/main_test.go",
     "tests/test_ref_text_budget.py",
-    "tests/test_browser_control_continuation.py"
+    "tests/test_browser_control_continuation.py",
+    "tests/test_project_audit_root_paths.py"
   ],
   "excluded_tracked_source": [
     {
@@ -7414,6 +7469,15 @@
         "Q008B",
         "Q008C",
         "Q008D"
+      ]
+    },
+    {
+      "batch": "Q053",
+      "reason": "User explicitly requested diagnosis and repair of the >120-second candidate recovery case; suspend Q008 final gate investigation and validate durable projection root cause first. No files removed from original queue.",
+      "related_batches": [
+        "Q052",
+        "Q055",
+        "Q061"
       ]
     }
   ]

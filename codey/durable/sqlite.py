@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Generator, Mapping
+from collections.abc import Generator, Iterator, Mapping
 from contextlib import closing, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -57,9 +57,11 @@ from codey.durable.sqlite_records import (
 )
 from codey.durable.sqlite_schema import initialize_database
 from codey.durable.timeline import (
+    TaskSettlementHistory,
     TaskTransition,
     execution_payload,
     public_commit_payload,
+    settlement_histories,
     transition_from_payload,
 )
 from codey.storage.file_lock import acquire_lease
@@ -548,6 +550,27 @@ class SQLiteDurableStore:
                 if matches or legacy_match:
                     history.append(transition_from_payload(int(row["seq"]), raw, task_id))
             return tuple(history)
+
+    def task_settlement_history(
+        self, task_ids: tuple[str, ...], *, through: int,
+    ) -> tuple[TaskSettlementHistory, ...]:
+        with closing(self._connect()) as database:
+            rows: list[sqlite3.Row] = database.execute(
+                "SELECT seq, json_extract(payload, '$._workflow') AS workflow FROM commits "
+                "WHERE json_extract(payload, '$._workflow') IS NOT NULL AND seq<=? ORDER BY seq",
+                (through,),
+            ).fetchall()
+
+            def payloads() -> Iterator[tuple[int, object]]:
+                for row in rows:
+                    sequence: object = row["seq"]
+                    encoded: object = row["workflow"]
+                    if type(sequence) is not int or not isinstance(encoded, str):
+                        raise ValueError("invalid workflow commit row")
+                    value: object = json.loads(encoded)
+                    yield sequence, value
+
+            return settlement_histories(task_ids, payloads())
 
 
 def _entries(database: sqlite3.Connection, conversation_id: str) -> tuple[EntryDraft, ...]:

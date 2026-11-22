@@ -17,7 +17,7 @@ from codey.durable.model import (
     SubmissionRecord,
     TaskCheckpoint,
 )
-from codey.durable.timeline import TaskTransition
+from codey.durable.timeline import TaskSettlementHistory, TaskTransition
 
 
 class DurableStore(Protocol):
@@ -85,6 +85,10 @@ class DurableStore(Protocol):
     def task(self, task_id: str) -> TaskCheckpoint: ...
 
     def task_history(self, task_id: str, *, through: int | None = None) -> tuple[TaskTransition, ...]: ...
+
+    def task_settlement_history(
+        self, task_ids: tuple[str, ...], *, through: int,
+    ) -> tuple[TaskSettlementHistory, ...]: ...
 
     def effect(self, effect_id: str) -> EffectRecord: ...
 

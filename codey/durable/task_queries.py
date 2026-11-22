@@ -77,29 +77,26 @@ class TaskQueryFacade:
         """Read the owner's and owned tools' settlements at one commit boundary."""
         def read() -> tuple[EffectRecord, ...]:
             cutoff = self._store.commit_sequence()
-            owner = read_task_snapshot(self._store, task_id, cutoff).task
-            tasks = (owner, *(child for child in self._store.owned_dependents(task_id)
-                             if child.execution_kind == "tool"))
+            task_ids = (task_id, *(child.task_id for child in self._store.owned_dependents(task_id)
+                                   if child.execution_kind == "tool"))
+            histories = self._store.task_settlement_history(task_ids, through=cutoff)
+            owner = next((history.task for history in histories if history.task.task_id == task_id), None)
+            if owner is None:
+                raise KeyError("task has no checkpoint at this commit")
             first: dict[str, tuple[int, EffectRecord]] = {}
-            for task in tasks:
-                history = self._store.task_history(task.task_id, through=cutoff)
-                if not history:
-                    continue
-                captured = history[-1].task
+            for history in histories:
+                captured = history.task
                 if captured.task_id != owner.task_id and (
                     captured.owner_task_id != owner.task_id or captured.conversation_id != owner.conversation_id
                     or captured.submission_id != owner.submission_id
                 ):
                     raise ValueError("tool settlement is outside its owner's scope")
-                for point in history:
-                    for effect in point.effect_changes:
-                        if effect.settlement is None:
-                            continue
-                        previous = first.get(effect.effect_id)
-                        if previous is None:
-                            first[effect.effect_id] = point.commit_seq, effect
-                        elif previous[1].settlement != effect.settlement:
-                            raise ValueError("conflicting terminal effect settlements")
+                for sequence, effect in history.settlements:
+                    previous = first.get(effect.effect_id)
+                    if previous is None:
+                        first[effect.effect_id] = sequence, effect
+                    elif previous[1].settlement != effect.settlement:
+                        raise ValueError("conflicting terminal effect settlements")
             def order(row: tuple[int, EffectRecord]) -> int:
                 return row[0]
 

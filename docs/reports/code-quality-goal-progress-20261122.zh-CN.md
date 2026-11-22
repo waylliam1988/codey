@@ -352,3 +352,85 @@ Q003 自有三个生产文件和深入检查的关联测试完成 Any/行为验�
 进入 Q008 时，按模块 docstring/声明核对发现原“shared contracts”自动分组包含四种独立职责，现拆为 Q008（请求/工具分发，4 文件）、Q008B（状态与循环守卫，2 文件）、Q008C（对话 handoff，1 文件）、Q008D（只读多模型顾问，1 文件）。两个单文件各有独立的完整状态/顾问契约和专用测试，适合独立验收。原 8 文件全部保留，其他批次 ID 不变；总批数 **288 → 291**，不是缩小源码范围或制造完成率。清单归属/去重断言通过。
 
 当前 **7 / 291 批完成，20 / 975 个生产文件验收完成**。下一主要批次 Q008；其他三个子批次未开始，未把 AST 声明盘点算作深入检查。总 goal 继续 active。
+
+### Q008 进行中：请求、工具契约与只读审计
+
+- Q005～Q007 提交：`26c7cbf4`。完整读取本批 request、tools、tool_execution、project_audit_tools 四生产文件；相关深入测试为 agent_tools、project_audit_tools_ownership、audit_resolve_paths、consensus_audit_split 及新增 root_paths。
+- 本轮之外的浏览器/研究改动已由其所有者提交为 `1292e668`；没有混入本批暂存/提交。后续全树门禁基于此提交和本批工作区。
+
+**bug 准入证据**：审计明确拒绝项目内符号链接，根目录的展开形式不应改变该拒绝策略；既有 read/list 已 expanduser，搜索的 safe_join 也接受展开根目录，但原搜索/引用前置检查在未展开根目录上查链接。真实探针在用户 home 下独占临时目录创建 actual.py、alias.py 符号链接，传入 `~/<临时目录>`，实际 search 返回 actual.py 的 `needle = 1` 并标记成功，违反拒绝策略，断言失败、退出 1。新增 root_paths 测试在生产修改前实际 **2 failed、2 passed**（展开根目录的对照本来通过），均是目标行为失败。为了不要求 CI 拥有创建链接的权限，自动回归只在 Path 的文件系统边界模拟 expanduser/resolve/is_symlink，其余扫描和文件内容真实执行，没有新增 skip。
+
+修复：原共享 `_audit_search_resolve_start` 在检查子路径链接前展开/解析根目录；references 迁移到同一解析入口，并对后续扫描使用展开根目录，删除重复的拒绝/解析/存在检查。相同回归修复后 4 passed；真实符号链接探针的 search、references 都拒绝、退出 0。随后补充普通文件 search/references 在 tilde 根目录的正向边界，最终该文件 6 passed。
+
+**重复职责收敛**：公开 visible_entries、execute_read_only_call 原来各只转发一个私有同签名实现。完整模块无注册/反射入口，__all__ 和 operations 消费者只公开/调用原公开名；配置、CLI、打包没有引用私有名。全树搜索另外只找到 ownership 测试对 consensus 禁止旧定义的字符串，以及 kernel_parity 冻结 JSON 的 inventory.ast_surface 元数据，非 cases/执行入口。保留该历史 fixture，不据其元数据删除测试。已将两个实现直接归入原公开入口、更新内部调用并删除两层转发；公开名称、参数、输出和错误路径保留。合并前审计基线通过，合并后 26 个审计用例通过。
+
+**类型治理**：read/search/write/run 端口使用明确 Protocol，带运行上下文的回调使用六参数 Callable；可选参数以 TypedDict/Unpack 表达，校验/投影保留键缺省语义。ReplayDecision、文件迭代器和工具返回值明确，删除 Any/cast。字段依据是现有 toolchain/definition 的冻结 schema：offset/limit/context 为 integer，开关为 boolean，include 为 string，exclude 为 string 数组；非法字段类型走既有 ToolOutcome 错误通道，不修改底层工具自身分页归一化。测试验证省略字段与显式 False/0/空值保留、九种非法类型拒绝。旧测试 root=None 改为 Path('.')，独立依据为执行入口的 Path 合同；原 command/cwd/profile/phase 断言不变，未让生产接受无效 fixture。
+
+| 实际命令 | 退出码 | 结果与范围 |
+| --- | --- | --- |
+| `python -m pytest -q tests/test_agent_tools.py tests/test_agent_request_no_dead_fields.py tests/test_project_audit_tools_ownership.py tests/test_project_audit_advisor_kernel.py --tb=short` | 0 | 修改前 18 passed |
+| `python -m mypy codey/agents/request.py codey/agents/tools.py codey/agents/tool_execution.py codey/agents/project_audit_tools.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` | 1 | 修改前 22 条、3 文件；request 本来通过 |
+| `python -m pytest -q tests/test_project_audit_root_paths.py --tb=short` | 1 → 0 | 修改前 2 failed/2 passed；修复后 4 passed；扩展边界后最终 6 passed |
+| `python -m pytest -q tests/test_project_audit_root_paths.py tests/test_agent_tools.py tests/test_agent_request_no_dead_fields.py tests/test_project_audit_tools_ownership.py tests/test_project_audit_advisor_kernel.py tests/test_audit_resolve_paths.py tests/test_consensus_audit_split.py --tb=short` | 0 | 第一次 31 passed；补充边界后 33 passed、9 subtests passed |
+| `python -m pytest -q tests/test_agent_effect_sandwich.py tests/test_tool_replay_policy.py tests/test_read_before_edit_ab.py tests/test_tool_runtime.py --tb=short` | 0 | 调用方 125 passed、33 subtests passed，无 skip |
+| `python -m pytest -q tests/test_project_audit_root_paths.py tests/test_project_audit_tools_ownership.py tests/test_project_audit_advisor_kernel.py tests/test_audit_resolve_paths.py tests/test_consensus_audit_split.py --tb=short` | 0 | 转发合并后 26 passed |
+| `python -m pytest -q tests/test_agent_tools.py --tb=short` | 0 | 最终显式 False/0/空值边界后 6 passed、9 subtests passed |
+| `python -m mypy codey/agents/request.py codey/agents/tools.py codey/agents/tool_execution.py codey/agents/project_audit_tools.py tests/test_project_audit_root_paths.py tests/test_agent_tools.py tests/test_project_audit_tools_ownership.py tests/test_audit_resolve_paths.py tests/test_consensus_audit_split.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` | 0 | 九个完整文件通过；中间诊断包括 TypedDict 可选字段合并 1 条、关联旧测试 17 条及一处测试字面量推断，均实际修复，未忽略 |
+| 同九路径 `pyrefly check ... --python-version 3.11` / `ty check ... --python-version 3.11` | 0 / 0 | 两者通过 |
+| 同九路径 `python -m ruff check ...` | 1 → 0 | 仅新增导入间距 I001，修复后通过 |
+| `python -m tools.kernel_type_precision_gate` | 0 | 精度门禁通过 |
+| `python -m mypy codey --python-version 3.11` | 0 | 最终 737 文件通过 |
+| `pyrefly check codey --python-version 3.11` | 0 | 0 errors，35 suppressed / 165 warnings 仍未消除 |
+| `ty check codey --python-version 3.11` | 0 | 通过 |
+| `python -m tools.source_size_inventory` | 0 | 仅实际行数盘点，不是源码审查/测试结果；第三方和生成文件仍按治理范围排除 |
+
+最终全树类型命令串行执行，737 个生产源码检查前后 SHA-256 一致，`changed_during_checks=[]`；日志/命令/快照在 `.e2e-artifacts/code-quality-20261122/q008-final-full-types.json` 和相邻日志。上轮外部全树类型失败已被当前实际成功结果替代；五个跨区域测试失败没有据此说成解决。
+
+依赖追踪的额外整文件 Any 审计：`python -m mypy codey/toolchain/execution_options.py codey/runtime/effects/replay_policy.py codey/toolchain/search_page.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` 退出 1；前两个无诊断，search_page:70 有一处 json.dumps 字面量的隐式 dict[Any, Any]，保留到其所属批次，未计为治理完成。仅追踪的 project_completion_context:247 仍有回调 Any 声明，已归属原批次，不无限扩展当前区域。
+
+当前额外运行项目机器契约门禁 `python -m tools.machine_contract_gate`：已核对其固定 191 个明确测试文件，完整选择和门禁源码哈希保存在 `.e2e-artifacts/code-quality-20261122/q008-machine-selection.json`；不是全仓收集。该次门禁在约 25% 处出现慢用例和 3 个早期失败；采样完成后明确终止已核对命令的 PID 36624，session 49562 最终退出 1，未取得最终汇总，不计为通过或完整覆盖。现有唯一 pytest 文件实际覆盖先保持 **41 个**；门禁选择不能当作已执行。Q008 仍进行中，完成计数仍 **7 / 291、20 / 975**。
+
+
+### 用户插入优先项：持久化结算查询长耗时（进行中）
+
+- 原机器门禁已主动终止，不再存活；不是观察超时后误报退出。未重新启动 191 文件门禁。
+- 15 秒 py-spy 采样有 1298 个样本，主线程持有 GIL 执行历史 JSON/检查点反序列化；settled_projections/settled_effects 约 63% inclusive。后台调度线程在等待查询持有的写锁，未观察到锁环；现有证据是 CPU 重复工作，不能据此断言所有竞态均不存在。证据：q008-machine-live.speedscope.json。
+- 根因：每次查询为 owner 重建全历史以确定作用域，又为 owner 和工具子任务分别全扫描 workflow commits、重建每一版完整 checkpoint（含冻结输入/工具目录）。
+- 最小回归 tests/durable/test_settlement_projection_cost.py：一条结算后增加 16 次状态更新，结果必须仍为原结算且每个 task/cursor 至多构造一个最终 checkpoint。修改前实际失败：42 次构造，断言 42 <= 1 失败。修改后与 workflow_timeline/effect_identity 首批 20 passed（退出 0，2.17 秒）。性能要求来自只读历史投影所需数据：结算和截止点作用域，不需要构造已替代的全部检查点；不改变历史截止语义。
+- 已实施单次原始日志遍历的批量投影，保留原日志/事务/查询锁、截止点、归属检查和冲突拒绝；不新增缓存、表或第二套事实账本。
+- 原 writer 用例首轮修复后实际 1 failed（3.59 秒），暴露新投影未处理合法空 workflow={}。该失败为本次引入，正在修复并增加边界回归；不得作为通过或原问题已解决。
+- 新发现其他工作区文件 catalog.py、research/answer_context.py、research/answer_contract.py 的改动不属于本项，保留且不暂存。
+
+- 空 workflow 分支修正后原 writer / repair nodeid 分别 **1 passed，54.96 秒 / 1 passed，104.93 秒**（调用 53.86 / 103.81 秒），两次都保留原始断言。JSON 记录：settlement-writer-post.json、settlement-repair-post.json。
+- repair 的第二次 15 秒采样：主线程 1062 样本；settled_effects 约 30.7%，SQLite settlement 批量读约 16.5%；仍有当前任务读取、ToolTaskInput 校验及调用方反复恢复成本。该采样和原门禁采样不是同一个执行阶段，不当作严格加速倍数。191 次非阻塞读取失败为 profiler 采样错误，不能当作竞态证据。
+- 最小边界组：`python -m pytest -q tests/durable/test_settlement_projection_cost.py tests/durable/test_settlement_history_projection.py tests/durable/test_workflow_timeline.py tests/durable/test_effect_identity.py --tb=short` → 退出 0，**28 passed，2.17 秒**。
+- 扩大存储/只读边界组：`python -m pytest -q tests/durable/test_settlement_history_projection.py tests/durable/test_settlement_projection_cost.py tests/durable/test_workflow_timeline.py tests/durable/test_inbox_placement.py tests/durable/test_queued_input_revision.py tests/durable/test_owner_reverse_index.py tests/durable/test_conversation_mutation_line.py tests/durable/test_store_contract.py --tb=short` → 退出 0，**116 passed，4.28 秒**。
+- 调用方与竞态组：`python -m pytest -q tests/test_tool_task_next_stage.py tests/durable/test_execution_fencing.py tests/durable/test_scheduler_wakeup_races.py tests/durable/test_runtime_transaction_owner.py --tb=short --durations=5` → 退出 0，**34 passed，15.91 秒**；包含父子结算顺序冷热恢复、重复输入去重、执行权和调度唤醒竞态。
+- 增补重复/冲突结算边界后两份新测试文件重跑：`python -m pytest -q tests/durable/test_settlement_history_projection.py tests/durable/test_settlement_projection_cost.py --tb=short` → 退出 0，**11 passed，1.72 秒**。
+- 全文件加严 Any 检查七路径退出 1，**173 条 / 3 文件**：timeline:157 一条旧 Mapping Any；memory:574 三条旧 lambda 参数 Any；sqlite.py 169 条，来自 Row/游标/json.loads 等既有边界，新增方法无诊断。前两处已以类型收窄/明确回调参数修正，待复验。SQLite 整文件治理尚未完成，不据局部方法无诊断称整文件通过；其系统性边界改造留 Q052，不为当前性能修复扩大到整份事务引擎。
+- 当前主要批次切到 Q053（用户明确优先的历史投影修复），Q008 标记部分完成、待门禁早期失败处置；已完成计数保持 7 / 291、20 / 975。
+
+
+### 持久化长耗时修复验收（Q053；相关 Q052/Q055/Q061 保留部分完成）
+
+**最终根因与修改**：这是已采样到的 CPU 历史重建放大，未发现锁环或可复现竞态；调度线程等待正在做重复解码的查询线。批量 API 一次遍历原 workflow 日志，在同一个 cutoff 内保留每次终态结算，仅构造各任务最终 checkpoint。没有去掉查询锁、改用当前效果行代替历史、增加缓存或新账本。effect payload 解码复用同一实现。合法空 workflow={} 跳过，不当任务读取。memory 旧队列排序回调明确参数/返回类型，顺序不变。
+
+**原始文件完整覆盖**：先前 writer 和 repair 两个 nodeid 分别通过；随后 `python -m pytest -q tests/test_denied_probe_preserves_candidate_validation_evidence.py -k 'not test_denied_probe_then_stagnation_gets_actual_current_validation_and_completion' --tb=short --durations=8` 退出 **0，12 passed、2 deselected，632.91 秒**。这两个 deselected 是先前已单独执行通过的两例，不是 skip。合并为该文件全部 **14 个非重叠用例实际通过**；不称为同一次全文件命令通过。余批最慢单例 109.61 秒；review 三例约 100–102 秒，丢失退出码 109.54 秒。无新增 skip/xfail，也未修改该文件的断言、回合数或超时配置。性能成本仍偏高，残余当前任务/工具输入校验及调用方重复恢复成本记为 Q054/Q055/Q062 后续项，不声称所有性能问题都已消除。
+
+最终串行验证（工作目录 D:/codey，日志在 .e2e-artifacts/code-quality-20261122/settlement-final-validation.json 及相邻日志）：
+
+| 实际命令 | 退出码 | 结果 |
+| --- | --- | --- |
+| `python -m pytest -q tests/durable/test_settlement_history_projection.py tests/durable/test_settlement_projection_cost.py --tb=short` | 0 | 11 passed，1.71 秒；含 SQLite 重启与旧 cutoff、Memory/SQLite 空日志、旧单 task 格式、多任务过滤、重复/矛盾结算、损坏边界 |
+| `python -m mypy codey/durable/timeline.py codey/durable/store.py codey/durable/task_queries.py codey/durable/memory.py tests/durable/test_settlement_history_projection.py tests/durable/test_settlement_projection_cost.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` | 0 | 6 个完整文件通过，未添加 cast/ignore/关闭检查；测试计数器用有注解函数，避免 mock 的 Any 传播 |
+| `python -m mypy codey --python-version 3.11` | 0 | 737 个生产文件通过 |
+| `pyrefly check codey --python-version 3.11` | 0 | 0 errors；既有 35 suppressed / 165 warnings 未消除 |
+| `ty check codey --python-version 3.11` | 0 | 通过 |
+| `python -m tools.kernel_type_precision_gate` | 0 | 通过 |
+| `python -m ruff check codey/durable/timeline.py codey/durable/store.py codey/durable/task_queries.py codey/durable/memory.py codey/durable/sqlite.py tests/durable/test_settlement_history_projection.py tests/durable/test_settlement_projection_cost.py` | 0 | 首次仅新测试导入 I001，修正后通过；无无关格式化 |
+
+737 文件检查前后哈希一致，changed_during_checks=[]；原慢文件余批期间五个 durable 修改文件哈希也未变化。稳定性记录：settlement-final-source-stability.json、settlement-source-snapshot.json。
+
+**类型未完成范围**：SQLite 整文件额外 Any 169 条仍在 Q052（sqlite3.Row/游标返回值、JSON 边界；例如 sqlite.py:87、100、541–551 等），不能以标准 mypy 通过替代加严检查。旧 `tests/test_denied_probe_preserves_candidate_validation_evidence.py` 的未注解测试参数（如 :20、64、98）/mock capture，以及 `tests/project_candidate_recovery_fixture.py` 的动态 fixture 返回和回调，尚未做完整类型迁移；该脚本治理不计完成。根因修复可以独立保留；相关大文件迁移后续分批推进，不连带宣称整个 durable 区域完成。
+
+**进度与未覆盖**：Q053 的原有两个生产文件 store.py/timeline.py 完成，完成 **8 / 291 批、22 / 975 生产文件**。Q052/Q055/Q061 仅完成本次受影响部分；无新增删除项。191 文件机器门禁仍未取得完整结果，其三个早期失败待 Q008 以小批定位；其余未执行范围及既有待确认事项仍保留。接下来恢复 Q008 最终验收，然后回到既定队列，不继续追加可选性能优化。根因修复提交按明确九个路径暂存；commit hash 在提交后记录。

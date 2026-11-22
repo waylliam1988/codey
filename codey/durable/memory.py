@@ -40,7 +40,7 @@ from codey.durable.model import (
     valid_task_status_transition,
     valid_task_transition,
 )
-from codey.durable.timeline import TaskTransition, execution_payload, transition_from_payload
+from codey.durable.timeline import TaskSettlementHistory, TaskTransition, execution_payload, transition_from_payload
 
 
 @dataclass(frozen=True)
@@ -569,10 +569,10 @@ class MemoryDurableStore:
                 and item.record.placement is SubmissionPlacement.QUEUED
                 and (conversation_id is None or item.record.conversation_id == conversation_id)
             ]
-            return tuple(sorted(
-                queued,
-                key=lambda item: self._submissions[(item.conversation_id, item.request_id)].result.sequence,
-            ))
+            def order(item: SubmissionRecord) -> int:
+                return self._submissions[(item.conversation_id, item.request_id)].result.sequence
+
+            return tuple(sorted(queued, key=order))
 
     def submission_result_for_request(
         self, conversation_id: str, request_id: str, fingerprint: str,
@@ -653,6 +653,19 @@ class MemoryDurableStore:
         with self._lock:
             return tuple(point for point in self._history.get(task_id, ())
                          if through is None or point.commit_seq <= through)
+
+    def task_settlement_history(
+        self, task_ids: tuple[str, ...], *, through: int,
+    ) -> tuple[TaskSettlementHistory, ...]:
+        with self._lock:
+            histories: list[TaskSettlementHistory] = []
+            for task_id in task_ids:
+                points = self.task_history(task_id, through=through)
+                if points:
+                    changes = tuple((point.commit_seq, effect) for point in points
+                                    for effect in point.effect_changes if effect.settlement is not None)
+                    histories.append(TaskSettlementHistory(points[-1].task, changes))
+            return tuple(histories)
 
     def entries(self, conversation_id: str) -> tuple[EntryDraft, ...]:
         with self._lock:
