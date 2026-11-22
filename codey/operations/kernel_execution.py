@@ -51,7 +51,7 @@ from codey.operations.task_session import TaskSession, effect_coordinates, turn_
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, decode_json_object, require_json_string
 
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
@@ -834,13 +834,14 @@ def _admit_background(context: ToolExecutionContext, identity: str, call: ToolCa
             return _error_result(call, "background browser wait requires durable execution")
         try:
             resource_binding = browser.capture_wait_binding()
-            if call.name == "browser_wait" and call.args.get("condition") == "text_changed":
+            if call.name == "browser_wait" and call.args.get("condition") in {"text_changed", "controls_changed"}:
                 from codey.automation.browser_document import same_document
-                from codey.operations.browser_waits import snapshot_text_baseline
+                from codey.operations.browser_waits import snapshot_wait_baseline
 
                 if context.delegate.session is None:
                     raise ValueError("text_changed requires the original task receipts")
-                _text, document = snapshot_text_baseline(context.delegate.session, str(call.args.get("value") or ""))
+                _baseline, document = snapshot_wait_baseline(context.delegate.session, str(call.args.get("value") or ""),
+                    require_json_string(call.args.get("condition"), "condition"))
                 if not same_document(document, resource_binding["browser_document"]):
                     raise ValueError("text_changed requires the original snapshot document")
             context.durable.tool_resources.bind_browser(tool_task_id(identity), browser, resource_binding)

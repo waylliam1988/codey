@@ -35,7 +35,7 @@ from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.tools import ResearchTools
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.types.json_value import JsonObject, decode_json_object, parse_json_object, require_json_string
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object, require_json_string
 from tests.support.task_browser import install
 from tests.test_browser_context_delivery import URL
 from tests.test_browser_context_delivery import production_browser as production_browser
@@ -164,8 +164,9 @@ def test_alternating_reload_and_snapshot_does_not_reset_the_progress_budget(cycl
         progress.observe([parent], session, batch_id=f"navigation-{index}")
         progress.observe([explicit], session, batch_id=f"observation-{index}")
     assert progress.idle >= 4
-    assert not progress.stopped  # Repeated effects do not authorize safe completion.
-    assert progress.repeat_feedback()
+    assert progress.stopped  # A stalled reload cycle ends incomplete, never as business success.
+    restored = KernelProgress(snapshot=progress.snapshot())
+    assert restored.stopped and restored.idle == progress.idle
 
 
 @pytest.mark.parametrize("change", ["body", "input", "unrelated_program", "other_document", "browser_click", "browser_press", "browser_select"])
@@ -261,8 +262,9 @@ def test_delayed_native_controls_can_continue_without_repeating_the_delivered_cl
         this.after(next);},1600)">Begin</button></main>''')
     snapshot = observed_snapshot(session, browser)
     clicked = program(session, tools, snapshot,
-        "return unwrap(await tools.browser_click({ref:{role:'button',name:'Begin'},purpose:'controls'}));")
+        "return unwrap(await tools.browser_click({ref:{role:'button',name:'Begin'},purpose:'action'}));")
     assert clicked.ok, clicked.model_text
+    observed_snapshot(session, browser)
     current, hint = task_handoff(session, build_turn_snapshot(session), CompletionContext(), browser)
     assert current.browser_references is not None
     ref = current.browser_references.receipt_ref
@@ -322,9 +324,10 @@ def test_observation_wait_preserves_timeout_cancellation_and_original_document(
 
 
 @pytest.mark.parametrize("outcome", ["change", "managed_change", "worker_restart", "cancel", "navigation", "missing_snapshot"])
+@pytest.mark.parametrize("condition", ["text_changed", "controls_changed"])
 def test_background_text_wait_restores_the_original_snapshot_after_cache_loss(
     tmp_path: Path, production_browser: tuple[TaskSession, ResearchTools, BrowserSession],
-    monkeypatch: pytest.MonkeyPatch, outcome: str,
+    monkeypatch: pytest.MonkeyPatch, outcome: str, condition: str,
 ) -> None:
     session, tools, browser = production_browser
     runtime = open_runtime(tmp_path)
@@ -343,7 +346,8 @@ def test_background_text_wait_restores_the_original_snapshot_after_cache_loss(
 
     try:
         assert browser.navigate(URL).ok
-        install(browser, "<main><p>Waiting for the actual response.</p>" + ("z" * 9000 if outcome == "managed_change" else "") + "</main>")
+        install(browser, "<main><p>Waiting for the actual response.</p><button>Existing control</button>"
+            + ("z" * 9000 if outcome == "managed_change" else "") + "</main>")
         observed = execute(ToolCall("browser_snapshot", {}), 0)
         assert observed.ok
         source_ref = next(ref for ref, result in session._memory_results.items() if result.call.name == "browser_snapshot")
@@ -351,20 +355,26 @@ def test_background_text_wait_restores_the_original_snapshot_after_cache_loss(
             settled = runtime.app.durable.effect(source_ref).settlement
             assert settled is not None and settled.get("result_ref")
         with pytest.raises(ValueError, match="owned by the parent"):
-            browser_waits.restore_text_wait_snapshot(session, runtime.app.durable,
-                owner_task_id="another-task", result_ref=source_ref, store=runtime.app.managed_outputs)
+            browser_waits.restore_wait_snapshot(session, runtime.app.durable,
+                owner_task_id="another-task", result_ref=source_ref, store=runtime.app.managed_outputs, condition="text_changed")
         checked = threading.Event()
         original = browser.wait_for_text_change
+        original_controls = browser.wait_for_control_change
 
         def check(text: str, document: JsonObject, timeout_ms: int) -> BrowserToolOutput:
             checked.set()
             return original(text, document, timeout_ms)
 
         monkeypatch.setattr(browser, "wait_for_text_change", check)
-        accepted = execute(ToolCall("browser_wait", {"condition": "text_changed", "timeout_ms": 3000,
+        def check_controls(controls: list[JsonValue], document: JsonObject, timeout_ms: int) -> BrowserToolOutput:
+            checked.set()
+            return original_controls(controls, document, timeout_ms)
+
+        monkeypatch.setattr(browser, "wait_for_control_change", check_controls)
+        accepted = execute(ToolCall("browser_wait", {"condition": condition, "timeout_ms": 3000,
             "value": "not-a-snapshot" if outcome == "missing_snapshot" else source_ref, "run_in_background": True}), 1)
         if outcome == "missing_snapshot":
-            assert not accepted.ok and "text_changed" in accepted.model_text
+            assert not accepted.ok and condition in accepted.model_text
             assert not runtime.app.durable.owned_tasks("r")
             return
         assert accepted.ok and accepted.kind == "accepted", accepted.model_text
@@ -381,7 +391,8 @@ def test_background_text_wait_restores_the_original_snapshot_after_cache_loss(
         worker.start()
         assert checked.wait(4), runtime.app.durable.task(child_id)
         if outcome in {"change", "managed_change", "worker_restart"}:
-            assert browser.evaluate("document.querySelector('p').textContent='Actual response arrived'").ok
+            assert browser.evaluate("document.querySelector('p').textContent='Actual response arrived';"
+                "document.querySelector('main').insertAdjacentHTML('beforeend','<button>New control</button>')").ok
         elif outcome == "cancel":
             runtime.app.durable.request_cancel(child_id)
         else:

@@ -37,7 +37,7 @@ from codey.types.json_value import (
 )
 from codey.utils.citation_scanner import mask_markdown_code
 
-ANSWER_SCOPE_VERSION = 7
+ANSWER_SCOPE_VERSION = 8
 ANSWER_CONTRACT_VERSION = 1
 MAX_ANSWER_CHARACTERS = 64000
 ANSWER_STATES = ("answered", "partial", "unresolved")
@@ -132,6 +132,8 @@ class AnswerScope:
     schema_version: int = ANSWER_SCOPE_VERSION
     fields: tuple[AnswerField, ...] = ()
     declared_fields_ready: bool = True
+    execution_summary: str = ""
+    execution_refs: tuple[str, ...] = ()
 
     @property
     def passage_refs(self) -> tuple[str, ...]:
@@ -144,17 +146,22 @@ class AnswerScope:
             payload["fields"] = [field.to_payload() for field in self.fields]
         if self.schema_version >= 7:
             payload["declared_fields_ready"] = self.declared_fields_ready
+        if self.schema_version >= 8:
+            payload["execution_summary"] = self.execution_summary
+            payload["execution_refs"] = list(self.execution_refs)
         return payload
 
     @classmethod
     def from_payload(cls, raw: object) -> AnswerScope:
         raw = decode_json_object(raw)
         version = raw.get("schema_version")
-        if type(version) is not int or version not in {4, 5, 6, ANSWER_SCOPE_VERSION}:
+        if type(version) is not int or version not in {4, 5, 6, 7, ANSWER_SCOPE_VERSION}:
             raise ValueError("invalid whole-task research scope")
         expected = {"task_digest", "aliases", "attempt_refs", "schema_version"} | ({"fields"} if version >= 5 else set())
         if version >= 7:
             expected.add("declared_fields_ready")
+        if version >= 8:
+            expected.update(("execution_summary", "execution_refs"))
         if set(raw) != expected:
             raise ValueError("invalid whole-task research scope")
         task_digest = require_json_string(raw.get("task_digest"), "task_digest")
@@ -184,8 +191,15 @@ class AnswerScope:
         fields = tuple(AnswerField.from_payload(row) for row in raw_fields)
         if len({field.pointer for field in fields}) != len(fields) or any(set(field.labels) - {label for label, _ in bindings} for field in fields):
             raise ValueError("duplicate or unread frozen answer field")
+        execution_refs = raw.get("execution_refs", [])
+        if not isinstance(execution_refs, list):
+            raise ValueError("invalid frozen browser execution references")
+        summary = require_json_string(raw.get("execution_summary", ""), "execution_summary")
+        refs = tuple(require_json_string(ref, "execution ref") for ref in execution_refs)
+        if len(set(refs)) != len(refs) or bool(refs) != bool(summary):
+            raise ValueError("invalid frozen browser execution summary")
         return cls(task_digest, tuple(bindings), attempt_refs, version, fields,
-                   require_json_boolean(raw.get("declared_fields_ready", True), "declared_fields_ready"))
+                   require_json_boolean(raw.get("declared_fields_ready", True), "declared_fields_ready"), summary, refs)
 
 
 def answer_scope(session: AnswerSessionView) -> AnswerScope:
@@ -218,8 +232,11 @@ def answer_scope(session: AnswerSessionView) -> AnswerScope:
                 fields.append(freeze_field(rule, observation, results, aliases))
             if rule.file_path and not observation.evaluation.passed:
                 declared_fields_ready = False
+    from codey.operations.browser_result_evidence import action_summary
+
+    summary, execution_refs = action_summary(session.executed, results)
     return AnswerScope(digest(session.task_text), aliases, tuple(attempts), fields=tuple(fields),
-                       declared_fields_ready=declared_fields_ready)
+                       declared_fields_ready=declared_fields_ready, execution_summary=summary, execution_refs=execution_refs)
 
 
 def citation_occurrences(markdown: str) -> list[CitationOccurrence]:
@@ -249,6 +266,8 @@ def submit_answer(scope: AnswerScope, args: ToolArgs) -> AnswerSubmission:
             "Complete the intended query and read its actual result before submitting answered. "
             "A partial/unresolved report must describe the real gap. Do not invent values or repeat an unchanged read.")
     markdown = render_fields(scope.fields, markdown_value.strip(), state)
+    if scope.execution_summary and not markdown.endswith(scope.execution_summary):
+        markdown += "\n\n" + scope.execution_summary
     if len(markdown) > MAX_ANSWER_CHARACTERS:
         raise ValueError("Expanded answer exceeds the Markdown size limit.")
     if scope.schema_version >= 6:
@@ -333,11 +352,14 @@ def answer_spec(spec: ToolSpec, scope: AnswerScope) -> ToolSpec:
         if spec.name == "knowledge_read":
             return freeze_spec_parameters(replace(spec, description=spec.description + " " + KNOWLEDGE_READ_GUIDANCE))
         return spec
+    states = [state for state in ANSWER_STATES if scope.declared_fields_ready or state != "answered"]
     answer_parameters: dict[str, object] = {"markdown": {"type": "string", "minLength": 12, "maxLength": MAX_ANSWER_CHARACTERS},
-                  "state": {"type": "string", "enum": list(ANSWER_STATES if scope.declared_fields_ready else ANSWER_STATES[1:])},
+                  "state": {"type": "string", "enum": states},
                   "knowledge_updates": updates_schema()}
     return freeze_spec_parameters(replace(spec, parameters=tuple(answer_parameters.items()), required=("markdown", "state"),
         description="Submit the whole research answer as Markdown, with explicit [eN] citations beside supported statements. "
+                    "For browser action results, cite the formal post-action passage. Explicit quotations must occur "
+                    "in their cited passage. The application appends exact browser action counts and sequence from receipts. "
                     "Explain any unanswered requested point in place. state is your declaration, not semantic certification. "
                     + ("Do not end the report with an unescaped, unmatched inline-code backtick delimiter. "
                        "Complete the report text before declaring its state. " if scope.schema_version >= 6 else "")

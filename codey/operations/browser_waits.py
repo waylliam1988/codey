@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from codey.policies.tool_requirement import argument_digest, parse_tool_success_check
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, thaw_schema_value, validate_args_against_spec
-from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession
@@ -14,8 +14,8 @@ if TYPE_CHECKING:
     from codey.storage.managed_outputs import ManagedOutputStore
 
 
-def snapshot_text_baseline(session: TaskSession, result_ref: str) -> tuple[str, JsonObject]:
-    """Use the original committed text, including when the worker is restored."""
+def _snapshot_baseline(session: TaskSession, result_ref: str) -> tuple[JsonObject, JsonObject]:
+    """Read one original committed full-page observation, including after recovery."""
     from codey.automation.browser_document import same_document
     from codey.operations.browser_completion import committed_results
 
@@ -23,19 +23,38 @@ def snapshot_text_baseline(session: TaskSession, result_ref: str) -> tuple[str, 
     result = snapshots.get(result_ref)
     value = result.canonical.get("value") if result is not None else None
     if result is None or result.truncated or not isinstance(value, dict):
-        raise ValueError("text_changed requires a committed successful browser_snapshot receipt")
+        raise ValueError("snapshot wait requires a committed successful browser_snapshot receipt (text_changed or controls_changed)")
     value = decode_json_object(value)
     scope, document = value.get("scope"), value.get("document")
-    text = value.get("text")
-    if (not isinstance(text, str) or value.get("text_truncated") is not False
-            or not isinstance(scope, dict) or scope.get("root_ref") != "" or scope.get("selector") != ""
+    if (not isinstance(scope, dict) or scope.get("root_ref") != "" or scope.get("selector") != ""
             or not isinstance(document, dict) or not same_document(document, result.audit.get("browser_document"))):
-        raise ValueError("text_changed requires complete page text and its original document; scoped or truncated snapshots cannot substitute")
-    return text, decode_json_object(document)
+        raise ValueError("text_changed or controls_changed requires its original full-page document; scoped snapshots cannot substitute")
+    return value, decode_json_object(document)
 
 
-def restore_text_wait_snapshot(session: TaskSession, durable: DurableSession, *, owner_task_id: str,
-                                result_ref: str, store: ManagedOutputStore | None) -> None:
+def snapshot_wait_baseline(session: TaskSession, result_ref: str, condition: str) -> tuple[JsonValue, JsonObject]:
+    from codey.operations.browser_references import BrowserReferences
+
+    value, document = _snapshot_baseline(session, result_ref)
+    if condition == "controls_changed":
+        controls = BrowserReferences.observe(result_ref, value, document).controls
+        rows: list[JsonValue] = [row.payload() for row in controls]
+        return rows, document
+    text = value.get("text")
+    if condition != "text_changed" or not isinstance(text, str) or value.get("text_truncated") is not False:
+        raise ValueError("text_changed requires complete page text; truncated snapshots cannot substitute")
+    return text, document
+
+
+def snapshot_text_baseline(session: TaskSession, result_ref: str) -> tuple[str, JsonObject]:
+    from codey.types.json_value import require_json_string
+
+    value, document = snapshot_wait_baseline(session, result_ref, "text_changed")
+    return require_json_string(value, "baseline text"), document
+
+
+def restore_wait_snapshot(session: TaskSession, durable: DurableSession, *, owner_task_id: str,
+                          result_ref: str, store: ManagedOutputStore | None, condition: str) -> None:
     """Rebuild the child reader's view from its parent's one authoritative receipt."""
     from codey.operations.kernel_facts import project_execution_record
     from codey.operations.kernel_receipts import restore_result_receipt
@@ -49,14 +68,14 @@ def restore_text_wait_snapshot(session: TaskSession, durable: DurableSession, *,
     effect = durable.effect(result_ref)
     if (effect.task_id != owner_task_id or effect.category != "tool_call" or effect.settlement is None
             or effect.status != "ok" or effect.intent.get("tool_name") != "browser_snapshot"):
-        raise ValueError("text_changed requires an original snapshot owned by the parent task")
+        raise ValueError(f"{condition} requires an original snapshot owned by the parent task")
     intent = RuntimeEffectIntent.from_payload(canonical_json_object(effect.intent))
     settlement = RuntimeEffectSettlement.from_payload(canonical_json_object(effect.settlement))
     result = restore_result_receipt(RuntimeEffectProjection(intent, settlement), store=store,
         session_id=intent.session_id, run_id=owner_task_id)
     session._memory_results[result_ref] = result
     project_execution_record(session, result_ref, result.call, result, ok=result.ok)
-    snapshot_text_baseline(session, result_ref)
+    snapshot_wait_baseline(session, result_ref, condition)
 
 
 @dataclass(frozen=True)

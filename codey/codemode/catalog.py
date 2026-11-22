@@ -41,6 +41,7 @@ def snapshot_catalog(
         task_source_selector=snapshot.input_contract_version >= 13,
         browser_followup_checks=(snapshot.policy.required_checks if snapshot.policy else ())
         if snapshot.browser_followups else None,
+        browser_result_reads=snapshot.research_scope is not None,
         browser_references=snapshot.browser_references if observed_choices else None,
     )
 
@@ -123,6 +124,7 @@ def build_codemode_catalog(
     task_navigation_url: str | None = None,
     task_source_selector: bool = True,
     browser_followup_checks: tuple[str, ...] | None = None,
+    browser_result_reads: bool = False,
     browser_references: BrowserReferences | None = None,
 ) -> ToolCatalogSnapshot:
     """Build the frozen CodeMode catalog for one permission snapshot.
@@ -149,6 +151,7 @@ def build_codemode_catalog(
         purposes = tuple(purpose for purpose in PURPOSES if purpose in plans)
         values = tuple(model_spec(spec, None, click_purposes=purposes)
                        if spec.name == "browser_click" else spec for spec in values)
+    result_actions = {spec.name for spec in values if spec.executor == "browser" and spec.effect == "page_mutation"}
     snapshot = build_catalog_from_specs(values)
     allowed: list[ToolCatalogEntry] = []
     for entry in snapshot.entries:
@@ -176,6 +179,12 @@ def build_codemode_catalog(
                 entry = replace(entry, description='Select target="task" to read the original task URL without copying it. '
                     'Use url for another authorized source. ' + entry.description,
                     parameters={"anyOf": [task_source_schema(original), original]})
+            if browser_result_reads and entry.name in result_actions and any(
+                    spec.name == "browser_read" and not spec.required for spec in values):
+                entry = replace(entry, parameters={**canonical_json_object(entry.parameters),
+                    "x-codey-result-read": True}, description=entry.description +
+                    " In whole-answer Research, a delivered page action also acquires current formal page text "
+                    "after its follow-ups. The action receipt remains authoritative if acquisition fails.")
             allowed.append(entry)
     if browser_followup_checks is not None:
         for index, entry in enumerate(allowed):

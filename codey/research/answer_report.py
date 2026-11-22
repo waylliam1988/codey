@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import Field, dataclass
+from dataclasses import fields as dataclass_fields
+from typing import Protocol
 
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
 from codey.knowledge.store import KnowledgeStore
@@ -29,11 +31,21 @@ from codey.research.report_values import (
 )
 from codey.research.staging import StagedKnowledgeStore
 from codey.reviews.research_coverage import CoverageRow
-from codey.types.json_value import JsonObject, canonical_json_object, require_json_string
+from codey.types.json_value import (
+    JsonObject,
+    canonical_json_object,
+    decode_json_object,
+    encode_transport_value,
+    require_json_string,
+)
 
 REPORT_SCHEMA = "research_answer_v1"
 KNOWLEDGE_REPORT_SCHEMA = "research_answer_v2"
 DELIVERY_CHECKS = RESEARCH_ANSWER_REQUIRED_CHECKS
+
+
+class _KnowledgeDecoder(Protocol):
+    def from_dict(self, raw: JsonObject) -> KnowledgeObject: ...
 
 
 @dataclass(frozen=True)
@@ -75,7 +87,7 @@ class AnswerReport:
         object.__setattr__(self, "knowledge_batch", deepcopy(self.knowledge_batch))
 
     def to_payload(self) -> JsonObject:
-        fields = asdict(self)
+        fields = decode_json_object(encode_transport_value(self))
         if self.knowledge_batch is None:
             fields.pop("knowledge_batch")
         payload = canonical_json_object({"schema": KNOWLEDGE_REPORT_SCHEMA if self.knowledge_batch is not None
@@ -85,7 +97,8 @@ class AnswerReport:
     @classmethod
     def from_payload(cls, raw: object) -> AnswerReport:
         raw = canonical_json_object(raw)
-        fields = set(cls.__dataclass_fields__) - {"knowledge_batch"}
+        members: tuple[Field[object], ...] = dataclass_fields(cls)
+        fields = {field.name for field in members} - {"knowledge_batch"}
         if raw.get("schema") == KNOWLEDGE_REPORT_SCHEMA:
             fields.add("knowledge_batch")
         schema = raw.get("schema")
@@ -138,7 +151,8 @@ def _validate_report(report: AnswerReport) -> None:
             raise ValueError("knowledge mutations differ from the explicitly authored batch")
         material = material[:-len(explicit)]
     for row in material:
-        mutation = KnowledgeMutation(KnowledgeObject.from_dict(row["value"]), row["expected_revision"])
+        decoder: _KnowledgeDecoder = KnowledgeObject
+        mutation = KnowledgeMutation(decoder.from_dict(row["value"]), row["expected_revision"])
         if mutation.value.kind not in {"source", "evidence"}:
             raise ValueError("whole-answer preparation cannot manufacture claims or write a second answer")
     citations = citation_occurrences(report.markdown)
@@ -184,7 +198,21 @@ def compile_answer_report(session: TaskSession, ledger: ResearchLedger, store: K
         raise ValueError("whole research answer has not been submitted")
     receipt, result = found[-1]
     submission = validate_submission(result.canonical["research_submission"], session.task_text)
-    from codey.research.answer_contract import AnswerScope, submit_answer
+    from codey.operations.browser_result_evidence import action_summary, validate_current_result
+    from codey.research.answer_contract import AnswerScope
+
+    original_scope = AnswerScope.from_payload(submission["scope"])
+    if original_scope.schema_version >= 8 and original_scope.execution_refs:
+        summary, _refs = action_summary(session.executed, session._memory_results, original_scope.execution_refs)
+        if summary != original_scope.execution_summary:
+            raise ValueError("browser execution summary differs from its original receipts")
+        order = tuple(session.executed)
+        before = order[:order.index(receipt)]
+        original_records = {ref: session.executed[ref] for ref in before}
+        original_results = {ref: session._memory_results[ref] for ref in before if ref in session._memory_results}
+        validate_current_result(original_records, original_results,
+            submission["markdown"], submission["state"], original_scope.aliases)
+    from codey.research.answer_contract import submit_answer
 
     if submit_answer(AnswerScope.from_payload(submission["scope"]), result.call.args) != submission:
         raise ValueError("settled submission differs from the original tool arguments")

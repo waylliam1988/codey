@@ -44,6 +44,11 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     from codey.operations.browser_followups import DIRECT_TOOLS
 
     hints: list[str] = []
+    from codey.operations.browser_result_evidence import action_summary
+
+    actions, _refs = action_summary(session.executed, session._memory_results)
+    if actions:
+        hints.append("Authoritative execution summary derived from committed receipts; reuse these counts and order:\n" + actions)
     hints.append(browser_observation_handoff(session, snapshot, context, generation))
     snapshot, control_wait = browser_control_wait_handoff(session, snapshot, context, generation)
     hints.append(control_wait)

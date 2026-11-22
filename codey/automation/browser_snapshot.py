@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 
 from playwright.async_api import ElementHandle
 
@@ -15,6 +15,12 @@ from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 
 MAX_ELEMENTS = 80
 MAX_TEXT = 12_000
+AX_CONTROL_ROLES = frozenset({"button", "link", "textbox", "checkbox", "combobox", "menuitem"})
+
+
+def _evaluate(handle: ElementHandle, expression: str, argument: object = None) -> Awaitable[object]:
+    evaluate: Callable[[str, object], Awaitable[object]] = handle.evaluate
+    return evaluate(expression, argument)
 
 
 def element_role(metadata: JsonObject) -> str:
@@ -35,16 +41,17 @@ def element_role(metadata: JsonObject) -> str:
 
 
 def semantic_fingerprint(metadata: JsonObject) -> str:
-    return json.dumps({"identity": metadata.get("semantic_identity"), "role": element_role(metadata),
-                       "name": metadata.get("name"),
-                       "context": metadata.get("context")}, sort_keys=True)
+    value: JsonObject = {"identity": metadata.get("semantic_identity"), "role": element_role(metadata),
+                         "name": metadata.get("name"), "context": metadata.get("context")}
+    return json.dumps(value, sort_keys=True)
 
 
 async def element_metadata(handle: ElementHandle) -> tuple[JsonObject, ElementHandle | None]:
     observed = await handle.evaluate_handle(ELEMENT_METADATA)
     metadata = await observed.get_property("metadata")
     try:
-        raw: object = await metadata.json_value()
+        read_value: Callable[[], Awaitable[object]] = metadata.json_value
+        raw: object = await read_value()
         context = await observed.get_property("contextNode")
         return decode_json_object(raw), context.as_element()
     finally:
@@ -53,7 +60,7 @@ async def element_metadata(handle: ElementHandle) -> tuple[JsonObject, ElementHa
 
 
 async def file_control_details(handle: ElementHandle) -> JsonObject:
-    raw: object = await handle.evaluate("""el => ({
+    raw: object = await _evaluate(handle, """el => ({
         name:el.getAttribute('aria-label') || Array.from(el.labels||[],label=>label.innerText).join(' ') || el.title,
         dom_id:el.id,field_name:el.name,
         group:el.closest('fieldset')?.querySelector('legend')?.innerText || el.form?.getAttribute('aria-label') || '',
@@ -74,8 +81,12 @@ async def collect_ax_tree(context: FrameContext) -> dict[int, JsonObject]:
         node = decode_json_object(value)
         backend = node.get("backendDOMNodeId")
         if type(backend) is int and isinstance(backend, int) and node.get("ignored") is not True:
+            properties = node.get("properties", [])
+            disabled = any(isinstance(prop, dict) and prop.get("name") == "disabled"
+                and decode_json_object(prop.get("value", {})).get("value") is True
+                for prop in properties) if isinstance(properties, list) else False
             result[backend] = {"role": decode_json_object(node.get("role", {})).get("value", ""),
-                               "name": decode_json_object(node.get("name", {})).get("value", "")}
+                               "name": decode_json_object(node.get("name", {})).get("value", ""), "disabled": disabled}
     return result
 
 
@@ -104,12 +115,12 @@ async def collect_snapshot(context: FrameContext, registry: ElementRegistry[Elem
                            revision: int, max_elements: int = MAX_ELEMENTS, max_text: int = MAX_TEXT,
                            scope_ref: str = "", selector: str = "") -> JsonObject:
     root = await _scope_root(context, registry, scope_ref, selector)
-    raw_text: object = await root.evaluate(VISIBLE_TEXT)
+    raw_text: object = await _evaluate(root, VISIBLE_TEXT)
     if not isinstance(raw_text, str):
         raise ValueError("invalid observed text")
     max_elements, max_text = max(1, min(max_elements, MAX_ELEMENTS)), max(1, min(max_text, MAX_TEXT))
     handles = await root.query_selector_all(ACTIONABLE_CANDIDATES)
-    root_matches: object = await root.evaluate("(el,selector) => el.matches(selector)", ACTIONABLE_CANDIDATES)
+    root_matches: object = await _evaluate(root, "(el,selector) => el.matches(selector)", ACTIONABLE_CANDIDATES)
     if root_matches is True:
         handles.insert(0, root)
     ax = await collect_ax_tree(context)
@@ -155,13 +166,13 @@ async def collect_snapshot(context: FrameContext, registry: ElementRegistry[Elem
         rows.append(row)
     # AX-only actionable nodes are real DOM identities, not guessed selectors.
     for node, data in ax.items():
-        if node in known or data.get("role") not in {"button", "link", "textbox", "checkbox", "combobox", "menuitem"}:
+        if node in known or data.get("role") not in AX_CONTROL_ROLES:
             continue
         if len(rows) >= max_elements:
             elements_truncated = True
             break
         handle = await resolve_backend(context, node)
-        contained: object = await root.evaluate("(root,node) => root.contains(node)", handle)
+        contained: object = await _evaluate(root, "(root,node) => root.contains(node)", handle)
         if contained is not True or not await handle.is_visible():
             await handle.dispose()
             continue
@@ -172,7 +183,7 @@ async def collect_snapshot(context: FrameContext, registry: ElementRegistry[Elem
         rows.append({"ref": ref, "role": role, "name": name, "context_id": "", "disabled": metadata.get("disabled") is True,
                      "value": metadata.get("value"), "checked": metadata.get("checked"), "query_relation": ""})
     text_truncated = len(raw_text) > max_text
-    connected: object = await root.evaluate("el => el.isConnected && el.ownerDocument === document")
+    connected: object = await _evaluate(root, "el => el.isConnected && el.ownerDocument === document")
     async with frame_context(context.frame.page, context.frame, str(context.document["target_id"])) as after:
         if connected is not True or not same_document(context.document, after.document):
             registry.invalidate_document(context.document)

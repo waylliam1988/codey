@@ -49,6 +49,15 @@ class KernelProgress:
     def stopped(self) -> bool:
         if self.repair_rejections >= self.limit:
             return True
+        # Proven reload cycles may stop as incomplete; effect delivery is not
+        # permission to claim success, nor a reason to run until max_turns.
+        reloads: list[ToolAttemptRecord] = []
+        for record in reversed(self.attempts):
+            if record.tool not in {"browser_navigate", "browser_snapshot"}:
+                break
+            reloads.append(record)
+        if self.idle >= self.limit and any(record.tool == "browser_navigate" for record in reloads):
+            return True
         safe: list[ToolAttemptRecord] = []
         for record in reversed(self.attempts):
             if record.tool in EFFECT_OBSERVATIONS:

@@ -231,13 +231,14 @@ def _run_admitted_operation(durable: DurableSession, child: TaskCheckpoint, requ
         return raw if isinstance(raw, ToolOutcome) else project_run_command_result(root, raw)
 
     session = TaskSession(snapshot.policy, project=request.project)
-    if call.name == "browser_wait" and call.args.get("condition") == "text_changed":
-        from codey.operations.browser_waits import restore_text_wait_snapshot
+    if call.name == "browser_wait" and call.args.get("condition") in {"text_changed", "controls_changed"}:
+        from codey.operations.browser_waits import restore_wait_snapshot
 
         owner_task_id = require_json_string(child.owner_task_id, "background wait owner")
         owned_tool_task(durable, child.task_id, owner_task_id=owner_task_id)
-        restore_text_wait_snapshot(session, durable, owner_task_id=owner_task_id,
-            result_ref=require_json_string(call.args.get("value"), "value"), store=stores.managed_outputs)
+        restore_wait_snapshot(session, durable, owner_task_id=owner_task_id,
+            result_ref=require_json_string(call.args.get("value"), "value"), store=stores.managed_outputs,
+            condition=require_json_string(call.args.get("condition"), "condition"))
     from codey.automation.browser_session import BrowserSession
 
     browser: BrowserSession | None = None

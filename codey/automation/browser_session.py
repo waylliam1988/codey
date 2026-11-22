@@ -145,6 +145,10 @@ class BrowserSession:
         return self.action(BrowserAction.WAIT, {"condition": "text_changed", "value": "",
             "baseline_text": text, "timeout_ms": timeout_ms, "expected_document": document})
 
+    def wait_for_control_change(self, controls: list[JsonValue], document: JsonObject, timeout_ms: int) -> BrowserToolOutput:
+        return self.action(BrowserAction.WAIT, {"condition": "controls_changed", "value": "",
+            "baseline_controls": controls, "timeout_ms": timeout_ms, "expected_document": document})
+
     def evaluate(self, code: str) -> BrowserToolOutput:
         return self.action(BrowserAction.EVALUATE, {"code": code})
 

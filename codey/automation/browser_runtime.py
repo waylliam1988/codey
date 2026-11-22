@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from collections import Counter
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -54,6 +55,8 @@ from codey.automation.browser_query import changed_query_region
 from codey.automation.browser_query_async import bind_query_target
 from codey.automation.browser_refs import ElementRecord, ElementRegistry
 from codey.automation.browser_snapshot import (
+    AX_CONTROL_ROLES,
+    collect_ax_tree,
     collect_snapshot,
     diff_snapshot,
     element_metadata,
@@ -726,6 +729,17 @@ class BrowserRuntime:
             observed["query_baseline"] = baseline
         return BrowserToolOutput("Delivered " + action.value + " to " + ref, True, observed)
 
+    def _control_baseline(self, args: JsonObject) -> Counter[tuple[str, str]]:
+        baseline = args.get("baseline_controls")
+        if not isinstance(baseline, list):
+            raise ValueError("controls_changed requires its original observed controls")
+        controls: Counter[tuple[str, str]] = Counter()
+        for raw in baseline:
+            row = decode_json_object(raw)
+            if row.get("disabled") is not True:
+                controls[(require_json_string(row["role"], "control role"), require_json_string(row["name"], "control name"))] += 1
+        return controls
+
     async def _wait(self, invocation: Invocation, state: PageState) -> BrowserToolOutput:
         args = invocation.command.arguments
         condition = require_json_string(args["condition"], "condition")
@@ -735,8 +749,9 @@ class BrowserRuntime:
         if not 100 <= timeout_ms <= 30000:
             raise ValueError("invalid_wait_deadline")
         baseline_text = require_json_string(args.get("baseline_text"), "baseline_text") if condition == "text_changed" else ""
-        if condition == "text_changed" and not isinstance(expected, dict):
-            raise ValueError("text_changed requires its original document")
+        if condition in {"text_changed", "controls_changed"} and not isinstance(expected, dict):
+            raise ValueError(condition + " requires its original document")
+        controls = self._control_baseline(args) if condition == "controls_changed" else Counter[tuple[str, str]]()
         deadline = min(invocation.command.deadline, time.monotonic() + timeout_ms / 1000)
         while time.monotonic() < deadline:
             if condition in {"popup", "dialog", "download"}:
@@ -757,9 +772,15 @@ class BrowserRuntime:
                 if condition in {"text", "text_absent"}:
                     body: object = await _evaluate(context.frame, "() => document.body?.innerText || ''")
                     matched = (value in str(body)) == (condition == "text")
-                elif condition == "text_changed":
-                    observed_text: object = await _evaluate(context.frame, "(" + VISIBLE_TEXT + ")(document.body)")
-                    matched = require_json_string(observed_text, "visible text") != baseline_text
+                elif condition in {"text_changed", "controls_changed"}:
+                    if condition == "controls_changed":
+                        current = await collect_ax_tree(context)
+                        available = Counter((str(row.get("role", "")), " ".join(str(row.get("name", "")).split())[:240])
+                            for row in current.values() if row.get("role") in AX_CONTROL_ROLES and row.get("disabled") is not True)
+                        matched = any(count > controls[key] for key, count in available.items())
+                    else:
+                        observed_text: object = await _evaluate(context.frame, "(" + VISIBLE_TEXT + ")(document.body)")
+                        matched = require_json_string(observed_text, "visible text") != baseline_text
                     async with self._frame(state) as after:
                         if not same_document(context.document, after.document):
                             raise RuntimeError("wait_document_changed")

@@ -31,6 +31,9 @@ PURPOSE_DESCRIPTION = (
     " If result is unavailable, omit purpose for an atomic click, then explicitly wait and read as required."
     " Returns the click result; follow-up observations are delivered in child receipts. "
     "A failed follow-up returns failure even when the click was delivered."
+    " With controls, a complete prior snapshot also supplies a bounded control-change wait before the new snapshot. "
+    "A control-wait timeout means no new control was observed; it still returns the current snapshot and does not "
+    "replay the click or declare the business outcome."
 )
 PENDING = (
     "Click delivered. The query result is unconfirmed. Read the result again without repeating the click. "
@@ -155,7 +158,10 @@ def click_followup_plan(checks: tuple[str, ...], names: set[str], *, stage: int 
                         if name not in names and (name == "browser_read" or wait.waits or wait.missing))
     plans: JsonObject = {"action": []}
     if "browser_snapshot" in names:
-        plans["controls"] = [{"name": "browser_snapshot", "args": JsonObject()}]
+        controls: list[JsonValue] = [{"name": "browser_snapshot", "args": JsonObject()}]
+        if "browser_wait" in names:
+            controls.insert(0, {"name": "browser_wait", "args": {"condition": "controls_changed", "timeout_ms": 5000}})
+        plans["controls"] = controls
     if not wait.missing and not unavailable:
         steps: list[JsonValue] = [{"name": "browser_wait", "args": args} for args in wait.waits]
         plans["result"] = [*steps, {"name": "browser_read", "args": JsonObject()}]

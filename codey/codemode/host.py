@@ -90,6 +90,7 @@ class CodeModeHost:
         self._bound_edit = bound_edit
         self._next_child = 0
         self._complete_reads: dict[str, ToolResult] = {}
+        self._control_snapshot_ref = browser_references.receipt_ref if browser_references is not None else ""
 
     def invoke(self, name: str, args: dict[str, object]) -> object:
         tool_name = str(name or "").strip().lower()
@@ -103,6 +104,9 @@ class CodeModeHost:
         index = self._current_child_index()
         json_edit = tool_name == "edit" and "changes" in decoded_args
         click_args, query, steps = self._click_args(tool_name, decoded_args)
+        if (canonical_json_object(self._catalog[tool_name].parameters).get("x-codey-result-read") is True
+                and not any(step_name == "browser_read" for step_name, _args in steps)):
+            steps = (*steps, ("browser_read", JsonObject()))
         step_indices = self._allocate_children(len(steps))
         raw = self._invoke_one(index, tool_name, click_args, query=query)
         if raw.ok and steps:
@@ -113,6 +117,10 @@ class CodeModeHost:
                     error = str(exc)
                 else:
                     if followup.ok:
+                        continue
+                    value = followup.canonical.get("value")
+                    if (not query and step_name == "browser_wait" and step_args.get("condition") == "controls_changed"
+                            and isinstance(value, dict) and decode_json_object(value).get("reason") == "timeout"):
                         continue
                     error = followup.model_text
                 return {"ok": False, "error": f"Click delivered; {step_name} failed: {error}"
@@ -126,6 +134,12 @@ class CodeModeHost:
         output: dict[str, object] = {"ok": True, "value": value}
         if ref := raw.audit.get("result_ref"):
             output["result_ref"] = ref
+            if tool_name == "browser_snapshot" and isinstance(ref, str) and isinstance(value, dict):
+                snapshot = decode_json_object(value)
+                scope = snapshot.get("scope")
+                if (snapshot.get("elements_truncated") is False and isinstance(scope, dict)
+                        and decode_json_object(scope).get("root_ref") == "" and decode_json_object(scope).get("selector") == ""):
+                    self._control_snapshot_ref = ref
             if (tool_name == "read_file" and "edit" in self._catalog
                     and isinstance(ref, str) and isinstance(value, dict) and not raw.truncated):
                 data = decode_json_object(value)
@@ -234,7 +248,12 @@ class CodeModeHost:
             step_name = item["name"]
             if not isinstance(step_name, str) or step_name not in self._catalog:
                 raise ValueError("The requested click follow-up contains an unavailable tool.")
-            parsed.append((step_name, decode_json_object(item["args"])))
+            step_args = decode_json_object(item["args"])
+            if step_name == "browser_wait" and step_args.get("condition") == "controls_changed" and purpose == "controls":
+                if not self._control_snapshot_ref:
+                    continue
+                step_args["value"] = self._control_snapshot_ref
+            parsed.append((step_name, step_args))
         return {"ref": args["ref"]}, purpose == "result", tuple(parsed)
 
     def _json_edit_args(self, args: JsonObject) -> JsonObject:

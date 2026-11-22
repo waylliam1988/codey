@@ -355,7 +355,7 @@ class ExecutionDelegate:
         if call.name == "browser_scroll":
             return browser.action(BrowserAction.SCROLL, args)
         if call.name == "browser_wait":
-            if args.get("condition") == "text_changed":
+            if args.get("condition") in {"text_changed", "controls_changed"}:
                 return self._wait_for_observed_text(browser, call)
             if self._browser_wait_document is not None:
                 return browser.wait(str(args.get("condition") or ""), str(args.get("value") or ""),
@@ -380,14 +380,20 @@ class ExecutionDelegate:
         return browser.action(BrowserAction(call.name.removeprefix("browser_")), args)
 
     def _wait_for_observed_text(self, browser: BrowserSession, call: ToolCall) -> BrowserToolOutput:
-        from codey.operations.browser_waits import snapshot_text_baseline
+        from codey.operations.browser_waits import snapshot_wait_baseline
 
         if self.session is None:
             raise ValueError("text_changed requires the original task receipts")
-        text, document = snapshot_text_baseline(self.session, require_json_string(call.args.get("value"), "value"))
+        condition = require_json_string(call.args.get("condition"), "condition")
+        baseline, document = snapshot_wait_baseline(self.session, require_json_string(call.args.get("value"), "value"), condition)
         if self._browser_wait_document is not None and not same_document(self._browser_wait_document, document):
             raise ValueError("text_changed snapshot does not belong to the original background wait document")
-        return browser.wait_for_text_change(text, document, require_json_integer(call.args.get("timeout_ms"), "timeout_ms"))
+        timeout_ms = require_json_integer(call.args.get("timeout_ms"), "timeout_ms")
+        if condition == "controls_changed":
+            if not isinstance(baseline, list):
+                raise ValueError("controls_changed requires observed controls")
+            return browser.wait_for_control_change(baseline, document, timeout_ms)
+        return browser.wait_for_text_change(require_json_string(baseline, "baseline text"), document, timeout_ms)
 
     def _persist_browser_image(self, output: BrowserToolOutput) -> tuple[ToolImageRef, ...]:
         if self.managed_outputs is None or not self.session_id or not self.run_id:
@@ -917,6 +923,11 @@ class ExecutionDelegate:
         if not isinstance(self._research_scope, AnswerScope):
             raise ValueError("submit_research_answer requires an original frozen whole-answer scope")
         declared = submit_answer(self._research_scope, call.args)
+        if self.session is not None:
+            from codey.operations.browser_result_evidence import validate_current_result
+
+            validate_current_result(self.session.executed, self.session._memory_results,
+                declared["markdown"], declared["state"], self._research_scope.aliases)
         return ToolResult(call, "Whole answer recorded. The application will validate and publish this submission.",
                           ok=True, canonical={"research_submission": declared}), True, None
 

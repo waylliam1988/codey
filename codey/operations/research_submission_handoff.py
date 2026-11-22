@@ -107,6 +107,17 @@ def research_submission_handoff(session: TaskSession, snapshot: TurnSnapshot, co
     rule = submission_sequence(session)
     url = rule.url if rule is not None else declared_workflow_url(session)
     if not url:
+        from codey.operations.browser_result_evidence import current_result_passages
+
+        action, current_passages = current_result_passages(session.executed, session._memory_results)
+        if action:
+            labels = ", ".join(f"[{label}]" for label, ref in scope.aliases if ref in current_passages)
+            return snapshot, (f"Current formal page result after action {action}: {labels}. "
+                "Use these post-action passages for the current result; earlier sources remain background evidence. "
+                "Explicit quotations must occur in the passage they cite. "
+                "The application appends the committed action sequence and counts." if labels else
+                "The current page action has no complete formal result read. Use browser_read without repeating the action; "
+                "if acquisition fails, report the actual gap as partial/unresolved.")
         if scope.fields and all(not field.feedback and field.value is not None for field in scope.fields):
             unique = {f"[{label}]": None for field in scope.fields for label in field.labels}
             labels = ", ".join(unique)
