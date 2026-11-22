@@ -8,18 +8,25 @@ import threading
 from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from types import ModuleType
+from typing import Protocol, runtime_checkable
 
 from codey.app.connection_status import ConnectionStatusCoordinator
 from codey.providers.catalog import API_CONNECTIONS, PROVIDER_LABELS
 from codey.providers.model_preferences import ModelPreferences
 from codey.providers.supervisor import ProviderSupervisor
+from codey.runtime.core.cancellation import TaskCancelled
 
 logger = logging.getLogger(__name__)
 
 
+@runtime_checkable
+class _ShutdownCallback(Protocol):
+    def __call__(self) -> object: ...
+
+
 class ProviderRegistry:
-    def __init__(self, state_home: str | Path | None = None, *, emit: Callable[[dict[str, Any]], None] | None = None) -> None:
+    def __init__(self, state_home: str | Path | None = None, *, emit: Callable[[dict[str, object]], None] | None = None) -> None:
         self.model_preferences = ModelPreferences(state_home)
         self.model_uses: Counter[tuple[str, str]] = Counter()
         self._model_uses_lock = threading.Lock()
@@ -40,7 +47,7 @@ class ProviderRegistry:
         return {provider_id: registration[0] for provider_id, registration in API_CONNECTIONS.items()}
 
     @staticmethod
-    def _connection(provider_id: str) -> Any:
+    def _connection(provider_id: str) -> ModuleType:
         from codey.providers.api_connections import connection_for
 
         return connection_for(provider_id)
@@ -56,8 +63,8 @@ class ProviderRegistry:
         closed = True
         for _, module_path in tuple(API_CONNECTIONS.values()):
             module = sys.modules.get(module_path)
-            shutdown = getattr(module, "shutdown_controls", None)
-            if callable(shutdown):
+            shutdown: object = getattr(module, "shutdown_controls", None)
+            if isinstance(shutdown, _ShutdownCallback):
                 try:
                     shutdown()
                 except Exception:
@@ -74,6 +81,8 @@ class ProviderRegistry:
             return ()
         try:
             statuses = tab_availability()
+        except TaskCancelled:
+            raise
         except Exception:
             logger.exception("provider tab availability probe failed")
             statuses = dict[str, bool]()

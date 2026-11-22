@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 975,
   "region_count": 40,
-  "batch_count": 291,
+  "batch_count": 293,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -76,6 +76,8 @@
       "batches": [
         "Q013",
         "Q014",
+        "Q014B",
+        "Q014C",
         "Q015",
         "Q016",
         "Q017",
@@ -1639,6 +1641,10 @@
       "followups": [
         "Whole-file tests/test_server.py Any remains: unparameterized dict at line 68, untyped callback at line 83, json.loads and Mock propagation throughout, including ConsensusConnectionTests at lines 2190-2221; q008d-server-any.log has all 1709 diagnostics. Coordinate Q015 test migration; no claim of full governance.",
         "Three existing lazy import failures need browser boundary repair; exact traced chain and original-source reproduction in q008d-lazy-import-chain.json and q008d-lazy-baseline.json."
+      ],
+      "commits": [
+        "94f1cfad",
+        "deb4bf6a"
       ]
     },
     {
@@ -1659,7 +1665,10 @@
         "tests/test_writer_failover.py",
         "tests/test_writer_failover_cancellation.py"
       ],
-      "result": "Stop-first contract repaired across entry, reconnect/takeover failure, final canary budget and cleanup cancellation. Pre-fix 6 failed/2 passed; additional final-budget boundary 2 failed/1 passed/7 deselected before branch repair. Final direct group 23 passed; explicitly scoped caller group 19 passed. Three whole files passed strong Any/Pyrefly/ty/Ruff; normal full-production gates passed with stable hashes. checkpoint True-done remains independently baseline-waiting due missing tool-task worker, routed Q094/Q095/Q099; no completed test count claimed for interrupted runs. Test harness annotations and nominal ProviderTransport retain original payload/close comparisons."
+      "result": "Stop-first contract repaired across entry, reconnect/takeover failure, final canary budget and cleanup cancellation. Pre-fix 6 failed/2 passed; additional final-budget boundary 2 failed/1 passed/7 deselected before branch repair. Final direct group 23 passed; explicitly scoped caller group 19 passed. Three whole files passed strong Any/Pyrefly/ty/Ruff; normal full-production gates passed with stable hashes. checkpoint True-done remains independently baseline-waiting due missing tool-task worker, routed Q094/Q095/Q099; no completed test count claimed for interrupted runs. Test harness annotations and nominal ProviderTransport retain original payload/close comparisons.",
+      "commits": [
+        "7f1e50ee"
+      ]
     },
     {
       "responsibility": "Project prompt context assembly and atomic tool-message grouping for compaction",
@@ -1682,7 +1691,10 @@
         "tests/test_context_tool_group_requires_exact_result_ids.py",
         "tests/test_context_compaction_grouping.py"
       ],
-      "result": "Removed unreachable previous-group append by maximal-adjacent-tools invariant; public API and exact ID validation unchanged. 10 initial pairing/native baseline; 15 grouping/pairing baseline and same 15 post-deletion tests passed. API compaction/history callers 41 passed; context assembly callers 8 passed. Four whole files strong Any/Pyrefly/ty/Ruff passed, test debt 16 -> 1 -> 0; normal production mypy/Pyrefly/ty and precision gates passed with stable hashes. context.py required no code change. No new deterministic bug claimed."
+      "result": "Removed unreachable previous-group append by maximal-adjacent-tools invariant; public API and exact ID validation unchanged. 10 initial pairing/native baseline; 15 grouping/pairing baseline and same 15 post-deletion tests passed. API compaction/history callers 41 passed; context assembly callers 8 passed. Four whole files strong Any/Pyrefly/ty/Ruff passed, test debt 16 -> 1 -> 0; normal production mypy/Pyrefly/ty and precision gates passed with stable hashes. context.py required no code change. No new deterministic bug claimed.",
+      "commits": [
+        "b05ae646"
+      ]
     },
     {
       "responsibility": "Protocol repair examples, project path canonicalization and explicit verification denials",
@@ -1729,7 +1741,10 @@
         "tests/test_shell_approval_native_identity.py",
         "tests/test_shell_event_p2_locks.py"
       ],
-      "result": "Consolidated native call identity encoding across request/pending, retaining provider_id bound difference, event shape, command hash/preview and deferred semantics. Original baseline 29 passed; identity baseline 9 passed; post direct 22 passed; persistence/HTTP/analysis callers 29 passed/2 existing host-zsh skips; command-bound locks 4 passed with 2 zsh skip confirmations. One invalid parameter selection failed collection (no tests ran), corrected after 22-node collection-only check; q012-test-records.json records exact commands. Four whole files strong Any/Pyrefly/ty/Ruff passed; full-production gates passed with stable hashes. No new bug claimed."
+      "result": "Consolidated native call identity encoding across request/pending, retaining provider_id bound difference, event shape, command hash/preview and deferred semantics. Original baseline 29 passed; identity baseline 9 passed; post direct 22 passed; persistence/HTTP/analysis callers 29 passed/2 existing host-zsh skips; command-bound locks 4 passed with 2 zsh skip confirmations. One invalid parameter selection failed collection (no tests ran), corrected after 22-node collection-only check; q012-test-records.json records exact commands. Four whole files strong Any/Pyrefly/ty/Ruff passed; full-production gates passed with stable hashes. No new bug claimed.",
+      "commits": [
+        "d9988a52"
+      ]
     },
     {
       "responsibility": "codey/app: package entry and composition",
@@ -1737,27 +1752,64 @@
         "codey/app/__init__.py"
       ],
       "id": "Q013",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_unchanged",
+      "reviewed_files": [
+        "codey/app/__init__.py"
+      ],
+      "verified_files": [
+        "codey/app/__init__.py"
+      ],
+      "candidate_test_count": 0,
+      "result": "Package initializer is only a docstring; no runtime behavior, dynamic exports or Any. Required regular-package marker under setuptools namespaces=false, so retained. Fresh interpreter import verified exact repository module path and no browser/Playwright load. Whole-file strong Any/Pyrefly/ty/Ruff all exited 0 (q013-validation.json). No pytest executed or test count claimed, no source change or empty commit."
     },
     {
-      "responsibility": "codey/app: provider connection and selection",
+      "responsibility": "Provider registries and revision-aware status coordination",
       "files": [
         "codey/app/active_provider_registry.py",
-        "codey/app/connection_actions.py",
-        "codey/app/model_settings.py",
-        "codey/app/connection_status.py",
         "codey/app/provider_registry.py",
-        "codey/app/operator_auth.py",
-        "codey/app/provider_services.py"
+        "codey/app/connection_status.py"
       ],
       "id": "Q014",
+      "status": "in_progress",
+      "reviewed_files": [
+        "codey/app/active_provider_registry.py",
+        "codey/app/provider_registry.py",
+        "codey/app/connection_status.py"
+      ],
+      "verified_files": [],
+      "candidate_test_count": "recompute at entry; initial combined hint 26",
+      "tests": [
+        "tests/test_connection_status_cold_start.py",
+        "tests/test_provider_registry_app.py",
+        "tests/test_task_runtime_coordinator.py",
+        "tests/test_provider_registry_cancellation.py",
+        "tests/test_connection_status_publication.py"
+      ],
+      "result": "Two confirmed bugs repaired: active failover consumes TaskCancelled (pre-fix 1 failed/1 passed) and already-completed Future callback notifies while outer coordinator lock remains held (pre-fix 1 failed, cross-thread read=False). Callback registration moved outside lock with generation/revision validation intact. Direct 19 passed; dependency groups 28 and 18 passed, no skips. Eight whole files strong Any/Pyrefly/ty/Ruff passed (158 -> 101 -> 0), normal production/precision gates passed, stable hashes. Typed fixture baseline on original HEAD sources 16 passed with exact restoration. Split commits pending; no production-source changes in active registry."
+    },
+    {
+      "responsibility": "Provider service facade and model/connection actions",
+      "files": [
+        "codey/app/provider_services.py",
+        "codey/app/model_settings.py",
+        "codey/app/connection_actions.py"
+      ],
+      "id": "Q014B",
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 26
+      "candidate_test_count": "recompute at entry; initial combined hint 26"
+    },
+    {
+      "responsibility": "Operator bootstrap exchange and authenticated browser sessions",
+      "files": [
+        "codey/app/operator_auth.py"
+      ],
+      "id": "Q014C",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "candidate_test_count": "recompute at entry; initial combined hint 26"
     },
     {
       "responsibility": "codey/app: shared contracts and module services",
@@ -7608,6 +7660,15 @@
         "Q052",
         "Q055",
         "Q061"
+      ]
+    },
+    {
+      "batch": "Q014",
+      "reason": "Actual docstrings/import graph separate three independent units: shared registries/status, facade/model/connection actions, and launch/browser operator credentials. All seven production files retained once; foundations before service consumers. Auth is a small independent stdlib security boundary.",
+      "replacement": [
+        "Q014",
+        "Q014B",
+        "Q014C"
       ]
     }
   ]

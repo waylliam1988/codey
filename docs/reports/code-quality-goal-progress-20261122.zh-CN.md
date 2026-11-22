@@ -643,3 +643,38 @@ Q012 最终验收：
 - 为确认两项 skip 原因及覆盖命令校验，首次误选不存在的 wildcard[zsh] 参数节点，工具实际 **退出 1、no tests ran，1.26 秒**，仅收集选择错误，不算行为失败或通过。随后 `python -m pytest --collect-only -q tests/test_shell_analysis_authorization.py` → **退出 0，22 collected，1.13 秒**，没有执行用例；据真实 nodeid 纠正为 quoted-separators[zsh]/opaque-request[zsh]，与 coldstart_v1_locks 中 shell_event 的 legacy/digest/preview/current 四 nodeid 一起执行 → **退出 0，4 passed / 2 skipped，1.42 秒**，-rs 明示二者均“shell executable unavailable: zsh”。完整实际命令和退出/数量见 q012-test-records.json，未机械重跑已通过的 29 例。
 - 生产 mypy **0，737 文件**；Pyrefly **0，0 errors，原 35 suppressed/165 warnings**；ty **0**；精度门 **0**。按项目命令显式目标 codey/Python 3.11 串行运行，与四文件 scoped checks 的完整命令/输出保存在 q012-validation.json。源码与测试哈希前后一致，changed_during_checks=[]。
 - 变更只涉及 shell_approval.py、一个有类型的基线测试和两份记录；没有更改审批授权、命令执行器或持久恢复判定。Diff 核对通过，本批完成；累计 **15 / 291 批、34 / 975 生产文件**。下一批 Q013 为 app 包入口，之后 Q014 的 provider 连接/选择区域。Q008D/shared server 类型、Q118 其余文件、原懒加载/调度等待等待办仍未完成；总 goal 仍 active。
+
+Q012 已提交：`d9988a52`（refactor(agents): share shell approval call identity encoding）。
+
+### Q013：app 包入口（已完成，无需修改）
+
+- `codey/app/__init__.py` 全文件只有包说明，没有执行入口、导出、注册或 Any；pyproject 的 setuptools namespaces=false 要求普通包标记，不以“没有可调用内容”删掉它。
+- 新解释器实际导入 codey.app，核对 __file__ 是当前仓库文件，并断言未加载浏览器/Playwright，**退出 0**；该文件 `python -m mypy codey/app/__init__.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any`、`pyrefly check codey/app/__init__.py --python-version 3.11`、`ty check codey/app/__init__.py --python-version 3.11`、`python -m ruff check codey/app/__init__.py` 均 **退出 0**。完整命令/输出 q013-validation.json。这里只执行导入/类型/静态验证，没有执行 pytest，不虚报用例数。
+- 没有源码修改或空提交；检查记录持久化在本次进度更新。完成累计 **16 / 291 批、35 / 975 生产文件**；975 文件仍各有唯一归属，清单无丢失/重复。
+
+下一主批 Q014 尚未开始深入检查：已仅用 AST/docstring 映射七文件的入口和规模，未计作源码治理或执行测试。provider_services 是 384 行的门面，registry/status 各有职责，operator_auth.py（49 行）实际负责一次性 launch/session 凭据；进入生产修改前先按真实调用关系细化职责边界并保留所有文件归属。不要重新检查已完成 agents 文件的可选优化。
+
+当前状态：本轮七个本地 commits 94f1cfad / deb4bf6a / 7f1e50ee / b05ae646 / f7ac1ac6 / d34a04e0 / d9988a52，所有生产/测试修改已提交，仅本次进度/hash 补记等待后续记录提交。没有活跃测试或类型进程。总 goal 仍 active，原 191 文件门禁未完整通过、Q008D 的共享 server 类型债务、Q118 未检查文件、lazy import、checkpoint True-done 调度等待、CodeMode 三失败和 SQLite Any 债务继续留队；未将这些项目记为已完成。
+
+
+### Q014：provider 注册表与异步状态（进行中）
+
+- 恢复时 HEAD=d9988a52，只有本任务两份进度/hash 补记未提交，保留。重读完整目标、AGENTS 与类型/测试配置；上轮七个 commits 和 Q013 导入/检查有实际证据，属于进展。没有复制仓库/worktree，也没有并发测试/重型类型进程。
+- 原 Q014 七文件经 docstring/入口/调用关系核对，拆为 Q014（active_provider_registry/provider_registry/connection_status 三基础文件）、Q014B（provider_services/model_settings/connection_actions 三服务消费者）、Q014C（operator_auth 单一会话认证职责）。全部原文件保留，975 文件各有唯一归属；批数 291 → 293。根认证是独立 49 行安全边界，避免混进 provider 状态治理；排序先基础、再消费者。
+- 三个基础生产文件已完整检查。active registry 以 run_id+provider 对象身份清理原始 transport，原子操作已有锁，无需改动。session 字典由 AppContext/conversation_coordinator 的同一 application lock 保护，已定位实际 set/forget 调用，不把没有外部协调的任意并发脚本当作其生产竞态证据。状态 coordinator 的 revision/generation/last-good 与 close 边界保留；没有确认正确行为的其他缓存疑点不作猜测修改。
+- 基线 `python -m pytest -q tests/test_connection_status_cold_start.py tests/test_provider_registry_app.py tests/test_task_runtime_coordinator.py --tb=short` → **退出 0，16 passed，2.67 秒**；三源及四测试初始加严 Any **158 条 / 4 文件**，q014-any-before.log。
+- **bug：活动 Writer 的停止被可用性降级吞掉。** TaskCancelled 的有效契约是用户停止当前任务；project_writer_phase._select_next_writer → hooks/provider_failover_order → ProviderRegistry.failover_order 属于同一运行，不能将该异常当浏览器离线返回其他可用 provider。`python -m pytest -q tests/test_provider_registry_cancellation.py --tb=short` 修改前 **退出 1，1 failed / 1 passed，1.19 秒**；cancelled 回调没有抛出停止，RuntimeError 离线对照保持配置顺序。q014-cancellation-before.json。随后仅该活动 failover 边界重抛 TaskCancelled；未将后台状态探针或系统关闭清理的普通异常策略一概改成任务停止。
+- 类型：动态 connector 入场为 object，已声明调用端口验证 status_key/probe_status/shutdown 回调，保留 getattr 动态代理与原 str/错误降级；_connection 返回实际 ModuleType。状态 JSON 对象键通过既有 object_fields 验证，与原 dict[str,...] 合同一致；值维持未知，消费者按需要收窄，无新 JSON 数值/深度/字段白名单策略。来源解码、data/payload/事件回调不再传播 Any。
+- 冷启动测试全文件补具体 AppContext/Path/MonkeyPatch/ProbeRequest/回调类型；SimpleNamespace/Mock 改为有类型的 connector 和计数列表，保存调用次数断言。API providers 列表与 preferences 快照在边界校验，无跳过坏行。注册字典恢复仍保持同一对象和插入顺序，替代 patch.dict 的隐式 Any；local_config 直接定位同一原模块，避免私有重导出。runtime coordinator 测试补第二次 reserve_run 非空断言，未把 None 当 RunSnapshot。
+- 独立 fixture 基线：临时在本目录使用 HEAD 原 registry/status 两源，运行上述同三文件 → **退出 0，16 passed，2.69 秒**；finally 恢复本轮字节并核对冲突/哈希，q014-fixture-baseline.json，restored_own_source=true。该结果证明类型 fixture 在原生产行为上仍成立，不将本轮修复当作旧期望的依据。
+- **bug：已完成 Future 的同步回调仍持有外层状态锁。** concurrent.futures 的有效契约允许 add_done_callback 对已完成 Future 立即在注册线程执行；coordinator 宣明非阻塞状态协调，发布后通知又会进入 AppContext.emit 的 application lock。_publish 虽退出自身 with-lock，_submit 在注册 callback 时仍持有外层 RLock，造成通知中其他线程无法读取已发布状态，也允许与 application lock 形成反向依赖。
+- `python -m pytest -q tests/test_connection_status_publication.py --tb=short` 对应生产改动前 **退出 1，1 failed，6.18 秒**，实际 `[False] != [True]`：标准 Future 在注册前完成、回调观察线程直到通知返回都不能完成 current()。探针只控制 Future 完成时机，没有修改锁或 current 实现；这不是泛化竞态猜测。q014-publication-before.json。将 add_done_callback 移出 _submit 的 with，保留 future 注册/版本/generation 原子更新及旧结果拒绝。close/revision 之间若发生切换，原 _publish 校验继续拒绝旧结果。
+- 修复后 `python -m pytest -q tests/test_connection_status_publication.py tests/test_connection_status_cold_start.py tests/test_provider_registry_app.py tests/test_provider_registry_cancellation.py tests/test_task_runtime_coordinator.py --tb=short` → **退出 0，19 passed，3.49 秒**；八个完整文件的加严 Any 与 Ruff **退出 0**，诊断 **158 → 101 → 0**，无 cast/ignore/关门。
+- 依赖扩大 `python -m pytest -q tests/test_connection_actions.py tests/test_zen_catalog_lifecycle.py tests/test_api_connections_do_not_enter_browser_failover.py tests/test_task_admission_races.py --tb=short` → **退出 0，28 passed，3.21 秒**；覆盖显式目录压过旧 probe、移除/禁用连接、普通控制关闭失败、API 排除与任务准入。当前完成仍 **16 / 293、35 / 975**，待最终调用方/类型门/diff 与拆分提交。
+
+Q014 最终验证：
+
+- 活动 transport 的真实停止调用方：`python -m pytest -q tests/test_task_submit.py tests/durable/test_scheduler_abort_handler.py --tb=short` → **退出 0，18 passed，2.01 秒**；原对象身份清理/abort 阻断行为保留。
+- 首轮 scoped Pyrefly 实际 **退出 1，2 条空容器隐式 Any**，三生产类型门也各 **退出 1，同一条 model_settings.py:116 的 JsonObject → dict[str,object] 不变性错误**；不是既有失败。前者明确字符串选择模型列表和模型行列表的空容器类型；后者在 owning observe_catalog 只读入口采用 Mapping[str,object]，保留原 payload 对象引用，不用 cast、更改调用方或关闭检查。首次结果 q014-validation-first.json 未删除。
+- 最终八完整路径的加严 mypy、Pyrefly、ty、Ruff **全部退出 0**；生产 `python -m mypy codey --python-version 3.11` **0，737 文件**；`pyrefly check codey --python-version 3.11` **0，0 errors，既有 35 suppressed/165 warnings 保留**；`ty check codey --python-version 3.11` **0**；`python -m tools.kernel_type_precision_gate` **0**。完整命令/输出 q014-validation.json，串行执行且源码/测试哈希前后一致，changed_during_checks=[]。随后仅只读 diff，不机械重跑没有运行期变化的通过用例。
+- Diff 已核对：生产两文件，测试两份原文件/两份新增，记录两份；active_provider_registry.py 与 test_provider_registry_app.py 只检查验证、没有制造修改。两个独立 bug 按 provider registry 取消与 connection status 发布锁分别提交；本批最终状态待完整提交后更新。原 shared server/SQLite/CodeMode 等待办仍未解决，总 goal 仍 active。
