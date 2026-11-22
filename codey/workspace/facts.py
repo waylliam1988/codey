@@ -5,8 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
-from typing import Any
+from pathlib import Path
 
 from codey.policies.command_line import split_run_command
 from codey.storage.local_store import (
@@ -17,6 +16,9 @@ from codey.storage.local_store import (
     read_json_strict,
     write_json_atomic,
 )
+from codey.types.json_value import JsonObject
+from codey.utils.change_paths import safe_change_path
+from codey.utils.object_fields import object_fields, sequence_items
 
 SCHEMA_VERSION = 1
 MAX_VERIFIED_COMMANDS = 8
@@ -48,8 +50,8 @@ class VerifiedCommand:
     kind: str = "run"
     entry_file: str = ""
 
-    def to_payload(self) -> dict[str, Any]:
-        payload = {"command": self.command, "cwd": self.cwd, "kind": self.kind}
+    def to_payload(self) -> JsonObject:
+        payload: JsonObject = {"command": self.command, "cwd": self.cwd, "kind": self.kind}
         if self.entry_file:
             payload["entry_file"] = self.entry_file
         return payload
@@ -60,7 +62,7 @@ class SuccessfulCheck:
     command: str
     cwd: str = "."
 
-    def to_payload(self) -> dict[str, Any]:
+    def to_payload(self) -> JsonObject:
         return {"command": self.command, "cwd": self.cwd}
 
 
@@ -71,8 +73,8 @@ class SuccessfulChange:
     checks: tuple[SuccessfulCheck, ...] = ()
     receipt: str = ""
 
-    def to_payload(self) -> dict[str, Any]:
-        payload = {
+    def to_payload(self) -> JsonObject:
+        payload: JsonObject = {
             "task": self.task,
             "files": list(self.files),
             "checks": [item.to_payload() for item in self.checks],
@@ -90,13 +92,12 @@ class ProjectFacts:
 
 def _safe_cwd(value: str) -> str | None:
     text = (value or ".").strip().replace("\\", "/") or "."
-    path = PurePosixPath(text)
-    if path.is_absolute() or ".." in path.parts:
+    return safe_change_path(text, allow_root=True) or None
+
+
+def _verified_command(command: object, cwd: object) -> VerifiedCommand | None:
+    if not isinstance(command, str) or not isinstance(cwd, str):
         return None
-    return path.as_posix()
-
-
-def _verified_command(command: str, cwd: str) -> VerifiedCommand | None:
     text = (command or "").strip()
     safe_cwd = _safe_cwd(cwd)
     if (
@@ -139,10 +140,7 @@ def _safe_rel_path(value: object) -> str | None:
     text = str(value or "").strip().replace("\\", "/")
     if not text or len(text) > 240:
         return None
-    path = PurePosixPath(text)
-    if path.is_absolute() or ".." in path.parts:
-        return None
-    return path.as_posix()
+    return safe_change_path(text, allow_root=True) or None
 
 
 def _safe_receipt(value: object) -> str:
@@ -157,13 +155,15 @@ def _successful_check_from_object(value: object) -> SuccessfulCheck | None:
     # rejected (fail closed) instead of being coerced.
     if isinstance(value, str):
         return None
-    if isinstance(value, dict):
+    command: object
+    cwd: object
+    if object_fields(value):
         command = value.get("command", "")
         cwd = value.get("cwd", ".")
     else:
         command = getattr(value, "command", "")
         cwd = getattr(value, "cwd", ".")
-    fact = _verified_command(str(command or ""), str(cwd or "."))
+    fact = _verified_command(command, cwd)
     if fact is None or fact.kind != "check":
         return None
     return SuccessfulCheck(fact.command, fact.cwd)
@@ -199,25 +199,17 @@ def _successful_change(
     )
 
 
-def _successful_checks_from_payload(value: object) -> tuple[SuccessfulCheck, ...]:
-    if not isinstance(value, (list, tuple)):
-        return ()
-    return tuple(
-        item
-        for item in (_successful_check_from_object(check) for check in value)
-        if item is not None
-    )
-
-
 def _successful_change_from_payload(value: object) -> SuccessfulChange | None:
-    if not isinstance(value, dict):
+    if not object_fields(value):
         return None
     raw_files = value.get("files")
-    files: Sequence[object] = tuple(raw_files) if isinstance(raw_files, (list, tuple)) else ()
+    files = raw_files if sequence_items(raw_files) else ()
+    raw_checks = value.get("checks")
+    checks = raw_checks if sequence_items(raw_checks) else ()
     return _successful_change(
         task=value.get("task"),
         files=files,
-        checks=_successful_checks_from_payload(value.get("checks")),
+        checks=checks,
         receipt=value.get("receipt", ""),
     )
 
@@ -243,15 +235,17 @@ class ProjectFactsStore:
         if not payload or type(payload.get("schema_version")) is not int or payload.get("schema_version") != SCHEMA_VERSION:
             return ProjectFacts()
         commands: list[VerifiedCommand] = []
-        for item in payload.get("commands") or []:
-            if not isinstance(item, dict):
+        raw_commands = payload.get("commands") or ()
+        for item in raw_commands if sequence_items(raw_commands) else ():
+            if not object_fields(item):
                 continue
             fact = _verified_command(item.get("command", ""), item.get("cwd", "."))
             if fact is None:
                 continue
             commands.append(fact)
         successful_changes: list[SuccessfulChange] = []
-        for item in payload.get("successful_changes") or []:
+        raw_changes = payload.get("successful_changes") or ()
+        for item in raw_changes if sequence_items(raw_changes) else ():
             change = _successful_change_from_payload(item)
             if change is not None:
                 successful_changes.append(change)

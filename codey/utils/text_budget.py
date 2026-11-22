@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 OUTPUT_OMISSION_MARKER = "\n\n... middle of output omitted ...\n\n"
 TRUNCATION_MARKER = "\n[truncated]"
@@ -170,8 +171,13 @@ def _line_ending(line: str) -> str:
 
 
 def _path_parts(path: str) -> list[str]:
+    if path.startswith("file:"):
+        try:
+            url = urlsplit(path)
+        except ValueError:
+            return []
+        path = (f"//{url.netloc}" if url.netloc else "") + unquote(url.path)
     normalized = path.replace("\\", "/").lower()
-    normalized = re.sub(r"^[a-z]:", "", normalized)
     return [
         part
         for part in normalized.split("/")

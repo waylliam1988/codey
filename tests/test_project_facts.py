@@ -3,20 +3,25 @@ from __future__ import annotations
 import shutil
 import tempfile
 import unittest
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from unittest import mock
 
 from codey.agents.request import AgentRequest
 from codey.app import consensus_service, review_service, server
 from codey.app import task_submit as task_submit
+from codey.app.context import AppContext
+from codey.runtime.core.cancellation import CapturedProcess, ProcessOutputObserver
+from codey.runtime.core.cancellation import run_process as real_run_process
 from codey.runtime.core.models import ToolCall
+from codey.runtime.core.process_io import ProcessIO, ProcessOptions
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.execution_evidence import CheckEvidence
 from codey.toolchain.runtime import ToolOutcome
 from codey.workspace.facts import MAX_VERIFIED_COMMANDS, ProjectFactsStore
 from tests import http_context
-from tests.support.kernel_runtime import run_agent as _agent_kernel_request
+from tests.support.kernel_runtime import run_agent
 
 
 class FakeProvider:
@@ -27,7 +32,7 @@ class FakeProvider:
         self.reply = reply
         self.sent: list[str] = []
 
-    def new_chat(self) -> None:
+    def new_chat(self, timeout: float | None = None) -> None:
         pass
 
     def send(self, text: str, timeout: float | None = None) -> str:
@@ -37,10 +42,6 @@ class FakeProvider:
 
     def close(self) -> None:
         pass
-
-
-def run_agent(provider, project, task, **kwargs):
-    return _agent_kernel_request(AgentRequest(provider=provider, project=Path(project), task=task, **kwargs))
 
 
 class ProjectFactsTests(unittest.TestCase):
@@ -232,12 +233,12 @@ class ProjectFactsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
 
-            result = run_agent(
-                provider,
-                Path(td),
-                "Fix it",
+            result = run_agent(AgentRequest(
+                provider=provider,
+                project=Path(td),
+                task="Fix it",
                 project_facts="- successful check: python -m unittest",
-            )
+            ))
 
         self.assertEqual(result.stop_reason, "done")
         # New single entry includes project facts via Project context (no old header).
@@ -246,13 +247,13 @@ class ProjectFactsTests(unittest.TestCase):
 
     def test_project_completion_records_success_and_injects_it_into_next_task(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
-            state = server.AppContext(state_td)
-            provider = mock.Mock()
+            state = AppContext(state_td)
+            provider = FakeProvider("")
             provider.name = "DeepSeek Web"
             captured_facts: list[str] = []
             run_count = 0
 
-            def fake_agent_run(request: AgentRequest):
+            def fake_agent_run(request: AgentRequest) -> RunResult:
                 nonlocal run_count
                 run_count += 1
                 captured_facts.append(request.project_facts)
@@ -292,8 +293,7 @@ class ProjectFactsTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (backend / "app.js").write_text("before\n", encoding="utf-8")
-            state = server.AppContext(root / "state")
-            from dataclasses import replace
+            state = AppContext(root / "state")
 
             provider = FakeProvider("")
             provider.name = "DeepSeek Web"
@@ -303,14 +303,31 @@ class ProjectFactsTests(unittest.TestCase):
                 '{"tool":"run","args":{"path":"backend","command":"npm test"}}',
                 '{"tool":"done","args":{"summary":"Updated backend and checked it."}}',
             ])
-            provider.send = lambda _text, timeout=None: next(replies)
+            def send_reply(text: str, timeout: float | None = None) -> str:
+                return next(replies)
 
-            def fake_agent_run(request: AgentRequest):
+            def fake_agent_run(request: AgentRequest) -> RunResult:
                 # Keep kernel-owned workspace proofs and completion facts.
                 # Only the external npm process is scripted in this fixture.
-                tools = replace(request.tool_fns, run_command_with_context=None,
-                    run_command=lambda *_args, **_kwargs: ToolOutcome("ok", True, exit_code=0))
-                return _agent_kernel_request(replace(request, tool_fns=tools))
+                def run_process(
+                    args: str | Sequence[str], *, cwd: str | Path, timeout: float,
+                    capture_limit_bytes: int, env: dict[str, str] | None = None,
+                    shell: bool = False, observer: ProcessOutputObserver | None = None,
+                    options: ProcessOptions | None = None,
+                    on_started: Callable[[ProcessIO], Callable[[], None]] | None = None,
+                ) -> CapturedProcess:
+                    if args != ["npm", "test"]:
+                        return real_run_process(
+                            args, cwd=cwd, timeout=timeout, capture_limit_bytes=capture_limit_bytes,
+                            env=env, shell=shell, observer=observer, options=options, on_started=on_started,
+                        )
+                    self.assertEqual(cwd, backend)
+                    if observer is not None:
+                        observer.close()
+                    return CapturedProcess(args, 0, "", "", 0, 0, False, False)
+
+                with mock.patch("codey.toolchain.runtime.cancellation.run_process", run_process):
+                    return run_agent(request)
 
             changes = {
                 "ok": True,
@@ -329,6 +346,7 @@ class ProjectFactsTests(unittest.TestCase):
 
             real_which = shutil.which
             with (
+                mock.patch.object(provider, "send", send_reply),
                 mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(task_submit, "agent_run", side_effect=fake_agent_run),
@@ -355,11 +373,11 @@ class ProjectFactsTests(unittest.TestCase):
 
     def test_project_completion_does_not_record_failed_run(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
-            state = server.AppContext(state_td)
-            provider = mock.Mock()
+            state = AppContext(state_td)
+            provider = FakeProvider("")
             provider.name = "Qwen Studio"
 
-            def fake_agent_run(request: AgentRequest):
+            def fake_agent_run(request: AgentRequest) -> RunResult:
                 request.on_event(RunEvent.tool_finished(
                     1,
                     ToolCall("run", {"path": ".", "command": "python -m unittest"}),
@@ -385,11 +403,11 @@ class ProjectFactsTests(unittest.TestCase):
 
     def test_facts_persistence_failure_does_not_fail_task(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
-            state = server.AppContext(state_td)
-            provider = mock.Mock()
+            state = AppContext(state_td)
+            provider = FakeProvider("")
             provider.name = "DeepSeek Web"
 
-            def fake_agent_run(request: AgentRequest):
+            def fake_agent_run(request: AgentRequest) -> RunResult:
                 request.on_event(RunEvent.tool_finished(
                     1,
                     ToolCall("run", {"path": ".", "command": "python -m unittest"}),

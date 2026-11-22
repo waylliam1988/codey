@@ -20,7 +20,10 @@ class ZenAccessObservations:
             stored = read_json_strict(self.path)
             if not isinstance(stored, dict) or stored.get("schema_version") != 1 or stored.get("agreement") != agreement:
                 return
-            for row in stored.get("observations", [])[:64]:
+            observations = stored.get("observations", [])
+            if not isinstance(observations, list):
+                return
+            for row in observations[:64]:
                 if (isinstance(row, dict) and isinstance(row.get("model"), str) and len(row["model"]) <= 1000
                         and row.get("protocol") in {"openai-completions", "openai-responses"}
                         and type(row.get("allowed")) is bool and type(row.get("observed_at")) in {int, float}):

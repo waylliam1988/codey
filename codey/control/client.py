@@ -32,6 +32,7 @@ from codey.launcher.releases import (
 from codey.launcher.startup import startup_stage
 from codey.storage.file_lock import acquire_lease
 from codey.storage.local_store import DEFAULT_STATE_HOME, read_json_strict, write_json_atomic
+from codey.types.json_value import require_json_string
 
 if os.name == "nt" or TYPE_CHECKING:
     # CREATE_NO_WINDOW is a Windows-only subprocess constant and is absent
@@ -61,9 +62,10 @@ class ControlClient:
         secret = read_json_strict(self.home / "control-credentials.json", max_bytes=8192)
         if secret is None:
             raise ControlError("UNAUTHORIZED", "Local control credentials are unavailable")
+        credential = require_json_string(secret["operator" if self.operator else "agent"], "control credential")
         data = json.dumps({"operation": operation, "params": params}, ensure_ascii=False, allow_nan=False).encode()
         request = urllib.request.Request(info["url"] + ("/api/lifecycle" if lifecycle else "/api/control"), data=data,
-                                         headers={"Content-Type": "application/json", "Authorization": "Bearer " + secret["operator" if self.operator else "agent"],
+                                         headers={"Content-Type": "application/json", "Authorization": "Bearer " + credential,
                                                   "X-Codey-Instance": info["instance_id"]})
         try:
             with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=timeout) as response:

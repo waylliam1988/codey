@@ -70,14 +70,15 @@ class ModelPreferences:
             raw = read_json_strict(self.path)
         if raw is None:
             return {"revision": 0, "sources": default_sources(), "catalogs": {}}
+        sources = raw.get("sources")
         if (
             type(raw.get("revision")) is not int
-            or not isinstance(raw.get("sources"), dict)
+            or not isinstance(sources, dict)
             or not isinstance(raw.get("catalogs"), dict)
         ):
             raise ValueError("invalid model preferences")
         # Removed integrations cease to participate; their old chats own their identity.
-        current = {key: raw["sources"].get(key, value) for key, value in default_sources().items()}
+        current = {key: sources.get(key, value) for key, value in default_sources().items()}
         return {"revision": raw["revision"], "sources": normalize_sources(current), "catalogs": raw["catalogs"]}
 
     def snapshot(self) -> dict[str, Any]:

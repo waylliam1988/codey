@@ -8,7 +8,7 @@ import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 from uuid import uuid4
 
 from codey.knowledge.changes import KnowledgeChanges
@@ -28,6 +28,13 @@ class KnowledgeLinkResult:
     ok: bool
     model_text: str
     created: bool = False
+
+
+class NoteDocumentMetadata(TypedDict):
+    id: str
+    path: str
+    revision: int
+    content_hash: str
 
 
 class KnowledgeStore:
@@ -212,8 +219,8 @@ class KnowledgeStore:
 
     def read_notes_with_rows(
         self, note_ids: list[str]
-    ) -> dict[str, tuple[KnowledgeNote, dict[str, Any]]]:
-        out: dict[str, tuple[KnowledgeNote, dict[str, Any]]] = {}
+    ) -> dict[str, tuple[KnowledgeNote, NoteDocumentMetadata]]:
+        out: dict[str, tuple[KnowledgeNote, NoteDocumentMetadata]] = {}
         for note_id, (note, path, revision) in self.documents.get_many(note_ids).items():
             out[note_id] = (note, {"id": note_id, "path": path, "revision": revision,
                                    "content_hash": _content_hash(note.to_markdown())})

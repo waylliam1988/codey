@@ -10,8 +10,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from pathlib import Path, PurePosixPath
-from typing import Any
+from pathlib import Path
 
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
@@ -23,6 +22,9 @@ from codey.storage.local_store import (
     session_key,
     write_json_atomic,
 )
+from codey.types.json_value import JsonObject
+from codey.utils.change_paths import safe_change_path
+from codey.utils.object_fields import object_fields, sequence_items
 from codey.workspace.revision import (
     INITIAL_WORKSPACE_REVISION,
     valid_workspace_fingerprint,
@@ -60,10 +62,9 @@ def _text(value: object, limit: int) -> str:
 
 def _rel_path(value: object) -> str | None:
     text = str(value or "").strip().replace("\\", "/")
-    path = PurePosixPath(text)
-    if not text or path.is_absolute() or ".." in path.parts or len(text) > MAX_REL_PATH_CHARS:
+    if not text or len(text) > MAX_REL_PATH_CHARS:
         return None
-    return path.as_posix()
+    return safe_change_path(text, allow_root=True) or None
 
 
 def _canonical_rel_path(root: Path, value: object) -> str | None:
@@ -112,6 +113,9 @@ class CheckpointFile:
     path: str
     after_hash: str
 
+    def to_payload(self) -> JsonObject:
+        return {"path": self.path, "after_hash": self.after_hash}
+
 
 @dataclass(frozen=True)
 class CheckpointCheck:
@@ -120,6 +124,10 @@ class CheckpointCheck:
     workspace_revision: int = INITIAL_WORKSPACE_REVISION
     workspace_fingerprint: str = ""
 
+    def to_payload(self) -> JsonObject:
+        return {"command": self.command, "cwd": self.cwd,
+                "workspace_revision": self.workspace_revision, "workspace_fingerprint": self.workspace_fingerprint}
+
 
 @dataclass(frozen=True)
 class LastAction:
@@ -127,6 +135,9 @@ class LastAction:
     ok: bool
     command: str = ""
     cwd: str = "."
+
+    def to_payload(self) -> JsonObject:
+        return {"tool": self.tool, "ok": self.ok, "command": self.command, "cwd": self.cwd}
 
 
 @dataclass(frozen=True)
@@ -148,8 +159,8 @@ class WorkCheckpoint:
     stop_reason: str = ""
     workspace_changed: bool = False
 
-    def to_payload(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
+    def to_payload(self) -> JsonObject:
+        payload: JsonObject = {
             "schema_version": SCHEMA_VERSION,
             "run_id": self.run_id,
             "session_id": self.session_id,
@@ -158,13 +169,13 @@ class WorkCheckpoint:
             "status": self.status,
             "started_at": self.started_at,
             "updated_at": self.updated_at,
-            "changed_files": [vars(item) for item in self.changed_files],
+            "changed_files": [item.to_payload() for item in self.changed_files],
             "hash_unavailable_files": list(self.hash_unavailable_files),
-            "successful_checks_after_last_change": [vars(item) for item in self.successful_checks_after_last_change],
+            "successful_checks_after_last_change": [item.to_payload() for item in self.successful_checks_after_last_change],
             "stop_reason": self.stop_reason,
         }
         if self.last_action is not None:
-            payload["last_action"] = vars(self.last_action)
+            payload["last_action"] = self.last_action.to_payload()
         return payload
 
 
@@ -204,24 +215,33 @@ class WorkCheckpointStore:
             if status not in VALID_STATUSES or str(payload.get("session_id") or "") != session_id:
                 return WorkCheckpointLoadResult(checkpoint=None)
             files = []
-            for item in payload.get("changed_files") or []:
-                rel = _rel_path(item.get("path")) if isinstance(item, dict) else None
-                digest = str(item.get("after_hash") or "") if isinstance(item, dict) else ""
+            raw_files = payload.get("changed_files") or ()
+            if not sequence_items(raw_files):
+                raise TypeError("changed_files must be an array")
+            for item in raw_files:
+                rel = _rel_path(item.get("path")) if object_fields(item) else None
+                digest = str(item.get("after_hash") or "") if object_fields(item) else ""
                 if rel and (digest == "missing" or digest.startswith("sha256:")):
                     files.append(CheckpointFile(rel, digest))
                 if len(files) >= MAX_CHANGED_FILES:
                     break
+            raw_unavailable = payload.get("hash_unavailable_files") or ()
+            if not sequence_items(raw_unavailable):
+                raise TypeError("hash_unavailable_files must be an array")
             hash_unavailable = tuple(
                 rel
                 for rel in (
                     _rel_path(item) if isinstance(item, str) else None
-                    for item in payload.get("hash_unavailable_files") or []
+                    for item in raw_unavailable
                 )
                 if rel
             )[:MAX_CHANGED_FILES]
             checks = []
-            for item in payload.get("successful_checks_after_last_change") or []:
-                if not isinstance(item, dict):
+            raw_checks = payload.get("successful_checks_after_last_change") or ()
+            if not sequence_items(raw_checks):
+                raise TypeError("successful_checks_after_last_change must be an array")
+            for item in raw_checks:
+                if not object_fields(item):
                     continue
                 command = _text(item.get("command"), MAX_COMMAND_CHARS)
                 cwd = _rel_path(item.get("cwd") or ".")
@@ -235,7 +255,7 @@ class WorkCheckpointStore:
                     break
             action_value = payload.get("last_action")
             action = None
-            if isinstance(action_value, dict) and action_value.get("tool"):
+            if object_fields(action_value) and action_value.get("tool"):
                 action = LastAction(
                     _text(action_value.get("tool"), 40),
                     bool(action_value.get("ok")),
@@ -338,11 +358,11 @@ class WorkCheckpointStore:
         workspace_fingerprint: str,
     ) -> WorkCheckpoint:
         safe_command = _text(command, MAX_COMMAND_CHARS)
-        safe_cwd = _rel_path(cwd or ".") or "."
+        safe_cwd = _rel_path(cwd or ".")
         revision = valid_workspace_revision(workspace_revision)
         fingerprint = valid_workspace_fingerprint(workspace_fingerprint)
         checks = list(checkpoint.successful_checks_after_last_change)
-        if ok and safe_command and revision and fingerprint:
+        if ok and safe_command and safe_cwd and revision and fingerprint:
             check = CheckpointCheck(safe_command, safe_cwd, revision, fingerprint)
             checks = [
                 item
@@ -356,7 +376,7 @@ class WorkCheckpointStore:
             checkpoint,
             updated_at=_now(),
             successful_checks_after_last_change=tuple(checks[-MAX_SUCCESSFUL_CHECKS:]),
-            last_action=LastAction("run", ok, safe_command, safe_cwd),
+            last_action=LastAction("run", ok, safe_command, safe_cwd or "."),
         )
         self.save(updated)
         return updated

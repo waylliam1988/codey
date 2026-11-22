@@ -8,6 +8,11 @@ from __future__ import annotations
 import tempfile
 from dataclasses import replace
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from codey.agents.request import AgentRequest
+    from codey.runtime.core.run_result import RunResult
 
 from codey.operations.kernel_contracts import (
     KernelExecutionDeps,
@@ -94,7 +99,7 @@ def run_task_kernel(session, *, request, session_id="test-session"):
             durable.close()
 
 
-def run_agent(request):
+def run_agent(request: AgentRequest) -> RunResult:
     """Explicitly provision durable dependencies for isolated adapter tests."""
     from codey.durable import DurableSession, MemoryDurableStore
     from codey.durable.checkpoint import operation_from_checkpoint

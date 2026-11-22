@@ -8,7 +8,14 @@ import os
 import stat
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Protocol, Self, TypeVar
+
+
+class _SortKey(Protocol):
+    def __lt__(self, other: Self, /) -> bool: ...
+
+
+_Key = TypeVar("_Key", bound=_SortKey)
 
 _WINDOWS_RESERVED_STEMS = frozenset({
     "con",
@@ -87,10 +94,10 @@ def _open_regular_no_follow(target: Path) -> int:
     if not stat.S_ISREG(info.st_mode):
         raise ValueError(f"not a file: {target}")
     flags = os.O_RDONLY
-    if hasattr(os, "O_BINARY"):
-        flags |= os.O_BINARY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
+    for name in ("O_BINARY", "O_NOFOLLOW"):
+        flag: object = getattr(os, name, 0)
+        if isinstance(flag, int):
+            flags |= flag
     try:
         fd = os.open(target, flags)
     except FileNotFoundError:
@@ -151,7 +158,7 @@ def read_text_bounded(path: str | Path, *, max_bytes: int) -> str:
 
 
 def read_text_or_none(path: str | Path, *, max_bytes: int) -> str | None:
-    target = Path(path)
+    target = ensure_not_symlink(path)
     if not target.exists():
         return None
     return read_text_bounded(target, max_bytes=max_bytes)
@@ -200,7 +207,7 @@ def bounded_directory_entries(
     max_entries: int,
     *,
     include_hidden: bool = True,
-    sort_key: Callable[[Path], Any] | None = None,
+    sort_key: Callable[[Path], _Key] | None = None,
     check_cancel: Callable[[], None] | None = None,
     swallow_errors: bool = False,
 ) -> tuple[list[Path], bool]:
@@ -238,7 +245,7 @@ def is_test_path(rel: str) -> bool:
 
 def _sorted_entries(
     entries: list[Path],
-    sort_key: Callable[[Path], Any] | None,
+    sort_key: Callable[[Path], _Key] | None,
 ) -> list[Path]:
     if sort_key is None:
         return sorted(entries)

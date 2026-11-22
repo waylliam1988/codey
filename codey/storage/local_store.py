@@ -7,10 +7,13 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Any
+
+from codey.storage.atomic_io import MAX_ATOMIC_JSON_BYTES
+from codey.storage.atomic_io import write_json_atomic as write_json_atomic
+from codey.utils.object_fields import object_fields
 
 DEFAULT_STATE_HOME = Path.home() / ".codey"
-MAX_JSON_BYTES = 8 * 1024 * 1024
+MAX_JSON_BYTES = MAX_ATOMIC_JSON_BYTES
 
 
 class StoreCorruption(ValueError):
@@ -31,7 +34,7 @@ def session_key(session_id: str) -> str:
     return hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:24]
 
 
-def read_json(path: Path, *, max_bytes: int = MAX_JSON_BYTES) -> dict[str, Any] | None:
+def read_json(path: Path, *, max_bytes: int = MAX_JSON_BYTES) -> dict[str, object] | None:
     """Lenient cache read: missing or corrupt state -> None.
 
     Cache-like stores (ghost learning, facts, conversations) use this: a
@@ -40,15 +43,12 @@ def read_json(path: Path, *, max_bytes: int = MAX_JSON_BYTES) -> dict[str, Any] 
     corruption is backed up instead of silently reset.
     """
     try:
-        if not path.is_file() or path.stat().st_size > max_bytes:
-            return None
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return read_json_strict(path, max_bytes=max_bytes)
+    except StoreCorruption:
         return None
-    return value if isinstance(value, dict) else None
 
 
-def read_json_strict(path: Path, *, max_bytes: int = MAX_JSON_BYTES) -> dict[str, Any] | None:
+def read_json_strict(path: Path, *, max_bytes: int = MAX_JSON_BYTES) -> dict[str, object] | None:
     """Strict read distinguishing missing (None) from corrupt (raise).
 
     Missing file -> None. Oversize, undecodable, or non-dict ->
@@ -56,37 +56,20 @@ def read_json_strict(path: Path, *, max_bytes: int = MAX_JSON_BYTES) -> dict[str
     file, and only then reset.
     """
     try:
-        if not path.is_file():
-            return None
-        if path.stat().st_size > max_bytes:
+        with path.open("rb") as handle:
+            data = handle.read(max(0, max_bytes) + 1)
+        if len(data) > max_bytes:
             raise StoreCorruption(path, "too large")
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value: object = json.loads(data.decode("utf-8"))
+    except FileNotFoundError:
+        return None
     except StoreCorruption:
         raise
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, RecursionError) as exc:
         raise StoreCorruption(path, type(exc).__name__) from exc
-    if not isinstance(value, dict):
+    if not object_fields(value):
         raise StoreCorruption(path, "not a dict")
     return value
-
-
-def write_json_atomic(
-    path: Path,
-    value: dict[str, Any],
-    *,
-    mode: int | None = None,
-    preserve_mode: bool = True,
-    max_bytes: int = MAX_JSON_BYTES,
-) -> None:
-    from codey.storage.atomic_io import write_json_atomic as _atomic_write_json
-
-    _atomic_write_json(
-        path,
-        value,
-        mode=mode,
-        preserve_mode=preserve_mode,
-        max_bytes=max_bytes,
-    )
 
 
 def delete_file(path: Path) -> None:

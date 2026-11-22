@@ -62,7 +62,10 @@ class ContextLedger:
                         or ProtocolWindowRef.from_payload(last_ref) != self.window_ref):
                     raise ValueError("context ledger window reference mismatch")
             self.sequence = sequence
-            self.view = head["view"]
+            view = head["view"]
+            if not isinstance(view, list):
+                raise ValueError("context ledger view must be a list")
+            self.view = view
 
     @classmethod
     def for_session(cls, home: Path, session_id: str, identity: str) -> ContextLedger:

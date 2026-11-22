@@ -16,12 +16,12 @@ def decode_git_path(value: object) -> str:
     return raw.strip()
 
 
-def safe_change_path(value: object) -> str:
-    """Return a normalized relative POSIX path, or ``""`` when unsafe."""
+def safe_change_path(value: object, *, allow_root: bool = False) -> str:
+    """Normalize a relative path, optionally retaining ``.`` for directory scopes."""
     import re as _re
 
     raw = str(value or "").strip()
-    if not raw:
+    if not raw or "\x00" in raw:
         return ""
     # Reject on the raw value before any slash stripping: a leading "/"
     # is a POSIX absolute path and "C:/" / "C:\\" / "\\\\" are Windows
@@ -30,12 +30,13 @@ def safe_change_path(value: object) -> str:
     if unified.startswith("/") or _re.match(r"^[A-Za-z]:", unified):
         return ""
     normalized = unified.strip().strip("/")
-    if not normalized or normalized == ".":
+    if not normalized:
         return ""
     path = PurePosixPath(normalized)
-    if path.is_absolute() or ".." in path.parts or path.as_posix() == ".":
+    if path.is_absolute() or ".." in path.parts:
         return ""
-    return path.as_posix()
+    result = path.as_posix()
+    return result if allow_root or result != "." else ""
 
 
 def change_file_paths(

@@ -90,6 +90,45 @@ class TextBudgetTests(unittest.TestCase):
 
         self.assertEqual(prune_dependency_stack_frames(text, root), text)
 
+    def test_prune_keeps_node_esm_project_frames(self) -> None:
+        cases = (
+            ("E:/node_modules/repo", "file:///E:/node_modules/repo"),
+            ("E:/node_modules/my repo", "file:///E:/node_modules/my%20repo"),
+            ("/opt/node_modules/repo", "file:///opt/node_modules/repo"),
+            ("//server/share/node_modules/repo", "file://server/share/node_modules/repo"),
+        )
+        for root, url in cases:
+            with self.subTest(root=root):
+                text = f"Error: local failure\n    at handler ({url}/src/app.js:5:1)\n"
+                self.assertEqual(prune_dependency_stack_frames(text, Path(root)), text)
+
+    def test_prune_folds_node_esm_dependencies_within_project(self) -> None:
+        root = Path("E:/node_modules/my repo")
+        text = (
+            "Error: local failure\n"
+            "    at handler (file:///E:/node_modules/my%20repo/src/app.js:5:1)\n"
+            "    at run (file:///E:/node_modules/my%20repo/node_modules/pkg/index.js:2:1)\n"
+        )
+
+        pruned = prune_dependency_stack_frames(text, root)
+
+        self.assertIn("at handler (file:///E:/node_modules/my%20repo/src/app.js:5:1)", pruned)
+        self.assertIn("[... 1 dependency stack frame omitted ...]", pruned)
+        self.assertNotIn("pkg/index.js", pruned)
+
+    def test_prune_does_not_confuse_project_with_same_path_on_another_drive(self) -> None:
+        text = "Error: dependency failure\n    at run (C:/node_modules/repo/index.js:2:1)\n"
+
+        pruned = prune_dependency_stack_frames(text, Path("E:/node_modules/repo"))
+
+        self.assertIn("[... 1 dependency stack frame omitted ...]", pruned)
+        self.assertNotIn("at run", pruned)
+
+    def test_prune_keeps_malformed_file_url_verbatim(self) -> None:
+        text = "Error: reported location\n    at run (file://[invalid/node_modules/pkg.js:2:1)\n"
+
+        self.assertEqual(prune_dependency_stack_frames(text, Path("E:/repo")), text)
+
     def test_prune_leaves_non_stack_logs_byte_identical(self) -> None:
         text = (
             "loading node_modules/express/index.js as fixture text\n"

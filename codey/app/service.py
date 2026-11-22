@@ -24,7 +24,7 @@ def credentials(home: Path) -> dict[str, Any]:
         raise ValueError("Control credentials cannot be a symbolic link")
     existing = read_json_strict(path, max_bytes=8192)
     if existing is not None:
-        if not all(isinstance(existing.get(key), str) and len(existing[key]) >= 32 for key in ("operator", "agent")):
+        if not all(isinstance(value, str) and len(value) >= 32 for value in (existing.get(key) for key in ("operator", "agent"))):
             raise ValueError("Invalid local control credentials")
         return existing
     value = {"operator": secrets.token_urlsafe(48), "agent": secrets.token_urlsafe(48)}

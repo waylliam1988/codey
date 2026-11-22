@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
-import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +11,8 @@ from unittest import mock
 from codey.app import http_plumbing
 from codey.app.context import MAX_CHANGE_TRACKERS, AppContext
 from codey.storage.ui_state_store import UiStateStore
+from codey.types.json_value import decode_json_object, parse_json_object
+from codey.utils.object_fields import object_fields
 from codey.workspace.paths import bounded_directory_entries, safe_join
 
 
@@ -20,7 +22,7 @@ class ColdstartReviewBatchTests(unittest.TestCase):
             root = Path(td)
             import codey.workspace.paths as paths
 
-            with mock.patch.object(paths.os, "name", "nt"):
+            with mock.patch.object(os, "name", "nt"):
                 with self.assertRaisesRegex(ValueError, "reserved device name"):
                     safe_join(root, "NUL")
                 with self.assertRaisesRegex(ValueError, "reserved device name"):
@@ -31,7 +33,7 @@ class ColdstartReviewBatchTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "reserved device name"):
                     safe_join(root, "NUL.txt")
             # POSIX keeps the old behavior: the gate itself is a no-op.
-            with mock.patch.object(paths.os, "name", "posix"):
+            with mock.patch.object(os, "name", "posix"):
                 paths._reject_windows_reserved_names("NUL", label="project root")
                 paths._reject_windows_reserved_names("subdir/CON.txt", label="project root")
 
@@ -74,10 +76,17 @@ class ColdstartReviewBatchTests(unittest.TestCase):
             with mock.patch.object(
                 ui_mod, "read_json_strict", side_effect=OSError("disk gone")
             ):
-                current = store._current()
-                saved = store.save(current, base_revision=current["revision"])
-            self.assertEqual(saved["sessions"][0]["title"], "Cached title")
-            self.assertNotIn("messages", saved["sessions"][0])
+                current_raw: object = store._current()
+                current = decode_json_object(current_raw)
+                revision = current["revision"]
+                assert isinstance(revision, int) and not isinstance(revision, bool)
+                saved_raw: object = store.save(current, base_revision=revision)
+                saved = decode_json_object(saved_raw)
+            sessions = saved["sessions"]
+            assert isinstance(sessions, list)
+            session = decode_json_object(sessions[0])
+            self.assertEqual(session["title"], "Cached title")
+            self.assertNotIn("messages", session)
 
     def test_change_trackers_evict_oldest_only(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -141,7 +150,7 @@ class ColdstartReviewBatchTests(unittest.TestCase):
             stdout = io.StringIO()
             with mock.patch("sys.stdout", stdout):
                 code = cli.main(["ghost", "export", "--state-home", td])
-            payload = json.loads(stdout.getvalue())
+            payload = parse_json_object(stdout.getvalue())
             self.assertEqual(code, 0)
             self.assertIsInstance(payload["enabled"], bool)
             self.assertEqual(payload["items"], [])
@@ -150,14 +159,20 @@ class ColdstartReviewBatchTests(unittest.TestCase):
     def test_cli_memory_deletes_only_the_requested_scope(self) -> None:
         from codey.app import cli
         with tempfile.TemporaryDirectory() as td:
+            with contextlib.closing(AppContext(td, start_scheduler=False)) as state:
+                state.durable.create_conversation("s")
             stdout = io.StringIO()
             with mock.patch("sys.stdout", stdout):
                 code = cli.main(["ghost", "delete_scope", "--state-home", td, "--session-id", "s"])
             self.assertEqual(code, 0)
-            self.assertEqual(json.loads(stdout.getvalue()), {"ok": True, "deleted": 0})
-            with self.assertRaises(SystemExit) as failure:
-                cli.main(["ghost", "reset", "--state-home", td])
-            self.assertEqual(failure.exception.code, 2)
+            self.assertEqual(parse_json_object(stdout.getvalue()), {"ok": True, "deleted": 0})
+            stdout = io.StringIO()
+            with mock.patch("sys.stdout", stdout):
+                code = cli.main(["ghost", "reset", "--state-home", td])
+            self.assertEqual(code, 1)
+            self.assertEqual(parse_json_object(stdout.getvalue()), {
+                "ok": False, "error": "scope_kind requires a user, an existing session or a project",
+            })
 
     def test_provider_availability_ttl_caches_cdp_scan(self) -> None:
         from codey.app import provider_services
@@ -168,7 +183,7 @@ class ColdstartReviewBatchTests(unittest.TestCase):
             try:
                 calls: list[int] = []
 
-                def fake_scan(**_kwargs) -> dict[str, bool]:
+                def fake_scan(*, allowed: set[str] | None = None) -> dict[str, bool]:
                     calls.append(1)
                     return {"deepseek": True}
 
@@ -203,7 +218,7 @@ class ColdstartReviewBatchTests(unittest.TestCase):
                     ),
                     mock.patch.object(store.documents, "get", side_effect=AssertionError("no per-note document query")),
                 ):
-                    queries = []
+                    queries: list[str] = []
                     store.index._read_conn().set_trace_callback(queries.append)
                     try:
                         notes = store.read_notes_with_rows(["beta", "missing", "alpha", "beta"])
@@ -227,8 +242,6 @@ class ColdstartReviewBatchTests(unittest.TestCase):
             self.assertNotIn("missing", missing)
 
     def test_research_notes_response_has_no_per_note_index_get(self) -> None:
-        from types import SimpleNamespace
-
         from codey.app import api as app_api
         from codey.knowledge.note import KnowledgeNote
         from codey.knowledge.store import KnowledgeStore
@@ -240,11 +253,11 @@ class ColdstartReviewBatchTests(unittest.TestCase):
                     store.write_note(KnowledgeNote(
                         id=note_id, title=note_id, body=f"body {note_id}", type="fact",
                     ))
-                ctx = SimpleNamespace(knowledge_store=store)
-                with mock.patch.object(
+                with contextlib.closing(AppContext(Path(td) / "app", start_scheduler=False)) as ctx, mock.patch.object(
                     store.index, "get",
                     side_effect=AssertionError("API layer must not index.get per note"),
                 ):
+                    ctx.knowledge_store = store
                     status, payload = app_api.research_notes_response(
                         ctx, {"ids": ["alpha", "beta", "missing"]}
                     )
@@ -252,8 +265,10 @@ class ColdstartReviewBatchTests(unittest.TestCase):
                 store.close()
             self.assertEqual(status, 200)
             self.assertTrue(payload["ok"])
-            self.assertIn("alpha", payload["notes"])
-            self.assertIn("beta", payload["notes"])
+            notes_payload = payload["notes"]
+            assert object_fields(notes_payload)
+            self.assertIn("alpha", notes_payload)
+            self.assertIn("beta", notes_payload)
             self.assertEqual(payload["missing"], ["missing"])
 
     def test_ledger_append_fast_path_avoids_full_rescan(self) -> None:
@@ -302,7 +317,7 @@ class ColdstartReviewBatchTests(unittest.TestCase):
             # Same-size corruption: flip bytes without changing the length.
             tampered = bytearray(raw)
             for index in range(len(tampered)):
-                if tampered[index : index + 1] not in (b"\n", b"{", b"}"):
+                if tampered[index] not in b"\n{}":
                     tampered[index] = ord("x")
                     break
             assert len(tampered) == len(raw)

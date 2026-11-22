@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TypeGuard
 
 
@@ -19,6 +19,10 @@ def mapping_fields(value: object) -> TypeGuard[Mapping[str, object]]:
         return False
     fields: Mapping[object, object] = value
     return all(isinstance(key, str) for key in fields)
+
+
+def sequence_items(value: object) -> TypeGuard[Sequence[object]]:
+    return isinstance(value, (list, tuple))
 
 
 def decoded_object(encoded: object) -> dict[str, object]:

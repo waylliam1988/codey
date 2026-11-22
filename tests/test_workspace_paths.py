@@ -4,6 +4,7 @@ import os
 import stat
 import tempfile
 import unittest
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -42,29 +43,23 @@ class WorkspacePathTests(unittest.TestCase):
                 read_text_bounded(path, max_bytes=1)
 
     def test_bounded_directory_entries_consumes_one_probe_entry(self) -> None:
-        class FakeEntry:
-            def __init__(self, name: str) -> None:
-                self.name = name
+        seen = 0
 
-        class FakeDirectory:
-            def __init__(self) -> None:
-                self.seen = 0
+        def iterdir(_directory: Path) -> Iterator[Path]:
+            nonlocal seen
+            for index in range(100):
+                seen += 1
+                if seen > 4:
+                    raise AssertionError("iterator consumed past remaining + 1")
+                yield Path(f"file_{index}.py")
 
-            def iterdir(self):
-                for index in range(100):
-                    self.seen += 1
-                    if self.seen > 4:
-                        raise AssertionError("iterator consumed past remaining + 1")
-                    yield FakeEntry(f"file_{index}.py")
-
-        directory = FakeDirectory()
-
-        entries, truncated = bounded_directory_entries(
-            directory, 3, sort_key=lambda item: item.name  # type: ignore[arg-type]
-        )
+        with mock.patch.object(Path, "iterdir", iterdir):
+            entries, truncated = bounded_directory_entries(
+                Path("."), 3, sort_key=lambda item: item.name
+            )
 
         self.assertTrue(truncated)
-        self.assertEqual(directory.seen, 4)
+        self.assertEqual(seen, 4)
         self.assertEqual([entry.name for entry in entries], ["file_0.py", "file_1.py", "file_2.py"])
 
     def test_bounded_directory_entries_can_skip_hidden_entries(self) -> None:
@@ -104,6 +99,17 @@ class WorkspacePathTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "symlink"):
                 path_hash(link)
 
+    def test_optional_reader_refuses_dangling_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            link = Path(td) / "link.txt"
+            try:
+                link.symlink_to(Path(td) / "missing.txt")
+            except OSError:
+                self.skipTest("symlinks unavailable")
+
+            with self.assertRaisesRegex(ValueError, "symlink"):
+                read_text_or_none(link, max_bytes=64)
+
     def test_path_hash_opens_without_following_symlinks(self) -> None:
         # Proves the hash path cannot bypass the no-follow helper: a swapped-in
         # link must fail even if it points at readable content, and on POSIX
@@ -132,9 +138,9 @@ class WorkspacePathTests(unittest.TestCase):
             seen: dict[str, int] = {}
             real_open = os.open
 
-            def spy_open(file, flags, *args, **kwargs):
-                seen["flags"] = int(flags)
-                return real_open(file, flags, *args, **kwargs)
+            def spy_open(file: Path, flags: int) -> int:
+                seen["flags"] = flags
+                return real_open(file, flags)
 
             with mock.patch.object(os, "open", spy_open):
                 self.assertEqual(path_hash(path), content_hash("hello\n"))
@@ -149,9 +155,9 @@ class WorkspacePathTests(unittest.TestCase):
             seen: dict[str, int] = {}
             real_open = os.open
 
-            def spy_open(file, flags, *args, **kwargs):
-                seen["flags"] = int(flags)
-                return real_open(file, flags, *args, **kwargs)
+            def spy_open(file: Path, flags: int) -> int:
+                seen["flags"] = flags
+                return real_open(file, flags)
 
             with mock.patch.object(os, "open", spy_open):
                 self.assertEqual(

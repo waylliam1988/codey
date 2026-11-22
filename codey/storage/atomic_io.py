@@ -18,9 +18,28 @@ import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import BinaryIO, Literal, TypeVar
+
+_Value = TypeVar("_Value")
 
 MAX_ATOMIC_JSON_BYTES = 8 * 1024 * 1024
+
+
+def _optional_open_flags(*names: str) -> int:
+    flags = 0
+    for name in names:
+        flag: object = getattr(os, name, 0)
+        if isinstance(flag, int):
+            flags |= flag
+    return flags
+
+
+def _fdopen_binary(fd: int, mode: Literal["rb", "wb"]) -> BinaryIO:
+    try:
+        return os.fdopen(fd, mode)
+    except OSError:
+        os.close(fd)
+        raise
 
 
 def filesystem_path(path: Path) -> Path:
@@ -63,13 +82,9 @@ def write_bytes_atomic(
         mode if mode is not None else (existing_mode if (preserve_mode and existing_mode is not None) else 0o666)
     )
     try:
-        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
-        if hasattr(os, "O_BINARY"):
-            flags |= os.O_BINARY
-        if hasattr(os, "O_NOFOLLOW"):
-            flags |= os.O_NOFOLLOW
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | _optional_open_flags("O_BINARY", "O_NOFOLLOW")
         fd = os.open(tmp, flags, creation_mode)
-        with os.fdopen(fd, "wb") as handle:
+        with _fdopen_binary(fd, "wb") as handle:
             handle.write(data)
             if mode is not None:
                 _apply_mode(handle.fileno(), tmp, mode, required=True)
@@ -106,9 +121,7 @@ def _apply_mode(fileno: int, path: Path, mode: int, *, required: bool = False) -
 def _fsync_dir(directory: Path) -> None:
     if os.name == "posix":
         try:
-            flags = os.O_RDONLY
-            if hasattr(os, "O_DIRECTORY"):
-                flags |= os.O_DIRECTORY
+            flags = os.O_RDONLY | _optional_open_flags("O_DIRECTORY")
             dir_fd = os.open(str(directory), flags)
             try:
                 os.fsync(dir_fd)
@@ -143,17 +156,10 @@ def append_bytes_durable(path: str | Path, chunks: list[bytes] | tuple[bytes, ..
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.is_symlink():
         raise OSError(errno.ELOOP, f"refusing to append through symlink: {target}")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
-    if hasattr(os, "O_BINARY"):
-        flags |= os.O_BINARY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | _optional_open_flags("O_BINARY", "O_NOFOLLOW")
     fd = os.open(target, flags, 0o666)
     try:
-        try:
-            st = os.fstat(fd)
-        except OSError:
-            raise
+        st = os.fstat(fd)
         if not stat.S_ISREG(st.st_mode):
             raise OSError(errno.ELOOP, f"refusing to append to non-regular file: {target}")
         with os.fdopen(fd, "ab") as handle:
@@ -186,7 +192,7 @@ def write_text_atomic(
 
 def write_json_atomic(
     path: str | Path,
-    value: dict[str, Any],
+    value: dict[str, _Value],
     *,
     mode: int | None = None,
     preserve_mode: bool = True,
@@ -224,16 +230,12 @@ def _read_existing_bytes_no_follow(target: Path) -> bytes:
     try:
         if target.is_symlink():
             return b""
-        flags = os.O_RDONLY
-        if hasattr(os, "O_BINARY"):
-            flags |= os.O_BINARY
-        if hasattr(os, "O_NOFOLLOW"):
-            flags |= os.O_NOFOLLOW
+        flags = os.O_RDONLY | _optional_open_flags("O_BINARY", "O_NOFOLLOW")
         fd = os.open(target, flags)
     except (OSError, ValueError):
         return b""
     try:
-        with os.fdopen(fd, "rb") as handle:
+        with _fdopen_binary(fd, "rb") as handle:
             chunks: list[bytes] = []
             remaining = _EOL_SCAN_BYTES
             carry = b""
@@ -267,7 +269,8 @@ def _retry_sharing_violation(action: Callable[[], None], *, unchanged: Callable[
             action()
             return
         except OSError as exc:
-            if getattr(exc, "winerror", None) != 32 or attempt == 7:
+            winerror: object = getattr(exc, "winerror", None)
+            if winerror != 32 or attempt == 7:
                 raise
             time.sleep(0.01 * (attempt + 1))
             if unchanged is not None and not unchanged():
@@ -278,7 +281,8 @@ def _cleanup_temp_file(path: Path) -> None:
     try:
         _retry_sharing_violation(lambda: path.unlink(missing_ok=True))
     except PermissionError as exc:
-        if getattr(exc, "winerror", None) == 32:
+        winerror: object = getattr(exc, "winerror", None)
+        if winerror == 32:
             return
         try:
             mode = stat.S_IMODE(path.stat().st_mode)

@@ -12,6 +12,13 @@ from uuid import uuid4
 
 from codey.runtime.core import cancellation
 from codey.storage.local_store import StoreCorruption, read_json_strict, write_json_atomic
+from codey.types.json_value import (
+    JsonValue,
+    decode_json_object,
+    require_json_boolean,
+    require_json_integer,
+    require_json_string,
+)
 from codey.workspace.bounded_scan import (
     BoundedScanBudget,
     DirectoryEntries,
@@ -54,6 +61,51 @@ class FileIndexSnapshot:
     directories: tuple[tuple[Path, int, int, int, str], ...]
     coverage: DiscoveryCoverage
     generation: str
+
+
+def _payload_items(value: JsonValue) -> list[JsonValue]:
+    if not isinstance(value, list):
+        raise ValueError("snapshot entries must be an array")
+    return value
+
+
+def _coverage_from_payload(value: JsonValue) -> DiscoveryCoverage:
+    raw = decode_json_object(value)
+    coverage = DiscoveryCoverage(
+        max_files=require_json_integer(raw["max_files"], "max_files"),
+        max_dirs=require_json_integer(raw["max_dirs"], "max_dirs"),
+        max_dir_entries=require_json_integer(raw["max_dir_entries"], "max_dir_entries"),
+        files_seen=require_json_integer(raw["files_seen"], "files_seen"),
+        dirs_seen=require_json_integer(raw["dirs_seen"], "dirs_seen"),
+        file_limited=require_json_boolean(raw["file_limited"], "file_limited"),
+        dir_limited=require_json_boolean(raw["dir_limited"], "dir_limited"),
+        entry_limited=require_json_boolean(raw["entry_limited"], "entry_limited"),
+        read_failed=require_json_boolean(raw["read_failed"], "read_failed"),
+    )
+    if raw.keys() != asdict(coverage).keys():
+        raise ValueError("invalid coverage fields")
+    return coverage
+
+
+def _entry_from_payload(value: JsonValue) -> FileIndexEntry:
+    raw = decode_json_object(value)
+    return FileIndexEntry(
+        Path(require_json_string(raw["path"], "path")),
+        require_json_integer(raw["size"], "size"),
+        require_json_integer(raw["mtime_ns"], "mtime_ns"),
+        require_json_integer(raw["mode"], "mode"),
+    )
+
+
+def _directory_from_payload(value: JsonValue) -> tuple[Path, int, int, int, str]:
+    path, modified, device, inode, signature = _payload_items(value)
+    return (
+        Path(require_json_string(path, "directory path")),
+        require_json_integer(modified, "directory metadata mtime_ns"),
+        require_json_integer(device, "directory metadata device"),
+        require_json_integer(inode, "directory metadata inode"),
+        require_json_string(signature, "directory membership signature"),
+    )
 
 
 class IncrementalFileIndex:
@@ -212,13 +264,13 @@ class IncrementalFileIndex:
         if raw is None:
             return None
         try:
-            payload = raw["snapshot"]
+            payload = decode_json_object(raw["snapshot"])
             encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
             if raw["sha256"] != hashlib.sha256(encoded.encode()).hexdigest():
                 raise ValueError("snapshot digest mismatch")
             if payload["schema"] != _SNAPSHOT_SCHEMA or payload["policy"] != policy or payload["root"] != policy[1]:
                 raise ValueError("snapshot policy mismatch")
-            coverage = DiscoveryCoverage(**payload["coverage"])
+            coverage = _coverage_from_payload(payload["coverage"])
             for name, value in asdict(coverage).items():
                 expected = bool if name.endswith(("limited", "failed")) else int
                 # bool is not an integer budget.
@@ -227,9 +279,9 @@ class IncrementalFileIndex:
             if [coverage.max_files, coverage.max_dirs, coverage.max_dir_entries] != policy[-3:]:
                 raise ValueError("coverage limits mismatch")
             entries = tuple(
-                FileIndexEntry(Path(e["path"]), e["size"], e["mtime_ns"], e["mode"]) for e in payload["entries"]
+                _entry_from_payload(entry) for entry in _payload_items(payload["entries"])
             )
-            directories = tuple((Path(p), m, d, i, signature) for p, m, d, i, signature in payload["directories"])
+            directories = tuple(_directory_from_payload(row) for row in _payload_items(payload["directories"]))
             start = Path(str(policy[1]))
             for candidate in [e.path for e in entries] + [d[0] for d in directories]:
                 if not candidate.is_absolute() or ".." in candidate.parts:
@@ -245,10 +297,11 @@ class IncrementalFileIndex:
             if (len(entries) != coverage.files_seen or len(directories) != coverage.dirs_seen
                     or coverage.dirs_seen > coverage.max_dirs or any(not stat.S_ISREG(e.mode) for e in entries)):
                 raise ValueError("inconsistent discovery coverage")
-            if not isinstance(payload["generation"], str) or not payload["generation"]:
+            generation = payload["generation"]
+            if not isinstance(generation, str) or not generation:
                 raise ValueError("missing generation")
             if len(entries) > coverage.files_seen or coverage.files_seen > coverage.max_files:
                 raise ValueError("inconsistent file coverage")
-            return FileIndexSnapshot(start, entries, directories, coverage, payload["generation"])
+            return FileIndexSnapshot(start, entries, directories, coverage, generation)
         except (KeyError, TypeError, ValueError) as exc:
             raise StoreCorruption(path, str(exc)) from exc

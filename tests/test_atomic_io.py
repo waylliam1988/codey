@@ -7,6 +7,8 @@ import stat
 import tempfile
 import unittest
 from pathlib import Path
+from types import TracebackType
+from typing import BinaryIO, Literal, Self
 from unittest import mock
 
 from codey.storage.atomic_io import encode_with_original_eol, write_text_atomic
@@ -119,33 +121,34 @@ class AtomicWriteTests(unittest.TestCase):
         )
 
     def test_eol_detection_reads_bounded_prefix(self) -> None:
-        from codey.storage import atomic_io as atomic_module
-
         with tempfile.TemporaryDirectory() as td:
             target = Path(td, "big.py")
             target.write_bytes(b"a\n" * 100 + b"\r\n" + b"b\n" * 100)
             reads: list[int] = []
-            real_fdopen = atomic_module.os.fdopen
+            real_fdopen = os.fdopen
 
             class BoundedReader:
-                def __init__(self, handle):
+                def __init__(self, handle: BinaryIO) -> None:
                     self._handle = handle
 
                 def read(self, size: int = -1) -> bytes:
                     reads.append(size)
                     return self._handle.read(size)
 
-                def __enter__(self):
+                def __enter__(self) -> Self:
                     return self
 
-                def __exit__(self, *exc):
-                    return self._handle.__exit__(*exc)
+                def __exit__(
+                    self, exc_type: type[BaseException] | None,
+                    exc: BaseException | None, traceback: TracebackType | None,
+                ) -> None:
+                    self._handle.close()
 
-            def fake_fdopen(fd, *args, **kwargs):
-                handle = real_fdopen(fd, *args, **kwargs)
+            def fake_fdopen(fd: int, mode: Literal["rb"]) -> BoundedReader:
+                handle = real_fdopen(fd, mode)
                 return BoundedReader(handle)
 
-            with mock.patch.object(atomic_module.os, "fdopen", side_effect=fake_fdopen):
+            with mock.patch.object(os, "fdopen", side_effect=fake_fdopen):
                 encoded = encode_with_original_eol(target, "x\ny\n")
             self.assertEqual(encoded, b"x\r\ny\r\n")
             self.assertTrue(reads)
@@ -165,6 +168,41 @@ class AtomicWriteTests(unittest.TestCase):
 
             self.assertEqual(original.read_text(encoding="utf-8"), "original\n")
 
+    def test_fdopen_failure_closes_raw_descriptor(self) -> None:
+        from codey.storage.atomic_io import write_bytes_atomic
+
+        opened: list[int] = []
+        real_open = os.open
+
+        def recording_open(file: Path, flags: int, mode: int = 0o777) -> int:
+            fd = real_open(file, flags, mode)
+            opened.append(fd)
+            return fd
+
+        for operation in ("read", "write"):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as td:
+                target = Path(td) / "target.txt"
+                target.write_bytes(b"before\r\n")
+                opened.clear()
+                try:
+                    with (
+                        mock.patch.object(os, "open", recording_open),
+                        mock.patch.object(os, "fdopen", side_effect=OSError("fdopen failed")),
+                    ):
+                        if operation == "write":
+                            with self.assertRaisesRegex(OSError, "fdopen failed"):
+                                write_bytes_atomic(target, b"after\n")
+                        else:
+                            self.assertEqual(encode_with_original_eol(target, "after\n"), b"after\n")
+                    self.assertEqual(len(opened), 1)
+                    with self.assertRaises(OSError):
+                        os.fstat(opened[0])
+                    self.assertEqual(target.read_bytes(), b"before\r\n")
+                finally:
+                    for fd in opened:
+                        with contextlib.suppress(OSError):
+                            os.close(fd)
+
     def test_failed_replace_cleans_read_only_temp_file(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             target = Path(td, "readonly.txt")
@@ -180,9 +218,10 @@ class AtomicWriteTests(unittest.TestCase):
                 leftovers = [
                     item.name
                     for item in Path(td).iterdir()
-                    if item.name.startswith(".readonly.txt.") and item.name.endswith(".tmp")
+                    if item != target
                 ]
-                self.assertEqual(leftovers, [])
+                expected_leftovers: list[str] = []
+                self.assertEqual(leftovers, expected_leftovers)
                 self.assertEqual(target.read_text(encoding="utf-8"), "before\n")
             finally:
                 with contextlib.suppress(OSError):
@@ -226,21 +265,22 @@ class AtomicWriteTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             path = Path(td, "flags.log")
-            seen: dict[str, object] = {}
+            seen: dict[str, int] = {}
             real_open = os.open
 
-            def _recording_open(file, flags, *args):
-                seen["flags"] = int(flags)
-                return real_open(file, flags, *args)
+            def _recording_open(file: Path, flags: int, mode: int = 0o777) -> int:
+                seen["flags"] = flags
+                return real_open(file, flags, mode)
 
-            with mock.patch.object(atomic_io.os, "open", side_effect=_recording_open):
+            with mock.patch.object(os, "open", side_effect=_recording_open):
                 atomic_io.append_bytes_durable(path, [b"x\n"])
-            flags = int(seen["flags"])
+            flags = seen["flags"]
             self.assertTrue(flags & os.O_WRONLY)
             self.assertTrue(flags & os.O_CREAT)
             self.assertTrue(flags & os.O_APPEND)
-            if hasattr(os, "O_NOFOLLOW"):
-                self.assertTrue(flags & os.O_NOFOLLOW)
+            no_follow: object = getattr(os, "O_NOFOLLOW", None)
+            if isinstance(no_follow, int):
+                self.assertTrue(flags & no_follow)
 
     def test_write_json_atomic(self) -> None:
         import json
@@ -273,7 +313,7 @@ class AtomicWriteTests(unittest.TestCase):
                     side_effect=PermissionError("chmod denied"),
                 )
             ]
-            if hasattr(atomic_io.os, "fchmod"):
+            if hasattr(os, "fchmod"):
                 patches.append(
                     mock.patch(
                         "codey.storage.atomic_io.os.fchmod",
@@ -303,7 +343,7 @@ class AtomicWriteTests(unittest.TestCase):
                     side_effect=PermissionError("chmod denied"),
                 )
             ]
-            if hasattr(atomic_io.os, "fchmod"):
+            if hasattr(os, "fchmod"):
                 patches.append(
                     mock.patch(
                         "codey.storage.atomic_io.os.fchmod",
@@ -328,14 +368,14 @@ class AtomicWriteTests(unittest.TestCase):
         # the faked platform instead of the real one.
         target = Path(".")
         with (
-            mock.patch.object(atomic_io.os, "name", "posix"),
-            mock.patch.object(atomic_io.os, "open", return_value=99),
+            mock.patch.object(os, "name", "posix"),
+            mock.patch.object(os, "open", return_value=99),
             mock.patch.object(
-                atomic_io.os,
+                os,
                 "fsync",
                 side_effect=OSError(errno.EINVAL, "invalid"),
             ),
-            mock.patch.object(atomic_io.os, "close"),
+            mock.patch.object(os, "close"),
         ):
             atomic_io._fsync_dir(target)
 
@@ -345,14 +385,14 @@ class AtomicWriteTests(unittest.TestCase):
         # See above: keep Path construction on the real platform.
         target = Path(".")
         with (
-            mock.patch.object(atomic_io.os, "name", "posix"),
-            mock.patch.object(atomic_io.os, "open", return_value=99),
+            mock.patch.object(os, "name", "posix"),
+            mock.patch.object(os, "open", return_value=99),
             mock.patch.object(
-                atomic_io.os,
+                os,
                 "fsync",
                 side_effect=OSError(errno.EIO, "io error"),
             ),
-            mock.patch.object(atomic_io.os, "close"),self.assertRaises(OSError)
+            mock.patch.object(os, "close"),self.assertRaises(OSError)
         ):
             atomic_io._fsync_dir(target)
 

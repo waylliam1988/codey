@@ -150,9 +150,12 @@ class ZenCatalog:
             if isinstance(cache, dict) and cache.get("schema_version") == 2:
                 directory = cache["directory"]
                 self.models = parse_models(directory)
-                self._directory = cache["directory"]
-                self.etag = cache["etag"]
-                self.updated = float(cache["updated"])
+                etag, updated = cache["etag"], cache["updated"]
+                if not isinstance(directory, dict) or not isinstance(etag, str) or not isinstance(updated, (str, int, float)):
+                    raise TypeError("invalid Zen catalog cache")
+                self._directory = directory
+                self.etag = etag
+                self.updated = float(updated)
                 self.checked = self.updated
         except (StoreCorruption, KeyError, ValueError, TypeError):
             self.stale = True

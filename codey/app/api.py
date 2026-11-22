@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codey.app.context import AppContext
+    from codey.knowledge.store import NoteDocumentMetadata
 
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.app import provider_services
@@ -377,7 +378,7 @@ def research_notes_response(ctx: AppContext, body: dict[str, object]) -> tuple[i
     return 200, {"ok": True, "notes": notes, "missing": missing}
 
 
-def _research_note_payload(note: KnowledgeNote, row: dict[str, object]) -> dict[str, object]:
+def _research_note_payload(note: KnowledgeNote, row: NoteDocumentMetadata) -> dict[str, object]:
     return {
         "id": note.id,
         "type": note.type,
@@ -386,7 +387,7 @@ def _research_note_payload(note: KnowledgeNote, row: dict[str, object]) -> dict[
         "sources": note.sources,
         "tags": note.tags,
         "status": note.status,
-        "path": str(row.get("path") or ""),
+        "path": row["path"],
         "updated": note.updated,
     }
 

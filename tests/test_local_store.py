@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,7 +36,7 @@ class LocalStoreTests(unittest.TestCase):
             path = Path(td) / "state.json"
             local_store.write_json_atomic(path, {"value": "old"})
 
-            with mock.patch.object(local_store.os, "replace", side_effect=OSError("busy")), self.assertRaisesRegex(OSError, "busy"):
+            with mock.patch.object(os, "replace", side_effect=OSError("busy")), self.assertRaisesRegex(OSError, "busy"):
                 local_store.write_json_atomic(path, {"value": "new"})
 
             self.assertEqual(local_store.read_json(path), {"value": "old"})
@@ -47,8 +48,49 @@ class LocalStoreTests(unittest.TestCase):
             path.write_text("not json", encoding="utf-8")
             self.assertIsNone(local_store.read_json(path))
 
-            with mock.patch.object(local_store, "MAX_JSON_BYTES", 2):
+            path.write_text('{"value":1}', encoding="utf-8")
+            self.assertIsNone(local_store.read_json(path, max_bytes=2))
+
+    def test_readers_reject_json_grown_after_metadata_check(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "state.json"
+            path.write_bytes(b"{}")
+            old_stat = path.stat()
+            path.write_bytes(b'{"value":"' + b"x" * 100 + b'"}')
+
+            with mock.patch.object(Path, "stat", return_value=old_stat):
+                with self.subTest(reader="lenient"):
+                    self.assertIsNone(local_store.read_json(path, max_bytes=16))
+                with self.subTest(reader="strict"), self.assertRaisesRegex(local_store.StoreCorruption, "too large"):
+                    local_store.read_json_strict(path, max_bytes=16)
+
+    def test_readers_handle_json_parser_recursion_failure_as_corruption(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "state.json"
+            depth = 5000
+            path.write_text('{"value":' + "[" * depth + "0" + "]" * depth + "}", encoding="utf-8")
+
+            with self.subTest(reader="lenient"):
                 self.assertIsNone(local_store.read_json(path))
+            with self.subTest(reader="strict"), self.assertRaisesRegex(local_store.StoreCorruption, "RecursionError"):
+                local_store.read_json_strict(path)
+
+    def test_strict_reader_does_not_treat_directory_as_missing_state(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            self.assertIsNone(local_store.read_json(Path(td)))
+            with self.assertRaises(local_store.StoreCorruption):
+                local_store.read_json_strict(Path(td))
+
+    def test_json_size_budget_is_in_bytes_with_inclusive_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "state.json"
+            data = '{"value":"中文"}'.encode()
+            path.write_bytes(data)
+
+            self.assertEqual(local_store.read_json_strict(path, max_bytes=len(data)), {"value": "中文"})
+            self.assertIsNone(local_store.read_json(path, max_bytes=len(data) - 1))
+            with self.assertRaisesRegex(local_store.StoreCorruption, "too large"):
+                local_store.read_json_strict(path, max_bytes=len(data) - 1)
 
     def test_strict_reader_distinguishes_missing_from_corrupt(self) -> None:
         with tempfile.TemporaryDirectory() as td:
