@@ -562,3 +562,30 @@ Q008C 已提交：`7edc3897`（fix(agents): bound unusable handoff summaries and
 此前 53 例直接验证和五文件加严 Any 成功仍有效，生产源未再修改。确定性修复按零预算、取消传播与端口类型两份本地提交拆分；本批仍为 partial_follow_up，累计完整完成 **11 / 291 批、29 / 975 文件**，不把共享脚本待办算已完成。下一主批 Q009：writer_failover.py，接着 Q010 上下文、Q011 协议、Q012 shell 审批；原 191 文件门禁未完整通过、CodeMode 三失败与 SQLite 类型债务继续保留。
 
 Q008D 零预算修复已提交：`94f1cfad`（fix(agents): honor zero consensus advisor budget）。取消传播、类型端口与必要 fixture 的独立验证已完成，以下提交继续保存这部分；没有夹带浏览器或 durable 生产修改。
+
+Q008D 其余独立成果已提交：`deb4bf6a`（fix(agents): propagate consensus cancellation and type provider ports）。工作区清洁后进入 Q009；共享 server 脚本类型与懒加载失败的 partial 状态不变。
+
+### Q009：Writer 接管状态机（进行中）
+
+- 范围 writer_failover.py 全文件，入口 WriterFailoverRunner.run；调用方 project_writer_phase/_repair_writer 与 candidate validation，CheckpointView 也用于 reviews。公开 __all__、文档与手动场景仍引用这些入口，不删作死代码。接管与初始重连保留不同 handoff 语义；未将异常/副作用不同的路径强行合并。
+- 原基线 `python -m pytest -q tests/test_writer_failover.py --tb=short` → **退出 0，12 passed，1.10 秒**。源与该脚本加严 mypy 初测 **退出 1，186 条，仅测试文件**；生产源没有显式或隐式 Any 诊断。测试的无注解 harness/callback/list 与 dict 假 provider 是传播源。
+- 按原生产端口将 fake 包装为 ProviderTransport，保留原字典载荷及 provider 相等性/关闭断言；明确所有 hook/callback/容器类型，不以 object 替换实际需要具体操作的数据。生产代码尚未改动时原 12 用例再跑 **退出 0，12 passed，1.12 秒**，建立 fixture 改动的独立行为基线。
+- **bug 准入**：模块 docstring 要求 honour Stop first，TaskCancelled 表示用户停止；真实 project_writer_phase 将当前 run 的 stop_flag.is_set 传给 stopped 回调。原实现仅在 Writer 的 ProviderActionError 分支检查，初次连接、后续接管和清理路径不满足相同契约。
+- `python -m pytest -q tests/test_writer_failover_cancellation.py --tb=short` 修改生产前 **退出 1，6 failed / 2 passed，1.24 秒**（q009-cancellation-before.json）。输入为已停止但有/无连接、连接失败时置停止标志、清理直接抛 TaskCancelled、失败 canary 时停止；实际继续连接/运行并正常返回，没有传播停止。普通 RuntimeError 清理对照原来通过。修复加入边界停止检查并仅重抛清理中的 TaskCancelled，保留普通清理容错与 provider 引用先清空的不变量。
+- 补充最后一个切换预算边界：`python -m pytest -q tests/test_writer_failover_cancellation.py -k 'final_takeover or failed_canary' --tb=short` 在对应分支修复前 **退出 1，2 failed / 1 passed / 7 deselected，1.24 秒**。最后一次连接/canary 失败且同时停止，实际错误地抛 ProviderActionError；进一步在终止分支前检查停止，使停止优先于 provider 故障。不是宣称线程竞态已复现或所有时序均无竞态。
+- 最终直接组 `python -m pytest -q tests/test_writer_failover_cancellation.py tests/test_writer_failover.py --tb=short` → **退出 0，22 passed，1.54 秒**。包含正常接管、共享总 turn/switch 预算、旧 handoff 语义、普通清理失败及新增停止路径。随后仅调整测试容器类型推导和导入顺序，关键断言未放宽。
+- 三完整文件加严 Any mypy：**186 → 10 → 1 → 0**，末条来自 assertEqual 为 sorted 表达式提供 Any 上下文，改为有推导类型的局部变量。没有新 cast/ignore 或关闭门禁。当前正在运行五个明确调用方文件；完成计数仍 **11 / 291、29 / 975**，待其结果及最终检查/diff/提交。
+
+Q009 调用方局部阻碍：
+
+- 五文件首批 `python -m pytest -q tests/test_review_repair_preserves_total_turn_budget.py tests/test_writer_checkpoint_scope_reaches_completion_gate.py tests/test_writer_request_forwards_workspace_revision_store.py tests/test_api_connections_do_not_enter_browser_failover.py tests/test_readonly_stagnation_completion.py --tb=short` 在 checkpoint 的 `[True-done]` 节点超过 120 秒。py-spy 实际只有主线程，在 evaluate_completion → wait_tool_task → Event.wait 等待；当前 fixture 只建 MemoryDurableStore，没有执行子工具任务的 worker/scheduler。该节点直接调用 _run_one_writer_attempt，没有经过本批修改的 WriterFailoverRunner。未证明生产等待合同错误，不改完成门让未执行的命令假装完成。
+- 已通过 Ctrl-C 终止该次测试进程，工具报告 **退出 1、无 pytest 最终汇总**；打印的进度点不冒充用例完成数。证据 q009-caller-wait-stack.log。初次原版对照的计时器覆盖收集，8 秒时尚未执行到测试，结果不具有行为复现效力（q009-caller-baseline-attempt1-inconclusive.json），不作为基线结论。
+- 修正对照探针，让 8 秒计时从 pytest_runtest_call 开始：在 HEAD 原版 writer_failover.py 上实际到达 automatic_command_result → wait_tool_task 的同一子任务等待；记录本模块运行期函数调用数 **0**。主动中断后 **退出 2、无完成用例数**，不是通过结果；q009-caller-baseline.json 含完整栈。finally 恢复本轮字节且哈希一致，未复制 worktree。该 fixture/runtime 调度问题路由 Q094/Q095/Q099，未夹带进本批。
+- 后续以明确 nodeid 拆出 checkpoint 的 scope 合并和 `[False-max_turns]`，继续运行原组的其余四文件；`[True-done]` 仍未完成验证，不添加 skip、不删用例或放宽断言。另补充“Writer 尝试中才置停止标志”的有效对照，避免入口提前停止使原异常分支失去覆盖；其运行结果待最终直接组记录。
+
+Q009 最终验收：
+
+- 拆分调用方实际命令：`python -m pytest -q tests/test_review_repair_preserves_total_turn_budget.py tests/test_writer_checkpoint_scope_reaches_completion_gate.py::test_checkpoint_scope_is_combined_with_new_attempt_edits tests/test_writer_checkpoint_scope_reaches_completion_gate.py::test_checkpoint_edit_scope_reaches_real_writer_gate_without_reediting[False-max_turns] tests/test_writer_request_forwards_workspace_revision_store.py tests/test_api_connections_do_not_enter_browser_failover.py tests/test_readonly_stagnation_completion.py --tb=short` → **退出 0，19 passed，178.99 秒，无 skip**。含 review 共享预算、checkpoint 作用域、workspace revision 传递、API/browser 接管排除和只读完成恢复；单个 `[True-done]` 未完成的等待仍明确保留，不宣称该文件全绿。
+- `python -m pytest -q tests/test_writer_failover.py tests/test_writer_failover_cancellation.py --tb=short` → **退出 0，23 passed，1.59 秒**；同三个完整路径加严 Any mypy / scoped Pyrefly / scoped ty / Ruff **全部退出 0**。有实际运行的普通失败、停止优先、预算/hand-off 保持验证；没有新增忽略、skip 或放宽断言。
+- 生产 `python -m mypy codey --python-version 3.11` → **0，737 文件**；`pyrefly check codey --python-version 3.11` → **0，0 errors，原 35 suppressed/165 warnings**；`ty check codey --python-version 3.11` → **0**；`python -m tools.kernel_type_precision_gate` → **0**。全部串行，源码与本批脚本哈希前后一致，changed_during_checks=[]；q009-validation.json 含真实命令、退出码与输出。
+- Diff 已核对，仅状态机、原测试、新增取消回归及两份记录；未改调度器或未完成 fixture。Q009 已完成，累计 **12 / 291 批、30 / 975 生产文件**；Q008D 仍是 partial_follow_up。下一主批 Q010 的 context.py/context_compaction.py，按实际上下文装配/消息组边界建基线，不回到前面文件追加可选优化。

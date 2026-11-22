@@ -25,7 +25,6 @@ keeps the module unit-testable with plain fakes.
 
 from __future__ import annotations
 
-import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
@@ -121,6 +120,7 @@ class WriterFailoverRunner:
         checkpoint: CheckpointView,
     ) -> RunResult:
         """Run the Writer with failover and return its (budget-adjusted) result."""
+        self._check_stopped()
         turns_used = 0
         cur_fresh = fresh
         cur_handoff = handoff
@@ -129,6 +129,7 @@ class WriterFailoverRunner:
             cur_fresh, cur_checkpoint = self._initial_reconnect(cur_fresh, cur_checkpoint)
         assert self.provider is not None
         while True:
+            self._check_stopped()
             counter = _TurnCounter()
             spec = WriterAttempt(
                 task=task,
@@ -177,6 +178,7 @@ class WriterFailoverRunner:
         except TaskCancelled:
             raise
         except Exception as connect_error:
+            self._check_stopped()
             failure = self.capture_failure(self.provider_id, "connect", connect_error)
             self.record_failure(self.provider_id, failure)
             self.clear_session(self.provider_id)
@@ -196,6 +198,7 @@ class WriterFailoverRunner:
         provider remains within the switch budget.
         """
         while True:
+            self._check_stopped()
             next_id = self.select_next(self.tried)
             if next_id is None:
                 raise origin
@@ -208,6 +211,7 @@ class WriterFailoverRunner:
             except TaskCancelled:
                 raise
             except Exception as connect_error:
+                self._check_stopped()
                 failure = self.capture_failure(next_id, "connect", connect_error)
                 self.record_failure(next_id, failure)
                 if self.switches >= self.max_switches:
@@ -215,16 +219,25 @@ class WriterFailoverRunner:
                 continue
             if self.needs_canary(next_id) and not self.run_canary(next_id, self.provider):
                 self._close_current()
+                self._check_stopped()
                 if self.switches >= self.max_switches:
                     raise origin
                 continue
             return self.refresh_checkpoint()
 
+    def _check_stopped(self) -> None:
+        if self.stopped():
+            raise TaskCancelled("task stopped")
+
     def _close_current(self) -> None:
         provider, self.provider = self.provider, None
         if provider is not None:
-            with contextlib.suppress(Exception):
+            try:
                 self.close(provider)
+            except TaskCancelled:
+                raise
+            except Exception:
+                pass
 
 
 # Public surface intentionally small: the state machine plus its data shapes.

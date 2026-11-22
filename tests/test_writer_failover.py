@@ -8,13 +8,18 @@ old task-run closures.
 from __future__ import annotations
 
 import unittest
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 
 from codey.agents.writer_failover import (
     CheckpointView,
     WriterAttempt,
     WriterFailoverRunner,
 )
+from codey.providers.base import ChatProvider
 from codey.providers.diagnostics import ProviderActionError, ProviderFailure
+from codey.providers.requests import ProviderRequest
+from codey.providers.transport import ProviderTransport
 from codey.runtime.core.cancellation import TaskCancelled
 from codey.runtime.core.run_result import RunResult
 
@@ -34,15 +39,26 @@ def _ok(turns: int = 1) -> RunResult:
     return RunResult(summary="ok", stop_reason="done", turns=turns)
 
 
-def _succeed(turns: int = 1):
-    def action(spec: WriterAttempt, note) -> RunResult:
+Attempt = Callable[[WriterAttempt, Callable[[int], None]], RunResult]
+
+
+@dataclass
+class _Provider(ProviderTransport):
+    provider: object
+
+    def execute_request(self, request: ProviderRequest) -> object:
+        raise AssertionError("the attempt callback owns provider execution")
+
+
+def _succeed(turns: int = 1) -> Attempt:
+    def action(spec: WriterAttempt, note: Callable[[int], None]) -> RunResult:
         return _ok(turns)
 
     return action
 
 
-def _fail(turn: int = 1):
-    def action(spec: WriterAttempt, note) -> RunResult:
+def _fail(turn: int = 1) -> Attempt:
+    def action(spec: WriterAttempt, note: Callable[[int], None]) -> RunResult:
         note(turn)
         raise ProviderActionError(_failure(model=spec.provider_id))
 
@@ -55,11 +71,11 @@ class _Harness:
     def __init__(
         self,
         *,
-        order,
-        connect_fail=(),
-        canary_fail=(),
-        needs_canary=(),
-        stopped=False,
+        order: Sequence[str],
+        connect_fail: Iterable[str] = (),
+        canary_fail: Iterable[str] = (),
+        needs_canary: Iterable[str] = (),
+        stopped: bool = False,
     ) -> None:
         self.order = list(order)
         self.connect_fail = set(connect_fail)
@@ -67,7 +83,7 @@ class _Harness:
         self.needs_canary_ids = set(needs_canary)
         self._stopped = stopped
         self.log: list[tuple[str, str]] = []
-        self.closed: list[object] = []
+        self.closed: list[ChatProvider | ProviderTransport] = []
         self.switched: list[str] = []
         self.excluded_snapshots: list[set[str]] = []
         self.refreshed = 0
@@ -77,58 +93,61 @@ class _Harness:
             successful_checks=(),
         )
         self.specs: list[WriterAttempt] = []
-        self.script: list = []
+        self.script: list[Attempt] = []
 
-    def select_next(self, excluded):
+    def select_next(self, excluded: set[str]) -> str | None:
         self.excluded_snapshots.append(set(excluded))
         for pid in self.order:
             if pid not in excluded:
                 return pid
         return None
 
-    def connect(self, pid):
+    def connect(self, pid: str) -> ProviderTransport:
         self.log.append(("connect", pid))
         if pid in self.connect_fail:
             raise RuntimeError(f"connect {pid} failed")
-        return {"provider": pid}
+        return _Provider({"provider": pid})
 
-    def close(self, provider):
+    def close(self, provider: ChatProvider | ProviderTransport) -> None:
         self.closed.append(provider)
 
-    def needs_canary(self, pid):
+    def needs_canary(self, pid: str) -> bool:
         return pid in self.needs_canary_ids
 
-    def run_canary(self, pid, provider):
+    def run_canary(self, pid: str, provider: ChatProvider | ProviderTransport) -> bool:
         return pid not in self.canary_fail
 
-    def capture_failure(self, pid, action, error):
+    def capture_failure(self, pid: str, action: str, error: BaseException) -> ProviderFailure:
         return _failure(model=pid, action=action)
 
-    def record_failure(self, pid, failure):
+    def record_failure(self, pid: str, failure: ProviderFailure) -> None:
         self.log.append(("record_failure", pid))
 
-    def record_success(self, pid):
+    def record_success(self, pid: str) -> None:
         self.log.append(("record_success", pid))
 
-    def clear_session(self, pid):
+    def clear_session(self, pid: str) -> None:
         self.log.append(("clear_session", pid))
 
-    def on_switch(self, pid):
+    def on_switch(self, pid: str) -> None:
         self.switched.append(pid)
 
-    def refresh_checkpoint(self):
+    def refresh_checkpoint(self) -> CheckpointView:
         self.refreshed += 1
         return self.view
 
-    def stopped(self):
+    def stopped(self) -> bool:
         return self._stopped
 
-    def attempt(self, spec, note):
+    def attempt(self, spec: WriterAttempt, note: Callable[[int], None]) -> RunResult:
         self.specs.append(spec)
         action = self.script.pop(0)
         return action(spec, note)
 
-    def make_runner(self, *, provider, provider_id, switches=0, tried=None):
+    def make_runner(
+        self, *, provider: ChatProvider | ProviderTransport | None, provider_id: str,
+        switches: int = 0, tried: Iterable[str] | None = None,
+    ) -> WriterFailoverRunner:
         return WriterFailoverRunner(
             provider=provider,
             provider_id=provider_id,
@@ -154,7 +173,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
     def test_first_provider_succeeds_without_switch(self) -> None:
         h = _Harness(order=["p1", "p2"])
         h.script = [_succeed(turns=2)]
-        runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
+        runner = h.make_runner(provider=_Provider({"p": "p1"}), provider_id="p1")
 
         result = runner.run(task="t",
             turn_budget=5,
@@ -164,7 +183,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         )
 
         self.assertEqual(result.turns, 2)
-        self.assertEqual(h.switched, [])
+        self.assertEqual(h.switched, list[str]())
         self.assertIn(("record_success", "p1"), h.log)
         spec = h.specs[0]
         self.assertFalse(spec.fresh_chat)
@@ -184,7 +203,8 @@ class WriterFailoverRunnerTests(unittest.TestCase):
             checkpoint=CheckpointView(prompt="init"),
         )
 
-        self.assertEqual(h.switched, ["p2"])
+        expected_switches = ["p2"]
+        self.assertEqual(h.switched, expected_switches)
         self.assertEqual(runner.provider_id, "p2")
         self.assertEqual(h.refreshed, 1)
         spec = h.specs[0]
@@ -197,7 +217,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
     def test_switch_gives_next_writer_only_remaining_turns(self) -> None:
         h = _Harness(order=["p1", "p2"])
         h.script = [_fail(turn=3), _succeed(turns=2)]
-        runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
+        runner = h.make_runner(provider=_Provider({"p": "p1"}), provider_id="p1")
 
         result = runner.run(task="t",
             turn_budget=10,
@@ -216,7 +236,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
     def test_mid_attempt_failure_excludes_just_failed_provider(self) -> None:
         h = _Harness(order=["p1", "p2"])
         h.script = [_fail(turn=1), _succeed()]
-        runner = h.make_runner(provider={"p": "p1"}, provider_id="p1", tried=())
+        runner = h.make_runner(provider=_Provider({"p": "p1"}), provider_id="p1", tried=())
 
         runner.run(task="t",
             turn_budget=5,
@@ -226,13 +246,14 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         )
 
         self.assertIn("p1", h.excluded_snapshots[0])
-        self.assertEqual(h.switched, ["p2"])
+        expected_switches = ["p2"]
+        self.assertEqual(h.switched, expected_switches)
         self.assertEqual(runner.provider_id, "p2")
 
     def test_stop_takes_priority_over_sibling(self) -> None:
         h = _Harness(order=["p1", "p2"], stopped=True)
         h.script = [_fail(turn=1)]
-        runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
+        runner = h.make_runner(provider=_Provider({"p": "p1"}), provider_id="p1")
 
         with self.assertRaises(TaskCancelled):
             runner.run(task="t",
@@ -242,7 +263,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
                 checkpoint=CheckpointView(),
             )
 
-        self.assertEqual(h.switched, [])
+        self.assertEqual(h.switched, list[str]())
         self.assertNotIn(("record_failure", "p1"), h.log)
 
     def test_canary_failure_skips_provider(self) -> None:
@@ -263,8 +284,9 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         )
 
         self.assertEqual(runner.provider_id, "p3")
-        self.assertIn({"provider": "p2"}, h.closed)
-        self.assertEqual(h.switched, ["p2", "p3"])
+        self.assertIn(_Provider({"provider": "p2"}), h.closed)
+        expected_switches = ["p2", "p3"]
+        self.assertEqual(h.switched, expected_switches)
 
     def test_terminal_canary_failure_leaves_no_closed_provider(self) -> None:
         # A canary failure at the switch budget raises; the runner must not
@@ -289,13 +311,13 @@ class WriterFailoverRunnerTests(unittest.TestCase):
             )
 
         self.assertEqual(runner.provider_id, "p2")
-        self.assertIn({"provider": "p2"}, h.closed)
+        self.assertIn(_Provider({"provider": "p2"}), h.closed)
         self.assertIsNone(runner.provider)
 
     def test_mid_attempt_close_always_clears_provider_reference(self) -> None:
         h = _Harness(order=["p1", "p2", "p3", "p4"])
         h.script = [_fail(turn=1), _fail(turn=1), _fail(turn=1)]
-        runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
+        runner = h.make_runner(provider=_Provider({"p": "p1"}), provider_id="p1")
 
         with self.assertRaises(ProviderActionError):
             runner.run(task="t",
@@ -305,13 +327,14 @@ class WriterFailoverRunnerTests(unittest.TestCase):
                 checkpoint=CheckpointView(),
             )
 
-        self.assertEqual(h.switched, ["p2", "p3"])
+        expected_switches = ["p2", "p3"]
+        self.assertEqual(h.switched, expected_switches)
         self.assertIsNone(runner.provider)
 
     def test_switches_at_most_twice(self) -> None:
         h = _Harness(order=["p1", "p2", "p3", "p4"])
         h.script = [_fail(turn=1), _fail(turn=1), _fail(turn=1)]
-        runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
+        runner = h.make_runner(provider=_Provider({"p": "p1"}), provider_id="p1")
 
         with self.assertRaises(ProviderActionError):
             runner.run(task="t",
@@ -321,14 +344,15 @@ class WriterFailoverRunnerTests(unittest.TestCase):
                 checkpoint=CheckpointView(),
             )
 
-        self.assertEqual(h.switched, ["p2", "p3"])
+        expected_switches = ["p2", "p3"]
+        self.assertEqual(h.switched, expected_switches)
         self.assertNotIn("p4", h.switched)
 
     def test_checkpoint_view_refreshed_after_switch(self) -> None:
         h = _Harness(order=["p1", "p2"])
         h.view = CheckpointView(prompt="fresh-local", changed_files=("x.py",))
         h.script = [_fail(turn=1), _succeed()]
-        runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
+        runner = h.make_runner(provider=_Provider({"p": "p1"}), provider_id="p1")
 
         runner.run(task="t",
             turn_budget=10,
@@ -344,7 +368,7 @@ class WriterFailoverRunnerTests(unittest.TestCase):
     def test_review_repair_shares_switch_budget(self) -> None:
         h = _Harness(order=["p1", "p2", "p3"])
         h.script = [_fail(turn=1), _succeed()]
-        runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
+        runner = h.make_runner(provider=_Provider({"p": "p1"}), provider_id="p1")
 
         runner.run(task="init",
             turn_budget=10,
@@ -368,12 +392,13 @@ class WriterFailoverRunnerTests(unittest.TestCase):
 
         # The repair only gets the one remaining switch (p2 -> p3).
         self.assertEqual(runner.switches, 2)
-        self.assertEqual(h.switched, ["p2", "p3"])
+        expected_switches = ["p2", "p3"]
+        self.assertEqual(h.switched, expected_switches)
 
     def test_failed_provider_is_never_reselected(self) -> None:
         h = _Harness(order=["p1", "p2", "p3", "p4"])
         h.script = [_fail(turn=1), _fail(turn=1), _succeed()]
-        runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
+        runner = h.make_runner(provider=_Provider({"p": "p1"}), provider_id="p1")
 
         runner.run(task="t",
             turn_budget=100,
@@ -383,8 +408,11 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         )
 
         self.assertEqual(runner.provider_id, "p3")
-        self.assertEqual(h.switched, ["p2", "p3"])
-        self.assertEqual(sorted(runner.tried), ["p1", "p2", "p3"])
+        expected_switches = ["p2", "p3"]
+        self.assertEqual(h.switched, expected_switches)
+        expected_tried = ["p1", "p2", "p3"]
+        tried = sorted(runner.tried)
+        self.assertEqual(tried, expected_tried)
 
 
 if __name__ == "__main__":
