@@ -40,6 +40,7 @@ def clip_tail(value: object, limit: int, marker: str = TRUNCATION_MARKER) -> str
     return text[: limit - len(marker)].rstrip() + marker
 _PYTHON_FRAME_RE = re.compile(r'^\s*File "([^"]+)", line \d+(?:, in .*)?$')
 _NODE_FRAME_RE = re.compile(r"^\s*at\s+")
+_NODE_ABSOLUTE_LOCATION_RE = re.compile(r"(?:^at(?:\s+async)?\s+|\()(?=(?:file:|[A-Za-z]:[\\/]|[\\/]))")
 _PYTHON_DEPENDENCY_SEGMENTS = {
     ".venv",
     "dist-packages",
@@ -144,7 +145,12 @@ def _node_dependency_frame_path(line: str) -> str:
     if not _NODE_FRAME_RE.match(line):
         return ""
     stripped = line.strip()
-    if "(" in stripped and stripped.endswith(")"):
+    absolute = _NODE_ABSOLUTE_LOCATION_RE.search(stripped)
+    if absolute is not None:
+        location = stripped[absolute.end():]
+        if absolute.group().endswith("("):
+            location = location.removesuffix(")")
+    elif "(" in stripped and stripped.endswith(")"):
         location = stripped.rsplit("(", 1)[1].removesuffix(")")
     else:
         location = stripped.removeprefix("at ").rsplit(" ", 1)[-1]

@@ -129,6 +129,40 @@ class TextBudgetTests(unittest.TestCase):
 
         self.assertEqual(prune_dependency_stack_frames(text, Path("E:/repo")), text)
 
+    def test_prune_keeps_node_project_frames_below_parenthesized_ancestor(self) -> None:
+        for root, location in (
+            ("E:/my (workspace)/node_modules/project", "E:/my (workspace)/node_modules/project/src/app.js"),
+            ("E:/my (workspace)/node_modules/project", "file:///E:/my%20(workspace)/node_modules/project/src/app.js"),
+            ("/my (workspace)/node_modules/project", "/my (workspace)/node_modules/project/src/app.js"),
+            ("//server/my (workspace)/node_modules/project", "file://server/my%20(workspace)/node_modules/project/app.js"),
+        ):
+            with self.subTest(location=location):
+                text = f"Error: local failure\n    at handler ({location}:5:1)\n"
+                self.assertEqual(prune_dependency_stack_frames(text, Path(root)), text)
+
+    def test_prune_keeps_absolute_node_project_frames_with_spaces(self) -> None:
+        root = Path("E:/node_modules/my project")
+        for frame in (
+            "at E:/node_modules/my project/app.js:5:1",
+            "at async E:/node_modules/my project/app.js:5:1",
+            "at Object.handler (alias) (E:/node_modules/my project/app.js:5:1)",
+        ):
+            with self.subTest(frame=frame):
+                text = f"Error: local failure\n    {frame}\n"
+                self.assertEqual(prune_dependency_stack_frames(text, root), text)
+
+    def test_prune_folds_node_dependency_frames_with_parenthesized_paths(self) -> None:
+        root = Path("E:/repo")
+        for frame in (
+            "at handler (E:/repo/node_modules/my (package)/index.js:2:1)",
+            "at Object.handler (alias) (E:/repo/node_modules/my (package)/index.js:2:1)",
+            "at E:/repo/node_modules/my package/index.js:2:1",
+        ):
+            with self.subTest(frame=frame):
+                pruned = prune_dependency_stack_frames(f"Error: dependency failure\n    {frame}\n", root)
+                self.assertIn("[... 1 dependency stack frame omitted ...]", pruned)
+                self.assertNotIn(frame, pruned)
+
     def test_prune_leaves_non_stack_logs_byte_identical(self) -> None:
         text = (
             "loading node_modules/express/index.js as fixture text\n"

@@ -1364,14 +1364,34 @@
         "codey/utils/__init__.py"
       ],
       "id": "Q002",
-      "status": "in_progress",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/utils/text_budget.py",
+        "codey/utils/failure_output.py",
+        "codey/utils/scan_report.py",
+        "codey/utils/positive_int.py",
+        "codey/utils/__init__.py"
+      ],
+      "verified_files": [
+        "codey/utils/text_budget.py",
+        "codey/utils/failure_output.py",
+        "codey/utils/scan_report.py",
+        "codey/utils/positive_int.py",
+        "codey/utils/__init__.py"
+      ],
       "candidate_test_count": 9,
       "tests": [
         "tests/test_text_budget.py",
-        "tests/test_shared_helpers.py"
-      ]
+        "tests/test_failure_result_presentation.py",
+        "tests/test_automatic_edit_assistance.py",
+        "tests/test_fail_closed_numeric_guards.py",
+        "tests/test_shared_helpers.py",
+        "tests/test_run_command_semantics.py",
+        "tests/test_run_command_characterization.py",
+        "tests/test_tool_runtime.py",
+        "tests/test_bounded_capture_and_context.py"
+      ],
+      "result": "Node frame path bug: real Node probe failed before and passed after; same regression 5 subtests failed before, passed after; final text budget 14 tests and 14 subtests pass; 2 existing cancellation fixture failures routed to owner; whole-file strict Any audit passed"
     },
     {
       "responsibility": "Citation and result reference scanning",
@@ -1381,7 +1401,7 @@
         "codey/utils/refs.py"
       ],
       "id": "Q003",
-      "status": "not_started",
+      "status": "in_progress",
       "reviewed_files": [],
       "verified_files": [],
       "candidate_test_count": 17,
@@ -3880,7 +3900,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 84
+      "candidate_test_count": 84,
+      "followups": [
+        "Q002 caller batch found two pre-existing failures in tests/test_bounded_capture_and_context.py: SimpleNamespace process doubles omit args (one also omits pid). Reproduced with pre-Q002 text_budget from 055abab8. Inspect Process contract and fix typed fixtures without weakening assertions; whole-file test Any audit remains pending."
+      ]
     },
     {
       "responsibility": "codey/runtime/core: execution evidence and event projection",

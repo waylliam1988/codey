@@ -220,3 +220,28 @@ python -m pytest -q tests/test_atomic_io.py tests/test_fact_checkpoint_payload_b
 | `git -c core.safecrlf=false diff --check` | 0 | 通过；无无关格式化 |
 
 当前：**1 / 288 批完成，3 / 974 个生产文件验收完成**。本轮实际执行 3 个不同 pytest 文件；历史的 32 文件记录仍单独保留，不能直接相加。未覆盖其他生产区域和大多数测试。下一批 Q002（5 个输出/数值工具文件），不反复重新打开 Q001。
+
+### Q002：终端输出和数值小工具
+
+- Q001 提交：`055abab8`。本批完整审查 text_budget、failure_output、scan_report、positive_int、utils/__init__ 五文件，以及完整 text_budget 测试。正整数转换与 refs 的整数转换对 bool/失败值等语义不同，没有为了相似代码强行合并；现有公开工具入口未据“无引用”删除。
+- **确定性 bug**：Node 帧位置从最后一个 `(` 或空格切分，会把路径内括号/空格误当成函数边界。有效契约来自 `prune_dependency_stack_frames` 的明确说明“preserving user-code evidence”，以及项目根目录与目录名无关的身份不变量；调用方需要原终端用户代码位置来定位错误。
+- 实际 Node 探针在临时 `quality-(workspace)-*/node_modules/project/entry.cjs` 执行 `throw new Error(...)`，Node 如期退出 1；修改前输出真实 `at Object.<anonymous> (...entry.cjs:1:7)` 被过滤，断言失败，探针退出 1。修改后相同脚本/关键断言通过，退出 0，项目帧保留。只创建单文件临时工程，没有复制 worktree。
+- 新增的两个回归入口在生产修改前出现 **5 个子例失败、2 个外层用例通过**，整体退出 1；失败均为误删项目帧或遗漏依赖折叠，非环境/导入失败。之后修改位置识别，优先识别绝对/file URL 位置起点，保留虚拟/相对帧原行为。相同入口修复后 **2 passed、5 subtests passed**。
+- 随后扩展 Windows/POSIX/UNC、ESM 编码路径、函数别名含括号、async 和裸帧含空格的边界。没有新增 skip/xfail，没有改弱原断言。
+
+| 实际命令（仓库根目录） | 退出码 | 结果及范围 |
+| --- | --- | --- |
+| `python -m pytest -q tests/test_text_budget.py tests/test_failure_result_presentation.py tests/test_automatic_edit_assistance.py tests/test_fail_closed_numeric_guards.py tests/test_shared_helpers.py --tb=short` | 0 | 修改前 63 passed、9 subtests passed；修复后首次 65 passed、14 subtests passed |
+| `python -m pytest -q tests/test_text_budget.py::TextBudgetTests::test_prune_keeps_node_project_frames_below_parenthesized_ancestor tests/test_text_budget.py::TextBudgetTests::test_prune_folds_node_dependency_frames_with_parenthesized_paths --tb=short` | 1 → 0 | 修改前 5 failed、2 passed；同输入修复后 2 passed、5 subtests passed |
+| `python -m pytest -q tests/test_text_budget.py --tb=short` | 0 | 扩展边界后的最终 14 passed、14 subtests passed；其他四个直接相关文件未因仅新增测试而机械重跑 |
+| `python -m pytest -q tests/test_run_command_semantics.py tests/test_run_command_characterization.py tests/test_tool_runtime.py tests/test_bounded_capture_and_context.py --tb=short` | 1 | 140 passed、1 skipped、100 subtests passed、2 failed；跳过为既有 POSIX 平台用例。两个失败见下，不写作全绿 |
+| `python -m mypy codey/utils/text_budget.py codey/utils/failure_output.py codey/utils/scan_report.py codey/utils/positive_int.py codey/utils/__init__.py tests/test_text_budget.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` | 0 | 修改前及最终六个完整文件通过，没有新增 Any，也不声称其调用方已全部无 Any |
+| `pyrefly check codey/utils/text_budget.py codey/utils/failure_output.py codey/utils/scan_report.py codey/utils/positive_int.py codey/utils/__init__.py tests/test_text_budget.py --python-version 3.11` | 0 | 最终 0 errors |
+| `ty check codey/utils/text_budget.py codey/utils/failure_output.py codey/utils/scan_report.py codey/utils/positive_int.py codey/utils/__init__.py tests/test_text_budget.py --python-version 3.11` | 0 | 最终通过 |
+| `python -m ruff check codey/utils/text_budget.py codey/utils/failure_output.py codey/utils/scan_report.py codey/utils/positive_int.py codey/utils/__init__.py tests/test_text_budget.py` | 0 | 通过 |
+
+**已有测试失败的定位和处置**：`tests/test_bounded_capture_and_context.py` 的 `WaitProcessCleanupOwnershipTests::test_close_owned_pipes_skips_live_reader`、`::test_external_holder_does_not_pin_close` 使用 SimpleNamespace 替代进程，但缺少当前 `_close_owned_pipes` 诊断使用的 `args`（其中一个也无 pid）。从 `055abab8` 通过 `git show` 读取修改前 text_budget，在独立 Python 进程内编译后替换 `sys.modules['codey.utils.text_budget']`，再用 `pytest.main` 运行上述两个精确 nodeid，实际仍为 **2 failed、退出 1**，同样因缺失 args。cancellation 没有依赖 text_budget，也没有本轮修改。按已有进程 mock 不满足契约的问题归入 cancellation 所属批次，不改生产日志或本批修复来迁就它们；后续修 fixture 前仍需核对 Process 契约，并完成该大型测试文件的 Any 治理。
+
+本批只为根因定位阅读 cancellation 的局部清理函数和上述夹具，未把整文件算作完成。已有失败不由本批引入，有修改前复核证据；允许独立提交本批已验证的修复。其余生产区域和相关测试仍在队列。
+
+Q002 提交前最终门禁：`python -m mypy codey --python-version 3.11`（736 文件）、`pyrefly check codey --python-version 3.11`（0 errors，原有 35 suppressed/164 warnings）、`ty check codey --python-version 3.11`、`python -m tools.kernel_type_precision_gate`、`git -c core.safecrlf=false diff --check` 均退出 0。本轮累计实际运行 **12 个不同 pytest 文件**（部分包含重复运行，不累加为唯一用例数）。当前 **2 / 288 批完成，8 / 974 个生产文件完成**；Q189 保留两项已有夹具失败。下一批 Q003：引用扫描和 refs，先建立行为及 Any 基线。
