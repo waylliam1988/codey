@@ -6,7 +6,9 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from codey.policies.capabilities import BROWSER_CAPABILITIES, KNOWN_TASK_GRANTS
+from codey.task.instruction_text import instruction_text
 from codey.task.model import derive_project_changes_required
+from codey.task.web_intent import explicit_web_intent
 
 
 @dataclass(frozen=True)
@@ -18,6 +20,7 @@ class EntryAuth:
     project_changes_required: bool = False
     sources_open_required: bool = False
     denied_capabilities: tuple[str, ...] = ()
+    inferred_intent: str = ""
 
 
 _READONLY_MUST_NOT_CHANGE_MARKERS = (
@@ -31,6 +34,11 @@ _NAMED_PRESERVATION_TARGET = (
 )
 _OTHER_FILES = r"\bother\b.*\bfiles?\b|(?:其他|其它|其余).{0,16}(?:文件|代码|源码|项目)"
 _ALL_FILES = r"\b(?:any|all)\s+(?:(?:project|source|code)\s+)?files?\b|(?:任何|所有|全部).{0,16}(?:文件|代码|源码|项目)"
+_EDIT_REQUEST = re.compile(
+    r"(?:^|[，。；;,.\n]|\bthen\b|然后|接着)\s*(?:请|please\s+)?"
+    r"(?:修改|编辑|更新|修复|改代码|(?:modify|edit|update|fix|patch)\b)",
+    re.IGNORECASE,
+)
 
 
 def _named_edit_scope(task: str) -> str:
@@ -107,15 +115,24 @@ def derive_entry_auth(body: Mapping[str, object] | None, *, project: str | None 
     if data.get("allow_write") is True:
         requested.add("project.write")
     strict = data.get("strict_research") is True or intent == "research"
-    requires = derive_project_changes_required(data, intent=intent, project=project)
-    if requires and _explicit_readonly_task(task) and data.get("project_changes_required") is not True:
+    readonly = _explicit_readonly_task(instruction_text(task))
+    infer_hybrid = (
+        intent == "auto" and bool(project) and not strict and not readonly and allow_web is not False
+        and data.get("input_kind") not in ("resume_run", "resolve_shell_approval")
+        and data.get("continue_task") is not True
+        and data.get("project_changes_required") is not False
+        and explicit_web_intent(task, source_lines=False).requested
+        and (data.get("project_changes_required") is True or _EDIT_REQUEST.search(instruction_text(task)) is not None)
+    )
+    requires = derive_project_changes_required(data, intent="hybrid" if infer_hybrid else intent, project=project)
+    if requires and readonly and data.get("project_changes_required") is not True:
         requires = False
     sources_required = data.get("sources_open_required") is True
     denied: set[str] = set()
     if allow_web is False:
         denied.update({"web.read", *BROWSER_CAPABILITIES})
         sources_required = False
-    if intent in {"project", "hybrid", "auto", "chat"} and _explicit_readonly_task(task):
+    if intent in {"project", "hybrid", "auto", "chat"} and readonly:
         # 明确只读：取消“必须修改”，同时落实“禁止修改”。project_changes_required
         # 只表示完成要求，写权限由 denied_capabilities 独立否决。
         denied.update({"project.write", "shell.approval"})
@@ -126,4 +143,5 @@ def derive_entry_auth(body: Mapping[str, object] | None, *, project: str | None 
         sources_open_required=sources_required,
         project_changes_required=requires,
         denied_capabilities=tuple(sorted(denied)),
+        inferred_intent="hybrid" if infer_hybrid else "",
     )

@@ -167,7 +167,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              explanation_bindings: tuple[str, ...] = BINDINGS,
              explanation_schema: JsonObject | None = None,
              requested_capabilities: tuple[str, ...] | None = None,
-             project_files: Mapping[str, str] | None = None) -> dict[str, object]:
+             project_files: Mapping[str, str] | None = None, intent_override: str | None = None,
+             source_pages: Mapping[str, str] | None = None) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     project_task = mode in {"hybrid", "project"}
     provider = BrowserSearchProvider(headless=True)
@@ -245,6 +246,9 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
 
     def route_document(route: Route) -> None:
         navigations.append(route.request.url)
+        if source_pages is not None and (body := source_pages.get(route.request.url)) is not None:
+            route.fulfill(status=200, content_type="text/html", body=body)
+            return
         if source_failure and source_status == 200:
             matches = route.request.url == URL
             route.fulfill(status=200 if matches else 404, content_type="text/html",
@@ -387,7 +391,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                  "required": ["amount", "code"], "additionalProperties": False})
             selection: dict[str, object] = {"model": target.model, "base_url": target.base_url}
             request = HeadlessRequest(
-                project if project_task else None, task, intent=mode, provider_id="local", max_turns=max_turns,
+                project if project_task else None, task, intent=intent_override or mode, provider_id="local", max_turns=max_turns,
                 session_id=session_id,
                 state_home=directory / "state", research_store_root=directory / "knowledge",
                 requested_capabilities=requested_capabilities if requested_capabilities is not None else (
@@ -403,7 +407,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                 strict_research=strict_research,
             )
             request_record: dict[str, object] = {
-                "task": task, "mode": mode, "max_turns": max_turns, "required_tools": request.required_tools,
+                "task": task, "mode": mode, "intent": request.intent, "max_turns": max_turns, "required_tools": request.required_tools,
                 "sources_open_required": request.sources_open_required, "strict_research": strict_research,
                 "requested_capabilities": request.requested_capabilities,
                 "output_format": request.output_format, "output_schema": request.output_schema,
@@ -414,6 +418,10 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             result = run_headless(request, emit_jsonl=observe, connect_provider=connect)
             artifact = parse_json_object(result_file.read_text(encoding="utf-8"))
             (directory / "project-result.json").write_text(json.dumps(artifact), encoding="utf-8")
+            if project_files:
+                final_files = {name: (project / name).read_text(encoding="utf-8") for name in project_files
+                               if (project / name).is_file()}
+                (directory / "project-files.json").write_text(json.dumps(final_files, ensure_ascii=False), encoding="utf-8")
         terminal = next((row for row in reversed(events) if row.get("type") == "task_done"), None)
         answer = str(terminal.get("summary") or "") if terminal is not None else ""
         successful = {str(row.get("tool_name")) for row in events if row.get("type") == "tool" and row.get("ok") is True}

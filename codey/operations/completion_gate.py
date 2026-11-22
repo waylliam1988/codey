@@ -27,12 +27,17 @@ from codey.completion.contract import (
     project_completion_proof,
     register_completion_domain,
 )
+from codey.completion.verification_policy import VerificationPlan
 from codey.operations.browser_completion import evaluate_page_rounds, evaluate_research_sequence
 from codey.operations.browser_text_report import BrowserMetadata, MetadataPending
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_inputs import CompletionCheckInput
 from codey.operations.completion_output import tool_facts
-from codey.operations.project_completion_checks import collect_completion_workspace
+from codey.operations.project_completion_checks import (
+    collect_completion_workspace,
+    resolve_verification_requirement,
+    verification_plan_feedback,
+)
 from codey.operations.research_completion_checks import (
     citation_requirement_checks,
     prepare_research_completion,
@@ -491,6 +496,11 @@ def _browser_completion_block(session: TaskSession, text: str, context: Completi
     from codey.policies.tool_requirement import decode_answer
 
     if (pending := pending_click(session._memory_results, context.browser_document)) is not None:
+        for result in session._memory_results.values():
+            diagnostic = result.canonical.get("query_read")
+            if (result.audit.get("query_click") == pending[0] and isinstance(diagnostic, dict)
+                    and diagnostic.get("reason") == "query_target_unbound"):
+                return GateVerdict(False, "", None, final_text=result.model_text, blocked=True)
         return GateVerdict(False, UNCERTAIN if delivery(pending[1]) == "uncertain" else PENDING, None)
     coverage = task_source_coverage(session, context.research_execution_ledger or context.research_ledger)
     if (session.task_kind == "chat" and not session.policy.strict_research
@@ -639,18 +649,26 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
     )
     followup = f"Not done yet ({reason or 'checks incomplete'}). " + instruction
     if "relevant_verification" in failed_ids:
-        selected = session.selected_verification or context.selected_check
-        if selected is not None:
-            command = str(selected.command).replace("\r", " ").replace("\n", " ")[:240]
-            cwd = str(selected.cwd or ".").replace("\r", " ").replace("\n", " ")[:120]
-            followup += (f"\n\nRequired verification for the current changes: {command} (path: {cwd}). "
-                         "A passing narrower or different check may not cover this requirement. "
-                         "Run this check against the current files before proposing done again; "
-                         "if it cannot run, report the actual failure.")
+        followup += _verification_feedback(session, context)
     feedback = research_completion_feedback(session, text, context, deduped)
     if feedback:
         followup += "\n\n" + feedback
     return GateVerdict(complete=False, followup=followup, proof=proof)
+
+def _verification_feedback(session: TaskSession, context: CompletionContext) -> str:
+    scope = tuple(dict.fromkeys((*context.scope_files, *session.edited_files)))
+    selected = resolve_verification_requirement(session, context, scope)
+    if isinstance(selected, VerificationPlan):
+        return verification_plan_feedback(session, context, selected)
+    elif selected is not None:
+        command = str(selected.command).replace("\r", " ").replace("\n", " ")[:240]
+        cwd = str(selected.cwd or ".").replace("\r", " ").replace("\n", " ")[:120]
+        return (f"\n\nRequired verification for the current changes: {command} (path: {cwd}). "
+                     "A passing narrower or different check may not cover this requirement. "
+                     "Run this check against the current files before proposing done again; "
+                     "if it cannot run, report the actual failure.")
+    return ""
+
 
 __all__ = [
     "GateVerdict",

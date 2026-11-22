@@ -24,13 +24,13 @@ def render_opened_source(
 ) -> str:
     """Render an opened source for the model without granting source text authority."""
 
-    outline = _section_locators(document) if more_offset is not None else []
+    outline: list[str] = _section_locators(document) if more_offset is not None else []
     lines = [
         UNTRUSTED_SOURCE_PREAMBLE,
         UNTRUSTED_SOURCE_START,
-        *_metadata_lines(document),
-        (text_window or ""),
-        *outline,
+        *(line.replace(UNTRUSTED_SOURCE_START, "[source begin marker]")
+          .replace(UNTRUSTED_SOURCE_END, "[source end marker]")
+          for line in (*_metadata_lines(document), text_window, *outline)),
         UNTRUSTED_SOURCE_END,
     ]
     if read_window is not None:

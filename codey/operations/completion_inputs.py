@@ -41,10 +41,12 @@ class ProjectCompletionFacts:
     workspace_fingerprint: str
     edited_files: Mapping[str, int]
     verifications: tuple[VerificationObservation, ...]
+    verification_candidates: tuple[VerificationCandidate, ...] = ()
 
     @classmethod
     def capture(cls, session: TaskSession) -> ProjectCompletionFacts:
         return cls(session.policy, session.project_changes_required, session.verification_forbidden,
                    session.selected_verification, session.verification_candidates_refresh_failed,
                    session.workspace_revision, session.workspace_fingerprint,
-                   MappingProxyType(dict(session.edited_files)), verification_observations(session.verifications))
+                   MappingProxyType(dict(session.edited_files)), verification_observations(session.verifications),
+                   session.verification_candidates)

@@ -810,6 +810,63 @@ def select_verification_candidate(
     return best[0] if len(best) == 1 else None
 
 
+@dataclass(frozen=True)
+class VerificationObligation:
+    candidate: VerificationCandidate
+    paths: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class VerificationPlan:
+    obligations: tuple[VerificationObligation, ...]
+    uncovered_paths: tuple[str, ...] = ()
+
+
+VerificationRequirement = VerificationCandidate | VerificationPlan
+
+
+def select_verification_plan(
+    candidates: Sequence[VerificationCandidate],
+    changed_paths: Sequence[str],
+    *,
+    root: str | Path | None = None,
+) -> VerificationPlan:
+    paths = tuple(sorted({
+        path.replace("\\", "/") for path in changed_paths if path and not is_document_path(path)
+    }))
+    selected = select_verification_candidate(candidates, paths, root=root)
+    if selected is not None:
+        return VerificationPlan((VerificationObligation(selected, paths),))
+
+    grouped: dict[tuple[str, str], tuple[VerificationCandidate, list[str]]] = {}
+    uncovered: list[str] = []
+    for path in paths:
+        candidate = select_verification_candidate(candidates, (path,), root=root)
+        if candidate is None:
+            uncovered.append(path)
+            continue
+        _, covered = grouped.setdefault((candidate.cwd, candidate.command), (candidate, []))
+        covered.append(path)
+    return VerificationPlan(tuple(VerificationObligation(candidate, tuple(covered))
+                                  for candidate, covered in grouped.values()), tuple(uncovered))
+
+
+def select_verification_requirement(
+    candidates: Sequence[VerificationCandidate],
+    changed_paths: Sequence[str],
+    *,
+    root: str | Path | None = None,
+) -> VerificationRequirement | None:
+    plan = select_verification_plan(candidates, changed_paths, root=root)
+    if plan.uncovered_paths and len(plan.uncovered_paths) + sum(len(item.paths) for item in plan.obligations) > 1:
+        return plan
+    if len(plan.obligations) > 1:
+        return plan
+    if plan.obligations:
+        return plan.obligations[0].candidate
+    return None
+
+
 def _effective_source_priority(candidate: VerificationCandidate) -> int:
     priority = candidate.source_priority
     if isinstance(priority, bool):

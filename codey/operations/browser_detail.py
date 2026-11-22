@@ -229,7 +229,8 @@ def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, ca
                 page = browser.capture_query_result(baseline, pending=browser_followups.PENDING)
             except QueryObservationError as exc:
                 return ToolResult(ok=False, call=call, model_text=str(exc),
-                    canonical={"query_read": {"reason": exc.reason}}, audit={"query_click": query_ref}), False, None
+                    canonical={"query_read": {"reason": exc.reason}},
+                    audit={"query_click": query_ref, "browser_document": document}), False, None
     url = str(page.get("url") or "")
     opened = render_source_read(
         tools.gateway.capture(url, page), tools.ledger,

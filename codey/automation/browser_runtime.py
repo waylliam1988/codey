@@ -51,7 +51,7 @@ from codey.automation.browser_input import _HIT_TEST
 from codey.automation.browser_ipc import BrowserPacket
 from codey.automation.browser_native_input import NativeInput
 from codey.automation.browser_observation import VISIBLE_TEXT
-from codey.automation.browser_query import changed_query_region
+from codey.automation.browser_query import QueryObservationError, changed_query_region
 from codey.automation.browser_query_async import bind_query_target
 from codey.automation.browser_refs import ElementRecord, ElementRegistry
 from codey.automation.browser_snapshot import (
@@ -375,9 +375,11 @@ class BrowserRuntime:
             return BrowserPacket({"type": "result", "operation_id": command.operation_id, "value": value,
                 "completion": BrowserCompletion.COMPLETED.value, "generation": self._revision, "binding": await self.binding()}, blob)
         except (asyncio.CancelledError, TimeoutError, Error, RuntimeError, ValueError, KeyError, TypeError, OSError) as exc:
-            reason = "cancelled" if isinstance(exc, asyncio.CancelledError) else "deadline" if isinstance(exc, TimeoutError) else str(exc)
+            reason = (exc.reason if isinstance(exc, QueryObservationError) else "cancelled"
+                      if isinstance(exc, asyncio.CancelledError) else "deadline" if isinstance(exc, TimeoutError) else str(exc))
             delivery = {"not_sent": "not_delivered", "unknown": "uncertain", "confirmed": "delivered"}[invocation.dispatch_state]
-            output = BrowserToolOutput("ERROR: " + reason, False, {"action": command.action.value,
+            output = BrowserToolOutput("ERROR: " + (str(exc) if isinstance(exc, QueryObservationError) else reason), False,
+                {"action": command.action.value,
                 "ref": command.arguments.get("ref", ""), "reason": reason, "phase": invocation.phase, "delivery": delivery,
                 "document": invocation.document, "query_baseline": invocation.query_baseline,
                 "input_state": invocation.input_state.payload() if invocation.input_state is not None else None})
@@ -606,7 +608,9 @@ class BrowserRuntime:
             del self._observations[next(iter(self._observations))]
         # The receipt retains the full observation; the model sees its derived delta.
         receipt = {**current, **{key: value[key] for key in ("kind", "base_revision", "added", "changed", "removed") if key in value}}
-        return BrowserToolOutput(json.dumps(value, ensure_ascii=False), True, receipt)
+        hint = ("\nControls are truncated. Inspect a listed container with browser_snapshot(scope_ref=ref) "
+                "or use a unique selector to narrow the scope." if current["elements_truncated"] is True else "")
+        return BrowserToolOutput(json.dumps(value, ensure_ascii=False) + hint, True, receipt)
 
     async def _capture(self, context: FrameContext) -> JsonObject:
         raw: object = await _evaluate(context.frame, """() => ({url:location.href,title:document.title,
@@ -815,13 +819,13 @@ class BrowserRuntime:
                 raise ValueError("query_target_changed")
             explicit: object = await _evaluate(record.handle, "el => el.hasAttribute('aria-controls') || el.matches('summary')")
             if target is None and explicit is not True:
-                candidates = await context.frame.query_selector_all("article,[role=status],[role=region],[aria-live]")
+                candidates = await context.frame.query_selector_all("article,output,[role=status],[role=region],[aria-live]")
                 visible = [node for node in candidates if await node.is_visible()]
                 if len(visible) == 1:
                     target = {"backend_node_id": await backend_node(context, visible[0]), "relation": "observed-result-region"}
                 for node in candidates:
                     await node.dispose()
-        regions = await self._query_regions(context, target)
+        regions = await self._query_regions(context, target) if target is not None else []
         baseline: JsonObject = {"document": context.document, "regions": regions,
             "control": {"backend_node_id": record.backend_node_id}, "context": record.context}
         if target is not None:
@@ -890,26 +894,26 @@ class BrowserRuntime:
             record = await self._resolve(context, require_json_string(args["ref"], "ref"))
             return control.get("backend_node_id") == record.backend_node_id
         if not same_document(baseline.get("document"), context.document):
-            raise RuntimeError("query_document_changed")
+            raise QueryObservationError("query_document_changed", "The click belongs to a previous document.")
         raw_target = baseline.get("target")
-        target = decode_json_object(raw_target) if isinstance(raw_target, dict) else None
+        if not isinstance(raw_target, dict):
+            raise QueryObservationError("query_target_unbound",
+                "The click was delivered, but no result region was bound before it. Observe the page without repeating the click.")
+        target = decode_json_object(raw_target)
         deadline = min(invocation.command.deadline, time.monotonic() + 2.5)
         while True:
             current: JsonObject = {"document": context.document, "regions": await self._query_regions(context, target)}
-            changed = changed_query_region(baseline, current) if target is not None else ""
+            changed = changed_query_region(baseline, current)
             if changed:
                 captured = await self._capture(context)
                 if (" ".join(changed.split()) in " ".join(str(captured["text"]).split())
                         and current["regions"] == await self._query_regions(context, target)):
                     captured["query_confirmed"] = True
                     captured["query_region"] = {"text": changed, "visible": True, "context": baseline.get("context"),
-                        "relation": target["relation"] if target is not None else "observed-document-change"}
+                        "relation": target["relation"]}
                     return captured
             if time.monotonic() >= deadline:
-                captured = await self._capture(context)
-                captured["query_confirmed"] = False
-                captured["query_pending"] = "query_update_unconfirmed"
-                return captured
+                raise QueryObservationError("query_update_unconfirmed", "The bound result region has not shown a confirmed update.")
             await asyncio.sleep(0.1)
 
     async def _file_snapshot(self, context: FrameContext) -> BrowserToolOutput:
@@ -1116,6 +1120,8 @@ class BrowserRuntime:
 
     async def _resolve(self, context: FrameContext, ref: str, *, purpose: Literal["action", "scope", "inspect"] = "action") -> ElementRecord[ElementHandle]:
         record = self._registry.resolve(ref, context.document)
+        if record.scope_only and purpose == "action":
+            raise ValueError("scope_ref_is_observation_only")
         connected: object = await _evaluate(record.handle, "el => el.isConnected && el.ownerDocument === document")
         if connected is not True:
             raise ValueError("stale_ref")

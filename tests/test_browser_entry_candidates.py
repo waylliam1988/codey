@@ -17,8 +17,12 @@ from tests.test_protocol_surface import TARGET, page_reset_action
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import browser_entry_surface as entry
 from tools import protocol_surface_ab as probe
-from tools.browser_production_live_gate import DOWNLOAD_BYTES, URL
+from tools.browser_production_live_gate import DOWNLOAD_BYTES, HTML, URL
 from tools.completion_artifact_audit import tool_receipts
+
+REPLACED_CONTROL_HTML = HTML.replace(
+    '<input id="city">', """<input id="city" oninput="const el=document.querySelector('button'); el.replaceWith(el.cloneNode(true))">"""
+)
 
 
 def browser_code() -> str:
@@ -78,7 +82,8 @@ def test_named_controls_use_fresh_snapshot_and_preserve_explicit_stale_rejection
              "return unwrap(await tools.browser_read({}));")
     install_http(monkeypatch, [action(code), done("净重 173 克，校验码 QUARTZ_851。")])
     directory = tmp_path / "run"
-    row = probe.run_arm(directory, scenario, "B", entry.TARGETS, TARGET, max_turns=5)
+    row = probe.run_arm(directory, scenario, "B", entry.TARGETS, TARGET, max_turns=5,
+                        fixture_html=REPLACED_CONTROL_HTML if scenario == "stale_ref" else HTML)
     assert row["passed"], row
     receipts = tool_receipts(directory / "state")
     if scenario == "stale_ref":
@@ -213,7 +218,8 @@ def test_wait_errors_are_prechecked_then_real_wait_can_continue(
         "if(timed.ok) throw Error('expected timeout');unwrap(await tools.browser_wait", 1)
     install_http(monkeypatch, [bad, invalid, action(code), done("净重 173 克，校验码 QUARTZ_851。")])
     directory = tmp_path / "run"
-    row = probe.run_arm(directory, scenario, "B", entry.WAIT, TARGET, max_turns=6)
+    row = probe.run_arm(directory, scenario, "B", entry.WAIT, TARGET, max_turns=6,
+                        fixture_html=REPLACED_CONTROL_HTML if scenario == "stale_ref" else HTML)
     assert row["passed"], row
     receipts = tool_receipts(directory / "state")
     failed = [r.result for r in receipts if r.result.call.name == "codemode" and not r.result.ok]
@@ -221,7 +227,7 @@ def test_wait_errors_are_prechecked_then_real_wait_can_continue(
     assert all(item.canonical["child_effect_ids"] == [] and "did not consume" not in item.model_text for item in failed)
     assert sum(r.result.ok and r.result.call.name == "browser_wait" for r in receipts) == 1
     timed, = [r.result for r in receipts if not r.result.ok and r.result.call.name == "browser_wait"]
-    assert "wait timed out" in timed.model_text
+    assert decode_json_object(timed.canonical["value"])["reason"] == "timeout"
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
@@ -251,8 +257,9 @@ def test_navigation_and_tab_change_invalidate_old_refs(tmp_path: Path, monkeypat
         "if((await tools.browser_click({ref:old})).ok) throw Error('navigation kept old ref');"
         "old=unwrap(await tools.browser_snapshot({})).elements.find(e=>e.name==='Load record').ref;"
         "unwrap(await tools.browser_tab_new({url:inputs.url}));"
-        "unwrap(await tools.browser_tab_switch({index:0}));"
-        "if((await tools.browser_click({ref:old})).ok) throw Error('tab transition kept old ref');")
+        "unwrap(await tools.browser_tab_switch({index:1}));"
+        "if((await tools.browser_click({ref:old})).ok) throw Error('another tab accepted the old ref');"
+        "unwrap(await tools.browser_tab_switch({index:0}));")
     install_http(monkeypatch, [action(transitions + browser_code()), done("净重 173 克，校验码 QUARTZ_851。")])
     row = probe.run_arm(tmp_path / "run", "stale_ref", "B", entry.TARGETS, TARGET, max_turns=4)
     assert row["passed"] and row["failed_stale_refs"] == 2, row

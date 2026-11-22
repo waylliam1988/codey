@@ -130,6 +130,10 @@ class TaskSession:
         for item in fields(self):
             setattr(self, item.name, getattr(staged, item.name))
 
+    @property
+    def verification_paths(self) -> tuple[str, ...]:
+        return tuple(self.edited_files)
+
     def record_search(self, query: str) -> None:
         text = (query or "").strip()
         if text:

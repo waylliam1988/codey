@@ -46,7 +46,9 @@ from codey.completion.contract import (
 )
 from codey.completion.edit_scope import is_document_path
 from codey.completion.verification_policy import (
-    VerificationCandidate,
+    VerificationObligation,
+    VerificationPlan,
+    VerificationRequirement,
     check_covers_selected_candidate,
 )
 from codey.research.evidence_runtime import normalize_runtime_ref
@@ -287,8 +289,20 @@ class VerificationProvenance:
         return {"stance": self.stance, "source": self.source}
 
 
+def _obligations(
+    requirement: VerificationRequirement, files: tuple[str, ...],
+) -> tuple[VerificationObligation, ...]:
+    if isinstance(requirement, VerificationPlan):
+        return requirement.obligations
+    return (VerificationObligation(requirement, files),)
+
+
+def _covers_obligation(check: CheckEvidence, obligation: VerificationObligation, *, root: str | Path) -> bool:
+    return check_covers_selected_candidate(obligation.candidate, check.command, check.cwd, obligation.paths, root=root)
+
+
 def coding_verification_state(
-    selected_check: VerificationCandidate | None,
+    selected_check: VerificationRequirement | None,
     evidence: ExecutionEvidence,
     files: tuple[str, ...],
     *,
@@ -302,27 +316,15 @@ def coding_verification_state(
 
     if selected_check is None:
         return VERIFICATION_UNOBSERVED
-    if any(
-        check_covers_selected_candidate(
-            selected_check,
-            item.command,
-            item.cwd,
-            files,
-            root=root,
-        )
-        for item in _current_failed_checks(evidence)
-    ):
+    obligations = _obligations(selected_check, files)
+    failing = _current_failed_checks(evidence)
+    if any(_covers_obligation(item, obligation, root=root) for item in failing for obligation in obligations):
         return VERIFICATION_FRESH_FAIL
-    if any(
-        check_covers_selected_candidate(
-            selected_check,
-            item.command,
-            item.cwd,
-            files,
-            root=root,
-        )
-        for item in _current_successful_checks(evidence)
-    ):
+    if isinstance(selected_check, VerificationPlan) and selected_check.uncovered_paths:
+        return VERIFICATION_UNOBSERVED
+    passing = _current_successful_checks(evidence)
+    if obligations and all(any(_covers_obligation(item, obligation, root=root) for item in passing)
+                           for obligation in obligations):
         return VERIFICATION_FRESH_PASS
     return VERIFICATION_UNOBSERVED
 
@@ -404,7 +406,7 @@ def verification_provenance(
 
 def relevant_verification_pairs(
     verification_state: str,
-    selected_check: VerificationCandidate | None,
+    selected_check: VerificationRequirement | None,
     evidence: ExecutionEvidence,
     files: tuple[str, ...],
     *,
@@ -428,13 +430,8 @@ def relevant_verification_pairs(
         return ()
     pairs: list[tuple[str, str]] = []
     for item in items:
-        if not check_covers_selected_candidate(
-            selected_check,
-            item.command,
-            item.cwd,
-            files,
-            root=root,
-        ):
+        if not any(_covers_obligation(item, obligation, root=root)
+                   for obligation in _obligations(selected_check, files)):
             continue
         pair = (item.command, item.cwd)
         if pair not in pairs:
@@ -669,7 +666,7 @@ def classify_verification_failure(
 
 
 def decisive_failure_fact(
-    selected_check: VerificationCandidate | None,
+    selected_check: VerificationRequirement | None,
     evidence: ExecutionEvidence,
     files: tuple[str, ...],
     *,
@@ -680,19 +677,14 @@ def decisive_failure_fact(
     if selected_check is None:
         return None
     for item in _current_failed_checks(evidence):
-        if check_covers_selected_candidate(
-            selected_check,
-            item.command,
-            item.cwd,
-            files,
-            root=root,
-        ):
+        if any(_covers_obligation(item, obligation, root=root)
+               for obligation in _obligations(selected_check, files)):
             return item
     return None
 
 
 def decisive_environment_failure_fact(
-    selected_check: VerificationCandidate | None,
+    selected_check: VerificationRequirement | None,
     evidence: ExecutionEvidence,
     files: tuple[str, ...],
     *,
@@ -703,13 +695,8 @@ def decisive_environment_failure_fact(
     if selected_check is None:
         return None
     for item in _current_environment_failures(evidence):
-        if check_covers_selected_candidate(
-            selected_check,
-            item.command,
-            item.cwd,
-            files,
-            root=root,
-        ):
+        if any(_covers_obligation(item, obligation, root=root)
+               for obligation in _obligations(selected_check, files)):
             return item
     return None
 

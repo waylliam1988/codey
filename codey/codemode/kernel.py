@@ -127,6 +127,7 @@ class CodeModeKernelExecutor:
         repair_context: CodeModeRepairContext | None = None,
         runtime_contract: str | None = None,
         task_navigation_url: str | None = None,
+        task_source_url: str | None = None,
         browser_references: BrowserReferences | None = None,
         bound_edit: Callable[[int, JsonObject], JsonObject] | None = None,
         browser_stage: Callable[[], int] | None = None,
@@ -153,6 +154,7 @@ class CodeModeKernelExecutor:
         self.repair_context = repair_context
         self.runtime_contract = runtime_contract
         self.task_navigation_url = task_navigation_url
+        self.task_source_url = task_source_url
         self.browser_references = browser_references
         self.bound_edit = bound_edit
         self.browser_stage = browser_stage
@@ -186,6 +188,7 @@ class CodeModeKernelExecutor:
             allow_writes=self.allow_writes,
             replay=replay_child if repair is not None else None,
             task_navigation_url=self.task_navigation_url,
+            task_source_url=self.task_source_url,
             browser_references=self.browser_references,
             replay_browser_ref=repair.resolve_browser_ref if repair is not None else None,
             browser_stage=self.browser_stage,
@@ -320,6 +323,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             return DurableCodeModeReplay.for_repair(durable, run_id, repair, runtime_contract)
         fingerprint: dict[str, object] = {"args": call.args, "catalog": catalog.digest, "allow_writes": allow_writes,
             "task_navigation_url": snapshot.task_navigation_url,
+            **({"task_source_url": snapshot.bound_source_url} if snapshot.input_contract_version >= 15 else {}),
             "browser_references": snapshot.browser_references.payload() if snapshot.browser_references else None,
             "runtime": runtime_contract}
         if snapshot.input_binding is not None and snapshot.input_binding.source_refs:
@@ -547,6 +551,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             session_id=session_id,
             run_id=str(run_id or ""),
             task_navigation_url=snapshot.task_navigation_url,
+            task_source_url=snapshot.bound_source_url,
             browser_references=snapshot.browser_references,
             browser_stage=browser_stage,
             original_browser_wait=original_browser_wait,

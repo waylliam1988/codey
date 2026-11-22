@@ -182,6 +182,7 @@ async def collect_snapshot(context: FrameContext, registry: ElementRegistry[Elem
             revision, semantic_fingerprint(metadata), await backend_node(context, owner) if owner is not None else 0))
         rows.append({"ref": ref, "role": role, "name": name, "context_id": "", "disabled": metadata.get("disabled") is True,
                      "value": metadata.get("value"), "checked": metadata.get("checked"), "query_relation": ""})
+    suggestions: list[JsonValue] = await _scope_suggestions(context, registry, root, revision) if elements_truncated else []
     text_truncated = len(raw_text) > max_text
     connected: object = await _evaluate(root, "el => el.isConnected && el.ownerDocument === document")
     async with frame_context(context.frame.page, context.frame, str(context.document["target_id"])) as after:
@@ -195,7 +196,30 @@ async def collect_snapshot(context: FrameContext, registry: ElementRegistry[Elem
             "scope": {"frame_id": context.document["frame_id"], "root_ref": scope_ref, "selector": selector,
                       "max_elements": max_elements, "max_text": max_text},
             "complete": not text_truncated and not elements_truncated, "text_truncated": text_truncated,
-            "elements_truncated": elements_truncated, "text": raw_text[:max_text], "elements": rows, "contexts": contexts}
+            "elements_truncated": elements_truncated, "text": raw_text[:max_text], "elements": rows, "contexts": contexts,
+            **({"scope_suggestions": suggestions} if suggestions else {})}
+
+
+async def _scope_suggestions(
+    context: FrameContext, registry: ElementRegistry[ElementHandle], root: ElementHandle, revision: int,
+) -> list[JsonValue]:
+    handles = await root.query_selector_all("main,section,article,form,fieldset,nav,[role=region],[role=group]")
+    suggestions: list[JsonValue] = []
+    for handle in handles:
+        if len(suggestions) >= 12 or not await handle.is_visible():
+            await handle.dispose()
+            continue
+        metadata, owner = await element_metadata(handle)
+        if owner is not None:
+            await owner.dispose()
+        label: object = await _evaluate(handle, """el => el.getAttribute('aria-label') ||
+            el.querySelector(':scope > h1,:scope > h2,:scope > h3,:scope > legend')?.textContent ||
+            el.id || el.localName""")
+        name = " ".join(str(label or "").split())[:120]
+        ref = registry.observe_node(ElementRecord(handle, context.document, await backend_node(context, handle),
+            element_role(metadata), name, None, None, None, revision, semantic_fingerprint(metadata), scope_only=True))
+        suggestions.append({"ref": ref, "label": name})
+    return suggestions
 
 
 def diff_snapshot(base: Mapping[str, JsonValue] | None, current: JsonObject) -> JsonObject:

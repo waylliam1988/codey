@@ -136,8 +136,10 @@ def prototype(directory: Path, features: frozenset[str], *, file_feedback: bool 
     digest = NodeWorkerRuntime.contract_digest
     invoke = CodeModeHost.invoke
 
-    def render_entry(snapshot: ToolCatalogSnapshot) -> str:
-        return declarations(render(snapshot), snapshot.entries, features)
+    def render_entry(snapshot: ToolCatalogSnapshot, *, budget_bytes: int = catalog_module.MODEL_CATALOG_BUDGET_BYTES,
+                     outer_descriptions: Mapping[str, str] | None = None) -> str:
+        return declarations(render(snapshot, budget_bytes=budget_bytes, outer_descriptions=outer_descriptions),
+                            snapshot.entries, features)
 
     def checked(host: CodeModeHost, name: str, args: dict[str, object]) -> object:
         return prechecked_invoke(host, name, args, invoke) if name == "browser_wait" else invoke(host, name, args)

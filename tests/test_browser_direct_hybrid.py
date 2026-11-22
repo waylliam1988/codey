@@ -17,6 +17,8 @@ from codey.protocols.text_turn import decode_text_turn
 from codey.types.json_value import JsonObject, decode_json_object
 from tests.test_model_input_binding import copy_snapshot, upload_snapshot
 from tests.test_receipt_bound_edit_surface_probe import install_http
+from tests.test_structured_surface import ScriptedExperimentProvider
+from tools import browser_production_live_gate
 from tools.browser_prerequisite_ab import LOAD, WAIT, code_action
 from tools.browser_production_live_gate import run_case
 from tools.completion_artifact_audit import artifacts, tool_receipts
@@ -99,6 +101,7 @@ def test_hybrid_fills_refreshes_waits_reads_and_edits_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, declared_wait: bool, parent_bound: bool,
 ) -> None:
     directory = tmp_path / "run"
+    monkeypatch.setattr(browser_production_live_gate, "ExperimentProvider", ScriptedExperimentProvider)
     wait: JsonObject = {"condition": "text", "value": "鱼丸", "timeout_ms": 5000}
 
     def ref(name: str) -> str:
@@ -115,7 +118,10 @@ def test_hybrid_fills_refreshes_waits_reads_and_edits_once(
         if not declared_wait:
             yield {"tool": "browser_wait", "args": wait}
             yield {"tool": "browser_read", "args": {}}
-        yield {"tool": "codemode", "args": {"path": "result.json"}}
+        yield code_action(
+            "const base=await tools.read_file({path:'result.json'}); unwrap(base); "
+            "return unwrap(await tools.edit({path:'result.json',base_result_ref:base.result_ref,declared_fields:true}));"
+        )
         yield {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}
 
     install_http(monkeypatch, replies())

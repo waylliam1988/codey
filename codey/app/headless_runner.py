@@ -31,7 +31,7 @@ from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import clip_event_text
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.task.entry_auth import derive_entry_auth
-from codey.task.model import TaskInput, TaskSubmission
+from codey.task.model import ResolveShellApproval, ResumeRun, TaskInput, TaskSubmission
 
 
 class HeadlessConnector(Protocol):
@@ -335,7 +335,9 @@ def _run_headless_task(
             "strict_research": request.strict_research,
             "project_changes_required": request.project_changes_required,
             "sources_open_required": request.sources_open_required,
+            "continue_task": request.continue_task or isinstance(request.input, (ResumeRun, ResolveShellApproval)),
         }, project=str(project) if project is not None else None)
+        intent = auth.inferred_intent or _request_intent(request.intent)
         from codey.providers.snapshot import capture_provider_selection, provider_snapshot
 
         admitted_selection = capture_provider_selection(
@@ -376,7 +378,7 @@ def _run_headless_task(
                 "max_turns": request.max_turns,
                 "continue_task": request.continue_task,
                 "provider_id": request.provider_id,
-                "intent": _request_intent(request.intent),
+                "intent": intent,
                 "requested_capabilities": list(auth.requested_capabilities),
                 "strict_research": auth.strict_research,
                 "sources_open_required": auth.sources_open_required,
@@ -397,7 +399,7 @@ def _run_headless_task(
                 max_turns=request.max_turns,
                 provider_id=request.provider_id,
                 input=request.input,
-                intent=_request_intent(request.intent),
+                intent=intent,
                 run_id=run_id,
                 requested_capabilities=auth.requested_capabilities,
                 strict_research=auth.strict_research,
@@ -417,7 +419,7 @@ def _run_headless_task(
                 max_turns=request.max_turns,
                 continue_task=request.continue_task,
                 provider_id=request.provider_id,
-                intent=_request_intent(request.intent),
+                intent=intent,
                 run_id=run_id,
                 requested_capabilities=auth.requested_capabilities,
                 strict_research=auth.strict_research,

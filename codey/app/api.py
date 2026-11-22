@@ -804,7 +804,8 @@ def run_submit_response(  # noqa: C901, PLR0912
             return error
         submit_kwargs.update(captured)
     return _submit_with_attachments(ctx, body, submit_task,
-        (session_id, project, task, max_turns, continue_task, provider_id, intent), submit_kwargs)
+        (session_id, project, task, max_turns, continue_task, provider_id,
+         (entry_auth.inferred_intent or intent) if intent == "auto" and not continue_task else intent), submit_kwargs)
 
 
 def _submit_with_attachments(ctx: AppContext | None, body: dict[str, object], submit: TaskSubmitter, args: _SubmissionArgs, kwargs: TaskSubmitOptions) -> tuple[int, dict[str, object]]:

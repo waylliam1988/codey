@@ -26,6 +26,7 @@ class ElementRecord(Generic[Handle]):
     revision: int
     semantics_json: str = ""
     context_backend_node_id: int = 0
+    scope_only: bool = False
 
 
 class ElementRegistry(Generic[Handle]):
@@ -44,6 +45,7 @@ class ElementRegistry(Generic[Handle]):
         for ref, previous in tuple(self.records.items()):
             if (same_document(previous.document, record.document)
                     and previous.backend_node_id == record.backend_node_id
+                    and previous.scope_only == record.scope_only
                     and previous.role == record.role and previous.name == record.name
                     and previous.semantics_json == record.semantics_json
                     and previous.context_backend_node_id == record.context_backend_node_id

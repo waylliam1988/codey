@@ -30,7 +30,7 @@ from codey.completion.verification import (
     relevant_verification_pairs,
     verification_provenance,
 )
-from codey.completion.verification_policy import VerificationCandidate
+from codey.completion.verification_policy import VerificationPlan, VerificationRequirement
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.utils.refs import coerce_int
 
@@ -63,7 +63,7 @@ def build_completion_decision(
     stop_reason: str,
     task_changed: bool,
     files: tuple[str, ...],
-    selected_check: VerificationCandidate | None,
+    selected_check: VerificationRequirement | None,
     evidence: ExecutionEvidence,
     analysis_run_payloads: Iterable[Mapping[str, object]] = (),
     project: str | Path | None = None,
@@ -86,7 +86,7 @@ def build_completion_decision(
     )
     provenance = verification_provenance(
         local_state=local_state,
-        checkpoint_green=checkpoint_green,
+        checkpoint_green=checkpoint_green and not isinstance(selected_check, VerificationPlan),
     )
     analysis_refs = matching_analysis_run_refs(
         analysis_run_payloads,

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codey.completion.inputs import AnalysisRunEvidence, CompletionChangeSet
-from codey.completion.verification_policy import VerificationCandidate
+from codey.completion.verification_policy import VerificationRequirement
 
 if TYPE_CHECKING:
     from codey.completion.engine import CompletionEvidence
@@ -33,7 +33,7 @@ class CompletionContext:
     knowledge_project: str = ""
     knowledge_session_id: str = ""
     research_prerequisites: ResearchPrerequisiteFacts | None = None
-    selected_check: VerificationCandidate | None = None
+    selected_check: VerificationRequirement | None = None
     project_evaluation: CompletionEvidence | None = None
     changes: CompletionChangeSet | None = None
     scope_files: tuple[str, ...] = ()

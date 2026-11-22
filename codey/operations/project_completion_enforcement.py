@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any
 
 from codey.agents.protocol import task_forbids_verification
 from codey.completion.engine import CompletionEngine, CompletionEvidence
@@ -16,7 +15,11 @@ from codey.completion.verification import (
     STANCE_INHERITED_PASS,
     decisive_failure_fact,
 )
-from codey.completion.verification_policy import VerificationCandidate, select_verification_candidate
+from codey.completion.verification_policy import (
+    VerificationCandidate,
+    VerificationPlan,
+    select_verification_requirement,
+)
 from codey.operations.project_completion_context import (
     COMPLETION_REPAIR_FOLLOWUP,
     MAX_COMPLETION_REPAIR_ROUNDS,
@@ -44,14 +47,12 @@ from codey.runtime.observe.events import RunEvent
 
 def _enforcement_scope(
     ctx: ProjectRun,
-    changes: dict[str, Any] | None,
+    changes: dict[str, object] | None,
     changed: bool,
 ) -> tuple[bool, tuple[str, ...]]:
-    files = tuple(
-        str(item.get("path") or "")
-        for item in ((changes or {}).get("files") or [])
-        if item.get("path")
-    )
+    rows = changes.get("files") if changes is not None else None
+    files = tuple(item["path"] for item in rows if isinstance(item, dict)
+                  and isinstance(item.get("path"), str) and item["path"]) if isinstance(rows, list) else ()
     if not files and change_state(changes) is None and ctx.work.evidence.changed_files:
         return True, tuple(ctx.work.evidence.changed_files)
     return changed, files
@@ -74,7 +75,7 @@ def _completion_evidence(
         stop_reason=stop,
         task_changed=changed,
         scope_files=scope_files,
-        selected_check=check if isinstance(check, VerificationCandidate) else None,
+        selected_check=check if isinstance(check, (VerificationCandidate, VerificationPlan)) else None,
         evidence=ctx.work.evidence,
         analysis_run_payloads=ctx.work.analysis_run_payloads,
         project=ctx.project,
@@ -190,7 +191,7 @@ def _prepare_completion_enforcement(ctx: ProjectRun) -> None:
         ctx.configured_ignored_paths,
     )
     ctx.selected_check = (
-        select_verification_candidate(ctx.verification_candidates, ctx.files)
+        select_verification_requirement(ctx.verification_candidates, ctx.files, root=ctx.project)
         if ctx.result.stop_reason == "done" and ctx.task_changed and ctx.files
         else None
     )
@@ -348,7 +349,7 @@ def _apply_repair_result(ctx: ProjectRun, repair_result: RunResult) -> None:
             ctx.configured_ignored_paths,
         )
         ctx.selected_check = (
-            select_verification_candidate(ctx.verification_candidates, ctx.files)
+            select_verification_requirement(ctx.verification_candidates, ctx.files, root=ctx.project)
             if ctx.files
             else None
         )

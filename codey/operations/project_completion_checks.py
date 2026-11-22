@@ -19,7 +19,13 @@ from codey.completion.contract import (
 )
 from codey.completion.engine import CompletionEngine
 from codey.completion.inputs import ChangedFile, CompletionChangeSet
-from codey.completion.verification_policy import VerificationCandidate
+from codey.completion.verification import coding_verification_state
+from codey.completion.verification_policy import (
+    VerificationCandidate,
+    VerificationPlan,
+    VerificationRequirement,
+    select_verification_requirement,
+)
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_inputs import ProjectCompletionFacts
 from codey.operations.task_session import TaskSession
@@ -94,7 +100,9 @@ def _selected_equal(first: VerificationCandidate, second: VerificationCandidate)
             and (first.cwd or ".").strip() == (second.cwd or ".").strip())
 
 
-def _resolve_selected_check(session: TaskSession | ProjectCompletionFacts, context: CompletionContext) -> VerificationCandidate | None:
+def resolve_verification_requirement(
+    session: TaskSession | ProjectCompletionFacts, context: CompletionContext, scope: tuple[str, ...],
+) -> VerificationRequirement | None:
     """One owner for the required verification candidate.
 
     The session requirement wins; a context candidate only fills a missing
@@ -104,6 +112,12 @@ def _resolve_selected_check(session: TaskSession | ProjectCompletionFacts, conte
     its real command and cwd preserved.
     """
     provided = context.selected_check
+    if isinstance(provided, VerificationPlan):
+        return provided
+    if session.verification_candidates:
+        resolved = select_verification_requirement(session.verification_candidates, scope, root=context.project or None)
+        if isinstance(resolved, VerificationPlan):
+            return resolved
     selected = session.selected_verification
     if selected is not None and provided is not None and not _selected_equal(selected, provided):
         raise ValueError("selected verification conflict: session and context disagree")
@@ -184,6 +198,25 @@ def verification_gap_diagnostics(session: TaskSession | ProjectCompletionFacts) 
     return "\n".join(details[:4])
 
 
+def verification_plan_feedback(session: TaskSession, context: CompletionContext, plan: VerificationPlan) -> str:
+    evidence = context.execution_evidence
+    if evidence is None:
+        evidence = ExecutionEvidence(workspace_revision=session.workspace_revision,
+                                     workspace_fingerprint=session.workspace_fingerprint)
+    projected, _ = _evidence_with_session_facts(evidence.detached(), session)
+    if projected is None:
+        return ""
+    commands = []
+    for index, obligation in enumerate(plan.obligations, 1):
+        status = coding_verification_state(obligation.candidate, projected, obligation.paths,
+                                           root=context.project or session.project or ".")
+        commands.append(f"project-{index}: {status} — {obligation.candidate.command} "
+                        f"(path: {obligation.candidate.cwd}) covers {', '.join(obligation.paths)}")
+    if plan.uncovered_paths:
+        commands.append("No unambiguous verification command for: " + ", ".join(plan.uncovered_paths))
+    return "\n\nVerification coverage for the current changes:\n" + "\n".join(commands)[:2000]
+
+
 def _projection_gaps_for_latest(
     latest_by_key: dict[tuple[str, str], VerificationObservation],
 ) -> tuple[set[tuple[str, str]], list[str]]:
@@ -252,7 +285,7 @@ def _verification_checks(
     else:
         evidence = evidence.detached()
     changes = _synthesize_changes(scope, context.changes)
-    selected = _resolve_selected_check(session, context)
+    selected = resolve_verification_requirement(session, context, scope)
     # Single engine call over the complete projection: session facts fill
     # the gaps the unified production context does not carry, so the same
     # edit+fresh-pass passes with or without an evidence-only context.

@@ -38,7 +38,8 @@ def snapshot_catalog(
         allow_project_run=allow_writes and snapshot.policy is not None and snapshot.policy.allows("project.verify")
             and "run" in names,
         task_navigation_url=snapshot.task_navigation_url,
-        task_source_selector=snapshot.input_contract_version >= 13,
+        task_source_url=snapshot.bound_source_url,
+        task_source_selector=snapshot.input_contract_version >= 13 and snapshot.bound_source_url is not None,
         browser_followup_checks=(snapshot.policy.required_checks if snapshot.policy else ())
         if snapshot.browser_followups else None,
         browser_result_reads=snapshot.research_scope is not None,
@@ -123,6 +124,7 @@ def build_codemode_catalog(
     allow_project_edit: bool | None = None, allow_project_run: bool | None = None,
     task_navigation_url: str | None = None,
     task_source_selector: bool = True,
+    task_source_url: str | None = None,
     browser_followup_checks: tuple[str, ...] | None = None,
     browser_result_reads: bool = False,
     browser_references: BrowserReferences | None = None,
@@ -177,7 +179,7 @@ def build_codemode_catalog(
                         task_navigation_schema(),
                         canonical_json_object(entry.parameters),
                     ]})
-            if entry.name in TASK_SOURCE_TOOLS and task_navigation_url is not None and task_source_selector:
+            if entry.name in TASK_SOURCE_TOOLS and task_source_selector and (task_source_url or task_navigation_url):
                 original = canonical_json_object(entry.parameters)
                 entry = replace(entry, description='Select target="task" to read the original task URL without copying it. '
                     'Use url for another authorized source. ' + entry.description,

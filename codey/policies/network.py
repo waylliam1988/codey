@@ -15,12 +15,13 @@ blocked.
 from __future__ import annotations
 
 import ipaddress
+import re
 import socket
 import threading
 import time
 from dataclasses import dataclass
 from enum import Enum
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
 
 from codey.utils.refs import is_valid_hostname
 
@@ -34,6 +35,7 @@ _BLOCKED_HOSTS = frozenset(
 )
 
 _DNS_FAKE_IP_NETS = (ipaddress.ip_network("198.18.0.0/15"),)
+_AMBIGUOUS_URL_CHAR = re.compile(r"[\\\x00-\x1f\x7f]")
 
 
 def _ip_is_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -42,6 +44,13 @@ def _ip_is_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
 
 def _ip_is_dns_fake_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     return any(ip in net for net in _DNS_FAKE_IP_NETS)
+
+
+def _parse_network_url(url: str) -> ParseResult:
+    cleaned = url.strip()
+    if _AMBIGUOUS_URL_CHAR.search(cleaned):
+        raise ValueError("invalid URL")
+    return urlparse(cleaned)
 
 
 class NetworkStatus(Enum):
@@ -97,7 +106,7 @@ class NetworkPolicy:
 
     def check_url(self, url: str, *, resolve: bool = True, use_cache: bool = False) -> str | None:
         try:
-            parsed = urlparse((url or "").strip())
+            parsed = _parse_network_url(url or "")
         except ValueError:
             return "invalid URL"
 

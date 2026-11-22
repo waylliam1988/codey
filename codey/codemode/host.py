@@ -59,6 +59,7 @@ class CodeModeHost:
         allow_writes: bool = False,
         replay: Callable[[int, str, JsonObject], ToolResult] | None = None,
         task_navigation_url: str | None = None,
+        task_source_url: str | None = None,
         browser_references: BrowserReferences | None = None,
         replay_browser_ref: Callable[[int, str, JsonValue], str] | None = None,
         browser_stage: Callable[[], int] | None = None,
@@ -83,6 +84,7 @@ class CodeModeHost:
         self._execute = execute
         self._replay = replay
         self._task_navigation_url = task_navigation_url
+        self._task_source_url = task_source_url or task_navigation_url
         self._browser_references = browser_references
         self._replay_browser_ref = replay_browser_ref
         self._browser_stage = browser_stage
@@ -193,7 +195,7 @@ class CodeModeHost:
         if tool_name == "browser_navigate":
             decoded_args = resolve_task_navigation(decoded_args, self._task_navigation_url)
         if tool_name in TASK_SOURCE_TOOLS:
-            decoded_args = resolve_task_source(decoded_args, self._task_navigation_url)
+            decoded_args = resolve_task_source(decoded_args, self._task_source_url)
         if tool_name == "run":
             decoded_args = resolve_verification(decoded_args, canonical_json_object(self._catalog[tool_name].parameters))
         json_edit = tool_name == "edit" and "changes" in decoded_args

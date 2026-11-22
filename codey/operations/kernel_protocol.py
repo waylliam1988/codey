@@ -47,7 +47,7 @@ from codey.toolchain.tool_spec import (
 from codey.types.json_value import JsonValue, ToolArgs, canonical_json_object, decode_json_object
 
 MAX_NATIVE_CALLS_PER_TURN = 8
-InputContractVersion: TypeAlias = Literal[11, 12, 13, 14]
+InputContractVersion: TypeAlias = Literal[11, 12, 13, 14, 15]
 
 if TYPE_CHECKING:
     from codey.completion.verification_policy import VerificationCandidate
@@ -63,6 +63,9 @@ class KernelSessionView(Protocol):
 
     @property
     def selected_verification(self) -> VerificationCandidate | None: ...
+
+    @property
+    def verification_paths(self) -> tuple[str, ...]: ...
 
     @property
     def verification_forbidden(self) -> bool: ...
@@ -155,10 +158,15 @@ class TurnSnapshot:
     browser_copy: CopyTurn | None = None
     input_binding: ModelInputBinding | None = None
     task_navigation_url: str | None = None
+    task_source_url: str | None = None
     input_contract_version: InputContractVersion = 14
     browser_followups: bool = False
     browser_fill_text: str | None = None
     browser_references: BrowserReferences | None = None
+
+    @property
+    def bound_source_url(self) -> str | None:
+        return self.task_source_url if self.input_contract_version >= 15 else self.task_navigation_url
 
     @property
     def task_navigation_selector(self) -> bool:
@@ -180,7 +188,7 @@ class TurnSnapshot:
         specs = tuple(binding.model_spec if binding is not None and spec.name == binding.model_spec.name else spec
                       for spec in self.frozen_specs if spec.name in self.tool_names)
         specs = tuple(reference_spec(spec, self.browser_references) for spec in specs)
-        if self.input_contract_version >= 13 and self.task_navigation_url is not None:
+        if self.input_contract_version >= 13 and self.bound_source_url is not None:
             from codey.codemode.navigation import TASK_SOURCE_TOOLS, task_source_spec
 
             specs = tuple(task_source_spec(spec) if spec.name in TASK_SOURCE_TOOLS else spec for spec in specs)
@@ -366,8 +374,7 @@ def _task_edit_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...]) -
             parameters=tuple((key, value) for key, value in spec.parameters if key in {"path", "content", "base_result_ref"}),
             required=("path", "content", "base_result_ref"))) if spec.name == "edit" else spec for spec in frozen)
     if file_rules(session.policy.required_checks):
-        return tuple(freeze_spec_parameters(replace(spec, parameters=(*tuple(
-            (key, value) for key, value in spec.parameters if key in {"path", "content", "base_result_ref"}),
+        return tuple(freeze_spec_parameters(replace(spec, parameters=(*spec.parameters,
             ("declared_fields", {"type": "boolean", "enum": [True], "description":
                 "Copy only task-declared fields from complete browser receipts. Supply path and the original "
                 "complete read's base_result_ref; do not supply content or changes."})))) if spec.name == "edit" else spec
@@ -379,7 +386,11 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
                      scope: AnswerScope | None) -> tuple[ToolSpec, ...]:
     """Select completion once; bind investigation tools on their separate route."""
     from codey.codemode.verification import verification_spec
-    from codey.completion.verification_policy import preferred_verification_candidate
+    from codey.completion.verification_policy import (
+        VerificationPlan,
+        preferred_verification_candidate,
+        select_verification_requirement,
+    )
     from codey.operations.browser_waits import wait_spec
     from codey.operations.chat_knowledge import chat_knowledge_spec, hybrid_knowledge_spec, read_knowledge_versions
     from codey.operations.execution_claims import execution_claim_spec
@@ -405,8 +416,9 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
     for spec in frozen:
         if (spec.name == "run" and session.policy.allows("project.verify") and not session.verification_forbidden
                 and not session.verification_candidates_refresh_failed):
-            candidate = session.selected_verification or preferred_verification_candidate(session.verification_candidates)
-            if candidate is not None:
+            requirement = select_verification_requirement(session.verification_candidates, session.verification_paths)
+            candidate = requirement or session.selected_verification or preferred_verification_candidate(session.verification_candidates)
+            if candidate is not None and (not isinstance(candidate, VerificationPlan) or candidate.obligations):
                 spec = verification_spec(spec, candidate)
         if spec.name == "done":
             if explaining:
@@ -458,7 +470,9 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     names = tuple(name for name in names if name in available)
     nested: tuple[str, ...] = ()
     binding = None
-    task_navigation_url = None
+    task_navigation_url: str | None = None
+    task_source_url: str | None = None
+    input_version: InputContractVersion = 14
     target = copy_target(session.task_text)
     frozen = _task_edit_specs(session, frozen)
     if "codemode" in names:
@@ -474,7 +488,12 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         if (upload is None and target is None
                 and any(spec.name in {"browser_navigate", "open_url"} for spec in frozen)):
             task_navigation_url = _task_navigation_url(session)
+            if task_navigation_url is not None and len(session.required_source_urls) > 1:
+                input_version = 15
+                if "open_url" in available:
+                    task_source_url = _other_task_source_url(session, task_navigation_url)
         catalog = build_codemode_catalog(frozen, task_navigation_url=task_navigation_url,
+            task_source_url=task_source_url, task_source_selector=input_version < 15 or task_source_url is not None,
             allow_writes=session.policy.allows("project.write"),
             allow_project_run=session.policy.allows("project.verify"))
         nested = tuple(entry.name for entry in catalog.entries)
@@ -540,21 +559,36 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
                               and not has_explanation(session.policy.required_checks),
         browser_copy=browser_copy,
         input_binding=binding,
-        task_navigation_url=task_navigation_url,
+        task_navigation_url=task_navigation_url, task_source_url=task_source_url,
+        input_contract_version=input_version,
     ))
 
 
 def _task_navigation_url(session: KernelSessionView) -> str | None:
     from codey.policies.network import check_fetch_url
-    from codey.task.web_intent import explicit_web_intent, source_url_key
+    from codey.task.web_intent import explicit_web_intent
 
     intent = explicit_web_intent(session.task_text)
-    if len(intent.original_urls) != 1 or len(session.required_source_urls) != 1:
+    if intent.urls != session.required_source_urls:
         return None
-    url = next(iter(intent.original_urls))
-    if intent.urls != session.required_source_urls or source_url_key(url) not in session.required_source_urls:
+    targets = intent.original_urls if len(intent.urls) == 1 else intent.original_navigation_urls
+    if len(targets) != 1:
         return None
+    url = next(iter(targets))
     return url if check_fetch_url(url, resolve=False) is None else None
+
+
+def _other_task_source_url(session: KernelSessionView, navigation_url: str) -> str | None:
+    from codey.policies.network import check_fetch_url
+    from codey.task.web_intent import explicit_web_intent, source_url_key
+
+    sources = explicit_web_intent(session.task_text).original_urls - {navigation_url}
+    if len(sources) != 1:
+        return None
+    url = next(iter(sources))
+    if source_url_key(url) not in session.required_source_urls or check_fetch_url(url, resolve=False) is not None:
+        return None
+    return url
 
 
 def _expand_text_batch(tool: str, args: ToolArgs) -> tuple[list[tuple[str, ToolArgs, str]], str]:
@@ -791,12 +825,12 @@ def _lower_bound_inputs(
                 args = resolve_verification(args, {"properties": canonical_json_object(dict(models[name].parameters))})
             except ValueError as exc:
                 return _invalid_plan(str(exc), tool=name)
-        if name in TASK_SOURCE_TOOLS and name in models and snapshot.input_contract_version >= 13 and snapshot.task_navigation_url is not None:
+        if name in TASK_SOURCE_TOOLS and name in models and snapshot.input_contract_version >= 13 and snapshot.bound_source_url is not None:
             from codey.codemode.navigation import resolve_task_source
 
             if error := validate_args_with_spec(models[name], args):
                 return _invalid_plan(error, tool=name)
-            lowered.append((raw, resolve_task_source(args, snapshot.task_navigation_url), call_id))
+            lowered.append((raw, resolve_task_source(args, snapshot.bound_source_url), call_id))
             continue
         bound_observation = name in {"browser_snapshot", "browser_read"} and any(
             (rule := parse_tool_success_check(check)) is not None and rule.tool == name and rule.via == "codemode"

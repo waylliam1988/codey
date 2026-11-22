@@ -28,7 +28,7 @@ def repair_snapshot(snapshot: TurnSnapshot) -> TurnSnapshot:
         frozen_specs=tuple(spec for spec in snapshot.frozen_specs if spec.name in names),
         custom_executors=tuple(row for row in snapshot.custom_executors if row[0] in names),
         browser_followups=False, browser_references=None, browser_fill_text=None,
-        browser_copy=None, input_binding=None, task_navigation_url=None))
+        browser_copy=None, input_binding=None, task_navigation_url=None, task_source_url=None))
 
 
 def repair_messages(messages: list[ProviderToolResult] | None, prompt: str, *, rejected_control: bool) -> list[ProviderToolResult] | None:

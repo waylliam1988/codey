@@ -38,6 +38,7 @@ class WebIntent:
     original_urls: frozenset[str] = frozenset()
     browser_navigation_requested: bool = False
     deferred_urls: frozenset[str] = frozenset()
+    original_navigation_urls: frozenset[str] = frozenset()
 
 
 def explicit_browser_checks(task: str) -> tuple[str, ...]:
@@ -238,9 +239,11 @@ def explicit_web_intent(task: str, *, source_lines: bool = True) -> WebIntent:
     allowed = {key: candidates for key, candidates in direct.items() if candidates is not None}
     originals = {url for candidates in allowed.values() for url in candidates if url is not None}
     unambiguous = all(None not in candidates for candidates in allowed.values())
+    navigation_originals = {url for key in navigation_urls & allowed.keys()
+                            for url in allowed[key] if url is not None and None not in allowed[key]}
     return WebIntent(requested, frozenset(allowed), frozenset(originals) if unambiguous else frozenset(),
                      browser_navigation_requested or bool(navigation_urls & allowed.keys()),
-                     frozenset(deferred_urls & allowed.keys()))
+                     frozenset(deferred_urls & allowed.keys()), frozenset(navigation_originals))
 
 
 def source_requirements(task: str) -> dict[str, object]:

@@ -32,7 +32,7 @@ def test_browser_capabilities_survive_entry_policy_and_recovery_without_changing
     assert {"web_search", "open_url"} <= set(snapshot.tool_names)
     if kind == "research":
         assert "submit_research_answer" in snapshot.tool_names
-        assert "done" not in snapshot.tool_names
+        assert "done" in snapshot.tool_names
 
 
 def test_network_off_denies_default_and_explicit_browser_grants() -> None:

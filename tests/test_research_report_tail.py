@@ -113,4 +113,7 @@ def test_production_rejects_unfinished_report_then_publishes_repair_without_reac
     assert "repair" not in reports[1].call.args  # The original tool performs the replacement submission.
     assert sum(row.call.name == "browser_fill" for row in receipts) == 1
     assert sum(row.call.name == "browser_click" for row in receipts) == 1
-    assert sum(row.call.name == "browser_read" for row in receipts) == 2
+    first_submission = next(index for index, row in enumerate(receipts) if row.call.name == "submit_research_answer")
+    assert any(row.call.name == "browser_read" and row.ok for row in receipts[:first_submission])
+    assert not any(row.call.name in {"browser_read", "browser_navigate", "open_url", "source_search"}
+                   for row in receipts[first_submission:])

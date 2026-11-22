@@ -8,7 +8,7 @@ from typing import TypeVar
 
 from codey.completion.engine import CompletionEvidence
 from codey.completion.inputs import AnalysisRunEvidence, CompletionChangeSet
-from codey.completion.verification_policy import VerificationCandidate
+from codey.completion.verification_policy import VerificationCandidate, VerificationPlan
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.completion_context import CompletionContext
 from codey.operations.research_prerequisites import ResearchPrerequisiteFacts
@@ -62,6 +62,9 @@ def decode_completion_context(value: object, *, ignored_paths: tuple[str, ...] =
     changed = row.get("task_changed")
     if changed is not None:
         changed = require_json_boolean(changed, "task_changed")
+    selected_check = row.get("selected_check")
+    if selected_check is not None and not isinstance(selected_check, (VerificationCandidate, VerificationPlan)):
+        raise ValueError("completion selected_check must be a verification candidate or plan")
     changes = row.get("changes")
     prerequisites = row.get("research_prerequisites")
     if isinstance(prerequisites, TaskSession):
@@ -80,7 +83,7 @@ def decode_completion_context(value: object, *, ignored_paths: tuple[str, ...] =
         knowledge_project=require_json_string(row.get("knowledge_project", ""), "knowledge_project"),
         knowledge_session_id=require_json_string(row.get("knowledge_session_id", ""), "knowledge_session_id"),
         research_prerequisites=_optional_instance(prerequisites, ResearchPrerequisiteFacts, "research_prerequisites"),
-        selected_check=_optional_instance(row.get("selected_check"), VerificationCandidate, "selected_check"),
+        selected_check=selected_check,
         project_evaluation=_optional_instance(row.get("project_evaluation"), CompletionEvidence, "project_evaluation"),
         changes=CompletionChangeSet.from_value(changes) if changes is not None else None,
         scope_files=_strings(row.get("scope_files", ()), "scope_files"),

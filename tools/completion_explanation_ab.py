@@ -144,6 +144,7 @@ class Target:
     model: str
     seed: int
     timeout: float
+    context_window_tokens: int = 32768
 
 
 class ExperimentProvider(ApiProvider):
@@ -156,7 +157,7 @@ class ExperimentProvider(ApiProvider):
         self.fixed_acquisition = fixed_acquisition
         self.acquisition_action = acquisition_action
         counter, budget = admitted_context_budget(target.base_url, "", "openai-completions",
-            LocalContextBudget(32768, 8192, 12000, source="configuration"))
+            LocalContextBudget(target.context_window_tokens, 8192, 12000, source="configuration"))
         super().__init__(target.base_url, target.model, temperature=0, timeout=target.timeout, stream=stream,
                          context_window_tokens=budget.context_window_tokens, context_reserve_tokens=budget.context_reserve_tokens,
                          context_keep_recent_tokens=budget.context_keep_recent_tokens, native_tools=False, thinking_enabled=False,

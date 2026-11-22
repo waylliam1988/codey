@@ -9,7 +9,7 @@ from codey.agents.writer_failover import CheckpointView, WriterAttempt
 from codey.completion.verification_policy import (
     VerificationCandidate,
     check_covers_selected_candidate,
-    select_verification_candidate,
+    select_verification_plan,
 )
 from codey.operations.project_completion_context import ProjectRun, commit_runtime_operation
 from codey.operations.project_writer_phase import _run_one_writer_attempt
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from codey.operations.task_run import CollectChanges
     from codey.workspace.changes import ChangeTracker
 
-VALIDATE_TASK = 'Validate the stopped candidate using the original authorized check; do not edit files.'
+VALIDATE_TASK = 'Validate the stopped candidate using the original authorized checks. Do not edit files.'
 READONLY_COMPLETION_TASK = (
     'The original verification already passed on the current unchanged workspace. '
     'Submit the read-only verification result now with done; do not run another test, '
@@ -44,9 +44,8 @@ class _AdmittedCandidateCheck:
     name = 'runtime candidate validation'
     location = 'runtime:candidate-validation'
 
-    def __init__(self, check: VerificationCandidate) -> None:
-        self._check = check
-        self._started = False
+    def __init__(self, checks: tuple[VerificationCandidate, ...]) -> None:
+        self._checks = iter(checks)
 
     def new_chat(self, timeout: float | None = None) -> None:
         pass
@@ -55,9 +54,8 @@ class _AdmittedCandidateCheck:
         pass
 
     def send(self, text: str, timeout: float | None = None) -> str:
-        if not self._started:
-            self._started = True
-            proposal: JsonObject = {'tool': 'run', 'args': {'command': self._check.command, 'path': self._check.cwd}}
+        if (check := next(self._checks, None)) is not None:
+            proposal: JsonObject = {'tool': 'run', 'args': {'command': check.command, 'path': check.cwd}}
             return json.dumps(proposal)
         # A yielded command can require a formal-result delivery before the
         # gate accepts done. Resubmit only completion, never the command.
@@ -99,10 +97,11 @@ def validate_stopped_candidate(ctx: ProjectRun) -> None:
             or not all(policy.allows(grant) for grant in ('project.read', 'project.verify', 'project.write'))):
         return
     files = tuple(session.edited_files)
-    check = select_verification_candidate(ctx.verification_candidates, files)
-    if check is None:
-        return
     remaining_turns = request.max_turns - previous.turns
+    plan = select_verification_plan(ctx.verification_candidates, files, root=ctx.project)
+    checks = tuple(item.candidate for item in plan.obligations)
+    if not checks or plan.uncovered_paths or remaining_turns <= len(checks):
+        return
 
     def admit(mutations: RuntimeMutationLine, sid: str, rid: str) -> RuntimeOperationState | None:
         return mutations.mark_candidate_validation_running(sid, rid, provider_id=ctx.frame.provider_id,
@@ -110,10 +109,12 @@ def validate_stopped_candidate(ctx: ProjectRun) -> None:
 
     commit_runtime_operation(ctx, 'mark_candidate_validation_running', admit)
     ctx.hooks.append_ledger(lambda ledger: ledger.append('candidate_validation_admitted',
-        command=check.command, cwd=check.cwd, turn_budget=remaining_turns, source_stop_reason='no_progress',
+        command=checks[0].command, cwd=checks[0].cwd,
+        checks=[{'command': check.command, 'cwd': check.cwd} for check in checks],
+        turn_budget=remaining_turns, source_stop_reason='no_progress',
         driver='runtime', writer_attempt=ctx.writer_attempt_index + 1))
     validated = _run_one_writer_attempt(ctx, WriterAttempt(
-        task=VALIDATE_TASK, provider=_AdmittedCandidateCheck(check), provider_id=ctx.frame.provider_id,
+        task=VALIDATE_TASK, provider=_AdmittedCandidateCheck(checks), provider_id=ctx.frame.provider_id,
         remaining_turns=remaining_turns, fresh_chat=False, handoff='', checkpoint=CheckpointView(changed_files=files)),
         lambda turn: None)
     _settle_validation(ctx, previous, validated, repair=operation.leaf == LEAF_REPAIR_SETTLED)

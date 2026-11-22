@@ -135,6 +135,8 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
             "policy": snapshot.policy.to_payload(), "specs": json_value(snapshot.frozen_specs),
             "executors": [{"name": name, "binding": None if fn is None else _executor_identity(fn)}
                           for name, fn in snapshot.custom_executors]}))
+    if snapshot.input_contract_version >= 15:
+        payload["task_source_url"] = snapshot.task_source_url
     payload["browser_fill_text"] = snapshot.browser_fill_text
     payload["browser_followups"] = snapshot.browser_followups
     payload["browser_references"] = snapshot.browser_references.payload() if snapshot.browser_references else None
@@ -272,8 +274,10 @@ def _snapshot_payload(raw: object) -> tuple[JsonObject, InputContractVersion]:
                 "nested_tool_names", "research_scope", "ignore_runtime_claims", "browser_copy", "input_binding",
                 "task_navigation_url", "browser_fill_text", "browser_followups", "browser_references"}
     version = require_json_integer(payload.get("schema_version"), "snapshot version")
+    if version == 15:
+        expected.add("task_source_url")
     match version:
-        case 11 | 12 | 13 | 14:
+        case 11 | 12 | 13 | 14 | 15:
             if set(payload) != expected:
                 raise ValueError("invalid captured turn snapshot version/shape")
             return payload, version
@@ -296,6 +300,26 @@ def _restore_model_contract(snapshot: TurnSnapshot, raw_references: object) -> T
     if contract != contract_semantics(render_snapshot_contract(snapshot)):
         raise ValueError("captured contract text differs from its frozen model definitions")
     return snapshot
+
+
+def _restore_bound_source(
+    payload: JsonObject,
+    navigation_url: str | None,
+    names: list[str],
+    nested: list[str],
+    policy: TaskPolicy,
+) -> str | None:
+    value = payload.get("task_source_url")
+    if value is None:
+        return None
+    from codey.policies.network import check_fetch_url
+
+    source = require_json_string(value, "task_source_url")
+    if (not source or navigation_url is None or source == navigation_url
+            or check_fetch_url(source, resolve=False) is not None
+            or "open_url" not in (*names, *nested) or not policy.allows("web.read")):
+        raise ValueError("invalid captured task source binding")
+    return source
 
 
 def restore_snapshot(payload: object) -> TurnSnapshot:
@@ -346,6 +370,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
                 or input_binding is not None and input_binding.kind != "declared_fields"
                 or copy is not None):
             raise ValueError("invalid captured task navigation binding")
+    source_url = _restore_bound_source(payload, navigation_url, names, nested, policy)
     ignore_runtime_claims = require_json_boolean(payload["ignore_runtime_claims"], "ignore_runtime_claims")
     if nested:
         from codey.codemode.catalog import build_codemode_catalog
@@ -355,7 +380,8 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
             allow_project_edit="edit" in nested,
             allow_project_run="run" in nested,
             task_navigation_url=navigation_url,
-            task_source_selector=input_version >= 13,
+            task_source_url=source_url,
+            task_source_selector=input_version >= 13 and (source_url is not None or input_version < 15),
         )
         if "codemode" not in names or not set(nested) <= {entry.name for entry in catalog.entries}:
             raise ValueError("captured nested capabilities exceed the frozen CodeMode inventory")
@@ -401,7 +427,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         custom_executors=tuple(bindings), implementation_compatible=bool(compatible), nested_tool_names=tuple(nested),
         research_scope=scope, ignore_runtime_claims=ignore_runtime_claims,
         browser_copy=copy, input_binding=input_binding, task_navigation_url=navigation_url,
-        input_contract_version=input_version,
+        input_contract_version=input_version, task_source_url=source_url,
         browser_followups=followups, browser_fill_text=fill_text, browser_references=references)
     from codey.toolchain.constants import PAGE_DETAIL_TOOL
 
