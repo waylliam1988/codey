@@ -745,3 +745,25 @@ Q015 验收：
 - 两完整文件加严 mypy/Pyrefly/ty/Ruff **0**，q015-validation-final.json；生产 mypy **0，737 文件**、Pyrefly **0，原35 suppressed/165 warnings**、ty/精度门 **0**（q015-validation-first.json）。最终只改测试 fixture，生产 hash 与这些调用方/生产门验证时相同，不重复未失效结果。前后 hash 稳定。
 - 为证明新 fixture 与 address 重构基线独立成立，临时还原本目录 HEAD 单个 http_plumbing 源，实际运行五既有/绑定基线 node → **0，5 passed / 5 subtests passed，1.24 秒**；finally 精确恢复已验证生产字节，q015-fixture-baseline.json，restored_own_source=true。没有复制工作区/worktree。
 - 入口/引用分析未发现可证明能删除的公开函数，__all__ 保留。diff 已核对，只涉及 HTTP 源、直接完整测试与两份记录。本批完成后累计 **20 / 298 批、43 / 975 生产文件**；下一主批 Q015B attachment_routes.py / documents.py。原打包库存失配及其他跨区域待办仍未解决，总 goal 仍 active。
+
+
+Q015 已提交：`92ef82dd`（fix(http): apply weak comparison to complete conditional entity tags）。
+
+### Q015B：附件与会话文档（进行中）
+
+- 两生产文件已全读；有效职责/范围来自 workspace_documents_and_terminal.md 的服务端会话绑定、工作区包含性、2 MiB/显式状态和研究笔记归属契约，以及 frontend document_content.ts 的 representation 字符串接口。没有修改路径包含性、祖先会话附件继承、图像支持能力或大小预算。
+- **bug：representation 容器值触发 hash 异常。** HTTP JSON 能提供任意 JSON 值，合法表示仅 reference/content/image；_file_document 接受 object 并为所有域外值定义 document_representation_invalid，非法值是否可哈希不应改变验证路径。列表/对象却在 set membership 先抛 TypeError，绕过400。新增八输入回归在改生产前实际 **1，4 failed / 4 passed，1.35 秒**，标量拒绝对照通过、四容器出现 unhashable TypeError。独立依据是有限字符串表示的接口要求与 JSON 请求边界，不将生产当唯一正确答案。q015b-baseline.json。
+- 原三文件基线（document_preview/attachment_capabilities/input_attachments）**0，39 passed，3.47 秒**；有既有 WinError32 RAM 清理警告，路径指 test_idle_attachment_input_dispatches... 的 .durable.sqlite3.lock，不虚报无警告。首次记录脚本在打印非UTF8系统错误时遭 GBK UnicodeEncodeError，未保存尾部证据，已改UTF8 stdout并逐命令持久化，重新实际运行获得上述完整记录；该脚本输出失败不当成行为复现。
+- 增加显式字符串检查后，同三文件加八输入回归 **0，47 passed，4.12 秒**，同一清理警告仍在。两完整生产源码加严 Any **68 → 0**；五完整路径含相关测试原 **192** 条，测试迁移尚未完成，不计整个批次完成。
+- documents 采用仅含实际只读能力的 context Protocol，UI rows 在边界验证字符串键/序列，项目 path 验证为持久 UI 契约字符串；不新增 JSON 深度预算或复制整份状态。附件 refs 和 durable 消息行相同的列表/字典验证归唯一 _attachment_rows，保留先验全组结构再读取、原错误文字与 refs 上限4。全量调用方/type gates/diff 尚待完成。
+
+
+Q015B 验收与提交准备：
+
+- document_preview 整个脚本改为 typed 最小只读 context，包含明确 sessions/projects/KnowledgeStore，保持对同一 project 行的绑定修改；base64、候选路径列表和 read_note 可空返回在边界收窄，无过滤坏行/放宽断言。capabilities 测试的 connector factory 参数/返回明确，API_CONNECTIONS 使用真实 owning catalog 同一个字典，不通过私有重导出传播 Any。
+- 测试夹具独立基线：临时使用 HEAD 原 documents/attachment_routes 两源码，`python -m pytest -q tests/test_document_preview.py tests/test_attachment_capabilities.py --tb=short` → **0，20 passed，1.75 秒**；finally 精确恢复并核对 restored_own_source=true，q015b-fixture-baseline.json。没有复制目录/worktree。
+- 最终 `python -m pytest -q tests/test_document_preview.py tests/test_attachment_capabilities.py tests/test_document_representation_validation.py tests/test_input_attachments.py --tb=short` → **0，47 passed，4.16 秒**。相同八输入/核心断言已全通过；覆盖文本/图像/reference、binary/大小/路径/symlink拒绝、缺失/歧义、研究归属、捕获图像能力、上传不可变/来源伪造拒绝、历史附件继承/运行交付。没有 skip。Input attachments 只作调用方验证与引用路由，未改动或宣称全脚本 Any 已治理；浏览器 UI、git worktree 场景不在本批执行范围。
+- 仍有基线同样的 RAM 清理 WinError32（task idle attachment 的 .durable.sqlite3.lock），已独立路由 Q018 context 生命周期，尚未证明竞态/生产 bug，没有隐藏或为绿门改断言。必要行为用例通过与清理警告分开报告。
+- 两源码完整 Any **68 → 0**，加三完整测试 **192 → 0**，加严 mypy/scoped Pyrefly/ty/Ruff 全部 **0**。生产 mypy **0，737 文件**、Pyrefly **0，原35 suppressed/165 warnings**、ty/精度门 **0**；q015b-validation-first.json 持续逐命令写入完整命令/结果，全部完成，changed_during_checks=[]。
+- 引用/语义分析：两个生产文件的公开响应/准备函数均有 API/server/控制提交或直接测试用途，不以搜索无外部引用删除私有或公开入口。重复仅合并同为列表+字符串键dict的附件结构校验，正常 request 与 durable fallback 分别保留自己的错误信息、数量上限和 from None，先全部结构验证再读取，未混合存储内容验证与模型能力策略。
+- 已检查 diff/暂存路径；按 documents 输入 bug+类型与 attachment routes 类型/行校验收敛拆独立 commits。本批待提交完毕再计完成，仍 **20 / 298、43 / 975**。Q018 清理警告和 Q078 库存失配保留为独立未完事项，不将其误报修复。

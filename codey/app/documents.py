@@ -5,30 +5,62 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Protocol
 
+from codey.types.json_value import JsonObject
+from codey.utils.object_fields import object_fields, sequence_items
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.workspace.config import load_project_config, path_matches_ignored_prefix
 from codey.workspace.session import session_workspace
 
+if TYPE_CHECKING:
+    from codey.knowledge.store import KnowledgeStore
+
 MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
 
 
-def document_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+class _DocumentContext(Protocol):
+    @property
+    def state_home(self) -> Path | None: ...
+    @property
+    def knowledge_store(self) -> KnowledgeStore | None: ...
+    def load_ui_state(self) -> dict[str, object]: ...
+
+
+def _state_records(value: object) -> list[dict[str, object]]:
+    if not sequence_items(value):
+        raise ValueError("invalid document state records")
+    records: list[dict[str, object]] = []
+    for row in value:
+        if not object_fields(row):
+            raise ValueError("invalid document state record")
+        records.append(row)
+    return records
+
+
+def _project_root(project: Mapping[str, object]) -> Path:
+    path = project["path"]
+    if not isinstance(path, str):
+        raise ValueError("invalid project path")
+    return Path(path).resolve()
+
+
+def document_response(ctx: _DocumentContext, body: Mapping[str, object]) -> tuple[int, JsonObject]:
     session_id = body.get("session_id")
     state = ctx.load_ui_state()
-    session = next((s for s in state.get("sessions", []) if s.get("id") == session_id), None)
+    session = next((s for s in _state_records(state.get("sessions", ())) if s.get("id") == session_id), None)
     if not session:
         return 404, {"ok": False, "error": "session_not_found"}
-    project = next((p for p in state.get("projects", []) if p.get("id") == session.get("projectId")), None)
+    project = next((p for p in _state_records(state.get("projects", ())) if p.get("id") == session.get("projectId")), None)
     try:
         if body.get("kind") == "research":
             return _research_document(ctx, body, str(session_id), project)
         if body.get("kind") != "workspace":
             return 400, {"ok": False, "error": "document_kind_invalid"}
         if project:
-            root = Path(project["path"]).resolve()
+            root = _project_root(project)
         elif ctx.state_home is not None:
             root = session_workspace(ctx.state_home, str(session_id))
         else:
@@ -71,10 +103,10 @@ def document_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, An
         return 403, {"ok": False, "error": "document_unreadable"}
 
 
-def _file_document(path: Path, relative: str, root: Path, representation: object) -> tuple[int, dict[str, Any]]:
+def _file_document(path: Path, relative: str, root: Path, representation: object) -> tuple[int, JsonObject]:
     if representation == "reference":
         return 200, {"ok": True, "path": relative, "title": path.name, "workspace": str(root)}
-    if representation not in {"content", "image"}:
+    if not isinstance(representation, str) or representation not in {"content", "image"}:
         return 400, {"ok": False, "error": "document_representation_invalid"}
     with path.open("rb") as handle:
         data = handle.read(MAX_DOCUMENT_BYTES + 1)
@@ -91,7 +123,7 @@ def _file_document(path: Path, relative: str, root: Path, representation: object
     return 200, _document(relative, path.name, content, _format(path.suffix), str(root))
 
 
-def _image_document(path: str, title: str, data: bytes, workspace: str) -> tuple[int, dict[str, Any]]:
+def _image_document(path: str, title: str, data: bytes, workspace: str) -> tuple[int, JsonObject]:
     mime = ""
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
         mime = "image/png"
@@ -122,7 +154,7 @@ def _reference_candidates(root: Path, reference: str) -> tuple[list[Path], bool]
     def allowed(path: Path) -> bool:
         return not path_matches_ignored_prefix(path.relative_to(root).as_posix(), ignored)
 
-    matches = []
+    matches: list[Path] = []
     for candidate in iter_bounded_files(root, excluded_dirs=excluded, budget=budget, allow_dir=allowed):
         relative = candidate.relative_to(root).as_posix()
         if os.path.normcase("/" + relative).endswith(suffix):
@@ -135,8 +167,8 @@ def _reference_candidates(root: Path, reference: str) -> tuple[list[Path], bool]
 
 
 def _research_document(
-    ctx: Any, body: dict[str, Any], session_id: str, project: dict[str, Any] | None
-) -> tuple[int, dict[str, Any]]:
+    ctx: _DocumentContext, body: Mapping[str, object], session_id: str, project: dict[str, object] | None
+) -> tuple[int, JsonObject]:
     note_id = body.get("note_id")
     if not isinstance(note_id, str) or not note_id:
         return 400, {"ok": False, "error": "note_id_required"}
@@ -145,19 +177,20 @@ def _research_document(
     if found is None:
         return 404, {"ok": False, "error": "document_missing"}
     note, row = found
-    same_project = bool(project and note.project and Path(note.project).resolve() == Path(project["path"]).resolve())
+    same_project = bool(project and note.project and Path(note.project).resolve() == _project_root(project))
     if note.session_id != session_id and not same_project:
         return 403, {"ok": False, "error": "document_scope_mismatch"}
     if len(note.body.encode("utf-8")) > MAX_DOCUMENT_BYTES:
         return 413, {"ok": False, "error": "document_too_large"}
-    return 200, _document(str(row["path"]), note.title or note.id, note.body, "markdown", f"research:{session_id}")
+    path: object = row["path"]
+    return 200, _document(str(path), note.title or note.id, note.body, "markdown", f"research:{session_id}")
 
 
 def _format(suffix: str) -> str:
     return "markdown" if suffix.lower() in {".md", ".markdown"} else "json" if suffix.lower() == ".json" else "text"
 
 
-def _document(path: str, title: str, content: str, format_: str, workspace: str) -> dict[str, Any]:
+def _document(path: str, title: str, content: str, format_: str, workspace: str) -> JsonObject:
     return {
         "ok": True,
         "path": path,

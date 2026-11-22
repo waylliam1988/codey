@@ -1892,7 +1892,10 @@
         "tests/test_server.py::RunSnapshotTests::test_sse_reconnect_replays_history_from_query_cursor",
         "tests/test_operator_auth_blocks_unauthenticated_http.py"
       ],
-      "result": "RFC 9110 13.1.2/8.8.3 violations reproduced before production edits: strong-vs-weak opaque tag and comma-containing returned tag both gave 200 instead of 304 (2 failed/1 passed/5 subtests). Fixed weak comparison and linear quote-aware splitting. Bound address read/exception behavior consolidated with original HEAD fixture baseline 5 passed/5 subtests. Direct final 8 passed/15 subtests; dependencies 30 passed, no skips. Two complete files strict Any/Pyrefly/ty/Ruff passed (25 -> 2 -> 0, first baseline includes fixture inheritance errors); production/precision checks passed and unchanged since. Server script only selected nodes validated, whole-file Any remains routed Q015F."
+      "result": "RFC 9110 13.1.2/8.8.3 violations reproduced before production edits: strong-vs-weak opaque tag and comma-containing returned tag both gave 200 instead of 304 (2 failed/1 passed/5 subtests). Fixed weak comparison and linear quote-aware splitting. Bound address read/exception behavior consolidated with original HEAD fixture baseline 5 passed/5 subtests. Direct final 8 passed/15 subtests; dependencies 30 passed, no skips. Two complete files strict Any/Pyrefly/ty/Ruff passed (25 -> 2 -> 0, first baseline includes fixture inheritance errors); production/precision checks passed and unchanged since. Server script only selected nodes validated, whole-file Any remains routed Q015F.",
+      "commits": [
+        "92ef82dd"
+      ]
     },
     {
       "id": "Q015B",
@@ -1901,10 +1904,23 @@
         "codey/app/attachment_routes.py",
         "codey/app/documents.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93"
+      "status": "in_progress",
+      "reviewed_files": [
+        "codey/app/attachment_routes.py",
+        "codey/app/documents.py"
+      ],
+      "verified_files": [
+        "codey/app/attachment_routes.py",
+        "codey/app/documents.py"
+      ],
+      "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93",
+      "result": "Verified; pending separate document bug/type and attachment row/type commits. Representation containers pre-fix 4 failed/4 passed; final direct 47 passed (RAM-disk lock cleanup warning persists from 39-pass baseline). Two whole sources 68 Any diagnostics -> 0, five whole files 192 -> 0; scoped/full-production type and precision gates pass, stable hashes. Updated typed fixtures on original HEAD sources 20 passed, exact restoration. Shared attachment row structure check preserves complete validation-before-read, cap 4, error strings and suppressed context. Input attachments file only executed/routed, no whole-file typing claim; no browser UI/worktree tests executed.",
+      "tests": [
+        "tests/test_document_representation_validation.py",
+        "tests/test_document_preview.py",
+        "tests/test_attachment_capabilities.py",
+        "tests/test_input_attachments.py"
+      ]
     },
     {
       "id": "Q015C",
@@ -2000,7 +2016,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 89
+      "candidate_test_count": 89,
+      "followups": [
+        "Q015B baseline and post-fix test_input_attachments.py::test_idle_attachment_input_dispatches_without_changing_its_durable_metadata pass but process cleanup reports WinError32 retaining RAM temp state/.durable.sqlite3.lock. Baseline 39 passed and final 47 passed both show it; classify as fixture/runtime lifecycle cleanup warning pending localization, not proven race or production defect. Source changes were documents/attachment_routes only. q015b-baseline.json and q015b-validation-first.json. Investigate with current context lifecycle batch, without skipping assertions or manually clearing user services."
+      ]
     },
     {
       "responsibility": "codey/app: conversation and input lifecycle",
