@@ -18,6 +18,7 @@ from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.kernel_protocol import (
+    InputContractVersion,
     TurnSnapshot,
     build_turn_snapshot,
     normalize_turn,
@@ -60,8 +61,9 @@ def test_navigation_freezes_observation_followup_without_changing_historical_req
     assert not plan.protocol_error
     assert "tools.browser_snapshot" in require_json_string(plan.calls[0].args["code"], "code")
     assert "automatically" in next(spec.description for spec in restored.model_specs if spec.name == "browser_navigate")
-    for version in (12, 13):
-        legacy = refresh_snapshot_contract(replace(snapshot, input_contract_version=12 if version == 12 else 13))
+    legacy_versions: tuple[InputContractVersion, ...] = (12, 13)
+    for version in legacy_versions:
+        legacy = refresh_snapshot_contract(replace(snapshot, input_contract_version=version))
         legacy = restore_snapshot(snapshot_description(legacy))
         old = normalize_turn(reply, snapshot=legacy)
         assert not old.protocol_error

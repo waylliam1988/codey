@@ -10,7 +10,7 @@ from collections.abc import Callable
 from dataclasses import Field, fields, replace
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from codey.durable.model import ArtifactRecord, thaw_json
 from codey.durable.session import DurableSession
@@ -30,7 +30,7 @@ from codey.workspace.context_admission import ContextCandidate
 if TYPE_CHECKING:
     from codey.operations.browser_copy import CopyTurn
     from codey.operations.kernel_contracts import ToolExecutor
-    from codey.operations.kernel_protocol import ModelInputBinding, TurnSnapshot
+    from codey.operations.kernel_protocol import InputContractVersion, ModelInputBinding, TurnSnapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.tool_spec import ToolSpec
 
@@ -266,30 +266,19 @@ def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSp
     return binding, True
 
 
-def _snapshot_payload(raw: object) -> JsonObject:
+def _snapshot_payload(raw: object) -> tuple[JsonObject, InputContractVersion]:
     payload = decode_json_object(raw)
     expected = {"schema_version", "implementation_id", "allowed", "contract_text", "tool_names", "policy", "specs", "executors",
                 "nested_tool_names", "research_scope", "ignore_runtime_claims", "browser_copy", "input_binding",
                 "task_navigation_url", "browser_fill_text", "browser_followups", "browser_references"}
     version = require_json_integer(payload.get("schema_version"), "snapshot version")
-    if version not in {11, 12, 13, 14}:
-        raise ValueError("unsupported captured turn snapshot version; start a new request")
-    if set(payload) != expected:
-        raise ValueError("invalid captured turn snapshot version/shape")
-    return payload
-
-
-def _input_contract_version(payload: JsonObject) -> Literal[11, 12, 13, 14]:
-    version = payload["schema_version"]
-    if version == 11:
-        return 11
-    if version == 12:
-        return 12
-    if version == 13:
-        return 13
-    if version == 14:
-        return 14
-    raise ValueError("unsupported captured input contract")
+    match version:
+        case 11 | 12 | 13 | 14:
+            if set(payload) != expected:
+                raise ValueError("invalid captured turn snapshot version/shape")
+            return payload, version
+        case _:
+            raise ValueError("unsupported captured turn snapshot version; start a new request")
 
 
 def _restore_model_contract(snapshot: TurnSnapshot, raw_references: object) -> TurnSnapshot:
@@ -315,8 +304,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.tool_spec import custom_executor_for
 
-    payload = _snapshot_payload(payload)
-    input_version = _input_contract_version(payload)
+    payload, input_version = _snapshot_payload(payload)
     raw_binding = payload["input_binding"]
     names = require_json_strings(payload["tool_names"], "tool_names")
     nested = require_json_strings(payload["nested_tool_names"], "nested_tool_names")

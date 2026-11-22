@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
 
 from codey.operations import browser_followups
 from codey.operations.browser_copy import CopyTurn, copy_target, copy_turn
@@ -47,6 +47,7 @@ from codey.toolchain.tool_spec import (
 from codey.types.json_value import JsonValue, ToolArgs, canonical_json_object, decode_json_object
 
 MAX_NATIVE_CALLS_PER_TURN = 8
+InputContractVersion: TypeAlias = Literal[11, 12, 13, 14]
 
 if TYPE_CHECKING:
     from codey.completion.verification_policy import VerificationCandidate
@@ -154,7 +155,7 @@ class TurnSnapshot:
     browser_copy: CopyTurn | None = None
     input_binding: ModelInputBinding | None = None
     task_navigation_url: str | None = None
-    input_contract_version: Literal[11, 12, 13, 14] = 14
+    input_contract_version: InputContractVersion = 14
     browser_followups: bool = False
     browser_fill_text: str | None = None
     browser_references: BrowserReferences | None = None

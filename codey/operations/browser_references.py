@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, TypeAlias
 
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters
@@ -20,6 +20,8 @@ from codey.types.json_value import (
 
 if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserToolOutput
+
+ControlPresentationVersion: TypeAlias = Literal[1, 2, 3, 4]
 
 
 def _label(value: str) -> str:
@@ -46,7 +48,7 @@ class BrowserReferences:
     document_json: str
     generation: int
     controls: tuple[ObservedControl, ...]
-    presentation_version: Literal[1, 2, 3, 4] = 4
+    presentation_version: ControlPresentationVersion = 4
 
     def __post_init__(self) -> None:
         if (not self.receipt_ref or self.generation < 0 or not parse_json_object(self.document_json)
@@ -140,17 +142,12 @@ class BrowserReferences:
         if set(row) not in (expected, expected | {"presentation_version"}) or not isinstance(row["controls"], list):
             raise ValueError("Invalid frozen browser control binding.")
         raw_version = require_json_integer(row.get("presentation_version", 2), "control presentation version")
-        presentation_version: Literal[1, 2, 3, 4]
-        if raw_version == 1:
-            presentation_version = 1
-        elif raw_version == 2:
-            presentation_version = 2
-        elif raw_version == 3:
-            presentation_version = 3
-        elif raw_version == 4:
-            presentation_version = 4
-        else:
-            raise ValueError("Unsupported frozen browser control presentation version.")
+        presentation_version: ControlPresentationVersion
+        match raw_version:
+            case 1 | 2 | 3 | 4:
+                presentation_version = raw_version
+            case _:
+                raise ValueError("Unsupported frozen browser control presentation version.")
         controls: list[ObservedControl] = []
         for raw_control in row["controls"]:
             control = decode_json_object(raw_control)
