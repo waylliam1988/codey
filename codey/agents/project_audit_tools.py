@@ -8,9 +8,11 @@ kernel.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Unpack
 
+from codey.agents.tools import ReadOptions, read_call_options
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import (
     SEARCH_MAX_FILE_BYTES,
@@ -186,7 +188,8 @@ def _audit_scannable_file_allowed(path: Path, root: Path) -> bool:
         return False
 
 
-def _audit_visible_entries(root: Path, rel: str) -> ToolOutcome:
+def visible_entries(root: Path, rel: str) -> ToolOutcome:
+    """List directory entries visible to project audit advisors."""
     # See _audit_searchable_files: resolve so iterdir entries and the
     # relative_to guards below share one path form.
     root = root.expanduser().resolve()
@@ -237,7 +240,7 @@ def _audit_visible_entries(root: Path, rel: str) -> ToolOutcome:
     return ToolOutcome("\n".join(lines) if lines else "(empty)", True)
 
 
-def _audit_read_file(root: Path, rel: str, **options: Any) -> ToolOutcome:
+def _audit_read_file(root: Path, rel: str, **options: Unpack[ReadOptions]) -> ToolOutcome:
     # See _audit_searchable_files: resolve so safe_join output and the
     # _audit_file_allowed guard share one path form.
     root = root.expanduser().resolve()
@@ -273,7 +276,7 @@ def _audit_scan_budget() -> BoundedScanBudget:
     )
 
 
-def _audit_searchable_files(root: Path, start: Path, budget: BoundedScanBudget) -> Any:
+def _audit_searchable_files(root: Path, start: Path, budget: BoundedScanBudget) -> Iterator[Path]:
     # Resolve once: `start` comes from safe_join (resolved) while callers
     # may pass a symlinked/short-name root (e.g. CI temp dirs). Comparing
     # resolved entries against an unresolved root makes every allow_* guard
@@ -296,6 +299,7 @@ def _audit_search_resolve_start(
     reason = _audit_path_block_reason(rel)
     if reason:
         return None, ToolOutcome.error(reason)
+    root = root.expanduser().resolve()
     reason = _audit_raw_symlink_reason(root, rel)
     if reason:
         return None, ToolOutcome.error(reason)
@@ -335,18 +339,12 @@ def _audit_search_files(
 
 
 def _audit_find_references(root: Path, rel: str, symbol: str) -> ToolOutcome:
-    reason = _audit_path_block_reason(rel)
-    if reason:
-        return ToolOutcome.error(reason)
-    reason = _audit_raw_symlink_reason(root, rel)
-    if reason:
-        return ToolOutcome.error(reason)
-    try:
-        start = safe_join(root, rel or ".")
-    except ValueError as exc:
-        return ToolOutcome.error(str(exc))
-    if not start.exists():
-        return ToolOutcome.error(f"path not found: {rel}")
+    start, error = _audit_search_resolve_start(root, rel)
+    if error is not None:
+        return error
+    if start is None:
+        return ToolOutcome.error("path could not be resolved")
+    root = root.expanduser().resolve()
     try:
         budget = _audit_scan_budget()
         files = _audit_searchable_files(root, start, budget)
@@ -363,16 +361,16 @@ def _audit_find_references(root: Path, rel: str, symbol: str) -> ToolOutcome:
     return ToolOutcome(scan.output, True, truncated=scan.truncated)
 
 
-def _execute_read_only_call(project: Path, call: ToolCall) -> ToolOutcome:
+def execute_read_only_call(project: Path, call: ToolCall) -> ToolOutcome:
+    """Execute one read-only audit call within audit bounds."""
     path = str(call.args.get("path") or ".")
     if call.name == "ls":
-        return _audit_visible_entries(project, path)
+        return visible_entries(project, path)
     if call.name == "read":
-        read_options = {
-            name: call.args[name]
-            for name in ("offset", "limit")
-            if name in call.args
-        }
+        try:
+            read_options = read_call_options(call.args)
+        except ValueError as exc:
+            return ToolOutcome.error(str(exc))
         return _audit_read_file(project, path, **read_options)
     if call.name == "search":
         try:
@@ -392,16 +390,6 @@ def _execute_read_only_call(project: Path, call: ToolCall) -> ToolOutcome:
     return ToolOutcome.error(
         "project audit advisors may only use read-only list_dir, read_file, grep, and find_references"
     )
-
-
-def visible_entries(root: Path, rel: str) -> ToolOutcome:
-    """List directory entries visible to project audit advisors."""
-    return _audit_visible_entries(root, rel)
-
-
-def execute_read_only_call(project: Path, call: ToolCall) -> ToolOutcome:
-    """Execute one read-only audit call within audit bounds."""
-    return _execute_read_only_call(project, call)
 
 
 __all__ = [

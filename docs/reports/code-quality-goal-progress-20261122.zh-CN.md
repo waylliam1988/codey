@@ -434,3 +434,16 @@ Q003 自有三个生产文件和深入检查的关联测试完成 Any/行为验�
 **类型未完成范围**：SQLite 整文件额外 Any 169 条仍在 Q052（sqlite3.Row/游标返回值、JSON 边界；例如 sqlite.py:87、100、541–551 等），不能以标准 mypy 通过替代加严检查。旧 `tests/test_denied_probe_preserves_candidate_validation_evidence.py` 的未注解测试参数（如 :20、64、98）/mock capture，以及 `tests/project_candidate_recovery_fixture.py` 的动态 fixture 返回和回调，尚未做完整类型迁移；该脚本治理不计完成。根因修复可以独立保留；相关大文件迁移后续分批推进，不连带宣称整个 durable 区域完成。
 
 **进度与未覆盖**：Q053 的原有两个生产文件 store.py/timeline.py 完成，完成 **8 / 291 批、22 / 975 生产文件**。Q052/Q055/Q061 仅完成本次受影响部分；无新增删除项。191 文件机器门禁仍未取得完整结果，其三个早期失败待 Q008 以小批定位；其余未执行范围及既有待确认事项仍保留。接下来恢复 Q008 最终验收，然后回到既定队列，不继续追加可选性能优化。根因修复提交按明确九个路径暂存；commit hash 在提交后记录。
+
+根因修复已本地提交：60f68f9b（fix(durable): avoid rebuilding historical checkpoints for settlements），仅上述九个明确路径；其余 agent、browser、codemode、research 改动未夹带。总 goal 仍 active，非全仓完成。
+
+
+### Q008 收尾：明确门禁失败归属并提交可独立成果
+
+- 小批门禁：`python -m pytest -q tests/test_kernel_type_precision_gate.py tests/test_tool_execution_lifecycle.py tests/test_read_result_contract.py tests/test_rg_search_contract.py --tb=short` → **退出 1，95 passed / 3 failed，12.85 秒**。三个失败均位于 test_read_result_contract.py，不是导入/环境错误。
+- :42 和 :106：旧测试将含 task_control 写操作的完整目录交给默认 allow_writes=False 的宿主/执行器，初始化在进入测试目标 read 结果断言前被拒绝。host.py:72/kernel.py:140 明确要求写目录显式许可，20261120 工具控制验证文档也记录 task_control 已进入 CodeMode。倾向 fixture 范围落后；不能为迁就用例取消宿主权限门，后续在 Q035/Q037 核对并修正合适的测试目录。
+- :60：断言完整 read 返回签名必定内联，而实际是 compact catalog 的 describe 发现入口。20261115 收敛报告已有 24KB 内联预算与发现接口合同；但是否本应优先保留 read_file 签名仍须检查具体预算/渲染路径，暂不判定测试或生产正确。归 Q034/Q096 待确认，不直接把实际字符串改成期望。
+- 三个触发路径是 CodeMode 目录构造/宿主初始化/声明展示，尚未进入工具调用或 durable 历史查询；所需冻结 ToolDefinition 与 CodeMode 源码没有在 Q008 中改动。该文件及 catalog.py 的既有动态类型/外部改动仍未完成治理，不计为已完成文件。
+- durable 存储共享依赖修改后，Q008 最终重跑全部直接和调用方文件：`python -m pytest -q tests/test_project_audit_root_paths.py tests/test_agent_tools.py tests/test_agent_request_no_dead_fields.py tests/test_project_audit_tools_ownership.py tests/test_project_audit_advisor_kernel.py tests/test_audit_resolve_paths.py tests/test_consensus_audit_split.py tests/test_agent_effect_sandwich.py tests/test_tool_replay_policy.py tests/test_read_before_edit_ab.py tests/test_tool_runtime.py --tb=short` → **退出 0，161 passed / 42 subtests passed，12.44 秒**。不与先前重叠批次相加成唯一用例总数。
+- 四个 Q008 生产文件与 q008-final-full-types.json 保存的最终哈希一致；前述九文件加严 Any、当前 737 文件三类型门及精度检查仍有实际成功证据。Q008 原有四个文件完成，累计 **9 / 291 批、26 / 975 生产文件**；191 文件门禁仍未完整通过，三个未解决项按其实际模块保留。
+- Q008 准备独立提交 agent 工具契约、根目录链接修复、转发合并、四个相关测试文件和两份进度记录，不夹带其他工作区代码。下一批回到 Q008B：state.py / runaway_guard.py（状态与循环保护）。

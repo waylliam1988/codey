@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.agents import project_audit_tools as audit_tools
+from codey.types.json_value import decode_json_object
 
 
 def _make_root(files: dict[str, str | bytes]) -> tempfile.TemporaryDirectory[str]:
@@ -51,7 +52,12 @@ def test_audit_and_regular_search_use_the_same_backend() -> None:
             result = audit_tools._audit_search_files(root, ".", "hello")
         assert result.ok and "a.py:1: HeLLo world" in result.model_text
         assert shared.call_count == 1
-        assert result.canonical["value"]["matches"][0]["text"] == "HeLLo world"
+        value = decode_json_object(result.canonical["value"])
+        matches = value["matches"]
+        assert isinstance(matches, list)
+        match = matches[0]
+        assert isinstance(match, dict)
+        assert match["text"] == "HeLLo world"
 
 
 def test_search_files_end_to_end_basic_and_limits() -> None:
@@ -64,7 +70,8 @@ def test_search_files_end_to_end_basic_and_limits() -> None:
         assert not empty.ok
         limited = audit_tools._audit_search_files(root, ".", "marker", max_results=1)
         assert not limited.truncated  # Exactly one match is a complete page.
-        assert not limited.canonical["value"]["has_more"]
+        value = decode_json_object(limited.canonical["value"])
+        assert not value["has_more"]
 
 
 def test_search_files_skips_secret_and_reports_budgets() -> None:

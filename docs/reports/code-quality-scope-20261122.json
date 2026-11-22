@@ -1539,16 +1539,21 @@
         "codey/agents/project_audit_tools.py"
       ],
       "id": "Q008",
-      "status": "in_progress",
+      "status": "completed_changed",
       "reviewed_files": [
         "codey/agents/request.py",
         "codey/agents/tools.py",
         "codey/agents/tool_execution.py",
         "codey/agents/project_audit_tools.py"
       ],
-      "verified_files": [],
+      "verified_files": [
+        "codey/agents/request.py",
+        "codey/agents/tools.py",
+        "codey/agents/tool_execution.py",
+        "codey/agents/project_audit_tools.py"
+      ],
       "candidate_test_count": "recompute at entry; initial combined count 73",
-      "result": "Direct/caller tests and 9-file strict Any checks passed. User-prioritized durable query root cause repaired and verified in Q053; original machine gate was stopped without final summary. Resume classification of its three early failures using explicit small file batches before committing Q008.",
+      "result": "Four owned files reviewed; tilde-root symlink audit bug reproduced before fix; duplicate forwarding layers merged with public entry points preserved; 9-file whole-file strict Any check passed. After durable fix, all 11 explicit direct/caller files reran: 161 passed, 42 subtests. Current production typing/precision passed; Q008 production hashes unchanged since prior final checks. Three machine-gate failures localized to CodeMode catalog permission/declaration test contracts and routed to Q034/Q035/Q037/Q096; no complete 191-file gate claim.",
       "tests": [
         "tests/test_project_audit_root_paths.py",
         "tests/test_agent_tools.py",
@@ -1958,7 +1963,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 26
+      "candidate_test_count": 26,
+      "follow_up": [
+        "Machine gate small batch: tests/test_read_result_contract.py has 3 failures: read-only host/kernel reject task_control write entries; inline declaration assertion conflicts with compact output. Classify fixture vs production contract independently; catalog.py has external dirty work, preserve it. Not caused by durable settlement execution; no assertions changed."
+      ]
     },
     {
       "responsibility": "codey/codemode: shared contracts and module services",
@@ -1976,7 +1984,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 33
+      "candidate_test_count": 33,
+      "follow_up": [
+        "Machine gate small batch: tests/test_read_result_contract.py has 3 failures: read-only host/kernel reject task_control write entries; inline declaration assertion conflicts with compact output. Classify fixture vs production contract independently; catalog.py has external dirty work, preserve it. Not caused by durable settlement execution; no assertions changed."
+      ]
     },
     {
       "responsibility": "codey/codemode: completion review and edit validation",
@@ -2002,7 +2013,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 57
+      "candidate_test_count": 57,
+      "follow_up": [
+        "Machine gate small batch: tests/test_read_result_contract.py has 3 failures: read-only host/kernel reject task_control write entries; inline declaration assertion conflicts with compact output. Classify fixture vs production contract independently; catalog.py has external dirty work, preserve it. Not caused by durable settlement execution; no assertions changed."
+      ]
     },
     {
       "responsibility": "codey/codemode: execution evidence and event projection",
@@ -2820,6 +2834,9 @@
       "candidate_test_count": 135,
       "followups": [
         "Q003 integration tests: research_report_tail False/True read count 4 vs 2; structured_research_report frozen phase includes done. Exact three failures reproduced with pre-refactor citation_scanner from 6b12a394; not caused by citation type change. Determine production contract vs outdated test vs concurrent browser changes before editing either side."
+      ],
+      "follow_up": [
+        "Machine gate small batch: tests/test_read_result_contract.py has 3 failures: read-only host/kernel reject task_control write entries; inline declaration assertion conflicts with compact output. Classify fixture vs production contract independently; catalog.py has external dirty work, preserve it. Not caused by durable settlement execution; no assertions changed."
       ]
     },
     {

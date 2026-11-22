@@ -18,8 +18,8 @@ def test_audit_tools_leaf_exists_with_public_entries() -> None:
     assert LEAF.exists(), "missing codey/agents/project_audit_tools.py"
     from codey.agents import project_audit_tools as tools
 
-    assert callable(getattr(tools, "execute_read_only_call", None))
-    assert callable(getattr(tools, "visible_entries", None))
+    assert callable(tools.execute_read_only_call)
+    assert callable(tools.visible_entries)
 
 
 def test_audit_leaf_has_no_provider_or_operations_dependency() -> None:

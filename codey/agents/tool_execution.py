@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING
 
 from codey.agents.protocol import (
     canonical_project_path,
     edit_has_content,
 )
+from codey.agents.tools import AgentToolFns, read_call_options, search_call_options
 from codey.policies.action import (
     DECISION_ASK_USER,
     DECISION_DENY,
@@ -25,6 +26,9 @@ from codey.toolchain.definition import (
     call_arg,
 )
 from codey.toolchain.runtime import ToolOutcome, safe_join
+
+if TYPE_CHECKING:
+    from codey.runtime.effects.replay_policy import ReplayDecision
 
 SUPPORTED_TOOL_NAMES = SUPPORTED_RUNTIME_TOOL_NAMES
 INFORMATION_TOOL_NAMES = INFORMATION_RUNTIME_TOOL_NAMES
@@ -81,7 +85,7 @@ def evaluate_tool_call_policy_for(
     approval_available: bool = False,
     phase: str = "writer",
     shell: ShellSpec | None = None,
-) -> tuple[ActionPolicyDecision | None, Any]:
+) -> tuple[ActionPolicyDecision | None, ReplayDecision]:
     policy_subject = action_subject_for_call(
         call,
         project=project,
@@ -133,38 +137,36 @@ def read_before_edit_outcome(
 
 def execute_information_tool_call(
     project: Path,
-    tool_fns: Any,
+    tool_fns: AgentToolFns,
     call: ToolCall,
 ) -> ToolOutcome:
     """Execute a pure read/information tool call in a replay-safe manner."""
     path = call_arg(call, "path", ".")
     if call.name == "read":
-        read_options = {
-            name: call.args[name]
-            for name in ("offset", "limit")
-            if name in call.args
-        }
-        return cast(ToolOutcome, tool_fns.read_file(project, path, **read_options))
+        try:
+            read_options = read_call_options(call.args)
+        except ValueError as exc:
+            return ToolOutcome.error(str(exc))
+        return tool_fns.read_file(project, path, **read_options)
     if call.name == "ls":
-        return cast(ToolOutcome, tool_fns.list_directory(project, path))
+        return tool_fns.list_directory(project, path)
     if call.name == "search":
-        search_options = {
-            name: call.args[name]
-            for name in ("offset", "limit", "literal", "case_sensitive", "include", "exclude", "before_context", "after_context")
-            if name in call.args
-        }
-        return cast(ToolOutcome, tool_fns.search_files(
+        try:
+            search_options = search_call_options(call.args)
+        except ValueError as exc:
+            return ToolOutcome.error(str(exc))
+        return tool_fns.search_files(
             project,
             path,
             call_arg(call, "query"),
             **search_options,
-        ))
+        )
     if call.name == "references":
-        return cast(ToolOutcome, tool_fns.find_references(
+        return tool_fns.find_references(
             project,
             path,
             call_arg(call, "symbol"),
-        ))
+        )
     return ToolOutcome.error(f"unsupported information tool {call.name} (path={path})")
 
 
