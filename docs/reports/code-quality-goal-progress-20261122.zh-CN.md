@@ -821,3 +821,24 @@ Q015D 回答裁剪和完整query类型边界已提交：`c2bf9364`（fix(control
 最终fixture独立基线：将本目录单个query源临时替换为cb43afb5原版，实际执行三evidence（含新跨run通道校验）、两非失败回答边界、candidate空projection和三原有效digest场景 → **0，9 passed，1.47 秒**，q015d-query-fixture-baseline.json；finally恢复当前最终字节，其sha256与此前14例及完整类型验证时一致。未将四个旧coverage错误或旧16001裁剪错误计为通过，也没有复制worktree。
 
 候选摘要coverage修复已按独立变更准备提交；diff只有根目录存在性、onerror、声明覆盖内目录链接拒绝以及七场景测试。此后主批仍进行中，下一步唯一主线为control_service.py 的396条Any与直接行为基线；control_queries已完成的检查不因可选优化重新打开。全批完成数仍 **22 / 298、46 / 975**，另有本批1个查询源已单独验证。原Q008D/shared server、Q018临时锁清理、Q078发布库存及其他登记事项全部保留，总goal继续active。
+
+
+Q015D 候选覆盖修复已提交：`50ff98c3`（fix(control): reject incomplete candidate digest coverage）。
+
+Q015D 控制服务最终验收与暂停：
+
+- 上轮有9个实际本地commits及行为证据，属于有效进展。恢复时HEAD=50ff98c3、工作区干净；本轮未完成重构后，用户将范围明确为“这个阶段做完commit好就暂停”。本轮仅完成当前Q015D，不进入Q015E。后来出现的 docs/codey_deep_audit_and_benchmark.md 和 docs/codey_function_level_upgrade_guide.md 为其他工作，保留且不暂存。
+- 新增直接ControlService契约脚本使用真实AppContext与原durable owner，关闭scheduler/memory；原源码初始 **0，11 passed，1.89秒**。覆盖创建/入场幂等、内容冲突、历史无被动控制条目、观察超时不取消、暂停代次及原回执、身份/操作员权限、未结算candidate拒绝验收、非法预算不创建会话。没有创建或复制工作区/runtime快照。
+- 全文件参数/回调收敛为AppContext、TaskCheckpoint、CommitResult/DurableMutation、ApiRunSelection；legacy配置/收据/队列/问题/health返回先作为unknown读取，再校验记录/序列/实际消费的标量。未加cast/ignore或降低检查强度。保留task旧代次的int转换支持；number边界保留int|float，不把巨大合法JSON整数先转float，既有越界控制错误得以保留。
+- _prepare_message 与 _send 的输入ID完全同为conversation_id/request_id同序数组、同前缀/40位fingerprint，无状态副作用，归唯一 _input_identity；创建会话用actor/request、24位的不同策略未混合。未删无法证明不用的公开方法。
+- release接口需要非空Path，而AppContext支持ephemeral None；仅在release路由验证home并提供只读的home/instance_id/allowed_roots视图，未改发布模块或启动/切换流程。三个路由均用原接口契约验证转交字段，无实际快照、发布、部署或激活。
+- 扩展基线首次 **1 failed / 16 passed，2.06秒**，根因是本轮新测试错误地认为get_upgrade需operator；独立公开Command目录明确其默认readonly、operator=False，而prepare/activate显式operator=True。依此修正测试：代理可读升级状态，代理准备发布仍拒绝；未改生产权限或放宽断言。首次结果保留 q015d-service-fixture-baseline.json。修正后的全部17例在HEAD原control_service.py实际 **0，17 passed，2.00秒**，finally恢复本轮源字节，q015d-service-fixture-baseline-final.json。
+- service完整加严Any **396 → 26 → 2 → 0**；两源起始515条现已全部消除。中间错误为本轮类型工作，未归为历史问题：object数值收窄、Path可空release端口、legacy问题返回/显式字典泛型。最终检查前消除两处已是int的重复转换，Pyrefly回到原warning数，不隐藏新增警告。
+- 最终 `python -m pytest -q tests/test_control_candidate_digest_coverage.py tests/test_control_evidence_budget.py tests/test_control_run_snapshot_bounds.py tests/test_control_service_contract.py --tb=short` → **0，31 passed，3.46秒**，无skip。主批两源码+四完整测试的加严mypy/Pyrefly/ty/Ruff均 **0**；生产 mypy **0，737文件**、Pyrefly **0，既有35 suppressed/165 warnings**、ty/精度门 **0**。完整实际命令/每批退出码/输出 q015d-final-validation-complete.json，串行检查、hash稳定且提交前核对匹配；之前167warnings的中间结果保留 q015d-final-validation.json。
+- Q078发布清单失配仍导致原runtime依赖的external_control/release集成不可用，本轮没有重跑或记作通过；这里验证的是直接控制服务与只读查询及release路由接口。control_conversations/input_queue/durable.control等legacy Any仍归Q019/Q051，已记录具体边界与未完成性质；本批零Any不代表依赖或全仓零Any。
+- 两生产文件完整验收完成，累计 **23 / 298批、48 / 975生产文件**，975文件唯一归属未变。Q015E保持未开始；全仓目标尚未完成。按用户指示，在本阶段代码与进度提交完成后暂停，恢复须由用户另行要求。
+
+
+Q015D 服务类型与输入身份收敛已提交：`c3baf7e2`（refactor(control): validate service boundaries and share input identity）。本次进度提交记录该hash与验收结果；本阶段所有代码已提交。仅记录一个未确认语义问题：grant_control更新expires_at但保留创建时的max_seconds；该展示字段代表原始预算还是最近续期值尚无独立读取方/规范依据，实际到期仍使用expires_at，未猜测更改。此项不阻止现有契约的类型/行为验收，只有新契约或复现证据出现时才重开。
+
+按用户“这个阶段做完commit好就暂停”暂停总goal；本阶段完成，整个仓库仍未完成。当前 **23 / 298批、48 / 975生产文件**，Q015E未开始，所有原已登记限制保持。其他两份未跟踪文档保留。

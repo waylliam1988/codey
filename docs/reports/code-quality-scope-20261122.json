@@ -1971,23 +1971,30 @@
         "codey/app/control_queries.py",
         "codey/app/control_service.py"
       ],
-      "status": "in_progress",
+      "status": "completed_changed",
       "reviewed_files": [
         "codey/app/control_queries.py",
         "codey/app/control_service.py"
       ],
       "verified_files": [
-        "codey/app/control_queries.py"
+        "codey/app/control_queries.py",
+        "codey/app/control_service.py"
       ],
       "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93",
-      "result": "Query-side fixes and typing verified, overall batch in progress. Digest pre-fix 4 failed/1 passed (missing/file roots, included dir symlink, unreadable child); rendered answer flag pre-fix 1 failed/3 passed including nested-evidence fixture. Final query group 14 passed, no skips; 4 whole paths strong Any/Pyrefly/ty/Ruff pass; query source 114 -> 0, production/precision gates pass (35 suppressed/165 warnings). ControlService remains unchanged and has 396 strict Any diagnostics (initial 401); full two-source initial 515. Answer/typed query committed as c2bf9364; digest coverage committed separately. Original cb43afb5 query source with new typed fixtures: 9 baseline cases passed; restored exact validated final source hash. Published-runtime-dependent HTTP transport tests not rerun under known Q078 inventory failure.",
+      "result": "Completed. Query bugs already committed as c2bf9364/50ff98c3 with pre-fix coverage 4 failed/1 passed and rendered-answer 1 failed/3 passed. Service complete-file strict Any 396 -> 26 -> 2 -> 0; initial combined two-source count 515 -> 0. Six whole files strict Any/Pyrefly/ty/Ruff pass, direct four-file group 31 passed (no skips), production mypy 737/Pyrefly/ty/precision gates pass (35 suppressed/165 warnings retained), stable hashes. New direct service fixture baseline 17 passed on original HEAD source with exact restoration. One new test incorrectly classified get_upgrade operator-only; corrected using independently declared command catalogue (query is agent-readable; preparation/activation operator-only), no production permission change. Input identity duplicate shared with identical hashing/order. Persistent release owner is checked readonly Path/instance/roots view, three release routes verified without copying/publishing/activation. Runtime-dependent transport integration retains prior Q078 inventory limitation. User requested pause immediately after this stage commit; Q015E not started.",
       "tests": [
         "tests/test_control_candidate_digest_coverage.py",
         "tests/test_control_evidence_budget.py",
-        "tests/test_control_run_snapshot_bounds.py"
+        "tests/test_control_run_snapshot_bounds.py",
+        "tests/test_control_service_contract.py"
       ],
       "commits": [
-        "c2bf9364"
+        "c2bf9364",
+        "50ff98c3",
+        "c3baf7e2"
+      ],
+      "followups": [
+        "Contract question only, not a confirmed defect: grant_control updates expires_at but leaves stored max_seconds from creation. Whether max_seconds denotes original or latest delegated duration needs an independent caller/spec contract; effective expiration still uses expires_at. Preserve existing behavior; reopen only with new contract/reproduction evidence."
       ]
     },
     {
@@ -2082,7 +2089,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 12
+      "candidate_test_count": 12,
+      "followups": [
+        "Q015D inspected control_conversations.py configuration/UI JSON contracts and input_queue.get/list/create signatures to isolate service boundaries. Their ctx/return dictionary Any remain at those owning files (for example configurations/config_for and input_queue methods); no full-file governance or typing completion claim. Service ports now validate outer record/sequence and consumed scalars; do not treat this as migration of their implementations."
+      ]
     },
     {
       "responsibility": "codey/app: conversation and input lifecycle",
@@ -2520,7 +2530,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 1
+      "candidate_test_count": 1,
+      "followups": [
+        "Q015D inspected durable/control.py latest/receipt/write contracts; session and configuration/receipt dictionaries still declare Any in this owning module. No source edits or full-file type claim here. ControlService validates returned records before consuming values; complete whole-file typing in Q051."
+      ]
     },
     {
       "responsibility": "codey/durable: shared contracts and module services",
