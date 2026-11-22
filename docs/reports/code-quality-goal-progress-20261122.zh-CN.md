@@ -245,3 +245,27 @@ python -m pytest -q tests/test_atomic_io.py tests/test_fact_checkpoint_payload_b
 本批只为根因定位阅读 cancellation 的局部清理函数和上述夹具，未把整文件算作完成。已有失败不由本批引入，有修改前复核证据；允许独立提交本批已验证的修复。其余生产区域和相关测试仍在队列。
 
 Q002 提交前最终门禁：`python -m mypy codey --python-version 3.11`（736 文件）、`pyrefly check codey --python-version 3.11`（0 errors，原有 35 suppressed/164 warnings）、`ty check codey --python-version 3.11`、`python -m tools.kernel_type_precision_gate`、`git -c core.safecrlf=false diff --check` 均退出 0。本轮累计实际运行 **12 个不同 pytest 文件**（部分包含重复运行，不累加为唯一用例数）。当前 **2 / 288 批完成，8 / 974 个生产文件完成**；Q189 保留两项已有夹具失败。下一批 Q003：引用扫描和 refs，先建立行为及 Any 基线。
+
+### Q003 进行中：有界引用扫描及 refs
+
+- Q002 提交：`aeaba3e2`。本批三个完整生产文件已阅读，先处理 refs 的独立 bug，再收窄 citation_scanner 和 references 的动态类型。未把读取算作完成。
+- **裁剪预算 bug 的独立依据**：refs 原模块声明其职责为“bounded text/ref primitives”和 clipped identifiers；limit 是调用方提供的字符上限，省略标记也属于输出。可论证不变量为输出长度不超过非负预算，不能用省略标记反而突破上限。该依据不来自另一裁剪实现或测试断言。
+- 触发：`clip('abcdef', 1)`、`clip('abcdef', 2)`（Unicode 同样）；原结果均为 `...`，长度 3，派生 identifier 也突破预算。新增 `test_ref_text_budget.py` 修改前实际 **4 failed、11 passed、退出 1**，均为长度超限；随后按预算截短标记，保留正常预算、规范化及短文本不变。相同文件修复后 **15 passed、退出 0**，含 -1/0/1/2/3/4/8 的边界。
+- refs 全文件以 `Iterable[object]` 收窄动态迭代元素后再规范化/去重；没有新增 cast/ignore。未合并 clip_tail：它与 refs 对 None/False/0 的规范化、marker 和模块依赖约束不同。
+
+| 实际命令 | 退出码 | 结果 |
+| --- | --- | --- |
+| `python -m pytest -q tests/test_citation_scanner.py tests/test_fail_closed_runtime_sweep.py tests/test_proof_ref_parity.py tests/test_research_identity.py tests/test_search_scan_split.py --tb=short` | 0 | 修改前 82 passed、37 subtests passed |
+| `python -m mypy codey/utils/citation_scanner.py codey/utils/references.py codey/utils/refs.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` | 1 | 基线 27 条、2 文件：正则 Match 的下标/findall/回调和可选 Path getattr。独立 cache-dir 避免强 Any 检查使全树正常检查反复失效；不更改检查强度 |
+| `python -m pytest -q tests/test_ref_text_budget.py --tb=short` | 1 → 0 | 修改前 4 failed、11 passed；修复后 15 passed |
+| `python -m mypy codey/utils/refs.py tests/test_ref_text_budget.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` | 0 | 两个完整文件通过 |
+| `python -m pytest -q tests/test_fail_closed_runtime_sweep.py tests/test_proof_ref_parity.py tests/test_research_identity.py tests/test_persisted_receipt_exit_code_roundtrip.py --tb=short` | 0 | 64 passed、37 subtests passed，无 skip |
+| `pyrefly check codey/utils/refs.py tests/test_ref_text_budget.py --python-version 3.11` | 0 | 0 errors |
+| `ty check codey/utils/refs.py tests/test_ref_text_budget.py --python-version 3.11` | 0 | 通过 |
+| `python -m ruff check codey/utils/refs.py tests/test_ref_text_budget.py` | 0 | 通过 |
+
+本轮累计实际执行 **19 个不同 pytest 文件**。当前完整批次仍为 **2 / 288**，另 Q003 部分完成；生产文件验收 **9 / 974**。Q003 剩余两个生产文件及深入检查的 citation_scanner 测试仍需类型审计和行为验证，不能宣称整批已完成。
+
+Q003 第一个独立提交前的全树门禁实际失败：mypy（`python -m mypy codey --python-version 3.11`，退出 1）报告 tool_tasks 引用已改名的 restore_text_wait_snapshot；Pyrefly（同 Q002 全树命令，退出 1）报告 browser_followups 列表类型和 kernel_execution 缺失 require_json_string；ty（同 Q002 全树命令，退出 1）报告后者。随后 Git 检查证实出现了本轮之外的并行改动：automation/browser_runtime/session/snapshot、codemode/host、operations/browser_followups/waits/kernel_execution/task_execution/tool_tasks、toolchain/tool_spec、旧浏览器测试以及新增 browser_control_continuation 测试。这些文件在检查期间仍发生更新，部分诊断位置已被其所有者修正，但没有据此宣称门禁通过。
+
+以上不是 refs 的返回类型或实现引起的失败；本批没有修改上述浏览器文件，也不覆盖或夹带提交它们。refs 定向三种类型检查、全部直接/调用方验证通过，允许先独立提交预算修复。全树最新成功结果仍是 Q002 时刻，本次失败保留，后续须在现有外部修改上重新核验。精度门禁及 diff 空白检查本次均退出 0。后续继续处理没有文件冲突的 citation_scanner/references。

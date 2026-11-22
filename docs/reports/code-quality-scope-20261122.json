@@ -1402,12 +1402,25 @@
       ],
       "id": "Q003",
       "status": "in_progress",
-      "reviewed_files": [],
-      "verified_files": [],
+      "reviewed_files": [
+        "codey/utils/citation_scanner.py",
+        "codey/utils/references.py",
+        "codey/utils/refs.py"
+      ],
+      "verified_files": [
+        "codey/utils/refs.py"
+      ],
       "candidate_test_count": 17,
       "tests": [
-        "tests/test_citation_scanner.py"
-      ]
+        "tests/test_ref_text_budget.py",
+        "tests/test_citation_scanner.py",
+        "tests/test_fail_closed_runtime_sweep.py",
+        "tests/test_proof_ref_parity.py",
+        "tests/test_research_identity.py",
+        "tests/test_search_scan_split.py",
+        "tests/test_persisted_receipt_exit_code_roundtrip.py"
+      ],
+      "result": "in progress: clip total-budget bug reproduced (4 failed, 11 passed) then fixed (15 passed); refs whole-file strict Any audit passed; citation_scanner/references Any diagnostics pending"
     },
     {
       "responsibility": "Atomic storage and path safety",

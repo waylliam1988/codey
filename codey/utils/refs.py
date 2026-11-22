@@ -26,12 +26,14 @@ _FLOAT_INPUT: TypeAlias = (
 
 
 def clip(value: object, limit: int = 240) -> str:
+    """Normalize reference text within a total character budget, including dots."""
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     if type(limit) is not int or limit <= 0:
         return ""
     if len(text) <= limit:
         return text
-    return text[: max(0, limit - 3)].rstrip() + "..."
+    marker = "..."[:limit]
+    return text[: limit - len(marker)].rstrip() + marker
 
 
 def normalize_text(value: object) -> str:
@@ -145,8 +147,9 @@ def bounded_refs(values: object, *, limit: int = DEFAULT_REF_LIMIT) -> tuple[str
         return ()
     refs: list[str] = []
     seen: set[str] = set()
+    iterable: Iterable[object] = values
     try:
-        iterator = iter(values)
+        iterator = iter(iterable)
     except TypeError:
         return ()
     for value in iterator:
