@@ -8,15 +8,21 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
-from typing import TypeAlias
+from typing import Protocol, TypeAlias
 
 JsonPrimitive: TypeAlias = None | bool | int | float | str
 JsonValue: TypeAlias = JsonPrimitive | list["JsonValue"] | dict[str, "JsonValue"]
 JsonObject: TypeAlias = dict[str, JsonValue]
 ToolArgs: TypeAlias = JsonObject
+_CLASS_TYPE: type[object] = type
+
+
+class _DataclassField(Protocol):
+    @property
+    def name(self) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -53,7 +59,8 @@ class _Decoder:
         if depth > self.limits.max_depth or self.nodes > self.limits.max_nodes:
             raise ValueError("JSON depth or node budget exceeded")
         if transport and isinstance(value, Enum):
-            return self.value(value.value, depth + 1, transport=transport, tuples=tuples)
+            enum_value: object = value.value
+            return self.value(enum_value, depth + 1, transport=transport, tuples=tuples)
         if value is None:
             return None
         if isinstance(value, str) and type(value) is str:
@@ -74,18 +81,26 @@ class _Decoder:
     def container(self, value: object, depth: int, *, transport: bool, tuples: bool) -> JsonValue:
         if isinstance(value, Mapping):
             result: JsonObject = {}
-            for key, item in value.items():
+            mapping: Mapping[object, object] = value
+            for key, item in mapping.items():
                 if not isinstance(key, str) or type(key) is not str:
                     raise ValueError("JSON object keys must be strings")
                 result[self.string(key)] = self.value(item, depth + 1, transport=transport, tuples=tuples)
             return result
         if isinstance(value, list) or (tuples and isinstance(value, tuple)):
-            return [self.value(item, depth + 1, transport=transport, tuples=tuples) for item in value]
+            sequence: Sequence[object] = value
+            return [self.value(item, depth + 1, transport=transport, tuples=tuples) for item in sequence]
         if transport and isinstance(value, (set, frozenset)):
-            return [self.value(item, depth + 1, transport=True, tuples=True) for item in sorted(value)]
-        if transport and is_dataclass(value) and not isinstance(value, type):
-            return {self.string(field.name): self.value(getattr(value, field.name), depth + 1,
-                    transport=True, tuples=True) for field in fields(value)}
+            sorted_items: list[object] = sorted(value)
+            return [self.value(item, depth + 1, transport=True, tuples=True) for item in sorted_items]
+        if transport and is_dataclass(value) and not isinstance(value, _CLASS_TYPE):
+            dataclass_fields: Sequence[_DataclassField] = fields(value)
+            result = {}
+            for field in dataclass_fields:
+                name = self.string(field.name)
+                field_value: object = getattr(value, field.name)
+                result[name] = self.value(field_value, depth + 1, transport=True, tuples=True)
+            return result
         raise ValueError(f"JSON cannot encode {type(value).__name__}")
 
 
@@ -138,7 +153,8 @@ def require_json_boolean(value: object, field: str) -> bool:
 def require_json_strings(value: object, field: str) -> list[str]:
     if not isinstance(value, list):
         raise ValueError(f"{field} must be an array of strings")
-    return [require_json_string(item, field) for item in value]
+    items: list[object] = value
+    return [require_json_string(item, field) for item in items]
 
 
 def unique_json_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:

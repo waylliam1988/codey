@@ -8,19 +8,26 @@ import pytest
 
 from codey.providers.response_record import json_value
 from codey.runtime.core.models import canonical_json_mapping
-from codey.types.json_value import JsonLimits, decode_json_object, decode_json_value, require_json_string
+from codey.types.json_value import (
+    JsonLimits,
+    JsonValue,
+    decode_json_object,
+    decode_json_value,
+    require_json_string,
+    require_json_strings,
+)
 
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), {1: "bad"}, {"x": object()}, "\ud800"])
-def test_non_json_values_are_rejected_at_both_boundaries(value):
+def test_non_json_values_are_rejected_at_both_boundaries(value: object) -> None:
     with pytest.raises(ValueError):
         decode_json_value(value)
     with pytest.raises(ValueError):
         json_value(value)
 
 
-def test_decoder_detaches_shared_containers_without_mutating_input():
-    child = [1, False, None, "中文😀"]
+def test_decoder_detaches_shared_containers_without_mutating_input() -> None:
+    child: list[JsonValue] = [1, False, None, "中文😀"]
     original = {"left": child, "right": child}
     decoded = decode_json_object(original)
     child.append("late mutation")
@@ -28,8 +35,8 @@ def test_decoder_detaches_shared_containers_without_mutating_input():
     assert decoded["left"] is not decoded["right"]
 
 
-def test_cycles_fail_with_a_controlled_error():
-    cycle = []
+def test_cycles_fail_with_a_controlled_error() -> None:
+    cycle: list[object] = []
     cycle.append(cycle)
     for decode in (decode_json_value, json_value):
         with pytest.raises(ValueError, match="cycle"):
@@ -41,12 +48,12 @@ def test_cycles_fail_with_a_controlled_error():
     ([1, 2, 3], JsonLimits(max_nodes=3), "node"),
     ({"中": "😀"}, JsonLimits(max_string_bytes=6), "byte"),
 ])
-def test_resource_limits_fail_without_clipping(value, limits, match):
+def test_resource_limits_fail_without_clipping(value: object, limits: JsonLimits, match: str) -> None:
     with pytest.raises(ValueError, match=match):
         decode_json_value(value, limits=limits)
 
 
-def test_legacy_python_transport_structures_are_not_external_json():
+def test_legacy_python_transport_structures_are_not_external_json() -> None:
     @dataclass(frozen=True)
     class Record:
         name: str
@@ -66,9 +73,23 @@ def test_legacy_python_transport_structures_are_not_external_json():
         canonical_json_mapping({"positions": {1, 2}})
 
 
-def test_explicit_field_validation_does_not_coerce_values():
+def test_explicit_field_validation_does_not_coerce_values() -> None:
     assert require_json_string("", "summary") == ""
     with pytest.raises(ValueError, match="summary"):
         require_json_string(12, "summary")
     with pytest.raises(ValueError, match="object"):
         decode_json_object([])
+
+
+@pytest.mark.parametrize("value", [("name",), "name", ["name", 1], [False], [None]])
+def test_string_array_validation_rejects_wrong_containers_and_items(value: object) -> None:
+    with pytest.raises(ValueError, match="names"):
+        require_json_strings(value, "names")
+
+
+def test_string_array_validation_preserves_strings_and_detaches_input() -> None:
+    original = ["", "中文😀", "name"]
+    decoded = require_json_strings(original, "names")
+    assert decoded == ["", "中文😀", "name"]
+    assert decoded is not original
+    assert require_json_strings([], "names") == []

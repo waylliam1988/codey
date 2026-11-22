@@ -197,3 +197,26 @@ python -m pytest -q tests/test_atomic_io.py tests/test_fact_checkpoint_payload_b
 历史未完成类型事项归入所属区域：model_preferences、zen/access/catalog、context_ledger、file_index、control/client、app/service、knowledge/store；历史测试 Any 40 条及 conftest/kernel_runtime 作为关联验证债务保留，未计为已完成。
 
 本轮进度：**0 / 288 批完成，0 / 974 个生产文件验收完成**。已阅读 Q001 三文件及其旧测试；为后续路由阅读的 failure_output、scan_report、refs、references 和 positive_int 未验收，类型义务仍归 Q002/Q003。
+
+### Q001 已完成：JSON 和动态容器边界
+
+- 分区清单提交：`fbf80021`。Q001 实际深入检查全部三个生产文件及 `tests/test_json_value_contract.py`；没有证据充分的业务 bug、可证明死代码或重复职责，不制造相应修改。
+- 修改 JSON 编码边界：Enum 值、反射字段值以 object 接入原递归校验；Mapping/Sequence 元素显式声明为待校验对象；dataclass 字段仅投影实际使用的 name 协议；排序结果仍沿用原 sorted，之后逐项递归校验。没有新增 cast/ignore，也没有取消校验。保留字段名预算检查先于属性读取的执行顺序。
+- `_CLASS_TYPE` 是原 builtin type 对象的注解别名，用于避开 type 元类未参数化产生的 Any，不改变 class 检测。原 is_dataclass 判断顺序保持不变。
+- 补齐整个 JSON 契约测试的参数/返回/递归容器类型。增加字符串数组的正反向边界：元组/标量/错误元素拒绝，空数组及 Unicode 保持，不复用输入数组。未修改既有断言或预期。
+
+| 实际命令（均仓库根目录） | 退出码 | 结果与限制 |
+| --- | --- | --- |
+| `python -m pytest -q tests/test_json_value_contract.py --tb=short` | 0 | 修改前行为基线 12 passed，无 skip；不是 bug 的失败复现 |
+| `python -m mypy codey/types/json_value.py codey/types/__init__.py codey/utils/object_fields.py tests/test_json_value_contract.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` | 1 → 0 | 基线 25 条；中间依次 1 条、2 条、0 条；恢复原判断顺序后的最终检查仍 4 文件通过。错误均为类型诊断，不冒充行为 bug |
+| `python -m pytest -q tests/test_json_value_contract.py tests/test_json_codec.py tests/test_fact_checkpoint_payload_boundaries.py --tb=short` | 0 | 修改后 29 passed，无 skip；JSON 直接合同、协议 codec 和已治理缓存边界 |
+| `pyrefly check codey/types/json_value.py codey/types/__init__.py codey/utils/object_fields.py tests/test_json_value_contract.py --python-version 3.11` | 0 | 0 errors |
+| `ty check codey/types/json_value.py codey/types/__init__.py codey/utils/object_fields.py tests/test_json_value_contract.py --python-version 3.11` | 0 | All checks passed |
+| `python -m ruff check codey/types/json_value.py codey/types/__init__.py codey/utils/object_fields.py tests/test_json_value_contract.py` | 0 | All checks passed |
+| `python -m tools.kernel_type_precision_gate` | 0 | 精度/逃逸门禁通过，未更改保护范围 |
+| `python -m mypy codey --python-version 3.11` | 0 | 736 生产文件通过 |
+| `pyrefly check codey --python-version 3.11` | 0 | 0 errors，仍有既存 35 suppressed / 164 warnings；不声称已消除 |
+| `ty check codey --python-version 3.11` | 0 | All checks passed |
+| `git -c core.safecrlf=false diff --check` | 0 | 通过；无无关格式化 |
+
+当前：**1 / 288 批完成，3 / 974 个生产文件验收完成**。本轮实际执行 3 个不同 pytest 文件；历史的 32 文件记录仍单独保留，不能直接相加。未覆盖其他生产区域和大多数测试。下一批 Q002（5 个输出/数值工具文件），不反复重新打开 Q001。

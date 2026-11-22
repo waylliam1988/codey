@@ -1335,13 +1335,24 @@
         "codey/utils/object_fields.py"
       ],
       "id": "Q001",
-      "status": "in_progress",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/types/json_value.py",
+        "codey/types/__init__.py",
+        "codey/utils/object_fields.py"
+      ],
+      "verified_files": [
+        "codey/types/json_value.py",
+        "codey/types/__init__.py",
+        "codey/utils/object_fields.py"
+      ],
       "candidate_test_count": 202,
       "tests": [
-        "tests/test_json_value_contract.py"
-      ]
+        "tests/test_json_value_contract.py",
+        "tests/test_json_codec.py",
+        "tests/test_fact_checkpoint_payload_boundaries.py"
+      ],
+      "result": "type boundaries narrowed without casts/ignores; whole-file strict Any audit passed; 29 tests passed; production checkers passed; no admitted business bug or deletion"
     },
     {
       "responsibility": "Text limits and error projection",
@@ -1353,7 +1364,7 @@
         "codey/utils/__init__.py"
       ],
       "id": "Q002",
-      "status": "not_started",
+      "status": "in_progress",
       "reviewed_files": [],
       "verified_files": [],
       "candidate_test_count": 9,
