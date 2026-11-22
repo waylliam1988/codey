@@ -299,3 +299,27 @@ Q003 最新全树核验（737 个生产 Python 文件，三个 checker 串行）
 范围更新：检测到外部新增的 `codey/operations/browser_result_evidence.py`，将其明确加入 Q084，待审查、待 Any 治理；该批从 8 扩为 9 个紧密相关的 browser 完成/后续证据文件，仍符合用户每批约 3～10 文件的范围。总范围由 974 更新为 **975 个生产/工具源码文件**，批次数保持 288，没有删除旧范围或掩盖未完成项。去重与归属断言已运行通过，当前 codey 的全部 737 个 Python 文件都有归属。外部新增测试也列入验证支持，不计为已执行。
 
 Q003 自有三个生产文件和深入检查的关联测试完成 Any/行为验证；独立于已定位的跨区域失败，可以结项并提交类型收敛。当前 **3 / 288 批完成、11 / 975 个生产文件验收完成**，没有删除或强行合并不能证明的代码。下一批 Q004：原子存储、路径及其历史测试 Any 债务。总 goal 继续 active，所有剩余区域、五个测试失败和当前全树类型错误仍在记录/队列中。
+
+### Q004 已完成：存储/路径及历史测试类型债务
+
+- Q003 类型提交：`3d76583c`。完整检查 atomic_io、local_store、storage/__init__、workspace/paths、utils/change_paths 五个生产文件，以及 atomic_io/local_store/workspace_paths 三个测试文件。历史 bug 修复仍通过；没有新增准入充分的 bug、可证明死代码或语义相同且值得合并的实现，不额外修改生产代码。
+- 生产文件强 Any 检查通过。测试基线有 18 条 Any 诊断，集中于 unittest 的容器上下文、os.fdopen 重载、既有 skipIf 泛型、动态 OS 标志和 JSON 解析结果；现已清零，整个八文件范围通过额外禁止 Any 表达式/显式 Any/动态装饰器的 mypy 检查。
+- 测试预期值和原断言不变；stdlib 二进制 fdopen 绑定精确签名，JSON 未验证结果保留为 object 后由原完整等式断言验证。O_NOFOLLOW 先检查整数类型再做原位运算。
+- 原两个 skipIf 使用相同函数、相同条件、相同理由，只将返回装饰器保存为具体测试签名的变量；没有增加 skip。pytest 原有 4 个平台跳过的数量、用例和理由均保持；native unittest 也实际复核，仍有原 2 个 POSIX 模式跳过。
+
+| 实际命令 | 退出码 | 结果 |
+| --- | --- | --- |
+| `python -m pytest -q tests/test_atomic_io.py tests/test_local_store.py tests/test_workspace_paths.py tests/test_atomic_write_transient_windows_sharing_violations.py tests/test_strict_store_loads.py --tb=short` | 0 | 修改前 53 passed、4 skipped、6 subtests passed |
+| 同一 pytest 命令增加 `-rs` | 0 | 修改后仍 53 passed、4 skipped、6 subtests passed；两个 Windows 无 O_NOFOLLOW、两个 POSIX 权限位用例 |
+| `python -m mypy codey/storage/atomic_io.py codey/storage/local_store.py codey/storage/__init__.py codey/workspace/paths.py codey/utils/change_paths.py tests/test_atomic_io.py tests/test_local_store.py tests/test_workspace_paths.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` | 1 → 0 | 修改前 18 errors in 3 files；修改后八个完整文件通过 |
+| `pyrefly check codey/storage/atomic_io.py codey/storage/local_store.py codey/storage/__init__.py codey/workspace/paths.py codey/utils/change_paths.py tests/test_atomic_io.py tests/test_local_store.py tests/test_workspace_paths.py --python-version 3.11` | 0 | 0 errors，2 warnings not shown；不将其说成无警告 |
+| 同一 Pyrefly 命令增加 `--output-format json` | 0 | errors 数组为空，仍报告两个未展示 warning |
+| 同一 Pyrefly 命令增加 `--min-severity warn` | 1 | 实际展示两个 missing-attribute-patch-target：原有条件 mock 的 os.fchmod 在 Windows 不存在。代码先 hasattr 再添加 mock，实际测试不进入该分支，属于平台静态目标诊断；未增加 ignore 或改变 mock 目标。展示 warning 的检查退出 1 如实保留 |
+| `ty check codey/storage/atomic_io.py codey/storage/local_store.py codey/storage/__init__.py codey/workspace/paths.py codey/utils/change_paths.py tests/test_atomic_io.py tests/test_local_store.py tests/test_workspace_paths.py --python-version 3.11` | 0 | 通过 |
+| `python -m ruff check codey/storage/atomic_io.py codey/storage/local_store.py codey/storage/__init__.py codey/workspace/paths.py codey/utils/change_paths.py tests/test_atomic_io.py tests/test_local_store.py tests/test_workspace_paths.py` | 0 | 通过 |
+| `python -m unittest -q tests.test_atomic_io` | 0 | Ran 23 tests，OK（skipped=2）；不是 23 个全部执行通过 |
+| `git -c core.safecrlf=false diff --check -- tests/test_atomic_io.py tests/test_local_store.py tests/test_workspace_paths.py` | 0 | 通过 |
+
+本批只有测试类型改动，没有使已通过的生产调用方测试失效，不机械扩大/重复此前验证。全树最新结果仍为 Q003 的外部源码错误，未凭本批定向通过宣称修复它们。当前 **4 / 288 批完成，16 / 975 个生产文件验收完成**；本轮累计执行 **28 个不同 pytest 文件**，knowledge 仍只算一个精确用例的覆盖。历史六测试文件的 Any 债务中，本批三个文件已完成；coldstart/project_facts 等其余文件及 conftest/kernel_runtime 义务仍保留。
+
+下一批固定为 Q005、Q006 的顶层包版本和启动/环境入口，再按清单进入 agents/app。不重新打开已完成基础工具批次，除非有新增复现或后续依赖变化证据；Q189 的两项进程夹具问题、Q096/Q106/Q161 的三项研究失败及外部全树类型错误继续留在所属队列。总 goal 未完成，继续 active。

@@ -60,7 +60,9 @@ class WorkspacePathTests(unittest.TestCase):
 
         self.assertTrue(truncated)
         self.assertEqual(seen, 4)
-        self.assertEqual([entry.name for entry in entries], ["file_0.py", "file_1.py", "file_2.py"])
+        names: list[str] = [entry.name for entry in entries]
+        expected: list[str] = ["file_0.py", "file_1.py", "file_2.py"]
+        self.assertEqual(names, expected)
 
     def test_bounded_directory_entries_can_skip_hidden_entries(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -71,7 +73,9 @@ class WorkspacePathTests(unittest.TestCase):
             entries, truncated = bounded_directory_entries(root, 10, include_hidden=False)
 
         self.assertFalse(truncated)
-        self.assertEqual([entry.name for entry in entries], ["app.py"])
+        names: list[str] = [entry.name for entry in entries]
+        expected: list[str] = ["app.py"]
+        self.assertEqual(names, expected)
 
     def test_is_test_path_covers_python_and_javascript_conventions(self) -> None:
         self.assertTrue(is_test_path("tests/test_api.py"))
@@ -144,7 +148,9 @@ class WorkspacePathTests(unittest.TestCase):
 
             with mock.patch.object(os, "open", spy_open):
                 self.assertEqual(path_hash(path), content_hash("hello\n"))
-            self.assertTrue(seen["flags"] & os.O_NOFOLLOW)
+            no_follow: object = os.O_NOFOLLOW
+            assert isinstance(no_follow, int)
+            self.assertTrue(seen["flags"] & no_follow)
 
     def test_no_follow_reader_opens_with_no_follow_flag(self) -> None:
         if not hasattr(os, "O_NOFOLLOW"):
@@ -163,7 +169,9 @@ class WorkspacePathTests(unittest.TestCase):
                 self.assertEqual(
                     read_text_bounded_no_follow(path, max_bytes=64), "hello\n"
                 )
-            self.assertTrue(seen["flags"] & os.O_NOFOLLOW)
+            no_follow: object = os.O_NOFOLLOW
+            assert isinstance(no_follow, int)
+            self.assertTrue(seen["flags"] & no_follow)
 
     def test_no_follow_reader_rechecks_opened_fd_is_regular(self) -> None:
         with tempfile.TemporaryDirectory() as td:

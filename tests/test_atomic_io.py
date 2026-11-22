@@ -6,12 +6,21 @@ import os
 import stat
 import tempfile
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from types import TracebackType
-from typing import BinaryIO, Literal, Self
+from typing import BinaryIO, Literal, Self, TypeAlias
 from unittest import mock
 
 from codey.storage.atomic_io import encode_with_original_eol, write_text_atomic
+
+_AtomicTest: TypeAlias = Callable[["AtomicWriteTests"], None]
+_skip_windows_executable_bits: Callable[[_AtomicTest], _AtomicTest] = unittest.skipIf(
+    os.name == "nt", "POSIX executable bits are not stable on Windows",
+)
+_skip_windows_permission_bits: Callable[[_AtomicTest], _AtomicTest] = unittest.skipIf(
+    os.name == "nt", "POSIX permission bits are not supported on Windows",
+)
 
 
 class AtomicWriteTests(unittest.TestCase):
@@ -24,7 +33,9 @@ class AtomicWriteTests(unittest.TestCase):
             target = directory / "manifest.json"
             write_text_atomic(target, "saved")
             self.assertEqual(target.read_text(encoding="utf-8"), "saved")
-            self.assertEqual(list(directory.iterdir()), [target])
+            actual: list[Path] = list(directory.iterdir())
+            expected: list[Path] = [target]
+            self.assertEqual(actual, expected)
 
     def test_long_valid_filename_does_not_make_the_staging_filename_invalid(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -34,7 +45,9 @@ class AtomicWriteTests(unittest.TestCase):
             path.write_bytes(b"before")
             write_text_atomic(path, "after")
             self.assertEqual(path.read_bytes(), b"after")
-            self.assertEqual(list(root.iterdir()), [path])
+            actual: list[Path] = list(root.iterdir())
+            expected: list[Path] = [path]
+            self.assertEqual(actual, expected)
 
     def test_write_is_atomic_and_replaces_content(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -45,7 +58,8 @@ class AtomicWriteTests(unittest.TestCase):
 
             self.assertEqual(path.read_text(encoding="utf-8"), "after\n")
             leftovers = [item.name for item in Path(td).iterdir() if item.name != "app.py"]
-            self.assertEqual(leftovers, [])
+            expected: list[str] = []
+            self.assertEqual(leftovers, expected)
 
     def test_creates_missing_parents(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -103,7 +117,7 @@ class AtomicWriteTests(unittest.TestCase):
 
         self.assertEqual(encoded, b"line1\nline2\n")
 
-    @unittest.skipIf(os.name == "nt", "POSIX executable bits are not stable on Windows")
+    @_skip_windows_executable_bits
     def test_existing_file_mode_is_preserved_on_replace(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             script = Path(td, "run.sh")
@@ -125,7 +139,7 @@ class AtomicWriteTests(unittest.TestCase):
             target = Path(td, "big.py")
             target.write_bytes(b"a\n" * 100 + b"\r\n" + b"b\n" * 100)
             reads: list[int] = []
-            real_fdopen = os.fdopen
+            real_fdopen: Callable[[int, Literal["rb"]], BinaryIO] = os.fdopen
 
             class BoundedReader:
                 def __init__(self, handle: BinaryIO) -> None:
@@ -290,9 +304,11 @@ class AtomicWriteTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td, "data.json")
             write_json_atomic(path, {"key": "value"})
-            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"key": "value"})
+            actual: object = json.loads(path.read_text(encoding="utf-8"))
+            expected: dict[str, str] = {"key": "value"}
+            self.assertEqual(actual, expected)
 
-    @unittest.skipIf(os.name == "nt", "POSIX permission bits are not supported on Windows")
+    @_skip_windows_permission_bits
     def test_explicit_mode_is_applied_to_file(self) -> None:
         from codey.storage.atomic_io import write_json_atomic
 

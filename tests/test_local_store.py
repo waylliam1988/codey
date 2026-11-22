@@ -28,8 +28,11 @@ class LocalStoreTests(unittest.TestCase):
             local_store.write_json_atomic(path, {"value": 1})
             local_store.write_json_atomic(path, {"value": 2})
 
-            self.assertEqual(local_store.read_json(path), {"value": 2})
-            self.assertEqual(list(path.parent.glob("*.tmp")), [])
+            expected: dict[str, int] = {"value": 2}
+            leftovers: list[Path] = list(path.parent.glob("*.tmp"))
+            empty: list[Path] = []
+            self.assertEqual(local_store.read_json(path), expected)
+            self.assertEqual(leftovers, empty)
 
     def test_failed_replace_keeps_previous_value_and_removes_temporary_file(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -39,8 +42,11 @@ class LocalStoreTests(unittest.TestCase):
             with mock.patch.object(os, "replace", side_effect=OSError("busy")), self.assertRaisesRegex(OSError, "busy"):
                 local_store.write_json_atomic(path, {"value": "new"})
 
-            self.assertEqual(local_store.read_json(path), {"value": "old"})
-            self.assertEqual(list(path.parent.glob("*.tmp")), [])
+            expected: dict[str, str] = {"value": "old"}
+            leftovers: list[Path] = list(path.parent.glob("*.tmp"))
+            empty: list[Path] = []
+            self.assertEqual(local_store.read_json(path), expected)
+            self.assertEqual(leftovers, empty)
 
     def test_invalid_or_oversized_json_is_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -87,7 +93,8 @@ class LocalStoreTests(unittest.TestCase):
             data = '{"value":"中文"}'.encode()
             path.write_bytes(data)
 
-            self.assertEqual(local_store.read_json_strict(path, max_bytes=len(data)), {"value": "中文"})
+            expected: dict[str, str] = {"value": "中文"}
+            self.assertEqual(local_store.read_json_strict(path, max_bytes=len(data)), expected)
             self.assertIsNone(local_store.read_json(path, max_bytes=len(data) - 1))
             with self.assertRaisesRegex(local_store.StoreCorruption, "too large"):
                 local_store.read_json_strict(path, max_bytes=len(data) - 1)
@@ -109,7 +116,8 @@ class LocalStoreTests(unittest.TestCase):
 
             ok = Path(td) / "ok.json"
             ok.write_text('{"value":1}', encoding="utf-8")
-            self.assertEqual(local_store.read_json_strict(ok), {"value": 1})
+            expected: dict[str, int] = {"value": 1}
+            self.assertEqual(local_store.read_json_strict(ok), expected)
 
     def test_corrupt_backup_never_overwrites_previous_backup(self) -> None:
         with tempfile.TemporaryDirectory() as td:
