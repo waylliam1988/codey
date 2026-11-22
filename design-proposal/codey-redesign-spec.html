@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Codey UI/UX 优化方案与视觉规范 — 团队评审稿</title>
+<style>
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Cascadia Code', 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+
+  --bg-rail:   #141416;
+  --bg:        #18181b;
+  --bg-2:      #1d1d20;
+  --panel:     #212125;
+  --panel-2:   #27272c;
+  --hover:     rgba(255,255,255,0.055);
+  --active:    rgba(255,255,255,0.09);
+  --border:    rgba(255,255,255,0.085);
+  --border-2:  rgba(255,255,255,0.048);
+  --border-hi: rgba(255,255,255,0.15);
+  --inset-hi:  inset 0 1px 0 rgba(255,255,255,0.035);
+
+  --text:      #ededf0;
+  --text-dim:  #a1a1aa;
+  --muted:     #71717a;
+  --faint:     #4b4b54;
+
+  --green-rgb: 120, 165, 139;
+  --green:     #78a58b;
+  --green-hi:  #acd1b9;
+  --green-soft:rgba(120,165,139,0.14);
+  --sel-bg:    #334d3f;
+
+  --err-text:  #dc9191;
+  --err-soft:  rgba(214,138,138,0.12);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.7 var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--sel-bg); color: var(--text); }
+a { color: inherit; }
+
+/* Sticky Top Navigation */
+.top-nav {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(20, 20, 22, 0.88);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.top-nav-inner {
+  max-width: 1080px; margin: 0 auto; padding: 0 24px;
+  height: 54px; display: flex; align-items: center; gap: 18px;
+}
+.brand {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 550; font-size: 13.5px; white-space: nowrap;
+}
+.brand .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+.nav-links {
+  display: flex; align-items: center; gap: 4px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.nav-links::-webkit-scrollbar { display: none; }
+.nav-links a {
+  padding: 5px 10px; border-radius: 6px;
+  font-size: 12.5px; color: var(--text-dim); text-decoration: none; white-space: nowrap;
+  transition: background .12s, color .12s;
+}
+.nav-links a:hover { background: var(--hover); color: var(--text); }
+.nav-cta {
+  margin-left: auto; flex-shrink: 0;
+  padding: 6px 13px; border-radius: 7px;
+  background: var(--text); color: #141416;
+  font-size: 12.5px; font-weight: 500; text-decoration: none;
+  transition: opacity .12s;
+}
+.nav-cta:hover { opacity: 0.9; }
+
+/* Main Content Container */
+.page {
+  max-width: 1080px; margin: 0 auto;
+  padding: 44px 24px 96px;
+}
+
+/* Hero */
+.hero {
+  padding-bottom: 36px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 44px;
+}
+.eyebrow {
+  font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.9px;
+  text-transform: uppercase; color: var(--green-hi);
+  margin-bottom: 10px;
+}
+.hero h1 {
+  margin: 0 0 12px; font-size: 28px; font-weight: 550; letter-spacing: -0.3px; line-height: 1.3;
+}
+.hero p {
+  margin: 0; max-width: 760px; color: var(--text-dim); font-size: 14.5px; line-height: 1.75;
+}
+.hero-stats {
+  display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px;
+  margin-top: 26px;
+}
+.stat-card {
+  background: var(--panel); border: 1px solid var(--border);
+  box-shadow: var(--inset-hi); border-radius: 10px; padding: 14px 16px;
+}
+.stat-card strong { display: block; font-size: 13.5px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
+.stat-card span { display: block; font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+
+/* Sections */
+.sec { margin-bottom: 56px; scroll-margin-top: 72px; }
+.sec-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  margin-bottom: 18px;
+}
+.sec-head h2 { margin: 0; font-size: 19px; font-weight: 550; letter-spacing: -0.2px; }
+.sec-head .tag { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.sec-lead { margin: 0 0 22px; color: var(--text-dim); font-size: 13.8px; max-width: 780px; }
+
+/* Principles Matrix (Keep vs Evolve) */
+.two-col { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
+.card {
+  background: var(--panel); border: 1px solid var(--border);
+  box-shadow: var(--inset-hi); border-radius: 11px; padding: 18px 20px;
+}
+.card h3 {
+  margin: 0 0 12px; font-size: 14px; font-weight: 500;
+  display: flex; align-items: center; gap: 8px;
+}
+.pill-tag {
+  font-family: var(--font-mono); font-size: 10.5px; padding: 2px 7px; border-radius: 99px;
+}
+.pill-tag.keep { background: var(--green-soft); color: var(--green-hi); }
+.pill-tag.evolve { background: rgba(255,255,255,0.07); color: var(--text); }
+.clean-list { margin: 0; padding-left: 18px; color: var(--text-dim); font-size: 13.2px; }
+.clean-list li { margin: 7px 0; }
+.clean-list strong { color: var(--text); font-weight: 500; }
+
+/* Color & Surface Swatches */
+.swatch-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 10px;
+}
+.swatch {
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 9px; padding: 10px; cursor: pointer; text-align: left;
+  transition: border-color .14s, transform .14s;
+}
+.swatch:hover { border-color: var(--border-hi); transform: translateY(-1px); }
+.swatch-chip {
+  height: 40px; border-radius: 6px; border: 1px solid var(--border);
+  margin-bottom: 9px;
+}
+.swatch-name { font-family: var(--font-mono); font-size: 11.8px; color: var(--text); display: block; }
+.swatch-val { font-family: var(--font-mono); font-size: 11px; color: var(--muted); display: block; margin-top: 1px; }
+.swatch-use { font-size: 11.5px; color: var(--text-dim); display: block; margin-top: 4px; }
+
+/* Before vs After Proposal Cards */
+.proposal {
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden; margin-bottom: 22px;
+}
+.proposal-head {
+  padding: 15px 20px; border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,0.015);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+}
+.proposal-num {
+  font-family: var(--font-mono); font-size: 11px; color: var(--green-hi);
+  background: var(--green-soft); padding: 2px 8px; border-radius: 5px;
+  margin-right: 8px;
+}
+.proposal-title { font-size: 15px; font-weight: 500; color: var(--text); }
+.prio {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+  border: 1px solid var(--border); padding: 2px 8px; border-radius: 99px;
+}
+.ba-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+}
+.ba-col { padding: 18px 20px; }
+.ba-col + .ba-col { border-left: 1px solid var(--border); background: rgba(120,165,139,0.02); }
+.ba-label {
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.9px;
+  text-transform: uppercase; margin-bottom: 10px; display: block;
+}
+.ba-label.before { color: var(--muted); }
+.ba-label.after { color: var(--green-hi); }
+.ba-col p { margin: 0 0 12px; font-size: 13px; color: var(--text-dim); line-height: 1.65; }
+.ba-col ul { margin: 0; padding-left: 17px; font-size: 12.8px; color: var(--text-dim); }
+.ba-col li { margin: 5px 0; }
+
+/* Live Miniature UI Demos Inside Spec */
+.mini-stage {
+  margin-top: 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 12px 14px;
+}
+.mini-topbar {
+  display: flex; align-items: center; gap: 8px;
+  padding-bottom: 9px; border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.mini-ws-pills {
+  margin-left: auto; display: inline-flex; gap: 2px; padding: 2px;
+  border-radius: 6px; border: 1px solid var(--border-2); background: rgba(255,255,255,0.02);
+}
+.mini-ws-pills span {
+  padding: 2px 7px; border-radius: 4px; font-size: 11px; color: var(--text-dim);
+}
+.mini-ws-pills span.on { background: var(--active); color: var(--text); }
+.mini-ws-pills b {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  color: var(--green-hi); background: var(--green-soft); padding: 0 5px; border-radius: 99px; margin-left: 3px;
+}
+
+.mini-approval {
+  background: var(--panel); border: 1px solid var(--border-hi);
+  border-left: 2px solid var(--green); border-radius: 8px; padding: 10px 12px;
+}
+.mini-code {
+  background: var(--bg-rail); border: 1px solid var(--border-2); border-radius: 6px;
+  padding: 7px 10px; margin: 7px 0; font-family: var(--font-mono); font-size: 11.5px; color: var(--text);
+}
+.mini-btn-row { display: flex; justify-content: flex-end; gap: 6px; }
+.mini-btn {
+  padding: 4px 10px; border-radius: 5px; font-size: 11.5px;
+  border: 1px solid var(--border-hi); color: var(--text-dim);
+}
+.mini-btn.pri { background: var(--text); color: #141416; border-color: var(--text); font-weight: 500; }
+
+/* Component State Matrix */
+.matrix {
+  display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px;
+}
+.m-cell {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.m-label { font-family: var(--font-mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.7px; }
+.m-demo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+.ctx-chip-demo {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 6px; font-size: 11.8px; color: var(--text-dim);
+  background: rgba(255,255,255,0.03);
+}
+.ctx-chip-demo.on { background: var(--green-soft); color: var(--text); }
+.dot-g { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+.dot-m { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+
+/* Rollout Roadmap Table */
+.roadmap-table {
+  width: 100%; border-collapse: collapse;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  font-size: 13px;
+}
+.roadmap-table th, .roadmap-table td {
+  padding: 12px 15px; border-bottom: 1px solid var(--border-2); text-align: left; vertical-align: top;
+}
+.roadmap-table th {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.7px;
+  text-transform: uppercase; color: var(--muted); background: rgba(255,255,255,0.02);
+}
+.roadmap-table tr:last-child td { border-bottom: 0; }
+.roadmap-table code {
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--green-hi);
+  background: var(--green-soft); padding: 1px 5px; border-radius: 4px;
+}
+
+.footer-cta {
+  margin-top: 48px; padding: 26px 28px;
+  background: var(--panel); border: 1px solid var(--border-hi);
+  border-radius: 12px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+}
+.footer-cta h3 { margin: 0 0 4px; font-size: 16px; font-weight: 500; }
+.footer-cta p { margin: 0; font-size: 13px; color: var(--text-dim); }
+
+.toast {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+  background: var(--panel-2); border: 1px solid var(--border-hi);
+  color: var(--text); padding: 7px 14px; border-radius: 8px; font-size: 12px;
+  opacity: 0; pointer-events: none; transition: opacity .16s;
+}
+.toast.show { opacity: 1; }
+
+@media (max-width: 820px) {
+  .hero-stats, .two-col, .ba-grid, .matrix { grid-template-columns: 1fr; }
+  .ba-col + .ba-col { border-left: 0; border-top: 1px solid var(--border); }
+}
+</style>
+</head>
+<body>
+
+<nav class="top-nav">
+  <div class="top-nav-inner">
+    <div class="brand"><span class="dot"></span>Codey UI/UX 改造方案</div>
+    <div class="nav-links">
+      <a href="#principles">继承与演进</a>
+      <a href="#tokens">色板与层次</a>
+      <a href="#proposals">6 大核心改版</a>
+      <a href="#matrix">组件状态矩阵</a>
+      <a href="#roadmap">分阶段落地</a>
+    </div>
+    <a class="nav-cta" href="codey-redesign-app.html">打开完整交互原型 →</a>
+  </div>
+</nav>
+
+<main class="page">
+
+  <!-- HERO -->
+  <header class="hero">
+    <div class="eyebrow">Design Review · Based on DESIGN.md &amp; frontend/src Audit</div>
+    <h1>让 Codey 更精致、更顺手，同时守住“安静的本地 IDE”灵魂</h1>
+    <p>
+      本方案基于对当前 <code>frontend/</code> 实际代码与 <code>DESIGN.md</code> 规范的全面梳理，针对视觉层次偏平、右侧工作区入口隐蔽且三层头冗余、过程流与审批辨识度不足、Settings 嵌套过深等 6 类高频痛点提出系统化升级。完整交互效果可随时点击右上角进入可操作原型体验。
+    </p>
+    <div class="hero-stats">
+      <div class="stat-card">
+        <strong>保留 100% 品牌气质</strong>
+        <span>纯暗黑单色体系 + 唯一鼠尾草绿族、英文 UI Chrome、字符涟漪空首页、零花哨徽章。</span>
+      </div>
+      <div class="stat-card">
+        <strong>空间层次立体化</strong>
+        <span>4 级深灰明度阶梯 + 半透明发丝描边，告别“灰块贴灰块”的扁平观感。</span>
+      </div>
+      <div class="stat-card">
+        <strong>高频面板一键直达</strong>
+        <span>消除右侧面板双层标题冗余，Files / Changes / Research 顶栏直达且保留改动计数。</span>
+      </div>
+      <div class="stat-card">
+        <strong>安全与配置更清晰</strong>
+        <span>Shell 审批聚焦边界、Restore 内联二次确认、Settings 双栏平铺告别套娃。</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 1. PRINCIPLES -->
+  <section class="sec" id="principles">
+    <div class="sec-head">
+      <h2>一、相对 DESIGN.md：哪些坚定保留，哪些适度突破</h2>
+      <span class="tag">Alignment</span>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <h3><span class="pill-tag keep">坚定保留</span> Codey 的识别基因</h3>
+        <ul class="clean-list">
+          <li><strong>克制单色 + 唯一鼠尾草绿</strong>：绝不引入蓝/紫主按钮、渐变卡片、彩色状态胶囊或 Emoji。</li>
+          <li><strong>De-bubbled AI 回答</strong>：AI 正文无外框直接落于画布，保障长技术内容和代码块的阅读流。</li>
+          <li><strong>字符涟漪空首页（Character Pond）</strong>：空对话页保持零营销文案，鼠标划过泛起鼠尾草绿字符波纹，发送首条消息时输入框丝滑沉底。</li>
+          <li><strong>绿色在线圆点 &amp; 知识图谱</strong>：模型选择器的在线圆点、Research Graph 绿节点与悬浮高亮连线、波浪刻度导航（Tick Rail）全部保留并精细化。</li>
+          <li><strong>安全边界与英文 Chrome</strong>：Shell 审批、右键引用、只读事实收据（Run Details）全部沿用原语义。</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="pill-tag evolve">适度突破</span> 提升颜值与易用性的关键调整</h3>
+        <ul class="clean-list">
+          <li><strong>半透明发丝线替代死灰实线</strong>：用 <code>rgba(255,255,255,0.085)</code> 与微弱顶部高光替代 <code>#2a2a2a</code>，显著提升暗色精致度。</li>
+          <li><strong>用户消息收敛为右对齐自适应卡片</strong>：避免满宽 760px 灰条把提问和回答混成一团，一眼分清对话角色。</li>
+          <li><strong>顶栏增加 3 个静默快捷入口</strong>：把最高频的 <code>Files / Changes / Research</code> 放到顶栏右侧微胶囊组，不再藏在单一图标里。</li>
+          <li><strong>Composer 上下文微态反馈</strong>：<code>Choose folder</code> 和 <code>Research</code> 增加细微 hover 底色与状态点，让新手一眼看出可点、是否开启。</li>
+          <li><strong>Settings 改双栏平铺</strong>：拆解原版 <code>&lt;details&gt;</code> 嵌套地狱，把 Models / Connections / Appearance / Saved permissions 清晰分 tab，杜绝双 Save 按钮冲突。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. TOKENS -->
+  <section class="sec" id="tokens">
+    <div class="sec-head">
+      <h2>二、演进后的色彩与表面层级体系</h2>
+      <span class="tag">点击色块复制 CSS Token</span>
+    </div>
+    <p class="sec-lead">
+      沿用 <code>DESIGN.md</code> 的黑灰白 + <code>#78a58b</code> 鼠尾草绿体系，微调底层灰阶的明度差（Rail 更深、Canvas 适中、Panel 微浮），让三栏空间不靠粗边框也能自然分层。
+    </p>
+    <div class="swatch-grid" id="swatch-grid"></div>
+  </section>
+
+  <!-- 3. 6 CORE PROPOSALS -->
+  <section class="sec" id="proposals">
+    <div class="sec-head">
+      <h2>三、6 大核心 UI/UX 改造详述（Before vs After）</h2>
+      <span class="tag">Core Redesign</span>
+    </div>
+
+    <!-- Proposal 1 -->
+    <article class="proposal">
+      <div class="proposal-head">
+        <div><span class="proposal-num">01</span><span class="proposal-title">三栏表面层次 &amp; 对话视觉节拍</span></div>
+        <span class="prio">P0 · 纯 CSS 可落地</span>
+      </div>
+      <div class="ba-grid">
+        <div class="ba-col">
+          <span class="ba-label before">现状问题 (Before)</span>
+          <p>侧栏 <code>#1c1c1c</code>、主画布 <code>#181818</code>、卡片 <code>#202020</code> 亮度差距微弱，且用户消息占满整行 760px 宽度，快速滚动长对话时很难用余光定位“我上一句问了什么”。</p>
+          <ul>
+            <li>全宽灰底用户气泡在单句短提问时显得笨重空旷。</li>
+            <li>多轮对话间缺少明确的视觉锚点，阅读容易疲劳。</li>
+          </ul>
+        </div>
+        <div class="ba-col">
+          <span class="ba-label after">优化方案 (After)</span>
+          <p>确立 <strong>Rail (#141416) → Canvas (#18181b) → Panel (#212125)</strong> 三级纵深；用户消息改为<strong>右对齐、自适应内容宽度（max 86%）</strong>的克制圆角卡片，带微弱发丝描边和顶部 1px 高光。</p>
+          <ul>
+            <li>操作行（Copy / Edit / Fork）保留在卡片外下方，共享连续 hover 热区，移入不闪烁。</li>
+            <li>AI 回复继续无气泡落于画布，长文、代码块与文件链接（柔和绿底）层次清晰。</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+
+    <!-- Proposal 2 -->
+    <article class="proposal">
+      <div class="proposal-head">
+        <div><span class="proposal-num">02</span><span class="proposal-title">右侧工作区：直达入口、去冗余头与 Restore 防误触</span></div>
+        <span class="prio">P0 · 高频易用性提升</span>
+      </div>
+      <div class="ba-grid">
+        <div class="ba-col">
+          <span class="ba-label before">现状问题 (Before)</span>
+          <p>顶栏只有一个通用“侧栏开关”图标，用户不知道当前有几个改动文件，也得反复点 <code>+</code> 菜单找 Research / Changes / Review。同时右侧打开后出现“Tab 栏 + 抽屉头 + 子标签”三层叠罗汉，挤占代码 diff 高度。</p>
+        </div>
+        <div class="ba-col">
+          <span class="ba-label after">优化方案 (After)</span>
+          <p>顶栏右侧增加安静的单色快捷组（<code>Files</code> / <code>Changes 2</code> / <code>Research</code>），其余次高频面板（Review / Local context / History）留在 <code>+</code> 菜单和 <code>Ctrl+K</code>；右侧面板内部将标题与操作合并为单行 36px 紧凑子栏；点击 Snapshot <code>Restore</code> 展开内联二次确认条，防止误点覆盖代码。</p>
+          <div class="mini-stage">
+            <div class="mini-topbar">
+              <span style="color:var(--muted);">codey</span><span style="color:var(--faint);">/</span><span>Fix SSE cursor</span>
+              <div class="mini-ws-pills">
+                <span>Files</span>
+                <span class="on">Changes<b>2</b></span>
+                <span>Research</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- Proposal 3 -->
+    <article class="proposal">
+      <div class="proposal-head">
+        <div><span class="proposal-num">03</span><span class="proposal-title">过程流 Timeline、Shell 审批焦点与 Steering 纠偏</span></div>
+        <span class="prio">P0 · 核心闭环体验</span>
+      </div>
+      <div class="ba-grid">
+        <div class="ba-col">
+          <span class="ba-label before">现状问题 (Before)</span>
+          <ul>
+            <li>展开后的 <code>.process-block</code> 工具行全部是等宽灰字，很难一眼分辨 read / edit / shell。</li>
+            <li>Shell 审批卡片和普通代码块外观太接近，任务暂停等批准时不够醒目；Split Button 下拉菜单层级较弱。</li>
+            <li>运行中追加的消息队列（<code>.pending-inputs</code>）缺乏“正在纠偏当前运行”的语义提示。</li>
+          </ul>
+        </div>
+        <div class="ba-col">
+          <span class="ba-label after">优化方案 (After)</span>
+          <ul>
+            <li><strong>结构化时间轴</strong>：摘要行增加耗时（如 <code>Worked · read 3 · edited 2 · 14s</code>），展开后按动词左对齐，编辑行直接带红绿 <code>+18 −4</code> 且点击直达右侧 Diff。</li>
+            <li><strong>聚焦式审批卡</strong>：左侧加 2px 鼠尾草绿语义边界 + 终端图标 + 深色 <code>$ cmd</code> 独立区，右下方明确区分 <code>Deny</code> 与高对比 <code>Allow once ▾</code>。</li>
+            <li><strong>Steering 队列条</strong>：运行中在输入框上方显示带 <code>STEERING</code> 标识的轻量条，支持即时删除/编辑。</li>
+          </ul>
+          <div class="mini-stage">
+            <div class="mini-approval">
+              <div style="display:flex;justify-content:space-between;font-size:12px;">
+                <strong style="font-weight:500;">Run this command?</strong>
+                <span style="font-family:var(--font-mono);font-size:11px;color:var(--muted);">D:\codey</span>
+              </div>
+              <div class="mini-code">$ npm --prefix frontend run test -- --run</div>
+              <div class="mini-btn-row">
+                <span class="mini-btn">Deny</span>
+                <span class="mini-btn pri">Allow once ▾</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- Proposal 4 -->
+    <article class="proposal">
+      <div class="proposal-head">
+        <div><span class="proposal-num">04</span><span class="proposal-title">Composer 上下文可发现性 &amp; 拖拽附件体验</span></div>
+        <span class="prio">P1 · 新手友好度</span>
+      </div>
+      <div class="ba-grid">
+        <div class="ba-col">
+          <span class="ba-label before">现状问题 (Before)</span>
+          <p>输入框上方的 <code>Choose folder · Research</code> 只是两段无底色无图标的小号灰字，新手容易误以为是静态面包屑而非可切换按钮；同时移除了附件按钮后，用户不知道支持直接拖文件或粘贴截图。</p>
+        </div>
+        <div class="ba-col">
+          <span class="ba-label after">优化方案 (After)</span>
+          <p>保留零冗余按钮的极简理念，但给 <code>Choose folder</code> 加上极细目录图标、给 <code>Research</code> 加上 6px 状态点（激活时柔和鼠尾草绿微亮）；右侧以极低存在感的 11px 提示语告知 <code>Drop files or paste images</code>（运行中自动切换为 <code>Sending steers the active run</code>），拖入时整个输入框亮起绿边反馈。</p>
+        </div>
+      </div>
+    </article>
+
+    <!-- Proposal 5 -->
+    <article class="proposal">
+      <div class="proposal-head">
+        <div><span class="proposal-num">05</span><span class="proposal-title">Settings 弹窗：拆解多层嵌套，清晰分离“选模型”与“配连接”</span></div>
+        <span class="prio">P1 · 信息架构重构</span>
+      </div>
+      <div class="ba-grid">
+        <div class="ba-col">
+          <span class="ba-label before">现状问题 (Before)</span>
+          <p>当前 Settings 全部塞在单列弹窗中：<code>Appearance</code>、<code>Models</code>、<code>Local</code> 里的 <code>Connection</code> 再嵌套 <code>Advanced</code>（三层折叠套娃），且页面底部同时存在 <code>Save connection</code> 和 <code>Save changes</code> 两个保存按钮，用户极易点错或丢失未保存配置。</p>
+        </div>
+        <div class="ba-col">
+          <span class="ba-label after">优化方案 (After)</span>
+          <p>升级为 <strong>680px 紧凑左导右内容双栏弹窗</strong>，明确拆为 4 个扁平分区：</p>
+          <ul>
+            <li><strong>Models</strong>：只管勾选日常下拉菜单里显示哪些网站/本地模型。</li>
+            <li><strong>Connections</strong>：专心配置本地地址、API Key、上下文上限和 Tool calling，独立测试与保存。</li>
+            <li><strong>Appearance</strong>：字体缩放实时预览。</li>
+            <li><strong>Saved permissions</strong>：集中查看与撤销已记住的精确 Shell 授权规则（审批菜单仍可直达此页）。</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+
+    <!-- Proposal 6 -->
+    <article class="proposal">
+      <div class="proposal-head">
+        <div><span class="proposal-num">06</span><span class="proposal-title">Research Handoff、长对话波浪刻度与键盘流闭环</span></div>
+        <span class="prio">P2 · 深度体验打磨</span>
+      </div>
+      <div class="ba-grid">
+        <div class="ba-col">
+          <span class="ba-label before">现状问题 (Before)</span>
+          <p>Research 面板里的 <code>Use in Project</code> 按钮与普通灰字按钮无视觉区分，用户做完研究后容易忽略核心的 <code>Research Brief → Project Writer</code> 交接路径；长对话中快速定位旧提问也不够直觉。</p>
+        </div>
+        <div class="ba-col">
+          <span class="ba-label after">优化方案 (After)</span>
+          <ul>
+            <li>给 <code>Use in Project</code> 赋予克制的柔和绿底（<code>--green-soft</code>），成为 Research 面板唯一的高优先级出口；报告中的引用编号 <code>[1]</code> 可点击直接定位到右侧 Evidence/Sources。</li>
+            <li>保留并微调左侧 <strong>Tick Rail 波浪刻度条</strong>，悬浮展开柔和波浪 + 延迟显示 Q&amp;A 摘要卡片，点击平滑跳转。</li>
+            <li>保留右键选中文本 <code>Quote in reply</code>（直接引用为 Markdown 进入输入框）与 <code>Ctrl+K</code> 命令面板。</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <!-- 4. COMPONENT STATE MATRIX -->
+  <section class="sec" id="matrix">
+    <div class="sec-head">
+      <h2>四、关键组件状态矩阵</h2>
+      <span class="tag">Visual Consistency</span>
+    </div>
+    <div class="matrix">
+      <div class="m-cell">
+        <span class="m-label">Context &amp; Research State</span>
+        <div class="m-demo">
+          <span class="ctx-chip-demo"><span class="dot-m"></span>Research (Off)</span>
+          <span class="ctx-chip-demo on"><span class="dot-g"></span>Research (Active)</span>
+        </div>
+      </div>
+      <div class="m-cell">
+        <span class="m-label">Provider Availability</span>
+        <div class="m-demo">
+          <span class="ctx-chip-demo"><span class="dot-g"></span>DeepSeek · Online</span>
+          <span class="ctx-chip-demo"><span class="dot-m"></span>Claude · Offline</span>
+        </div>
+      </div>
+      <div class="m-cell">
+        <span class="m-label">Buttons (Zero Blue/Purple)</span>
+        <div class="m-demo">
+          <span class="mini-btn pri">Allow once</span>
+          <span class="mini-btn">Deny</span>
+          <span class="mini-btn" style="color:var(--err-text);border-color:rgba(214,138,138,0.35);">Confirm restore</span>
+        </div>
+      </div>
+      <div class="m-cell">
+        <span class="m-label">Diff Highlight Semantics</span>
+        <div class="m-demo" style="flex-direction:column;align-items:stretch;gap:4px;font-family:var(--font-mono);font-size:11.5px;">
+          <div style="background:rgba(120,165,139,0.18);border-left:2px solid var(--green);padding:2px 8px;color:var(--text);"><span style="color:var(--green-hi);margin-right:6px;">+</span>fence.revision === target.revision</div>
+          <div style="background:rgba(214,138,138,0.16);border-left:2px solid #be8282;padding:2px 8px;color:var(--text);"><span style="color:#ebb0b0;margin-right:6px;">−</span>if (this.lastEventId)</div>
+        </div>
+      </div>
+      <div class="m-cell">
+        <span class="m-label">Inline File &amp; Citation</span>
+        <div class="m-demo">
+          <span style="font-family:var(--font-mono);font-size:11.5px;color:var(--green-hi);background:var(--green-soft);padding:1px 6px;border-radius:4px;">frontend/src/sse.ts</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--green-hi);background:var(--green-soft);padding:1px 5px;border-radius:4px;">[1]</span>
+        </div>
+      </div>
+      <div class="m-cell">
+        <span class="m-label">Quiet Steering Notice</span>
+        <div class="m-demo" style="width:100%;">
+          <div style="width:100%;padding:6px 10px;border-radius:6px;background:var(--bg-2);border:1px solid var(--border);border-left:2px solid var(--green);font-size:11.5px;">
+            <span style="font-family:var(--font-mono);font-size:10px;color:var(--green-hi);margin-right:6px;">STEERING</span>Keep patch minimal
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. IMPLEMENTATION ROADMAP -->
+  <section class="sec" id="roadmap">
+    <div class="sec-head">
+      <h2>五、建议的分阶段落地顺序（低风险渐进改造）</h2>
+      <span class="tag">Engineering Plan</span>
+    </div>
+    <table class="roadmap-table">
+      <thead>
+        <tr>
+          <th style="width:90px;">阶段</th>
+          <th style="width:220px;">改动内容</th>
+          <th>涉及文件</th>
+          <th style="width:180px;">预期收益</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Phase 1</strong><br><span style="font-size:11.5px;color:var(--muted);">1–2 天</span></td>
+          <td>更新表面色阶与发丝线 Token、优化用户气泡对齐、Shell 审批卡左侧语义线与 Process 时间轴样式</td>
+          <td><code>frontend/public/assets/tokens.css</code><br><code>frontend/public/assets/app.css</code></td>
+          <td>零业务逻辑风险，整体视觉精致度立竿见影提升 60%</td>
+        </tr>
+        <tr>
+          <td><strong>Phase 2</strong><br><span style="font-size:11.5px;color:var(--muted);">2–3 天</span></td>
+          <td>顶栏增加 Files / Changes / Research 快捷切换组（带改动文件数）、合并右侧面板冗余头部、Restore 内联确认</td>
+          <td><code>frontend/src/workspace.ts</code><br><code>frontend/src/workspace.css</code><br><code>frontend/src/changes_drawer.ts</code></td>
+          <td>大幅减少高频操作点击次数，Diff / Graph 可视面积增加 ~40px</td>
+        </tr>
+        <tr>
+          <td><strong>Phase 3</strong><br><span style="font-size:11.5px;color:var(--muted);">2–3 天</span></td>
+          <td>Settings 弹窗改双栏平铺导航、Composer 上下文行微交互与拖拽高亮反馈、Research Handoff 视觉引导</td>
+          <td><code>frontend/index.html</code><br><code>frontend/src/settings.ts</code><br><code>frontend/src/composer.ts</code></td>
+          <td>彻底消除双保存冲突和配置嵌套困扰，新手上手门槛显著下降</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- BOTTOM CTA -->
+  <div class="footer-cta">
+    <div>
+      <h3>准备好评审交互细节了吗？</h3>
+      <p>在完整交互原型中可以亲自点击：字符涟漪空首页、Shell 审批与 Split 下拉、Research 可拖拽知识图谱、Diff 恢复确认、Settings 双栏弹窗、Fork 弹窗、Ctrl+K 与右键引用回复。</p>
+    </div>
+    <a class="nav-cta" href="codey-redesign-app.html" style="margin-left:0;">进入完整交互原型 →</a>
+  </div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  const swatches = [
+    { name: '--bg-rail',   val: '#141416', use: '左侧栏、代码块底、深层容器' },
+    { name: '--bg',        val: '#18181b', use: '主对话阅读画布' },
+    { name: '--bg-2',      val: '#1d1d20', use: '右侧工作区、输入框主体' },
+    { name: '--panel',     val: '#212125', use: '用户气泡、审批卡片、弹窗浮层' },
+    { name: '--panel-2',   val: '#27272c', use: '嵌套表面、激活标签、命令输出' },
+    { name: '--border',    val: 'rgba(255,255,255,0.085)', use: '主发丝分隔线（替代实灰）' },
+    { name: '--text',      val: '#ededf0', use: '主正文、主按钮填充' },
+    { name: '--text-dim',  val: '#a1a1aa', use: '次要正文、可用按钮、说明文字' },
+    { name: '--green',     val: '#78a58b', use: '在线点、图谱节点、审批语义线' },
+    { name: '--green-hi',  val: '#acd1b9', use: '刻度高亮、文件链接、Diff + 符号' },
+    { name: '--sel-bg',    val: '#334d3f', use: '原生文本选中高亮背景' },
+    { name: '--err-text',  val: '#dc9191', use: '仅用于错误文案与 Diff 删除' },
+  ];
+  const grid = document.getElementById('swatch-grid');
+  const toast = document.getElementById('toast');
+  let timer = 0;
+
+  grid.innerHTML = swatches.map((s) => `
+    <button class="swatch" data-copy="var(${s.name}) /* ${s.val} */" type="button">
+      <div class="swatch-chip" style="background:${s.val};"></div>
+      <span class="swatch-name">${s.name}</span>
+      <span class="swatch-val">${s.val}</span>
+      <span class="swatch-use">${s.use}</span>
+    </button>
+  `).join('');
+
+  grid.querySelectorAll('.swatch').forEach((btn) => {
+    btn.onclick = () => {
+      navigator.clipboard?.writeText(btn.dataset.copy).catch(() => {});
+      toast.textContent = '已复制 ' + btn.dataset.copy;
+      toast.classList.add('show');
+      clearTimeout(timer);
+      timer = setTimeout(() => toast.classList.remove('show'), 1800);
+    };
+  });
+})();
+</script>
+</body>
+</html>

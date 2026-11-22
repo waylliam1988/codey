@@ -1,0 +1,3871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Codey — UI/UX Redesign Interactive Prototype</title>
+<style>
+/* ==========================================================================
+   Codey Redesign Design Tokens
+   Evolved from DESIGN.md: Monochrome Dark IDE + Restrained Sage Green
+   ========================================================================== */
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Cascadia Code', 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  --font-scale: 1;
+
+  /* Refined Neutral Surface Ladder */
+  --bg-rail:     #141416;   /* Left sidebar & chrome shell */
+  --bg:          #18181b;   /* Main reading canvas */
+  --bg-2:        #1d1d20;   /* Composer shell & right workspace */
+  --panel:       #212125;   /* Cards, menus, user bubbles, modals */
+  --panel-2:     #27272c;   /* Nested surfaces, code blocks, outputs */
+  --hover:       rgba(255, 255, 255, 0.055);
+  --active:      rgba(255, 255, 255, 0.09);
+
+  /* Hairline Borders */
+  --border:      rgba(255, 255, 255, 0.085);
+  --border-2:    rgba(255, 255, 255, 0.048);
+  --border-hi:   rgba(255, 255, 255, 0.14);
+  --inset-hi:    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+
+  /* Text Hierarchy (4 Levels, >= 4.5:1 on body/dim) */
+  --text:        #ededf0;
+  --text-dim:    #a1a1aa;
+  --muted:       #71717a;
+  --faint:       #4b4b54;
+
+  /* Single Restrained Sage Green Family */
+  --green-rgb:   120, 165, 139;
+  --green:       rgb(var(--green-rgb));         /* #78a58b */
+  --green-bright:#acd1b9;
+  --green-soft:  rgba(var(--green-rgb), 0.13);
+  --green-ring:  rgba(var(--green-rgb), 0.22);
+  --selection-bg:#334d3f;
+
+  /* Semantic Minimal */
+  --err-rgb:     214, 138, 138;
+  --err-text:    #dc9191;
+  --err-soft:    rgba(var(--err-rgb), 0.12);
+  --diff-add-bg: rgba(var(--green-rgb), 0.18);
+  --diff-add-edge: var(--green);
+  --diff-add-mark: var(--green-bright);
+  --diff-del-bg: rgba(var(--err-rgb), 0.16);
+  --diff-del-edge: #be8282;
+  --diff-del-mark: #ebb0b0;
+
+  /* Radii & Layout */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --sidebar-w: 256px;
+  --workspace-w: 460px;
+  --reading-w: 760px;
+  --topbar-h: 46px;
+  --demo-bar-h: 40px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body {
+  font-family: var(--font-sans);
+  font-size: calc(13px * var(--font-scale));
+  line-height: 1.6;
+  background: var(--bg);
+  color: var(--text);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+}
+::selection { background: var(--selection-bg); color: var(--text); }
+button, input, textarea, select { font-family: inherit; color: inherit; }
+button { background: transparent; border: 0; cursor: pointer; }
+button:focus-visible, [tabindex]:focus-visible { outline: 1px solid var(--text-dim); outline-offset: 2px; }
+input:focus, textarea:focus, select:focus { outline: none; }
+[hidden] { display: none !important; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.11); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+::-webkit-scrollbar-corner { background: transparent; }
+
+svg.ic {
+  width: 15px; height: 15px;
+  stroke: currentColor; fill: none;
+  stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0; display: block;
+}
+svg.ic-sm { width: 13px; height: 13px; }
+svg.ic-lg { width: 17px; height: 17px; }
+
+/* ==========================================================================
+   Prototype Presentation Strip (Collapsible for Pure App View)
+   ========================================================================== */
+.demo-strip {
+  height: var(--demo-bar-h);
+  flex: none;
+  background: #101012;
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 90;
+  font-size: 12px;
+}
+body.demo-hidden .demo-strip { display: none; }
+.demo-badge {
+  display: inline-flex; align-items: center; gap: 7px;
+  color: var(--text); font-weight: 500; white-space: nowrap;
+  padding-right: 10px; border-right: 1px solid var(--border);
+}
+.demo-badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+.demo-tabs {
+  display: flex; align-items: center; gap: 3px;
+  background: rgba(255,255,255,0.035);
+  border: 1px solid var(--border-2);
+  border-radius: 8px; padding: 3px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.demo-tabs::-webkit-scrollbar { display: none; }
+.demo-tab {
+  padding: 4px 10px; border-radius: 5px;
+  font-size: 11.5px; color: var(--text-dim); white-space: nowrap;
+  transition: background .12s, color .12s;
+}
+.demo-tab:hover { color: var(--text); background: var(--hover); }
+.demo-tab.active {
+  color: var(--text); background: var(--panel-2);
+  box-shadow: var(--inset-hi), 0 1px 2px rgba(0,0,0,0.28);
+}
+.demo-right {
+  margin-left: auto; display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+}
+.demo-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 9px; border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 11.5px; color: var(--text-dim); text-decoration: none;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.demo-pill:hover { background: var(--hover); color: var(--text); border-color: var(--border-hi); }
+.demo-pill.is-on { color: var(--green-bright); border-color: rgba(var(--green-rgb), 0.35); background: var(--green-soft); }
+.demo-restore-fab {
+  position: fixed; right: 12px; bottom: 12px; z-index: 95;
+  display: none; align-items: center; gap: 6px;
+  padding: 6px 11px; border-radius: 99px;
+  background: var(--panel); border: 1px solid var(--border-hi);
+  color: var(--text-dim); font-size: 11.5px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+}
+body.demo-hidden .demo-restore-fab { display: inline-flex; }
+.demo-restore-fab:hover { color: var(--text); background: var(--panel-2); }
+
+/* ==========================================================================
+   Core 3-Column Application Shell
+   ========================================================================== */
+.app-shell {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(360px, 1fr) 0px;
+  transition: grid-template-columns 0.2s var(--ease);
+  position: relative;
+}
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 0px minmax(360px, 1fr) 0px;
+}
+.app-shell.workspace-open {
+  grid-template-columns: var(--sidebar-w) minmax(360px, 1fr) var(--workspace-w);
+}
+.app-shell.sidebar-collapsed.workspace-open {
+  grid-template-columns: 0px minmax(360px, 1fr) var(--workspace-w);
+}
+.app-shell.is-resizing { transition: none; user-select: none; }
+.app-shell.workspace-full .workspace-pane {
+  position: fixed;
+  top: var(--demo-bar-h); right: 0; bottom: 0; left: var(--sidebar-w);
+  width: auto; z-index: 60;
+}
+body.demo-hidden .app-shell.workspace-full .workspace-pane { top: 0; }
+.app-shell.sidebar-collapsed.workspace-full .workspace-pane { left: 0; }
+
+/* ==========================================================================
+   Left Sidebar
+   ========================================================================== */
+.sidebar {
+  position: relative;
+  background: var(--bg-rail);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-width: 0; min-height: 0;
+  overflow: hidden;
+}
+.app-shell.sidebar-collapsed .sidebar { border-right: 0; }
+
+.resize-handle {
+  position: absolute; top: 0; bottom: 0; width: 6px;
+  cursor: col-resize; z-index: 30;
+}
+.resize-handle::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px;
+  background: transparent; transition: background .15s;
+}
+.resize-handle:hover::after, .resize-handle.dragging::after { background: var(--green); }
+.sidebar-resize { right: -3px; }
+.workspace-resize { left: -3px; }
+
+.sidebar-head {
+  height: var(--topbar-h);
+  padding: 0 10px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.icon-btn {
+  width: 28px; height: 28px; border-radius: var(--r-sm);
+  display: inline-grid; place-items: center;
+  color: var(--text-dim); flex-shrink: 0;
+  transition: background .12s, color .12s;
+}
+.icon-btn:hover:not(:disabled) { color: var(--text); background: var(--hover); }
+.icon-btn.quiet:hover:not(:disabled) { background: transparent; color: var(--text); }
+.icon-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.icon-btn.active { color: var(--text); background: var(--active); }
+
+.sidebar-actions {
+  padding: 2px 8px 8px;
+  display: flex; flex-direction: column; gap: 1px;
+}
+.side-row {
+  height: 33px; padding: 0 9px; border-radius: var(--r-sm);
+  display: flex; align-items: center; gap: 9px;
+  color: var(--text-dim); font-size: calc(12.8px * var(--font-scale));
+  text-align: left; width: 100%;
+  transition: background .12s, color .12s;
+}
+.side-row:hover { background: var(--hover); color: var(--text); }
+.side-row .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-row .kbd {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--muted);
+  letter-spacing: 0.2px;
+}
+
+.sidebar-search-wrap { position: relative; }
+.sidebar-search-input {
+  width: 100%; height: 33px; padding: 0 28px 0 32px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text); font-size: 12.5px;
+}
+.sidebar-search-input::placeholder { color: var(--muted); }
+.sidebar-search-icon {
+  position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
+  color: var(--muted); pointer-events: none;
+}
+.sidebar-search-clear {
+  position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+  width: 22px; height: 22px; display: grid; place-items: center;
+  color: var(--text-dim); border-radius: 4px;
+}
+.sidebar-search-clear:hover { color: var(--text); }
+
+.sidebar-scroll {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 2px 8px 14px;
+  scrollbar-width: none;
+}
+.sidebar-scroll::-webkit-scrollbar { display: none; }
+
+.group-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 4px 5px 9px;
+  font-size: 10.5px; font-weight: 500; letter-spacing: 0.9px;
+  text-transform: uppercase; color: var(--muted);
+}
+.group-head .group-act {
+  width: 24px; height: 24px; border-radius: 5px;
+  display: grid; place-items: center; color: var(--text-dim);
+  opacity: 0; transition: opacity .12s, color .12s;
+}
+.group-head:hover .group-act, .group-head:focus-within .group-act { opacity: 1; }
+.group-head .group-act:hover { color: var(--text); }
+
+.project-group { margin-bottom: 2px; }
+.project-row {
+  position: relative; height: 31px; padding: 0 4px;
+  border-radius: var(--r-sm);
+  display: flex; align-items: center; gap: 5px;
+  color: var(--text-dim); cursor: pointer;
+  transition: color .12s;
+}
+.project-row:hover { color: var(--text); }
+.project-row.has-active::before {
+  content: ''; position: absolute; left: -8px; top: 7px; bottom: 7px;
+  width: 2px; border-radius: 1px; background: var(--text);
+}
+.project-chev {
+  width: 18px; height: 18px; display: grid; place-items: center;
+  color: var(--muted); transition: transform .15s var(--ease);
+}
+.project-group.collapsed .project-chev { transform: rotate(-90deg); }
+.project-name {
+  flex: 1; min-width: 0; font-size: calc(12.8px * var(--font-scale));
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.project-hover-acts {
+  display: flex; align-items: center; gap: 1px;
+  opacity: 0; transition: opacity .12s;
+}
+.project-row:hover .project-hover-acts,
+.project-row:focus-within .project-hover-acts { opacity: 1; }
+.mini-act {
+  width: 22px; height: 22px; display: grid; place-items: center;
+  color: var(--muted); border-radius: 4px;
+}
+.mini-act:hover { color: var(--text); }
+
+.project-chats {
+  padding-left: 14px;
+  display: flex; flex-direction: column; gap: 1px;
+  margin-bottom: 4px;
+}
+.project-group.collapsed .project-chats { display: none; }
+
+.session-item {
+  height: 31px; padding: 0 8px 0 10px; border-radius: var(--r-sm);
+  display: flex; align-items: center; gap: 7px;
+  color: var(--text-dim); font-size: calc(12.8px * var(--font-scale));
+  cursor: pointer; position: relative;
+  transition: background .1s, color .1s;
+}
+.session-item:hover { background: var(--hover); color: var(--text); }
+.session-item.active {
+  background: var(--active); color: var(--text);
+  box-shadow: var(--inset-hi);
+}
+.session-item .s-title {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.session-item .s-run-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green); flex-shrink: 0;
+  animation: soft-pulse 1.5s ease-in-out infinite;
+}
+@keyframes soft-pulse { 50% { opacity: 0.35; } }
+.session-item .s-more { opacity: 0; }
+.session-item:hover .s-more, .session-item:focus-within .s-more { opacity: 1; }
+
+.sidebar-footer {
+  padding: 6px 8px 8px;
+  border-top: 1px solid var(--border-2);
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Main Conversation Column
+   ========================================================================== */
+.main-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0; min-height: 0;
+  position: relative;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+/* Character Pond Canvas (Empty Home Only) */
+.pond-canvas {
+  position: absolute;
+  inset: var(--topbar-h) 0 0 0;
+  width: 100%;
+  height: calc(100% - var(--topbar-h));
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+.main-col.is-empty .pond-canvas { opacity: 1; }
+
+/* Single-Layer Clean Topbar */
+.topbar {
+  height: var(--topbar-h);
+  flex-shrink: 0;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(24, 24, 27, 0.88);
+  backdrop-filter: blur(8px);
+  z-index: 10;
+}
+.breadcrumb {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 6px;
+  font-size: calc(13px * var(--font-scale));
+}
+.crumb-proj {
+  color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 180px;
+}
+.crumb-sep { color: var(--faint); flex-shrink: 0; }
+.crumb-title-btn {
+  padding: 3px 6px; margin-left: -6px; border-radius: 5px;
+  color: var(--text); font-weight: 450; font-size: inherit;
+  max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: background .12s;
+}
+.crumb-title-btn:hover { background: var(--hover); }
+.crumb-title-input {
+  background: transparent; border: 0; color: var(--text);
+  font-size: inherit; font-weight: 450; padding: 3px 6px; margin-left: -6px;
+  width: 260px; max-width: 100%;
+}
+
+/* Topbar Right Controls: Quiet Status + Direct Workspace Quick Pills */
+.topbar-right {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+}
+.run-status {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 3px 8px; border-radius: 6px;
+  font-size: 11.5px; color: var(--text-dim);
+  margin-right: 4px;
+}
+.spinner {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 1.5px solid var(--faint);
+  border-top-color: var(--text-dim);
+  animation: spin 0.78s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* NEW UX: Context Quick-Access Group in Topbar (Quiet Monochrome) */
+.ws-quick-group {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px; border-radius: 7px;
+  border: 1px solid var(--border-2);
+  background: rgba(255,255,255,0.02);
+}
+.ws-quick-btn {
+  height: 26px; padding: 0 8px; border-radius: 5px;
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: var(--text-dim);
+  transition: background .12s, color .12s;
+}
+.ws-quick-btn:hover { background: var(--hover); color: var(--text); }
+.ws-quick-btn.active { background: var(--active); color: var(--text); }
+.ws-count {
+  font-family: var(--font-mono); font-size: 10.5px;
+  color: var(--green-bright);
+  background: var(--green-soft);
+  padding: 0 5px; border-radius: 99px; line-height: 16px;
+}
+
+/* Conversation Scroll & Reading Column */
+.chat-stage {
+  flex: 1; min-height: 0;
+  position: relative;
+  display: flex; flex-direction: column;
+  z-index: 2;
+}
+.chat-scroll {
+  flex: 1; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: 28px 0 36px;
+  scroll-behavior: smooth;
+}
+.main-col.is-empty .chat-scroll { opacity: 0; pointer-events: none; }
+
+.chat-inner {
+  max-width: var(--reading-w);
+  margin: 0 auto;
+  padding: 0 28px;
+  display: flex; flex-direction: column;
+  gap: 22px;
+}
+
+/* Conversation Tick Rail (Left Reading Margin) */
+.tick-rail {
+  position: absolute;
+  left: 14px; top: 50%; transform: translateY(-50%);
+  width: 34px; max-height: min(68%, 540px);
+  display: flex; flex-direction: column; gap: 2px;
+  z-index: 15;
+  opacity: 0; pointer-events: none;
+  transition: opacity .2s;
+}
+.tick-rail.visible { opacity: 1; pointer-events: auto; }
+.main-col.is-empty .tick-rail { opacity: 0; pointer-events: none; }
+.tick-btn {
+  height: 10px; width: 32px; padding: 0 2px;
+  display: flex; align-items: center;
+}
+.tick-bar {
+  display: block; height: 2px; width: 7px; border-radius: 1px;
+  background: var(--faint);
+  transition: width 0.14s var(--ease);
+}
+.tick-btn.is-current .tick-bar { width: 15px; background: var(--green); }
+.tick-rail.is-hovering .tick-btn.is-current .tick-bar { width: 7px; background: var(--faint); }
+.tick-rail.is-hovering .tick-btn.is-near-2 .tick-bar { width: 10px; background: var(--muted); }
+.tick-rail.is-hovering .tick-btn.is-near-1 .tick-bar { width: 14px; background: var(--text-dim); }
+.tick-rail.is-hovering .tick-btn.is-selected .tick-bar { width: 20px; background: var(--green-bright); }
+
+.tick-preview {
+  position: absolute; left: 48px; width: 290px;
+  background: var(--panel); border: 1px solid var(--border-hi);
+  border-radius: var(--r-md); padding: 11px 13px;
+  box-shadow: 0 14px 36px rgba(0,0,0,0.5);
+  pointer-events: none; z-index: 25;
+  opacity: 0; transform: translateX(-4px);
+  transition: opacity .15s, transform .15s;
+}
+.tick-preview.show { opacity: 1; transform: translateX(0); }
+.tick-preview-q {
+  font-size: 12.5px; font-weight: 500; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tick-preview-a {
+  margin-top: 5px; font-size: 11.5px; color: var(--text-dim); line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* Back to Latest Floating Circle */
+.back-latest {
+  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--panel); border: 1px solid var(--border-hi);
+  color: var(--text-dim); display: grid; place-items: center;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+  z-index: 18; transition: background .12s, color .12s, transform .12s;
+}
+.back-latest:hover { background: var(--panel-2); color: var(--text); transform: translateX(-50%) translateY(1px); }
+
+/* ==========================================================================
+   Messages, Process Timeline, Approvals, Questions & Receipts
+   ========================================================================== */
+.turn-block { display: flex; flex-direction: column; gap: 14px; }
+
+/* User Message — Quiet Elevated Surface, Self-Sized, Actions Below */
+.msg-user-wrap {
+  display: flex; flex-direction: column; align-items: flex-end;
+}
+.msg-user-bubble {
+  max-width: min(86%, 600px);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: var(--inset-hi);
+  border-radius: 12px 12px 4px 12px;
+  padding: 11px 15px;
+  font-size: calc(13.8px * var(--font-scale));
+  line-height: 1.65;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.msg-attachments {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
+}
+.msg-att-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px; border-radius: 5px;
+  background: var(--panel-2); border: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+}
+
+/* Continuous Hover Region for Message Actions */
+.msg-actions {
+  display: flex; align-items: center; gap: 2px;
+  padding-top: 5px;
+  opacity: 0; pointer-events: none;
+  transition: opacity .14s;
+}
+.msg-user-wrap:hover .msg-actions,
+.msg-user-wrap:focus-within .msg-actions,
+.msg-asst-wrap:hover .msg-actions,
+.msg-asst-wrap:focus-within .msg-actions,
+.msg-actions.keep-visible {
+  opacity: 1; pointer-events: auto;
+}
+.msg-act-btn {
+  width: 26px; height: 26px; border-radius: 5px;
+  display: grid; place-items: center;
+  color: var(--muted); transition: color .12s;
+}
+.msg-act-btn:hover { color: var(--text); }
+.msg-act-btn.done { color: var(--green-bright); }
+
+/* Forked From Banner */
+.fork-origin {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--muted);
+  padding: 4px 0 8px; border-bottom: 1px solid var(--border-2);
+}
+.fork-origin button { color: var(--text-dim); font-size: inherit; padding: 0; }
+.fork-origin button:hover { color: var(--text); }
+
+/* Process Timeline Disclosure (Redesigned for Scannable Clarity) */
+.process-box {
+  display: flex; flex-direction: column;
+}
+.process-summary {
+  display: inline-flex; align-items: center; gap: 8px;
+  width: fit-content; max-width: 100%;
+  padding: 4px 8px 4px 0; border-radius: 6px;
+  font-family: var(--font-mono); font-size: calc(12px * var(--font-scale));
+  color: var(--text-dim); user-select: none;
+  transition: color .12s;
+}
+.process-summary:hover { color: var(--text); }
+.process-summary .p-state-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green); flex-shrink: 0;
+}
+.process-summary .p-state-dot.is-idle { background: var(--muted); }
+.process-summary .p-sep { color: var(--faint); }
+.process-summary .p-dur { color: var(--muted); }
+.process-summary .p-chev {
+  color: var(--muted); transition: transform .16s var(--ease);
+}
+.process-box.open .process-summary .p-chev { transform: rotate(180deg); }
+
+.process-timeline {
+  display: none;
+  margin: 6px 0 6px 3px;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+  flex-direction: column;
+  gap: 8px;
+}
+.process-box.open .process-timeline { display: flex; }
+
+/* Thinking Block inside Process */
+.thinking-card {
+  display: flex; flex-direction: column; gap: 5px;
+}
+.thinking-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--muted);
+  width: fit-content; padding: 2px 0;
+}
+.thinking-toggle:hover { color: var(--text-dim); }
+.thinking-toggle svg { transition: transform .14s; }
+.thinking-card.open .thinking-toggle svg { transform: rotate(180deg); }
+.thinking-body {
+  display: none;
+  padding: 8px 12px;
+  border-left: 2px solid var(--border-hi);
+  background: rgba(255,255,255,0.018);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-dim); font-size: 12.5px; line-height: 1.65;
+}
+.thinking-card.open .thinking-body { display: block; }
+
+/* Tool Step Rows */
+.tool-step {
+  display: flex; align-items: baseline; gap: 8px;
+  font-family: var(--font-mono); font-size: 11.8px; line-height: 1.55;
+  color: var(--text-dim); min-height: 22px;
+}
+.tool-step .t-verb { color: var(--muted); min-width: 52px; flex-shrink: 0; }
+.tool-step .t-target {
+  color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: pointer; transition: color .12s;
+}
+.tool-step .t-target:hover { color: var(--text); }
+.tool-step .t-meta { margin-left: auto; color: var(--muted); font-size: 11px; flex-shrink: 0; }
+.tool-step .t-diff-add { color: var(--green-bright); }
+.tool-step .t-diff-del { color: var(--err-text); margin-left: 4px; }
+
+/* Folded Read Group */
+.tool-group-btn {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  font-family: var(--font-mono); font-size: 11.8px; color: var(--text-dim);
+  padding: 2px 0; text-align: left;
+}
+.tool-group-btn:hover { color: var(--text); }
+.tool-group-btn .tg-chev { margin-left: auto; color: var(--muted); transition: transform .14s; }
+.tool-group.open .tg-chev { transform: rotate(180deg); }
+.tool-group-items {
+  display: none; padding: 4px 0 2px 14px;
+  flex-direction: column; gap: 3px;
+}
+.tool-group.open .tool-group-items { display: flex; }
+
+/* Shell Command Disclosure Card */
+.cmd-block { display: flex; flex-direction: column; gap: 6px; }
+.cmd-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  font-family: var(--font-mono); font-size: 11.8px; color: var(--text-dim);
+  padding: 2px 0; text-align: left;
+}
+.cmd-row:hover { color: var(--text); }
+.cmd-row .cmd-preview { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.cmd-row .cmd-badge { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+.cmd-row .cmd-badge.ok { color: var(--green); }
+.cmd-row .cmd-chev { color: var(--muted); transition: transform .14s; }
+.cmd-block.open .cmd-chev { transform: rotate(180deg); }
+
+.cmd-panel {
+  display: none;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.cmd-block.open .cmd-panel { display: block; }
+.cmd-sec {
+  position: relative;
+  padding: 9px 38px 9px 12px;
+  font-family: var(--font-mono); font-size: 11.8px; line-height: 1.55;
+}
+.cmd-sec + .cmd-sec { border-top: 1px solid var(--border-2); background: var(--bg-rail); }
+.cmd-sec .cmd-copy {
+  position: absolute; right: 7px; top: 7px;
+  width: 24px; height: 24px; border-radius: 5px;
+  display: grid; place-items: center; color: var(--muted);
+  opacity: 0; transition: opacity .12s, background .12s, color .12s;
+}
+.cmd-sec:hover .cmd-copy, .cmd-sec:focus-within .cmd-copy { opacity: 1; }
+.cmd-sec .cmd-copy:hover { background: var(--hover); color: var(--text); }
+.cmd-output-pre {
+  margin: 0; max-height: 136px; overflow: auto;
+  color: var(--text-dim); white-space: pre;
+}
+.cmd-foot {
+  padding: 5px 12px;
+  border-top: 1px solid var(--border-2);
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px; color: var(--muted);
+  background: rgba(0,0,0,0.12);
+}
+.cmd-foot .ok { color: var(--green-bright); }
+
+/* Shell Approval Card (Focused, Authoritative, Still Monochrome + Quiet) */
+.approval-card {
+  background: var(--panel);
+  border: 1px solid var(--border-hi);
+  border-left: 2px solid var(--green);
+  border-radius: var(--r-md);
+  box-shadow: var(--inset-hi), 0 8px 28px rgba(0,0,0,0.28);
+  overflow: visible;
+  position: relative;
+}
+.approval-head {
+  padding: 12px 15px 10px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.approval-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 500; color: var(--text);
+}
+.approval-cwd {
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.approval-code {
+  margin: 0 15px;
+  padding: 10px 12px;
+  background: var(--bg-rail);
+  border: 1px solid var(--border-2);
+  border-radius: 7px;
+  font-family: var(--font-mono); font-size: 12.2px; line-height: 1.55;
+  color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.approval-code::before { content: '$ '; color: var(--muted); }
+.approval-foot {
+  padding: 10px 15px 12px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  flex-wrap: wrap;
+}
+.approval-hint { font-size: 11.5px; color: var(--muted); }
+.approval-btns { display: flex; align-items: center; gap: 8px; }
+
+.btn-outline {
+  height: 29px; padding: 0 12px; border-radius: 6px;
+  border: 1px solid var(--border-hi);
+  color: var(--text-dim); font-size: 12px;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.btn-outline:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+.btn-outline:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-primary {
+  height: 29px; padding: 0 12px; border-radius: 6px;
+  background: var(--text); color: #141416;
+  font-size: 12px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: opacity .12s;
+}
+.btn-primary:hover:not(:disabled) { opacity: 0.9; }
+.btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Split Allow Button */
+.split-btn { display: inline-flex; position: relative; }
+.split-btn .btn-primary { border-radius: 6px 0 0 6px; }
+.split-trigger {
+  height: 29px; width: 26px;
+  background: var(--text); color: #141416;
+  border-left: 1px solid rgba(20, 20, 22, 0.22);
+  border-radius: 0 6px 6px 0;
+  display: grid; place-items: center;
+}
+.split-trigger:hover:not(:disabled) { opacity: 0.9; }
+.split-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; width: 310px;
+  background: var(--panel); border: 1px solid var(--border-hi);
+  border-radius: 9px; padding: 5px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.55);
+  z-index: 40; display: none;
+}
+.split-menu.open { display: flex; flex-direction: column; gap: 2px; }
+.split-menu button {
+  text-align: left; padding: 8px 10px; border-radius: 6px;
+  color: var(--text); font-size: 12.2px;
+  transition: background .12s;
+}
+.split-menu button:hover { background: var(--hover); }
+.split-menu button small {
+  display: block; margin-top: 2px; font-size: 11px; color: var(--text-dim);
+}
+.split-menu .menu-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+
+/* Inline User Question Card */
+.question-card {
+  background: var(--panel);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--r-md);
+  box-shadow: var(--inset-hi);
+  padding: 14px 16px 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.question-title { font-size: 13px; font-weight: 500; color: var(--text); }
+.q-options { display: flex; flex-direction: column; gap: 6px; }
+.q-opt {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 11px; border-radius: 7px;
+  border: 1px solid var(--border-2); background: rgba(255,255,255,0.015);
+  cursor: pointer; transition: background .12s, border-color .12s;
+}
+.q-opt:hover { background: var(--hover); border-color: var(--border); }
+.q-opt.selected { border-color: rgba(var(--green-rgb), 0.45); background: var(--green-soft); }
+.q-opt input { margin-top: 3px; accent-color: var(--green); }
+.q-opt-label { font-size: 12.8px; color: var(--text); font-weight: 450; }
+.q-opt-desc { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+
+/* Assistant Prose (Clean Canvas, De-Bubbled, Crisp Typography) */
+.msg-asst-wrap { display: flex; flex-direction: column; }
+.asst-body {
+  font-size: calc(14px * var(--font-scale));
+  line-height: 1.75;
+  color: var(--text);
+}
+.asst-body p { margin: 0 0 12px; }
+.asst-body p:last-child { margin-bottom: 0; }
+.asst-body h3 { font-size: 14.5px; font-weight: 550; margin: 18px 0 8px; color: var(--text); }
+.asst-body ul { margin: 0 0 12px; padding-left: 20px; }
+.asst-body li { margin: 4px 0; }
+.asst-body code.ic {
+  font-family: var(--font-mono); font-size: 12.2px;
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 5px;
+}
+.asst-body .file-link {
+  font-family: var(--font-mono); font-size: 12.2px;
+  color: var(--green-bright); padding: 1px 4px; border-radius: 4px;
+  background: var(--green-soft);
+  transition: background .12s;
+}
+.asst-body .file-link:hover { background: var(--green-ring); }
+.asst-body .cite-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--green-bright); background: var(--green-soft);
+  border-radius: 4px; padding: 0 5px; margin: 0 2px; vertical-align: baseline;
+}
+.asst-body .cite-chip:hover { background: var(--green-ring); }
+
+/* Code Block inside Assistant */
+.code-card {
+  margin: 12px 0;
+  background: var(--bg-rail);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.code-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 8px 5px 12px;
+  border-bottom: 1px solid var(--border-2);
+  background: rgba(255,255,255,0.02);
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+}
+.code-card pre {
+  margin: 0; padding: 11px 13px; overflow-x: auto;
+  font-family: var(--font-mono); font-size: 12.2px; line-height: 1.6;
+  color: var(--text);
+}
+
+/* Inline Changes Summary + Task Receipt */
+.receipt-block {
+  display: flex; flex-direction: column; gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-2);
+}
+.receipt-row {
+  display: flex; align-items: baseline; gap: 10px;
+  font-family: var(--font-mono); font-size: 11.8px;
+}
+.receipt-prefix {
+  font-size: 10.5px; font-weight: 550; letter-spacing: 0.9px;
+  text-transform: uppercase; color: var(--green);
+}
+.receipt-text { color: var(--text-dim); flex: 1; min-width: 0; }
+.link-btn {
+  font-size: 11.8px; color: var(--text-dim); padding: 0;
+  transition: color .12s;
+}
+.link-btn:hover { color: var(--text); }
+
+.inline-changes {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 8px 11px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  font-family: var(--font-mono); font-size: 11.8px;
+}
+.ic-file-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 3px 4px; border-radius: 5px;
+  color: var(--text-dim); text-align: left; width: 100%;
+}
+.ic-file-row:hover { background: var(--hover); color: var(--text); }
+.ic-file-row .st { color: var(--muted); width: 14px; }
+.ic-file-row .fp { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ic-file-row .ds { color: var(--muted); font-size: 11px; }
+
+.run-details-box {
+  display: none;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--border-2);
+  flex-direction: column; gap: 5px;
+  font-size: 12px;
+}
+.run-details-box.open { display: flex; }
+.rd-head {
+  font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 2px;
+}
+.rd-row { display: grid; grid-template-columns: 110px minmax(0,1fr); gap: 10px; }
+.rd-k { color: var(--muted); }
+.rd-v { color: var(--text-dim); font-family: var(--font-mono); font-size: 11.5px; }
+
+/* ==========================================================================
+   Composer + Empty Home Transition + Steering Strip
+   ========================================================================== */
+.composer-dock {
+  flex-shrink: 0;
+  padding: 8px 24px 18px;
+  z-index: 8;
+  transition: transform 0.38s var(--ease), margin-bottom 0.38s var(--ease);
+}
+.main-col.is-empty .composer-dock {
+  margin-bottom: clamp(40px, 30vh, 320px);
+}
+.composer-inner {
+  max-width: var(--reading-w);
+  margin: 0 auto;
+  display: flex; flex-direction: column; gap: 6px;
+}
+
+/* Pending Steering Queue Strip (Visible while running) */
+.steer-strip {
+  display: flex; flex-direction: column; gap: 5px;
+}
+.steer-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 11px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--green);
+  border-radius: 8px;
+  font-size: 12.2px;
+}
+.steer-tag {
+  font-family: var(--font-mono); font-size: 10.5px;
+  color: var(--green-bright); flex-shrink: 0;
+}
+.steer-text {
+  flex: 1; min-width: 0; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Context Row (Folder + Research Toggle — Quiet yet Clearly Interactive) */
+.context-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 3px;
+  font-size: 11.8px;
+}
+.ctx-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 7px; border-radius: 6px;
+  color: var(--text-dim); font-size: 11.8px;
+  transition: background .12s, color .12s;
+}
+.ctx-pill:hover { background: var(--hover); color: var(--text); }
+.ctx-pill.research-on {
+  color: var(--text);
+  background: var(--green-soft);
+}
+.ctx-pill .r-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--muted); transition: background .15s, box-shadow .15s;
+}
+.ctx-pill.research-on .r-dot {
+  background: var(--green);
+  box-shadow: 0 0 0 3px var(--green-ring);
+}
+.ctx-sep { color: var(--faint); font-size: 11px; }
+.ctx-right-hint {
+  margin-left: auto; font-size: 11px; color: var(--muted);
+}
+
+/* Composer Box */
+.composer-box {
+  background: var(--bg-2);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--r-lg);
+  box-shadow: var(--inset-hi), 0 8px 30px rgba(0,0,0,0.22);
+  padding: 9px 11px 8px;
+  transition: border-color .15s, background .15s;
+}
+.composer-box.drag-over {
+  border-color: var(--green);
+  background: rgba(var(--green-rgb), 0.05);
+}
+.composer-atts {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 2px 3px 8px;
+}
+.att-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border-radius: 6px;
+  background: var(--panel-2); border: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 11.2px; color: var(--text-dim);
+}
+.att-chip button { color: var(--muted); display: grid; place-items: center; padding: 1px; }
+.att-chip button:hover { color: var(--text); }
+
+.composer-input {
+  width: 100%; min-height: 40px; max-height: 180px;
+  background: transparent; border: 0; resize: none;
+  color: var(--text); font-size: calc(13.8px * var(--font-scale));
+  line-height: 1.55; padding: 3px 4px 6px; display: block;
+}
+.composer-input::placeholder { color: var(--muted); }
+
+.composer-bar {
+  display: flex; align-items: center; gap: 4px;
+  padding-top: 2px;
+}
+
+/* Model + Thinking Effort Borderless Pickers */
+.picker-wrap { position: relative; }
+.picker-btn {
+  height: 28px; padding: 0 8px; border-radius: 6px;
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12.2px; color: var(--text-dim);
+  transition: background .12s, color .12s;
+}
+.picker-btn:hover, .picker-btn.open { background: var(--hover); color: var(--text); }
+.online-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 3px var(--green-soft);
+  flex-shrink: 0;
+}
+.online-dot.offline { background: var(--muted); box-shadow: none; }
+
+.pop-menu {
+  position: absolute; left: 0; bottom: calc(100% + 7px);
+  width: 248px; max-height: 300px; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border-hi);
+  border-radius: 9px; padding: 5px;
+  box-shadow: 0 18px 44px rgba(0,0,0,0.55);
+  z-index: 45; display: none;
+}
+.pop-menu.open { display: flex; flex-direction: column; gap: 2px; }
+.pop-menu.narrow { width: 164px; }
+.pop-group {
+  font-size: 10px; letter-spacing: 0.9px; text-transform: uppercase;
+  color: var(--muted); padding: 7px 8px 3px;
+}
+.pop-item {
+  width: 100%; padding: 7px 8px; border-radius: 6px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.4px; color: var(--text-dim); text-align: left;
+  transition: background .1s, color .1s;
+}
+.pop-item:hover { background: var(--hover); color: var(--text); }
+.pop-item.selected { color: var(--text); background: var(--active); }
+.pop-item .pi-check { margin-left: auto; color: var(--green-bright); opacity: 0; }
+.pop-item.selected .pi-check { opacity: 1; }
+
+.composer-spacer { flex: 1; }
+.enter-hint {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--faint);
+  margin-right: 4px; opacity: 0; transition: opacity .15s;
+}
+.composer-box:focus-within .enter-hint,
+.composer-bar:hover .enter-hint { opacity: 1; }
+
+.send-slot {
+  width: 32px; height: 32px; border-radius: 7px;
+  display: grid; place-items: center;
+  color: var(--text); transition: background .12s, color .12s;
+}
+.send-slot:hover:not(:disabled) { background: var(--hover); }
+.send-slot:disabled { color: var(--faint); cursor: not-allowed; }
+.send-slot.is-stop { color: var(--text); background: var(--active); }
+
+/* ==========================================================================
+   Right Workspace Pane (Unified Header — Zero Double-Header Clutter)
+   ========================================================================== */
+.workspace-pane {
+  position: relative;
+  background: var(--bg-2);
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0;
+  overflow: hidden;
+}
+.app-shell:not(.workspace-open) .workspace-pane { border-left: 0; }
+
+.ws-header {
+  height: var(--topbar-h);
+  flex-shrink: 0;
+  padding: 0 8px 0 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 4px;
+}
+.ws-tabs {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 3px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.ws-tabs::-webkit-scrollbar { display: none; }
+.ws-tab {
+  height: 28px; padding: 0 6px 0 9px; border-radius: 6px;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-dim); white-space: nowrap; flex-shrink: 0;
+  transition: background .12s, color .12s;
+}
+.ws-tab:hover { color: var(--text); background: var(--hover); }
+.ws-tab.active {
+  color: var(--text); background: var(--active);
+  box-shadow: var(--inset-hi);
+}
+.ws-tab-x {
+  width: 18px; height: 18px; border-radius: 4px;
+  display: grid; place-items: center; color: var(--muted);
+  opacity: 0; transition: opacity .12s, color .12s;
+}
+.ws-tab:hover .ws-tab-x, .ws-tab.active .ws-tab-x { opacity: 1; }
+.ws-tab-x:hover { color: var(--text); }
+
+.ws-plus-menu {
+  position: absolute; top: 44px; right: 10px; width: 196px;
+  background: var(--panel); border: 1px solid var(--border-hi);
+  border-radius: 9px; padding: 5px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.55);
+  z-index: 40; display: none;
+}
+.ws-plus-menu.open { display: flex; flex-direction: column; gap: 2px; }
+.ws-plus-menu button {
+  padding: 7px 9px; border-radius: 6px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.2px; color: var(--text-dim); text-align: left;
+}
+.ws-plus-menu button:hover { background: var(--hover); color: var(--text); }
+
+/* Compact Single-Row Sub-toolbar inside Each Panel */
+.ws-subbar {
+  min-height: 36px; padding: 5px 12px;
+  border-bottom: 1px solid var(--border-2);
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11.8px; color: var(--text-dim);
+  flex-shrink: 0;
+}
+.ws-subbar-meta {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px;
+  overflow: hidden;
+}
+.ws-scope-pill {
+  font-family: var(--font-mono); font-size: 10.8px;
+  color: var(--text-dim); background: rgba(255,255,255,0.045);
+  border: 1px solid var(--border-2); border-radius: 4px; padding: 1px 6px;
+  flex-shrink: 0;
+}
+.ws-subbar-path {
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ws-act {
+  font-size: 11.5px; color: var(--text-dim); padding: 3px 7px; border-radius: 5px;
+  white-space: nowrap; transition: background .12s, color .12s;
+}
+.ws-act:hover { background: var(--hover); color: var(--text); }
+.ws-act.danger:hover { color: var(--err-text); }
+.ws-act.primary-accent { color: var(--green-bright); background: var(--green-soft); }
+.ws-act.primary-accent:hover { background: var(--green-ring); }
+
+.ws-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 12px 14px 20px;
+}
+
+/* Restore Inline Safety Banner */
+.restore-confirm {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid rgba(var(--err-rgb), 0.35);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  font-size: 12px;
+}
+.restore-confirm p { margin: 0; color: var(--text-dim); }
+.restore-confirm strong { color: var(--text); font-weight: 500; }
+
+/* Changes Diff List */
+.diff-file {
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  background: var(--bg-rail);
+}
+.diff-file-head {
+  width: 100%; padding: 8px 11px;
+  display: flex; align-items: center; gap: 9px;
+  background: rgba(255,255,255,0.02);
+  font-family: var(--font-mono); font-size: 11.8px; text-align: left;
+}
+.diff-file-head:hover { background: var(--hover); }
+.diff-file-head .df-st { color: var(--muted); width: 14px; }
+.diff-file-head .df-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.diff-file-head .df-stat { font-size: 11px; color: var(--muted); }
+.diff-file-head .df-stat .a { color: var(--green-bright); }
+.diff-file-head .df-stat .d { color: var(--err-text); margin-left: 4px; }
+.diff-code {
+  display: none; border-top: 1px solid var(--border-2);
+  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6;
+  overflow-x: auto; padding: 4px 0;
+}
+.diff-file.open .diff-code { display: block; }
+.dl {
+  display: flex; padding: 0 12px 0 8px; border-left: 2px solid transparent;
+  white-space: pre; color: var(--text-dim);
+}
+.dl .ln { width: 3.2ch; text-align: right; color: var(--faint); margin-right: 10px; user-select: none; flex-shrink: 0; }
+.dl .mk { width: 1.6ch; flex-shrink: 0; color: var(--muted); }
+.dl.add { background: var(--diff-add-bg); border-left-color: var(--diff-add-edge); color: var(--text); }
+.dl.add .mk { color: var(--diff-add-mark); }
+.dl.del { background: var(--diff-del-bg); border-left-color: var(--diff-del-edge); color: var(--text); }
+.dl.del .mk { color: var(--diff-del-mark); }
+.dl.hunk { color: var(--muted); background: rgba(255,255,255,0.015); }
+
+/* Research Panel Tabs & Interactive Graph */
+.res-tabs {
+  display: flex; gap: 3px;
+  padding: 6px 12px; border-bottom: 1px solid var(--border-2);
+}
+.res-tab {
+  padding: 4px 9px; border-radius: 5px;
+  font-size: 11.8px; color: var(--muted);
+}
+.res-tab:hover { color: var(--text-dim); background: var(--hover); }
+.res-tab.active { color: var(--text); background: var(--active); }
+
+.res-card {
+  padding: 11px 0; border-bottom: 1px solid var(--border-2);
+}
+.res-card:last-child { border-bottom: 0; }
+.res-card-title { font-size: 12.8px; color: var(--text); font-weight: 450; }
+.res-card-meta {
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+  margin-top: 3px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.res-tag {
+  background: var(--panel-2); color: var(--text-dim);
+  padding: 1px 6px; border-radius: 4px; font-size: 10.5px;
+}
+.res-quote {
+  margin-top: 7px; padding-left: 10px;
+  border-left: 1.5px solid var(--border-hi);
+  font-size: 12.2px; color: var(--text-dim); line-height: 1.6;
+}
+.graph-wrap {
+  display: flex; flex-direction: column; gap: 10px; height: 100%;
+}
+.graph-bar {
+  display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted);
+}
+.depth-btn {
+  padding: 3px 7px; border-radius: 5px; color: var(--muted); font-size: 11.5px;
+}
+.depth-btn:hover { background: var(--hover); color: var(--text-dim); }
+.depth-btn.active { background: var(--active); color: var(--text); }
+.graph-stage {
+  height: 310px; background: var(--bg-rail);
+  border: 1px solid var(--border); border-radius: 9px;
+  position: relative; overflow: hidden;
+}
+.graph-stage canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+.graph-stage canvas:active { cursor: grabbing; }
+.graph-detail {
+  padding: 10px 12px; background: var(--panel);
+  border: 1px solid var(--border-2); border-radius: 8px;
+}
+.graph-detail h4 { margin: 0; font-size: 12.8px; font-weight: 500; color: var(--text); }
+.graph-detail .gd-meta { font-family: var(--font-mono); font-size: 11px; color: var(--green-bright); margin-top: 3px; }
+.graph-detail p { margin: 6px 0 0; font-size: 12px; color: var(--text-dim); line-height: 1.55; }
+
+/* Files Viewer */
+.file-find {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-bottom: 1px solid var(--border-2);
+}
+.file-find input {
+  flex: 1; background: transparent; border: 0; color: var(--text); font-size: 12px;
+}
+.source-view {
+  font-family: var(--font-mono); font-size: 11.8px; line-height: 1.65;
+  padding: 10px 0;
+}
+.src-line {
+  display: flex; padding: 0 14px 0 8px;
+}
+.src-line.hl { background: var(--green-soft); }
+.src-line .sl-n {
+  width: 3.4ch; text-align: right; color: var(--faint);
+  margin-right: 14px; user-select: none; flex-shrink: 0;
+}
+.src-line .sl-c { white-space: pre; color: var(--text-dim); }
+.source-view.wrap .sl-c { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Review & Local Context */
+.finding-card {
+  padding: 11px 12px; margin-bottom: 8px;
+  background: var(--panel); border: 1px solid var(--border-2); border-radius: 8px;
+}
+.finding-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.finding-loc { font-family: var(--font-mono); font-size: 11.5px; color: var(--green-bright); cursor: pointer; }
+.finding-sev { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); }
+.finding-body { margin: 6px 0 0; font-size: 12.2px; color: var(--text-dim); line-height: 1.55; }
+
+.lc-section { margin-bottom: 16px; }
+.lc-title {
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.9px;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
+}
+.lc-row {
+  padding: 9px 10px; border-radius: 7px; border: 1px solid var(--border-2);
+  background: rgba(255,255,255,0.015); margin-bottom: 6px;
+  display: flex; align-items: flex-start; gap: 10px;
+}
+.lc-main { flex: 1; min-width: 0; }
+.lc-main strong { display: block; font-size: 12.5px; font-weight: 450; color: var(--text); }
+.lc-main small { display: block; font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+.lc-acts { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* ==========================================================================
+   Modals: Redesigned Settings (Clean Navigation), Fork, Command Palette, Selection Menu
+   ========================================================================== */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 110;
+  background: rgba(0, 0, 0, 0.56);
+  backdrop-filter: blur(2px);
+  display: none; place-items: center; padding: 20px;
+}
+.modal-backdrop.open { display: grid; }
+
+.modal-card {
+  width: min(680px, 100%);
+  max-height: min(560px, 88vh);
+  background: var(--panel);
+  border: 1px solid var(--border-hi);
+  border-radius: 12px;
+  box-shadow: var(--inset-hi), 0 24px 64px rgba(0,0,0,0.65);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-card.compact { width: min(440px, 100%); }
+
+.modal-head {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-head h2 { margin: 0; font-size: 14px; font-weight: 500; }
+
+/* Settings 2-Column Clean Architecture (Eliminates Nested <details>) */
+.settings-grid {
+  flex: 1; min-height: 0;
+  display: grid; grid-template-columns: 164px minmax(0, 1fr);
+}
+.settings-nav {
+  background: var(--bg-rail);
+  border-right: 1px solid var(--border);
+  padding: 10px 8px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.snav-btn {
+  height: 32px; padding: 0 10px; border-radius: 6px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--text-dim); text-align: left;
+}
+.snav-btn:hover { background: var(--hover); color: var(--text); }
+.snav-btn.active { background: var(--active); color: var(--text); }
+
+.settings-pane {
+  padding: 16px 20px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.set-desc { margin: 0; font-size: 12px; color: var(--text-dim); line-height: 1.55; }
+.set-card {
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 9px; padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.set-card-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.set-card-head strong { font-size: 13px; font-weight: 500; }
+.set-card-head span { font-size: 11.5px; color: var(--muted); }
+
+/* Monochrome Toggle Switch */
+.toggle-sw {
+  position: relative; width: 32px; height: 18px;
+  border-radius: 99px; border: 1px solid var(--border-hi);
+  background: var(--bg-rail); cursor: pointer; flex-shrink: 0;
+  transition: background .15s, border-color .15s;
+}
+.toggle-sw::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--muted); transition: transform .15s var(--ease), background .15s;
+}
+.toggle-sw.on { background: var(--green-soft); border-color: var(--green); }
+.toggle-sw.on::after { transform: translateX(14px); background: var(--green-bright); }
+
+.model-check-list { display: flex; flex-direction: column; gap: 4px; }
+.model-check {
+  display: flex; align-items: center; gap: 9px;
+  padding: 5px 6px; border-radius: 6px; cursor: pointer;
+  font-size: 12.4px; color: var(--text-dim);
+}
+.model-check:hover { background: var(--hover); color: var(--text); }
+.model-check input { accent-color: var(--green); }
+
+.field-group { display: flex; flex-direction: column; gap: 5px; }
+.field-group label { font-size: 12px; color: var(--text-dim); display: flex; justify-content: space-between; }
+.field-group label span { color: var(--muted); font-size: 11px; }
+.field-input {
+  height: 34px; padding: 0 10px; border-radius: 6px;
+  background: var(--bg-rail); border: 1px solid var(--border);
+  color: var(--text); font-size: 12.5px; width: 100%;
+}
+.field-input.mono { font-family: var(--font-mono); font-size: 12px; }
+
+.modal-foot {
+  padding: 12px 18px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  background: rgba(0,0,0,0.12);
+}
+
+/* Fork Dialog Options */
+.fork-choice {
+  width: 100%; padding: 12px 14px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg-2);
+  text-align: left; display: flex; flex-direction: column; gap: 3px;
+  transition: background .12s, border-color .12s;
+}
+.fork-choice:hover { background: var(--hover); border-color: var(--border-hi); }
+.fork-choice strong { font-size: 13px; font-weight: 500; color: var(--text); }
+.fork-choice small { font-size: 11.8px; color: var(--text-dim); }
+.fork-choice .fc-badge {
+  display: inline-block; margin-top: 4px; width: fit-content;
+  font-family: var(--font-mono); font-size: 10.5px;
+  color: var(--green-bright); background: var(--green-soft);
+  padding: 1px 6px; border-radius: 4px;
+}
+
+/* Command Palette (Ctrl+K) */
+.palette-card {
+  width: min(500px, 100%);
+  align-self: start; margin-top: 11vh;
+  background: var(--panel); border: 1px solid var(--border-hi);
+  border-radius: 12px; box-shadow: 0 24px 64px rgba(0,0,0,0.65);
+  overflow: hidden;
+}
+.palette-input-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px; border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+.palette-input {
+  flex: 1; background: transparent; border: 0;
+  font-size: 13.5px; color: var(--text);
+}
+.palette-list { max-height: 300px; overflow-y: auto; padding: 6px; }
+.palette-item {
+  width: 100%; padding: 8px 10px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12.8px; color: var(--text-dim); text-align: left;
+}
+.palette-item:hover, .palette-item.selected { background: var(--hover); color: var(--text); }
+.palette-item .pk { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+
+/* Selection Context Menu */
+.sel-menu {
+  position: fixed; z-index: 120;
+  background: var(--panel); border: 1px solid var(--border-hi);
+  border-radius: 8px; padding: 4px; min-width: 144px;
+  box-shadow: 0 14px 36px rgba(0,0,0,0.55);
+  display: none; flex-direction: column; gap: 1px;
+}
+.sel-menu.open { display: flex; }
+.sel-menu button {
+  padding: 6px 10px; border-radius: 5px;
+  text-align: left; font-size: 12.4px; color: var(--text-dim);
+}
+.sel-menu button:hover { background: var(--hover); color: var(--text); }
+
+/* Quiet Monochrome Toast */
+.toast {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(10px);
+  background: var(--panel-2); border: 1px solid var(--border-hi);
+  color: var(--text); padding: 7px 14px; border-radius: 8px;
+  font-size: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+  opacity: 0; pointer-events: none; z-index: 140;
+  transition: opacity .18s, transform .18s var(--ease);
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+@media (max-width: 960px) {
+  .app-shell.workspace-open { grid-template-columns: var(--sidebar-w) minmax(0, 1fr) 0px; }
+  .app-shell.workspace-open .workspace-pane {
+    position: fixed; top: var(--demo-bar-h); right: 0; bottom: 0; width: min(460px, 90vw); z-index: 55;
+    box-shadow: -18px 0 48px rgba(0,0,0,0.5);
+  }
+  body.demo-hidden .app-shell.workspace-open .workspace-pane { top: 0; }
+}
+</style>
+</head>
+<body>
+
+<!-- ==================== Top Demo Switcher (For Colleague Review) ==================== -->
+<div class="demo-strip" id="demo-strip">
+  <div class="demo-badge">
+    <span class="dot"></span>
+    <span>Codey UI/UX 交互原型</span>
+  </div>
+  <div class="demo-tabs" role="tablist" aria-label="Prototype scenes">
+    <button class="demo-tab" data-scene="empty" type="button">1. 空首页 · 字符涟漪</button>
+    <button class="demo-tab active" data-scene="coding" type="button">2. 编程闭环 · 审批与过程流</button>
+    <button class="demo-tab" data-scene="research" type="button">3. Research · 证据与知识图谱</button>
+    <button class="demo-tab" data-scene="review" type="button">4. Diff · 双模型 Review</button>
+  </div>
+  <div class="demo-right">
+    <button class="demo-pill" id="btn-sim-run" type="button" title="Toggle simulated running state + steering">模拟运行中</button>
+    <button class="demo-pill" id="btn-open-palette" type="button">Ctrl+K 命令</button>
+    <a class="demo-pill" href="codey-redesign-spec.html">查看设计方案说明 →</a>
+    <button class="demo-pill" id="btn-hide-demo" type="button" title="Hide demo bar for clean full-app view">纯净视图</button>
+  </div>
+</div>
+<button class="demo-restore-fab" id="btn-show-demo" type="button">显示演示切换条</button>
+
+<!-- ==================== Main 3-Column Workbench ==================== -->
+<div class="app-shell workspace-open" id="app-shell">
+
+  <!-- LEFT SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="resize-handle sidebar-resize" id="sidebar-resize" title="Drag to resize sidebar"></div>
+    <div class="sidebar-head">
+      <button class="icon-btn" id="btn-collapse-sidebar" title="Collapse sidebar" aria-label="Collapse sidebar">
+        <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-side-palette" title="Command palette (Ctrl+K)" aria-label="Command palette">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/></svg>
+      </button>
+    </div>
+
+    <div class="sidebar-actions">
+      <button class="side-row" id="btn-new-chat" type="button">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        <span class="label">New chat</span>
+        <span class="kbd">Ctrl+N</span>
+      </button>
+      <button class="side-row" id="btn-add-project" type="button">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+        <span class="label">Add project</span>
+      </button>
+      <div class="sidebar-search-wrap" id="search-wrap">
+        <button class="side-row" id="btn-search-toggle" type="button">
+          <svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <span class="label">Search</span>
+        </button>
+        <div id="search-box" hidden>
+          <svg class="ic ic-sm sidebar-search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input class="sidebar-search-input" id="search-input" type="text" placeholder="Filter chats & projects…" />
+          <button class="sidebar-search-clear" id="search-clear" type="button" hidden aria-label="Clear search">
+            <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-scroll" id="sidebar-list">
+      <!-- Populated by JS -->
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="side-row" id="btn-settings" type="button">
+        <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 0 1 0 4h-.09c-.66 0-1.25.4-1.51 1Z"/></svg>
+        <span class="label">Settings</span>
+        <span class="kbd">Ctrl+,</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- MAIN CONVERSATION AREA -->
+  <main class="main-col" id="main-col">
+    <canvas class="pond-canvas" id="pond-canvas" aria-hidden="true"></canvas>
+
+    <header class="topbar">
+      <button class="icon-btn" id="btn-expand-sidebar" hidden title="Show sidebar" aria-label="Show sidebar">
+        <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+      </button>
+      <div class="breadcrumb" id="breadcrumb">
+        <span class="crumb-proj" id="crumb-proj">codey</span>
+        <span class="crumb-sep" id="crumb-sep">/</span>
+        <button class="crumb-title-btn" id="crumb-title" type="button" title="Click to rename">Fix flaky SSE cursor replay</button>
+        <input class="crumb-title-input" id="crumb-input" type="text" hidden maxlength="80" />
+      </div>
+
+      <div class="topbar-right">
+        <div class="run-status" id="top-run-status" hidden>
+          <span class="spinner"></span>
+          <span id="top-run-label">Running</span>
+        </div>
+
+        <!-- NEW UX: Quiet Direct Entry Pills to Primary Workspaces -->
+        <div class="ws-quick-group" aria-label="Workspace panels">
+          <button class="ws-quick-btn" data-open-ws="files" type="button">
+            <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg>
+            <span>Files</span>
+          </button>
+          <button class="ws-quick-btn active" data-open-ws="changes" type="button">
+            <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M5 12h14"/></svg>
+            <span>Changes</span>
+            <span class="ws-count" id="changes-badge">2</span>
+          </button>
+          <button class="ws-quick-btn" data-open-ws="research" type="button">
+            <svg class="ic ic-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18M3 12h18"/></svg>
+            <span>Research</span>
+          </button>
+        </div>
+
+        <button class="icon-btn" id="btn-toggle-ws" title="Toggle right workspace" aria-label="Toggle right workspace">
+          <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="chat-stage">
+      <!-- Left Reading Margin Tick Rail -->
+      <nav class="tick-rail" id="tick-rail" aria-label="Conversation navigation"></nav>
+      <div class="tick-preview" id="tick-preview">
+        <div class="tick-preview-q" id="tp-q"></div>
+        <div class="tick-preview-a" id="tp-a"></div>
+      </div>
+
+      <!-- Transcript -->
+      <div class="chat-scroll" id="chat-scroll">
+        <div class="chat-inner" id="chat-inner"></div>
+      </div>
+
+      <button class="back-latest" id="back-latest" hidden aria-label="Back to latest">
+        <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
+      </button>
+    </div>
+
+    <!-- Composer Dock -->
+    <div class="composer-dock">
+      <div class="composer-inner">
+        <!-- Steering Pending Queue -->
+        <div class="steer-strip" id="steer-strip" hidden></div>
+
+        <!-- Context Row: Folder + Research -->
+        <div class="context-row">
+          <button class="ctx-pill" id="ctx-folder" type="button" title="D:\codey — Click to switch workspace">
+            <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+            <span id="ctx-folder-label">codey</span>
+          </button>
+          <span class="ctx-sep">·</span>
+          <button class="ctx-pill" id="ctx-research" type="button" aria-pressed="false">
+            <span class="r-dot"></span>
+            <span>Research</span>
+          </button>
+          <span class="ctx-right-hint" id="ctx-hint">Drop files or paste images</span>
+        </div>
+
+        <!-- Unified Composer Frame -->
+        <div class="composer-box" id="composer-box">
+          <div class="composer-atts" id="composer-atts" hidden></div>
+          <textarea class="composer-input" id="composer-input" rows="1" placeholder="Send a message to Codey…"></textarea>
+          <div class="composer-bar">
+            <!-- Model Picker -->
+            <div class="picker-wrap">
+              <button class="picker-btn" id="btn-model" type="button">
+                <span class="online-dot" id="model-dot"></span>
+                <span id="model-label">DeepSeek</span>
+                <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="pop-menu" id="model-menu">
+                <div class="pop-group">Websites</div>
+                <button class="pop-item selected" data-model="DeepSeek" data-online="1" data-effort="1" type="button">
+                  <span class="online-dot"></span><span>DeepSeek</span><span class="pi-check">✓</span>
+                </button>
+                <button class="pop-item" data-model="ChatGPT" data-online="1" data-effort="1" type="button">
+                  <span class="online-dot"></span><span>ChatGPT</span><span class="pi-check">✓</span>
+                </button>
+                <button class="pop-item" data-model="Claude" data-online="0" data-effort="0" type="button">
+                  <span class="online-dot offline"></span><span>Claude</span><span class="pi-check">✓</span>
+                </button>
+                <div class="pop-group">Local</div>
+                <button class="pop-item" data-model="Qwen3-Coder 30B" data-online="1" data-effort="1" type="button">
+                  <span class="online-dot"></span><span>Qwen3-Coder 30B</span><span class="pi-check">✓</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Thinking Effort Picker -->
+            <div class="picker-wrap" id="effort-wrap">
+              <button class="picker-btn" id="btn-effort" type="button">
+                <span id="effort-label">High</span>
+                <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="pop-menu narrow" id="effort-menu">
+                <button class="pop-item" data-effort="Off" type="button"><span>Off</span><span class="pi-check">✓</span></button>
+                <button class="pop-item" data-effort="Low" type="button"><span>Low</span><span class="pi-check">✓</span></button>
+                <button class="pop-item" data-effort="Med" type="button"><span>Med</span><span class="pi-check">✓</span></button>
+                <button class="pop-item selected" data-effort="High" type="button"><span>High</span><span class="pi-check">✓</span></button>
+              </div>
+            </div>
+
+            <div class="composer-spacer"></div>
+            <span class="enter-hint" id="enter-hint">Enter</span>
+            <button class="send-slot" id="btn-send" type="button" disabled aria-label="Send">
+              <svg class="ic" id="send-svg" viewBox="0 0 24 24"><path d="M3 11 21 3l-7 18-3-8-8-2Z"/></svg>
+              <svg class="ic" id="stop-svg" hidden viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" stroke="none"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- RIGHT WORKSPACE PANE -->
+  <aside class="workspace-pane" id="workspace-pane">
+    <div class="resize-handle workspace-resize" id="ws-resize" title="Drag to resize workspace"></div>
+    <div class="ws-header">
+      <div class="ws-tabs" id="ws-tabs" role="tablist"></div>
+      <button class="icon-btn" id="btn-ws-plus" title="Open panel" aria-label="Open panel">
+        <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-ws-full" title="Toggle fullscreen" aria-label="Toggle fullscreen">
+        <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-ws-close" title="Close workspace" aria-label="Close workspace">
+        <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+
+    <div class="ws-plus-menu" id="ws-plus-menu">
+      <button data-add-tab="files" type="button"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg>Files</button>
+      <button data-add-tab="changes" type="button"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 3v18M5 12h14"/></svg>Changes</button>
+      <button data-add-tab="research" type="button"><svg class="ic ic-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/></svg>Research</button>
+      <button data-add-tab="review" type="button"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>Review</button>
+      <button data-add-tab="context" type="button"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Local context</button>
+      <button data-add-tab="history" type="button"><svg class="ic ic-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>History</button>
+    </div>
+
+    <div id="ws-panel-root" style="display:flex;flex-direction:column;flex:1;min-height:0;"></div>
+  </aside>
+</div>
+
+<!-- ==================== Redesigned Settings Modal (Flat 2-Column) ==================== -->
+<div class="modal-backdrop" id="modal-settings">
+  <div class="modal-card" role="dialog" aria-label="Settings">
+    <div class="modal-head">
+      <h2>Settings</h2>
+      <button class="icon-btn" data-close-modal="modal-settings" aria-label="Close settings">
+        <svg class="ic" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="settings-grid">
+      <div class="settings-nav">
+        <button class="snav-btn active" data-spane="models" type="button">Models</button>
+        <button class="snav-btn" data-spane="connections" type="button">Connections</button>
+        <button class="snav-btn" data-spane="appearance" type="button">Appearance</button>
+        <button class="snav-btn" data-spane="permissions" type="button">Saved permissions</button>
+      </div>
+      <div class="settings-pane" id="settings-pane"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-outline" data-close-modal="modal-settings" type="button">Cancel</button>
+      <button class="btn-primary" id="btn-save-settings" type="button">Save changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Fork Destination Dialog ==================== -->
+<div class="modal-backdrop" id="modal-fork">
+  <div class="modal-card compact" role="dialog" aria-label="Fork chat from here">
+    <div class="modal-head">
+      <h2>Fork chat from here</h2>
+      <button class="icon-btn" data-close-modal="modal-fork" aria-label="Close">
+        <svg class="ic" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div style="padding:16px 18px;display:flex;flex-direction:column;gap:10px;">
+      <p class="set-desc">Keep conversation history up to the selected turn and branch into a new chat.</p>
+      <button class="fork-choice" id="fork-workspace" type="button">
+        <strong>Fork in this workspace</strong>
+        <small>Share D:\codey working tree with a fresh conversation branch.</small>
+      </button>
+      <button class="fork-choice" id="fork-worktree" type="button">
+        <strong>Fork in a new Git worktree</strong>
+        <small>Create an isolated branch at .codey/worktrees/sse-replay-exp so edits stay separate.</small>
+        <span class="fc-badge">Git worktree ready · main</span>
+      </button>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-outline" data-close-modal="modal-fork" type="button">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Command Palette (Ctrl+K) ==================== -->
+<div class="modal-backdrop" id="modal-palette">
+  <div class="palette-card" role="dialog" aria-label="Command palette">
+    <div class="palette-input-row">
+      <svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input class="palette-input" id="palette-input" type="text" placeholder="Type a command or jump to panel…" />
+      <span style="font-family:var(--font-mono);font-size:10.5px;">Esc</span>
+    </div>
+    <div class="palette-list" id="palette-list"></div>
+  </div>
+</div>
+
+<!-- ==================== Selection Context Menu ==================== -->
+<div class="sel-menu" id="sel-menu">
+  <button id="sel-copy" type="button">Copy</button>
+  <button id="sel-quote" type="button">Quote in reply</button>
+</div>
+
+<!-- ==================== Quiet Monochrome Toast ==================== -->
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  /* ------------------------------------------------------------------------
+     State & Fixtures
+     ------------------------------------------------------------------------ */
+  const state = {
+    scene: 'coding',
+    running: false,
+    researchActive: false,
+    folder: 'codey',
+    model: 'DeepSeek',
+    effort: 'High',
+    fontScale: 1,
+    wsOpen: true,
+    wsFull: false,
+    wsTabs: ['changes', 'files'],
+    wsActive: 'changes',
+    researchSubTab: 'graph',
+    graphDepth: 2,
+    settingsTab: 'models',
+    restoreConfirming: false,
+    approvalState: 'pending', // pending | submitting | settled | denied
+    questionAnswered: false,
+    selectedQuestionOpt: 0,
+    pendingSteers: [],
+    attachments: [],
+    savedPermissions: [
+      { id: 'p1', cmd: 'pytest tests/test_sse_cursor.py -q', scope: 'This project', cwd: 'D:\\codey' },
+      { id: 'p2', cmd: 'npm run build', scope: 'This chat', cwd: 'D:\\codey\\frontend' },
+    ],
+    projects: [
+      {
+        id: 'codey', name: 'codey', path: 'D:\\codey', collapsed: false,
+        chats: [
+          { id: 'c1', title: 'Fix flaky SSE cursor replay', scene: 'coding', running: false },
+          { id: 'c2', title: 'Compare SQLite WAL checkpoint modes', scene: 'research', running: false },
+          { id: 'c3', title: 'Audit right workspace resize bounds', scene: 'review', running: false },
+        ]
+      },
+      {
+        id: 'notes-cli', name: 'notes-cli', path: 'D:\\repos\\notes-cli', collapsed: true,
+        chats: [
+          { id: 'c4', title: 'Add markdown frontmatter parser', scene: 'coding', running: false },
+        ]
+      }
+    ],
+    standaloneChats: [
+      { id: 's0', title: 'New chat', scene: 'empty' },
+      { id: 's1', title: 'Quick regex for ISO timestamps', scene: 'coding' },
+    ],
+    activeChatId: 'c1',
+    searchQuery: '',
+    selectedQuoteText: '',
+  };
+
+  /* ------------------------------------------------------------------------
+     Helpers
+     ------------------------------------------------------------------------ */
+  const $ = (id) => document.getElementById(id);
+  let toastTimer = 0;
+  function showToast(msg) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  /* ------------------------------------------------------------------------
+     Sidebar Rendering & Search
+     ------------------------------------------------------------------------ */
+  function renderSidebar() {
+    const q = state.searchQuery.trim().toLowerCase();
+    const list = $('sidebar-list');
+    let html = '';
+
+    // PROJECTS
+    const matchingProjects = state.projects.filter((p) => {
+      if (!q) return true;
+      return p.name.toLowerCase().includes(q) || p.chats.some((c) => c.title.toLowerCase().includes(q));
+    });
+    if (!q || matchingProjects.length) {
+      html += `<div class="group-head"><span>Projects</span><button class="group-act" data-add-proj title="Add project"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>`;
+      for (const p of matchingProjects) {
+        const chats = q && !p.name.toLowerCase().includes(q)
+          ? p.chats.filter((c) => c.title.toLowerCase().includes(q))
+          : p.chats;
+        const hasActive = p.chats.some((c) => c.id === state.activeChatId);
+        const collapsed = q ? false : p.collapsed;
+        html += `
+          <div class="project-group ${collapsed ? 'collapsed' : ''}" data-pid="${p.id}">
+            <div class="project-row ${hasActive ? 'has-active' : ''}" title="${esc(p.path)}" data-toggle-proj="${p.id}">
+              <span class="project-chev"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+              <span class="project-name">${esc(p.name)}</span>
+              <div class="project-hover-acts">
+                <button class="mini-act" data-proj-new="${p.id}" title="New chat in ${esc(p.name)}"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+              </div>
+            </div>
+            <div class="project-chats">
+              ${chats.map((c) => `
+                <div class="session-item ${c.id === state.activeChatId ? 'active' : ''}" data-chat="${c.id}">
+                  <span class="s-title">${esc(c.title)}</span>
+                  ${c.id === 'c1' && state.running ? '<span class="s-run-dot" title="Running"></span>' : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>`;
+      }
+    }
+
+    // CHATS
+    const matchingStandalone = state.standaloneChats.filter((c) => !q || c.title.toLowerCase().includes(q));
+    if (!q || matchingStandalone.length) {
+      html += `<div class="group-head"><span>Chats</span><button class="group-act" data-new-free title="New chat"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button></div>`;
+      for (const c of matchingStandalone) {
+        html += `
+          <div class="session-item ${c.id === state.activeChatId ? 'active' : ''}" data-chat="${c.id}">
+            <span class="s-title">${esc(c.title)}</span>
+          </div>`;
+      }
+    }
+
+    if (!html) {
+      html = `<div style="padding:14px 10px;color:var(--text-dim);font-size:12px;">No matches</div>`;
+    }
+    list.innerHTML = html;
+
+    list.querySelectorAll('[data-toggle-proj]').forEach((row) => {
+      row.onclick = (e) => {
+        if (e.target.closest('[data-proj-new]')) return;
+        const proj = state.projects.find((x) => x.id === row.dataset.toggleProj);
+        if (proj) { proj.collapsed = !proj.collapsed; renderSidebar(); }
+      };
+    });
+    list.querySelectorAll('[data-proj-new]').forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        state.folder = btn.dataset.projNew;
+        switchScene('empty');
+        showToast(`New chat in ${state.folder}`);
+      };
+    });
+    list.querySelectorAll('[data-add-proj]').forEach((btn) => {
+      btn.onclick = () => showToast('Native folder picker opens here');
+    });
+    list.querySelectorAll('[data-new-free]').forEach((btn) => {
+      btn.onclick = () => { state.folder = ''; switchScene('empty'); };
+    });
+    list.querySelectorAll('[data-chat]').forEach((el) => {
+      el.onclick = () => {
+        const id = el.dataset.chat;
+        state.activeChatId = id;
+        const foundProj = state.projects.find((p) => p.chats.some((c) => c.id === id));
+        const chat = foundProj
+          ? foundProj.chats.find((c) => c.id === id)
+          : state.standaloneChats.find((c) => c.id === id);
+        if (chat) {
+          state.folder = foundProj ? foundProj.name : '';
+          switchScene(chat.scene, id, chat.title);
+        }
+      };
+    });
+  }
+
+  /* ------------------------------------------------------------------------
+     Scene Switching
+     ------------------------------------------------------------------------ */
+  function switchScene(scene, chatId, customTitle) {
+    state.scene = scene;
+    document.querySelectorAll('.demo-tab').forEach((t) => {
+      t.classList.toggle('active', t.dataset.scene === scene);
+    });
+
+    const mainCol = $('main-col');
+    mainCol.classList.toggle('is-empty', scene === 'empty');
+
+    if (scene === 'empty') {
+      state.activeChatId = chatId || 's0';
+      state.researchActive = false;
+      $('crumb-proj').hidden = !state.folder;
+      $('crumb-sep').hidden = !state.folder;
+      $('crumb-proj').textContent = state.folder;
+      $('crumb-title').textContent = 'New chat';
+      setWorkspaceOpen(false);
+    } else if (scene === 'coding') {
+      state.activeChatId = chatId || 'c1';
+      state.folder = 'codey';
+      state.researchActive = false;
+      $('crumb-proj').hidden = false; $('crumb-sep').hidden = false;
+      $('crumb-proj').textContent = 'codey';
+      $('crumb-title').textContent = customTitle || 'Fix flaky SSE cursor replay';
+      ensureTab('changes'); ensureTab('files');
+      state.wsActive = 'changes';
+      setWorkspaceOpen(true);
+    } else if (scene === 'research') {
+      state.activeChatId = chatId || 'c2';
+      state.folder = 'codey';
+      state.researchActive = true;
+      $('crumb-proj').hidden = false; $('crumb-sep').hidden = false;
+      $('crumb-proj').textContent = 'codey';
+      $('crumb-title').textContent = customTitle || 'Compare SQLite WAL checkpoint modes';
+      state.wsTabs = ['research', 'context'];
+      state.wsActive = 'research';
+      setWorkspaceOpen(true);
+    } else if (scene === 'review') {
+      state.activeChatId = chatId || 'c3';
+      state.folder = 'codey';
+      state.researchActive = false;
+      $('crumb-proj').hidden = false; $('crumb-sep').hidden = false;
+      $('crumb-proj').textContent = 'codey';
+      $('crumb-title').textContent = customTitle || 'Audit right workspace resize bounds';
+      state.wsTabs = ['changes', 'review', 'files'];
+      state.wsActive = 'review';
+      setWorkspaceOpen(true);
+    }
+
+    syncContextRow();
+    renderSidebar();
+    renderTranscript();
+    renderWorkspace();
+    updateTopQuickButtons();
+    if (scene === 'empty') {
+      startPond();
+      setTimeout(() => $('composer-input').focus(), 40);
+    } else {
+      stopPond();
+    }
+  }
+
+  function syncContextRow() {
+    $('ctx-folder-label').textContent = state.folder || 'Choose folder';
+    const r = $('ctx-research');
+    r.classList.toggle('research-on', state.researchActive);
+    r.setAttribute('aria-pressed', String(state.researchActive));
+    $('ctx-hint').textContent = state.running
+      ? 'Sending steers the active run'
+      : 'Drop files or paste images';
+  }
+
+  /* ------------------------------------------------------------------------
+     Conversation Transcript Renderer
+     ------------------------------------------------------------------------ */
+  const copyIcon = `<svg class="ic ic-sm" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+  const editIcon = `<svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+  const forkIcon = `<svg class="ic ic-sm" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M6 8.5v2a3.5 3.5 0 0 0 3.5 3.5h5A3.5 3.5 0 0 0 18 10.5v-2M12 14v1.5"/></svg>`;
+  const chevIcon = `<svg class="ic ic-sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>`;
+
+  let tickMeta = [];
+
+  function renderTranscript() {
+    const inner = $('chat-inner');
+    tickMeta = [];
+
+    if (state.scene === 'empty') {
+      inner.innerHTML = '';
+      renderTickRail();
+      return;
+    }
+
+    if (state.scene === 'research') {
+      inner.innerHTML = `
+        <div class="turn-block" data-turn="0">
+          <div class="msg-user-wrap">
+            <div class="msg-user-bubble">Compare SQLite WAL passive vs truncate checkpoint behavior for a local desktop workbench with frequent small writes.</div>
+            <div class="msg-actions">
+              <button class="msg-act-btn" data-copy-txt="Compare SQLite WAL passive vs truncate checkpoint behavior..." title="Copy">${copyIcon}</button>
+              <button class="msg-act-btn" data-fork title="Fork chat from here">${forkIcon}</button>
+            </div>
+          </div>
+
+          <div class="process-box open" id="proc-res">
+            <button class="process-summary" type="button">
+              <span class="p-state-dot"></span>
+              <span>Worked · searched 2 queries · read 4 sources · saved 3 notes</span>
+              <span class="p-sep">·</span><span class="p-dur">18s</span>
+              <span class="p-chev">${chevIcon}</span>
+            </button>
+            <div class="process-timeline">
+              <div class="tool-step"><span class="t-verb">search</span><span class="t-target">"sqlite wal_checkpoint passive truncate busy"</span><span class="t-meta">6 results</span></div>
+              <div class="tool-step"><span class="t-verb">read</span><span class="t-target" data-jump-res="sources">sqlite.org/wal.html#checkpointing</span><span class="t-meta">captured</span></div>
+              <div class="tool-step"><span class="t-verb">read</span><span class="t-target" data-jump-res="sources">sqlite.org/c3ref/wal_checkpoint_v2.html</span><span class="t-meta">captured</span></div>
+              <div class="tool-step"><span class="t-verb">note</span><span class="t-target" data-jump-res="notes">wal-checkpoint-tradeoffs.md</span><span class="t-meta">grounded</span></div>
+            </div>
+          </div>
+
+          <div class="msg-asst-wrap">
+            <div class="asst-body" data-asst-selectable>
+              <p>For a local desktop workbench like Codey where small UI-state writes happen frequently while a reader tab may hold a short snapshot, <strong>PASSIVE</strong> should remain the default background checkpoint mode <button class="cite-chip" data-jump-res="evidence">[1]</button>, paired with periodic <strong>TRUNCATE</strong> only at clean idle boundaries <button class="cite-chip" data-jump-res="evidence">[2]</button>.</p>
+              <h3>Key Tradeoffs</h3>
+              <ul>
+                <li><strong>PASSIVE</strong> never blocks active readers or writers; if a reader holds an older mark it simply stops early and resumes on the next checkpoint <button class="cite-chip" data-jump-res="sources">sqlite.org/wal</button>.</li>
+                <li><strong>TRUNCATE</strong> resets the WAL file to zero bytes, preventing unbounded disk growth after bursty tool logs, but waits briefly for exclusive access <button class="cite-chip" data-jump-res="sources">wal_checkpoint_v2</button>.</li>
+              </ul>
+              <p>The grounded brief and source graph are ready in the right panel — click <strong>Use in Project</strong> whenever you want to hand this brief directly to the Writer.</p>
+            </div>
+            <div class="msg-actions">
+              <button class="msg-act-btn" data-copy-txt="For a local desktop workbench..." title="Copy">${copyIcon}</button>
+              <button class="msg-act-btn" data-fork title="Fork chat from here">${forkIcon}</button>
+            </div>
+          </div>
+
+          <div class="receipt-block">
+            <div class="receipt-row">
+              <span class="receipt-prefix">Done</span>
+              <span class="receipt-text">4 verified sources · 3 notes · brief ready</span>
+              <button class="link-btn" data-jump-res="graph">View graph</button>
+              <button class="link-btn" data-open-ws="research">Inspect evidence</button>
+            </div>
+          </div>
+        </div>
+      `;
+      tickMeta = [{ q: 'Compare SQLite WAL passive vs truncate checkpoint behavior...', a: 'PASSIVE should remain the default background checkpoint mode, paired with periodic TRUNCATE at idle boundaries.' }];
+      bindTranscriptEvents();
+      renderTickRail();
+      return;
+    }
+
+    // Coding / Review Multi-turn Transcript (shows Tick Rail with 4 turns!)
+    const approvalHtml = renderApprovalCard();
+    const questionHtml = renderQuestionCard();
+
+    inner.innerHTML = `
+      <div class="fork-origin">
+        ${forkIcon}
+        <span>Continued from</span>
+        <button type="button" id="btn-fork-src">Investigate reconnect duplicates</button>
+      </div>
+
+      <!-- Turn 1 -->
+      <div class="turn-block" data-turn="0">
+        <div class="msg-user-wrap">
+          <div class="msg-user-bubble">Inspect why reconnecting SSE sometimes replays an already settled task checkpoint.</div>
+          <div class="msg-actions">
+            <button class="msg-act-btn" data-copy-txt="Inspect why reconnecting SSE..." title="Copy">${copyIcon}</button>
+            <button class="msg-act-btn" data-edit title="Edit">${editIcon}</button>
+            <button class="msg-act-btn" data-fork title="Fork chat from here">${forkIcon}</button>
+          </div>
+        </div>
+
+        <div class="process-box">
+          <button class="process-summary" type="button">
+            <span class="p-state-dot is-idle"></span>
+            <span>Worked · read 3 files · searched 1 query</span>
+            <span class="p-sep">·</span><span class="p-dur">6s</span>
+            <span class="p-chev">${chevIcon}</span>
+          </button>
+          <div class="process-timeline">
+            <div class="tool-step"><span class="t-verb">search</span><span class="t-target">lastEventId in frontend/src</span><span class="t-meta">4 matches</span></div>
+            <div class="tool-step"><span class="t-verb">read</span><span class="t-target" data-open-file="sse.ts">frontend/src/sse.ts</span><span class="t-meta">L1–L142</span></div>
+            <div class="tool-step"><span class="t-verb">read</span><span class="t-target" data-open-file="run_lifecycle.ts">frontend/src/run_lifecycle.ts</span><span class="t-meta">L1–L96</span></div>
+          </div>
+        </div>
+
+        <div class="msg-asst-wrap">
+          <div class="asst-body" data-asst-selectable>
+            <p>Found the root cause in <button class="file-link" data-open-file="sse.ts">frontend/src/sse.ts</button>: when a new task version starts on the same session, the SSE cursor retained the previous run's <code class="ic">lastEventId</code> without fencing on <code class="ic">checkpointRevision</code>.</p>
+          </div>
+          <div class="msg-actions">
+            <button class="msg-act-btn" data-copy-txt="Found the root cause in frontend/src/sse.ts..." title="Copy">${copyIcon}</button>
+            <button class="msg-act-btn" data-fork title="Fork chat from here">${forkIcon}</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Turn 2 (Inline User Question Card) -->
+      <div class="turn-block" data-turn="1">
+        <div class="msg-user-wrap">
+          <div class="msg-user-bubble">Should we fence cursors per run_id or per (run_id, revision)?</div>
+          <div class="msg-actions">
+            <button class="msg-act-btn" data-copy-txt="Should we fence cursors..." title="Copy">${copyIcon}</button>
+            <button class="msg-act-btn" data-fork title="Fork chat from here">${forkIcon}</button>
+          </div>
+        </div>
+        ${questionHtml}
+      </div>
+
+      <!-- Turn 3 (Full Process Timeline + Expanded Shell Card + Code + Receipt) -->
+      <div class="turn-block" data-turn="2">
+        <div class="msg-user-wrap">
+          <div class="msg-user-bubble">Apply the (run_id, revision) fence, add a regression test, and run pytest on the SSE suite.
+            <div class="msg-attachments">
+              <span class="msg-att-chip">sse_trace_repro.log · 4.2 KB</span>
+            </div>
+          </div>
+          <div class="msg-actions">
+            <button class="msg-act-btn" data-copy-txt="Apply the (run_id, revision) fence..." title="Copy">${copyIcon}</button>
+            <button class="msg-act-btn" data-edit title="Edit">${editIcon}</button>
+            <button class="msg-act-btn" data-fork title="Fork chat from here">${forkIcon}</button>
+          </div>
+        </div>
+
+        <div class="process-box open" id="proc-main">
+          <button class="process-summary" type="button">
+            <span class="p-state-dot"></span>
+            <span>Worked · read 3 files · edited 2 files · ran 1 command</span>
+            <span class="p-sep">·</span><span class="p-dur">14s</span>
+            <span class="p-chev">${chevIcon}</span>
+          </button>
+          <div class="process-timeline">
+            <div class="thinking-card" id="think-1">
+              <button class="thinking-toggle" type="button"><span>Thinking</span>${chevIcon}</button>
+              <div class="thinking-body">
+                We need to preserve cursor continuity during network reconnects within the same checkpoint revision, while resetting strictly when the durable revision advances. Checking <code>run_lifecycle.ts</code> ensures terminal checkpoints remain irreversible even if an older buffered frame arrives late.
+              </div>
+            </div>
+
+            <div class="tool-group" id="tg-read">
+              <button class="tool-group-btn" type="button">
+                <span style="color:var(--muted);min-width:52px;">read</span>
+                <span>3 files</span>
+                <span class="tg-chev">${chevIcon}</span>
+              </button>
+              <div class="tool-group-items">
+                <div class="tool-step"><span class="t-target" data-open-file="sse.ts">frontend/src/sse.ts</span><span class="t-meta">L42–L118</span></div>
+                <div class="tool-step"><span class="t-target" data-open-file="run_lifecycle.ts">frontend/src/run_lifecycle.ts</span><span class="t-meta">L18–L84</span></div>
+                <div class="tool-step"><span class="t-target" data-open-file="sse.ts">tests/test_sse_cursor.py</span><span class="t-meta">L1–L64</span></div>
+              </div>
+            </div>
+
+            <div class="tool-step">
+              <span class="t-verb">edit</span>
+              <span class="t-target" data-open-diff="frontend/src/sse.ts">frontend/src/sse.ts</span>
+              <span class="t-meta"><span class="t-diff-add">+18</span><span class="t-diff-del">−4</span></span>
+            </div>
+            <div class="tool-step">
+              <span class="t-verb">edit</span>
+              <span class="t-target" data-open-diff="tests/test_sse_cursor.py">tests/test_sse_cursor.py</span>
+              <span class="t-meta"><span class="t-diff-add">+26</span><span class="t-diff-del">−0</span></span>
+            </div>
+
+            <div class="cmd-block open" id="cmd-1">
+              <button class="cmd-row" type="button">
+                <span style="color:var(--muted);min-width:52px;">ran</span>
+                <span class="cmd-preview">pytest tests/test_sse_cursor.py -q</span>
+                <span class="cmd-badge ok">✓ 0</span>
+                <span class="cmd-chev">${chevIcon}</span>
+              </button>
+              <div class="cmd-panel">
+                <section class="cmd-sec">
+                  <div style="color:var(--text);">$ pytest tests/test_sse_cursor.py -q</div>
+                  <button class="cmd-copy" data-copy-txt="pytest tests/test_sse_cursor.py -q" title="Copy command">${copyIcon}</button>
+                </section>
+                <section class="cmd-sec">
+                  <pre class="cmd-output-pre">tests/test_sse_cursor.py::test_same_revision_resumes_cursor PASSED
+tests/test_sse_cursor.py::test_newer_revision_resets_cursor PASSED
+tests/test_sse_cursor.py::test_terminal_checkpoint_irreversible PASSED
+
+3 passed in 0.42s</pre>
+                  <button class="cmd-copy" data-copy-txt="3 passed in 0.42s" title="Copy output">${copyIcon}</button>
+                </section>
+                <div class="cmd-foot">
+                  <span>D:\codey</span>
+                  <span class="ok">✓ Success · 420ms</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="msg-asst-wrap">
+          <div class="asst-body" data-asst-selectable>
+            <p>Updated <button class="file-link" data-open-file="sse.ts">frontend/src/sse.ts</button> to bind the SSE cursor to both <code class="ic">runId</code> and <code class="ic">checkpointRevision</code>. Reconnecting within the same version resumes cleanly, while any revision advance discards stale replay cursors.</p>
+            <div class="code-card">
+              <div class="code-card-head">
+                <span>typescript</span>
+                <button class="icon-btn" data-copy-txt="if (cursor.runId !== next.runId || cursor.revision !== next.revision) cursor.reset(next);" title="Copy code">${copyIcon}</button>
+              </div>
+              <pre>if (cursor.runId !== next.runId || cursor.revision !== next.revision) {
+  cursor.reset({ runId: next.runId, revision: next.revision });
+}</pre>
+            </div>
+          </div>
+          <div class="msg-actions">
+            <button class="msg-act-btn" data-copy-txt="Updated frontend/src/sse.ts..." title="Copy">${copyIcon}</button>
+            <button class="msg-act-btn" data-fork title="Fork chat from here">${forkIcon}</button>
+          </div>
+        </div>
+
+        <div class="receipt-block">
+          <div class="inline-changes">
+            <button class="ic-file-row" data-open-diff="frontend/src/sse.ts" type="button">
+              <span class="st">M</span><span class="fp">frontend/src/sse.ts</span><span class="ds">+18 −4</span>
+            </button>
+            <button class="ic-file-row" data-open-diff="tests/test_sse_cursor.py" type="button">
+              <span class="st">M</span><span class="fp">tests/test_sse_cursor.py</span><span class="ds">+26 −0</span>
+            </button>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-prefix">Done</span>
+            <span class="receipt-text">2 files changed · checks passed · review ready</span>
+            <button class="link-btn" id="btn-toggle-rd" type="button">Details</button>
+            <button class="link-btn" data-open-ws="changes" type="button">View diff</button>
+          </div>
+          <div class="run-details-box" id="run-details-box">
+            <div class="rd-head">Run details</div>
+            <div class="rd-row"><span class="rd-k">Work</span><span class="rd-v">Project writing</span></div>
+            <div class="rd-row"><span class="rd-k">Model</span><span class="rd-v">DeepSeek (High)</span></div>
+            <div class="rd-row"><span class="rd-k">Actions</span><span class="rd-v">read 3 files, edited 2 files, ran 1 check</span></div>
+            <div class="rd-row"><span class="rd-k">Request context</span><span class="rd-v">~14.2k / 64k tokens</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Turn 4 (Active Shell Approval Card!) -->
+      <div class="turn-block" data-turn="3">
+        <div class="msg-user-wrap">
+          <div class="msg-user-bubble">Also run the full frontend typecheck and unit test suite before we commit.</div>
+          <div class="msg-actions">
+            <button class="msg-act-btn" data-copy-txt="Also run the full frontend typecheck..." title="Copy">${copyIcon}</button>
+            <button class="msg-act-btn" data-edit title="Edit">${editIcon}</button>
+            <button class="msg-act-btn" data-fork title="Fork chat from here">${forkIcon}</button>
+          </div>
+        </div>
+        ${approvalHtml}
+      </div>
+    `;
+
+    tickMeta = [
+      { q: 'Inspect why reconnecting SSE sometimes replays an already settled task checkpoint.', a: 'Found the root cause in frontend/src/sse.ts: cursor retained lastEventId without fencing on checkpointRevision.' },
+      { q: 'Should we fence cursors per run_id or per (run_id, revision)?', a: 'Answered: Fence on (run_id, checkpointRevision) to preserve reconnects while blocking stale revisions.' },
+      { q: 'Apply the (run_id, revision) fence, add a regression test, and run pytest on the SSE suite.', a: 'Updated frontend/src/sse.ts and tests/test_sse_cursor.py. 3 passed in 0.42s.' },
+      { q: 'Also run the full frontend typecheck and unit test suite before we commit.', a: 'Waiting for command approval: npm --prefix frontend run test -- --run' },
+    ];
+
+    bindTranscriptEvents();
+    renderTickRail();
+  }
+
+  function renderQuestionCard() {
+    if (state.questionAnswered) {
+      return `<div style="font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:8px;padding:4px 0;">
+        <span style="color:var(--green);">✓</span>
+        <span>Answered: Fence on (run_id, checkpointRevision)</span>
+        <button class="link-btn" id="btn-reopen-q" style="margin-left:auto;">Reset demo</button>
+      </div>`;
+    }
+    const opts = [
+      { label: 'Fence on (run_id, checkpointRevision)', desc: 'Recommended — preserves mid-run reconnects while strictly dropping stale revision replays.' },
+      { label: 'Fence on run_id only', desc: 'Simpler, but requires server-side deduplication after approval continuations.' },
+    ];
+    return `
+      <div class="question-card" id="question-card">
+        <div class="question-title">Which cursor fence scope should we enforce?</div>
+        <div class="q-options">
+          ${opts.map((o, i) => `
+            <label class="q-opt ${state.selectedQuestionOpt === i ? 'selected' : ''}" data-qopt="${i}">
+              <input type="radio" name="q-fence" ${state.selectedQuestionOpt === i ? 'checked' : ''} />
+              <div>
+                <div class="q-opt-label">${o.label}</div>
+                <div class="q-opt-desc">${o.desc}</div>
+              </div>
+            </label>
+          `).join('')}
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button class="btn-outline" id="btn-q-skip" type="button">Cancel</button>
+          <button class="btn-primary" id="btn-q-confirm" type="button">Confirm answer</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderApprovalCard() {
+    if (state.approvalState === 'settled') {
+      return `
+        <div class="cmd-block open">
+          <button class="cmd-row" type="button">
+            <span style="color:var(--muted);min-width:52px;">ran</span>
+            <span class="cmd-preview">npm --prefix frontend run test -- --run</span>
+            <span class="cmd-badge ok">✓ 0</span>
+          </button>
+          <div class="cmd-panel" style="display:block;">
+            <section class="cmd-sec">
+              <pre class="cmd-output-pre">✓ src/sse.test.ts (14 tests) 38ms
+✓ src/run_lifecycle.test.ts (22 tests) 51ms
+Test Files  18 passed (18) · Tests  146 passed (146)</pre>
+            </section>
+            <div class="cmd-foot">
+              <span>Allowed once · D:\codey</span>
+              <button class="link-btn" id="btn-reset-approval">Reset approval demo</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    if (state.approvalState === 'denied') {
+      return `
+        <div class="receipt-row" style="padding:4px 0;">
+          <span class="receipt-prefix" style="color:var(--err-text);">Denied</span>
+          <span class="receipt-text">Command will not run: npm --prefix frontend run test -- --run</span>
+          <button class="link-btn" id="btn-reset-approval">Reset approval demo</button>
+        </div>
+      `;
+    }
+    const busy = state.approvalState === 'submitting';
+    return `
+      <div style="font-family:var(--font-mono);font-size:11.8px;color:var(--text-dim);">Waiting for approval</div>
+      <div class="approval-card" id="approval-card">
+        <div class="approval-head">
+          <div class="approval-title">
+            <svg class="ic ic-sm" style="color:var(--green);" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            <span>Run this command?</span>
+          </div>
+          <span class="approval-cwd">D:\codey</span>
+        </div>
+        <div class="approval-code">npm --prefix frontend run test -- --run</div>
+        <div class="approval-foot">
+          <span class="approval-hint">Shell · local execution requires your approval</span>
+          <div class="approval-btns">
+            <button class="btn-outline" id="btn-deny" type="button" ${busy ? 'disabled' : ''}>Deny</button>
+            <div class="split-btn">
+              <button class="btn-primary" id="btn-allow-once" type="button" ${busy ? 'disabled' : ''}>
+                ${busy ? '<span class="spinner" style="border-color:rgba(20,20,22,0.25);border-top-color:#141416;"></span><span>Submitting…</span>' : 'Allow once'}
+              </button>
+              <button class="split-trigger" id="btn-allow-menu" type="button" aria-label="More allow options" ${busy ? 'disabled' : ''}>
+                <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="split-menu" id="approval-split-menu">
+                <button data-allow-scope="chat" type="button">
+                  Allow exact command in this chat
+                  <small>Remembers this exact command until this chat ends.</small>
+                </button>
+                <button data-allow-scope="project" type="button">
+                  Allow exact command in this project
+                  <small>Saved for D:\codey. Revoke anytime in Saved permissions.</small>
+                </button>
+                <div class="menu-sep"></div>
+                <button data-manage-perms type="button" style="color:var(--text-dim);">Manage saved permissions…</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function bindTranscriptEvents() {
+    const inner = $('chat-inner');
+
+    inner.querySelectorAll('.process-summary').forEach((btn) => {
+      btn.onclick = () => btn.closest('.process-box').classList.toggle('open');
+    });
+    inner.querySelectorAll('.thinking-toggle').forEach((btn) => {
+      btn.onclick = () => btn.closest('.thinking-card').classList.toggle('open');
+    });
+    inner.querySelectorAll('.tool-group-btn').forEach((btn) => {
+      btn.onclick = () => btn.closest('.tool-group').classList.toggle('open');
+    });
+    inner.querySelectorAll('.cmd-row').forEach((btn) => {
+      btn.onclick = () => btn.closest('.cmd-block').classList.toggle('open');
+    });
+
+    inner.querySelectorAll('[data-copy-txt]').forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        navigator.clipboard?.writeText(btn.dataset.copyTxt).catch(() => {});
+        btn.classList.add('done');
+        showToast('Copied to clipboard');
+        setTimeout(() => btn.classList.remove('done'), 1200);
+      };
+    });
+
+    inner.querySelectorAll('[data-fork]').forEach((btn) => {
+      btn.onclick = () => openModal('modal-fork');
+    });
+    inner.querySelectorAll('[data-edit]').forEach((btn) => {
+      btn.onclick = () => {
+        const bubble = btn.closest('.msg-user-wrap')?.querySelector('.msg-user-bubble');
+        if (!bubble) return;
+        const original = bubble.childNodes[0]?.textContent?.trim() || '';
+        input.value = original;
+        input.dispatchEvent(new Event('input'));
+        input.focus();
+        showToast('Loaded message into composer for editing');
+      };
+    });
+    const forkSrc = $('btn-fork-src');
+    if (forkSrc) forkSrc.onclick = () => {
+      ensureTab('history');
+      state.wsActive = 'history';
+      setWorkspaceOpen(true);
+      renderWorkspace();
+      showToast('Showing parent branch in History');
+    };
+
+    inner.querySelectorAll('[data-open-file]').forEach((el) => {
+      el.onclick = () => {
+        ensureTab('files');
+        state.wsActive = 'files';
+        setWorkspaceOpen(true);
+        renderWorkspace();
+      };
+    });
+    inner.querySelectorAll('[data-open-diff]').forEach((el) => {
+      el.onclick = () => {
+        ensureTab('changes');
+        state.wsActive = 'changes';
+        setWorkspaceOpen(true);
+        renderWorkspace();
+      };
+    });
+    inner.querySelectorAll('[data-jump-res]').forEach((el) => {
+      el.onclick = () => {
+        ensureTab('research');
+        state.wsActive = 'research';
+        state.researchSubTab = el.dataset.jumpRes;
+        setWorkspaceOpen(true);
+        renderWorkspace();
+      };
+    });
+    inner.querySelectorAll('[data-open-ws]').forEach((el) => {
+      el.onclick = () => {
+        ensureTab(el.dataset.openWs);
+        state.wsActive = el.dataset.openWs;
+        setWorkspaceOpen(true);
+        renderWorkspace();
+      };
+    });
+
+    const btnRd = $('btn-toggle-rd');
+    if (btnRd) btnRd.onclick = () => $('run-details-box').classList.toggle('open');
+
+    // Question card
+    inner.querySelectorAll('[data-qopt]').forEach((opt) => {
+      opt.onclick = () => {
+        state.selectedQuestionOpt = Number(opt.dataset.qopt);
+        renderTranscript();
+      };
+    });
+    const qConfirm = $('btn-q-confirm');
+    if (qConfirm) qConfirm.onclick = () => {
+      state.questionAnswered = true;
+      renderTranscript();
+      showToast('Answer submitted');
+    };
+    const qSkip = $('btn-q-skip');
+    if (qSkip) qSkip.onclick = () => {
+      state.questionAnswered = true;
+      renderTranscript();
+      showToast('Question cancelled');
+    };
+    const qReopen = $('btn-reopen-q');
+    if (qReopen) qReopen.onclick = () => {
+      state.questionAnswered = false;
+      renderTranscript();
+    };
+
+    // Approval card
+    const btnAllow = $('btn-allow-once');
+    if (btnAllow) btnAllow.onclick = () => runApprovalFlow('Allowed once');
+    const btnDeny = $('btn-deny');
+    if (btnDeny) btnDeny.onclick = () => {
+      state.approvalState = 'denied';
+      renderTranscript();
+      showToast('Command denied');
+    };
+    const btnMenu = $('btn-allow-menu');
+    if (btnMenu) btnMenu.onclick = (e) => {
+      e.stopPropagation();
+      $('approval-split-menu').classList.toggle('open');
+    };
+    inner.querySelectorAll('[data-allow-scope]').forEach((b) => {
+      b.onclick = () => {
+        const scope = b.dataset.allowScope === 'project' ? 'This project' : 'This chat';
+        state.savedPermissions.unshift({
+          id: 'p' + Date.now(),
+          cmd: 'npm --prefix frontend run test -- --run',
+          scope, cwd: 'D:\\codey'
+        });
+        runApprovalFlow(`Allowed & saved (${scope})`);
+      };
+    });
+    const btnManage = inner.querySelector('[data-manage-perms]');
+    if (btnManage) btnManage.onclick = () => {
+      state.settingsTab = 'permissions';
+      openSettings();
+    };
+    const btnResetApp = $('btn-reset-approval');
+    if (btnResetApp) btnResetApp.onclick = () => {
+      state.approvalState = 'pending';
+      renderTranscript();
+    };
+  }
+
+  function runApprovalFlow(msg) {
+    state.approvalState = 'submitting';
+    renderTranscript();
+    setTimeout(() => {
+      state.approvalState = 'settled';
+      renderTranscript();
+      showToast(msg + ' — 146 tests passed');
+    }, 680);
+  }
+
+  /* ------------------------------------------------------------------------
+     Conversation Tick Rail (Wave Hover + Delayed Preview + Smooth Jump)
+     ------------------------------------------------------------------------ */
+  let currentTurn = 0;
+  let previewTimer = 0;
+  function renderTickRail() {
+    const rail = $('tick-rail');
+    const preview = $('tick-preview');
+    preview.classList.remove('show');
+    if (tickMeta.length < 2) {
+      rail.classList.remove('visible');
+      rail.innerHTML = '';
+      return;
+    }
+    rail.classList.add('visible');
+    rail.innerHTML = tickMeta.map((m, i) => `
+      <button class="tick-btn ${i === currentTurn ? 'is-current' : ''}" data-ti="${i}" aria-label="Jump to question ${i + 1}">
+        <span class="tick-bar"></span>
+      </button>
+    `).join('');
+
+    const btns = Array.from(rail.querySelectorAll('.tick-btn'));
+    rail.onmouseleave = () => {
+      rail.classList.remove('is-hovering');
+      btns.forEach((b) => b.classList.remove('is-selected', 'is-near-1', 'is-near-2'));
+      clearTimeout(previewTimer);
+      preview.classList.remove('show');
+    };
+    btns.forEach((b, idx) => {
+      b.onmouseenter = () => {
+        rail.classList.add('is-hovering');
+        btns.forEach((other, j) => {
+          const d = Math.abs(j - idx);
+          other.classList.toggle('is-selected', d === 0);
+          other.classList.toggle('is-near-1', d === 1);
+          other.classList.toggle('is-near-2', d === 2);
+        });
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(() => {
+          $('tp-q').textContent = tickMeta[idx].q;
+          $('tp-a').textContent = tickMeta[idx].a;
+          const rect = b.getBoundingClientRect();
+          const stageRect = $('chat-scroll').getBoundingClientRect();
+          const top = Math.max(12, Math.min(stageRect.height - 120, rect.top - stageRect.top - 24));
+          preview.style.top = top + 'px';
+          preview.classList.add('show');
+        }, 160);
+      };
+      b.onclick = () => {
+        const target = $('chat-inner').querySelector(`[data-turn="${idx}"]`);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          currentTurn = idx;
+          btns.forEach((x, j) => x.classList.toggle('is-current', j === idx));
+          preview.classList.remove('show');
+        }
+      };
+    });
+  }
+
+  $('chat-scroll').addEventListener('scroll', () => {
+    const sc = $('chat-scroll');
+    const atBottom = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 28;
+    $('back-latest').hidden = atBottom || state.scene === 'empty';
+    // Update current tick
+    const turns = Array.from($('chat-inner').querySelectorAll('[data-turn]'));
+    if (turns.length >= 2) {
+      let active = 0;
+      const scTop = sc.getBoundingClientRect().top + 80;
+      turns.forEach((t, i) => {
+        if (t.getBoundingClientRect().top <= scTop) active = i;
+      });
+      if (active !== currentTurn) {
+        currentTurn = active;
+        $('tick-rail').querySelectorAll('.tick-btn').forEach((b, i) => b.classList.toggle('is-current', i === active));
+      }
+    }
+  });
+  $('back-latest').onclick = () => {
+    const sc = $('chat-scroll');
+    sc.scrollTo({ top: sc.scrollHeight, behavior: 'smooth' });
+  };
+
+  /* ------------------------------------------------------------------------
+     Right Workspace Pane (Changes, Research + Interactive Graph, Files, Review, Local Context, History)
+     ------------------------------------------------------------------------ */
+  const TAB_LABELS = {
+    files: 'sse.ts',
+    changes: 'Changes',
+    research: 'Research',
+    review: 'Review',
+    context: 'Local context',
+    history: 'History',
+  };
+
+  function ensureTab(id) {
+    if (!state.wsTabs.includes(id)) state.wsTabs.push(id);
+  }
+  function setWorkspaceOpen(open) {
+    state.wsOpen = open;
+    if (!open) state.wsFull = false;
+    $('app-shell').classList.toggle('workspace-open', state.wsOpen);
+    $('app-shell').classList.toggle('workspace-full', state.wsFull);
+    updateTopQuickButtons();
+  }
+  function updateTopQuickButtons() {
+    document.querySelectorAll('[data-open-ws]').forEach((b) => {
+      b.classList.toggle('active', state.wsOpen && state.wsActive === b.dataset.openWs);
+    });
+    $('btn-toggle-ws').classList.toggle('active', state.wsOpen);
+  }
+
+  function renderWorkspace() {
+    // Tabs
+    const tabsEl = $('ws-tabs');
+    tabsEl.innerHTML = state.wsTabs.map((id) => `
+      <div class="ws-tab ${id === state.wsActive ? 'active' : ''}" data-sel-tab="${id}" role="tab" aria-selected="${id === state.wsActive}">
+        <span>${TAB_LABELS[id] || id}</span>
+        <button class="ws-tab-x" data-close-tab="${id}" title="Close tab" aria-label="Close ${TAB_LABELS[id]}">
+          <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+    `).join('');
+
+    tabsEl.querySelectorAll('[data-sel-tab]').forEach((t) => {
+      t.onclick = (e) => {
+        if (e.target.closest('[data-close-tab]')) return;
+        state.wsActive = t.dataset.selTab;
+        renderWorkspace();
+        updateTopQuickButtons();
+      };
+    });
+    tabsEl.querySelectorAll('[data-close-tab]').forEach((x) => {
+      x.onclick = (e) => {
+        e.stopPropagation();
+        const id = x.dataset.closeTab;
+        state.wsTabs = state.wsTabs.filter((t) => t !== id);
+        if (!state.wsTabs.length) {
+          setWorkspaceOpen(false);
+        } else {
+          if (state.wsActive === id) state.wsActive = state.wsTabs[0];
+          renderWorkspace();
+        }
+        updateTopQuickButtons();
+      };
+    });
+
+    const root = $('ws-panel-root');
+    if (state.wsActive === 'changes') renderChangesPanel(root);
+    else if (state.wsActive === 'research') renderResearchPanel(root);
+    else if (state.wsActive === 'files') renderFilesPanel(root);
+    else if (state.wsActive === 'review') renderReviewPanel(root);
+    else if (state.wsActive === 'context') renderLocalContextPanel(root);
+    else if (state.wsActive === 'history') renderHistoryPanel(root);
+  }
+
+  function renderChangesPanel(root) {
+    root.innerHTML = `
+      <div class="ws-subbar">
+        <div class="ws-subbar-meta">
+          <span class="ws-scope-pill">Snapshot</span>
+          <span class="ws-subbar-path">codey · 2 files (+44 −4)</span>
+        </div>
+        <button class="ws-act" id="ws-copy-diff" type="button">Copy diff</button>
+        <button class="ws-act danger" id="ws-restore" type="button">Restore</button>
+      </div>
+      <div class="ws-body">
+        ${state.restoreConfirming ? `
+          <div class="restore-confirm">
+            <p>Restore <strong>2 files</strong> to pre-run snapshot?</p>
+            <div style="display:flex;gap:6px;">
+              <button class="btn-outline" id="rc-cancel" type="button">Cancel</button>
+              <button class="btn-outline" id="rc-go" style="color:var(--err-text);border-color:rgba(var(--err-rgb),0.4);" type="button">Confirm restore</button>
+            </div>
+          </div>
+        ` : ''}
+        <div class="diff-file open">
+          <button class="diff-file-head" type="button">
+            <span class="df-st">M</span>
+            <span class="df-path">frontend/src/sse.ts</span>
+            <span class="df-stat"><span class="a">+18</span><span class="d">−4</span></span>
+          </button>
+          <div class="diff-code">
+            <div class="dl hunk"><span class="ln"></span><span class="mk"></span><span>@@ -64,9 +64,15 @@ export class SseStream {</span></div>
+            <div class="dl"><span class="ln">64</span><span class="mk"> </span><span>  connect(target: StreamTarget) {</span></div>
+            <div class="dl del"><span class="ln">65</span><span class="mk">−</span><span>    if (this.lastEventId) {</span></div>
+            <div class="dl del"><span class="ln">66</span><span class="mk">−</span><span>      params.set('cursor', this.lastEventId);</span></div>
+            <div class="dl del"><span class="ln">67</span><span class="mk">−</span><span>    }</span></div>
+            <div class="dl add"><span class="ln">65</span><span class="mk">+</span><span>    const sameFence = this.fence?.runId === target.runId</span></div>
+            <div class="dl add"><span class="ln">66</span><span class="mk">+</span><span>      && this.fence?.revision === target.revision;</span></div>
+            <div class="dl add"><span class="ln">67</span><span class="mk">+</span><span>    if (sameFence && this.lastEventId) {</span></div>
+            <div class="dl add"><span class="ln">68</span><span class="mk">+</span><span>      params.set('cursor', this.lastEventId);</span></div>
+            <div class="dl add"><span class="ln">69</span><span class="mk">+</span><span>    } else {</span></div>
+            <div class="dl add"><span class="ln">70</span><span class="mk">+</span><span>      this.resetFence(target.runId, target.revision);</span></div>
+            <div class="dl add"><span class="ln">71</span><span class="mk">+</span><span>    }</span></div>
+            <div class="dl"><span class="ln">72</span><span class="mk"> </span><span>    this.source = new EventSource(url);</span></div>
+          </div>
+        </div>
+        <div class="diff-file open">
+          <button class="diff-file-head" type="button">
+            <span class="df-st">M</span>
+            <span class="df-path">tests/test_sse_cursor.py</span>
+            <span class="df-stat"><span class="a">+26</span><span class="d">−0</span></span>
+          </button>
+          <div class="diff-code">
+            <div class="dl hunk"><span class="ln"></span><span class="mk"></span><span>@@ -38,3 +38,10 @@ def test_same_revision_resumes_cursor():</span></div>
+            <div class="dl add"><span class="ln">40</span><span class="mk">+</span><span>def test_newer_revision_resets_cursor():</span></div>
+            <div class="dl add"><span class="ln">41</span><span class="mk">+</span><span>    stream = SseCursorFence(run_id="r1", revision=2)</span></div>
+            <div class="dl add"><span class="ln">42</span><span class="mk">+</span><span>    stream.observe("evt-42")</span></div>
+            <div class="dl add"><span class="ln">43</span><span class="mk">+</span><span>    assert stream.cursor_for("r1", revision=3) is None</span></div>
+          </div>
+        </div>
+      </div>
+    `;
+    root.querySelectorAll('.diff-file-head').forEach((h) => {
+      h.onclick = () => h.closest('.diff-file').classList.toggle('open');
+    });
+    $('ws-copy-diff').onclick = () => showToast('Unified diff copied');
+    $('ws-restore').onclick = () => { state.restoreConfirming = !state.restoreConfirming; renderWorkspace(); };
+    const rcCancel = $('rc-cancel');
+    if (rcCancel) rcCancel.onclick = () => { state.restoreConfirming = false; renderWorkspace(); };
+    const rcGo = $('rc-go');
+    if (rcGo) rcGo.onclick = () => { state.restoreConfirming = false; renderWorkspace(); showToast('Restored 2 files from snapshot'); };
+  }
+
+  function renderResearchPanel(root) {
+    const sub = state.researchSubTab;
+    root.innerHTML = `
+      <div class="ws-subbar">
+        <div class="ws-subbar-meta">
+          <span class="ws-scope-pill">4 sources</span>
+          <span class="ws-subbar-path">SQLite WAL checkpointing</span>
+        </div>
+        <button class="ws-act primary-accent" id="btn-handoff" type="button">Use in Project</button>
+      </div>
+      <div class="res-tabs">
+        ${['evidence','sources','graph','notes'].map((t) => `
+          <button class="res-tab ${sub === t ? 'active' : ''}" data-rsub="${t}" type="button">${t[0].toUpperCase() + t.slice(1)}</button>
+        `).join('')}
+      </div>
+      <div class="ws-body" id="res-body"></div>
+    `;
+    root.querySelectorAll('[data-rsub]').forEach((b) => {
+      b.onclick = () => { state.researchSubTab = b.dataset.rsub; renderWorkspace(); };
+    });
+    $('btn-handoff').onclick = () => showToast('Research Brief attached to project Writer (codey)');
+
+    const body = $('res-body');
+    if (sub === 'evidence') {
+      body.innerHTML = `
+        <div class="res-card">
+          <div class="res-card-title">PASSIVE checkpoints never block concurrent readers or writers</div>
+          <div class="res-card-meta"><span class="res-tag">Supported</span><span>sqlite.org/wal.html</span></div>
+          <div class="res-quote">“SQLITE_CHECKPOINT_PASSIVE checkpoints as many frames as possible without waiting for any database readers or writers to finish.”</div>
+        </div>
+        <div class="res-card">
+          <div class="res-card-title">TRUNCATE reclaims WAL disk space at clean idle boundaries</div>
+          <div class="res-card-meta"><span class="res-tag">Supported</span><span>sqlite.org/c3ref/wal_checkpoint_v2.html</span></div>
+          <div class="res-quote">“SQLITE_CHECKPOINT_TRUNCATE works like RESTART and additionally truncates the log file to zero bytes upon successful return.”</div>
+        </div>
+      `;
+    } else if (sub === 'sources') {
+      body.innerHTML = `
+        <div class="res-card">
+          <div class="res-card-title">Write-Ahead Logging — SQLite Documentation</div>
+          <div class="res-card-meta"><span>https://sqlite.org/wal.html</span><span>· Captured 4 passages</span></div>
+        </div>
+        <div class="res-card">
+          <div class="res-card-title">Checkpoint a database — wal_checkpoint_v2</div>
+          <div class="res-card-meta"><span>https://sqlite.org/c3ref/wal_checkpoint_v2.html</span><span>· Captured 3 passages</span></div>
+        </div>
+        <div class="res-card">
+          <div class="res-card-title">Pragma wal_autocheckpoint Reference</div>
+          <div class="res-card-meta"><span>https://sqlite.org/pragma.html#pragma_wal_autocheckpoint</span><span>· Captured 2 passages</span></div>
+        </div>
+      `;
+    } else if (sub === 'notes') {
+      body.innerHTML = `
+        <div class="res-card">
+          <div class="res-card-title">wal-checkpoint-tradeoffs.md</div>
+          <div class="res-card-meta"><span class="res-tag">Synthesis</span><span>3 grounded sources</span></div>
+          <div class="res-quote">Keep PASSIVE as default on every commit window. Schedule TRUNCATE only after 30s of zero active readers or on graceful shutdown.</div>
+        </div>
+        <div class="res-card">
+          <div class="res-card-title">desktop-lock-contention.md</div>
+          <div class="res-card-meta"><span class="res-tag">Source note</span><span>1 grounded source</span></div>
+          <div class="res-quote">Setting busy_timeout=5000 avoids transient SQLITE_BUSY errors during multi-tab restore checks.</div>
+        </div>
+      `;
+    } else {
+      body.innerHTML = `
+        <div class="graph-wrap">
+          <div class="graph-bar">
+            <span>Depth</span>
+            ${[1,2,3].map((d) => `<button class="depth-btn ${state.graphDepth === d ? 'active' : ''}" data-depth="${d}" type="button">${d}</button>`).join('')}
+            <span style="margin-left:auto;font-size:11px;">Drag nodes · Hover connections</span>
+          </div>
+          <div class="graph-stage"><canvas id="graph-canvas"></canvas></div>
+          <div class="graph-detail" id="graph-detail">
+            <h4>WAL Checkpointing Brief</h4>
+            <div class="gd-meta">Synthesis · 4 connected nodes</div>
+            <p>Hover or click any green node in the canvas to inspect its provenance and connected evidence.</p>
+          </div>
+        </div>
+      `;
+      body.querySelectorAll('[data-depth]').forEach((b) => {
+        b.onclick = () => { state.graphDepth = Number(b.dataset.depth); renderWorkspace(); };
+      });
+      initResearchGraph();
+    }
+  }
+
+  function renderFilesPanel(root) {
+    root.innerHTML = `
+      <div class="ws-subbar">
+        <div class="ws-subbar-meta">
+          <span class="ws-subbar-path">frontend/src/sse.ts</span>
+        </div>
+        <button class="ws-act" id="f-wrap" type="button">Wrap</button>
+        <button class="ws-act" id="f-copy" type="button">Copy</button>
+      </div>
+      <div class="file-find">
+        <svg class="ic ic-sm" style="color:var(--muted);" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="f-find-input" type="text" placeholder="Find in file…" />
+      </div>
+      <div class="ws-body" style="padding:0;">
+        <div class="source-view" id="source-view">
+          ${[
+            'export interface StreamFence { runId: string; revision: number; }',
+            '',
+            'export class SseStream {',
+            '  private fence: StreamFence | null = null;',
+            '  private lastEventId = \'\';',
+            '',
+            '  connect(target: StreamFence) {',
+            '    const sameFence = this.fence?.runId === target.runId',
+            '      && this.fence?.revision === target.revision;',
+            '    if (sameFence && this.lastEventId) {',
+            '      params.set(\'cursor\', this.lastEventId);',
+            '    } else {',
+            '      this.resetFence(target.runId, target.revision);',
+            '    }',
+            '    this.source = new EventSource(url);',
+            '  }',
+            '}',
+          ].map((line, i) => `
+            <div class="src-line ${i >= 7 && i <= 13 ? 'hl' : ''}">
+              <span class="sl-n">${i + 58}</span>
+              <span class="sl-c">${esc(line)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+    $('f-wrap').onclick = () => $('source-view').classList.toggle('wrap');
+    $('f-copy').onclick = () => showToast('File source copied');
+  }
+
+  function renderReviewPanel(root) {
+    root.innerHTML = `
+      <div class="ws-subbar">
+        <div class="ws-subbar-meta">
+          <span class="ws-scope-pill">ChatGPT Reviewer</span>
+          <span class="ws-subbar-path">2 findings · 0 blockers</span>
+        </div>
+      </div>
+      <div class="ws-body">
+        <div class="finding-card">
+          <div class="finding-head">
+            <span class="finding-loc" data-jump-file>frontend/src/sse.ts:65</span>
+            <span class="finding-sev">Edge case</span>
+          </div>
+          <p class="finding-body">When <code>target.revision</code> is omitted by an older server, fall back to the conservative replay barrier rather than treating <code>undefined === undefined</code> as a matching fence.</p>
+        </div>
+        <div class="finding-card">
+          <div class="finding-head">
+            <span class="finding-loc" data-jump-file>tests/test_sse_cursor.py:40</span>
+            <span class="finding-sev">Suggestion</span>
+          </div>
+          <p class="finding-body">Add an assertion verifying that an explicit reconnect after terminal settlement never re-enables Stop.</p>
+        </div>
+      </div>
+    `;
+    root.querySelectorAll('[data-jump-file]').forEach((el) => {
+      el.onclick = () => { ensureTab('files'); state.wsActive = 'files'; renderWorkspace(); };
+    });
+  }
+
+  function renderLocalContextPanel(root) {
+    root.innerHTML = `
+      <div class="ws-subbar">
+        <div class="ws-subbar-meta">
+          <span class="ws-scope-pill">codey</span>
+          <span class="ws-subbar-path">Local audit · read-only until confirmed</span>
+        </div>
+        <button class="ws-act" id="lc-export" type="button">Export</button>
+      </div>
+      <div class="ws-body">
+        <div class="lc-section">
+          <div class="lc-title">Pending review</div>
+          <div class="lc-row" id="lc-pending-row">
+            <div class="lc-main">
+              <strong>Run pytest with -q on targeted files first</strong>
+              <small>Observed in 4 recent project runs · codey</small>
+            </div>
+            <div class="lc-acts">
+              <button class="link-btn" id="lc-confirm" style="color:var(--green-bright);">Confirm</button>
+              <button class="link-btn" id="lc-reject">Reject</button>
+            </div>
+          </div>
+        </div>
+        <div class="lc-section">
+          <div class="lc-title">Active preferences</div>
+          <div class="lc-row">
+            <div class="lc-main">
+              <strong>Keep UI copy in English; avoid colored status chips</strong>
+              <small>Confirmed · Applies to project codey</small>
+            </div>
+          </div>
+        </div>
+        <div class="lc-section">
+          <div class="lc-title">Recent focus</div>
+          <div class="lc-row">
+            <div class="lc-main">
+              <strong>SSE checkpoint revision fencing & reconnect safety</strong>
+              <small>Updated 2m ago</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    $('lc-export').onclick = () => showToast('Local context exported as JSON');
+    const c = $('lc-confirm'), r = $('lc-reject');
+    if (c) c.onclick = () => { $('lc-pending-row').remove(); showToast('Preference confirmed'); };
+    if (r) r.onclick = () => { $('lc-pending-row').remove(); showToast('Item dismissed'); };
+  }
+
+  function renderHistoryPanel(root) {
+    root.innerHTML = `
+      <div class="ws-subbar">
+        <div class="ws-subbar-meta"><span class="ws-subbar-path">Branches & checkpoints</span></div>
+      </div>
+      <div class="ws-body">
+        <div class="res-card">
+          <div class="res-card-title">Current · Fix flaky SSE cursor replay</div>
+          <div class="res-card-meta"><span>4 turns</span><span>· Snapshot available</span></div>
+        </div>
+        <div class="res-card">
+          <div class="res-card-title">Parent · Investigate reconnect duplicates</div>
+          <div class="res-card-meta"><span>Branched at turn 3</span><span>· Worktree main</span></div>
+        </div>
+      </div>
+    `;
+  }
+
+  /* ------------------------------------------------------------------------
+     Interactive Research Graph (Retains DESIGN.md Green Nodes & Hover Edges)
+     ------------------------------------------------------------------------ */
+  function initResearchGraph() {
+    const canvas = $('graph-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const rect = canvas.getBoundingClientRect();
+    const W = rect.width || 420, H = rect.height || 310;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.scale(dpr, dpr);
+
+    const allNodes = [
+      { id: 0, label: 'WAL Brief', type: 'Synthesis', x: W * 0.5, y: H * 0.48, r: 9, d: 1, desc: 'Recommended strategy: PASSIVE default + idle TRUNCATE.' },
+      { id: 1, label: 'sqlite.org/wal', type: 'Source', x: W * 0.24, y: H * 0.28, r: 7, d: 1, desc: 'Official WAL specification covering reader marks and PASSIVE behavior.' },
+      { id: 2, label: 'wal_checkpoint_v2', type: 'Source', x: W * 0.77, y: H * 0.3, r: 7, d: 1, desc: 'C API contract for PASSIVE, FULL, RESTART, and TRUNCATE modes.' },
+      { id: 3, label: 'tradeoffs.md', type: 'Note', x: W * 0.3, y: H * 0.74, r: 7, d: 2, desc: 'Grounded note comparing latency spikes vs WAL file growth.' },
+      { id: 4, label: 'lock-contention.md', type: 'Note', x: W * 0.72, y: H * 0.74, r: 7, d: 2, desc: 'Guidance on busy_timeout=5000 for multi-tab local workbenches.' },
+      { id: 5, label: 'autocheckpoint', type: 'Source', x: W * 0.14, y: H * 0.56, r: 6, d: 3, desc: 'Default 1000-page threshold pragma documentation.' },
+      { id: 6, label: 'state.sqlite', type: 'Project Ref', x: W * 0.86, y: H * 0.55, r: 6, d: 3, desc: 'Local persistence store in Codey desktop runtime.' },
+    ];
+    const nodes = allNodes.filter((n) => n.d <= state.graphDepth);
+    const ids = new Set(nodes.map((n) => n.id));
+    const edges = [[0,1],[0,2],[0,3],[0,4],[1,3],[2,4],[1,5],[4,6]].filter(([a,b]) => ids.has(a) && ids.has(b));
+
+    let hovered = null;
+    let dragging = null;
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      for (const [a, b] of edges) {
+        const na = nodes.find((n) => n.id === a), nb = nodes.find((n) => n.id === b);
+        const hi = hovered && (hovered.id === a || hovered.id === b);
+        ctx.beginPath();
+        ctx.moveTo(na.x, na.y); ctx.lineTo(nb.x, nb.y);
+        ctx.strokeStyle = hi ? '#78a58b' : 'rgba(255,255,255,0.12)';
+        ctx.lineWidth = hi ? 1.8 : 1;
+        ctx.stroke();
+      }
+      for (const n of nodes) {
+        const isH = hovered?.id === n.id;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, isH ? n.r + 2 : n.r, 0, Math.PI * 2);
+        ctx.fillStyle = isH ? '#acd1b9' : '#78a58b';
+        ctx.fill();
+        if (isH) {
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, n.r + 6, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(120,165,139,0.28)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+        ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillStyle = isH ? '#ededf0' : '#a1a1aa';
+        ctx.textAlign = 'center';
+        ctx.fillText(n.label, n.x, n.y + n.r + 14);
+      }
+    }
+
+    function hit(e) {
+      const r = canvas.getBoundingClientRect();
+      const x = e.clientX - r.left, y = e.clientY - r.top;
+      return nodes.find((n) => Math.hypot(n.x - x, n.y - y) <= n.r + 8) || null;
+    }
+
+    canvas.onpointerdown = (e) => {
+      const n = hit(e);
+      if (n) {
+        dragging = n;
+        canvas.setPointerCapture(e.pointerId);
+        $('graph-detail').innerHTML = `<h4>${esc(n.label)}</h4><div class="gd-meta">${esc(n.type)} · Grounded</div><p>${esc(n.desc)}</p>`;
+      }
+    };
+    canvas.onpointermove = (e) => {
+      const r = canvas.getBoundingClientRect();
+      if (dragging) {
+        dragging.x = Math.max(24, Math.min(W - 24, e.clientX - r.left));
+        dragging.y = Math.max(20, Math.min(H - 28, e.clientY - r.top));
+        draw();
+        return;
+      }
+      const next = hit(e);
+      if (next !== hovered) {
+        hovered = next;
+        canvas.style.cursor = hovered ? 'pointer' : 'grab';
+        draw();
+      }
+    };
+    canvas.onpointerup = () => { dragging = null; };
+    draw();
+  }
+
+  /* ------------------------------------------------------------------------
+     Empty Home Character Pond (DESIGN.md Signature Ambient Effect)
+     ------------------------------------------------------------------------ */
+  let pondRaf = 0;
+  let pondActive = false;
+  let pondRipples = [];
+  let pondClock = 0;
+  let pondCells = [];
+  let pondNextAmbient = 0.2;
+
+  function resizePond() {
+    const canvas = $('pond-canvas');
+    const r = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.max(1, r.width) * dpr;
+    canvas.height = Math.max(1, r.height) * dpr;
+    const chars = '0123456789.:;+=-';
+    pondCells = [];
+    for (let y = 14; y < r.height - 10; y += 22) {
+      for (let x = 10; x < r.width - 10; x += 12) {
+        const h = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+        const frac = h - Math.floor(h);
+        pondCells.push({
+          x, y,
+          ch: chars[Math.floor(frac * chars.length)],
+          baseAlpha: 0.045 + frac * 0.06,
+        });
+      }
+    }
+  }
+
+  function startPond() {
+    if (pondActive) return;
+    pondActive = true;
+    resizePond();
+    let last = performance.now();
+    const tick = (now) => {
+      if (!pondActive) return;
+      const dt = Math.min(0.06, (now - last) / 1000);
+      last = now;
+      pondClock += dt;
+      const canvas = $('pond-canvas');
+      const ctx = canvas.getContext('2d');
+      const r = canvas.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+      if (pondClock >= pondNextAmbient) {
+        pondRipples.push({
+          x: r.width * (0.15 + Math.random() * 0.7),
+          y: r.height * (0.12 + Math.random() * 0.65),
+          born: pondClock, speed: 62, gain: 0.9,
+        });
+        pondNextAmbient = pondClock + 2.4 + Math.random() * 1.8;
+      }
+      pondRipples = pondRipples.filter((w) => pondClock - w.born < 6.5);
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, r.width, r.height);
+      ctx.font = '11px Consolas, "SF Mono", monospace';
+      ctx.textBaseline = 'middle';
+
+      for (const c of pondCells) {
+        let waveAmp = 0;
+        for (const w of pondRipples) {
+          const age = pondClock - w.born;
+          const dist = Math.hypot(c.x - w.x, c.y - w.y);
+          const front = dist - age * w.speed;
+          if (Math.abs(front) > 75) continue;
+          const env = Math.exp(-(front * front) / 680) * Math.exp(-age / 3.2) * w.gain;
+          waveAmp += Math.cos(front * 0.14) * env;
+        }
+        if (waveAmp > 0.06) {
+          const a = Math.min(0.75, c.baseAlpha + waveAmp * 0.65);
+          ctx.fillStyle = `rgba(120, 165, 139, ${a.toFixed(3)})`;
+        } else {
+          ctx.fillStyle = `rgba(235, 235, 240, ${c.baseAlpha.toFixed(3)})`;
+        }
+        ctx.fillText(c.ch, c.x, c.y);
+      }
+      pondRaf = requestAnimationFrame(tick);
+    };
+    pondRaf = requestAnimationFrame(tick);
+  }
+  function stopPond() {
+    pondActive = false;
+    cancelAnimationFrame(pondRaf);
+  }
+  $('main-col').addEventListener('pointermove', (e) => {
+    if (!pondActive) return;
+    if (Math.random() > 0.25) return;
+    const r = $('pond-canvas').getBoundingClientRect();
+    pondRipples.push({ x: e.clientX - r.left, y: e.clientY - r.top, born: pondClock, speed: 56, gain: 0.55 });
+    if (pondRipples.length > 14) pondRipples.shift();
+  });
+
+  /* ------------------------------------------------------------------------
+     Composer, Sending, Steering & Drag/Drop Attachments
+     ------------------------------------------------------------------------ */
+  const input = $('composer-input');
+  const sendBtn = $('btn-send');
+
+  function syncSendSlot() {
+    const hasDraft = input.value.trim().length > 0 || state.attachments.length > 0;
+    const showStop = state.running && !hasDraft;
+    $('send-svg').hidden = showStop;
+    $('stop-svg').hidden = !showStop;
+    sendBtn.classList.toggle('is-stop', showStop);
+    sendBtn.disabled = !hasDraft && !state.running;
+    sendBtn.setAttribute('aria-label', showStop ? 'Stop' : 'Send');
+  }
+
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(180, input.scrollHeight) + 'px';
+    syncSendSlot();
+  });
+
+  function submitComposer() {
+    const text = input.value.trim();
+    if (!text && !state.attachments.length) {
+      if (state.running) toggleSimRun(false);
+      return;
+    }
+
+    if (state.running) {
+      state.pendingSteers.push({ id: Date.now(), text });
+      input.value = ''; input.style.height = 'auto';
+      renderSteerStrip();
+      syncSendSlot();
+      showToast('Queued to steer active run');
+      return;
+    }
+
+    // Empty home smooth transition!
+    if (state.scene === 'empty') {
+      input.value = ''; input.style.height = 'auto';
+      state.attachments = []; renderAttachments();
+      switchScene('coding', 'c1', text.slice(0, 42));
+      showToast('Started new conversation');
+      return;
+    }
+
+    // Append message live to transcript
+    const inner = $('chat-inner');
+    const turn = document.createElement('div');
+    turn.className = 'turn-block';
+    turn.innerHTML = `
+      <div class="msg-user-wrap">
+        <div class="msg-user-bubble">${esc(text)}</div>
+      </div>
+      <div class="process-box">
+        <button class="process-summary" type="button">
+          <span class="spinner"></span>
+          <span>Working · Waiting for reply</span>
+        </button>
+      </div>
+    `;
+    inner.appendChild(turn);
+    input.value = ''; input.style.height = 'auto';
+    state.attachments = []; renderAttachments();
+    syncSendSlot();
+    $('chat-scroll').scrollTo({ top: $('chat-scroll').scrollHeight, behavior: 'smooth' });
+
+    setTimeout(() => {
+      turn.querySelector('.process-box').innerHTML = `
+        <button class="process-summary" type="button">
+          <span class="p-state-dot"></span>
+          <span>Worked · 1s</span>
+        </button>
+      `;
+      const ans = document.createElement('div');
+      ans.className = 'msg-asst-wrap';
+      ans.innerHTML = `<div class="asst-body" data-asst-selectable><p>Got it — this interactive prototype shows how new messages append smoothly while keeping the composer quiet and responsive.</p></div>`;
+      turn.appendChild(ans);
+      $('chat-scroll').scrollTo({ top: $('chat-scroll').scrollHeight, behavior: 'smooth' });
+    }, 900);
+  }
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitComposer();
+    }
+  });
+  sendBtn.onclick = submitComposer;
+
+  function renderSteerStrip() {
+    const el = $('steer-strip');
+    if (!state.pendingSteers.length) { el.hidden = true; el.innerHTML = ''; return; }
+    el.hidden = false;
+    el.innerHTML = state.pendingSteers.map((s) => `
+      <div class="steer-item">
+        <span class="steer-tag">STEERING</span>
+        <span class="steer-text">${esc(s.text)}</span>
+        <button class="link-btn" data-del-steer="${s.id}" type="button">Remove</button>
+      </div>
+    `).join('');
+    el.querySelectorAll('[data-del-steer]').forEach((b) => {
+      b.onclick = () => {
+        state.pendingSteers = state.pendingSteers.filter((x) => String(x.id) !== b.dataset.delSteer);
+        renderSteerStrip();
+      };
+    });
+  }
+
+  function renderAttachments() {
+    const el = $('composer-atts');
+    if (!state.attachments.length) { el.hidden = true; el.innerHTML = ''; return; }
+    el.hidden = false;
+    el.innerHTML = state.attachments.map((a, i) => `
+      <span class="att-chip">${esc(a)} <button data-rm-att="${i}" type="button" aria-label="Remove">×</button></span>
+    `).join('');
+    el.querySelectorAll('[data-rm-att]').forEach((b) => {
+      b.onclick = () => { state.attachments.splice(Number(b.dataset.rmAtt), 1); renderAttachments(); syncSendSlot(); };
+    });
+  }
+
+  const cbox = $('composer-box');
+  cbox.addEventListener('dragover', (e) => { e.preventDefault(); cbox.classList.add('drag-over'); });
+  cbox.addEventListener('dragleave', () => cbox.classList.remove('drag-over'));
+  cbox.addEventListener('drop', (e) => {
+    e.preventDefault(); cbox.classList.remove('drag-over');
+    const files = Array.from(e.dataTransfer?.files || []);
+    files.forEach((f) => state.attachments.push(f.name));
+    if (!files.length) state.attachments.push('dropped_snippet.ts');
+    renderAttachments(); syncSendSlot();
+  });
+
+  /* ------------------------------------------------------------------------
+     Simulated Running Toggle
+     ------------------------------------------------------------------------ */
+  function toggleSimRun(force) {
+    state.running = typeof force === 'boolean' ? force : !state.running;
+    $('top-run-status').hidden = !state.running;
+    $('btn-sim-run').classList.toggle('is-on', state.running);
+    $('btn-sim-run').textContent = state.running ? '停止运行模拟' : '模拟运行中';
+    if (state.running && !state.pendingSteers.length) {
+      state.pendingSteers = [{ id: 1, text: 'Keep the patch minimal and avoid touching unrelated SSE handlers' }];
+    } else if (!state.running) {
+      state.pendingSteers = [];
+    }
+    renderSteerStrip();
+    syncContextRow();
+    syncSendSlot();
+    renderSidebar();
+  }
+  $('btn-sim-run').onclick = () => toggleSimRun();
+
+  /* ------------------------------------------------------------------------
+     Settings Modal (Flat 2-Column)
+     ------------------------------------------------------------------------ */
+  function openSettings() {
+    renderSettingsPane();
+    openModal('modal-settings');
+  }
+  function renderSettingsPane() {
+    document.querySelectorAll('.snav-btn').forEach((b) => {
+      b.classList.toggle('active', b.dataset.spane === state.settingsTab);
+    });
+    const pane = $('settings-pane');
+    if (state.settingsTab === 'models') {
+      pane.innerHTML = `
+        <p class="set-desc">Choose which models appear in the daily composer picker. Websites open only when you send a message.</p>
+        <div class="set-card">
+          <div class="set-card-head">
+            <div><strong>Websites</strong> <span>· 2 selected</span></div>
+            <button class="toggle-sw on" data-tog type="button" aria-label="Toggle Websites"></button>
+          </div>
+          <div class="model-check-list">
+            <label class="model-check"><input type="checkbox" checked /> DeepSeek</label>
+            <label class="model-check"><input type="checkbox" checked /> ChatGPT</label>
+            <label class="model-check"><input type="checkbox" /> Claude</label>
+          </div>
+        </div>
+        <div class="set-card">
+          <div class="set-card-head">
+            <div><strong>Local server</strong> <span>· 1 selected</span></div>
+            <button class="toggle-sw on" data-tog type="button" aria-label="Toggle Local"></button>
+          </div>
+          <div class="model-check-list">
+            <label class="model-check"><input type="checkbox" checked /> Qwen3-Coder 30B (127.0.0.1:11434)</label>
+          </div>
+        </div>
+      `;
+      pane.querySelectorAll('[data-tog]').forEach((t) => { t.onclick = () => t.classList.toggle('on'); });
+    } else if (state.settingsTab === 'connections') {
+      pane.innerHTML = `
+        <p class="set-desc">Configure your OpenAI-compatible local server. Saved separately from model checklist changes.</p>
+        <div class="set-card">
+          <div class="field-group">
+            <label>Address <span>OpenAI-compatible</span></label>
+            <input class="field-input mono" value="http://127.0.0.1:11434/v1" />
+          </div>
+          <div class="field-group">
+            <label>Default model</label>
+            <input class="field-input mono" value="qwen3-coder:30b" />
+          </div>
+          <div class="field-group">
+            <label>API key <span>Optional · masked</span></label>
+            <input class="field-input" type="password" placeholder="Leave blank to keep saved key" />
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div class="field-group">
+              <label>Context limit</label>
+              <select class="field-input"><option>Follow server</option><option>32,768 tokens</option><option selected>131,072 tokens</option></select>
+            </div>
+            <div class="field-group">
+              <label>Tool calling</label>
+              <select class="field-input"><option selected>Automatic</option><option>Native</option><option>Compatibility</option></select>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;">
+            <button class="btn-outline" id="btn-test-conn" type="button">Save connection</button>
+          </div>
+        </div>
+      `;
+      $('btn-test-conn').onclick = () => showToast('Connection saved · Server reachable');
+    } else if (state.settingsTab === 'appearance') {
+      pane.innerHTML = `
+        <p class="set-desc">Adjust reading scale across the transcript, sidebar, and inspection panels.</p>
+        <div class="set-card">
+          <div class="set-card-head">
+            <strong>Font size</strong>
+            <span id="fs-val">${state.fontScale === 1 ? 'Standard' : state.fontScale > 1.1 ? 'Extra' : 'Large'}</span>
+          </div>
+          <input type="range" min="0" max="2" step="1" value="${state.fontScale === 1 ? 0 : state.fontScale > 1.1 ? 2 : 1}" id="fs-range" style="accent-color:var(--green);width:100%;" />
+        </div>
+      `;
+      $('fs-range').oninput = (e) => {
+        const scales = [1, 1.08, 1.16];
+        const names = ['Standard', 'Large', 'Extra'];
+        const v = Number(e.target.value);
+        state.fontScale = scales[v];
+        document.documentElement.style.setProperty('--font-scale', state.fontScale);
+        $('fs-val').textContent = names[v];
+      };
+    } else {
+      pane.innerHTML = `
+        <p class="set-desc">Exact shell commands remembered from approval prompts. Removing a rule restores manual approval.</p>
+        ${state.savedPermissions.length ? state.savedPermissions.map((p) => `
+          <div class="set-card" style="gap:4px;">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+              <code style="font-family:var(--font-mono);font-size:12px;color:var(--text);">${esc(p.cmd)}</code>
+              <button class="link-btn" data-rm-perm="${p.id}" style="color:var(--err-text);">Remove</button>
+            </div>
+            <div style="font-size:11.5px;color:var(--muted);">${esc(p.scope)} · ${esc(p.cwd)}</div>
+          </div>
+        `).join('') : '<p class="set-desc" style="text-align:center;padding:24px 0;">No saved permissions</p>'}
+      `;
+      pane.querySelectorAll('[data-rm-perm]').forEach((b) => {
+        b.onclick = () => {
+          state.savedPermissions = state.savedPermissions.filter((x) => x.id !== b.dataset.rmPerm);
+          renderSettingsPane();
+          showToast('Saved permission removed');
+        };
+      });
+    }
+  }
+  document.querySelectorAll('.snav-btn').forEach((b) => {
+    b.onclick = () => { state.settingsTab = b.dataset.spane; renderSettingsPane(); };
+  });
+  $('btn-settings').onclick = openSettings;
+  $('btn-save-settings').onclick = () => { closeModal('modal-settings'); showToast('Settings saved'); };
+
+  /* ------------------------------------------------------------------------
+     Command Palette (Ctrl+K)
+     ------------------------------------------------------------------------ */
+  const commands = [
+    { label: 'New chat', kbd: 'Ctrl+N', run: () => switchScene('empty') },
+    { label: 'Open Changes diff', kbd: '', run: () => { ensureTab('changes'); state.wsActive = 'changes'; setWorkspaceOpen(true); renderWorkspace(); } },
+    { label: 'Open Research & Graph', kbd: '', run: () => switchScene('research') },
+    { label: 'Open Review findings', kbd: '', run: () => { ensureTab('review'); state.wsActive = 'review'; setWorkspaceOpen(true); renderWorkspace(); } },
+    { label: 'Open Local context', kbd: '', run: () => { ensureTab('context'); state.wsActive = 'context'; setWorkspaceOpen(true); renderWorkspace(); } },
+    { label: 'Toggle Research mode', kbd: '', run: () => { state.researchActive = !state.researchActive; syncContextRow(); } },
+    { label: 'Open Settings', kbd: 'Ctrl+,', run: openSettings },
+    { label: 'Manage saved permissions', kbd: '', run: () => { state.settingsTab = 'permissions'; openSettings(); } },
+  ];
+
+  function renderPalette(q = '') {
+    const filtered = commands.filter((c) => c.label.toLowerCase().includes(q.toLowerCase()));
+    $('palette-list').innerHTML = filtered.map((c, i) => `
+      <button class="palette-item ${i === 0 ? 'selected' : ''}" data-pi="${commands.indexOf(c)}" type="button">
+        <span>${esc(c.label)}</span><span class="pk">${c.kbd}</span>
+      </button>
+    `).join('') || '<div style="padding:14px;color:var(--muted);font-size:12px;">No matching commands</div>';
+    $('palette-list').querySelectorAll('[data-pi]').forEach((b) => {
+      b.onclick = () => { closeModal('modal-palette'); commands[Number(b.dataset.pi)].run(); };
+    });
+  }
+  function openPalette() {
+    $('palette-input').value = '';
+    renderPalette();
+    openModal('modal-palette');
+    setTimeout(() => $('palette-input').focus(), 20);
+  }
+  $('palette-input').oninput = (e) => renderPalette(e.target.value);
+  $('btn-open-palette').onclick = openPalette;
+  $('btn-side-palette').onclick = openPalette;
+
+  /* ------------------------------------------------------------------------
+     Modals & Menus Shared Handlers
+     ------------------------------------------------------------------------ */
+  function openModal(id) { $(id).classList.add('open'); }
+  function closeModal(id) { $(id).classList.remove('open'); }
+  document.querySelectorAll('[data-close-modal]').forEach((b) => {
+    b.onclick = () => closeModal(b.dataset.closeModal);
+  });
+  document.querySelectorAll('.modal-backdrop').forEach((m) => {
+    m.onclick = (e) => { if (e.target === m) m.classList.remove('open'); };
+  });
+
+  $('fork-workspace').onclick = () => { closeModal('modal-fork'); showToast('Forked chat in D:\\codey'); };
+  $('fork-worktree').onclick = () => { closeModal('modal-fork'); showToast('Creating Git worktree & forked chat…'); };
+
+  /* Model & Effort Pickers */
+  $('btn-model').onclick = (e) => {
+    e.stopPropagation();
+    $('effort-menu').classList.remove('open');
+    $('model-menu').classList.toggle('open');
+  };
+  $('btn-effort').onclick = (e) => {
+    e.stopPropagation();
+    $('model-menu').classList.remove('open');
+    $('effort-menu').classList.toggle('open');
+  };
+  $('model-menu').querySelectorAll('.pop-item').forEach((item) => {
+    item.onclick = () => {
+      $('model-menu').querySelectorAll('.pop-item').forEach((x) => x.classList.remove('selected'));
+      item.classList.add('selected');
+      state.model = item.dataset.model;
+      $('model-label').textContent = state.model;
+      $('model-dot').classList.toggle('offline', item.dataset.online !== '1');
+      $('effort-wrap').hidden = item.dataset.effort !== '1';
+      $('model-menu').classList.remove('open');
+    };
+  });
+  $('effort-menu').querySelectorAll('.pop-item').forEach((item) => {
+    item.onclick = () => {
+      $('effort-menu').querySelectorAll('.pop-item').forEach((x) => x.classList.remove('selected'));
+      item.classList.add('selected');
+      state.effort = item.dataset.effort;
+      $('effort-label').textContent = state.effort;
+      $('effort-menu').classList.remove('open');
+    };
+  });
+
+  /* Inline Title Rename */
+  $('crumb-title').onclick = () => {
+    const inp = $('crumb-input');
+    inp.value = $('crumb-title').textContent;
+    $('crumb-title').hidden = true;
+    inp.hidden = false;
+    inp.focus(); inp.select();
+  };
+  function commitTitle(save) {
+    const inp = $('crumb-input');
+    if (inp.hidden) return;
+    const v = inp.value.trim();
+    if (save && v) $('crumb-title').textContent = v;
+    inp.hidden = true;
+    $('crumb-title').hidden = false;
+  }
+  $('crumb-input').onblur = () => commitTitle(true);
+  $('crumb-input').onkeydown = (e) => {
+    if (e.key === 'Enter') commitTitle(true);
+    if (e.key === 'Escape') commitTitle(false);
+  };
+
+  /* Sidebar Search */
+  $('btn-search-toggle').onclick = () => {
+    $('btn-search-toggle').hidden = true;
+    $('search-box').hidden = false;
+    $('search-input').focus();
+  };
+  $('search-input').oninput = (e) => {
+    state.searchQuery = e.target.value;
+    $('search-clear').hidden = !state.searchQuery;
+    renderSidebar();
+  };
+  $('search-clear').onclick = () => {
+    state.searchQuery = '';
+    $('search-input').value = '';
+    $('search-clear').hidden = true;
+    $('search-input').focus();
+    renderSidebar();
+  };
+  $('search-input').onblur = () => {
+    if (!state.searchQuery) {
+      $('search-box').hidden = true;
+      $('btn-search-toggle').hidden = false;
+    }
+  };
+
+  /* Sidebar & Workspace Controls */
+  $('btn-collapse-sidebar').onclick = () => {
+    $('app-shell').classList.add('sidebar-collapsed');
+    $('btn-expand-sidebar').hidden = false;
+  };
+  $('btn-expand-sidebar').onclick = () => {
+    $('app-shell').classList.remove('sidebar-collapsed');
+    $('btn-expand-sidebar').hidden = true;
+  };
+  $('btn-new-chat').onclick = () => { state.folder = ''; switchScene('empty'); };
+  $('btn-add-project').onclick = () => showToast('Native folder picker opens here');
+  $('ctx-folder').onclick = () => {
+    state.folder = state.folder ? '' : 'codey';
+    syncContextRow();
+    showToast(state.folder ? 'Workspace set to D:\\codey' : 'Switched to projectless chat');
+  };
+  $('ctx-research').onclick = () => {
+    state.researchActive = !state.researchActive;
+    syncContextRow();
+    showToast(state.researchActive ? 'Research enabled for next message' : 'Research turned off');
+  };
+
+  document.querySelectorAll('.demo-tab').forEach((t) => {
+    t.onclick = () => switchScene(t.dataset.scene);
+  });
+  $('btn-hide-demo').onclick = () => document.body.classList.add('demo-hidden');
+  $('btn-show-demo').onclick = () => document.body.classList.remove('demo-hidden');
+
+  document.querySelectorAll('.ws-quick-btn').forEach((b) => {
+    b.onclick = () => {
+      const id = b.dataset.openWs;
+      if (state.wsOpen && state.wsActive === id) {
+        setWorkspaceOpen(false);
+      } else {
+        ensureTab(id);
+        state.wsActive = id;
+        setWorkspaceOpen(true);
+        renderWorkspace();
+      }
+    };
+  });
+  $('btn-toggle-ws').onclick = () => {
+    if (state.wsOpen) setWorkspaceOpen(false);
+    else {
+      if (!state.wsTabs.length) state.wsTabs = ['files'];
+      setWorkspaceOpen(true);
+      renderWorkspace();
+    }
+  };
+  $('btn-ws-close').onclick = () => setWorkspaceOpen(false);
+  $('btn-ws-full').onclick = () => {
+    state.wsFull = !state.wsFull;
+    $('app-shell').classList.toggle('workspace-full', state.wsFull);
+  };
+  $('btn-ws-plus').onclick = (e) => {
+    e.stopPropagation();
+    $('ws-plus-menu').classList.toggle('open');
+  };
+  $('ws-plus-menu').querySelectorAll('[data-add-tab]').forEach((b) => {
+    b.onclick = () => {
+      ensureTab(b.dataset.addTab);
+      state.wsActive = b.dataset.addTab;
+      $('ws-plus-menu').classList.remove('open');
+      setWorkspaceOpen(true);
+      renderWorkspace();
+    };
+  });
+
+  /* Drag Resizers for Left Sidebar & Right Workspace */
+  function wireResizer(handle, cssVar, min, max, isRight) {
+    let dragging = false;
+    handle.onpointerdown = (e) => {
+      dragging = true;
+      handle.classList.add('dragging');
+      $('app-shell').classList.add('is-resizing');
+      handle.setPointerCapture(e.pointerId);
+    };
+    handle.onpointermove = (e) => {
+      if (!dragging) return;
+      const val = isRight ? window.innerWidth - e.clientX : e.clientX;
+      const clamped = Math.max(min, Math.min(max, val));
+      document.documentElement.style.setProperty(cssVar, clamped + 'px');
+    };
+    handle.onpointerup = () => {
+      dragging = false;
+      handle.classList.remove('dragging');
+      $('app-shell').classList.remove('is-resizing');
+    };
+  }
+  wireResizer($('sidebar-resize'), '--sidebar-w', 210, 380, false);
+  wireResizer($('ws-resize'), '--workspace-w', 340, 760, true);
+
+  /* Right-Click Selection Menu (Copy + Quote in Reply) */
+  document.addEventListener('contextmenu', (e) => {
+    const sel = window.getSelection()?.toString().trim();
+    if (!sel) return;
+    const inAsst = !!e.target.closest('[data-asst-selectable]');
+    e.preventDefault();
+    state.selectedQuoteText = sel;
+    $('sel-quote').hidden = !inAsst;
+    const m = $('sel-menu');
+    m.style.left = Math.min(window.innerWidth - 160, e.clientX) + 'px';
+    m.style.top = Math.min(window.innerHeight - 90, e.clientY) + 'px';
+    m.classList.add('open');
+  });
+  $('sel-copy').onclick = () => {
+    navigator.clipboard?.writeText(state.selectedQuoteText).catch(() => {});
+    $('sel-menu').classList.remove('open');
+    showToast('Copied selection');
+  };
+  $('sel-quote').onclick = () => {
+    const quoted = state.selectedQuoteText.split('\n').map((l) => `> ${l}`).join('\n') + '\n\n';
+    input.value = (input.value ? input.value + '\n' : '') + quoted;
+    input.dispatchEvent(new Event('input'));
+    input.focus();
+    $('sel-menu').classList.remove('open');
+  };
+
+  /* Global Dismiss & Keyboard Shortcuts */
+  document.addEventListener('click', () => {
+    $('model-menu').classList.remove('open');
+    $('effort-menu').classList.remove('open');
+    $('ws-plus-menu').classList.remove('open');
+    $('sel-menu').classList.remove('open');
+    const sm = $('approval-split-menu');
+    if (sm) sm.classList.remove('open');
+  });
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') { e.preventDefault(); switchScene('empty'); }
+    if ((e.ctrlKey || e.metaKey) && e.key === ',') { e.preventDefault(); openSettings(); }
+    if (e.key === 'Escape') {
+      ['modal-settings','modal-fork','modal-palette'].forEach(closeModal);
+      $('sel-menu').classList.remove('open');
+    }
+  });
+  window.addEventListener('resize', () => { if (pondActive) resizePond(); });
+
+  /* Boot */
+  switchScene('coding');
+})();
+</script>
+</body>
+</html>

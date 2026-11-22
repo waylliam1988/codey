@@ -32,6 +32,7 @@
 实施新工作前先核对现行源码与验收项，不按旧路径恢复已经删除的模块。
 
 - [设计原则与后续建议](codey_from_codex_principles.md)
+- [Linger 对照分析与借鉴优先级（2026-11-20）](linger-codey-analysis-20261120.zh-CN.md)
 - [外部控制：委派、观察、桌面同步与返修验收设计](external-control-design.zh-CN.md)
 - [外部控制实施细则：RPC、MCP、广播优化与自动版本切换](external-control-transports-and-updates.zh-CN.md)
 - [Codey Roadmap：0.6 语言闭环、后续按族晋级与独立研究](../ROADMAP.zh-CN.md)
