@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 975,
   "region_count": 40,
-  "batch_count": 293,
+  "batch_count": 298,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -79,6 +79,11 @@
         "Q014B",
         "Q014C",
         "Q015",
+        "Q015B",
+        "Q015C",
+        "Q015D",
+        "Q015E",
+        "Q015F",
         "Q016",
         "Q017",
         "Q018",
@@ -1855,25 +1860,96 @@
         "tests/test_operator_bootstrap_before_ui_requests.py",
         "tests/test_operator_http_fixture_sends_complete_request.py"
       ],
-      "result": "No confirmed production bug; operator_auth unchanged and all five whole files strong Any/Pyrefly/ty/Ruff passed (111 test diagnostics -> 0). Typed real HTTP fixture, callback/counters and validated JSON preserve existing assertions. Baseline and final direct groups 27 passed, no skips; imported short-body fixture group 3 passed. Service replacement integration node failed before authentication: descriptor 876 versus actual 877 package files, missing browser_result_evidence.py from existing 1292e668. Routed packaging condition to Q078/Q084, no production behavior/test expectation changed to mask it. q014c-validation.json hashes stable; full-production gates from Q014B remain valid (no production/config edits)."
+      "result": "No confirmed production bug; operator_auth unchanged and all five whole files strong Any/Pyrefly/ty/Ruff passed (111 test diagnostics -> 0). Typed real HTTP fixture, callback/counters and validated JSON preserve existing assertions. Baseline and final direct groups 27 passed, no skips; imported short-body fixture group 3 passed. Service replacement integration node failed before authentication: descriptor 876 versus actual 877 package files, missing browser_result_evidence.py from existing 1292e668. Routed packaging condition to Q078/Q084, no production behavior/test expectation changed to mask it. q014c-validation.json hashes stable; full-production gates from Q014B remain valid (no production/config edits).",
+      "commits": [
+        "1919ded3"
+      ]
     },
     {
-      "responsibility": "codey/app: shared contracts and module services",
-      "files": [
-        "codey/app/api.py",
-        "codey/app/attachment_routes.py",
-        "codey/app/server.py",
-        "codey/app/documents.py",
-        "codey/app/http_plumbing.py",
-        "codey/app/service.py",
-        "codey/app/control_service.py",
-        "codey/app/control_queries.py"
-      ],
       "id": "Q015",
+      "responsibility": "HTTP origin fence, static responses/cache and SSE framing",
+      "files": [
+        "codey/app/http_plumbing.py"
+      ],
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/app/http_plumbing.py"
+      ],
+      "verified_files": [
+        "codey/app/http_plumbing.py"
+      ],
+      "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93",
+      "tests": [
+        "tests/test_http_plumbing.py",
+        "tests/test_server.py::WebAssetTests",
+        "tests/test_server.py::LocalProviderApiTests::test_foreign_host_header_is_rejected_before_any_handler",
+        "tests/test_server.py::LocalProviderApiTests::test_ui_state_post_allows_missing_origin_for_same_origin_beacon",
+        "tests/test_server.py::LocalProviderApiTests::test_loopback_host_without_origin_is_accepted",
+        "tests/test_server.py::LocalProviderApiTests::test_explicit_lan_bind_allows_matching_origin",
+        "tests/test_server.py::RunSnapshotTests::test_write_sse_event_catches_json_serialization_errors",
+        "tests/test_server.py::RunSnapshotTests::test_sse_replay_cursor_requires_positive_header",
+        "tests/test_server.py::RunSnapshotTests::test_sse_initial_connect_does_not_replay_history",
+        "tests/test_server.py::RunSnapshotTests::test_sse_reconnect_replays_history_from_query_cursor",
+        "tests/test_operator_auth_blocks_unauthenticated_http.py"
+      ],
+      "result": "RFC 9110 13.1.2/8.8.3 violations reproduced before production edits: strong-vs-weak opaque tag and comma-containing returned tag both gave 200 instead of 304 (2 failed/1 passed/5 subtests). Fixed weak comparison and linear quote-aware splitting. Bound address read/exception behavior consolidated with original HEAD fixture baseline 5 passed/5 subtests. Direct final 8 passed/15 subtests; dependencies 30 passed, no skips. Two complete files strict Any/Pyrefly/ty/Ruff passed (25 -> 2 -> 0, first baseline includes fixture inheritance errors); production/precision checks passed and unchanged since. Server script only selected nodes validated, whole-file Any remains routed Q015F."
+    },
+    {
+      "id": "Q015B",
+      "responsibility": "Authenticated attachment import and read-only document projection",
+      "files": [
+        "codey/app/attachment_routes.py",
+        "codey/app/documents.py"
+      ],
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 93,
+      "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93"
+    },
+    {
+      "id": "Q015C",
+      "responsibility": "Application API request validation and submission responses",
+      "files": [
+        "codey/app/api.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93"
+    },
+    {
+      "id": "Q015D",
+      "responsibility": "Control facade and bounded durable observations",
+      "files": [
+        "codey/app/control_queries.py",
+        "codey/app/control_service.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93"
+    },
+    {
+      "id": "Q015E",
+      "responsibility": "Local service lease, discovery and activation lifecycle",
+      "files": [
+        "codey/app/service.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93"
+    },
+    {
+      "id": "Q015F",
+      "responsibility": "HTTP server route wiring, operator admission and event streaming",
+      "files": [
+        "codey/app/server.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93",
       "followups": [
         "Q008D repaired only ConsensusConnectionTests timeout fixture, preserving sibling-tab/new_chat/close expectations and asserting numeric 60/90s fallback. tests/test_server.py whole-file extra Any has 1709 diagnostics (q008d-server-any.log); shared script migration remains open. Q008D stays partial until coordinated verification."
       ]

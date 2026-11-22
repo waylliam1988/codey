@@ -6,10 +6,11 @@ import os
 import re
 import threading
 from collections import OrderedDict
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from typing import Any
+from typing import TypeVar
 
 from codey import __version__
 from codey.env_names import APP_VERSION_PLACEHOLDER, FRONTEND_ROOT_ENV
@@ -30,6 +31,7 @@ MAX_STATIC_CACHE_BYTES = 8 * 1024 * 1024
 _STATIC_CACHE_LOCK = threading.Lock()
 _STATIC_CACHE: OrderedDict[tuple[str, str], _StaticCacheEntry] = OrderedDict()
 _STATIC_CACHE_BYTES = 0
+_PayloadValue = TypeVar("_PayloadValue")
 
 
 @dataclass(frozen=True)
@@ -74,15 +76,23 @@ def validate_web_root(root: Path | None = None) -> Path:
     return candidate
 
 
-def loopback_allowed_hosts(handler: BaseHTTPRequestHandler) -> set[str]:
+def _bound_address(handler: BaseHTTPRequestHandler) -> tuple[str, int] | None:
     try:
         address = handler.server.server_address
         if not isinstance(address, tuple) or len(address) < 2:
-            return set()
+            return None
         port = address[1]
         bind_ip = str(address[0] or "")
     except Exception:
+        return None
+    return bind_ip, port
+
+
+def loopback_allowed_hosts(handler: BaseHTTPRequestHandler) -> set[str]:
+    address = _bound_address(handler)
+    if address is None:
         return set()
+    bind_ip, port = address
     hosts = {
         f"127.0.0.1:{port}",
         f"localhost:{port}",
@@ -98,14 +108,10 @@ def loopback_allowed_hosts(handler: BaseHTTPRequestHandler) -> set[str]:
 
 
 def request_allowed_origins(handler: BaseHTTPRequestHandler) -> set[str]:
-    try:
-        address = handler.server.server_address
-        if not isinstance(address, tuple) or len(address) < 2:
-            return set()
-        port = address[1]
-        bind_ip = str(address[0] or "")
-    except Exception:
+    address = _bound_address(handler)
+    if address is None:
         return set()
+    bind_ip, port = address
     origins = {
         f"http://127.0.0.1:{port}",
         f"http://localhost:{port}",
@@ -127,7 +133,7 @@ def request_origin_allowed(handler: BaseHTTPRequestHandler) -> bool:
     return origin.rstrip("/").lower() in request_allowed_origins(handler)
 
 
-def send_json(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
+def send_json(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, _PayloadValue]) -> None:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
@@ -228,9 +234,24 @@ def _static_etag(path: Path, *, transform_name: str, signature: tuple[int, int])
     return f'W/"codey-{__version__}-{path.name}-{transform_name}-{signature[0]:x}-{signature[1]:x}"'
 
 
+def _etag_candidates(header: str) -> Iterator[str]:
+    # Commas inside opaque tags are data, not list separators (RFC 9110 8.8.3).
+    quoted = False
+    start = 0
+    for index, character in enumerate(header):
+        if character == '"':
+            quoted = not quoted
+        elif character == "," and not quoted:
+            yield header[start:index].strip()
+            start = index + 1
+    yield header[start:].strip()
+
+
 def _request_etag_matches(handler: BaseHTTPRequestHandler, etag: str) -> bool:
-    header = (handler.headers.get("If-None-Match") or "")
-    return any(item.strip() in {"*", etag} for item in header.split(","))
+    header = handler.headers.get("If-None-Match") or ""
+    # If-None-Match always uses the weak comparison function (RFC 9110 13.1.2).
+    opaque_tag = etag.removeprefix("W/")
+    return any(item == "*" or item.removeprefix("W/") == opaque_tag for item in _etag_candidates(header))
 
 
 def _send_not_modified(handler: BaseHTTPRequestHandler, etag: str, *, immutable: bool = False) -> None:
@@ -272,12 +293,12 @@ def sse_cursor(value: object) -> tuple[int, int]:
 
 def write_sse_event(
     handler: BaseHTTPRequestHandler,
-    event: dict[str, Any],
+    event: Mapping[str, object],
     *,
     event_id: int | str = 0,
 ) -> bool:
     try:
-        data = json.dumps(dict(event), ensure_ascii=False)
+        data = json.dumps(dict[str, object](event), ensure_ascii=False)
         reset = event.get("type") == "resync_required" and event.get("cursor") == 0
         cursor = str(event_id)
         prefix = f"id: {cursor}\n" if cursor not in {"", "0"} or reset else ""

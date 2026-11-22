@@ -725,3 +725,23 @@ Q014C 验收：
 - 该失败分类为运行包构建/清单状态，Q014C 从未更改生产文件或运行 descriptor；没有把断言、skip 或认证行为改成迁就它。Q078/Q084 已登记正常 publisher 刷新和集成重验；这例不计通过。launcher/runtime.py 只诊断定位到 read_runtime，显式 Any 和全文件治理仍归 Q078，未宣称已完成。没有运行包复制成功，也没有复制工作区/worktree。
 - 本批无新生产 bug、无可证明的死代码或相同职责重复；不制造生产修改。生产/配置未变，Q014B 刚通过的三生产类型门继续有效，不机械重跑。本批完整检查/直接必要验证完成，保留上述跨区域集成限制；累计 **19 / 293 批、42 / 975 文件**。
 - 下一主批原 Q015 八文件含 844 行 API、HTTP plumbing/server、attachment/document 及 service/control，当前仅 AST/docstring 和调用关系路由，尚未深读/修改。进入前按实际职责拆分，保持全部原文件唯一归属与总范围。总 goal 仍 active。
+
+
+Q014C 已提交：`1919ded3`（refactor(tests): type operator authentication and HTTP fixtures）。
+
+### Q015：HTTP 基础、静态缓存与 SSE（进行中）
+
+- 原八文件 Q015 按 AST/docstring/实际依赖拆六项：Q015 http_plumbing；Q015B attachments/documents；Q015C api（844 行单文件）；Q015D control_queries/control_service；Q015E service；Q015F server（648 行单文件，接收原 shared server 类型待办）。先基础后消费者，避免将控制执行、包 lease 和 HTTP 发送不同职责放同一批。源清单仍 975 文件唯一归属，批数 **293 → 298**，完成仍 **19 / 298、42 / 975**，没有扩大已完成数。
+- http_plumbing.py 与直接 test_http_plumbing.py 已完整阅读；当前检查静态资源/ETag、origin 验证与 SSE 边界，未修改生产。其他依赖测试只定位相关 node，不将全部读取/执行混同全文件治理。候选问题：If-None-Match 按当前精确字符串比较弱 ETag；须先按 HTTP 有效协议建立改前行为复现，不能仅因测试期望修改。
+
+
+Q015 验收：
+
+- **确定性 bug 1：If-None-Match 没按弱比较。** 服务器发送 W/"opaque" 后，客户端给同 opaque 的强形式 "opaque"，静态 GET 应按 RFC 9110 §13.1.2 返回 304；原代码做全等比较，实际 200。**bug 2：把 opaque tag 内逗号当列表分隔符。** 合法 asset,part.js 的服务器返回 ETag 含逗号，§8.8.3 允许 opaque tag 包含它；原代码 split(",") 后连原样 tag 也无法匹配，实际 200。契约来自公开 HTTP 标准，不来自测试或另一实现。
+- 生产修改前第一例 **1 failed，1.21 秒**；随后同一复现加逗号和 origin 基线 **1，2 failed / 1 passed / 5 subtests passed，1.25 秒**。两例均为预期304/实际200的行为失败，无导入或环境失败；q015-baseline.json、q015-etag-before.json 保留实际命令/栈。增加线性扫描，仅在引号外拆列表，比较时忽略合法 W/ 标记；未改变资源内容、ETag 发放、304 头和 cache-control。
+- 初始四个已有静态行为基线 **0，4 passed，1.23 秒**。最终两完整文件加严 Any **25 → 2 → 0**，其中最初16条来自本轮 fixture 继承后 BufferedIOBase 读取类型，不冒充全是旧生产债务。源码 send_json 使用具体字典泛型保留直接序列化；SSE 接收只读 Mapping[str,object] 并由原 json.dumps 验证可编码值，非法 object 仍返回False。没有忽略注释或新类型断言。
+- 重复收敛：两处绑定地址读取、结构检查、str 转换及异常返回完全一致，抽成唯一 _bound_address；调用方仍各自维护不同 host/origin 集合，未强行合并不同协议规则。提前在原代码验证五种 bind / 无origin / 同origin / 错端口 / 外域/外host。既有测试 fixture 改真实 BaseHTTPRequestHandler/HTTPMessage 最小子类，输出缓冲通过同一个 BytesIO 别名读取；首轮 ty 的可写属性收窄与方法参数名错误已修正。
+- 最终 `python -m pytest -q tests/test_http_plumbing.py --tb=short` → **0，8 passed / 15 subtests passed，1.14 秒**，包括弱强、列表、逗号、空头、不同tag、W/*不当通配、未闭引号和静态缓存修改。无 skip。selected server WebAsset/四 origin/四 SSE node + operator_auth HTTP 文件 → **0，30 passed，16.79 秒**，完整明确node命令见 q015-validation-first.json；未跑整个 test_server.py。该大文件全脚本 Any 仍留 Q015F/Q008D，不宣称完成。
+- 两完整文件加严 mypy/Pyrefly/ty/Ruff **0**，q015-validation-final.json；生产 mypy **0，737 文件**、Pyrefly **0，原35 suppressed/165 warnings**、ty/精度门 **0**（q015-validation-first.json）。最终只改测试 fixture，生产 hash 与这些调用方/生产门验证时相同，不重复未失效结果。前后 hash 稳定。
+- 为证明新 fixture 与 address 重构基线独立成立，临时还原本目录 HEAD 单个 http_plumbing 源，实际运行五既有/绑定基线 node → **0，5 passed / 5 subtests passed，1.24 秒**；finally 精确恢复已验证生产字节，q015-fixture-baseline.json，restored_own_source=true。没有复制工作区/worktree。
+- 入口/引用分析未发现可证明能删除的公开函数，__all__ 保留。diff 已核对，只涉及 HTTP 源、直接完整测试与两份记录。本批完成后累计 **20 / 298 批、43 / 975 生产文件**；下一主批 Q015B attachment_routes.py / documents.py。原打包库存失配及其他跨区域待办仍未解决，总 goal 仍 active。
