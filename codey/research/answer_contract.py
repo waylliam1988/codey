@@ -57,6 +57,8 @@ ANSWER_GUIDANCE = (
     "For each clause, check which subject, operation, version and setting the question asks about, "
     "and which of those the cited passage actually establishes. "
     "Preserve every requested distinction, condition, exception and OR alternative. "
+    "When enumerating requested prerequisites, retain every item in the original list, including prerequisites "
+    "outside a later category table. An example of an exception is not an exhaustive exception list. "
     "A general statement is not a measurement of a specific setting; a nearby operation is not the requested mechanism. "
     "Distinguish source statements, supported deductions and missing evidence. Cite explicit [eN] labels beside "
     "supported statements, and explain any unresolved point beside its question. Do not invent facts or gaps. "

@@ -34,6 +34,7 @@ PURPOSE_DESCRIPTION = (
     " With controls, a complete prior snapshot also supplies a bounded control-change wait before the new snapshot. "
     "A control-wait timeout means no new control was observed; it still returns the current snapshot and does not "
     "replay the click or declare the business outcome."
+    " When an argument-free browser_read is available, controls also acquires formal page text after the snapshot."
 )
 PENDING = (
     "Click delivered. The query result is unconfirmed. Read the result again without repeating the click. "

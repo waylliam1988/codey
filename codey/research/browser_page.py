@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import time
+from collections.abc import Callable
 
 from playwright.sync_api import Error as BrowserError
 from playwright.sync_api import Page, Request, Response
@@ -90,7 +91,8 @@ def validate_browser_capture(page: dict[str, object]) -> dict[str, object]:
             and any(marker in text.casefold() for marker in ("log in", "sign in", "登录", "登入"))):
         invalid = source_download._fetch_failure(url, "login_required: page requires authentication",
                                                 code="login_required", delivery="confirmed")
-    if invalid is None and not _usable_fetch_page_text(text):
+    observed_short_text = page.get("observation") == "current_page" and page.get("render_pending") is not True
+    if invalid is None and not _usable_fetch_page_text(text, allow_short=observed_short_text):
         reason = "render_timeout" if page.get("render_pending") is True else _fetch_page_failure_kind(text)
         invalid = source_download._fetch_failure(url, reason,
             code="access_restricted" if reason == "page_unavailable" else "page_not_loaded", delivery="confirmed")
@@ -127,7 +129,8 @@ def _validate_page_observation(
 def _application_content_pending(page: Page) -> bool:
     """Recognize an empty app/main region while the SPA is still hydrating."""
     try:
-        pending: object = page.evaluate("""() => {
+        evaluate: Callable[[str], object] = page.evaluate
+        pending = evaluate("""() => {
             const roots = [...document.querySelectorAll('app-root, #root, #app, #__next')];
             return roots.length > 0 && roots.every(root => {
                 const main = root.querySelector('main, [role="main"]');

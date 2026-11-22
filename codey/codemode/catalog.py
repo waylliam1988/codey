@@ -20,7 +20,7 @@ from codey.operations.browser_references import BrowserReferences, reference_spe
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.toolchain.result_schema import model_output_schema, schema_typescript
 from codey.toolchain.tool_spec import ToolSpec, is_text_batch_tool
-from codey.types.json_value import canonical_json_object, require_json_strings
+from codey.types.json_value import JsonObject, canonical_json_object, require_json_strings
 
 if TYPE_CHECKING:
     from codey.operations.kernel_protocol import TurnSnapshot
@@ -148,6 +148,9 @@ def build_codemode_catalog(
         from codey.operations.browser_followups import PURPOSES, click_plans, model_spec
 
         plans = click_plans(browser_followup_checks, {spec.name for spec in values})
+        control_steps = plans.get("controls")
+        if isinstance(control_steps, list) and any(spec.name == "browser_read" and not spec.required for spec in values):
+            plans["controls"] = [*control_steps, {"name": "browser_read", "args": JsonObject()}]
         purposes = tuple(purpose for purpose in PURPOSES if purpose in plans)
         values = tuple(model_spec(spec, None, click_purposes=purposes)
                        if spec.name == "browser_click" else spec for spec in values)

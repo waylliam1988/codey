@@ -196,7 +196,7 @@ def _observation_program(result: ToolResult, receipts: Mapping[str, ToolResult])
         decode_json_object(result.canonical)["value"])})
 
 
-def _reload_snapshot(result: ToolResult, result_ref: str) -> JsonObject | None:
+def reload_snapshot(result: ToolResult, result_ref: str) -> JsonObject | None:
     """Compare a complete observation in a document proven to come from the fixed wrapper."""
     from codey.operations.browser_references import BrowserReferences
 
@@ -249,7 +249,7 @@ def _navigation_program(result: ToolResult, receipts: Mapping[str, ToolResult]) 
             or result.canonical.get("value") != navigation.canonical.get("value")
             or not same_document(observation.audit.get("browser_document"), navigation.audit.get("browser_document"))):
         return None
-    observed, action = _reload_snapshot(observation, rows[1][0]), _browser_value(navigation)
+    observed, action = reload_snapshot(observation, rows[1][0]), _browser_value(navigation)
     if observed is None or action is None:
         return None
     call = ToolCall("browser_navigate", navigation.call.args)
@@ -276,7 +276,7 @@ def _navigation_snapshot(result: ToolResult, receipts: Mapping[str, ToolResult])
             if before >= after or any((spec := spec_for_tool(receipts[ref].call.name)) is not None
                     and spec.executor == "browser" and spec.effect != "read" for ref in order[before + 1:after]):
                 return None
-            return _reload_snapshot(result, result_ref)
+            return reload_snapshot(result, result_ref)
     return None
 
 

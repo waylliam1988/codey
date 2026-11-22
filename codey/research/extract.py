@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import contextlib
-import json
 import re
 from html.parser import HTMLParser
 
-from codey.types.json_value import decode_json_object
+from codey.types.json_value import parse_json_object
 
 _SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "head"}
 _BLOCK_TAGS = {
@@ -176,7 +175,7 @@ _FETCH_BOILERPLATE_LINES = frozenset({
     "privacy policy", "accessibility", "terms of use", "contact us",
 })
 
-def _usable_fetch_page_text(text: str) -> bool:
+def _usable_fetch_page_text(text: str, *, allow_short: bool = False) -> bool:
     normalized = _clean_space(text).casefold()
     if not normalized:
         return False
@@ -185,7 +184,7 @@ def _usable_fetch_page_text(text: str) -> bool:
     if all(_clean_space(line).casefold() in _FETCH_BOILERPLATE_LINES
            for line in text.splitlines() if line.strip()):
         return False
-    return len(normalized) >= 24
+    return allow_short or len(normalized) >= 24
 
 def _fetch_page_failure_kind(text: str) -> str:
     normalized = _clean_space(text).casefold()
@@ -205,7 +204,7 @@ def _is_json_error_document(text: str) -> bool:
     if not text.startswith("{"):
         return False
     try:
-        envelope = decode_json_object(json.loads(text))
+        envelope = parse_json_object(text)
     except ValueError:
         return False
     if not set(envelope) <= {"error", "message", "code", "status", "request_id", "trace_id"}:

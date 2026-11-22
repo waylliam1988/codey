@@ -616,7 +616,7 @@ class BrowserRuntime:
             render_pending:Array.from(document.querySelectorAll('app-root,#root,#app,#__next')).some(el=>
                 !el.innerText.trim() || /^(loading|please wait|加载中|正在加载)[. 。…!]*$/i.test(el.innerText.trim()))})""")
         data = decode_json_object(raw)
-        visible_text: object = await _evaluate(context.frame, "(" + VISIBLE_TEXT + ")(document.body)")
+        visible_text: object = await _evaluate(context.frame, "(" + VISIBLE_TEXT + ")(document.body, true)")
         data["text"] = require_json_string(visible_text, "visible text")
         text = require_json_string(data["text"], "text")
         facts = self._navigation.get(self._document_key(context.document), {})
@@ -834,7 +834,7 @@ class BrowserRuntime:
         if node is None:
             raise RuntimeError("query_target_unavailable")
         try:
-            raw: object = await _evaluate(node, """el => ({text:(el.innerText||'').replace(/\\s+/g,' ').trim().slice(0,100001),
+            raw: object = await _evaluate(node, """el => ({text:(""" + VISIBLE_TEXT + """)(el, true).slice(0,100001),
                 connected:el.isConnected && el.ownerDocument === document,
                 visible:!!el.getClientRects().length && getComputedStyle(el).visibility!=='hidden',
                 busy:!!el.closest('[aria-busy=true]') || !!el.querySelector('[aria-busy=true]')})""")
@@ -899,7 +899,7 @@ class BrowserRuntime:
             changed = changed_query_region(baseline, current) if target is not None else ""
             if changed:
                 captured = await self._capture(context)
-                if (changed in " ".join(str(captured["text"]).split())
+                if (" ".join(changed.split()) in " ".join(str(captured["text"]).split())
                         and current["regions"] == await self._query_regions(context, target)):
                     captured["query_confirmed"] = True
                     captured["query_region"] = {"text": changed, "visible": True, "context": baseline.get("context"),

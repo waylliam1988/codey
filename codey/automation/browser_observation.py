@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 
-from playwright.sync_api import ElementHandle, Page
+from playwright.sync_api import ElementHandle, JSHandle, Page
 
 from codey.automation.browser_query import QUERY_TARGET, _backend_node
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string
@@ -12,7 +13,7 @@ ACTIONABLE_CANDIDATES = ("button,summary,a[href],input,textarea,select,[contente
     "[tabindex],[onclick],[role=button],[role=link],[role=textbox],[role=combobox],"
     "[role=searchbox],[role=menuitem],[role=checkbox],[role=radio],[role=switch],[role=tab]")
 
-VISIBLE_TEXT = r"""root => {
+VISIBLE_TEXT = r"""(root, structured = false) => {
     const parts = []; let length = 0;
     const visit = node => {
         if (length > 100000) return;
@@ -32,10 +33,28 @@ VISIBLE_TEXT = r"""root => {
             const assigned = node.assignedNodes({flatten:true});
             if (assigned.length) { assigned.forEach(visit); return; }
         }
+        const beginning = parts.length, before = length;
+        let prefix = '', suffix = '';
+        if (structured && node.nodeType === Node.ELEMENT_NODE) {
+            const tag = node.tagName.toLowerCase();
+            if (tag === 'br' && node.getClientRects().length) { parts.push('\n'); length++; return; }
+            if (/^h[1-6]$/.test(tag)) { prefix = '\n\n' + '#'.repeat(Number(tag[1])) + ' '; suffix = '\n\n'; }
+            else if (tag === 'li') { prefix = '\n- '; suffix = '\n'; }
+            else if (tag === 'td' || tag === 'th') suffix = '\t';
+            else if (tag === 'tr' || tag === 'br') { prefix = '\n'; suffix = '\n'; }
+            else if (['p','div','section','article','header','footer','details','summary','ul','ol','table','blockquote','pre'].includes(tag)) {
+                prefix = '\n\n'; suffix = '\n\n';
+            }
+        }
+        if (prefix) parts.push(prefix);
         const children = node.shadowRoot ? node.shadowRoot.childNodes : node.childNodes;
         for (const child of children) visit(child);
+        if (length === before) parts.length = beginning;
+        else if (suffix) parts.push(suffix);
     };
     if (root) visit(root);
+    if (structured) return parts.join('').replace(/[ \f\v]+/g,' ')
+        .replace(/ *\n */g,'\n').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
     return parts.join(' ').replace(/\s+/g,' ').trim();
 }"""
 
@@ -85,6 +104,7 @@ ELEMENT_METADATA = """el => {
 _RECORDS = """labels => {
     const contextOf = (""" + _CONTEXT + """);
     const targetOf = (""" + QUERY_TARGET + """);
+    const sourceText = (""" + VISIBLE_TEXT + """);
     const nodes = document.querySelectorAll('article,section,tr,[role=row],[role=region],fieldset');
     if (nodes.length > 240) return {rows: [], targets: []};
     const rows = [], targets = [], identities = new Map();
@@ -93,7 +113,7 @@ _RECORDS = """labels => {
         if (!context || !labels.includes(context.label) || !node.getClientRects().length ||
             node.closest('[hidden],[inert],[aria-hidden=true],[aria-busy=true]') ||
             getComputedStyle(node).visibility !== 'visible') continue;
-        const text = node.innerText;
+        const text = sourceText(node, true);
         if (!text || text.length > 12000) continue;
         const controls = node.querySelectorAll('button,a,[role=button],[role=link]');
         const regions = [];
@@ -102,7 +122,7 @@ _RECORDS = """labels => {
             if (!query.node || !node.contains(query.node) || !query.node.getClientRects().length ||
                 query.node.closest('[hidden],[inert],[aria-hidden=true],[aria-busy=true]') ||
                 getComputedStyle(query.node).visibility !== 'visible') continue;
-            const region = query.node.innerText;
+            const region = sourceText(query.node, true);
             if (!region || region.length > 12000) continue;
             let index = identities.get(query.node);
             if (index === undefined) {
@@ -125,7 +145,8 @@ def observe_records(page: Page, labels: tuple[str, ...]) -> list[JsonObject]:
     rows_handle = observed.get_property('rows')
     targets_handle = observed.get_property('targets')
     try:
-        raw: object = rows_handle.json_value()
+        read_rows: Callable[[], object] = rows_handle.json_value
+        raw = read_rows()
         if not isinstance(raw, list):
             raise ValueError('Invalid observed records.')
         rows = [decode_json_object(row) for row in raw]
@@ -181,7 +202,8 @@ def observe_elements(page: Page, handles: list[ElementHandle]) -> tuple[
     data_handle = observed.get_property('data')
     nodes_handle = observed.get_property('contextNodes')
     try:
-        raw: object = data_handle.json_value()
+        read_data: Callable[[], object] = data_handle.json_value
+        raw = read_data()
         data = decode_json_object(raw)
         elements, contexts = data['elements'], data['contexts']
         if not isinstance(elements, list) or not isinstance(contexts, list):
@@ -206,7 +228,8 @@ def observe_element(handle: ElementHandle) -> tuple[JsonObject, ElementHandle | 
     observed = handle.evaluate_handle(ELEMENT_METADATA)
     metadata = observed.get_property('metadata')
     try:
-        raw: object = metadata.json_value()
+        read_metadata: Callable[[], object] = metadata.json_value
+        raw = read_metadata()
         context_node = observed.get_property('contextNode').as_element()
         return decode_json_object(raw), context_node
     finally:
@@ -215,7 +238,8 @@ def observe_element(handle: ElementHandle) -> tuple[JsonObject, ElementHandle | 
 
 
 def same_node(left: ElementHandle, right: ElementHandle) -> bool:
-    raw: object = left.evaluate('(node, other) => node === other', right)
+    compare: Callable[[str, JSHandle], object] = left.evaluate
+    raw = compare('(node, other) => node === other', right)
     return raw is True
 
 
