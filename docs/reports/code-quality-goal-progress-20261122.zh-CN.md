@@ -842,3 +842,23 @@ Q015D 控制服务最终验收与暂停：
 Q015D 服务类型与输入身份收敛已提交：`c3baf7e2`（refactor(control): validate service boundaries and share input identity）。本次进度提交记录该hash与验收结果；本阶段所有代码已提交。仅记录一个未确认语义问题：grant_control更新expires_at但保留创建时的max_seconds；该展示字段代表原始预算还是最近续期值尚无独立读取方/规范依据，实际到期仍使用expires_at，未猜测更改。此项不阻止现有契约的类型/行为验收，只有新契约或复现证据出现时才重开。
 
 按用户“这个阶段做完commit好就暂停”暂停总goal；本阶段完成，整个仓库仍未完成。当前 **23 / 298批、48 / 975生产文件**，Q015E未开始，所有原已登记限制保持。其他两份未跟踪文档保留。
+
+
+### 2026-11-23 恢复与 Q015E 服务生命周期
+
+- 用户已明确继续；总 goal 保持 active。HEAD=21601416，恢复时工作区干净。暂停期间四个外部提交新增20个生产脚本，按职责追加7批；当前完整范围995文件/305批，唯一归属校验通过。原23已完成批中Q004/Q015C有生产文件实际改动，改为部分完成、待重新核验；21批当前仍完整完成，原历史证据保留。当前完整完成批次覆盖42个生产文件，另有部分批次中6个已验证文件，共48个当前已验证文件；旧48个完整批次覆盖扣除两个变动文件后为46个，其中4个仍属于重新打开的批次，不混计。
+- Q015E 唯一主批：service.py 已完整读，publication测试已读；先建立基线，必要复现后修复，完成资源/凭据/回调类型边界治理和限定测试，再本地提交。新增区域只做路由、未冒充深入检查。Q004/Q015C重验排在Q015E之后、Q015F之前。
+- test_control_service_startup.py 已为入口/快照副作用分析读过，整文件Any治理未完成，归控制客户端批次；本轮避开复制runtime的用例。file_lock.py 为确认FileLease接口阅读，完整Any核验归原存储锁批次，不在此声称治理完成。
+
+
+Q015E 最终验收：
+
+- service.py 全文件及两份完整测试已检查。独立依据：service 文档规定state home由OS lease确定唯一所有者；close显式仅在context清理仍活跃时保留所有权。资源已经关闭后，发现登记文件读/删失败不能让无运行资源的服务永久占有writer lease；I/O错误仍须暴露，不得删除无法确认属于本实例的文件。原实现把release放在可抛错发现I/O之后，异常使release永不执行，属于确定性异常清理缺口，无竞态证据。
+- 两输入：损坏service.json和本实例登记unlink PermissionError。生产修改前同一回归 **1，2 failed / 5 passed，2.27秒**，均因finished service retained its writer lease断言失败；损坏读取和删除拒绝都已实际走到生产close。最初fixture误用enable_memory参数导致另一个环境/测试失败，已按AppContext真实memory_enabled参数更正；该次保留q015e-close-before.json，只有最终q015e-close-before-final.json作为干净复现证据，未将导入/参数错误当bug。
+- 发现I/O放try/finally；ctx完成后无论登记读/删成功与否均释放lease并清None，原StoreCorruption/PermissionError继续上抛，原字节保留。未清完ctx仍抛RuntimeError且保留lease、第二次获取仍失败；匹配登记删除、继任者保留、缺失登记和重复close对照通过。
+- 资源字段为真实AppContext/CodeyHTTPServer/ControlService/PublicEventFeed/FileLease可空类型；unsubscribe精确Callable；凭据TypedDict及运行时长度/字符串TypeGuard，保留旧文件附加字段、不重写；event callback明确字典边界转交原public feed，未改变公共事件筛选/编码规则。延续回调统一使用验证活动context的getter；不改正常提交参数。发布锁、8次WinError5重试和失败传播断言保留。没有证据可删的公开入口，也没有强行合并语义不同实现。
+- 直接最终：`python -m pytest -q tests/test_service_publication.py tests/test_service_lifecycle.py --tb=short` → **0，20 passed，3.33秒**，无skip。真实临时home启动/凭据/浏览器bootstrap/operator与agent权限/错误实例/激活/排空/关闭均实际运行，没有runtime副本或worktree。凭据非法类型/长度不覆盖文件及额外字段兼容性也通过。
+- typed publication fixture用真实ControlService和AppContext替代SimpleNamespace；全部非bug对照在HEAD原service.py实际 **0，18 passed / 2 deselected，3.20秒**，finally精确恢复当前源码字节，q015e-fixture-baseline.json。未将两条bug回归排除结果算为通过；最终版本20项已全部执行通过。
+- 依赖：`python -m pytest -q tests/durable/test_services_lifecycle.py tests/test_control_runtime_ownership.py tests/test_control_service_contract.py --tb=short` → **0，25 passed，3.26秒**，无skip/清理警告，q015e-dependencies.json。release复制/发布/切换与基于旧runtime清单的transport集成仍未执行，不声明覆盖。
+- 三完整文件加严mypy Any初始两文件 **138条诊断 → 中间10条 → 最终0**；新增测试也已纳入零Any最终检查。mypy严格Any/scoped Pyrefly/ty/Ruff退出均0，生产mypy **0，749文件**、Pyrefly **0，35 suppressed/168 warnings**、ty/精度门0；warnings是当前读数，不套用旧165或声明零警告。完整逐命令/退出码/原始输出/稳定hash见q015e-validation-final.json；初次失败保留q015e-validation-first.json，没有降低门禁。
+- 当前 **22 / 305批完整完成，43 / 995生产文件属于完整完成批次**；另有部分批次中6文件已独立验证，共49个当前已验证文件。Q004/Q015C因外部变更仍部分完成，下一步优先重验两个实际改动文件，再进入Q015F server。初始全仓机器门禁、Q008D/shared server、Q018锁清理、Q078库存、Q052 SQLite等未完事项继续留队，总goal active。

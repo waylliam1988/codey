@@ -1,8 +1,8 @@
 {
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
-  "source_count": 975,
+  "source_count": 995,
   "region_count": 40,
-  "batch_count": 298,
+  "batch_count": 305,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -72,7 +72,7 @@
     },
     {
       "path": "codey/app",
-      "source_count": 71,
+      "source_count": 72,
       "batches": [
         "Q013",
         "Q014",
@@ -95,7 +95,8 @@
         "Q024",
         "Q025",
         "Q026",
-        "Q027"
+        "Q027",
+        "Q018B"
       ],
       "direct_dependencies": [
         "codey/agents",
@@ -170,14 +171,15 @@
     },
     {
       "path": "codey/codemode",
-      "source_count": 17,
+      "source_count": 19,
       "batches": [
         "Q033",
         "Q034",
         "Q035",
         "Q036",
         "Q037",
-        "Q038"
+        "Q038",
+        "Q035B"
       ],
       "direct_dependencies": [
         "codey/agents",
@@ -532,7 +534,7 @@
     },
     {
       "path": "codey/providers",
-      "source_count": 66,
+      "source_count": 67,
       "batches": [
         "Q121",
         "Q122",
@@ -550,7 +552,8 @@
         "Q134",
         "Q135",
         "Q136",
-        "Q137"
+        "Q137",
+        "Q132B"
       ],
       "direct_dependencies": [
         "codey/agents",
@@ -666,7 +669,7 @@
     },
     {
       "path": "codey/research",
-      "source_count": 93,
+      "source_count": 98,
       "batches": [
         "Q152",
         "Q153",
@@ -688,7 +691,8 @@
         "Q169",
         "Q170",
         "Q171",
-        "Q172"
+        "Q172",
+        "Q169B"
       ],
       "direct_dependencies": [
         "codey/automation",
@@ -1049,7 +1053,7 @@
     },
     {
       "path": "codey/toolchain",
-      "source_count": 22,
+      "source_count": 25,
       "batches": [
         "Q223",
         "Q224",
@@ -1061,7 +1065,8 @@
         "Q230",
         "Q231",
         "Q232",
-        "Q233"
+        "Q233",
+        "Q229B"
       ],
       "direct_dependencies": [
         "codey/automation",
@@ -1233,7 +1238,7 @@
     },
     {
       "path": "tools",
-      "source_count": 141,
+      "source_count": 149,
       "batches": [
         "Q261",
         "Q262",
@@ -1258,7 +1263,9 @@
         "Q281",
         "Q282",
         "Q283",
-        "Q284"
+        "Q284",
+        "Q275B",
+        "Q275C"
       ],
       "direct_dependencies": [
         "codey/agents",
@@ -1450,7 +1457,7 @@
         "codey/storage/__init__.py"
       ],
       "id": "Q004",
-      "status": "completed_changed",
+      "status": "partially_completed",
       "reviewed_files": [
         "codey/storage/atomic_io.py",
         "codey/storage/local_store.py",
@@ -1461,7 +1468,6 @@
       "verified_files": [
         "codey/storage/atomic_io.py",
         "codey/storage/local_store.py",
-        "codey/workspace/paths.py",
         "codey/utils/change_paths.py",
         "codey/storage/__init__.py"
       ],
@@ -1473,7 +1479,12 @@
         "tests/test_atomic_write_transient_windows_sharing_violations.py",
         "tests/test_strict_store_loads.py"
       ],
-      "result": "production baseline unchanged; 18 test Any diagnostics removed with typed containers, stdlib callable adapters and guarded OS constants; same 53 passed / 4 platform skips / 6 subtests before and after; native unittest preserves 2 skips; no production bug admitted"
+      "result": "production baseline unchanged; 18 test Any diagnostics removed with typed containers, stdlib callable adapters and guarded OS constants; same 53 passed / 4 platform skips / 6 subtests before and after; native unittest preserves 2 skips; no production bug admitted",
+      "previous_status": "completed_changed",
+      "revalidation_required": [
+        "codey/workspace/paths.py"
+      ],
+      "reopen_reason": "External commits 008966a0..21601416 modified previously completed production files; prior results retained historically, current bytes require scoped revalidation."
     },
     {
       "responsibility": "codey/entry: package entry and composition",
@@ -1932,13 +1943,11 @@
       "files": [
         "codey/app/api.py"
       ],
-      "status": "completed_changed",
+      "status": "partially_completed",
       "reviewed_files": [
         "codey/app/api.py"
       ],
-      "verified_files": [
-        "codey/app/api.py"
-      ],
+      "verified_files": [],
       "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93",
       "result": "Two ResumeRun API violations reproduced: omitted instruction becomes literal None (pre-fix 1 failed/7 passed); non-string source IDs coerced and submitted (4 failed/4 passed). Public DTO optional default/string constraints and absent-vs-explicit-default invariant justify fixes. Final whole contract script 17 passed; input/output/question group 33 passed; initial direct 41, API dependencies 39, lease 2 passed. Two whole files strict Any 33 -> 0; scoped tools passed (5 pre-existing warnings), final production/precision gates passed (35 suppressed/165 warnings), stable hashes. Legacy response objects and dataclass/result shapes validated at API boundary, no casting/budget relaxation. New question guard baseline on original HEAD 1 passed; old typed callback fixture baseline 4 passed; sources exactly restored. Shared test scripts only dependency verification, full typing ownership remains elsewhere.",
       "tests": [
@@ -1962,7 +1971,12 @@
       ],
       "commits": [
         "cb43afb5"
-      ]
+      ],
+      "previous_status": "completed_changed",
+      "revalidation_required": [
+        "codey/app/api.py"
+      ],
+      "reopen_reason": "External commits 008966a0..21601416 modified previously completed production files; prior results retained historically, current bytes require scoped revalidation."
     },
     {
       "id": "Q015D",
@@ -2003,10 +2017,29 @@
       "files": [
         "codey/app/service.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93"
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/app/service.py"
+      ],
+      "verified_files": [
+        "codey/app/service.py"
+      ],
+      "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93",
+      "tests": [
+        "tests/test_service_publication.py",
+        "tests/test_service_lifecycle.py",
+        "tests/durable/test_services_lifecycle.py",
+        "tests/test_control_runtime_ownership.py",
+        "tests/test_control_service_contract.py"
+      ],
+      "result": "Discovery cleanup failures leaked the completed service writer lease: corrupt JSON and denied unlink reproduced as 2 failed/5 passed before production edits; finally releases lease after successful context cleanup while preserving original errors and files. Cleanup-active boundary retains ownership. Final direct 20 passed; original-source non-bug fixture baseline 18 passed/2 deselected with exact restoration; durable lifecycle/runtime ownership/control dependencies 25 passed. Three whole files strict Any 138 initial diagnostics -> 0, scoped Pyrefly/ty/Ruff pass, full-production mypy 749/Pyrefly/ty/precision pass (35 suppressed/168 warnings). No dead API deletion or speculative race fix; OS lease contract and ordinary resource cleanup invariant justify release.",
+      "evidence": [
+        "q015e-baseline.json",
+        "q015e-close-before-final.json",
+        "q015e-validation-final.json",
+        "q015e-fixture-baseline.json",
+        "q015e-dependencies.json"
+      ]
     },
     {
       "id": "Q015F",
@@ -2072,6 +2105,21 @@
       "followups": [
         "Q015B baseline and post-fix test_input_attachments.py::test_idle_attachment_input_dispatches_without_changing_its_durable_metadata pass but process cleanup reports WinError32 retaining RAM temp state/.durable.sqlite3.lock. Baseline 39 passed and final 47 passed both show it; classify as fixture/runtime lifecycle cleanup warning pending localization, not proven race or production defect. Source changes were documents/attachment_routes only. q015b-baseline.json and q015b-validation-first.json. Investigate with current context lifecycle batch, without skipping assertions or manually clearing user services."
       ]
+    },
+    {
+      "id": "Q018B",
+      "responsibility": "Persist verified knowledge observations",
+      "files": [
+        "codey/app/knowledge_observation.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": [
+        "tests/test_p1_p2_receipts.py"
+      ],
+      "candidate_test_count": "recompute at batch entry",
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
     },
     {
       "responsibility": "codey/app: conversation and input lifecycle",
@@ -2326,6 +2374,23 @@
       "follow_up": [
         "Machine gate small batch: tests/test_read_result_contract.py has 3 failures: read-only host/kernel reject task_control write entries; inline declaration assertion conflicts with compact output. Classify fixture vs production contract independently; catalog.py has external dirty work, preserve it. Not caused by durable settlement execution; no assertions changed."
       ]
+    },
+    {
+      "id": "Q035B",
+      "responsibility": "CodeMode browser flows and bounded patch application",
+      "files": [
+        "codey/codemode/browser_flow.py",
+        "codey/codemode/patch.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": [
+        "tests/test_followup_mechanisms.py",
+        "tests/test_project_patch.py"
+      ],
+      "candidate_test_count": "recompute at batch entry",
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
     },
     {
       "responsibility": "codey/codemode: completion review and edit validation",
@@ -3694,6 +3759,21 @@
       "candidate_test_count": 55
     },
     {
+      "id": "Q132B",
+      "responsibility": "Provider durable replay binding",
+      "files": [
+        "codey/providers/replay.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": [
+        "tests/test_provider_durable_compaction_binding.py"
+      ],
+      "candidate_test_count": "recompute at batch entry",
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+    },
+    {
       "responsibility": "codey/providers: context and checkpoint boundaries",
       "files": [
         "codey/providers/summary_stream.py"
@@ -4202,6 +4282,27 @@
       "reviewed_files": [],
       "verified_files": [],
       "candidate_test_count": 39
+    },
+    {
+      "id": "Q169B",
+      "responsibility": "Research calculations, finding selection/staging and evidence gaps",
+      "files": [
+        "codey/research/calculation.py",
+        "codey/research/evidence_gaps.py",
+        "codey/research/finding_choices.py",
+        "codey/research/finding_stage.py",
+        "codey/research/report_evidence.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": [
+        "tests/test_calculation_receipts.py",
+        "tests/test_finding_choices.py",
+        "tests/test_p1_p2_receipts.py"
+      ],
+      "candidate_test_count": "recompute at batch entry",
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
     },
     {
       "responsibility": "codey/research: knowledge and memory",
@@ -4928,6 +5029,24 @@
       "candidate_test_count": 8
     },
     {
+      "id": "Q229B",
+      "responsibility": "Language server, semantic definition and syntax queries",
+      "files": [
+        "codey/toolchain/language_server.py",
+        "codey/toolchain/semantic_definition.py",
+        "codey/toolchain/syntax_query.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": [
+        "tests/test_followup_semantic_definition.py",
+        "tests/test_semantic_analysis.py"
+      ],
+      "candidate_test_count": "recompute at batch entry",
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+    },
+    {
       "responsibility": "codey/toolchain: execution evidence and event projection",
       "files": [
         "codey/toolchain/result_schema.py"
@@ -5597,6 +5716,43 @@
       "reviewed_files": [],
       "verified_files": [],
       "candidate_test_count": 6
+    },
+    {
+      "id": "Q275B",
+      "responsibility": "Followup and mixed workflow live validation tools",
+      "files": [
+        "tools/codemode_analysis_live.py",
+        "tools/followup_browser_flow_live.py",
+        "tools/followup_patch_live.py",
+        "tools/followup_research_live.py",
+        "tools/p0_mixed_live_gate.py",
+        "tools/semantic_analysis_probe.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": [
+        "tests/test_followup_mechanisms.py",
+        "tests/test_p0_mixed_workflow.py"
+      ],
+      "candidate_test_count": "recompute at batch entry",
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+    },
+    {
+      "id": "Q275C",
+      "responsibility": "Browser measurement and live evaluation tools",
+      "files": [
+        "tools/p3_browser_measurement.py",
+        "tools/p3_live_evaluation.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": [
+        "tests/test_followup_mechanisms.py"
+      ],
+      "candidate_test_count": "recompute at batch entry",
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
     },
     {
       "responsibility": "tools: answer and report projection",
@@ -6333,6 +6489,7 @@
     "tests/test_browser_completion_production.py",
     "tests/test_browser_context_delivery.py",
     "tests/test_browser_contract_closure.py",
+    "tests/test_browser_control_continuation.py",
     "tests/test_browser_copy_production.py",
     "tests/test_browser_copy_upgrade_recovery.py",
     "tests/test_browser_detail_production.py",
@@ -6401,6 +6558,7 @@
     "tests/test_browser_tool_images.py",
     "tests/test_browser_typed_copy.py",
     "tests/test_browser_worker.py",
+    "tests/test_calculation_receipts.py",
     "tests/test_cancellation.py",
     "tests/test_candidate_recovery_live_replay_isolation_and_prefixes.py",
     "tests/test_captured_version_boundaries.py",
@@ -6660,8 +6818,12 @@
     "tests/test_failure_result_presentation.py",
     "tests/test_file_index.py",
     "tests/test_file_lock.py",
+    "tests/test_finding_choices.py",
     "tests/test_finding_openonly_shape_locks.py",
     "tests/test_finding_status_contract_locks.py",
+    "tests/test_followup_mechanisms.py",
+    "tests/test_followup_recovery.py",
+    "tests/test_followup_semantic_definition.py",
     "tests/test_forget_session_cleanup.py",
     "tests/test_fork_capabilities.py",
     "tests/test_frame_legacy_workspace_fields_never_trusted.py",
@@ -6885,7 +7047,9 @@
     "tests/test_optional_cline_removal_preserves_other_connections.py",
     "tests/test_optional_zen_removal_preserves_local_api.py",
     "tests/test_output_capture_generated_utf8_boundaries.py",
+    "tests/test_p0_mixed_workflow.py",
     "tests/test_p1_hardening.py",
+    "tests/test_p1_p2_receipts.py",
     "tests/test_permission_profiles.py",
     "tests/test_persisted_executed_tampered_provenance_rejected.py",
     "tests/test_persisted_receipt_exit_code_roundtrip.py",
@@ -6906,6 +7070,7 @@
     "tests/test_project_adapter_requires_explicit_provider_id.py",
     "tests/test_project_and_machine_outputs_preserve_final_delivery.py",
     "tests/test_project_audit_advisor_kernel.py",
+    "tests/test_project_audit_root_paths.py",
     "tests/test_project_audit_tools_ownership.py",
     "tests/test_project_auto_local_review_lifecycle.py",
     "tests/test_project_completion_entry_has_no_cold_start_reexports.py",
@@ -6920,6 +7085,7 @@
     "tests/test_project_facts.py",
     "tests/test_project_map.py",
     "tests/test_project_map_split.py",
+    "tests/test_project_patch.py",
     "tests/test_project_review_gate_requires_real_automatic_flow.py",
     "tests/test_project_task_context.py",
     "tests/test_prompt_envelope.py",
@@ -7016,6 +7182,7 @@
     "tests/test_recovery_strict_conversion_no_silent_downgrade.py",
     "tests/test_recovery_trace_invariants.py",
     "tests/test_redaction.py",
+    "tests/test_ref_text_budget.py",
     "tests/test_release_control.py",
     "tests/test_release_gate_recovery_interrupts_and_resumes.py",
     "tests/test_release_gate_tool_order.py",
@@ -7258,9 +7425,12 @@
     "tests/test_search_provenance.py",
     "tests/test_search_scan_split.py",
     "tests/test_seen_info.py",
+    "tests/test_semantic_analysis.py",
     "tests/test_semantic_holdout_case_contracts.py",
+    "tests/test_semantic_plan_entry_auth.py",
     "tests/test_server.py",
     "tests/test_server_lazy_state.py",
+    "tests/test_service_lifecycle.py",
     "tests/test_service_publication.py",
     "tests/test_session_log_receipt_recovery_preserves_facts.py",
     "tests/test_settled_delivery_recovery.py",
@@ -7547,10 +7717,7 @@
     "tests/test_zen_vpn_direct_fallback.py",
     "tests/test_zoom_project_map_ab.py",
     "tests/work_checkpoint_smoke.py",
-    "tools/go_contract/main_test.go",
-    "tests/test_ref_text_budget.py",
-    "tests/test_browser_control_continuation.py",
-    "tests/test_project_audit_root_paths.py"
+    "tools/go_contract/main_test.go"
   ],
   "excluded_tracked_source": [
     {
@@ -7872,6 +8039,45 @@
         "Q014",
         "Q014B",
         "Q014C"
+      ]
+    },
+    {
+      "head": "21601416",
+      "reason": "Resume after four external commits; preserve full scope and historical results; revalidate only changed completed files. User resumed prior requested pause.",
+      "added_files": [
+        "codey/app/knowledge_observation.py",
+        "codey/codemode/browser_flow.py",
+        "codey/codemode/patch.py",
+        "codey/providers/replay.py",
+        "codey/research/calculation.py",
+        "codey/research/evidence_gaps.py",
+        "codey/research/finding_choices.py",
+        "codey/research/finding_stage.py",
+        "codey/research/report_evidence.py",
+        "codey/toolchain/language_server.py",
+        "codey/toolchain/semantic_definition.py",
+        "codey/toolchain/syntax_query.py",
+        "tools/codemode_analysis_live.py",
+        "tools/followup_browser_flow_live.py",
+        "tools/followup_patch_live.py",
+        "tools/followup_research_live.py",
+        "tools/p0_mixed_live_gate.py",
+        "tools/p3_browser_measurement.py",
+        "tools/p3_live_evaluation.py",
+        "tools/semantic_analysis_probe.py"
+      ],
+      "added_batches": [
+        "Q018B",
+        "Q035B",
+        "Q132B",
+        "Q169B",
+        "Q229B",
+        "Q275B",
+        "Q275C"
+      ],
+      "reopened_batches": [
+        "Q004",
+        "Q015C"
       ]
     }
   ]
