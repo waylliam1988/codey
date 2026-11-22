@@ -15,7 +15,7 @@ SOURCE = Path(__file__).resolve().parents[1] / "frontend/src/operator_auth.ts"
 
 
 @pytest.mark.parametrize("fragment,authorized", [("#codey_bootstrap=secret", True), ("", True), ("", False)])
-def test_browser_removes_launch_fragment_and_checks_session(fragment, authorized):
+def test_browser_removes_launch_fragment_and_checks_session(fragment: str, authorized: bool) -> None:
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js unavailable")
@@ -43,7 +43,7 @@ const context = vm.createContext({{window, URLSearchParams,
     assert result.returncode == 0, result.stderr
 
 
-def test_real_ui_boot_awaits_operator_auth_before_catalog_or_sse():
+def test_real_ui_boot_awaits_operator_auth_before_catalog_or_sse() -> None:
     boot = frontend_source("legacy-runtime")
     # The reconnect handler also calls connectEvents; only boot starts the UI.
     boot = boot[boot.index("async function boot()") :]
@@ -51,7 +51,7 @@ def test_real_ui_boot_awaits_operator_auth_before_catalog_or_sse():
     assert boot.index("await runtime.OperatorAuth.authorize()") < boot.index("connectEvents();")
 
 
-def test_expired_bootstrap_and_concurrent_exchange_are_fail_closed():
+def test_expired_bootstrap_and_concurrent_exchange_are_fail_closed() -> None:
     from concurrent.futures import ThreadPoolExecutor
 
     from codey.app.operator_auth import BOOTSTRAP_LIFETIME_SECONDS, OperatorAuth
@@ -62,6 +62,7 @@ def test_expired_bootstrap_and_concurrent_exchange_are_fail_closed():
     now[0] = BOOTSTRAP_LIFETIME_SECONDS
     assert auth.exchange(token) is None
     token = auth.issue_bootstrap()
+    tokens = [token] * 4
     with ThreadPoolExecutor(max_workers=4) as pool:
-        results = list(pool.map(auth.exchange, [token] * 4))
+        results: list[str | None] = list(pool.map(auth.exchange, tokens))
     assert sum(cookie is not None for cookie in results) == 1

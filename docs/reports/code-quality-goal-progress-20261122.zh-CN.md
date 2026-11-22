@@ -707,3 +707,21 @@ Q014B 验收与提交准备：
 
 
 Q014B provider 门面与提交失败恢复已提交：`c021a9af`（fix(app): release web probe slot when background submission fails）。模型设置/连接动作的类型与唯一缓存读取入口单独提交，验收全部通过。本批完成后累计 **18 / 293 批、41 / 975 个生产文件**。下一主批 Q014C：operator_auth.py 的 process-local bootstrap/session 凭据和到期/一次性兑换边界；其后继续原 Q015 队列，不重开已完成 provider 文件的可选优化。总 goal 保持 active。
+
+
+Q014B 模型/动作类型收敛已提交：`165a6efd`（refactor(app): type connection callbacks and share cached catalog reads）。
+
+### Q014C：一次性启动凭据与会话认证（进行中）
+
+- operator_auth.py 全文件检查：issue/exchange 用同一锁保证一份凭据只可成功兑换一次，截止时间采用 monotonic；未兑换成功不清除有效凭据。server 的 operator 路由和 service 的 HMAC 派生浏览器 token 调用关系已定位，与文档的一次性 UI 认证/服务替换后共享 session 契约一致。没有凭猜测改 session 格式、空值或 Cookie 解析策略，没有确认新的生产 bug。
+- 四相关测试文件基线 `python -m pytest -q tests/test_operator_auth_rejects_non_ascii_credentials.py tests/test_operator_auth_blocks_unauthenticated_http.py tests/test_operator_bootstrap_before_ui_requests.py tests/test_operator_http_fixture_sends_complete_request.py --tb=short` → **0，27 passed，14.59 秒**。同五路径完整加严 mypy：源码已经零 Any，四测试 **111 条**，q014c-baseline.json。下一步只治理实际类型传播与测试边界，保持已有拒绝、重放、origin fence、并发兑换和 HTTP 完整写入断言。
+
+
+Q014C 验收：
+
+- 仅四测试文件类型修改。HTTP fixture 端口准确包含标准库地址类型，在 fixture 边界校验 IPv4 字符串 host；保留头+body 一次 sendall。动态 type/Mock 改 typed class/callback/counters；唯一有效路由使用关闭 scheduler/memory 的真实 AppContext，替代原无接口 object。JSON 从标准库 Any 改已验证 parse_json_object；WEB_DIR 从真实 owning http_plumbing 导入，未改期望状态/内容。
+- 同原四文件实际 **0，27 passed，12.53 秒**，无 skip。完整源码加四测试的加严 Any **111 → 8 → 1 → 0**；最后一条来自 Executor.map 的 Iterable[Any] 将临时输入列表上下文推成 Any，将实际 token 列表先建立为精确 str 列表，无 cast/ignore。scoped Pyrefly/ty/Ruff 均 **0**，q014c-validation.json，前后 hash 一致。
+- 依赖扩大 `python -m pytest -q tests/test_http_short_body_never_dispatches.py tests/test_release_control.py::test_browser_session_survives_service_replacement_but_bootstrap_does_not --tb=short` → **1，3 passed / 1 failed，3.37 秒**。三项复用当前 HTTP fixture 的短 body 用例通过；service 替换一例未进入认证，snapshot → runtime_digest → read_runtime 因发布库存失效而失败。只读核对实际 **877** / descriptor **876**，唯一缺项 codey/operations/browser_result_evidence.py（已有 `1292e668`），无过期项。完整命令/栈 q014c-dependencies.json，差异 q014c-runtime-inventory.json。
+- 该失败分类为运行包构建/清单状态，Q014C 从未更改生产文件或运行 descriptor；没有把断言、skip 或认证行为改成迁就它。Q078/Q084 已登记正常 publisher 刷新和集成重验；这例不计通过。launcher/runtime.py 只诊断定位到 read_runtime，显式 Any 和全文件治理仍归 Q078，未宣称已完成。没有运行包复制成功，也没有复制工作区/worktree。
+- 本批无新生产 bug、无可证明的死代码或相同职责重复；不制造生产修改。生产/配置未变，Q014B 刚通过的三生产类型门继续有效，不机械重跑。本批完整检查/直接必要验证完成，保留上述跨区域集成限制；累计 **19 / 293 批、42 / 975 文件**。
+- 下一主批原 Q015 八文件含 844 行 API、HTTP plumbing/server、attachment/document 及 service/control，当前仅 AST/docstring 和调用关系路由，尚未深读/修改。进入前按实际职责拆分，保持全部原文件唯一归属与总范围。总 goal 仍 active。
