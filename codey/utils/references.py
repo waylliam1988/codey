@@ -73,12 +73,12 @@ def _iter_budgeted_files(files: Iterable[Path]) -> Iterator[Path]:
     non-budgeted path silently skips what ``consume_file`` rejects.
     """
     for path in files:
-        lstat = getattr(path, "lstat", None)
+        lstat: object = getattr(path, "lstat", None)
         if not callable(lstat):
             yield path
             continue
         try:
-            is_link = stat.S_ISLNK(lstat().st_mode)
+            is_link = stat.S_ISLNK(path.lstat().st_mode)
         except OSError:
             continue
         if is_link:
@@ -91,10 +91,10 @@ def _resolve_reference_candidate(
     root: Path,
     report: ScanReport,
 ) -> tuple[Path | None, str | None]:
-    resolve = getattr(path, "resolve", None)
+    resolve: object = getattr(path, "resolve", None)
     if callable(resolve):
         try:
-            path = resolve()
+            path = path.resolve()
         except OSError:
             rel = _relative(root, path)
             if rel:

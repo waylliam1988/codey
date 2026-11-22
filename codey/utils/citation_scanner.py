@@ -79,14 +79,16 @@ def mask_markdown_code(text: str, *, escaped_backslashes: bool = False) -> str:
                 list_columns.append(item.end())
                 content = content[item.end():]
         marker = re.match(r"^ *(`{3,}|~{3,})([^\r\n]*)", content)
+        marker_text: str = marker.group(1) if marker is not None else ""
+        marker_info: str = marker.group(2) if marker is not None else ""
         if fence:
             lines.append(" " * len(line))
-            if (marker is not None and marker[1][0] == fence[0]
-                    and len(marker[1]) >= len(fence) and not marker[2].strip()):
+            if (marker is not None and marker_text[0] == fence[0]
+                    and len(marker_text) >= len(fence) and not marker_info.strip()):
                 fence = ""
         elif (marker is not None and indent < (list_columns[-1] if list_columns else 0) + 4
-              and not (marker[1][0] == "`" and "`" in marker[2])):
-            fence = marker[1]
+              and not (marker_text[0] == "`" and "`" in marker_info)):
+            fence = marker_text
             lines.append(" " * len(line))
         elif content.strip() and indent >= (list_columns[-1] if list_columns else 0) + 4:
             lines.append(" " * len(line))
@@ -95,8 +97,12 @@ def mask_markdown_code(text: str, *, escaped_backslashes: bool = False) -> str:
     # Historical citation offsets use the original escape rule. New delivery
     # scopes can recognize an escaped backslash before an opening delimiter.
     prefix = r"(?:\\\\)*" if escaped_backslashes else ""
+
+    def mask(match: re.Match[str]) -> str:
+        return " " * len(match.group(0))
+
     return re.sub(r"(?<![`\\])" + prefix + r"(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)",
-                  lambda match: " " * len(match[0]), "".join(lines))
+                  mask, "".join(lines))
 
 
 def citation_refs(text: str) -> set[int]:
@@ -105,15 +111,21 @@ def citation_refs(text: str) -> set[int]:
 
 def normalize_citation_groups(text: str) -> str:
     """Expand an explicit comma list without supplying or selecting citations."""
-    return _CITATION_GROUP_RE.sub(
-        lambda match: "".join(f"[{value.strip()}]" for value in re.split("[,，、]", match.group(1))), text)
+    def expand(match: re.Match[str]) -> str:
+        group: str = match.group(1)
+        values: list[str] = re.split("[,，、]", group)
+        return "".join(f"[{value.strip()}]" for value in values)
+
+    return _CITATION_GROUP_RE.sub(expand, text)
 
 
 def citation_ref_items(text: str) -> list[CitationRef]:
     refs: list[CitationRef] = []
-    for value, pages in _CITATION_RE.findall(normalize_citation_groups(text or "")):
+    for match in _CITATION_RE.finditer(normalize_citation_groups(text or "")):
+        number_text: str = match.group(1)
+        pages: str = match.group(2) or ""
         try:
-            number = int(value)
+            number = int(number_text)
         except ValueError:
             continue
         refs.append(CitationRef(number=number, pages=_parse_page_ref(pages)))
@@ -128,8 +140,9 @@ def source_id_ref_items(text: str) -> list[SourceIdRef]:
     value = (text or "")
     refs: list[SourceIdRef] = []
     for match in _SOURCE_ID_BRACKET_RE.finditer(value):
+        source_id: str = match.group(1)
         refs.append(SourceIdRef(
-            source_id=match.group(1).lower(),
+            source_id=source_id.lower(),
             start=match.start(),
             end=match.end(),
             page_suffix=match.group(2) or "",
@@ -137,8 +150,9 @@ def source_id_ref_items(text: str) -> list[SourceIdRef]:
         ))
     refs.extend(_source_id_parenthetical_refs(value))
     for match in _SOURCE_ID_CONTEXT_RE.finditer(value):
+        context_source_id: str = match.group(1)
         refs.append(SourceIdRef(
-            source_id=match.group(1).lower(),
+            source_id=context_source_id.lower(),
             start=match.start(),
             end=match.end(),
         ))
@@ -155,8 +169,9 @@ def source_id_ref_items(text: str) -> list[SourceIdRef]:
         ))
     for match in _SOURCE_ID_LINE_RE.finditer(value):
         source_id_start = match.start(1)
+        line_source_id: str = match.group(1)
         refs.append(SourceIdRef(
-            source_id=match.group(1).lower(),
+            source_id=line_source_id.lower(),
             start=source_id_start,
             end=match.end(1),
         ))
@@ -166,7 +181,7 @@ def source_id_ref_items(text: str) -> list[SourceIdRef]:
 def _source_id_parenthetical_refs(value: str) -> list[SourceIdRef]:
     refs: list[SourceIdRef] = []
     for match in _SOURCE_ID_PAREN_GROUP_RE.finditer(value):
-        content = match.group(1)
+        content: str = match.group(1)
         if not _is_source_id_group(content):
             continue
         refs.extend(_source_id_group_refs(
@@ -229,7 +244,10 @@ def _source_id_group_refs(
 
 
 def _dedupe_source_id_refs(refs: list[SourceIdRef]) -> list[SourceIdRef]:
-    ordered = sorted(refs, key=lambda item: (item.start, -item.end, not item.bracketed))
+    def order(item: SourceIdRef) -> tuple[int, int, bool]:
+        return item.start, -item.end, not item.bracketed
+
+    ordered = sorted(refs, key=order)
     kept: list[SourceIdRef] = []
     spans: set[tuple[int, int]] = set()
     for item in ordered:
@@ -250,8 +268,10 @@ def _parse_page_ref(value: str) -> tuple[int, ...]:
     match = re.fullmatch(r"(\d+)(?:\s*-\s*(\d+))?", text)
     if not match:
         return ()
-    start = int(match.group(1))
-    end = int(match.group(2) or start)
+    start_text: str = match.group(1)
+    end_text: str | None = match.group(2)
+    start = int(start_text)
+    end = int(end_text or start)
     if start < 1 or end < start or end - start > 99:
         raise ValueError("invalid citation page range")
     return tuple(range(start, end + 1))

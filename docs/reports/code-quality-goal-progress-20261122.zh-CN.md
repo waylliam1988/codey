@@ -269,3 +269,33 @@ Q002 提交前最终门禁：`python -m mypy codey --python-version 3.11`（736 
 Q003 第一个独立提交前的全树门禁实际失败：mypy（`python -m mypy codey --python-version 3.11`，退出 1）报告 tool_tasks 引用已改名的 restore_text_wait_snapshot；Pyrefly（同 Q002 全树命令，退出 1）报告 browser_followups 列表类型和 kernel_execution 缺失 require_json_string；ty（同 Q002 全树命令，退出 1）报告后者。随后 Git 检查证实出现了本轮之外的并行改动：automation/browser_runtime/session/snapshot、codemode/host、operations/browser_followups/waits/kernel_execution/task_execution/tool_tasks、toolchain/tool_spec、旧浏览器测试以及新增 browser_control_continuation 测试。这些文件在检查期间仍发生更新，部分诊断位置已被其所有者修正，但没有据此宣称门禁通过。
 
 以上不是 refs 的返回类型或实现引起的失败；本批没有修改上述浏览器文件，也不覆盖或夹带提交它们。refs 定向三种类型检查、全部直接/调用方验证通过，允许先独立提交预算修复。全树最新成功结果仍是 Q002 时刻，本次失败保留，后续须在现有外部修改上重新核验。精度门禁及 diff 空白检查本次均退出 0。后续继续处理没有文件冲突的 citation_scanner/references。
+
+### Q003 第二步：正则和 Path 类型边界
+
+- refs 独立修复提交：`6b12a394`。
+- citation_scanner 使用有注解的正则替换/排序回调、明确 capture 字段类型，以 finditer 的有类型 Match 代替 findall 的动态元组。可选 page group 映射为空串仍保留，顺序/偏移/异常和遮罩规则不变。字段类型来自固定正则的 capture 约束；未添加不受约束的类型断言或忽略。
+- references 的可选 getattr 值先声明为 object 并检查 callable，再通过原 Path 接口调用 lstat/resolve。缺失方法的 test double 分支保留；没有额外扫描预算、跟随链接或改变输出规则。
+- citation_scanner 整个测试文件的预期容器加具体注解，值与断言不变；空集合明确为 set[str]。test_shared_helpers 也已整文件阅读并通过强 Any 检查，未作不必要修改。
+- 原三生产文件基线 27 条 Any 诊断；两关联测试初审 7 条，均在 citation_scanner 测试。迭代中 18 条 → 3 条 → 0 条，最后补齐 capture 局部值和新裁剪测试一起检查，6 完整文件通过。诊断减少是类型证据，不冒充 bug 修复数量。
+
+| 实际命令 | 退出码 | 结果 |
+| --- | --- | --- |
+| `python -m mypy tests/test_citation_scanner.py tests/test_shared_helpers.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` | 1 | 修改前 7 errors in 1 file |
+| `python -m pytest -q tests/test_citation_scanner.py tests/test_search_scan_split.py tests/test_tool_runtime.py tests/test_shared_helpers.py --tb=short` | 0 | 115 passed、23 subtests passed |
+| `python -m pytest -q tests/test_chat_programmatic_citations.py tests/test_research_report_tail.py tests/test_structured_research_report.py --tb=short` | 1 | 67 passed、3 failed，53.79s；完整失败未隐藏，见下 |
+| 用 6b12a394 的 citation_scanner 在进程内覆盖当前模块，再执行上述三个失败精确 nodeid | 1 | 同样 3 failed，48.05s；同关键断言失败，排除本次 citation 类型修改所致，不复制 worktree |
+| `python -m pytest -q tests/test_citation_scanner.py tests/test_knowledge.py::KnowledgeStoreTests::test_brief_builder_uses_shared_citation_scanner_shapes --tb=short` | 0 | 最终 capture 注解补齐后 7 passed；knowledge 只执行该精确用例，不写为全文件通过 |
+| `python -m mypy codey/utils/citation_scanner.py codey/utils/references.py codey/utils/refs.py tests/test_citation_scanner.py tests/test_ref_text_budget.py tests/test_shared_helpers.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` | 0 | 6 完整文件通过 |
+| `pyrefly check codey/utils/citation_scanner.py codey/utils/references.py codey/utils/refs.py tests/test_citation_scanner.py tests/test_ref_text_budget.py tests/test_shared_helpers.py --python-version 3.11` | 0 | 0 errors |
+| `ty check codey/utils/citation_scanner.py codey/utils/references.py codey/utils/refs.py tests/test_citation_scanner.py tests/test_ref_text_budget.py tests/test_shared_helpers.py --python-version 3.11` | 0 | 通过 |
+| `python -m ruff check codey/utils/citation_scanner.py codey/utils/references.py codey/utils/refs.py tests/test_citation_scanner.py tests/test_ref_text_budget.py tests/test_shared_helpers.py` | 0 | 通过 |
+
+三个集成失败的明确处置：`test_research_report_tail.py::test_production_rejects_unfinished_report_then_publishes_repair_without_reacquisition[False/True]` 期望 browser_read 次数 2，实际 4；`test_structured_research_report.py::test_native_completion_guidance_matches_frozen_phase_schema[research]` 期望不暴露 done，实际暴露。已在修改前 citation 实现下重现，故不是本次类型回归；生产 bug、测试过时或外部浏览器修改的影响仍待按有效契约区分。未改变这些测试或预期；已路由到研究完成/内核准备所属批次，保留为未解决事项。精确复核命令为进程内加载 `git show 6b12a394:codey/utils/citation_scanner.py` 后 `pytest.main(['-q', <上述三精确nodeid>, '--tb=short'])`。
+
+当前累计实际执行 **23 个不同 pytest 文件**，其中 knowledge 仅执行一个 nodeid；未运行全量 pytest。仍保留 Q189 两项进程夹具失败和上述三项研究集成失败，不能报告全绿。
+
+Q003 最新全树核验（737 个生产 Python 文件，三个 checker 串行）：mypy 退出 1，外部修改的 `research/answer_contract.py:150` 有两个 TypedDict.update 关键字诊断；Pyrefly 退出 1，外部新增 `operations/browser_result_evidence.py:47` 的空容器产生隐式 Any；ty 退出 0。完整命令、日志和源码 SHA-256 快照保存在 `.e2e-artifacts/code-quality-20261122/q003-full-types.json` 及相邻三个 log。核验前后全部生产 Python 源码哈希一致，`changed_during_checks=[]`，因此这次失败是可复核的当前状态，而非将瞬时输出当成通过。上述源码均不属于本批修改，未覆盖/提交。全树失败仍待其所属区域处理，不能以本批定向成功替代全树成功。精度门禁、本批 diff 空白检查均退出 0。
+
+范围更新：检测到外部新增的 `codey/operations/browser_result_evidence.py`，将其明确加入 Q084，待审查、待 Any 治理；该批从 8 扩为 9 个紧密相关的 browser 完成/后续证据文件，仍符合用户每批约 3～10 文件的范围。总范围由 974 更新为 **975 个生产/工具源码文件**，批次数保持 288，没有删除旧范围或掩盖未完成项。去重与归属断言已运行通过，当前 codey 的全部 737 个 Python 文件都有归属。外部新增测试也列入验证支持，不计为已执行。
+
+Q003 自有三个生产文件和深入检查的关联测试完成 Any/行为验证；独立于已定位的跨区域失败，可以结项并提交类型收敛。当前 **3 / 288 批完成、11 / 975 个生产文件验收完成**，没有删除或强行合并不能证明的代码。下一批 Q004：原子存储、路径及其历史测试 Any 债务。总 goal 继续 active，所有剩余区域、五个测试失败和当前全树类型错误仍在记录/队列中。

@@ -1,6 +1,6 @@
 {
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
-  "source_count": 974,
+  "source_count": 975,
   "region_count": 40,
   "batch_count": 288,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
@@ -387,7 +387,7 @@
     },
     {
       "path": "codey/operations",
-      "source_count": 114,
+      "source_count": 115,
       "batches": [
         "Q083",
         "Q084",
@@ -1401,13 +1401,15 @@
         "codey/utils/refs.py"
       ],
       "id": "Q003",
-      "status": "in_progress",
+      "status": "completed_changed",
       "reviewed_files": [
         "codey/utils/citation_scanner.py",
         "codey/utils/references.py",
         "codey/utils/refs.py"
       ],
       "verified_files": [
+        "codey/utils/citation_scanner.py",
+        "codey/utils/references.py",
         "codey/utils/refs.py"
       ],
       "candidate_test_count": 17,
@@ -1418,9 +1420,15 @@
         "tests/test_proof_ref_parity.py",
         "tests/test_research_identity.py",
         "tests/test_search_scan_split.py",
-        "tests/test_persisted_receipt_exit_code_roundtrip.py"
+        "tests/test_persisted_receipt_exit_code_roundtrip.py",
+        "tests/test_chat_programmatic_citations.py",
+        "tests/test_research_report_tail.py",
+        "tests/test_structured_research_report.py",
+        "tests/test_knowledge.py::KnowledgeStoreTests::test_brief_builder_uses_shared_citation_scanner_shapes",
+        "tests/test_shared_helpers.py",
+        "tests/test_tool_runtime.py"
       ],
-      "result": "in progress: clip total-budget bug reproduced (4 failed, 11 passed) then fixed (15 passed); refs whole-file strict Any audit passed; citation_scanner/references Any diagnostics pending"
+      "result": "completed owned file review and whole-file strong Any checks; clip bug and independent citation/Path type refactor verified; 3 report integration failures reproduced with prior citation code and routed to Q096/Q106/Q161; full-tree external errors remain explicitly recorded"
     },
     {
       "responsibility": "Atomic storage and path safety",
@@ -2488,13 +2496,17 @@
         "codey/operations/browser_waits.py",
         "codey/operations/browser_detail.py",
         "codey/operations/browser_upload.py",
-        "codey/operations/browser_text_report.py"
+        "codey/operations/browser_text_report.py",
+        "codey/operations/browser_result_evidence.py"
       ],
       "id": "Q084",
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 33
+      "candidate_test_count": 33,
+      "followups": [
+        "External concurrent addition: browser_result_evidence.py. Pending whole-file review and Any audit; Q084 expands from 8 to 9 closely related browser completion/followup files. Not edited or committed by this governance batch."
+      ]
     },
     {
       "responsibility": "codey/operations: browser contracts and interaction",
@@ -2680,7 +2692,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 135
+      "candidate_test_count": 135,
+      "followups": [
+        "Q003 integration tests: research_report_tail False/True read count 4 vs 2; structured_research_report frozen phase includes done. Exact three failures reproduced with pre-refactor citation_scanner from 6b12a394; not caused by citation type change. Determine production contract vs outdated test vs concurrent browser changes before editing either side."
+      ]
     },
     {
       "responsibility": "codey/operations: task kernel and execution",
@@ -2814,7 +2829,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 30
+      "candidate_test_count": 30,
+      "followups": [
+        "Q003 integration tests: research_report_tail False/True read count 4 vs 2; structured_research_report frozen phase includes done. Exact three failures reproduced with pre-refactor citation_scanner from 6b12a394; not caused by citation type change. Determine production contract vs outdated test vs concurrent browser changes before editing either side."
+      ]
     },
     {
       "responsibility": "codey/operations: source acquisition and discovery",
@@ -3553,7 +3571,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 4
+      "candidate_test_count": 4,
+      "followups": [
+        "Q003 integration tests: research_report_tail False/True read count 4 vs 2; structured_research_report frozen phase includes done. Exact three failures reproduced with pre-refactor citation_scanner from 6b12a394; not caused by citation type change. Determine production contract vs outdated test vs concurrent browser changes before editing either side."
+      ]
     },
     {
       "responsibility": "codey/research: source acquisition and discovery",
@@ -7013,7 +7034,9 @@
     "tests/test_zen_vpn_direct_fallback.py",
     "tests/test_zoom_project_map_ab.py",
     "tests/work_checkpoint_smoke.py",
-    "tools/go_contract/main_test.go"
+    "tools/go_contract/main_test.go",
+    "tests/test_ref_text_budget.py",
+    "tests/test_browser_control_continuation.py"
   ],
   "excluded_tracked_source": [
     {
@@ -7302,5 +7325,12 @@
     }
   ],
   "batch_completion": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
-  "validation_routing": "candidate counts are AST import hints, not executed coverage; choose explicit tests at entry by imports, named contracts and callers; mypy/pyrefly/ty for Python, Ruff; tsc and scoped Vitest for frontend; publication gates when affected"
+  "validation_routing": "candidate counts are AST import hints, not executed coverage; choose explicit tests at entry by imports, named contracts and callers; mypy/pyrefly/ty for Python, Ruff; tsc and scoped Vitest for frontend; publication gates when affected",
+  "scope_updates": [
+    {
+      "path": "codey/operations/browser_result_evidence.py",
+      "batch": "Q084",
+      "reason": "new owned production module added concurrently by external work; include without touching it or shrinking scope"
+    }
+  ]
 }

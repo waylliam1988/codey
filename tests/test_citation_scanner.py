@@ -14,21 +14,25 @@ class CitationScannerTests(unittest.TestCase):
     def test_numeric_citations_keep_page_ranges(self) -> None:
         refs = citation_ref_items("Alpha [2 p.3-4], ordinal [2nd], beta [10 pages 7].")
 
-        self.assertEqual([(item.number, item.pages) for item in refs], [
+        actual: list[tuple[int, tuple[int, ...]]] = [(item.number, item.pages) for item in refs]
+        expected: list[tuple[int, tuple[int, ...]]] = [
             (2, (3, 4)),
             (10, (7,)),
-        ])
+        ]
+        self.assertEqual(actual, expected)
 
     def test_numeric_citations_allow_adjacent_refs_without_array_indexes(self) -> None:
         refs = citation_ref_items("结论 [1][2]; array[0] per [3]; comma [1, 2].")
 
-        self.assertEqual([(item.number, item.pages) for item in refs], [
+        actual: list[tuple[int, tuple[int, ...]]] = [(item.number, item.pages) for item in refs]
+        expected: list[tuple[int, tuple[int, ...]]] = [
             (1, ()),
             (2, ()),
             (3, ()),
             (1, ()),
             (2, ()),
-        ])
+        ]
+        self.assertEqual(actual, expected)
 
     def test_explicit_group_normalization_does_not_guess_ranges_or_array_indices(self) -> None:
         self.assertEqual(normalize_citation_groups("Sources [2, 7，10]."), "Sources [2][7][10].")
@@ -38,11 +42,13 @@ class CitationScannerTests(unittest.TestCase):
     def test_source_id_refs_cover_bracket_and_context_only(self) -> None:
         refs = source_id_ref_items("plain s1 remains prose; [s2 p.5] and source_id=s3 are refs")
 
-        self.assertEqual(source_id_refs("plain s1 remains prose"), set())
-        self.assertEqual([(item.source_id, item.bracketed, item.page_suffix) for item in refs], [
+        self.assertEqual(source_id_refs("plain s1 remains prose"), set[str]())
+        actual: list[tuple[str, bool, str]] = [(item.source_id, item.bracketed, item.page_suffix) for item in refs]
+        expected: list[tuple[str, bool, str]] = [
             ("s2", True, " p.5"),
             ("s3", False, ""),
-        ])
+        ]
+        self.assertEqual(actual, expected)
 
     def test_source_id_refs_cover_common_report_renderings(self) -> None:
         text = (
@@ -53,22 +59,21 @@ class CitationScannerTests(unittest.TestCase):
 
         refs = source_id_ref_items(text)
 
-        self.assertEqual(
-            [(item.source_id, item.bracketed, item.page_suffix) for item in refs],
-            [
-                ("s2", True, ""),
-                ("s3", True, ""),
-                ("s4", True, " p.5"),
-                ("s5", True, ""),
-                ("s6", False, ""),
-                ("s7", False, ""),
-            ],
-        )
+        actual: list[tuple[str, bool, str]] = [(item.source_id, item.bracketed, item.page_suffix) for item in refs]
+        expected: list[tuple[str, bool, str]] = [
+            ("s2", True, ""),
+            ("s3", True, ""),
+            ("s4", True, " p.5"),
+            ("s5", True, ""),
+            ("s6", False, ""),
+            ("s7", False, ""),
+        ]
+        self.assertEqual(actual, expected)
 
     def test_source_id_refs_do_not_treat_plain_ids_as_citations(self) -> None:
         text = "plain s1 remains prose; a source was s3; source s12abc is a token"
 
-        self.assertEqual(source_id_refs(text), set())
+        self.assertEqual(source_id_refs(text), set[str]())
 
 
 if __name__ == "__main__":
