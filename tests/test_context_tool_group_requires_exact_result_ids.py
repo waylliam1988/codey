@@ -1,4 +1,6 @@
 """Compaction must not hide missing results behind duplicate or foreign IDs."""
+from collections.abc import Sequence
+
 import pytest
 
 from codey.agents.context_compaction import is_tool_group_complete
@@ -11,11 +13,16 @@ from codey.providers.error_classification import RequestPrepError
     (["a"], ["a", "a"]), (["a", "a"], ["a", "a"]),
     ([""], [""]), ([1], [1]), (["a", "b"], ["a"]),
 ])
-def test_invalid_pairing_is_not_complete_or_compactable(calls, results):
-    messages = [
+def test_invalid_pairing_is_not_complete_or_compactable(
+    calls: Sequence[str | int], results: Sequence[str | int],
+) -> None:
+    result_messages: list[dict[str, object]] = [
+        {"role": "tool", "tool_call_id": value, "content": "x" * 200} for value in results
+    ]
+    messages: list[dict[str, object]] = [
         {"role": "system", "content": "rules"},
         {"role": "assistant", "tool_calls": [{"id": x} for x in calls]},
-        *[{"role": "tool", "tool_call_id": x, "content": "x" * 200} for x in results],
+        *result_messages,
         {"role": "user", "content": "continue"},
     ]
     assert is_tool_group_complete(messages, range(1, len(messages) - 1)) is False
@@ -23,11 +30,11 @@ def test_invalid_pairing_is_not_complete_or_compactable(calls, results):
         prepare(messages, [], system="", tools=[])
 
 
-def test_out_of_order_unique_results_are_complete():
-    messages = [{"role": "assistant", "tool_calls": [{"id": "a"}, {"id": "b"}]},
+def test_out_of_order_unique_results_are_complete() -> None:
+    messages: list[dict[str, object]] = [{"role": "assistant", "tool_calls": [{"id": "a"}, {"id": "b"}]},
                 {"role": "tool", "tool_call_id": "b"}, {"role": "tool", "tool_call_id": "a"}]
     assert is_tool_group_complete(messages, range(3)) is True
 
 
-def test_stray_tool_result_is_not_a_complete_group():
+def test_stray_tool_result_is_not_a_complete_group() -> None:
     assert is_tool_group_complete([{"role": "tool", "tool_call_id": "a"}], [0]) is False

@@ -1662,16 +1662,27 @@
       "result": "Stop-first contract repaired across entry, reconnect/takeover failure, final canary budget and cleanup cancellation. Pre-fix 6 failed/2 passed; additional final-budget boundary 2 failed/1 passed/7 deselected before branch repair. Final direct group 23 passed; explicitly scoped caller group 19 passed. Three whole files passed strong Any/Pyrefly/ty/Ruff; normal full-production gates passed with stable hashes. checkpoint True-done remains independently baseline-waiting due missing tool-task worker, routed Q094/Q095/Q099; no completed test count claimed for interrupted runs. Test harness annotations and nominal ProviderTransport retain original payload/close comparisons."
     },
     {
-      "responsibility": "codey/agents: context and checkpoint boundaries",
+      "responsibility": "Project prompt context assembly and atomic tool-message grouping for compaction",
       "files": [
         "codey/agents/context.py",
         "codey/agents/context_compaction.py"
       ],
       "id": "Q010",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 2
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/agents/context.py",
+        "codey/agents/context_compaction.py"
+      ],
+      "verified_files": [
+        "codey/agents/context.py",
+        "codey/agents/context_compaction.py"
+      ],
+      "candidate_test_count": 2,
+      "tests": [
+        "tests/test_context_tool_group_requires_exact_result_ids.py",
+        "tests/test_context_compaction_grouping.py"
+      ],
+      "result": "Removed unreachable previous-group append by maximal-adjacent-tools invariant; public API and exact ID validation unchanged. 10 initial pairing/native baseline; 15 grouping/pairing baseline and same 15 post-deletion tests passed. API compaction/history callers 41 passed; context assembly callers 8 passed. Four whole files strong Any/Pyrefly/ty/Ruff passed, test debt 16 -> 1 -> 0; normal production mypy/Pyrefly/ty and precision gates passed with stable hashes. context.py required no code change. No new deterministic bug claimed."
     },
     {
       "responsibility": "codey/agents: task kernel and execution",

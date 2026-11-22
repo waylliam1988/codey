@@ -40,14 +40,8 @@ def group_messages_for_compaction(messages: Sequence[Mapping[str, object]]) -> l
                 index += 1
             groups.append(group)
         else:
-            # A stray tool message without a leading assistant call still
-            # joins the previous group when one exists, so replay order is kept.
-            if _is_tool_message(message) and groups and _has_tool_calls(messages[groups[-1][0]]):
-                groups[-1].append(index)
-                index += 1
-            else:
-                groups.append([index])
-                index += 1
+            groups.append([index])
+            index += 1
     return groups
 
 

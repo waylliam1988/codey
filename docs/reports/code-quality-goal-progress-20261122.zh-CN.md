@@ -589,3 +589,20 @@ Q009 最终验收：
 - `python -m pytest -q tests/test_writer_failover.py tests/test_writer_failover_cancellation.py --tb=short` → **退出 0，23 passed，1.59 秒**；同三个完整路径加严 Any mypy / scoped Pyrefly / scoped ty / Ruff **全部退出 0**。有实际运行的普通失败、停止优先、预算/hand-off 保持验证；没有新增忽略、skip 或放宽断言。
 - 生产 `python -m mypy codey --python-version 3.11` → **0，737 文件**；`pyrefly check codey --python-version 3.11` → **0，0 errors，原 35 suppressed/165 warnings**；`ty check codey --python-version 3.11` → **0**；`python -m tools.kernel_type_precision_gate` → **0**。全部串行，源码与本批脚本哈希前后一致，changed_during_checks=[]；q009-validation.json 含真实命令、退出码与输出。
 - Diff 已核对，仅状态机、原测试、新增取消回归及两份记录；未改调度器或未完成 fixture。Q009 已完成，累计 **12 / 291 批、30 / 975 生产文件**；Q008D 仍是 partial_follow_up。下一主批 Q010 的 context.py/context_compaction.py，按实际上下文装配/消息组边界建基线，不回到前面文件追加可选优化。
+
+Q009 已提交：`7f1e50ee`（fix(agents): honor task stops throughout writer failover）。
+
+### Q010：上下文装配与消息组（进行中）
+
+- 两个完整生产文件已读：context.py 的根目录指令、受权限约束的事实来源、PromptEnvelope 与 memory spans；context_compaction.py 的索引分组和完整 ID 配对。装配消费 project_adapter；消息分组消费 api_chat.prepare/validate_view/closed_spans，后接 provider compaction。两个生产文件原本加严 Any 无诊断，不为制造类型变更修改它们。
+- 初始 `python -m pytest -q tests/test_context_tool_group_requires_exact_result_ids.py tests/test_native_coding_context_uses_native_instructions.py --tb=short` → **退出 0，10 passed，2.80 秒**。两源和 pairing 测试的加严 mypy → **退出 1，16 条，仅测试文件**；原无注解 calls/results、异构 message list 与无返回注解为来源。
+- 死分支证明：非空 tool_calls 分支的内层 while 消费该条调用之后所有连续 tool 消息；下一次外层迭代若前一个组仍以该调用开头，当前条必然不是 tool。其他分支建立的组首又没有非空 tool_calls。因此 else 内“当前是 tool 且上一个组首带调用”的合取不可成立。检查 api_chat 的三处消费者只传稳定原始消息记录；无公共入口、导出、配置或插件被删除，_is_tool_message 仍供真实路径使用。
+- 为删除建立分组基线：空列表、纯文本、连续多结果、孤立工具结果、被 user 中断的悬空调用、相邻完整调用组，加原坏 ID/乱序正例；`python -m pytest -q tests/test_context_compaction_grouping.py tests/test_context_tool_group_requires_exact_result_ids.py --tb=short` 删除前 **退出 0，15 passed，1.55 秒**，删除后同输入/断言 **退出 0，15 passed，1.56 秒**。只删除不可达追加分支，保持 singleton 和完整 ID 规则；未宣称修复新 bug。
+- pairing 脚本补齐 Sequence[str|int]、返回注解、明确消息容器；原 int/空 ID、重复/外来/缺结果负例和 RequestPrepError 断言全部保留。初次 starred comprehension 与 list 不变性产生一条诊断，以 typed result_messages 保留同序/同值构造；最终 **16 → 1 → 0**。`python -m mypy codey/agents/context.py codey/agents/context_compaction.py tests/test_context_tool_group_requires_exact_result_ids.py tests/test_context_compaction_grouping.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` → **退出 0，四完整文件**。
+- API 消费者 `python -m pytest -q tests/test_context_compaction_within_long_tool_turn.py tests/test_context_compaction_transactions_and_lifecycle.py tests/test_api_chat_native_turns_and_history.py --tb=short` → **退出 0，41 passed，2.12 秒**，包含后台 tail、并发发送/关闭、未回答工具与请求准备。context.py 没有生产变更，正在补验实际装配调用方。当前仍 **12 / 291、30 / 975**，待最终检查/提交。
+
+Q010 最终验收：
+
+- `python -m pytest -q tests/test_task_entry_cutover.py::test_project_writer_keeps_bounded_project_context_in_first_prompt tests/test_agent_completion_repair_context.py --tb=short` → **退出 0，8 passed，9.15 秒**；实际涵盖根 AGENTS、项目事实/research/map/checkpoint、权限来源过滤、空/续接 repair context 和发送 epoch，不冒充 task_entry_cutover 全文件通过。两批调用方真实记录 q010-callers.json。
+- 四完整文件 scoped Pyrefly / ty / Ruff → **全部退出 0**；生产 `python -m mypy codey --python-version 3.11` → **0，737 文件**，`pyrefly check codey --python-version 3.11` → **0，0 errors，保留原 35 suppressed/165 warnings**，`ty check codey --python-version 3.11` → **0**，`python -m tools.kernel_type_precision_gate` → **0**。串行结果与哈希前后一致见 q010-validation.json，changed_during_checks=[]。前述四文件加严 Any、15 例直接验证仍有效，未重复运行无变化范围。
+- 没有待确认 bug 被按猜测修复；context.py 已完成全文件检查/类型验证，无需源码修改。唯一生产变更删除不可达分支，测试只补类型/分组基线。Diff/暂存前检查通过，当前批次 **已完成**；累计 **13 / 291 批、32 / 975 生产文件**。Q008D/shared server 类型、既有 lazy import、checkpoint True-done 调度等待、原 CodeMode/SQLite 债务继续留队；总 goal 未完成。下一主批 Q011：protocol.py 的协议纠错、路径规范及验证禁止识别。
