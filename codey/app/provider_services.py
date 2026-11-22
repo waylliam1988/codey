@@ -11,11 +11,14 @@ from __future__ import annotations
 
 import threading
 import time as _time
-from collections.abc import Generator
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable, Generator
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager, suppress
-from typing import Any, cast
+from pathlib import Path
+from typing import Protocol, TypedDict, Unpack, runtime_checkable
 
+from codey.app.connection_status import ConnectionSnapshot
+from codey.app.provider_registry import ProviderRegistry
 from codey.automation.browser_worker import submit as submit_browser_task
 from codey.operations.task_state import TaskState
 from codey.providers.base import ChatProvider
@@ -25,37 +28,79 @@ from codey.providers.supervisor import ProviderSupervisor
 from codey.utils.refs import clip, digest_text
 
 
-def _provider_registry() -> Any:
+class _BrowserOptions(TypedDict, total=False):
+    port: int
+    profile: Path
+
+
+class _ConnectOptions(_BrowserOptions, total=False):
+    open_if_missing: bool
+    bring_to_front: bool
+
+
+class _ProviderRegistryPort(Protocol):
+    def provider_tab_availability(self, *, allowed: set[str] | None = None) -> dict[str, bool]: ...
+    def warm_provider_tabs(self, *, port: int = ..., profile: Path = ...) -> dict[str, bool]: ...
+    def connect_provider(
+        self, provider_id: str, *, port: int = ..., profile: Path = ...,
+        open_if_missing: bool = ..., bring_to_front: bool = ...,
+    ) -> ChatProvider: ...
+    def connect_existing_provider(self, provider_id: str) -> ChatProvider: ...
+    def connect_fresh_provider_tab(
+        self, provider_id: str, *, port: int = ..., profile: Path = ...,
+    ) -> ChatProvider: ...
+    def borrow_open_provider(self, provider_id: str, owner_page: object) -> ChatProvider | None: ...
+
+
+@runtime_checkable
+class _RefreshStatusCallback(Protocol):
+    def __call__(self, provider_id: str, /) -> object: ...
+
+
+@runtime_checkable
+class _WaitStatusCallback(Protocol):
+    def __call__(self, provider_id: str, timeout: float | None = None) -> object: ...
+
+
+@runtime_checkable
+class _StatusSnapshotCallback(Protocol):
+    def __call__(self) -> dict[str, ConnectionSnapshot]: ...
+
+
+WarmupRunner = Callable[[], dict[str, bool]]
+
+
+def _provider_registry() -> _ProviderRegistryPort:
     """Import the connection registry on first use, never on module import."""
     from codey.providers import registry as _registry
 
     return _registry
 
 
-def provider_tab_availability(*, allowed: set[str] | None = None) -> dict[str, Any]:
-    return cast(dict[str, Any], _provider_registry().provider_tab_availability(allowed=allowed))
+def provider_tab_availability(*, allowed: set[str] | None = None) -> dict[str, bool]:
+    return _provider_registry().provider_tab_availability(allowed=allowed)
 
 
-def warm_provider_tabs(*args: object, **kwargs: object) -> dict[str, Any]:
-    return cast(dict[str, Any], _provider_registry().warm_provider_tabs(*args, **kwargs))
+def warm_provider_tabs(**kwargs: Unpack[_BrowserOptions]) -> dict[str, bool]:
+    return _provider_registry().warm_provider_tabs(**kwargs)
 
 
-def connect_provider(*args: object, **kwargs: object) -> ChatProvider:
-    return cast(ChatProvider, _provider_registry().connect_provider(*args, **kwargs))
+def connect_provider(provider_id: str, **kwargs: Unpack[_ConnectOptions]) -> ChatProvider:
+    return _provider_registry().connect_provider(provider_id, **kwargs)
 
 
 def connect_existing_provider(provider_id: str) -> ChatProvider:
-    return cast(ChatProvider, _provider_registry().connect_existing_provider(provider_id))
+    return _provider_registry().connect_existing_provider(provider_id)
 
 
-def connect_fresh_provider_tab(provider_id: str, **kwargs: object) -> ChatProvider:
-    return cast(ChatProvider, _provider_registry().connect_fresh_provider_tab(provider_id, **kwargs))
+def connect_fresh_provider_tab(provider_id: str, **kwargs: Unpack[_BrowserOptions]) -> ChatProvider:
+    return _provider_registry().connect_fresh_provider_tab(provider_id, **kwargs)
 
 
 def borrow_open_provider(provider_id: str, owner_page: object) -> ChatProvider | None:
     # Provider ids are canonically normalized by reviewer_candidates before
     # this borrowing boundary is reached.
-    return cast(ChatProvider | None, _provider_registry().borrow_open_provider(provider_id, owner_page))
+    return _provider_registry().borrow_open_provider(provider_id, owner_page)
 
 
 def reviewer_candidates(
@@ -88,26 +133,15 @@ def use_model(ctx: TaskState, provider_id: str, model_id: str = "") -> Generator
     with ctx.lock:
         if not ctx.providers.model_preferences.allows(*key):
             raise ValueError("Selected model is disabled. Choose an enabled model in Settings.")
-        uses_lock = getattr(ctx.providers, "_model_uses_lock", None)
-        if uses_lock is None:
+        with ctx.providers._model_uses_lock:
             ctx.providers.model_uses[key] += 1
-        else:
-            with uses_lock:
-                ctx.providers.model_uses[key] += 1
     try:
         yield
     finally:
-        with ctx.lock:
-            uses_lock = getattr(ctx.providers, "_model_uses_lock", None)
-            if uses_lock is None:
-                ctx.providers.model_uses[key] -= 1
-                if not ctx.providers.model_uses[key]:
-                    del ctx.providers.model_uses[key]
-            else:
-                with uses_lock:
-                    ctx.providers.model_uses[key] -= 1
-                    if not ctx.providers.model_uses[key]:
-                        del ctx.providers.model_uses[key]
+        with ctx.lock, ctx.providers._model_uses_lock:
+            ctx.providers.model_uses[key] -= 1
+            if not ctx.providers.model_uses[key]:
+                del ctx.providers.model_uses[key]
 
 
 PROVIDER_AVAILABILITY_TTL_S = 3.0
@@ -131,7 +165,7 @@ def reset_provider_availability_cache() -> None:
     _note_availability_statuses({}, 0.0)
 
 
-def _schedule_web_probe(ctx: Any, allowed: set[str]) -> None:
+def _schedule_web_probe(ctx: TaskState, allowed: set[str]) -> None:
     """Probe browser-backed providers off the HTTP response path."""
     global _WEB_PROBE_RUNNING
     if not allowed:
@@ -141,20 +175,20 @@ def _schedule_web_probe(ctx: Any, allowed: set[str]) -> None:
             return
         _WEB_PROBE_RUNNING = True
 
-    def complete(future: Any) -> None:
+    def complete(future: Future[dict[str, bool]]) -> None:
         global _WEB_PROBE_RUNNING
-        raw: dict[str, Any]
+        raw: dict[str, bool]
         try:
             result = future.result()
-            raw = result if isinstance(result, dict) else dict[str, Any]()
+            raw = result if isinstance(result, dict) else dict[str, bool]()
         except Exception:
-            raw = dict[str, Any]()
-        _note_availability_statuses(cast(dict[str, bool], raw), _time.monotonic())
+            raw = dict[str, bool]()
+        _note_availability_statuses(raw, _time.monotonic())
         rows = [
             {
                 "id": provider_id,
                 "label": PROVIDER_LABELS[provider_id],
-                "available": bool(raw.get(provider_id) is True),
+                "available": raw.get(provider_id) is True,
                 "state": "ready" if raw.get(provider_id) is True else "unavailable",
                 "freshness": "fresh",
                 "source": "browser_tab",
@@ -168,7 +202,12 @@ def _schedule_web_probe(ctx: Any, allowed: set[str]) -> None:
         with _WEB_PROBE_LOCK:
             _WEB_PROBE_RUNNING = False
 
-    future = _WEB_PROBE_EXECUTOR.submit(provider_tab_availability, allowed=allowed)
+    try:
+        future = _WEB_PROBE_EXECUTOR.submit(provider_tab_availability, allowed=allowed)
+    except Exception:
+        with _WEB_PROBE_LOCK:
+            _WEB_PROBE_RUNNING = False
+        raise
     future.add_done_callback(complete)
 
 
@@ -178,21 +217,31 @@ def provider_availability(ctx: TaskState) -> dict[str, bool]:
         return {pid: False for pid in PROVIDER_LABELS}
     api_allowed = allowed.intersection(API_CONNECTIONS)
     api_statuses: dict[str, bool] = {}
-    coordinator = getattr(ctx.providers, "connection_status", None)
+    coordinator: object = getattr(ctx.providers, "connection_status", None)
     if coordinator is not None:
         for provider_id in api_allowed:
             try:
-                snapshot = coordinator.refresh(provider_id)
-                if getattr(snapshot, "state", "") == "checking":
-                    snapshot = coordinator.wait_for(provider_id, timeout=2.0)
+                refresh: object = getattr(coordinator, "refresh", None)
+                if not isinstance(refresh, _RefreshStatusCallback):
+                    raise TypeError("provider status coordinator must expose refresh")
+                snapshot = refresh(provider_id)
+                state: object = getattr(snapshot, "state", "")
+                if state == "checking":
+                    wait_for: object = getattr(coordinator, "wait_for", None)
+                    if not isinstance(wait_for, _WaitStatusCallback):
+                        raise TypeError("provider status coordinator must expose wait_for")
+                    snapshot = wait_for(provider_id, timeout=2.0)
                 # The coordinator keeps the last good state for UI continuity
                 # when a refresh fails. That stale snapshot is displayable,
                 # but it is not a current advisor admission.
+                available: object = getattr(snapshot, "available", False)
+                freshness: object = getattr(snapshot, "freshness", "")
+                error: object = getattr(snapshot, "error", "")
                 api_statuses[provider_id] = bool(
-                    getattr(snapshot, "available", False)
+                    available
                     and not (
-                        getattr(snapshot, "freshness", "") == "stale"
-                        and bool(getattr(snapshot, "error", ""))
+                        freshness == "stale"
+                        and bool(error)
                     )
                 )
             except Exception:
@@ -228,7 +277,7 @@ def provider_availability_from_statuses(
     }
 
 
-def provider_payload(statuses: dict[str, bool] | None = None) -> list[dict[str, Any]]:
+def provider_payload(statuses: dict[str, bool] | None = None) -> list[dict[str, object]]:
     statuses = statuses or {}
     return [
         {"id": provider_id, "label": label, "available": statuses.get(provider_id) is True}
@@ -236,12 +285,12 @@ def provider_payload(statuses: dict[str, bool] | None = None) -> list[dict[str, 
     ]
 
 
-def provider_status_payload(ctx: Any) -> list[dict[str, Any]]:
+def provider_status_payload(ctx: TaskState) -> list[dict[str, object]]:
     """Return a complete UI snapshot, scheduling API probes asynchronously."""
-    coordinator = getattr(ctx, "connection_status", None)
+    coordinator: object = getattr(ctx, "connection_status", None)
     if coordinator is None:
         return provider_payload(provider_availability(ctx))
-    web_statuses: dict[str, Any]
+    web_statuses: dict[str, bool]
     try:
         web_allowed = {provider_id for provider_id in PROVIDER_LABELS
                        if provider_id not in API_CONNECTIONS and ctx.providers.model_preferences.allows(provider_id)}
@@ -254,10 +303,13 @@ def provider_status_payload(ctx: Any) -> list[dict[str, Any]]:
             web_statuses = {}
             _schedule_web_probe(ctx, web_allowed)
     except Exception:
-        web_statuses = dict[str, Any]()
-    api_snapshots = coordinator.snapshot()
+        web_statuses = dict[str, bool]()
+    snapshot: object = getattr(coordinator, "snapshot", None)
+    if not isinstance(snapshot, _StatusSnapshotCallback):
+        raise TypeError("provider status coordinator must expose snapshot")
+    api_snapshots = snapshot()
     now = _time.time()
-    rows: list[dict[str, Any]] = []
+    rows: list[dict[str, object]] = []
     for provider_id, label in PROVIDER_LABELS.items():
         if provider_id in api_snapshots:
             rows.append(api_snapshots[provider_id].payload(label))
@@ -278,7 +330,7 @@ def provider_status_payload(ctx: Any) -> list[dict[str, Any]]:
     return rows
 
 
-def provider_catalog() -> list[dict[str, Any]]:
+def provider_catalog() -> list[dict[str, object]]:
     """Cheap static catalog: ids + labels only, never probes CDP or network."""
     return [
         {"id": provider_id, "label": label}
@@ -286,7 +338,7 @@ def provider_catalog() -> list[dict[str, Any]]:
     ]
 
 
-def provider_status_update(provider_id: str, available: bool) -> list[dict[str, Any]]:
+def provider_status_update(provider_id: str, available: bool) -> list[dict[str, object]]:
     return [{
         "id": provider_id,
         "label": PROVIDER_LABELS.get(provider_id, provider_id),
@@ -298,17 +350,17 @@ def review_label(provider_id: str) -> str:
     return PROVIDER_LABELS.get(provider_id, provider_id)
 
 
-def provider_failover_order(providers: Any) -> tuple[str, ...]:
+def provider_failover_order(providers: ProviderRegistry) -> tuple[str, ...]:
     """Order providers by open tabs first, then registry order."""
     allowed = {pid for pid in PROVIDER_LABELS if pid not in API_CONNECTIONS and providers.model_preferences.allows(pid)}
-    return cast(tuple[str, ...], providers.failover_order(lambda: provider_tab_availability(allowed=allowed)))
+    return providers.failover_order(lambda: provider_tab_availability(allowed=allowed))
 
 
-def open_provider_session(ctx: TaskState, provider_id: str = DEFAULT_PROVIDER_ID) -> Any:
+def open_provider_session(ctx: TaskState, provider_id: str = DEFAULT_PROVIDER_ID) -> ChatProvider:
     """Connect a provider and announce it on the session event stream."""
     run = ctx.current_run()
     selection = ctx.run_registry.api_selection_for(run.run_id) if run is not None else None
-    if not ctx.providers.model_preferences.allows(provider_id, getattr(selection, "model_id", "")):
+    if not ctx.providers.model_preferences.allows(provider_id, selection.model_id if selection is not None else ""):
         raise ValueError("Selected model is disabled. Choose an enabled model in Settings.")
     ctx.set_run_status("connecting")
     ctx.emit({"type": "status", "status": "connecting"})
@@ -324,7 +376,7 @@ def open_provider_session(ctx: TaskState, provider_id: str = DEFAULT_PROVIDER_ID
     return provider
 
 
-def run_provider_warmup(ctx: TaskState, runner: Any = None) -> None:
+def run_provider_warmup(ctx: TaskState, runner: WarmupRunner | None = None) -> None:
     if runner is None:
         runner = warm_provider_tabs
     try:
@@ -345,7 +397,7 @@ def run_provider_warmup(ctx: TaskState, runner: Any = None) -> None:
             return
 
 
-def start_provider_warmup(ctx: TaskState, runner: Any = None, *, delay_s: float = 0.0) -> None:
+def start_provider_warmup(ctx: TaskState, runner: WarmupRunner | None = None, *, delay_s: float = 0.0) -> None:
     """Queue warmup; serve() passes a short delay to stay off the boot path."""
     import threading as _threading
 

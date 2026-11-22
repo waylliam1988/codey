@@ -680,3 +680,27 @@ Q014 最终验证：
 - Diff 已核对：生产两文件，测试两份原文件/两份新增，记录两份；active_provider_registry.py 与 test_provider_registry_app.py 只检查验证、没有制造修改。两个独立 bug 按 provider registry 取消与 connection status 发布锁分别提交；本批最终状态待完整提交后更新。原 shared server/SQLite/CodeMode 等待办仍未解决，总 goal 仍 active。
 
 Q014 取消与 registry 端口已提交：`3df4d47e`（fix(app): propagate cancellation from provider failover probes）。其余状态发布修复、状态 JSON/测试类型验收均已通过，单独提交；三生产文件批次完成后累计 **17 / 293 批、38 / 975 生产文件**。下一主批 Q014B 的 provider service/model settings/connection actions 三文件；Q014C 的 operator 会话认证仍完整留队。
+
+
+Q014 状态发布已提交：`e5b44737`（fix(app): notify provider status outside the submission lock）。累计仍为 **17 / 293 批、38 / 975 文件**。
+
+### Q014B：provider 服务、模型设置与连接动作（进行中）
+
+- 主批三生产文件已完整检查；HEAD=e5b44737，恢复时三源及新增 test_provider_web_probe_submission.py 为本任务未提交修改，无其他工作区改动。基线 `python -m pytest -q tests/test_connection_actions.py tests/test_model_settings.py tests/test_model_settings_authentication.py --tb=short` → **0，31 passed，3.59 秒**。三源完整加严 Any 初始 **158 errors / 3 files**。
+- **确定性 bug：executor.submit 失败永久卡住后台探针标记。** provider_status_payload → _schedule_web_probe 在提交前置 running；标准 ThreadPoolExecutor.submit 在线程启动失败时会抛 RuntimeError，并不存在成功运行的任务。没有运行任务就不能永久占用唯一探针名额，后续 HTTP 状态请求必须仍有机会恢复。新回归第一次 submit 抛 can't start new thread，第二次返回完成的 Future；改前 `python -m pytest -q tests/test_provider_web_probe_submission.py --tb=short` → **1，1 failed，1.25 秒**：两次请求仅一次提交；q014b-submit-before.json。生产修复在 submit 异常下持锁复位 running 并原样重抛，不改外层降级契约。新测试/冷启动最初 **0，11 passed，2.29 秒**。
+- 类型边界：lazy registry 用已注解的真实模块满足精确 Protocol；warm/connect/fresh kwargs 用 TypedDict/Unpack 保留底层默认值唯一所有权。模型 JSON、动态 callback 和 status 回调使用 object 入场后校验，无新增 cast/ignore。settings 与 disabled-discovery 相同缓存读取归 _cached_catalog；缺少 model_payload 仍抛 TypeError，保留原捕获边界。
+- 删除 use_model 缺锁兼容分支的依据不是单纯无引用：TaskState.providers 明确是 ProviderRegistry，其构造器无条件创建 _model_uses_lock；app 实际调用及直接 lease 测试使用真实 AppContext。保留初次允许性检查及锁顺序，回收路径两层 with 合并，不把检查挪到不同锁范围。
+- 三完整生产文件加严 mypy **158 → 0，退出 0**；`python -m pytest -q tests/test_connection_actions.py tests/test_model_settings.py tests/test_model_settings_authentication.py tests/test_provider_web_probe_submission.py --tb=short` → **0，32 passed，4.48 秒**；`python -m pytest -q tests/test_provider_web_probe_submission.py tests/test_connection_status_cold_start.py tests/test_model_preferences.py::test_live_reviewer_lease_blocks_only_its_used_model_until_released --tb=short` → **0，12 passed，2.54 秒**。
+- Ruff 首轮三处 import/SIM108/SIM117 失败均属于本轮，已按等价早返回/相同锁顺序/仅 import 排序修复，最终重验待执行。相关测试完整 Any、facade 默认值委托基线、三生产类型门及 diff/commit 尚未完成，不提前计入完成。
+
+
+Q014B 验收与提交准备：
+
+- connection_actions 全测试从无注解 SimpleNamespace/Mock 改为真实 AppContext（关闭 scheduler/memory）、有类型 ModuleType connector 与精确 callback；模型使用安排保持等价 Counter。logout 仍断言使用中拒绝、无执行，释放后执行时同一 app 锁禁止另线程非阻塞获取，没有把原锁断言删掉或放宽。错误隐私、显式 catalog state、shutdown 继续清理和不导入缺失包的全部断言保留。
+- 新 facade 两测试验证省略参数由底层独占默认值、显式 kwargs 原样委托、返回对象身份与异常原样传播。在本目录临时使用 HEAD 原三源运行 connection_actions / facade / model_settings_authentication / 指定 lease node → **0，10 passed，2.43 秒**；finally 精确恢复字节并检查 restored_own_source=true。q014b-fixture-baseline.json。没有创建或复制 worktree。
+- 最终直接五文件组 **0，35 passed，4.68 秒**。依赖按冷启动、Zen catalog、model_preferences、API reviewer 独立模型身份、consensus ports/cancellation、backend connection event node 扩大：`python -m pytest -q tests/test_connection_status_cold_start.py tests/test_zen_catalog_lifecycle.py tests/test_model_preferences.py tests/test_api_reviewer_uses_distinct_model_and_identity.py tests/test_consensus_provider_ports.py tests/test_consensus_cancellation.py tests/test_provider_connection_running_event.py::test_connection_event_stream_agrees_with_authoritative_state --tb=short` → **0，79 passed，6.90 秒**；无 skip。完整命令 q014b-validation.json。
+- 补充 probe 边界：未完成 Future 阻止重复提交；失败 Future 释放名额；缓存失效后的新请求可再次提交；已完成不可用结果正确发布 unavailable。mypy 对同一模块布尔属性的前后断言误判 unreachable，改为持探针锁读取当前状态的有类型 helper，保留关键断言。最后 probe 两例 **0，2 passed，1.17 秒**。
+- 首轮 scoped Pyrefly/ty 因 Protocol 的 Unpack 签名工具兼容、JSON 错误响应不变性和测试空容器失败，均为本轮引入，已修复；端口改明确可选关键字签名，默认以省略号表达可省略，不复制任何浏览器常量。生产 mypy/Pyrefly/ty 对最终修改均 **0**，mypy **737 文件**，Pyrefly 保留原 **35 suppressed / 165 warnings**。精度门 **0**。
+- 七完整文件（主批三源、connection_actions / model_settings_authentication / 两新测试）加严 Any mypy **0**、scoped Pyrefly **0 errors**、ty/Ruff **0**；q014b-validation-final.json 的前后 hash 相同，changed_during_checks=[]。三源 Any 原158条已消除；test_model_settings.py 和依赖测试只执行验证，未声明全文件类型完成。
+- q014b-validation-first.json、q014b-validation.json、q014b-validation-test-followup.json 保留实际失败过程；min-severity=warn 的一次诊断明确为原表达式多余 bool 转换，已在当前修改行等价删除。最终检查证据不覆盖或抹去旧失败。
+- diff/暂存区核对仅本任务路径。按 provider 门面/探针恢复与模型设置/动作类型收敛两独立职责提交；批次仍待全部提交后计完成。全仓 pytest、浏览器 UI、未列明测试没有执行；原已登记 lazy import/SQLite/server/CodeMode 等待办未解决。

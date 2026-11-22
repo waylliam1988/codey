@@ -1791,7 +1791,8 @@
       ],
       "result": "Two confirmed bugs repaired: active failover consumes TaskCancelled (pre-fix 1 failed/1 passed) and already-completed Future callback notifies while outer coordinator lock remains held (pre-fix 1 failed, cross-thread read=False). Callback registration moved outside lock with generation/revision validation intact. Direct 19 passed; dependency groups 28 and 18 passed, no skips. Eight whole files strong Any/Pyrefly/ty/Ruff passed (158 -> 101 -> 0), normal production/precision gates passed, stable hashes. Typed fixture baseline on original HEAD sources 16 passed with exact restoration. Registry cancellation committed; status publication/type commit completes batch; no production-source changes in active registry.",
       "commits": [
-        "3df4d47e"
+        "3df4d47e",
+        "e5b44737"
       ]
     },
     {
@@ -1802,10 +1803,33 @@
         "codey/app/connection_actions.py"
       ],
       "id": "Q014B",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": "recompute at entry; initial combined hint 26"
+      "status": "in_progress",
+      "reviewed_files": [
+        "codey/app/provider_services.py",
+        "codey/app/model_settings.py",
+        "codey/app/connection_actions.py"
+      ],
+      "verified_files": [
+        "codey/app/provider_services.py",
+        "codey/app/model_settings.py",
+        "codey/app/connection_actions.py"
+      ],
+      "candidate_test_count": "recompute at entry; initial combined hint 26",
+      "tests": [
+        "tests/test_provider_web_probe_submission.py",
+        "tests/test_provider_service_facade.py",
+        "tests/test_connection_actions.py",
+        "tests/test_model_settings.py",
+        "tests/test_model_settings_authentication.py",
+        "tests/test_connection_status_cold_start.py",
+        "tests/test_zen_catalog_lifecycle.py",
+        "tests/test_model_preferences.py",
+        "tests/test_api_reviewer_uses_distinct_model_and_identity.py",
+        "tests/test_consensus_provider_ports.py",
+        "tests/test_consensus_cancellation.py",
+        "tests/test_provider_connection_running_event.py::test_connection_event_stream_agrees_with_authoritative_state"
+      ],
+      "result": "Verified; awaiting two commits before completion. Submission failure latch regression: pre-fix 1 failed, post-fix direct 35 passed and dependency 79 passed (no skips), final probe boundary 2 passed. Facade/typed fixture baseline on original HEAD sources 10 passed, exact restore. Seven whole files strict Any/Pyrefly/ty/Ruff passed; three production files initial 158 Any diagnostics eliminated; production/precision gates passed (35 suppressed/165 warnings retained), stable hashes. Cached catalog duplicate unified; obsolete missing-registry-lock branch removed based on TaskState/ProviderRegistry constructor and real callers. Large model_settings/dependency tests only validated, no whole-file type claim."
     },
     {
       "responsibility": "Operator bootstrap exchange and authenticated browser sessions",
