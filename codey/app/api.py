@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
 from codey.agents.request import DEFAULT_MAX_TURNS
 from codey.app import provider_services
+from codey.app.http_response import response_fields as _response_fields
+from codey.app.http_response import response_pair as _response_pair
 from codey.app.memory_routes import memory_action, memory_summary
 from codey.app.submission_types import ContinuationSubmitter, TaskSubmitOptions, TaskSubmitter
 from codey.automation.browser_worker import BrowserWorkerBusy
@@ -57,21 +59,6 @@ _CLASS_TYPE: type[object] = type
 
 class _DataclassInstance(Protocol):
     __dataclass_fields__: ClassVar[dict[str, Field[object]]]
-
-
-def _response_fields(value: object) -> dict[str, object]:
-    if not object_fields(value):
-        raise TypeError("response payload must be an object with string keys")
-    return value
-
-
-def _response_pair(value: object) -> tuple[int, dict[str, object]]:
-    if not sequence_items(value) or len(value) != 2:
-        raise TypeError("response must contain a status and object payload")
-    status = value[0]
-    if not isinstance(status, int):
-        raise TypeError("response status must be an integer")
-    return status, _response_fields(value[1])
 
 
 def _local_bootstrap(*, probe: bool) -> dict[str, object]:

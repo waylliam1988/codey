@@ -31,11 +31,12 @@ import contextlib
 import json
 import sys
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, cast
+from socket import socket
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlparse
 
 from codey import __version__
@@ -65,10 +66,18 @@ from codey.app.http_plumbing import (
     validate_web_root,
     write_sse_event,
 )
+from codey.app.http_response import response_fields, response_pair
 from codey.app.input_queue_routes import input_action_response, inputs_response
 from codey.app.operator_auth import OperatorAuth
 from codey.app.question_routes import question_answer_response, questions_response
+from codey.app.submission_types import ContinuationSubmitter
 from codey.app.workflow_routes import workflow_fork_response, workflow_history_response
+from codey.control.protocol import Actor
+from codey.utils.object_fields import object_fields
+
+if TYPE_CHECKING:
+    from codey.app.control_service import ControlService
+    from codey.app.public_event_feed import PublicEventFeed
 
 FOLDER_DIALOG_LOCK = threading.Lock()
 SHELL_CONTINUATION_IDLE_TIMEOUT = task_submit.SHELL_CONTINUATION_IDLE_TIMEOUT
@@ -79,7 +88,8 @@ POST_BODY_READ_TIMEOUT = 10.0
 def _event_commit_seq(event: object) -> int:
     if not isinstance(event, dict):
         return 0
-    value = event.get("commit_seq")
+    fields: Mapping[object, object] = event
+    value = fields.get("commit_seq")
     return value if type(value) is int and value > 0 else 0
 
 
@@ -92,7 +102,10 @@ def _is_replayed_durable_commit(event: object, durable_cursor: int) -> bool:
     the browser apply one committed fact twice.  Other runtime events remain
     eligible for EventBus replay.
     """
-    if not isinstance(event, dict) or event.get("type") != "durable_commit":
+    if not isinstance(event, dict):
+        return False
+    fields: Mapping[object, object] = event
+    if fields.get("type") != "durable_commit":
         return False
     commit_seq = _event_commit_seq(event)
     return commit_seq > 0 and commit_seq <= max(0, int(durable_cursor))
@@ -108,15 +121,15 @@ class CodeyHTTPServer(ThreadingHTTPServer):
         super().__init__(server_address, request_handler_class)
         validate_web_root()
         self.operator_auth = OperatorAuth(self.server_address[1])
-        self.control_service: Any = None
-        self.control_auth: Any = None
-        self.lifecycle: Any = None
-        self.public_feed: Any = None
+        self.control_service: ControlService | None = None
+        self.control_auth: Callable[[str], Actor | None] | None = None
+        self.lifecycle: Callable[[Actor, str, object], dict[str, object]] | None = None
+        self.public_feed: PublicEventFeed | None = None
 
     def launch_url(self, base_url: str) -> str:
         return f"{base_url}#codey_bootstrap={self.operator_auth.issue_bootstrap()}"
 
-    def handle_error(self, request: Any, client_address: Any) -> None:
+    def handle_error(self, request: socket | tuple[bytes, socket], client_address: tuple[str, int]) -> None:
         error = sys.exc_info()[1]
         if isinstance(error, (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)):
             return
@@ -165,7 +178,7 @@ def pick_folder(mode: str = "open", initial: str | None = None) -> str | None:
     return str(path)
 
 
-def _pick_folder_response(_ctx: AppContext, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def _pick_folder_response(_ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
     mode = str(body.get("mode") or "open").strip().lower()
     if mode not in {"open", "new"}:
         return 400, {"error": "invalid mode"}
@@ -179,7 +192,7 @@ def _pick_folder_response(_ctx: AppContext, body: dict[str, Any]) -> tuple[int, 
     return 200, {"ok": True, "path": path, "name": Path(path).name or path}
 
 
-def _run_submit_route(_ctx: AppContext, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def _run_submit_route(_ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
     from codey.app.fork_workspaces import ensure_workspace_ready
 
     try:
@@ -187,11 +200,11 @@ def _run_submit_route(_ctx: AppContext, body: dict[str, Any]) -> tuple[int, dict
     except ValueError as error:
         return 409, {'ok': False, 'error': str(error)}
     submit = partial(task_submit.submit_task, get_state=lambda: _ctx)
-    response: tuple[int, dict[str, Any]] = app_api.run_submit_response(body, submit, ctx=_ctx)
+    response: tuple[int, dict[str, object]] = app_api.run_submit_response(body, submit, ctx=_ctx)
     return response
 
 
-def _shell_approval_status_route(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
+def _shell_approval_status_route(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, dict[str, object]]:
     approval_id = str((query.get("id") or [""])[0])
     if approval_id:
         state = ctx.shell_approval_workflow.status(approval_id)
@@ -201,7 +214,7 @@ def _shell_approval_status_route(ctx: AppContext, query: dict[str, list[str]]) -
     )}
 
 
-def _command_permissions_route(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
+def _command_permissions_route(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, dict[str, object]]:
     return 200, {"rules": ctx.command_permissions.list_rules(
         session_id=str((query.get("session_id") or [""])[0]),
         project=str((query.get("project") or [""])[0]),
@@ -209,7 +222,7 @@ def _command_permissions_route(ctx: AppContext, query: dict[str, list[str]]) -> 
     )}
 
 
-def _revoke_command_permission(ctx: AppContext, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def _revoke_command_permission(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
     rule_id = body.get("id")
     if not isinstance(rule_id, str) or not rule_id:
         return 400, {"error": "permission id required"}
@@ -218,16 +231,28 @@ def _revoke_command_permission(ctx: AppContext, body: dict[str, Any]) -> tuple[i
     return 200, {"ok": True}
 
 
-def _continuation_for(ctx: AppContext) -> Callable[..., Any]:
+def _continuation_for(ctx: AppContext) -> ContinuationSubmitter:
     return partial(task_submit.submit_task_after_slot_release, get_state=lambda: ctx)
 
 
-def _shell_approval_route(ctx: AppContext, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    response: tuple[int, dict[str, Any]] = app_api.shell_approval_response(
+def _shell_approval_route(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
+    response: tuple[int, dict[str, object]] = app_api.shell_approval_response(
         ctx,
         body,
         submit_task_after_slot_release=_continuation_for(ctx),
     )
+    return response
+
+
+def _remember_approval(ctx: AppContext, body: dict[str, object]) -> object:
+    response: object = ctx.shell_approval_workflow.remember(
+        str(body.get("id") or ""), str(body.get("scope") or ""),
+    )
+    return response
+
+
+def _retry_approval(ctx: AppContext, body: dict[str, object]) -> object:
+    response: object = ctx.shell_approval_workflow.retry(str(body.get("id") or ""), _continuation_for(ctx))
     return response
 
 
@@ -256,7 +281,7 @@ def _transcript_route(ctx: AppContext, session_id: str, query: dict[str, list[st
         return 400, {"ok": False, "error": str(exc)}
 
 
-def _transcript_search_route(ctx: AppContext, session_id: str, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
+def _transcript_search_route(ctx: AppContext, session_id: str, query: dict[str, list[str]]) -> tuple[int, dict[str, object]]:
     value = str((query.get("q") or [""])[0])
     if len(value) > 200:
         return 400, {"ok": False, "error": "query too long"}
@@ -267,7 +292,7 @@ def _transcript_search_route(ctx: AppContext, session_id: str, query: dict[str, 
     return 200, {"schema_version": 1, "session_id": session_id, "hits": hits}
 
 
-def _execution_output_route(ctx: AppContext, execution_id: str, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
+def _execution_output_route(ctx: AppContext, execution_id: str, query: dict[str, list[str]]) -> tuple[int, dict[str, object]]:
     try:
         snapshot = ctx.execution_outputs.snapshot(execution_id)
     except KeyError:
@@ -284,12 +309,29 @@ def _execution_output_route(ctx: AppContext, execution_id: str, query: dict[str,
     return 200, dict(snapshot)
 
 
-_GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, dict[str, Any]]]] = {
-    "/api/conversation_fork": fork_response,
-    "/api/conversation_tree": conversation_tree_response,
-    "/api/workflows": workflow_history_response,
-    "/api/inputs": inputs_response,
-    "/api/questions": questions_response,
+_GetRoute = Callable[[AppContext, dict[str, list[str]]], object]
+_PostRoute = Callable[[AppContext, dict[str, object]], object]
+
+# Legacy modules return dynamic rows. Keep their callable input contracts and
+# validate the response once at HTTP dispatch, before accessing its fields.
+_fork_get: _GetRoute = fork_response
+_tree_get: _GetRoute = conversation_tree_response
+_workflow_get: _GetRoute = workflow_history_response
+_inputs_get: _GetRoute = inputs_response
+_questions_get: _GetRoute = questions_response
+_fork_retry: _PostRoute = retry_fork_response
+_tree_action: _PostRoute = conversation_action_response
+_workflow_fork: _PostRoute = workflow_fork_response
+_input_action: _PostRoute = input_action_response
+_question_answer: _PostRoute = question_answer_response
+
+
+_GET_ROUTES: dict[str, _GetRoute] = {
+    "/api/conversation_fork": _fork_get,
+    "/api/conversation_tree": _tree_get,
+    "/api/workflows": _workflow_get,
+    "/api/inputs": _inputs_get,
+    "/api/questions": _questions_get,
     "/api/model_settings": lambda ctx, _query: model_settings.settings_response(ctx),
     "/api/connection_auth": connection_actions.authentication_response,
     "/api/state": lambda ctx, _query: (200, ctx.run_state_payload()),
@@ -308,16 +350,16 @@ _GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, d
 }
 
 
-_POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[str, Any]]]] = {
+_POST_ROUTES: dict[str, _PostRoute] = {
     "/api/history/validate_runs": validate_runs_response,
-    "/api/conversation_fork/retry": retry_fork_response,
-    "/api/conversation_tree/action": conversation_action_response,
-    "/api/workflows/fork": workflow_fork_response,
-    "/api/inputs": input_action_response,
+    "/api/conversation_fork/retry": _fork_retry,
+    "/api/conversation_tree/action": _tree_action,
+    "/api/workflows/fork": _workflow_fork,
+    "/api/inputs": _input_action,
     "/api/attachments": attachment_upload,
     "/api/attachments/read": attachment_read,
     "/api/attachments/capabilities": attachment_capabilities,
-    "/api/questions": question_answer_response,
+    "/api/questions": _question_answer,
     "/api/model_settings": model_settings.save_response,
     "/api/model_catalog": model_settings.discover_response,
     "/api/connection_action": connection_actions.action_response,
@@ -336,13 +378,9 @@ _POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[s
     "/api/documents/read": document_response,
     "/api/changes/restore": app_api.restore_changes_response,
     "/api/shell_approval": _shell_approval_route,
-    "/api/shell_approval/remember": lambda ctx, body: ctx.shell_approval_workflow.remember(
-        str(body.get("id") or ""), str(body.get("scope") or ""),
-    ),
+    "/api/shell_approval/remember": _remember_approval,
     "/api/command_permissions/revoke": _revoke_command_permission,
-    "/api/shell_approval/retry": lambda ctx, body: ctx.shell_approval_workflow.retry(
-        str(body.get("id") or ""), _continuation_for(ctx),
-    ),
+    "/api/shell_approval/retry": _retry_approval,
     "/api/teach/resume": app_api.teach_resume_response,
     "/api/new_chat": app_api.new_chat_response,
     "/api/stop": lambda ctx, body: app_api.stop_response(ctx, body),
@@ -352,46 +390,59 @@ _POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[s
 # ------------------------------------------------------------ http layer ---
 
 class Handler(BaseHTTPRequestHandler):
+    connection: socket
     server_version = f"Codey/{__version__}"
 
     def _get_state(self) -> AppContext:
-        state = cast(CodeyHTTPServer, self.server).app_context
-        if state is None:
+        state: object = getattr(self.server, "app_context", None)
+        if not isinstance(state, AppContext):
             raise RuntimeError("HTTP server requires an attached application context")
         return state
 
-    def _control_actor(self) -> Any:
-        authenticate = getattr(self.server, "control_auth", None)
-        if callable(authenticate):
+    def _bound_server(self) -> CodeyHTTPServer:
+        if not isinstance(self.server, CodeyHTTPServer):
+            raise RuntimeError("Handler requires a Codey HTTP server")
+        return self.server
+
+    def _control_actor(self) -> Actor | None:
+        bound = self._bound_server()
+        authenticate = bound.control_auth
+        if authenticate is not None:
             actor = authenticate(self.headers.get("Authorization", ""))
             if actor is not None:
                 return actor
-        auth = cast(CodeyHTTPServer, self.server).operator_auth
+        auth = self._bound_server().operator_auth
         if auth.authenticated(self.headers.get("Cookie")):
-            from codey.control.protocol import Actor
-
             return Actor("user", "User", True)
         return None
 
-    def _control_response(self, body: Any, actor: Any, *, lifecycle: bool = False) -> None:
+    def _control_response(self, body: object, actor: Actor, *, lifecycle: bool = False) -> None:
         from codey.control.protocol import ControlError
 
         try:
-            if not isinstance(body, dict) or set(body) - {"operation", "params"}:
+            if not object_fields(body) or set(body) - {"operation", "params"}:
                 raise ControlError("INVALID_ARGUMENT", "Expected operation and params")
             operation = body.get("operation")
             if not isinstance(operation, str):
                 raise ControlError("INVALID_ARGUMENT", "Operation is required")
-            service = cast(CodeyHTTPServer, self.server)
-            if self.headers.get("X-Codey-Instance", service.control_service.instance_id) != service.control_service.instance_id:
+            service = self._bound_server()
+            control = service.control_service
+            if control is None:
+                raise RuntimeError("Control service is not attached")
+            if self.headers.get("X-Codey-Instance", control.instance_id) != control.instance_id:
                 raise ControlError("RUN_MISMATCH", "Service instance changed; rediscover before a new command")
-            result = (service.lifecycle(actor, operation, body.get("params", {})) if lifecycle else
-                      service.control_service.execute(actor, operation, body.get("params", {})))
+            if lifecycle:
+                if service.lifecycle is None:
+                    raise RuntimeError("Service lifecycle is not attached")
+                result = service.lifecycle(actor, operation, body.get("params", {}))
+            else:
+                result = control.execute(actor, operation, body.get("params", {}))
             self._send_json(200, {"ok": True, "result": result})
         except ControlError as exc:
             status = {"INVALID_ARGUMENT": 400, "UNAUTHORIZED": 401, "FORBIDDEN": 403, "NOT_FOUND": 404,
                       "RATE_LIMITED": 429, "SERVER_DRAINING": 503}.get(exc.code, 409)
-            self._send_json(status, {"ok": False, "error": exc.payload()})
+            error_payload: object = exc.payload()
+            self._send_json(status, {"ok": False, "error": response_fields(error_payload)})
         except (KeyError, ValueError) as exc:
             self._send_json(409, {"ok": False, "error": {"code": "REVISION_CONFLICT", "message": str(exc)[:1000]}})
         except Exception:
@@ -400,7 +451,7 @@ class Handler(BaseHTTPRequestHandler):
             logging.getLogger(__name__).exception("control request failed")
             self._send_json(500, {"ok": False, "error": {"code": "INTERNAL_ERROR", "message": "Control operation failed; query its original request identity"}})
 
-    def log_message(self, format: str, *args: Any) -> None:
+    def log_message(self, format: str, *args: object) -> None:
         # Quiet the default access log.
         pass
 
@@ -411,7 +462,7 @@ class Handler(BaseHTTPRequestHandler):
     def _deny_foreign_origin(self) -> None:
         self._send_json(403, {"error": "cross-origin request refused"})
 
-    def _send_json(self, status: int, payload: dict[str, Any]) -> None:
+    def _send_json(self, status: int, payload: dict[str, object]) -> None:
         send_json(self, status, payload)
 
     def _send_file(self, path: Path, ctype: str, *, immutable: bool = False) -> None:
@@ -421,15 +472,15 @@ class Handler(BaseHTTPRequestHandler):
         send_index(self)
 
     def _require_operator(self) -> bool:
-        auth = cast(CodeyHTTPServer, self.server).operator_auth
+        auth = self._bound_server().operator_auth
         if auth.authenticated(self.headers.get("Cookie")):
             return True
         self._send_json(401, {"error": "operator authentication required"})
         return False
 
     def _exchange_operator(self, body: object) -> None:
-        auth = cast(CodeyHTTPServer, self.server).operator_auth
-        cookie = auth.exchange(body.get("token")) if isinstance(body, dict) and set(body) == {"token"} else None
+        auth = self._bound_server().operator_auth
+        cookie = auth.exchange(body.get("token")) if object_fields(body) and set(body) == {"token"} else None
         if cookie is None:
             self._send_json(401, {"error": "operator authentication required"})
             return
@@ -446,18 +497,15 @@ class Handler(BaseHTTPRequestHandler):
         """Bounded body read: slow clients get 408 instead of a thread."""
         if not length:
             return b""
-        connection = getattr(self, "connection", None)
-        set_timeout = getattr(connection, "settimeout", None)
-        previous_timeout: object = None
-        if connection is not None and callable(set_timeout):
-            try:
-                previous_timeout = connection.gettimeout()
-            except Exception:
-                previous_timeout = None
-            try:
-                connection.settimeout(POST_BODY_READ_TIMEOUT)
-            except Exception:
-                set_timeout = None
+        connection = self.connection
+        previous_timeout: float | None = None
+        with contextlib.suppress(Exception):
+            previous_timeout = connection.gettimeout()
+        restore_timeout = True
+        try:
+            connection.settimeout(POST_BODY_READ_TIMEOUT)
+        except Exception:
+            restore_timeout = False
         try:
             try:
                 body = self.rfile.read(length)
@@ -472,7 +520,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": "request body unreadable"})
                 return None
         finally:
-            if connection is not None and callable(set_timeout):
+            if restore_timeout:
                 with contextlib.suppress(Exception):
                     connection.settimeout(previous_timeout)
 
@@ -543,7 +591,7 @@ class Handler(BaseHTTPRequestHandler):
         route = _GET_ROUTES.get(url.path)
         if route is not None:
             try:
-                status, payload = route(self._get_state(), parse_qs(url.query))
+                status, payload = response_pair(route(self._get_state(), parse_qs(url.query)))
             except Exception as exc:
                 self._send_json(500, {"error": f"{type(exc).__name__}: {exc}"})
                 return
@@ -563,7 +611,7 @@ class Handler(BaseHTTPRequestHandler):
         exchange = url.path == "/api/operator_session"
         control_path = url.path in {"/api/control", "/api/lifecycle"}
         actor = self._control_actor() if control_path else None
-        if control_path and (actor is None or getattr(self.server, "control_service", None) is None):
+        if control_path and (actor is None or self._bound_server().control_service is None):
             self._send_json(401, {"ok": False, "error": {"code": "UNAUTHORIZED", "message": "Control authentication required"}})
             return
         if not exchange and not control_path and not self._require_operator():
@@ -591,7 +639,10 @@ class Handler(BaseHTTPRequestHandler):
         if raw is None:
             return
         try:
-            body = json.loads(raw.decode("utf-8")) if raw else dict[str, object]()
+            if raw:
+                body: object = json.loads(raw.decode("utf-8"))
+            else:
+                body = dict[str, object]()
         except Exception:
             self._send_json(400, {"error": "invalid json"})
             return
@@ -600,15 +651,19 @@ class Handler(BaseHTTPRequestHandler):
             self._exchange_operator(body)
             return
         if control_path:
+            assert actor is not None
             self._control_response(body, actor, lifecycle=url.path == "/api/lifecycle")
             return
         route = _POST_ROUTES.get(url.path)
         if route is not None:
+            if not object_fields(body):
+                self._send_json(400, {"error": "invalid json"})
+                return
             try:
                 ctx = self._get_state()
                 if not self._apply_ui_control(ctx, url.path, body):
                     return
-                status, payload = route(ctx, body)
+                status, payload = response_pair(route(ctx, body))
             except Exception as exc:
                 self._send_json(500, {"error": f"{type(exc).__name__}: {exc}"})
                 return
@@ -617,7 +672,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(404)
         self.end_headers()
 
-    def _apply_ui_control(self, ctx: AppContext, path: str, body: dict[str, Any]) -> bool:
+    def _apply_ui_control(self, ctx: AppContext, path: str, body: dict[str, object]) -> bool:
         service = ctx.control_service
         if service is None:
             return True
@@ -627,7 +682,7 @@ class Handler(BaseHTTPRequestHandler):
             return False
         if admission:
             source = body.get("request", body)
-            if not isinstance(source, dict):
+            if not object_fields(source):
                 self._send_json(400, {"error": "invalid input request"})
                 return False
             service.takeover_ui(str(source.get("session_id") or ""))
@@ -639,10 +694,13 @@ class Handler(BaseHTTPRequestHandler):
         return True
 
     def _sse(self) -> None:
-        from codey.app.public_event_feed import stream
+        from codey.app.public_event_feed import PublicEventFeed, stream
 
-        stream(self, self._get_state(), cast(CodeyHTTPServer, self.server).public_feed)
+        feed: object = getattr(self.server, "public_feed", None)
+        if not isinstance(feed, PublicEventFeed):
+            raise RuntimeError("Public event feed is not attached")
+        stream(self, self._get_state(), feed)
 
-    def _write_sse_event(self, event: dict[str, Any], *, event_id: int | str = 0) -> bool:
+    def _write_sse_event(self, event: dict[str, object], *, event_id: int | str = 0) -> bool:
         written: bool = write_sse_event(self, event, event_id=event_id)
         return written

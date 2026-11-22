@@ -882,3 +882,27 @@ Q004 重新核验已提交：`135d8e7a`（test(paths): verify raw newline hashes
 - 六个新增边界直接使用有类型captured EntryAuth：缺省/显式auto采纳hybrid、无推断保留auto、显式project/research不覆盖、resume不改auto；同时断言denied project.write、严格研究/开源要求、无写入要求和源run身份原样转交，防止仅改模式而扩大权限。未修改生产或放宽已有断言，没有把测试新增声称为新的生产bug修复。
 - 最终 `python -m pytest -q tests/test_task_input_contract.py tests/test_conversation_entry_auth.py tests/test_edit_api.py tests/test_task_input_and_output_contracts.py::test_api_passes_explicit_contract_and_rejects_invalid_contract tests/durable/test_question_authority.py --tb=short` → **0，32 passed，2.47秒**，无skip。两完整文件严格Any/Pyrefly/ty/Ruff全0；Pyrefly原5 warnings保留，q015c-revalidation-final.json。执行但未修改的共享测试不宣称整文件Any完成，归原owning批次；test_conversation_entry_auth.py旧Mock/无注解在其测试支持队列仍未治理。
 - Q015C恢复完成。当前 **24 / 305批完整完成，49 / 995生产文件属于完整完成批次**，另有部分批次中2文件已独立验证，共51个当前已验证文件。两个实际被外部修改的已完成源已重验；生产三个类型门已在当前749文件通过后无生产变更，不机械重复。下一主批Q015F server.py与其测试支持债务。
+
+
+Q015C 重新核验已提交：`5fff26b7`（test(api): verify inferred intent preserves explicit and resume authority）。
+
+### Q015F HTTP 路由、控制绑定与事件流（进行中）
+
+- server.py 648行已完整检查；tests/test_server.py为6727行跨多生产区域共享脚本，仅定位/执行明确类和node，不假称全脚本治理。原Q008D所欠整脚本Any仍未完成，不能将本批生产零Any等同支持脚本清零。
+- 当前server完整强Any基线 **194条**，q015f-any-baseline.json。原认证/短body/显式owner/http plumbing限定基线 **0，30 passed/15 subtests，12.17秒**，q015f-behavior-baseline.json。
+- bug一：CodeyHTTPServer先调用父构造绑定socket，再校验前端目录；校验抛ValueError时子类没有关闭已经绑定的监听器。资源构造失败不得留下活跃监听socket是可论证的资源所有权不变量。测试截获真实bound socket并保留引用，构造异常后fileno仍有效；测试finally清理自己的截获资源，避免靠GC掩盖泄漏。
+- bug二：/api/run公开对象输入契约与run_submit_response入口明确将非对象返回400 invalid json，但HTTP的fork准备和UI控制先访问body.get；认证后null/true/42/string/空list/非空list均实际500。对象DTO/HTTP入口契约，而非测试断言偏好，要求无效输入在边界拒绝并不入场。修改前 **1，7 failed，4.84秒**，q015f-bugs-before.json：socket断言失败1、同输入500而应400六项。后来将构造测试原样拆至test_server_construction.py以支持独立commit，没有删除失败用例。
+- JSON在已注册object POST路由前收窄，bootstrap与control的既有认证/错误响应和未知路由404保留，空body仍映射{}。请求先完成认证/长度/完整body检查，再解码和shape验证，不读取无效payload的context或提交任务。构造泄漏修复暂留独立后续，当前先验收JSON与完整类型边界。
+- 真实CodeyHTTPServer资源、Actor、lifecycle、public feed和ContinuationSubmitter取代Any；socket超时字段精确化。ty拒绝把BaseServer可写字段直接窄化（q015f-json-validation-first.json保留），已改为绑定处运行时isinstance验证；没有ignore/cast或降低门禁。_get_state按有效文档验证AppContext，原测试object占位改为真实context，保留身份相等断言并新增缺失context拒绝。四个owner测试在HEAD原server/api上 **0，4 passed，1.59秒**，q015f-ownership-fixture-baseline.json，finally精确恢复源。
+- HTTP动态返回沿明确Callable输入契约隔离为object，在使用status/payload前统一验证。为避免重复API现有同语义验证，把原_response_fields/_response_pair原样移到http_response.py；输入序列接受范围、int含bool的既有判定、dict原身份和错误字符串保持一致，API保留原私有别名。新增生产源加入Q015F，完整范围996文件/305批。API因真实共享边界改动再次待重验，不因可选优化重开；当前集中执行必要API/HTTP/服务验证。
+
+
+Q015F JSON与类型边界独立验收（主批仍进行中）：
+
+- 最终直接HTTP认证/JSON/短body/owner/plumbing **0，39 passed/15 subtests，17.39秒**；新增六错误根输入全部实际400，空body和{}仍task required，未知POST仍404，不触碰bootstrap/control既有拒绝策略。四个owner测试原始生产fixture基线4通过，未按无约束object占位改变正确生产契约。
+- 明确server类 `WebAssetTests / LocalProviderApiTests / ResearchGraphApiTests / ResearchServerHelperTests` → **0，31 passed，17.38秒**；API完整输入脚本/服务生命周期/发布/ChangesGetTests/RestoreLeaseTests → **0，45 passed，3.93秒**。SSE五个明确node+execution output/transcript cache两文件 → **0，19 passed，4.13秒**，q015f-shared-support-validation.json；全部无skip，非全量收集。Q015C共享helper影响已验证，恢复已完成。
+- server原194条Any诊断 → 首轮连新测试45条 → 最终0；server/API/shared response源码和JSON/owner两完整测试共5文件加严Any/Pyrefly/ty/Ruff全部0。生产mypy **0，750文件**、Pyrefly **0，35 suppressed/168 warnings**、ty/precision0。scoped Pyrefly15 warnings如实保留，不声明新增或既有归属未经比较。逐命令/退出码/稳定hash q015f-json-validation-final.json。
+- 共享测试债务重新实际核验：`python -m mypy tests/test_server.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated --cache-dir .e2e-artifacts/code-quality-20261122/mypy-any` → **1，1673诊断**。主要为既有无注解provider/mock/agent脚本、dict泛型和动态server导出；本批未改该6727行脚本，没有以选中node通过宣称它全文件治理完成，也不把当前1673套写成旧1709。该生产支持债务仍属Q008D/Q015F，后续须分生产职责迁移，无新增ignore/skip或强行处理无关业务测试。
+- 当前JSON/类型变更可独立验收先提交；socket构造泄漏原复现保留，下一步立即按独立commit修复，不将主批或server文件标记全部问题已完。新http_response源已独立验证。没有已知本轮引入的测试/导入/构建失败；新增构造回归尚未加入本次提交，原构造缺口是已记录后续待修bug。
+
+提交前人工检查补齐event dict的Mapping[object,object]显式边界，避免工具条件推断掩盖内部Any，同时保留非字符串额外键的旧event判定语义；移除本次全局Actor类型导入使其重复的局部导入，整理本次新增imports。受影响SSE五node+服务生命周期 **0，21 passed，4.05秒**；五完整文件严格Any/三类型/Ruff及750文件生产三类型/precision再次全0，35 suppressed/168 warnings不变，q015f-json-final-polish.json。JSON/路由函数没有后续行为修改，39/31/45/19结果按其实际影响保留，不虚构重跑。

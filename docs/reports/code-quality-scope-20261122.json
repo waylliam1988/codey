@@ -1,6 +1,6 @@
 {
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
-  "source_count": 995,
+  "source_count": 996,
   "region_count": 40,
   "batch_count": 305,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
@@ -72,7 +72,7 @@
     },
     {
       "path": "codey/app",
-      "source_count": 72,
+      "source_count": 73,
       "batches": [
         "Q013",
         "Q014",
@@ -1974,8 +1974,8 @@
         "cb43afb5"
       ],
       "revalidation_required": [],
-      "reopen_reason": "External commits 008966a0..21601416 modified previously completed production files; prior results retained historically, current bytes require scoped revalidation.",
-      "revalidation_result": "External change limited to transferring captured inferred_intent for a new auto task; explicit modes and resume remain unchanged. Added six boundary cases proving omitted/auto inference, blank inference fallback, explicit project/research preservation, and resume behavior without changing denied capabilities/source/research flags. Current scoped entry/input/edit/output/question group 32 passed; two whole files strict Any/Pyrefly/ty/Ruff pass (5 existing Pyrefly warnings). No production edits. q015c-revalidation-baseline.json and q015c-revalidation-final.json."
+      "reopen_reason": "Q015F moves unchanged response helpers to a shared module; API directly affected, scoped validation scheduled in current batch.",
+      "revalidation_result": "External change limited to transferring captured inferred_intent for a new auto task; explicit modes and resume remain unchanged. Added six boundary cases proving omitted/auto inference, blank inference fallback, explicit project/research preservation, and resume behavior without changing denied capabilities/source/research flags. Current scoped entry/input/edit/output/question group 32 passed; two whole files strict Any/Pyrefly/ty/Ruff pass (5 existing Pyrefly warnings). No production edits. q015c-revalidation-baseline.json and q015c-revalidation-final.json. Shared response helper move in Q015F: API/service/lease group 45 passed, local/research/HTTP helper classes 31 passed, whole API strict Any/scoped checks and production gates pass. Helper input/error/identity semantics unchanged."
     },
     {
       "id": "Q015D",
@@ -2044,15 +2044,34 @@
       "id": "Q015F",
       "responsibility": "HTTP server route wiring, operator admission and event streaming",
       "files": [
-        "codey/app/server.py"
+        "codey/app/server.py",
+        "codey/app/http_response.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "in_progress",
+      "reviewed_files": [
+        "codey/app/server.py",
+        "codey/app/http_response.py"
+      ],
+      "verified_files": [
+        "codey/app/http_response.py"
+      ],
       "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93",
       "followups": [
         "Q008D repaired only ConsensusConnectionTests timeout fixture, preserving sibling-tab/new_chat/close expectations and asserting numeric 60/90s fallback. tests/test_server.py whole-file extra Any has 1709 diagnostics (q008d-server-any.log); shared script migration remains open. Q008D stays partial until coordinated verification."
-      ]
+      ],
+      "tests": [
+        "tests/test_server_boundaries.py",
+        "tests/test_server_construction.py",
+        "tests/test_control_runtime_ownership.py",
+        "tests/test_operator_auth_blocks_unauthenticated_http.py",
+        "tests/test_http_short_body_never_dispatches.py",
+        "tests/test_http_plumbing.py",
+        "tests/test_server.py::WebAssetTests",
+        "tests/test_server.py::LocalProviderApiTests",
+        "tests/test_server.py::ResearchGraphApiTests",
+        "tests/test_server.py::ResearchServerHelperTests"
+      ],
+      "result": "JSON boundary fixed; original six object-input contract violations now pass. Production server/shared response and affected API plus two complete direct test scripts strict Any/scoped tools pass. HTTP direct 39 passed/15 subtests; selected server classes 31; API/service/lease 45; SSE/execution/transcript 19. Production mypy 750/Pyrefly/ty/precision pass. Known constructor listener leak remains queued for an independent fix. Shared tests/test_server.py remains 1673 strict diagnostics; script not modified in this batch, Q008D/Q015F support followup stays open. Do not mark batch complete."
     },
     {
       "responsibility": "codey/app: shared contracts and module services",
@@ -7428,6 +7447,8 @@
     "tests/test_semantic_holdout_case_contracts.py",
     "tests/test_semantic_plan_entry_auth.py",
     "tests/test_server.py",
+    "tests/test_server_boundaries.py",
+    "tests/test_server_construction.py",
     "tests/test_server_lazy_state.py",
     "tests/test_service_lifecycle.py",
     "tests/test_service_publication.py",
@@ -8086,6 +8107,11 @@
     {
       "batch": "Q015C",
       "reason": "External API inferred-intent forwarding change revalidated and status restored; no production change."
+    },
+    {
+      "batch": "Q015F",
+      "path": "codey/app/http_response.py",
+      "reason": "Move the exact existing API status/object validation into a single shared implementation for dynamic HTTP route responses. Necessary server type boundary; source scope expanded, no production omitted."
     }
   ]
 }
