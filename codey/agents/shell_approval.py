@@ -78,21 +78,26 @@ class ShellApprovalRequest:
             "deferred_tool_count": len(self.deferred_calls),
             "deferred_tool_calls": [item.to_payload() for item in deferred],
         }
-        # 原生调用身份原样保留：合法才带，不合法或超限直接省略，
-        # 绝不截断成另一个 id。
-        if valid_shell_call_id(self.call_id):
-            payload["call_id"] = self.call_id
-        elif (self.call_id or "").strip():
-            payload["call_id_invalid"] = True
+        payload.update(_call_identity_fields(self))
         if (self.provider_id or "").strip():
             payload["provider_id"] = _bounded_text(self.provider_id, MAX_DEFERRED_TEXT_CHARS)
-        if type(self.turn) is int and self.turn >= 0:
-            payload["turn"] = self.turn
-        if type(self.tool_index) is int and self.tool_index >= 0:
-            payload["tool_index"] = self.tool_index
-        if self.window_ref is not None:
-            payload["window_ref"] = self.window_ref.to_payload()
         return payload
+
+
+def _call_identity_fields(approval: ShellApprovalRequest) -> dict[str, object]:
+    """Encode native call identity verbatim in each approval projection."""
+    payload: dict[str, object] = {}
+    if valid_shell_call_id(approval.call_id):
+        payload["call_id"] = approval.call_id
+    elif (approval.call_id or "").strip():
+        payload["call_id_invalid"] = True
+    if type(approval.turn) is int and approval.turn >= 0:
+        payload["turn"] = approval.turn
+    if type(approval.tool_index) is int and approval.tool_index >= 0:
+        payload["tool_index"] = approval.tool_index
+    if approval.window_ref is not None:
+        payload["window_ref"] = approval.window_ref.to_payload()
+    return payload
 
 
 def deferred_tool_call_from_call(call: ToolCall, *, tool_index: int) -> DeferredToolCall:
@@ -162,18 +167,9 @@ def build_shell_approval_pending(
         "deferred_tool_count": len(approval.deferred_calls),
         "deferred_tool_calls": deferred_tool_calls,
     }
-    if valid_shell_call_id(approval.call_id):
-        pending["call_id"] = approval.call_id
-    elif (approval.call_id or "").strip():
-        pending["call_id_invalid"] = True
+    pending.update(_call_identity_fields(approval))
     if (approval.provider_id or "").strip():
         pending["provider_id"] = approval.provider_id.strip()
-    if type(approval.turn) is int and approval.turn >= 0:
-        pending["turn"] = approval.turn
-    if type(approval.tool_index) is int and approval.tool_index >= 0:
-        pending["tool_index"] = approval.tool_index
-    if approval.window_ref is not None:
-        pending["window_ref"] = approval.window_ref.to_payload()
     ui_event: dict[str, object] = {
         "shell": approval.shell.to_payload(),
         "tool_name": approval.tool_name,

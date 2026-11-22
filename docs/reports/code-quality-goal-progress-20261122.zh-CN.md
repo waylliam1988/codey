@@ -624,3 +624,22 @@ Q010 已提交：`b05ae646`（refactor(agents): remove unreachable compaction gr
 - 将类型/decoder 合并与根路径 bug 拆成两个职责清楚的本地提交；当前仍按 **13 / 291、32 / 975** 统计，待最后提交验收。Q118 scanner 文件虽已验收，未把该批其余两个文件或全仓扫描器声称完成。
 
 Q011 类型与解码收敛已提交：`f7ac1ac6`（refactor(protocols): consolidate typed JSON object extraction）。根路径修复 diff 仅统一 root 展开/解析与使用同一基准，加八个已验证边界回归；暂存前核对没有其他工作修改。本批验收完成，累计 **14 / 291 批、33 / 975 生产文件**（scanner 在 Q118 仅计文件级验证，不加到完整批次覆盖数）。下一主批 Q012：shell_approval.py 的审批输入、事件通知与停止/超时边界。原 Q008D、Q118 其余文件和所有已记录阻碍保留，总 goal 仍 active。
+
+Q011 根路径修复已提交：`d34a04e0`（fix(agents): canonicalize paths against expanded project roots）。
+
+### Q012：审批请求与原生身份编码（进行中）
+
+- shell_approval.py 全文件已读。实际职责是 DTO/持久 pending/UI event 投影、command 显示界限/哈希一致性与原生调用身份，等待/停止/超时执行器属于其他模块，不将它们并入本批主线。公共 __all__ 入口被 request/hooks/approval workflow、测试、stress 与 manual 场景使用，未发现可证明可删的公开入口。
+- 源码原本加严 Any **退出 0**；源码与完整 native_identity/event_p2 两测试加严 Any也 **退出 0，3 文件**。没有为了产生类型变更重写已精确字段。shell_contract 是实际过程/调用方验证，不计为其全脚本已治理或已无 Any。
+- 基线 `python -m pytest -q tests/test_shell_contract.py tests/test_shell_approval_native_identity.py --tb=short` → **退出 0，29 passed，17.47 秒**，包含真实 shell 的 argv/引用、解释器固定、Unicode、超时、原生调用批准/拒绝与 durable 恢复；无 skip。
+- 重复性已确认：to_payload 和 build_shell_approval_pending 的 call_id/invalid flag、严格非负 turn/tool_index 与 window_ref 编码完全相同；二者只读同一请求、无状态/资源副作用。provider_id 在请求中截到 240 字符、pending 中仅 strip，语义不同，保留各自处理；命令预览/哈希和 deferred 上限/持久全记录也未强行合并。持久 artifact 使用 sort_keys=True，身份字段编码顺序不改变原件哈希的含义。
+- 重构前新增 `python -m pytest -q tests/test_shell_approval_identity_payloads.py --tb=short` → **退出 0，9 passed，7.82 秒**：call_id 空白/原样空格/256 和 257 边界、window ref、负数/bool 数字字段省略、provider 两种长度策略。随后将相同身份字段实现抽为模块内唯一 _call_identity_fields，两消费者迁移并删除旧重复块。只合并确定重复，不宣称修复新 bug。
+- 当前运行新旧 native 身份及 event shape 明确三文件组；源码/三测试的最终类型门、调用方验证和 commit 尚未完成，计数仍 **14 / 291、33 / 975**。
+
+Q012 最终验收：
+
+- `python -m pytest -q tests/test_shell_approval_identity_payloads.py tests/test_shell_approval_native_identity.py tests/test_shell_event_p2_locks.py --tb=short` → **退出 0，22 passed，16.84 秒**。同四完整路径的加严 Any mypy 与 Ruff → **退出 0**；scoped Pyrefly **0 errors / 2 warnings**、ty **通过**，不把 warnings 隐瞒为零。保留原生原 call id、批准/拒绝/恢复和事件边界断言。
+- `python -m pytest -q tests/test_shell_approval_record_store.py tests/test_shell_approval_record_initialization.py tests/test_shell_approval_http_restart.py tests/test_shell_analysis_authorization.py --tb=short` → **退出 0，29 passed / 2 skipped，20.93 秒**。跳过来自既有 installed() 的 zsh 缺失，未增加 skip。
+- 为确认两项 skip 原因及覆盖命令校验，首次误选不存在的 wildcard[zsh] 参数节点，工具实际 **退出 1、no tests ran，1.26 秒**，仅收集选择错误，不算行为失败或通过。随后 `python -m pytest --collect-only -q tests/test_shell_analysis_authorization.py` → **退出 0，22 collected，1.13 秒**，没有执行用例；据真实 nodeid 纠正为 quoted-separators[zsh]/opaque-request[zsh]，与 coldstart_v1_locks 中 shell_event 的 legacy/digest/preview/current 四 nodeid 一起执行 → **退出 0，4 passed / 2 skipped，1.42 秒**，-rs 明示二者均“shell executable unavailable: zsh”。完整实际命令和退出/数量见 q012-test-records.json，未机械重跑已通过的 29 例。
+- 生产 mypy **0，737 文件**；Pyrefly **0，0 errors，原 35 suppressed/165 warnings**；ty **0**；精度门 **0**。按项目命令显式目标 codey/Python 3.11 串行运行，与四文件 scoped checks 的完整命令/输出保存在 q012-validation.json。源码与测试哈希前后一致，changed_during_checks=[]。
+- 变更只涉及 shell_approval.py、一个有类型的基线测试和两份记录；没有更改审批授权、命令执行器或持久恢复判定。Diff 核对通过，本批完成；累计 **15 / 291 批、34 / 975 生产文件**。下一批 Q013 为 app 包入口，之后 Q014 的 provider 连接/选择区域。Q008D/shared server 类型、Q118 其余文件、原懒加载/调度等待等待办仍未完成；总 goal 仍 active。
