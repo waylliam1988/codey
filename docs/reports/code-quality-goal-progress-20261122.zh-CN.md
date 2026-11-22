@@ -704,3 +704,6 @@ Q014B 验收与提交准备：
 - 七完整文件（主批三源、connection_actions / model_settings_authentication / 两新测试）加严 Any mypy **0**、scoped Pyrefly **0 errors**、ty/Ruff **0**；q014b-validation-final.json 的前后 hash 相同，changed_during_checks=[]。三源 Any 原158条已消除；test_model_settings.py 和依赖测试只执行验证，未声明全文件类型完成。
 - q014b-validation-first.json、q014b-validation.json、q014b-validation-test-followup.json 保留实际失败过程；min-severity=warn 的一次诊断明确为原表达式多余 bool 转换，已在当前修改行等价删除。最终检查证据不覆盖或抹去旧失败。
 - diff/暂存区核对仅本任务路径。按 provider 门面/探针恢复与模型设置/动作类型收敛两独立职责提交；批次仍待全部提交后计完成。全仓 pytest、浏览器 UI、未列明测试没有执行；原已登记 lazy import/SQLite/server/CodeMode 等待办未解决。
+
+
+Q014B provider 门面与提交失败恢复已提交：`c021a9af`（fix(app): release web probe slot when background submission fails）。模型设置/连接动作的类型与唯一缓存读取入口单独提交，验收全部通过。本批完成后累计 **18 / 293 批、41 / 975 个生产文件**。下一主批 Q014C：operator_auth.py 的 process-local bootstrap/session 凭据和到期/一次性兑换边界；其后继续原 Q015 队列，不重开已完成 provider 文件的可选优化。总 goal 保持 active。

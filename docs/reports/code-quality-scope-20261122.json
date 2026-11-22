@@ -1803,7 +1803,7 @@
         "codey/app/connection_actions.py"
       ],
       "id": "Q014B",
-      "status": "in_progress",
+      "status": "completed_changed",
       "reviewed_files": [
         "codey/app/provider_services.py",
         "codey/app/model_settings.py",
@@ -1829,7 +1829,10 @@
         "tests/test_consensus_cancellation.py",
         "tests/test_provider_connection_running_event.py::test_connection_event_stream_agrees_with_authoritative_state"
       ],
-      "result": "Verified; awaiting two commits before completion. Submission failure latch regression: pre-fix 1 failed, post-fix direct 35 passed and dependency 79 passed (no skips), final probe boundary 2 passed. Facade/typed fixture baseline on original HEAD sources 10 passed, exact restore. Seven whole files strict Any/Pyrefly/ty/Ruff passed; three production files initial 158 Any diagnostics eliminated; production/precision gates passed (35 suppressed/165 warnings retained), stable hashes. Cached catalog duplicate unified; obsolete missing-registry-lock branch removed based on TaskState/ProviderRegistry constructor and real callers. Large model_settings/dependency tests only validated, no whole-file type claim."
+      "result": "Completed; provider fix committed, model/action convergence submitted separately. Submission failure latch regression: pre-fix 1 failed, post-fix direct 35 passed and dependency 79 passed (no skips), final probe boundary 2 passed. Facade/typed fixture baseline on original HEAD sources 10 passed, exact restore. Seven whole files strict Any/Pyrefly/ty/Ruff passed; three production files initial 158 Any diagnostics eliminated; production/precision gates passed (35 suppressed/165 warnings retained), stable hashes. Cached catalog duplicate unified; obsolete missing-registry-lock branch removed based on TaskState/ProviderRegistry constructor and real callers. Large model_settings/dependency tests only validated, no whole-file type claim.",
+      "commits": [
+        "c021a9af"
+      ]
     },
     {
       "responsibility": "Operator bootstrap exchange and authenticated browser sessions",

@@ -2,16 +2,39 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from codey.providers.catalog import API_CONNECTIONS, WEB_PROVIDER_LABELS
-from codey.providers.compat_transport import optional_callable, require_callable
 from codey.providers.model_preferences import ModelPreferences, ModelPreferencesConflict, allows, normalize_sources
 from codey.runtime.core.api_selection import ApiRunSelection
 from codey.types.json_value import JsonObject, decode_json_object
+from codey.utils.object_fields import object_fields
 
 if TYPE_CHECKING:
     from codey.app.context import AppContext
+
+
+@runtime_checkable
+class _PayloadCallback(Protocol):
+    def __call__(self) -> object: ...
+
+
+@runtime_checkable
+class _RefreshModelsCallback(Protocol):
+    def __call__(self, *, force: bool) -> object: ...
+
+
+def _payload_callback(connector: object, name: str) -> _PayloadCallback | None:
+    callback: object = getattr(connector, name, None)
+    return callback if isinstance(callback, _PayloadCallback) else None
+
+
+def _cached_catalog(connector: object, store: ModelPreferences, source: str) -> JsonObject:
+    cached = _payload_callback(connector, "cached_model_payload")
+    if cached is None:
+        raw: object = store.catalog(source)
+        return decode_json_object(raw)
+    return decode_json_object(cached())
 
 
 def preferences_for(ctx: AppContext | None = None) -> ModelPreferences:
@@ -48,12 +71,11 @@ def settings_response(ctx: AppContext) -> tuple[int, JsonObject]:
     ]
     for key, (label, _) in API_CONNECTIONS.items():
         connector = connection_for(key)
-        cached_payload = optional_callable(connector, "cached_model_payload")
-        facts = decode_json_object(cached_payload() if cached_payload is not None else store.catalog(key))
+        facts = _cached_catalog(connector, store, key)
         # Catalog transport labels (for example Zen's "public") are not the
         # interactive authentication snapshot consumed by the settings panel.
         facts.pop("authentication", None)
-        authentication = optional_callable(connector, "authentication_payload")
+        authentication = _payload_callback(connector, "authentication_payload")
         if authentication is not None:
             facts["authentication"] = decode_json_object(authentication())
         sources.append(
@@ -64,16 +86,20 @@ def settings_response(ctx: AppContext) -> tuple[int, JsonObject]:
     # legitimately keep that lock for its admission/settlement transaction,
     # and opening Settings must remain responsive during that work.
     in_use = models_in_use(ctx)
-    return 200, decode_json_object({"ok": True, "preferences": store.snapshot(), "sources": sources, "in_use": in_use})
+    preferences: object = store.snapshot()
+    return 200, decode_json_object({"ok": True, "preferences": preferences, "sources": sources, "in_use": in_use})
 
 
 def save_response(ctx: AppContext, body: object) -> tuple[int, JsonObject]:
-    request: dict[str, object] = body if isinstance(body, dict) else {}
+    request: dict[str, object] = body if object_fields(body) else {}
     base_revision = request.get("base_revision")
     if type(base_revision) is not int:
         return 400, {"ok": False, "error": "base_revision required"}
     try:
-        sources = normalize_sources(request.get("sources"))
+        normalized: object = normalize_sources(request.get("sources"))
+        if not object_fields(normalized):
+            raise ValueError("model sources must be an object")
+        sources = normalized
         with ctx.lock:
             if any(
                 item["provider"] and not allows(sources, item["provider"], item["model"]) for item in models_in_use(ctx)
@@ -94,7 +120,7 @@ def save_response(ctx: AppContext, body: object) -> tuple[int, JsonObject]:
 
 
 def discover_response(ctx: AppContext, body: object) -> tuple[int, JsonObject]:
-    request: dict[str, object] = body if isinstance(body, dict) else {}
+    request: dict[str, object] = body if object_fields(body) else {}
     source = request.get("source")
     if not isinstance(source, str) or source not in API_CONNECTIONS:
         return 400, {"ok": False, "error": "model source unavailable"}
@@ -107,11 +133,18 @@ def discover_response(ctx: AppContext, body: object) -> tuple[int, JsonObject]:
         connector = connection_for(source)
         store = preferences_for(ctx)
         if not force and not store.enabled(source):
-            cached = optional_callable(connector, "cached_model_payload")
-            payload = decode_json_object(cached() if cached is not None else store.catalog(source))
+            payload = _cached_catalog(connector, store, source)
             return 200, {"ok": True, "source": payload}
-        refresh = optional_callable(connector, "refresh_models")
-        payload = decode_json_object(refresh(force=force) if refresh is not None else require_callable(connector, "model_payload")())
+        refresh: object = getattr(connector, "refresh_models", None)
+        raw: object
+        if isinstance(refresh, _RefreshModelsCallback):
+            raw = refresh(force=force)
+        else:
+            model_payload = _payload_callback(connector, "model_payload")
+            if model_payload is None:
+                raise TypeError("provider does not support model_payload")
+            raw = model_payload()
+        payload = decode_json_object(raw)
         store.observe_catalog(payload)
         ctx.connection_status.observe_catalog(source, payload)
     except (OSError, ValueError, RuntimeError) as exc:
