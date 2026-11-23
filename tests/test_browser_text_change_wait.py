@@ -207,7 +207,9 @@ def test_navigation_comparison_preserves_visible_changes_and_arbitrary_program_v
 
 
 @pytest.mark.parametrize("transition", ["new_control", "enabled_control", "ref_churn", "still_loading", "text_progress",
-                                       "wait_timeout", "wait_matched"])
+                                       "wait_timeout", "wait_matched", "controls_timeout", "controls_matched",
+                                       "controls_timeout_recaptured", "wait_timeout_recaptured",
+                                       "controls_prior_timeout_recaptured"])
 def test_control_wait_is_not_offered_after_the_next_control_is_already_observed(transition: str) -> None:
     from codey.operations.browser_task_handoff import browser_control_wait_handoff
 
@@ -232,21 +234,36 @@ def test_control_wait_is_not_offered_after_the_next_control_is_already_observed(
     if transition in {"new_control", "enabled_control"}:
         current["elements"] = [begin, {**next_control, "disabled": False}]
     observation = replace(initial, canonical={"value": current})
-    session._memory_results["current"] = observation
-    project_execution_record(session, "current", observation.call, observation, ok=True)
-    if transition in {"wait_timeout", "wait_matched"}:
-        waited = ToolResult(ToolCall("browser_wait", {"condition": "text_changed", "value": "current", "timeout_ms": 5000}),
-            "Wait settled", ok=transition == "wait_matched", audit={"browser_document": document})
+    prior_baseline = transition == "controls_prior_timeout_recaptured"
+    if not prior_baseline:
+        session._memory_results["current"] = observation
+        project_execution_record(session, "current", observation.call, observation, ok=True)
+    generation = 2
+    if transition.startswith(("wait_", "controls_")):
+        condition = "controls_changed" if transition.startswith("controls_") else "text_changed"
+        matched = transition.endswith("_matched")
+        outcome: JsonObject = {"matched": matched} if matched else {"matched": False, "reason": "timeout"}
+        baseline = "original-snapshot" if prior_baseline else "current"
+        waited = ToolResult(ToolCall("browser_wait", {"condition": condition, "value": baseline, "timeout_ms": 5000}),
+            "Wait settled", ok=matched, canonical={"value": outcome}, audit={"browser_document": document})
         session._memory_results["wait"] = waited
         project_execution_record(session, "wait", waited.call, waited, ok=waited.ok)
+        if transition.endswith("_recaptured"):
+            generation = 3
+            recaptured = replace(initial, canonical={"value": {**current, "generation": generation}})
+            session._memory_results["fresh"] = recaptured
+            project_execution_record(session, "fresh", recaptured.call, recaptured, ok=True)
     context = CompletionContext(browser_document=document)
-    snapshot = bind_browser_references(session, offer_browser_tools(build_turn_snapshot(session), session), context, 2)
-    _snapshot, hint = browser_control_wait_handoff(session, snapshot, context, 2)
+    snapshot = bind_browser_references(session, offer_browser_tools(build_turn_snapshot(session), session), context, generation)
+    _snapshot, hint = browser_control_wait_handoff(session, snapshot, context, generation)
     assert ('"condition": "text_changed"' in hint) is (transition == "ref_churn")
     if transition in {"new_control", "enabled_control"}:
         assert "Continue" in hint and "already" in hint
-    elif transition in {"wait_timeout", "wait_matched"}:
+    elif transition in {"wait_timeout", "wait_matched", "controls_timeout", "controls_matched"}:
         assert '"tool": "browser_snapshot"' in hint and "already settled" in hint
+    elif transition.endswith("_recaptured"):
+        assert "already settled" in hint and "Snapshot fresh" in hint
+        assert '"tool": "browser_wait"' not in hint and '"tool": "browser_snapshot"' not in hint
 
 
 @pytest.mark.parametrize("native", [False, True])

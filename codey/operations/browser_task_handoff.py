@@ -392,6 +392,35 @@ def browser_observation_handoff(session: TaskSession, snapshot: TurnSnapshot, co
     return "\n".join(lines)
 
 
+def _settled_post_click_wait(
+    records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],
+    *, click_ref: str, current_ref: str, document: JsonObject | None,
+) -> tuple[str, str, bool] | None:
+    order = {identity: index for index, identity in enumerate(records)}
+    snapshots = tuple(ref for ref, result in committed_results(records, results, frozenset({"browser_snapshot"}))
+                      if same_document(result.audit.get("browser_document"), document))
+    baselines = {ref for ref in snapshots if order[click_ref] < order[ref] <= order[current_ref]}
+    # A wait dispatched immediately after the click may use the observation
+    # that supplied the click's control, before any fresh snapshot exists.
+    preceding = next((ref for ref in reversed(snapshots) if order[ref] < order[click_ref]), None)
+    if preceding is not None:
+        baselines.add(preceding)
+    for ref, wait in reversed(committed_results(records, results, frozenset({"browser_wait"}),
+                                                include_failed=frozenset({"browser_wait"}))):
+        baseline = wait.call.args.get("value")
+        outcome = wait.canonical.get("value")
+        if (wait.call.args.get("condition") not in {"text_changed", "controls_changed"}
+                or not isinstance(baseline, str) or baseline not in baselines
+                or order[ref] <= max(order[baseline], order[click_ref])
+                or not same_document(wait.audit.get("browser_document"), document) or not isinstance(outcome, dict)):
+            continue
+        matched = wait.ok and outcome.get("matched") is True
+        timed_out = not wait.ok and outcome.get("matched") is False and outcome.get("reason") == "timeout"
+        if matched or timed_out:
+            return ref, baseline, order[ref] < order[current_ref]
+    return None
+
+
 def browser_control_wait_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                                  generation: int | None) -> tuple[TurnSnapshot, str]:
     """Offer a read-only continuation when the next control may appear later."""
@@ -410,13 +439,11 @@ def browser_control_wait_handoff(session: TaskSession, snapshot: TurnSnapshot, c
             or not same_document(action.audit.get("browser_document"), context.browser_document)
             or tuple(records).index(ref) >= tuple(records).index(current[0])):
         return snapshot, ""
-    waits = [(key, row) for key, row in committed_results(records, results, frozenset({"browser_wait"}),
-                                                        include_failed=frozenset({"browser_wait"}))
-             if row.call.args.get("condition") == "text_changed" and row.call.args.get("value") == current[0]
-             and tuple(records).index(key) > tuple(records).index(current[0])]
-    if waits:
+    wait = _settled_post_click_wait(records, results, click_ref=ref, current_ref=current[0],
+                                    document=context.browser_document)
+    if wait is not None and not wait[2]:
         snapshot, observe = _call_handoff(session, snapshot, ToolCall("browser_snapshot", {}))
-        return snapshot, f"Wait {waits[-1][0]} from snapshot {current[0]} already settled. Observe its current page.\n" + observe
+        return snapshot, f"Wait {wait[0]} from snapshot {wait[1]} already settled. Observe its current page.\n" + observe
     before = [(key, row) for key, row in committed_results(records, results, frozenset({"browser_snapshot"}))
               if tuple(records).index(key) < tuple(records).index(ref)]
     references = snapshot.browser_references
@@ -442,7 +469,11 @@ def browser_control_wait_handoff(session: TaskSession, snapshot: TurnSnapshot, c
                 "Use the current observation to choose remaining work or report the observed outcome. "
                 "A visible change alone does not verify the business result.")
     except ValueError:
-        return snapshot, ""
+        if wait is None:
+            return snapshot, ""
+    if wait is not None:
+        return snapshot, (f"Wait {wait[0]} already settled after click {ref}. Snapshot {current[0]} was taken afterwards. "
+            "Use this observation to decide the next required step; a new snapshot reference alone does not require repeating the wait.")
     snapshot, offered, _error = handoff_call(session, snapshot, ToolCall("browser_wait", {
         "condition": "text_changed", "value": current[0], "timeout_ms": 5000}))
     if offered is None:

@@ -752,6 +752,21 @@ class BrowserRuntime:
                 controls[(require_json_string(row["role"], "control role"), require_json_string(row["name"], "control name"))] += 1
         return controls
 
+    @asynccontextmanager
+    async def _wait_frame(self, state: PageState, expected: JsonValue) -> AsyncGenerator[FrameContext, None]:
+        try:
+            async with self._frame(state) as context:
+                yield context
+        except Error as error:
+            # Navigation can destroy the execution context between the two
+            # document checks. Confirm the new document before classifying it.
+            if isinstance(expected, dict):
+                with contextlib.suppress(Error):
+                    async with self._frame(state) as current:
+                        if not same_document(expected, current.document):
+                            raise RuntimeError("wait_document_changed") from error
+            raise
+
     async def _wait(self, invocation: Invocation, state: PageState) -> BrowserToolOutput:
         args = invocation.command.arguments
         condition = require_json_string(args["condition"], "condition")
@@ -776,7 +791,8 @@ class BrowserRuntime:
                         {"action": "wait", "condition": condition, "matched": True, "page_id": state.binding.target_id})
                 await asyncio.sleep(0.1)
                 continue
-            async with self._frame(state) as context:
+            unchanged_document = None if condition in {"url_contains", "new_document"} else expected
+            async with self._wait_frame(state, unchanged_document) as context:
                 same = expected is None or context.document == expected
                 if not same and condition not in {"url_contains", "new_document"}:
                     raise RuntimeError("wait_document_changed")
