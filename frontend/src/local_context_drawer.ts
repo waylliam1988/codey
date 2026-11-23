@@ -606,7 +606,11 @@ function renderFeedback(node: HTMLElement, value: Item, data: Summary): void {
   };
   answer.onchange = refreshBehavior;
   refreshBehavior();
-  node.append(answer, behavior);
+  const correction = document.createElement('textarea');
+  correction.setAttribute('aria-label', 'Correction in your own words');
+  correction.placeholder = 'Optional correction, e.g. In this project, use Go for code examples.';
+  correction.maxLength = 1200;
+  node.append(answer, behavior, correction);
   for (const [label, rating] of [
     ['Helpful', 'helpful'],
     ['Not helpful', 'unhelpful'],
@@ -622,6 +626,7 @@ function renderFeedback(node: HTMLElement, value: Item, data: Summary): void {
             exposure_id: exposures.find((row) => (row.id || row.run_id) === answer.value)?.id ?? '',
             behavior_id: behavior.value,
             rating,
+            ...(rating === 'correction' && correction.value.trim() ? { correction_text: correction.value } : {}),
             ...(value.scope === 'user' ? { scope_kind: 'user' } : {}),
           }),
       ),

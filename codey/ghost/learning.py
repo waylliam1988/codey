@@ -6,8 +6,9 @@ import sqlite3
 
 from codey.ghost.controls import policy
 from codey.ghost.storage import load, rows, save
-from codey.memory.codec import digest, record_from_payload, record_payload, timestamp
-from codey.memory.contracts import MemoryEvent
+from codey.memory.codec import digest, exposure_identity, record_from_payload, record_payload, timestamp, unique_scopes
+from codey.memory.contracts import MemoryEvent, MemoryItem, MemoryRecord
+from codey.memory.slots import contextual_slot_correction
 from codey.types.json_value import JsonObject, require_json_integer, require_json_string, require_json_strings
 
 
@@ -24,7 +25,8 @@ def _feedback(connection: sqlite3.Connection, event: MemoryEvent) -> None:
     if raw is None or exposure is None or exposure.get("scope") != event.scope:
         raise ValueError("feedback must identify memory exposed to this run and scope")
     record = record_from_payload(raw)
-    if exposure.get("item_version") != digest(record.item.to_payload()) or exposure.get("run_id") != run_id or exposure.get("item_id") != item_id:
+    item_version = digest(record.item.to_payload())
+    if exposure.get("item_version") != item_version or exposure.get("run_id") != run_id or exposure.get("item_id") != item_id:
         raise ValueError("feedback exposure names a different memory version or run")
     behavior_id = require_json_string(event.payload.get("behavior_id", ""), "behavior_id")
     if behavior_id:
@@ -39,12 +41,18 @@ def _feedback(connection: sqlite3.Connection, event: MemoryEvent) -> None:
         return
     if judgment is not None:
         raise ValueError("this run already has feedback for the item")
+    request_ref = require_json_string(exposure.get("source_ref"), "source_ref")
+    correction = require_json_string(event.payload.get("correction_text", ""), "correction_text")
+    if correction and rating != "correction":
+        raise ValueError("only correction feedback carries correction text")
     payload: JsonObject = {"id": event.event_id, "item_id": item_id, "run_id": run_id, "scope": event.scope,
                "rating": rating, "occurred_at": event.occurred_at,
                "exposure_id": exposure.get("id"), "item_version": exposure.get("item_version"), "behavior_id": behavior_id,
                "attribution": "observed_behavior" if behavior_id else "exposure_only",
                "control_scopes": list(record.control_scopes),
-               "source_refs": [*event.provenance, require_json_string(exposure.get("source_ref"), "source_ref")]}
+               "source_refs": [*event.provenance, request_ref]}
+    if correction:
+        payload["correction_text"] = correction
     save(connection, "feedback", event.event_id, event.scope, payload)
     save(connection, "judgments", run_id + ":" + item_id, event.scope,
          {"id": run_id + ":" + item_id, "item_id": item_id, "scope": event.scope, "feedback_id": event.event_id, "control_scopes": list(record.control_scopes)})
@@ -58,12 +66,34 @@ def _feedback(connection: sqlite3.Connection, event: MemoryEvent) -> None:
         "helpful": min(1000000, helpful + (1 if rating == "helpful" else 0)),
         "negative": min(1000000, negative + (0 if rating == "helpful" else 1)),
         "last_feedback_id": event.event_id, "source_refs": list(event.provenance), "at": event.occurred_at})
-    if rating == "correction" and record.state == "active":
+    if record.state != "active" or rating != "correction":
+        return
+    if correction:
+        if request_ref.startswith("request:") and exposure_id == exposure_identity(request_ref, item_id, item_version):
+            _contextual_correction(connection, event, record, correction, request_ref, context)
+    else:
         updated = record_payload(record)
         updated["state"] = "quarantined"
         updated["state_changed_at"] = event.occurred_at
         updated["run_id"] = raw.get("run_id", "")
         save(connection, "items", item_id, record.item.scope, updated)
+
+
+def _contextual_correction(connection: sqlite3.Connection, event: MemoryEvent, record: MemoryRecord,
+                           text: str, request_ref: str, context: str) -> None:
+    old = record.item
+    correction = contextual_slot_correction(text)
+    scope = require_json_string(event.payload.get("context_scope", ""), "context_scope")
+    if (correction is None or old.kind != "preference" or old.slot != correction.slot or old.value == correction.value
+            or context != "project" or not scope.startswith("project:") or old.scope not in {"user", scope}):
+        return
+    identity = "correction-candidate:" + event.event_id
+    refs = tuple(dict.fromkeys((*event.provenance, request_ref)))
+    item = MemoryItem(identity, "preference", text, scope, tuple(dict.fromkeys((*old.source_refs, *refs))),
+                      event.occurred_at, slot=old.slot, context=context, value=correction.value)
+    save(connection, "proposals", identity, scope, {"item": item.to_payload(), "decision": "",
+        "control_scopes": list(unique_scopes(("user", scope, *record.control_scopes))),
+        "relations": [{"target_id": old.item_id, "relation": "context_exception", "source_refs": list(refs)}]})
 
 
 def _predict(connection: sqlite3.Connection, event: MemoryEvent) -> None:
@@ -136,8 +166,6 @@ def _review(connection: sqlite3.Connection, event: MemoryEvent) -> None:
 
 def _review_proposal(connection: sqlite3.Connection, prediction: JsonObject, event: MemoryEvent) -> None:
     from datetime import timedelta
-
-    from codey.memory.contracts import MemoryItem
 
     raw = load(connection, "items", require_json_string(prediction.get("item_id"), "item_id"))
     if raw is None:

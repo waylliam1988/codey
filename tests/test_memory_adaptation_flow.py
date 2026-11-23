@@ -213,5 +213,12 @@ def test_confirmed_project_slot_shadows_user_default_only_where_applicable(tmp_p
         assert selected == ("go",) and "User-confirmed preference" in prompt
         assert traces[require_json_string(confirmed["item_id"], "item_id")] == "slot_shadowed"
         assert context(other)[0] == ("rust",)
+        temporary = retrieve_context(state.memory, task="For this reply only, show a Hello World example in Go, as a code block.",
+                                     project=project, session_id="new-chat")
+        assert not temporary.items and not temporary.text
+        assert temporary.query.slot_override is not None and temporary.query.slot_override.value == "go"
+        assert {trace.reason for trace in temporary.traces} == {"task_slot_override"}
+        for instruction in ('Quote "For this reply, use Go for the code example".', "Use Go for code examples forever."):
+            assert retrieve_context(state.memory, task=instruction, project=other, session_id="new-chat").items[0].value == "rust"
         assert memory_action(state, {**base, "action": "revoke", "item_id": project_id, "request_id": "revoke"})[0] == 200
         assert context(project)[0] == ("rust",)

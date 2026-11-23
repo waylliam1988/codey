@@ -5,7 +5,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from codey.memory.contracts import MemoryItem
+from codey.memory.contracts import MemoryItem, MemorySlotOverride
+from codey.task.instruction_text import instruction_text
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,33 @@ SLOTS: dict[str, MemorySlot] = {
     "repair.pattern": MemorySlot("repair"),
 }
 FAMILIES = ("manual", "continuity", *(row.family for row in SLOTS.values()))
+
+_CODE_LANGUAGE = "code.language"
+_TEMPORARY_EXAMPLE = re.compile(
+    r"^\s*(?:for this (?:reply|answer|example)(?: only)?,\s*"
+    r"(?:use ([a-z]+)(?=\s+for (?:the |this )?(?:code )?example\b|[.!?;,\n]|$)"
+    r"|show [^.!?;,\n]{0,80}\bexample in ([a-z]+)(?=[.!?;,\n]|$))"
+    r"|(?:这次|本次|本轮)(?:的)?(?:代码)?示例(?:请)?用\s*([a-z]+)(?=[。！？；，,\n]|$))",
+    re.I,
+)
+_CONTEXT_EXAMPLE = re.compile(r"^\s*(?:in this project,\s*use ([a-z]+) for code examples"
+                              r"|本项目(?:的)?代码示例(?:请)?用\s*([a-z]+))[.!。！]?\s*$", re.I)
+
+
+def _example_language(text: str, pattern: re.Pattern[str]) -> MemorySlotOverride | None:
+    matched = pattern.match(instruction_text(text))
+    if matched is None:
+        return None
+    value = next(group.casefold() for group in matched.groups() if group is not None)
+    return MemorySlotOverride(_CODE_LANGUAGE, value) if value in SLOTS[_CODE_LANGUAGE].values else None
+
+
+def temporary_slot_override(text: str) -> MemorySlotOverride | None:
+    return _example_language(text, _TEMPORARY_EXAMPLE)
+
+
+def contextual_slot_correction(text: str) -> MemorySlotOverride | None:
+    return _example_language(text, _CONTEXT_EXAMPLE)
 
 
 def family_for(item: MemoryItem) -> str:

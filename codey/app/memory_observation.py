@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from codey.app.memory_behaviors import answer_behaviors, tool_outcome
 from codey.durable.session import DurableSession
-from codey.memory.codec import digest, trace_from_payload
+from codey.memory.codec import digest, exposure_identity, trace_from_payload
 from codey.memory.context import candidate_item
 from codey.memory.contracts import MemoryExposure
 from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact, restore_context
@@ -58,10 +58,10 @@ def terminal_memory_facts(durable: DurableSession, outputs: ManagedOutputStore |
                 continue
             item = candidate_item(source)
             version = digest(item.to_payload())
-            identity = digest({"request": artifact.handle, "item": item.item_id, "version": version})
+            identity = exposure_identity(last_request, item.item_id, version)
             context = consumers.get(item.item_id, item.context)
             exposures.append(MemoryExposure(identity, item.item_id, version, run_id,
-                "request:" + artifact.handle, item.scope, "", context if isinstance(context, str) else "").to_payload())
+                last_request, item.scope, "", context if isinstance(context, str) else "").to_payload())
     answer_id = durable.submission(task.submission_id).answer_entry_id
     answer = next((row for row in durable.context(task.conversation_id) if row.entry_id == answer_id), None)
     text = answer.payload.get("text") if answer is not None else ""

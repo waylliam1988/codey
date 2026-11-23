@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from codey.memory.contracts import FeedbackRating, MemoryFeedback, MemoryPrediction, MemoryReview, PredictionOutcome
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string
+from codey.workspace.context_admission import request_scope
 
 if TYPE_CHECKING:
     from codey.app.context import AppContext
@@ -31,9 +32,16 @@ def learning_action(ctx: AppContext, payload: JsonObject, scope: str, ref: str, 
             task = ctx.durable.task(run_id)
             if task.phase != "completed":
                 raise ValueError("feedback requires a completed, delivered run")
+            correction = require_json_string(payload.get("correction_text", ""), "correction_text")
+            if correction and (rating != "correction" or not correction.strip() or len(correction) > 1200):
+                raise ValueError("correction text requires a nonempty correction of at most 1200 characters")
+            session_id = require_json_string(payload.get("session_id", ""), "session_id")
+            project = task.state.get("project")
+            context_scope = (request_scope(project, task.conversation_id) if correction and isinstance(project, str)
+                             and project and task.conversation_id == session_id else "")
             ctx.memory.feedback(MemoryFeedback(ref, item_id, run_id, scope, rating, ref, at,
                 require_json_string(payload.get("exposure_id", ""), "exposure_id"),
-                require_json_string(payload.get("behavior_id", ""), "behavior_id")))
+                require_json_string(payload.get("behavior_id", ""), "behavior_id"), correction, context_scope))
             return {"ok": True, "feedback_id": ref}
         statement = require_json_string(payload.get("statement"), "statement")
         due = require_json_string(payload.get("due_at"), "due_at")

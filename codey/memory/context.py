@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from codey.memory.codec import item_from_payload, unique_scopes
 from codey.memory.contracts import MemoryItem, MemoryQuery, MemoryTrace
 from codey.memory.service import MemoryService, utc_now
-from codey.memory.slots import SLOTS
+from codey.memory.slots import SLOTS, temporary_slot_override
 from codey.runtime.core.cancellation import DeadlineExceeded, TaskCancelled
 from codey.types.json_value import parse_json_object
 from codey.utils.refs import digest_text
@@ -51,7 +51,8 @@ def retrieve_context(service: MemoryService | None, *, task: str, project: str, 
     scopes = (scope, "user")
     controls = unique_scopes(("user", scope, request_scope("", session_id)))
     query = MemoryQuery(task, scopes, service.clock() if service is not None else utc_now(), exclude_run_id=run_id,
-                        control_scopes=controls, context=context or ("project" if project else "chat"), shadow=shadow)
+                        control_scopes=controls, context=context or ("project" if project else "chat"), shadow=shadow,
+                        slot_override=temporary_slot_override(task))
     result = service.retrieve(query) if service is not None else None
     candidates = result.items if result is not None else ()
     traces = {trace.item_id: trace for trace in result.traces} if result is not None else {}

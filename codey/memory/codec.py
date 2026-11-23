@@ -47,6 +47,10 @@ def digest(value: object) -> str:
     return hashlib.sha256(canonical(value).encode("utf-8")).hexdigest()
 
 
+def exposure_identity(request_ref: str, item_id: str, version: str) -> str:
+    return digest({"request": request_ref.removeprefix("request:"), "item": item_id, "version": version})
+
+
 def item_from_payload(value: object) -> MemoryItem:
     row = decode_json_object(value)
     kinds: dict[str, MemoryKind] = {"experience": "experience", "preference": "preference",

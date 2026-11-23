@@ -29,8 +29,10 @@ from codey.memory.contracts import (
     MemoryDecision,
     MemoryEvent,
     MemoryFamilyChange,
+    MemoryFamilyState,
     MemoryFeedback,
     MemoryHost,
+    MemoryItem,
     MemoryMaintenanceRequest,
     MemoryMaintenanceResult,
     MemoryPolicy,
@@ -52,6 +54,14 @@ from codey.types.json_value import (
     require_json_string,
     require_json_strings,
 )
+
+
+def _candidate_filter(item: MemoryItem, state: MemoryFamilyState, query: MemoryQuery) -> str:
+    if state != "enabled" and (not query.shadow or state in {"quarantined", "deleted", "demoted"}):
+        return "family_" + state
+    if item.kind == "preference" and query.slot_override is not None and item.slot == query.slot_override.slot:
+        return "task_slot_override"
+    return ""
 
 
 class GhostMemory:
@@ -103,8 +113,8 @@ class GhostMemory:
                 reason = "expired"
             elif item.context and item.context != query.context:
                 reason = "context_mismatch"
-            elif states[item.item_id] != "enabled" and (not query.shadow or states[item.item_id] in {"quarantined", "deleted", "demoted"}):
-                reason = "family_" + states[item.item_id]
+            elif filtered := _candidate_filter(item, states[item.item_id], query):
+                reason = filtered
             elif item.kind == "experience":
                 experiences += 1
                 if experiences > 200:
@@ -254,9 +264,11 @@ class GhostMemory:
                       {"item_id": change.item_id, "state": change.state}, (change.source_ref,))
 
     def feedback(self, feedback: MemoryFeedback) -> None:
-        self._command("memory.feedback", feedback.feedback_id, feedback.scope, feedback.occurred_at,
-                      {"item_id": feedback.item_id, "run_id": feedback.run_id, "rating": feedback.rating,
-                       "exposure_id": feedback.exposure_id, "behavior_id": feedback.behavior_id},
+        payload: JsonObject = {"item_id": feedback.item_id, "run_id": feedback.run_id, "rating": feedback.rating,
+                               "exposure_id": feedback.exposure_id, "behavior_id": feedback.behavior_id}
+        if feedback.correction_text:
+            payload.update(correction_text=feedback.correction_text, context_scope=feedback.context_scope)
+        self._command("memory.feedback", feedback.feedback_id, feedback.scope, feedback.occurred_at, payload,
                       (feedback.source_ref,))
 
     def predict(self, prediction: MemoryPrediction) -> None:

@@ -188,7 +188,7 @@ it('requires an explicit second action to delete the scope', async () => {
   );
 });
 it('submits a proposal that still requires a separate confirmation', async () => {
-  const text = document.querySelector('textarea');
+  const text = document.querySelector<HTMLTextAreaElement>('form textarea');
   if (!text) throw new Error('Missing text');
   text.value = 'Prefer concise replies';
   text.dispatchEvent(new Event('input'));
@@ -215,6 +215,23 @@ it('keeps storage failures visible', async () => {
   failure = true;
   click('Confirm');
   await vi.waitFor(() => expect(element('local-context-subtitle').textContent).toBe('storage unavailable'));
+});
+
+it('sends the correction in the user’s words with the selected exposure', async () => {
+  const field = document.querySelector<HTMLTextAreaElement>('[aria-label="Correction in your own words"]');
+  if (!field) throw new Error('Missing correction text');
+  field.value = 'In this project, use Go for code examples.';
+  click('Needs correction');
+  await vi.waitFor(() =>
+    expect(actions).toEqual([
+      expect.objectContaining({
+        action: 'feedback',
+        rating: 'correction',
+        exposure_id: 'exposure-1',
+        correction_text: field.value,
+      }),
+    ]),
+  );
 });
 it('hides mutation forms when memory is disabled', async () => {
   enabled = false;
@@ -247,7 +264,7 @@ it('reuses a command identity after an unconfirmed storage failure', async () =>
 });
 
 it('submits conditioned expiring corrections for a separate confirmation', async () => {
-  const text = document.querySelector('textarea');
+  const text = document.querySelector<HTMLTextAreaElement>('form textarea');
   const context = document.querySelector<HTMLSelectElement>('[aria-label="Applies during"]');
   const expiry = document.querySelector<HTMLInputElement>('[aria-label="Expires at"]');
   const replaces = document.querySelector<HTMLSelectElement>('[aria-label="Replaces item"]');
@@ -279,7 +296,7 @@ it('supports user-wide proposals through an explicit scope selection', async () 
     expect(document.querySelector<HTMLSelectElement>('[aria-label="Memory scope"]')?.value).toBe('user'),
   );
   await new Promise((resolve) => setTimeout(resolve, 0));
-  const text = document.querySelector('textarea');
+  const text = document.querySelector<HTMLTextAreaElement>('form textarea');
   if (!text) throw new Error('Missing proposal');
   text.value = 'Use concise examples';
   text.dispatchEvent(new Event('input'));

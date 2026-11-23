@@ -55,6 +55,12 @@ class MemoryItem:
 
 
 @dataclass(frozen=True)
+class MemorySlotOverride:
+    slot: str
+    value: str
+
+
+@dataclass(frozen=True)
 class MemoryQuery:
     text: str
     scopes: tuple[str, ...]
@@ -64,6 +70,7 @@ class MemoryQuery:
     control_scopes: tuple[str, ...] = ()
     context: str = ""
     shadow: bool = False
+    slot_override: MemorySlotOverride | None = None
 
 
 @dataclass(frozen=True)
@@ -324,6 +331,8 @@ class MemoryFeedback:
     occurred_at: str
     exposure_id: str = ""
     behavior_id: str = ""
+    correction_text: str = ""
+    context_scope: str = ""
 
 
 @dataclass(frozen=True)

@@ -131,13 +131,18 @@ def test_deleting_item_sources_removes_dependent_learning_projections(tmp_path: 
     assert store.export_state() == exported
 
 
-def test_normal_headless_receipt_drives_explicit_user_feedback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("contextual", [False, True])
+def test_normal_headless_receipt_drives_explicit_user_feedback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                        contextual: bool) -> None:
     from codey.app.context import AppContext
     from codey.app.headless_runner import HeadlessRequest, run_headless
     from codey.app.memory_routes import memory_action
+    from codey.memory.context import retrieve_context
     from codey.providers import api_transport
     from codey.providers.api_provider import ApiProvider
     from codey.providers.base import ChatProvider
+    from codey.types.json_value import require_json_string
+    from codey.workspace.context_admission import request_scope
 
     sent: list[bytes] = []
 
@@ -155,10 +160,14 @@ def test_normal_headless_receipt_drives_explicit_user_feedback(tmp_path: Path, m
         return Response(json.dumps(reply).encode())
 
     monkeypatch.setattr(api_transport, "open_request", send)
-    with closing(AppContext(tmp_path, start_scheduler=False)) as state:
+    project = tmp_path / "project"
+    project.mkdir()
+    state_home = tmp_path / "state"
+    with closing(AppContext(state_home, start_scheduler=False)) as state:
         state.durable.create_conversation("s")
         assert memory_action(state, {"action": "propose", "scope_kind": "user", "session_id": "s",
-                                     "kind": "preference", "text": "Prefer concise Python examples"})[0] == 200
+                                     "kind": "preference", "text": "Prefer concise Python examples",
+                                     "slot": "code.language", "value": "python"})[0] == 200
         proposal, = state.memory.proposals("user")
         assert memory_action(state, {"action": "accept", "scope_kind": "user", "session_id": "s",
                                      "proposal_id": proposal.proposal_id, "version": proposal.version})[0] == 200
@@ -167,11 +176,11 @@ def test_normal_headless_receipt_drives_explicit_user_feedback(tmp_path: Path, m
         return ApiProvider("http://fixture.invalid/v1", "fixture", native_tools=False, stream=False, thinking_enabled=False)
 
     events: list[dict[str, object]] = []
-    result = run_headless(HeadlessRequest(project=None, task="Hello", intent="chat", session_id="s",
-        provider_id="qwen", max_turns=2, state_home=tmp_path), emit_jsonl=events.append, connect_provider=connect)
+    result = run_headless(HeadlessRequest(project=project if contextual else None, task="Hello", intent="chat", session_id="s",
+        provider_id="qwen", max_turns=2, state_home=state_home), emit_jsonl=events.append, connect_provider=connect)
     assert result.exit_code == 0, events[-1]
     assert len(sent) == 1 and b"Prefer concise Python examples" in sent[0]
-    with closing(AppContext(tmp_path, start_scheduler=False)) as state:
+    with closing(AppContext(state_home, start_scheduler=False)) as state:
         from codey.app.memory_observation import routing_for_run
         from codey.app.memory_setup import observe_terminal
 
@@ -186,12 +195,37 @@ def test_normal_headless_receipt_drives_explicit_user_feedback(tmp_path: Path, m
         original = state.memory.rebuild()
         observe_terminal(state.memory, state.durable, result.run_id, state.managed_outputs)
         assert state.memory.rebuild() == original
+        command = {"action": "feedback", "scope_kind": "user", "session_id": "s", "request_id": "my-correction",
+                   "item_id": proposal.item.item_id, "run_id": result.run_id, "rating": "correction"}
+        if contextual:
+            from codey.types.json_value import JsonObject
+
+            correction = "In this project, use Go for code examples."
+            feedback: JsonObject = {**command, "correction_text": correction,
+                "exposure_id": require_json_string(exposed[0]["id"], "exposure_id")}
+            assert memory_action(state, {**feedback, "exposure_id": "different", "request_id": "bad"})[0] == 400
+            status, settled = memory_action(state, feedback)
+            assert status == 200 and memory_action(state, feedback) == (status, settled)
+            scope = request_scope(str(project), "s")
+            proposal_row, = state.memory.proposals(scope)
+            assert proposal_row.item.text == correction and proposal_row.item.value == "go"
+            assert proposal_row.relations[0].relation == "context_exception"
+            assert exposed[0]["source_ref"] in proposal_row.item.source_refs
+            assert state.memory.records(("user",))[0].state == "active"
+            assert {item.value for item in retrieve_context(state.memory, task="Show an example", project=str(project),
+                    session_id="fresh").items if item.slot} == {"python"}
+            assert memory_action(state, {"action": "accept", "project": str(project), "session_id": "s",
+                "proposal_id": proposal_row.proposal_id, "version": proposal_row.version})[0] == 200
+            assert {item.value for item in retrieve_context(state.memory, task="Show an example", project=str(project),
+                    session_id="fresh").items if item.slot} == {"go"}
+            assert {item.value for item in retrieve_context(state.memory, task="Show an example", project="",
+                    session_id="fresh").items if item.slot} == {"python"}
+        else:
+            assert memory_action(state, command)[0] == 200
+            assert state.memory.records(("user",))[0].state == "quarantined"
         assert memory_action(state, {"action": "control", "scope_kind": "user", "session_id": "s",
             "control": "retrieve_projections", "enabled": False})[0] == 200
         assert routing_for_run(state.durable, state.managed_outputs, result.run_id) == routed
-        assert memory_action(state, {"action": "feedback", "scope_kind": "user", "session_id": "s",
-            "item_id": proposal.item.item_id, "run_id": result.run_id, "rating": "correction"})[0] == 200
-        assert next(row for row in state.memory.records(("user",)) if row.item.item_id == proposal.item.item_id).state == "quarantined"
         assert state.durable.task(result.run_id).phase == "completed"
         before = state.memory.export_state()
         state.memory.rebuild()
