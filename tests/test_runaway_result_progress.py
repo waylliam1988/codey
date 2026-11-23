@@ -11,9 +11,12 @@ from codey.agents.request import AgentRequest
 from codey.agents.runaway_guard import attempt_record, should_block_or_remind
 from codey.app.headless_runner import HeadlessAppContext
 from codey.completion.verification_policy import VerificationCandidate
-from codey.operations.kernel_progress import project_check_feedback
+from codey.operations.kernel_progress import KernelProgress, project_check_cycle
 from codey.operations.progress_comparison import ProjectCheckComparison, pytest_failure_ids
+from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.core.progress import ProgressSnapshot
 from codey.types.json_value import JsonObject
 from tests.support.kernel_runtime import run_agent
 
@@ -77,12 +80,38 @@ def test_check_feedback_follows_unchanged_edit_and_distinct_equal_execution(chan
             return original
         return current if row is polled else None
 
-    feedback = project_check_feedback([polled], history, compare)
+    cycle = project_check_cycle([polled], history, compare)
     if change == "same":
+        assert cycle is not None
+        feedback = cycle.feedback
         assert "left limit.py unchanged" in feedback and "FAILED tests/test_limit.py::test_limit" in feedback
         assert "execution-B" in feedback and '"task_ref":"task-B"' in feedback
     else:
-        assert feedback == ""
+        assert cycle is None
+
+
+def test_verified_cycle_warns_before_stopping_and_survives_reload() -> None:
+    session = TaskSession(TaskPolicy(frozenset({"control"})))
+    progress = KernelProgress(2)
+    run = ToolResult(ToolCall("run", {"command": "python -m pytest"}), "first receipt", ok=False)
+    check = ProjectCheckComparison("python -m pytest", ".", "fingerprint", 1, ("FAILED tests.py::test_a",), "task-1", "e1")
+    assert not progress.observe([run], session, batch_id="first", check_facts={0: check})
+    assert progress.idle == 0
+    # A new failure is progress even at nonzero exit. Revisiting an old failure
+    # does not make it new, but the first proved no-op cycle still gets a warning.
+    distinct = replace(check, failure_ids=("FAILED tests.py::test_b",), execution_ref="e2")
+    assert not progress.observe([run], session, batch_id="second", check_facts={0: distinct})
+    assert progress.idle == 0
+    revisited = replace(check, execution_ref="e3")
+    assert not progress.observe([run], session, batch_id="warning", check_facts={0: revisited}, check_cycle="cycle")
+    assert progress.idle == 1 and progress.warning_batch_id == "warning"
+    saved = ProgressSnapshot.from_payload(progress.snapshot().to_payload())
+    restored = KernelProgress(2, snapshot=saved)
+    assert not restored.observe([run], session, batch_id="warning", check_facts={0: revisited}, check_cycle="cycle")
+    assert restored.snapshot() == saved
+    repeated = replace(check, execution_ref="e4")
+    assert restored.observe([run], session, batch_id="repeated", check_facts={0: repeated}, check_cycle="cycle")
+    assert restored.check_cycle_repeated
 
 
 def test_owned_pytest_checks_put_unchanged_edit_diagnostic_in_next_request(tmp_path: Path) -> None:

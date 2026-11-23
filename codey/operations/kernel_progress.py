@@ -3,14 +3,17 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Protocol
 
 from codey.agents.runaway_guard import attempt_record, should_block_or_remind
 from codey.agents.state import SeenInfoLRU, ToolAttemptRecord, seen_info_key
+from codey.knowledge.model import canonical_json
 from codey.operations.progress_comparison import EFFECT_OBSERVATIONS, ProjectCheckComparison, progress_comparison
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.progress import ProgressSnapshot
 from codey.types.json_value import JsonObject
+from codey.utils.refs import stable_ref
 
 
 class ProgressSession(Protocol):
@@ -24,10 +27,16 @@ class ProgressSession(Protocol):
     def _memory_results(self) -> Mapping[str, ToolResult]: ...
 
 
-def project_check_feedback(
+@dataclass(frozen=True)
+class ProjectCheckCycle:
+    key: str
+    feedback: str
+
+
+def project_check_cycle(
     delivered: Sequence[ToolResult], history: Mapping[str, ToolResult],
     compare: Callable[[ToolResult], ProjectCheckComparison | None],
-) -> str:
+) -> ProjectCheckCycle | None:
     """Describe a repeated verified failure after an edit that changed no bytes."""
     recent = tuple(history.values())[-16:]
     for current in reversed(delivered):
@@ -51,15 +60,14 @@ def project_check_feedback(
                 continue
             if comparison.key == latest.key and no_ops:
                 failures = ", ".join(latest.failure_ids[:5])
-                from codey.knowledge.model import canonical_json
-
                 output = canonical_json({"tool": "task_output", "args": {"task_ref": latest.task_ref}})
-                return (f"The recent edit left {', '.join(sorted(no_ops))} unchanged, and the same project check "
+                return ProjectCheckCycle(stable_ref("project_check", latest.key, *sorted(no_ops)),
+                        f"The recent edit left {', '.join(sorted(no_ops))} unchanged, and the same project check "
                         f"reported the same failures on the same workspace. Failures: {failures[:1000]}. "
                         f"Execution receipt: {latest.execution_ref}. To read its original output use {output}. "
                         "Find what produces the recorded failure before changing the file or rerunning the check.")
             break
-    return ""
+    return None
 
 
 class KernelProgress:
@@ -78,15 +86,22 @@ class KernelProgress:
         self.schema_version = snapshot.schema_version
         self.repair_failure_key = snapshot.repair_failure_key
         self.repair_rejections = snapshot.repair_rejections
+        self.warned_check_cycle = snapshot.warned_check_cycle
+        self.warning_batch_id = snapshot.warning_batch_id
+        self.check_cycle_repeated = snapshot.check_cycle_repeated
 
     def snapshot(self) -> ProgressSnapshot:
         return ProgressSnapshot(self.limit, self.seen.keys(), tuple(self.attempts), self.idle, self.last_batch_id,
-                                self.schema_version, self.repair_failure_key, self.repair_rejections)
+                                self.schema_version, self.repair_failure_key, self.repair_rejections,
+                                self.warned_check_cycle, self.warning_batch_id, self.check_cycle_repeated)
 
     @property
     def stopped(self) -> bool:
-        if self.repair_rejections >= self.limit:
+        if self.repair_rejections >= self.limit or self.check_cycle_repeated:
             return True
+        if self.warning_batch_id and (self.last_batch_id == self.warning_batch_id
+                or (self.attempts and self.attempts[-1].tool in {"run", "task_output", "edit"})):
+            return False
         # Proven reload cycles may stop as incomplete; effect delivery is not
         # permission to claim success, nor a reason to run until max_turns.
         reloads: list[ToolAttemptRecord] = []
@@ -130,7 +145,29 @@ class KernelProgress:
             reminder += " Recording a plan is not completed investigation. Repeating it is not progress."
         return reminder
 
-    def observe(self, results: Sequence[ToolResult], session: ProgressSession, *, batch_id: str = "") -> bool:
+    def _observe_check(self, fact: ProjectCheckComparison, result: ToolResult, *, epoch: int, turn: int) -> bool | None:
+        fresh_execution = self.seen.add(seen_info_key("check_execution", fact.execution_ref, "settled"))
+        if not fresh_execution and result.call.name == "task_output" and (
+            "stdout_cursor" in result.call.args or "stderr_cursor" in result.call.args
+        ):
+            # A new output page can provide information about the same execution.
+            return None
+        semantic = canonical_json(fact.key)
+        self.attempts.append(attempt_record(result.call, ToolResult(result.call, semantic, ok=fact.exit_code == 0),
+                                            turn=turn, edit_epoch=epoch))
+        return fresh_execution and self.seen.add(seen_info_key("project_check", str(epoch), semantic))
+
+    def _commit_check_observation(self, *, batch_id: str, cycle: str, progress: bool) -> None:
+        if batch_id and cycle:
+            self.check_cycle_repeated = self.warned_check_cycle == cycle and self.warning_batch_id != batch_id
+            if not self.check_cycle_repeated:
+                self.warned_check_cycle, self.warning_batch_id = cycle, batch_id
+            self.schema_version = 3
+        elif progress:
+            self.warned_check_cycle, self.warning_batch_id, self.check_cycle_repeated = "", "", False
+
+    def observe(self, results: Sequence[ToolResult], session: ProgressSession, *, batch_id: str = "",
+                check_facts: Mapping[int, ProjectCheckComparison] | None = None, check_cycle: str = "") -> bool:
         """Compare observations without treating repeated effects as safe to stop.
 
         Progress accounting never crashes the loop: a telemetry fault for one
@@ -141,15 +178,26 @@ class KernelProgress:
             return self.stopped
         progress = False
         epoch = max([0, *session.edited_files.values()])
-        for result in results:
+        check_moved = False
+        for index, result in enumerate(results):
             try:
+                fact = check_facts.get(index) if check_facts is not None else None
+                if fact is not None:
+                    settled = self._observe_check(fact, result, epoch=epoch, turn=session.turn)
+                    if settled is not None:
+                        progress = progress or settled
+                        check_moved = check_moved or settled
+                        continue
                 comparison = progress_comparison(result, session._memory_results)
                 call = comparison.call
                 record = attempt_record(call, comparison.result, turn=session.turn, edit_epoch=epoch)
             except Exception:
                 continue
             self.attempts.append(record)
+            if call.name == "run" and result.kind == "accepted":
+                continue
             changed = result.audit.get("changed") is True
+            check_moved = check_moved or changed
             key = seen_info_key(call.name, str(call.args.get("path") or call.args.get("url") or
                                              call.args.get("id") or ""), comparison.information)
             novel = self.seen.add(key)
@@ -161,6 +209,7 @@ class KernelProgress:
                 progress = True
         self.idle = 0 if progress else self.idle + 1
         self.last_batch_id = batch_id
+        self._commit_check_observation(batch_id=batch_id, cycle=check_cycle, progress=check_moved)
         # A newly changed file or genuinely new output must never be stopped
         # merely because its call arguments appeared earlier in the session.
         return self.stopped
@@ -187,7 +236,7 @@ class KernelProgress:
                 repeats if self.schema_version == 1 else 0)
             self.repair_failure_key = failure_key
             self.repair_rejections = min(self.limit, previous + 1)
-            self.schema_version = 2
+            self.schema_version = max(self.schema_version, 2)
             self.idle = max(self.idle, self.repair_rejections)
         else:
             self.repair_failure_key = ""

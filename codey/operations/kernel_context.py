@@ -25,7 +25,7 @@ from codey.operations.kernel_contracts import (
 )
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_preparation import capture_turn_snapshot, prepare_kernel_turn
-from codey.operations.kernel_progress import KernelProgress, project_check_feedback
+from codey.operations.kernel_progress import KernelProgress, ProjectCheckCycle, project_check_cycle
 from codey.operations.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
 from codey.operations.kernel_trace import record_outbound, record_turn
 from codey.operations.project_prompt_context import prepare_coding_context
@@ -62,6 +62,7 @@ from codey.workspace.context_admission import admit_context
 
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession
+    from codey.operations.progress_comparison import ProjectCheckComparison
     from codey.operations.task_effects import KernelEffectSink
     from codey.research.tools import ResearchTools
 
@@ -834,26 +835,36 @@ class KernelContext:
         self.session.turn = state.turn
         previous = state.counters.progress
         progress = KernelProgress(self.transport.stagnant_turns, snapshot=previous)
-        progress.observe(results, self.session, batch_id=action.delivery_batch_id)
+        facts, cycle = self._project_check_observations(results)
+        progress.observe(results, self.session, batch_id=action.delivery_batch_id,
+                         check_facts=facts, check_cycle=cycle.key if cycle is not None else "")
         self.sink.delivery_batch_id = action.delivery_batch_id
         self.sink.record_progress(previous, progress.snapshot())
 
-    def _project_check_reminder(self, results: Sequence[ToolResult]) -> str:
+    def _project_check_observations(
+        self, results: Sequence[ToolResult],
+    ) -> tuple[dict[int, ProjectCheckComparison], ProjectCheckCycle | None]:
         if not self.session.project:
-            return ""
-        from codey.operations.progress_comparison import ProjectCheckComparison, compare_project_check
+            return {}, None
+        from codey.operations.progress_comparison import compare_project_check
         from codey.operations.tool_tasks import settled_check_for_progress
 
         receipts = self.session._memory_results
+        cached: dict[int, ProjectCheckComparison | None] = {}
 
         def compare(result: ToolResult) -> ProjectCheckComparison | None:
+            key = id(result)
+            if key in cached:
+                return cached[key]
             execution = settled_check_for_progress(self.durable, result, owner_task_id=self.sink.run_id, receipts=receipts)
-            if execution is None:
-                return None
-            return compare_project_check(execution, session=self.session, store=self.sink.managed_outputs,
-                                         session_id=self.sink.session_id)
+            fact = compare_project_check(execution, session=self.session, store=self.sink.managed_outputs,
+                                         session_id=self.sink.session_id) if execution is not None else None
+            cached[key] = fact
+            return fact
 
-        return project_check_feedback(results, receipts, compare)
+        facts = {index: fact for index, result in enumerate(results) if (fact := compare(result)) is not None}
+        cycle = project_check_cycle(results, receipts, compare) if facts else None
+        return facts, cycle
 
     def deliver_results(self, view: SessionView, action: RuntimeAction) -> None:
         state = view.state
@@ -879,8 +890,9 @@ class KernelContext:
             self.advance(state, operation_payload.LEAF_COMPLETION_PENDING)
             return
         progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)
-        if self.cancelled() or progress.stopped or turn >= self.session.max_turns:
-            reason = "stopped" if self.cancelled() else "no_progress" if progress.stopped else "max_turns"
+        cancelled = self.cancelled()
+        if cancelled or turn >= self.session.max_turns or progress.stopped:
+            reason = "stopped" if cancelled else "max_turns" if turn >= self.session.max_turns else "no_progress"
             summary = {"stopped": "stopped", "no_progress": "stopped after repeated tool results without progress",
                        "max_turns": self.session.last_done_text or "max turns reached"}[reason]
             from codey.operations.kernel_control import no_progress_result
@@ -904,7 +916,10 @@ class KernelContext:
                 self.execution.research_tools.store if self.execution.research_tools is not None else None,
                 self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research_scope,
                 tool_names=snapshot.tool_names, provider=self.provider)
-        reminder = self._project_check_reminder(results) or progress.repeat_feedback()
+        check_cycle = None
+        if progress.warning_batch_id == action.delivery_batch_id:
+            _, check_cycle = self._project_check_observations(results)
+        reminder = check_cycle.feedback if check_cycle is not None else progress.repeat_feedback()
         if reminder:
             from codey.operations.browser_task_handoff import observation_recovery_handoff
             from codey.operations.progress_comparison import progress_comparison
