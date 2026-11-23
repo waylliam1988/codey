@@ -168,7 +168,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              explanation_schema: JsonObject | None = None,
              requested_capabilities: tuple[str, ...] | None = None,
              project_files: Mapping[str, str] | None = None, intent_override: str | None = None,
-             source_pages: Mapping[str, str] | None = None) -> dict[str, object]:
+             source_pages: Mapping[str, str | Callable[[Path], str]] | None = None,
+             independent_score: Callable[[Path, Path, str], JsonObject] | None = None) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     project_task = mode in {"hybrid", "project"}
     provider = BrowserSearchProvider(headless=True)
@@ -185,6 +186,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
     changed_after_read = False
     version_check_reached = False
     result_file: Path | None = None
+    project: Path | None = None
     build_snapshot = kernel_protocol.build_turn_snapshot
 
     def restored_snapshot(session: KernelSessionView, *, native: bool = False) -> TurnSnapshot:
@@ -248,6 +250,9 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
     def route_document(route: Route) -> None:
         navigations.append(route.request.url)
         if source_pages is not None and (body := source_pages.get(route.request.url)) is not None:
+            if callable(body):
+                assert project is not None
+                body = body(project)
             route.fulfill(status=200, content_type="text/html", body=body)
             return
         if source_failure and source_status == 200:
@@ -357,6 +362,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
         task = task_transform(task)
     (directory / "task.txt").write_text(task, encoding="utf-8")
     try:
+        score: JsonObject | None = None
         with tempfile.TemporaryDirectory(prefix="codey-browser-live-project-") as temporary, ExitStack() as stack:
             project = Path(temporary)
             result_file = project / "result.json"
@@ -387,7 +393,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             sequence = (require_browser_research_sequence(url=URL, condition="text", value="鱼丸"),) if research_sequence else ()
             file_fields = tuple(require_browser_file_field(url=URL, prefix=prefix, suffix=suffix, path="result.json",
                 pointer=pointer, value_type=kind) for prefix, suffix, pointer, kind in (
-                    ("鱼丸净重为 ", " 克。", "/amount", "number"), ("记录校验码 ", "。", "/code", "string"))) if project_task else ()
+                    ("鱼丸净重为 ", " 克。", "/amount", "number"), ("记录校验码 ", "。", "/code", "string"))) if project_task and independent_score is None else ()
             waits = (require_tool_success("browser_wait", via="codemode", arguments={
                 "condition": "text", "value": "UPLOAD_BYTES_82"}),) if upload_file and explicit_wait else ()
             output_schema: JsonObject = (explanation_schema if explanation_schema is not None else
@@ -427,6 +433,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                 final_files = {name: (project / name).read_text(encoding="utf-8") for name in project_files
                                if (project / name).is_file()}
                 (directory / "project-files.json").write_text(json.dumps(final_files, ensure_ascii=False), encoding="utf-8")
+            if independent_score is not None:
+                score = independent_score(project, directory, result.stop_reason)
         terminal = next((row for row in reversed(events) if row.get("type") == "task_done"), None)
         answer = str(terminal.get("summary") or "") if terminal is not None else ""
         successful = {str(row.get("tool_name")) for row in events if row.get("type") == "tool" and row.get("ok") is True}
@@ -459,7 +467,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
         conflict_recovered = (changed_after_read and audit["true_stale_conflicts"] == 1
                               and audit["fresh_read_recovery"] is True)
         submission_ready = has_submission_ready_request(directory) if research_sequence else False
-        passed = (result.stop_reason == "done" and required <= successful and facts_match
+        passed = (result.stop_reason == "done" and (not declare_required_tools or required <= successful) and facts_match
                   and (not reread or reads >= 2)
                   and (not stale_edit or conflict_recovered)
                   and (not structured or metadata_matches)
@@ -481,6 +489,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             passed = result.stop_reason == "done" and "open_url" in successful and SOURCE_SUCCESS_MARKER in answer
         elif source_failure:
             passed = result.stop_reason == "blocked" and bool(source_failures)
+        if score is not None:
+            passed = score.get("passed") is True
         summary: dict[str, object] = {"mode": mode, "passed": passed, "stop_reason": result.stop_reason,
             "successful_tools": sorted(successful), "answer": answer, "project_result": artifact, "navigations": navigations,
             "source_reads": reads, "failed_edits": failed_edits, "changed_after_read": changed_after_read,
@@ -500,6 +510,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                            conflict_injected=changed_after_read, conflict_recovery_covered=conflict_recovered,
                            conflict_coverage="recovered" if conflict_recovered else
                            "not_recovered" if changed_after_read else "not_injected" if version_check_reached else "not_reached")
+        if score is not None:
+            summary["independent_score"] = score
         if isinstance(explanation, str):
             summary["explanation_quality"] = explanation_quality
             summary["raw_explanation_preserved"] = bool(recording.proposals) and explanation == recording.proposals[-1]["raw_summary"]

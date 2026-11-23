@@ -47,7 +47,7 @@ from codey.toolchain.tool_spec import (
 from codey.types.json_value import JsonValue, ToolArgs, canonical_json_object, decode_json_object
 
 MAX_NATIVE_CALLS_PER_TURN = 8
-InputContractVersion: TypeAlias = Literal[11, 12, 13, 14, 15, 16, 17, 18]
+InputContractVersion: TypeAlias = Literal[11, 12, 13, 14, 15, 16, 17, 18, 19]
 
 if TYPE_CHECKING:
     from codey.completion.verification_policy import VerificationCandidate
@@ -168,6 +168,7 @@ class TurnSnapshot:
     browser_fill_text: str | None = None
     browser_references: BrowserReferences | None = None
     project_instructions: tuple[ProjectInstructionBinding, ...] = ()
+    navigation_verifies: bool = False
 
     @property
     def bound_source_url(self) -> str | None:
@@ -207,7 +208,8 @@ class TurnSnapshot:
                                               set(self.nested_tool_names))
         purposes = tuple(purpose for purpose in browser_followups.PURPOSES if purpose in plans)
         return tuple(browser_followups.model_spec(spec, self.browser_fill_text, click_purposes=purposes,
-                     navigation_observes=self.navigation_observes) for spec in specs)
+                     navigation_observes=self.navigation_observes,
+                     navigation_verifies=self.navigation_verifies) for spec in specs)
 
 
 def render_snapshot_contract(snapshot: TurnSnapshot) -> str:
@@ -879,7 +881,9 @@ def _lower_bound_inputs(
                     code = browser_followups.DIRECT_REF + browser_followups.FILL + browser_followups.OBSERVE
                 elif name == "browser_navigate" and snapshot.navigation_observes:
                     inputs = dict(args)
-                    code = browser_followups.NAVIGATE
+                    verify = snapshot.navigation_verifies and (args.get("target") == "task"
+                             or args.get("url") == snapshot.task_navigation_url)
+                    code = browser_followups.NAVIGATE_VERIFY if verify else browser_followups.NAVIGATE
                 elif name == "browser_wait" and args.get("condition") == "text_changed" and args.get("run_in_background") is not True:
                     inputs = dict(args)
                     code = "const action=unwrap(await tools.browser_wait(inputs));" + browser_followups.OBSERVE

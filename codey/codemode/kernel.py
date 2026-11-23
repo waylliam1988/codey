@@ -579,9 +579,13 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
 
         def plan_patch(files: tuple[JsonObject, ...], indices: tuple[int, ...]) -> tuple[JsonObject, ...]:
             from codey.codemode.patch import preflight_patch
+            from codey.operations.project_delivery import edit_scope_violation, project_write_basis
 
             if project_path is None or not allow_writes or snapshot.input_binding is not None:
                 raise ValueError("patch requires the ordinary project write contract")
+            _, error = project_write_basis(session)
+            if error:
+                raise ValueError(error)
 
             def receipt(index: int) -> ToolResult | None:
                 if repair_context is not None:
@@ -594,6 +598,8 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             patch_plans[targets] = ""
             pending: list[str] = []
             for index, target in targets:
+                if violation := edit_scope_violation(project_path, target, session.policy.edit_scope):
+                    raise ValueError(violation)
                 settled = receipt(index)
                 if settled is not None and settled.ok and settled.call.name == "edit" and settled.call.args.get("path") == target:
                     continue

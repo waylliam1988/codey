@@ -564,8 +564,10 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
     if execution_check is not None:
         checks.append(execution_check)
     from codey.operations.project_completion_checks import project_evidence_checks
+    from codey.operations.project_delivery import project_delivery_checks
 
     checks.extend(project_evidence_checks(session, context))
+    checks.extend(project_delivery_checks(session, context.browser_document))
     from codey.operations.explicit_execution_requirements import requested_output_read_check
 
     requested_read = requested_output_read_check(session, context.task or session.task_text)
@@ -592,7 +594,9 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
                       or _required_checks_verdict(session, deduped, required_checks.evaluations))
     if required_block is not None:
         feedback = research_completion_feedback(session, text, context, deduped)
-        return replace(required_block, followup=required_block.followup + ("\n\n" + feedback if feedback else ""))
+        verification = (_verification_feedback(session, context) if any(
+            row.check_id == "relevant_verification" and row.status in {CHECK_FAIL, CHECK_NOT_RUN} for row in deduped) else "")
+        return replace(required_block, followup=required_block.followup + verification + ("\n\n" + feedback if feedback else ""))
     deduped = required_checks.proof_checks(deduped)
     capacity_block = _proof_capacity_verdict(deduped, publication=profile == "research" and report is not None)
     if capacity_block is not None:
@@ -656,7 +660,7 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
     return GateVerdict(complete=False, followup=followup, proof=proof)
 
 def _verification_feedback(session: TaskSession, context: CompletionContext) -> str:
-    scope = tuple(dict.fromkeys((*context.scope_files, *session.edited_files)))
+    scope = tuple(dict.fromkeys((*context.scope_files, *session.verification_paths)))
     selected = resolve_verification_requirement(session, context, scope)
     if isinstance(selected, VerificationPlan):
         return verification_plan_feedback(session, context, selected)

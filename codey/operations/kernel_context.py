@@ -439,7 +439,8 @@ class KernelContext:
 
             bindings, instructions = instruction_handoff(
                 self.execution.project_path, self.session.read_files, self.session._memory_results)
-            snapshot = replace(snapshot, input_contract_version=18, project_instructions=bindings)
+            version = snapshot.input_contract_version if snapshot.input_contract_version >= 18 else 18
+            snapshot = replace(snapshot, input_contract_version=version, project_instructions=bindings)
         return snapshot, "\n\n".join(part for part in (assistance, instructions, hint) if part)
 
     def freeze(self, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int, prompt: str = "",

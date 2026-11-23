@@ -2,13 +2,19 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import html
 import json
-from dataclasses import replace
+import re
+import sys
+from dataclasses import dataclass, replace
 from pathlib import Path
 
-from codey.types.json_value import parse_json_object
-from tools.browser_production_live_gate import URL, run_case, select_target
-from tools.completion_artifact_audit import tool_receipts
+from codey.research.ledger_receipts import source_observation
+from codey.runtime.core import cancellation
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
+from tools.browser_production_live_gate import HTML, URL, run_case, select_target
+from tools.completion_artifact_audit import EffectReceipt, tool_receipts
 from tools.completion_explanation_ab import Target
 
 DOC_URL = "https://example.com/production-record-format"
@@ -24,6 +30,142 @@ FILES = {
     "package.json": '{"type":"module","scripts":{"test":"node web/test.mjs"}}',
 }
 
+NATURAL_VIEW_URL = "https://example.com/atlas/current-application"
+NATURAL_FORMAT_URL = "https://example.com/atlas/record-specification"
+NATURAL_FORMAT = ("<h1>Atlas record specification</h1><p>The stored JSON has exactly two fields, amount and code. "
+                  "Amount is an integer number of grams. The record code is a case-sensitive string. "
+                  "Locality selects the source record and is not stored in the JSON.</p>")
+NATURAL_FILES = {
+    **FILES,
+    "service/test_core.py": FILES["service/test_core.py"].replace("173", "347"),
+    "web/test.mjs": FILES["web/test.mjs"].replace("QUARTZ_851", "CEDAR_947"),
+    "AGENTS.md": (
+        "# Atlas workspace rules\n\n"
+        "Read README.md for the record specification and the updated application page. "
+        "Read the linked record specification before changing stored values.\n"
+        "Keep the existing amount and code fields. The stored JSON record, Python service, "
+        "and web adapter must agree. Preserve the existing test files. Verify the running "
+        "application page after the edits and report what it actually displays.\n"
+    ),
+    "README.md": (
+        "# Atlas record application\n\n"
+        "The saved fishball record lives in result.json. The Python service exposes its amount "
+        "as AMOUNT in service/core.py. The web adapter exposes its code in web/component.ts.\n"
+        "The saved values and both public values must agree.\n"
+        "Record JSON fields in `result.json`: `amount`, `code`\n"
+        "Record interface: `result.json`\n"
+        "Record interface: `service/core.py`\n"
+        "Record interface: `web/component.ts`\n"
+        f"Record specification: {NATURAL_FORMAT_URL}\n"
+        f"Application browser page: {NATURAL_VIEW_URL}\n"
+        "The existing project tests are under service/ and web/.\n"
+    ),
+}
+_BUSINESS_FILES = ("result.json", "service/core.py", "web/component.ts")
+
+
+@dataclass(frozen=True)
+class NaturalMixedOracle:
+    amount: int = 347
+    code: str = "CEDAR_947"
+    record_url: str = URL
+    specification_url: str = NATURAL_FORMAT_URL
+    application_url: str = NATURAL_VIEW_URL
+
+
+_NATURAL_ORACLE = NaturalMixedOracle()
+
+
+def _application_version(project: Path) -> str:
+    return hashlib.sha256(b"\0".join((project / path).read_bytes() for path in _BUSINESS_FILES)).hexdigest()[:16]
+
+
+def _verified_application_page(project: Path) -> str:
+    record = parse_json_object((project / "result.json").read_text(encoding="utf-8"))
+    return ("<h1>Atlas application record</h1>"
+            f"<p>Build {_application_version(project)}.</p>"
+            f"<p>Mass: {html.escape(str(record.get('amount')))} g.</p>"
+            f"<p>Code: {html.escape(str(record.get('code')))}.</p>")
+
+
+def _source_text(row: EffectReceipt) -> tuple[str, str]:
+    receipt = row.result
+    if not receipt.ok or not receipt.canonical.get("read_passages"):
+        return "", ""
+    try:
+        source, _, _ = source_observation(receipt.canonical.get("research_observation"))
+    except ValueError:
+        return "", ""
+    return source.final_url, receipt.model_text
+
+
+def _hidden_checks(project: Path) -> JsonObject:
+    commands = (
+        ("python", [sys.executable, "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider"], project / "service"),
+        ("node", ["node", "--test", "web/test.mjs"], project),
+    )
+    results: JsonObject = {}
+    for name, args, cwd in commands:
+        proc = cancellation.run_process(args, cwd=cwd, timeout=40, capture_limit_bytes=16000)
+        results[name] = {"exit": proc.returncode, "output": proc.stdout + proc.stderr}
+    return results
+
+
+def _first_request(directory: Path) -> JsonObject:
+    wire = directory / "provider.jsonl"
+    if not wire.is_file():
+        return {}
+    for line in wire.read_text(encoding="utf-8").splitlines():
+        row = parse_json_object(line)
+        if row.get("type") == "wire_attempt" and row.get("phase") == "request":
+            return decode_json_object(row["payload"])
+    return {}
+
+
+def score_natural_mixed(project: Path, directory: Path, stop_reason: str,
+                        oracle: NaturalMixedOracle = _NATURAL_ORACLE) -> JsonObject:
+    receipts = tool_receipts(directory / "state")
+    edited = [index for index, row in enumerate(receipts)
+              if row.result.call.name == "edit" and row.result.ok and row.result.audit.get("changed") is True]
+    protected = all((project / name).is_file() and (project / name).read_text(encoding="utf-8") == text
+                    for name, text in NATURAL_FILES.items() if name not in _BUSINESS_FILES)
+    record = parse_json_object((project / "result.json").read_text(encoding="utf-8"))
+    values_correct = record == {"amount": oracle.amount, "code": oracle.code}
+    tests = _hidden_checks(project) if protected else {}
+    checks_passed = bool(tests) and all(decode_json_object(row)["exit"] == 0 for row in tests.values())
+    sources: dict[str, JsonValue] = {}
+    page_ref = ""
+    build = _application_version(project)
+    events = [parse_json_object(line) for line in (directory / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    answer = next((str(row.get("summary", "")) for row in reversed(events) if row.get("type") == "task_done"), "")
+    for index, row in enumerate(receipts):
+        url, body = _source_text(row)
+        if edited and index < edited[0]:
+            if url == oracle.specification_url and "integer" in body and "grams" in body and "string" in body:
+                sources[url] = row.identity
+            if url == oracle.record_url and str(oracle.amount) in body and oracle.code in body:
+                sources[url] = row.identity
+        if (edited and index > edited[-1] and url == oracle.application_url and build in body
+                and f"{oracle.amount} g" in body and oracle.code in body):
+            page_ref = row.identity
+    citations = {oracle.specification_url, oracle.record_url}
+    cited = citations == set(sources) and all(url in answer for url in citations)
+    first = _first_request(directory)
+    initial_messages = json.dumps(first.get("messages", []), ensure_ascii=False)
+    initial_clean = bool(first) and not re.search(rf"\b{oracle.amount}\b", initial_messages) and all(
+        token not in initial_messages for token in (oracle.code, "#city", "#record", "pytest -q -p no:cacheprovider"))
+    written = {path.replace("\\", "/").removeprefix("./") for index in edited
+               if isinstance(path := receipts[index].result.call.args.get("path"), str)}
+    checks_current = bool(edited) and any(index > edited[-1] and row.result.call.name == "run"
+        and row.result.ok and row.exit_code == 0 for index, row in enumerate(receipts))
+    checks = {"initial_payload_clean": initial_clean, "protected_files": protected, "business_values": values_correct,
+              "requested_files_written": set(_BUSINESS_FILES) <= written, "independent_checks": checks_passed,
+              "model_verified": checks_current, "page_state_verified": bool(page_ref), "cited_sources": cited,
+              "task_completed": stop_reason == "done"}
+    first_missing = next((name for name, okay in checks.items() if not okay), "")
+    return {"passed": not first_missing, "checks": {key: value for key, value in checks.items()},
+            "first_missing": first_missing, "build": build, "page_ref": page_ref, "source_refs": sources, "tests": tests}
+
 
 def mixed_task(_: str) -> str:
     return (
@@ -38,7 +180,24 @@ def mixed_task(_: str) -> str:
     )
 
 
-def mixed_run(directory: Path, target: Target) -> dict[str, object]:
+def natural_mixed_task(_: str) -> str:
+    return (f"Update the application's stored fishball record for 福州 to match the live record at {URL}. "
+            "The values exposed by the service and web adapter should match that record too. "
+            "Follow the project's documented record format. The existing service and web tests must both pass. "
+            "Verify the updated application in its browser page. Cite the record and format you actually inspected.")
+
+
+def mixed_run(directory: Path, target: Target, *, natural: bool = False) -> dict[str, object]:
+    if natural:
+        oracle = _NATURAL_ORACLE
+        fixture = HTML.replace("173", str(oracle.amount)).replace("QUARTZ_851", oracle.code)
+        report = run_case(directory, "hybrid", target, intent_override="auto", task_transform=natural_mixed_task,
+            project_files=NATURAL_FILES, fixture_html=fixture, max_turns=25,
+            declare_required_tools=False, additional_required_tools=(),
+            source_pages={NATURAL_FORMAT_URL: NATURAL_FORMAT, NATURAL_VIEW_URL: _verified_application_page},
+            independent_score=score_natural_mixed)
+        (directory / "mixed-summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        return report
     report = run_case(directory, "hybrid", target, restore_snapshots=True, intent_override="auto",
         task_transform=mixed_task, project_files=FILES, source_pages={DOC_URL: DOC}, max_turns=25,
         additional_required_tools=("open_url", "run"))
@@ -58,13 +217,19 @@ def mixed_run(directory: Path, target: Target) -> dict[str, object]:
     return report
 
 
+class Options(argparse.Namespace):
+    run_dir: Path
+    natural: bool
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run_dir", type=Path)
-    args = parser.parse_args()
-    directory: Path = args.run_dir
+    parser.add_argument("--natural", action="store_true")
+    args = parser.parse_args(namespace=Options())
+    directory = args.run_dir
     target = replace(select_target(180, "http://127.0.0.1:5001/v1"), context_window_tokens=65536)
-    report = mixed_run(directory, target)
+    report = mixed_run(directory, target, natural=args.natural)
     print(json.dumps(report, ensure_ascii=True))
     return 0 if report.get("passed") is True else 1
 

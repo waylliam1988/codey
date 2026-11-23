@@ -59,14 +59,15 @@ def _new_session(project: Path) -> TaskSession:
                        task_kind="project", project=str(project), max_turns=8)
 
 
-def fixture(tmp_path: Path) -> tuple[Path, Path, Path, RuntimeMutationLine, ManagedOutputStore,
+def fixture(tmp_path: Path, *, task: str = "recovery fixture", policy: TaskPolicy | None = None,
+            ) -> tuple[Path, Path, Path, RuntimeMutationLine, ManagedOutputStore,
                                      WorkspaceRevisionStore, KernelEffectSink, TaskSession]:
     project, state, logdir = (tmp_path / name for name in ("project", "state", "log"))
     for directory in (project, state, logdir):
         directory.mkdir(parents=True)
     (project / "a.py").write_text("needle\n", encoding="utf-8")
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
-    durable.admit_input(conversation_id="s", request_id="request-r", task_id="r", text="recovery fixture",
+    durable.admit_input(conversation_id="s", request_id="request-r", task_id="r", text=task,
                         provider_snapshot={"provider_id": "local", "model_id": "fixture"},
                         task_state={"task_kind": "project", "project": str(project)})
     durable.start_task("r", state={"task_kind": "project"})
@@ -78,6 +79,8 @@ def fixture(tmp_path: Path) -> tuple[Path, Path, Path, RuntimeMutationLine, Mana
     sink = KernelEffectSink(mutations, session_id="s", run_id="r", provider_id="local",
                             managed_outputs=managed, durable=durable)
     session = _new_session(project)
+    if policy is not None:
+        session.policy, session.task_text = policy, task
     from codey.operations.recovery import record_entry_policy
 
     record_entry_policy(mutations, session_id="s", run_id="r", policy=session.policy, durable=durable)

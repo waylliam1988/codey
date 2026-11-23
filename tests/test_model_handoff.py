@@ -79,6 +79,62 @@ def test_new_handoff_sends_to_the_explicit_model_with_original_read_ref(
         assert len([row for row in tool_receipts(state_home) if row.result.call.name == "read_file"]) == 1
 
 
+@pytest.mark.usefixtures("scripted_local_api_connection", "no_external_advisor_models")
+def test_handoff_after_a_failed_check_verifies_the_repaired_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "value.py").write_text("VALUE = 23\n", encoding="utf-8")
+    tests = "from value import VALUE\n\ndef test_current_value():\n    assert VALUE == 29\n"
+    (project / "test_value.py").write_text(tests, encoding="utf-8")
+    (project / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    state_home = tmp_path / "state"
+    url = "http://scripted.test/v1"
+    install_http(monkeypatch, iter((
+        {"tool": "run", "args": {"command": "python -m pytest"}},
+        {"tool": "done", "args": {"summary": "The service check failed."}},
+        {"tool": "edit", "args": {"path": "test_value.py", "replacements": [{"old_string": "29", "new_string": "23"}]}},
+        {"tool": "read_file", "args": {"path": "value.py"}},
+        {"tool": "edit", "args": {"path": "value.py", "replacements": [{"old_string": "23", "new_string": "29"}]}},
+        {"tool": "run", "args": {"command": "python -m pytest"}},
+        {"tool": "done", "args": {"summary": "Updated the service value. The existing tests now pass."}},
+    )), native=False)
+    monkeypatch.setattr("codey.app.provider_services.provider_availability", lambda: {"local": True})
+    monkeypatch.setattr("codey.app.provider_services.provider_tab_availability", lambda: {})
+
+    def run(model: str, task: str, *, previous: str = "") -> str:
+        output = tmp_path / model
+        output.mkdir()
+        provider = ExperimentProvider(Target(url, model, 123, 15), output, fixed_acquisition=False)
+        try:
+            result = run_headless(HeadlessRequest(project, task, provider_id="local", session_id="failed-check",
+                state_home=state_home, model_selection={"model": model, "base_url": url},
+                project_changes_required=bool(previous), input=HandoffRun(previous, task) if previous else None),
+                emit_jsonl=lambda _row: None, connect_provider=lambda _name, *, port: provider)
+            assert result.stop_reason == "done", result
+            return result.run_id
+        finally:
+            provider.close()
+
+    original = run("before", "Run the existing project tests and report the result. Do not change files.")
+    with closing(AppContext(state_home, start_scheduler=False)) as state:
+        workers = state.durable.owned_tasks(original)
+        failed, = {effect.effect_id for worker in workers for effect in state.durable.settled_effects(worker.task_id)
+                   if effect.intent.get("tool_name") == "run" and effect.status == "error"}
+    revised = run("after", "Correct the service value so the existing tests pass. Only edit value.py.", previous=original)
+    assert revised != original
+    first = requests(tmp_path / "after")[0]
+    assert first["model"] == "after" and failed in str(first["messages"]) and '"exit_code":1' in str(first["messages"])
+    assert (project / "value.py").read_text(encoding="utf-8") == "VALUE = 29\n"
+    assert (project / "test_value.py").read_text(encoding="utf-8") == tests
+    receipts = tool_receipts(state_home)
+    assert len({row.identity for row in receipts if row.result.call.name == "edit" and row.result.ok}) == 1
+    assert any(row.result.call.name == "edit" and not row.result.ok and "authorized editing only value.py" in row.result.model_text
+               for row in receipts)
+    assert any(row.result.call.name == "run" and row.result.ok for row in receipts)
+
+
 @pytest.mark.parametrize("name,args", [("browser_click", {"ref": "button"}), ("run", {"command": "pytest"})])
 def test_model_handoff_rejects_active_work_and_only_exposes_uncertain_actions_for_observation(
     tmp_path: Path, name: str, args: JsonObject,

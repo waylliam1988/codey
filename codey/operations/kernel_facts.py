@@ -6,7 +6,12 @@ import re
 from dataclasses import replace
 
 from codey.operations.kernel_errors import EffectSettlementFailed
-from codey.operations.kernel_provenance import _kernel_workspace_identity_of, _session_workspace_identity
+from codey.operations.kernel_provenance import (
+    _kernel_workspace_identity_of,
+    _session_workspace_identity,
+    _trusted_workspace_proof,
+    attach_trusted_workspace,
+)
 from codey.operations.kernel_result import _call_args_digest, denied_before_execution, strict_exit_code_or_none
 from codey.operations.task_session import TaskSession
 from codey.policies.tool_requirement import argument_digest
@@ -133,7 +138,9 @@ def bind_source_identity(session: TaskSession, call: ToolCall, result: ToolResul
     source, _, _ = source_observation(result.canonical.get("research_observation"))
     if "source_id" in result.canonical:
         return result
-    return replace(result, canonical={**result.canonical, "source_id": session.source_id_for(source.final_url)})
+    bound = replace(result, canonical={**result.canonical, "source_id": session.source_id_for(source.final_url)})
+    identity = _kernel_workspace_identity_of(result)
+    return attach_trusted_workspace(bound, _trusted_workspace_proof(identity, "in_memory_kernel_result")) if identity is not None else bound
 
 
 def _record_knowledge_fact(session: TaskSession, result: ToolResult) -> None:

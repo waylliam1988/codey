@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from codey.policies.capabilities import BROWSER_CAPABILITIES, KNOWN_TASK_GRANTS
 
 TASK_POLICY_VERSION = 1
+TASK_POLICY_FILE_SCOPE_VERSION = 2
 _TASK_POLICY_FIELDS = frozenset({
     "grants", "strict_research", "sources_open_required", "required_checks",
     "source", "version", "denied_capabilities",
@@ -89,11 +90,15 @@ class TaskPolicy:
     version: int = TASK_POLICY_VERSION
     sources_open_required: bool = False
     denied_capabilities: frozenset[str] = frozenset()
+    edit_scope: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "grants", frozenset[str](self.grants))
         object.__setattr__(self, "denied_capabilities", frozenset[str](self.denied_capabilities))
         object.__setattr__(self, "required_checks", tuple[str, ...](self.required_checks))
+        object.__setattr__(self, "edit_scope", tuple[str, ...](self.edit_scope))
+        if self.edit_scope and self.version != TASK_POLICY_FILE_SCOPE_VERSION:
+            raise ValueError("file scope requires the corresponding task policy version")
 
     def allows(self, grant: object) -> bool:
         text = _normalize_grant(grant)
@@ -112,6 +117,7 @@ class TaskPolicy:
             "source": self.source,
             "version": self.version,
             "denied_capabilities": sorted(self.denied_capabilities or frozenset()),
+            **({"edit_scope": list(self.edit_scope)} if self.version == TASK_POLICY_FILE_SCOPE_VERSION else {}),
         }
 
     @staticmethod
@@ -119,13 +125,14 @@ class TaskPolicy:
         if not isinstance(payload, dict):
             raise ValueError("task policy must be an object")
         row: dict[object, object] = payload
-        if set(row) != _TASK_POLICY_FIELDS:
-            raise ValueError(f"task policy fields differ: {set(row) ^ _TASK_POLICY_FIELDS}")
-        version = row["version"]
-        if type(version) is not int or version != TASK_POLICY_VERSION:
+        version = row.get("version")
+        if type(version) is not int or version not in {TASK_POLICY_VERSION, TASK_POLICY_FILE_SCOPE_VERSION}:
             # 冷启动无兼容负担：未知版本直接拒绝，由调用方 fail-closed，
             # 绝不按当前格式继续解释。
             raise ValueError(f"unsupported task policy version: {version!r}")
+        expected = _TASK_POLICY_FIELDS | ({"edit_scope"} if version == TASK_POLICY_FILE_SCOPE_VERSION else set())
+        if set(row) != expected:
+            raise ValueError(f"task policy fields differ: {set(row) ^ expected}")
         grants = _restored_grants(row["grants"], "grants")
         denied = _restored_grants(row["denied_capabilities"], "denied_capabilities")
         raw_checks = row["required_checks"]
@@ -143,14 +150,18 @@ class TaskPolicy:
         source = row["source"]
         if not isinstance(source, str):
             raise ValueError("source must be a string")
+        from codey.types.json_value import require_json_strings
+
+        edit_scope = tuple(require_json_strings(row["edit_scope"], "edit_scope")) if version == TASK_POLICY_FILE_SCOPE_VERSION else ()
         return TaskPolicy(
             grants=frozenset(grants),
             strict_research=strict,
             sources_open_required=sources_open_required,
             required_checks=tuple(checks),
             source=source,
-            version=TASK_POLICY_VERSION,
+            version=version,
             denied_capabilities=frozenset(denied),
+            edit_scope=edit_scope,
         )
 
 

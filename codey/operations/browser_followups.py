@@ -72,11 +72,13 @@ def explicit_fill_text(task: str) -> str | None:
 
 
 def model_spec(spec: ToolSpec, fill_text: str | None, *, click_purposes: tuple[str, ...] = PURPOSES,
-               navigation_observes: bool = False) -> ToolSpec:
+               navigation_observes: bool = False, navigation_verifies: bool = False) -> ToolSpec:
     if spec.name == "browser_navigate" and navigation_observes:
+        read = (" When navigating to the task's application page, also read its current contents."
+                if navigation_verifies else "")
         return replace(spec, description=spec.description + " After navigation, automatically observe the actual final page "
             "and return its current control refs in a child snapshot receipt. If observation fails, the navigation "
-            "receipt still records its outcome; recover observation without repeating a delivered navigation.")
+            "receipt still records its outcome; recover observation without repeating a delivered navigation." + read)
     if spec.name == "browser_wait":
         return replace(spec, description=spec.description + " A successful foreground text_changed call automatically "
             "observes the current page in a child snapshot receipt. Use its fresh control refs for the next action. "
@@ -111,7 +113,9 @@ def allows_surface(snapshot: TurnSnapshot, direct_names: tuple[str, ...] = DIREC
 
 
 OBSERVE = "unwrap(await tools.browser_snapshot({}));return action;"
-NAVIGATE = "const action=unwrap(await tools.browser_navigate(inputs));" + OBSERVE
+_NAVIGATION = "const action=unwrap(await tools.browser_navigate(inputs));"
+NAVIGATE = _NAVIGATION + OBSERVE
+NAVIGATE_VERIFY = _NAVIGATION + "unwrap(await tools.browser_snapshot({}));return unwrap(await tools.browser_read({}));"
 FILL = "const action=unwrap(await tools.browser_fill({ref,value:inputs.value}));"
 DIRECT_REF = "const ref=inputs.ref;"
 query_click: ContextVar[bool] = ContextVar("query_click", default=False)

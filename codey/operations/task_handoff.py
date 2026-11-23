@@ -18,14 +18,17 @@ if TYPE_CHECKING:
 def report_completes_task(session: TaskSession) -> bool:
     """Only report-only work can propose completion directly from submission."""
     from codey.operations.project_completion_checks import _task_requires_modification
+    from codey.operations.project_delivery import PAGE_AFTER_EDIT
 
     return (not _task_requires_modification(session)
+            and PAGE_AFTER_EDIT not in session.policy.required_checks
             and not session.edited_files)
 
 
 def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                  browser: BrowserSession | None, *,
                  delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
+    from codey.completion.verification_policy import VerificationPlan
     from codey.operations.browser_detail import offer_page_details, offer_query_controls
     from codey.operations.browser_task_handoff import (
         bind_browser_references,
@@ -33,20 +36,67 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
         browser_observation_handoff,
         browser_step,
         browser_task_handoff_for_step,
+        handoff_call,
     )
     from codey.operations.kernel_protocol import offer_browser_call, offer_browser_tools
+    from codey.operations.project_completion_checks import (
+        project_evidence_checks,
+        resolve_verification_requirement,
+        verification_plan_feedback,
+    )
     from codey.operations.research_submission_handoff import research_browser_handoff, research_submission_handoff
+    from codey.runtime.core.models import ToolCall
 
     generation = browser.generation if browser is not None else None
     context = replace(context, browser_document=browser.document_identity() if browser is not None else None)
+    from codey.operations.project_delivery import observed_delivery_links
+
+    links = observed_delivery_links(session)
+    if (links.specification and snapshot.task_navigation_url is not None and session.policy.allows("web.read")
+            and "open_url" in (*snapshot.tool_names, *snapshot.nested_tool_names)):
+        snapshot = replace(snapshot, task_source_url=links.specification)
+    ready_for_page = bool(links.application and session.edited_files and (session.verification_forbidden or any(
+        row.check_id == "relevant_verification" and row.status in {"pass", "not_applicable"}
+        for row in project_evidence_checks(session, context))))
+    if links.application and session.edited_files and snapshot.task_navigation_url is not None:
+        snapshot = replace(snapshot, task_navigation_url=links.application)
     snapshot = offer_browser_tools(snapshot, session)
     snapshot = offer_browser_call(snapshot, session, "browser_navigate")
+    if (ready_for_page and snapshot.task_navigation_url == links.application and snapshot.navigation_observes
+            and "browser_navigate" in snapshot.tool_names and "browser_read" in snapshot.nested_tool_names):
+        snapshot = replace(snapshot, input_contract_version=19, navigation_verifies=True)
     snapshot = bind_browser_references(session, snapshot, context, generation)
     from codey.operations.browser_followups import DIRECT_TOOLS
 
     hints: list[str] = []
     from codey.operations.browser_result_evidence import action_summary
+    from codey.operations.project_delivery import live_record_subject_call, project_delivery_context
 
+    if delivery := project_delivery_context(session, context.browser_document, links):
+        hints.append("User-requested delivery and current evidence:\n" + canonical_json(delivery))
+    if snapshot.task_source_url == links.specification and delivery.get("record_specification") == {"state": "unread"}:
+        hints.append("The observed project documentation names a record specification. "
+                     "Use open_url with target=task to read that specification.")
+    if (ready_for_page
+            and delivery.get("updated_application_page") == {"state": "read the updated application page after the final edit"}):
+        if context.browser_document is not None and context.browser_document.get("url") == links.application:
+            snapshot, read, _ = handoff_call(session, snapshot, ToolCall("browser_read", {}))
+            if read is not None:
+                hints.append("The updated application page is already open. Read its current contents: " + canonical_json(read))
+        else:
+            hints.append("The observed project documentation names the application page. "
+                         "For verification after edits, navigate with target=task and read the opened application page.")
+    elif links.application and session.edited_files and not ready_for_page:
+        hints.append("Finish the requested project changes and get current project checks before verifying the application page.")
+        scope = tuple(dict.fromkeys((*context.scope_files, *session.verification_paths)))
+        plan = resolve_verification_requirement(session, context, scope)
+        if isinstance(plan, VerificationPlan):
+            hints.append(verification_plan_feedback(session, context, plan).strip())
+    if subject := live_record_subject_call(session, snapshot.browser_references, context.browser_document):
+        snapshot, call, _ = handoff_call(session, snapshot, subject)
+        if call is not None:
+            hints.append("The current page has one eligible input for the user's record subject. "
+                         "Fill that input before requesting the result: " + canonical_json(call))
     actions, _refs = action_summary(session.executed, session._memory_results)
     if actions:
         hints.append("Authoritative execution summary derived from committed receipts; reuse these counts and order:\n" + actions)

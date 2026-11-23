@@ -8,16 +8,22 @@ import pytest
 from codey.agents.tools import AgentToolFns
 from codey.codemode.host import CodeModeHost
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.operations.generation_boundary import durable_generation_boundary_callback
+from codey.operations.generation_boundary import (
+    GenerationBoundaryRequest,
+    GenerationBoundaryResult,
+    durable_generation_boundary_callback,
+)
 from codey.operations.kernel_contracts import (
     KernelExecutionDeps,
     KernelObservationDeps,
     KernelRunRequest,
     KernelTransportDeps,
 )
+from codey.operations.project_delivery import documented_verification_paths, observed_delivery_links
 from codey.operations.provider_session import adapt_provider
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_loop import run_task_kernel
+from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.core.models import ToolResult
 from codey.runtime.write.mutation_line import RuntimeMutationLine
@@ -27,6 +33,7 @@ from codey.types.json_value import JsonObject
 from codey.workspace.changes import ChangeTracker, SnapshotStore
 from codey.workspace.task_changes import collect_task_changes
 from tests.test_codemode_replay_authority import _durable, _new_session, fixture
+from tools.p0_mixed_live_gate import NATURAL_FORMAT_URL, NATURAL_VIEW_URL, natural_mixed_task
 
 
 @pytest.mark.parametrize("phase", ["before_admission", "after_admission", "after_write_before_receipt"])
@@ -135,6 +142,80 @@ def test_patch_cold_restart_preserves_settled_write_and_original_baseline(
         changes = collect_task_changes(project, resumed_tracker)
         assert changes["ok"] is True and changes["changed_count"] == 2
         assert "-limit = 12" in str(changes["diff"]) and "+limit = 37" in str(changes["diff"])
+    finally:
+        durable.close()
+
+
+def test_cold_restart_recovers_the_original_project_documentation(tmp_path: Path) -> None:
+    from codey.operations.project_delivery import declared_project_checks
+
+    class Crash(BaseException):
+        pass
+
+    task = natural_mixed_task("")
+    policy = TaskPolicy(frozenset({"control", "project.read", "project.write", "project.verify"}),
+                        required_checks=declared_project_checks(task))
+    project, state, _, line, managed, revisions, sink, session = fixture(tmp_path, task=task, policy=policy)
+    (project / "record.json").write_text('{}', encoding="utf-8")
+    (project / "README.md").write_text(
+        f"Record specification: {NATURAL_FORMAT_URL}\nApplication browser page: {NATURAL_VIEW_URL}\n"
+        "Record interface: `record.json`\n", encoding="utf-8")
+
+    class Provider:
+        native_tools = True
+
+        def __init__(self, before_restart: bool) -> None:
+            self.before_restart = before_restart
+
+        def send_turn(self, *args: object) -> AssistantTurn:
+            assert self.before_restart, "restart may replay the read result but must not re-run the read"
+            return AssistantTurn(tool_calls=(ProviderToolCall("read", "read_file", {"path": "README.md"}),))
+
+        def send_tool_results(self, *args: object) -> AssistantTurn:
+            return AssistantTurn(tool_calls=(ProviderToolCall("done", "done", {"summary": "Stopped here."}),))
+
+        def acknowledge_tool_results(self, *args: object) -> AssistantTurn:
+            return AssistantTurn()
+
+    def request(active: KernelEffectSink, *, cold: bool) -> KernelRunRequest:
+        boundary = durable_generation_boundary_callback(durable=active.durable, session_id="s", task_id="r", sink=active)
+
+        def cut_after_read(action: GenerationBoundaryRequest) -> GenerationBoundaryResult:
+            result = boundary(action)
+            if not cold and original_reads():
+                raise Crash()
+            return result
+
+        return KernelRunRequest(transport=KernelTransportDeps(provider=adapt_provider(Provider(not cold)),
+            run_id="r", provider_id="local", effect_scope="outer", user_task=task),
+            execution=KernelExecutionDeps(project_path=project, tool_fns=AgentToolFns(), workspace_revision_store=revisions),
+            observation=KernelObservationDeps(intent_sink=active, on_boundary=cut_after_read))
+
+    def original_reads() -> set[str]:
+        return {effect.effect_id for effect in _durable(line).settled_effects("r")
+                if effect.intent.get("tool_name") in {"read", "read_file"}}
+
+    with pytest.raises(Crash):
+        run_task_kernel(session, request=request(sink, cold=False))
+    original = original_reads()
+    assert len(original) == 1
+    _durable(line).close()
+    durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
+    try:
+        durable.recover_scheduler_state()
+        if durable.task("r").status == "pending":
+            durable.claim_task("r")
+        resumed = KernelEffectSink(RuntimeMutationLine(durable=durable), session_id="s", run_id="r", provider_id="local",
+                                   managed_outputs=managed, durable=durable)
+        restored = _new_session(project)
+        restored.policy, restored.task_text, restored.max_turns = policy, task, 2
+        outcome = run_task_kernel(restored, request=request(resumed, cold=True))
+        assert {ref for ref, result in restored._memory_results.items() if result.ok and result.call.name == "read_file"} == original, outcome
+        links = observed_delivery_links(restored)
+        assert (links.specification, links.application) == (NATURAL_FORMAT_URL, NATURAL_VIEW_URL)
+        assert documented_verification_paths(restored) == ("record.json",)
+        (project / "README.md").write_text("changed after restart", encoding="utf-8")
+        assert not observed_delivery_links(restored).application and not documented_verification_paths(restored)
     finally:
         durable.close()
 

@@ -140,6 +140,8 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
         payload["task_source_url"] = snapshot.task_source_url
     if snapshot.input_contract_version >= 18:
         payload["project_instructions"] = [rule.to_payload() for rule in snapshot.project_instructions]
+    if snapshot.input_contract_version >= 19:
+        payload["navigation_verifies"] = snapshot.navigation_verifies
     payload["browser_fill_text"] = snapshot.browser_fill_text
     payload["browser_followups"] = snapshot.browser_followups
     payload["browser_references"] = snapshot.browser_references.payload() if snapshot.browser_references else None
@@ -281,8 +283,10 @@ def _snapshot_payload(raw: object) -> tuple[JsonObject, InputContractVersion]:
         expected.add("task_source_url")
     if version >= 18:
         expected.add("project_instructions")
+    if version >= 19:
+        expected.add("navigation_verifies")
     match version:
-        case 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18:
+        case 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19:
             if set(payload) != expected:
                 raise ValueError("invalid captured turn snapshot version/shape")
             return payload, version
@@ -337,6 +341,15 @@ def _restore_project_instructions(payload: JsonObject, policy: TaskPolicy) -> tu
     if len({rule.name for rule in instructions}) != len(instructions) or instructions and not policy.allows("project.write"):
         raise ValueError("invalid captured project instruction scope")
     return instructions
+
+
+def _restore_navigation_verification(payload: JsonObject, navigation_url: str | None, followups: bool,
+                                     names: list[str], nested: list[str]) -> bool:
+    verifies = require_json_boolean(payload.get("navigation_verifies", False), "navigation_verifies")
+    if verifies and (not followups or navigation_url is None
+                     or "browser_navigate" not in names or not {"browser_snapshot", "browser_read"} <= set(nested)):
+        raise ValueError("invalid captured application navigation verification")
+    return verifies
 
 
 def restore_snapshot(payload: object) -> TurnSnapshot:
@@ -446,7 +459,8 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         browser_copy=copy, input_binding=input_binding, task_navigation_url=navigation_url,
         input_contract_version=input_version, task_source_url=source_url,
         browser_followups=followups, browser_fill_text=fill_text, browser_references=references,
-        project_instructions=_restore_project_instructions(payload, policy))
+        project_instructions=_restore_project_instructions(payload, policy),
+        navigation_verifies=_restore_navigation_verification(payload, navigation_url, followups, names, nested))
     from codey.toolchain.constants import PAGE_DETAIL_TOOL
 
     # Native disclosure reads have their own frozen choice contract. They

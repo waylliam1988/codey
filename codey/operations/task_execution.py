@@ -623,11 +623,18 @@ class ExecutionDelegate:
             return ToolOutcome.error(str(exc))
         if self.change_tracker is not None:
             self.change_tracker.capture_before(path)
+        from codey.operations.project_delivery import documented_record_fields, record_field_error
+
         version = args.get("expected_version")
-        if isinstance(version, str):
+        fields = documented_record_fields(self.session, canonical)
+        if isinstance(version, str) or fields:
             from codey.toolchain.runtime import edit_file_at_version
 
-            outcome = edit_file_at_version(project_path, path, edit_blocks, version=version)
+            def validator(content: str) -> str:
+                return record_field_error(canonical, fields, content)
+
+            outcome = edit_file_at_version(project_path, path, edit_blocks, version=version if isinstance(version, str) else "",
+                                           validate_content=validator if fields else None)
         else:
             outcome = self.tool_fns.edit_file(project_path, path, edit_blocks)
         if outcome.ok and outcome.changed and self.change_tracker is not None:
@@ -655,9 +662,12 @@ class ExecutionDelegate:
             self.change_tracker.capture_before(path)
         content = str(args.get("content") or "")
         from codey.operations.file_field_binding import validate_content
+        from codey.operations.project_delivery import documented_record_fields, record_field_error
 
         if self.session is not None:
-            error = validate_content(self.session.policy.required_checks, canonical, content,
+            fields = documented_record_fields(self.session, canonical)
+            error = (record_field_error(canonical, fields, content) if fields else "") or validate_content(
+                self.session.policy.required_checks, canonical, content,
                 self.session.executed, self.session._memory_results,
                 self.browser_session.document_identity() if self.browser_session is not None else None)
             if error:

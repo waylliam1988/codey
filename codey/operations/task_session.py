@@ -132,7 +132,9 @@ class TaskSession:
 
     @property
     def verification_paths(self) -> tuple[str, ...]:
-        return tuple(self.edited_files)
+        from codey.operations.project_delivery import documented_verification_paths
+
+        return tuple(dict.fromkeys((*self.edited_files, *documented_verification_paths(self))))
 
     def record_search(self, query: str) -> None:
         text = (query or "").strip()

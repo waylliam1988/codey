@@ -50,8 +50,9 @@ def authorize_model_handoff(durable: DurableSession, *, request: HandoffRun, tar
         raise ModelHandoffRejected("Select a different API connection or model for handoff.")
     store = RuntimeEffectStore(durable=durable)
     effects = store.load_effects(session_id, source.task_id)
-    effects += tuple(effect for child in children for effect in store.load_effects(session_id, child.task_id)
-                     if _unknown_action(effect))
+    effects += tuple(effect for child in children if child.execution_kind == "tool"
+                     for effect in store.load_effects(session_id, child.task_id)
+                     if effect.intent.effect_category == "tool_call")
     if not request.observe_only and any(_unknown_action(effect) for effect in effects):
         raise ModelHandoffRejected("The original run has an uncertain action. Select observation-only handoff.")
     return source, effects
@@ -78,7 +79,9 @@ def render_model_handoff(source: TaskCheckpoint, effects: tuple[RuntimeEffectPro
             continue
         if canonical_tool_name(intent.tool_name) not in _HANDOFF_TOOLS or settlement is None or len(rows) >= 12:
             continue
-        result = restore_result_receipt(effect, store=outputs, session_id=source.conversation_id, run_id=source.task_id)
+        result = restore_result_receipt(effect, store=outputs, session_id=source.conversation_id, run_id=intent.run_id)
+        if result.kind == "accepted":
+            continue
         row: JsonObject = {"result_ref": intent.effect_id, "tool": result.call.name, "ok": result.ok}
         for key in ("path", "url"):
             if isinstance(value := result.call.args.get(key), str):

@@ -26,6 +26,7 @@ from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_facts import bind_source_identity, project_execution_record, project_result_observation
 from codey.operations.kernel_protocol import frozen_custom_executor_map, frozen_spec_map
 from codey.operations.kernel_provenance import (
+    _kernel_workspace_identity_of,
     _with_trusted_workspace_state,
     sync_workspace_state_after_edit,
 )
@@ -290,16 +291,35 @@ def execute_tool_operation(
     runnable: Mapping[str, ToolExecutor], turn: int, tool_index: int, project_path: Path | None,
     workspace_revision_store: WorkspaceRevisionStore | None = None,
     snapshot: TurnSnapshot | None = None,
+    workspace_ignored_paths: tuple[str, ...] = (),
 ) -> tuple[ToolResult, bool, int | None]:
     """The same business operation and normalization for inline and owned work."""
+    from codey.operations.project_delivery import (
+        PAGE_AFTER_EDIT,
+        ProjectFileBasis,
+        edit_scope_violation,
+        project_file_basis,
+        project_source_binding,
+        project_write_basis,
+    )
     from codey.toolchain.execution_options import split_execution_options
     from codey.workspace.revision import WorkspaceIdentity
 
+    source_basis = None
+    file_basis: ProjectFileBasis | None = None
+    if call.name == "edit":
+        source_basis, error = project_write_basis(session)
+        if error:
+            return _error_result(call, error), False, None
     if (call.name == "edit" and project_path is not None and snapshot is not None
             and isinstance(target := call.args.get("path"), str)):
         from codey.operations.project_instructions import INSTRUCTION_CHANGE, changed_instruction_target
 
         try:
+            if violation := edit_scope_violation(project_path, target, session.policy.edit_scope):
+                return _error_result(call, violation), False, None
+            if source_basis is not None:
+                file_basis = project_file_basis(session, project_path, target, call.args)
             changed = changed_instruction_target(project_path, target, snapshot.project_instructions)
         except (OSError, ValueError) as exc:
             return _error_result(call, str(exc)), False, None
@@ -308,15 +328,25 @@ def execute_tool_operation(
                 canonical={INSTRUCTION_CHANGE: [changed]}, audit={"error_code": INSTRUCTION_CHANGE}), False, None
 
     args, _options = split_execution_options(call.args)
+    if file_basis is not None and file_basis.version and "replacements" in args:
+        expected = file_basis.version.removeprefix("raw:")
+        if args.get("expected_version", expected) != expected:
+            return _error_result(call, "The patch version and selected file receipt disagree."), False, None
+        args = {**args, "expected_version": expected}
     result, ok, code = _run_via_delegate_or_fn(delegate, runnable, session, replace(call, args=args), call.name,
         active_turn=turn, tool_index=tool_index, project_path=project_path)
     result = replace(result, call=call)
+    if ok and source_basis is not None and file_basis is not None:
+        result = replace(result, canonical={**result.canonical,
+            "project_source_basis": project_source_binding(source_basis, file_basis)})
+    verify_run = call.name == "run" and code is not None
+    verify_page = call.name == "browser_read" and ok and PAGE_AFTER_EDIT in session.policy.required_checks
     stable_workspace = True
-    if call.name == "run" and project_path is not None and workspace_revision_store is not None:
-        after = workspace_revision_store.current_state(project_path)
+    if (verify_run or verify_page) and project_path is not None and workspace_revision_store is not None:
+        after = workspace_revision_store.current_state(project_path, ignored_paths=workspace_ignored_paths if verify_page else ())
         stable_workspace = (not after.identity_reason and after.revision == session.workspace_revision
                             and after.fingerprint == session.workspace_fingerprint)
-    if call.name == "run" and code is not None and stable_workspace and WorkspaceIdentity.trusted_pair(
+    if (verify_run or verify_page) and stable_workspace and WorkspaceIdentity.trusted_pair(
             session.workspace_revision, session.workspace_fingerprint).trusted:
         result = _with_trusted_workspace_state(result, revision=session.workspace_revision,
                                               fingerprint=session.workspace_fingerprint)
@@ -795,13 +825,10 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
             with invocation_scope(browser_context):
                 result, ok, exit_code = execute_tool_operation(session, call, delegate=delegate, runnable=runnable,
                     turn=active_turn, tool_index=base_index + offset, project_path=project_path,
-                    workspace_revision_store=workspace_revision_store, snapshot=context.snapshot)
+                    workspace_revision_store=workspace_revision_store, snapshot=context.snapshot,
+                    workspace_ignored_paths=workspace_ignored_paths)
             if call.name.startswith("browser_"):
-                raw = result.canonical.get("value")
-                delivery = decode_json_object(raw).get("delivery") if isinstance(raw, dict) else None
-                result = replace(result, audit={**result.audit, "browser_execution": {
-                    "effect_ref": identity, "elapsed_ms": int((time.monotonic() - started) * 1000),
-                    "phase": "unknown" if delivery == "uncertain" else "finished"}})
+                result = _browser_execution_receipt(result, identity, started)
             # Single settlement per effect: edits defer settlement until the
             # authoritative bump decides the final result.
             edit_done = _settle_edit_with_workspace_bump(
@@ -818,6 +845,19 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
                 continue
             results.append(settle(identity, call, result, ok=ok, exit_code=exit_code))
     return results
+
+
+def _browser_execution_receipt(result: ToolResult, identity: str, started: float) -> ToolResult:
+    workspace_proof = _kernel_workspace_identity_of(result)
+    raw = result.canonical.get("value")
+    delivery = decode_json_object(raw).get("delivery") if isinstance(raw, dict) else None
+    observed = replace(result, audit={**result.audit, "browser_execution": {
+        "effect_ref": identity, "elapsed_ms": int((time.monotonic() - started) * 1000),
+        "phase": "unknown" if delivery == "uncertain" else "finished"}})
+    if workspace_proof is not None:
+        return _with_trusted_workspace_state(observed, revision=workspace_proof.revision,
+                                            fingerprint=workspace_proof.fingerprint)
+    return observed
 
 
 def _automatic_command(context: ToolExecutionContext, call: ToolCall) -> bool:

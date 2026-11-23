@@ -126,7 +126,10 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
         refresh_verification_candidates(context.session)
         completion_context = context.completion_context
         checks = context.session.policy.required_checks
+        from codey.operations.project_delivery import PAGE_AFTER_EDIT
+
         if (upload_completion_scope(context.session) is not None or report_scope(context.session) is not None or has_browser_field_bindings(checks)
+                or PAGE_AFTER_EDIT in checks
                 or any(rule.after for check in checks if (rule := parse_tool_success_check(check)) is not None)
                 or any(check.startswith(RESEARCH_PREFIX) for check in checks)
                 or unconfirmed_clicks(context.session._memory_results)):

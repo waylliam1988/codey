@@ -19,13 +19,14 @@ from codey.completion.contract import (
 )
 from codey.completion.engine import CompletionEngine
 from codey.completion.inputs import ChangedFile, CompletionChangeSet
-from codey.completion.verification import coding_verification_state
+from codey.completion.verification import VERIFICATION_UNOBSERVED, coding_verification_state
 from codey.completion.verification_policy import (
     VerificationCandidate,
     VerificationPlan,
     VerificationRequirement,
     select_verification_requirement,
 )
+from codey.knowledge.model import canonical_json
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_inputs import ProjectCompletionFacts
 from codey.operations.task_session import TaskSession
@@ -207,14 +208,19 @@ def verification_plan_feedback(session: TaskSession, context: CompletionContext,
     if projected is None:
         return ""
     commands = []
+    first_missing = ""
     for index, obligation in enumerate(plan.obligations, 1):
         status = coding_verification_state(obligation.candidate, projected, obligation.paths,
                                            root=context.project or session.project or ".")
         commands.append(f"project-{index}: {status} — {obligation.candidate.command} "
                         f"(path: {obligation.candidate.cwd}) covers {', '.join(obligation.paths)}")
+        if status == VERIFICATION_UNOBSERVED and not first_missing:
+            first_missing = f"project-{index}"
     if plan.uncovered_paths:
         commands.append("No unambiguous verification command for: " + ", ".join(plan.uncovered_paths))
-    return "\n\nVerification coverage for the current changes:\n" + "\n".join(commands)[:2000]
+    next_step = ("\nNext check without copying its command or directory: "
+                 + canonical_json({"tool": "run", "args": {"command": {"check": first_missing}}}) if first_missing else "")
+    return "\n\nVerification coverage for the current changes:\n" + "\n".join(commands)[:2000] + next_step
 
 
 def _projection_gaps_for_latest(
@@ -232,15 +238,17 @@ def _projection_gaps_for_latest(
 
 
 def _normalized_scope_and_change(session: TaskSession | ProjectCompletionFacts, context: CompletionContext) -> tuple[tuple[str, ...], bool]:
-    scope = tuple({name: None for name in (*tuple(context.scope_files or ()), *_session_scope_files(session))})
+    edits = _session_scope_files(session)
+    context_scope = tuple(context.scope_files or ())
     provided_changed = context.task_changed
     if provided_changed is None:
-        task_changed = bool(scope)
+        task_changed = bool(context_scope or edits)
     else:
         try:
-            task_changed = bool(provided_changed) or bool(scope)
+            task_changed = bool(provided_changed) or bool(context_scope or edits)
         except Exception:
-            task_changed = bool(scope)
+            task_changed = bool(context_scope or edits)
+    scope = tuple(dict.fromkeys((*context_scope, *edits, *(session.verification_paths if task_changed else ()))))
     return scope, task_changed
 
 

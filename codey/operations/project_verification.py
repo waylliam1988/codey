@@ -47,5 +47,5 @@ def refresh_verification_candidates(session: TaskSession) -> None:
             session.verification_candidates_refresh_failed = False
     candidates = session.verification_candidates
     session.selected_verification = select_verification_candidate(
-        candidates, tuple(session.edited_files), root=session.project,
+        candidates, session.verification_paths, root=session.project,
     )

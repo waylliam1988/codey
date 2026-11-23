@@ -16,7 +16,14 @@ from codey.completion.verification import (
 )
 from codey.completion.verification_policy import VerificationCandidate, select_verification_plan
 from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn, offer_browser_call
+from codey.operations.project_delivery import (
+    PAGE_AFTER_EDIT,
+    SOURCE_BEFORE_EDIT,
+    declared_edit_scope,
+    declared_project_checks,
+)
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
+from codey.operations.task_entry import build_task_policy_for_entry
 from codey.operations.task_session import TaskSession
 from codey.policies.network import NetworkPolicy, NetworkStatus
 from codey.policies.task_policy import TaskPolicy
@@ -26,6 +33,7 @@ from codey.research.source_rendering import UNTRUSTED_SOURCE_END, UNTRUSTED_SOUR
 from codey.research.tools import ResearchTools
 from codey.runtime.observe.execution_evidence import CheckEvidence, ExecutionEvidence
 from codey.task.entry_auth import derive_entry_auth
+from codey.task.model import StartTask, TaskSubmission
 from codey.task.web_intent import explicit_web_intent
 from codey.toolchain.tool_spec import tool_specs
 from codey.types.json_value import (
@@ -39,9 +47,10 @@ from tests.test_browser_context_delivery import URL, elements, install
 from tests.test_browser_context_delivery import production_browser as production_browser
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools.browser_prerequisite_ab import LOAD, WAIT, code_action
+from tools.browser_production_live_gate import URL as NATURAL_RECORD_URL
 from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import Target
-from tools.p0_mixed_live_gate import mixed_run
+from tools.p0_mixed_live_gate import NATURAL_FORMAT_URL, NATURAL_VIEW_URL, mixed_run, natural_mixed_task
 
 
 @pytest.mark.parametrize(("task", "options", "project", "mixed"), [
@@ -221,3 +230,74 @@ def test_auto_mixed_production_entry_completes_with_two_real_checks(
     runs = [event for event in events if event.get("type") == "tool" and event.get("tool_name") == "run"]
     assert len(runs) == 2 and all(event.get("ok") is True for event in runs)
     assert sum(row.result.call.name == "browser_click" for row in receipts) == 1
+
+
+def test_natural_requirements_and_single_file_scope_are_derived_only_from_user_text(tmp_path: Path) -> None:
+    task = (natural_mixed_task("") + " Only edit `result.json`.")
+    assert set(declared_project_checks(task)) == {SOURCE_BEFORE_EDIT, PAGE_AFTER_EDIT}
+    assert declared_edit_scope(tmp_path, "Create exactly one file at the project-relative path pkg/new.py.") == ("pkg/new.py",)
+    assert declared_edit_scope(tmp_path, "Only edit a.py and b.py.") == ()
+    assert declared_edit_scope(tmp_path, "The manual says \"Only edit result.json.\"") == ()
+    request = TaskSubmission.from_input(session_id="s", project=str(tmp_path), max_turns=5,
+        provider_id="local", intent="project", input=StartTask(task))
+    policy = build_task_policy_for_entry(request, "project")
+    assert policy.edit_scope == ("result.json",)
+    assert TaskPolicy.from_payload(policy.to_payload()) == policy
+    legacy = TaskPolicy(frozenset({"control", "project.write"}))
+    assert TaskPolicy.from_payload(legacy.to_payload()) == legacy
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
+def test_natural_mixed_entry_requires_observed_source_and_fresh_application_page(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    directory = tmp_path / "natural"
+    install_http(monkeypatch, [
+        {"tool": "edit", "args": {"path": "result.json", "replacements": [{"old_string": "0", "new_string": "1"}]}},
+        {"tool": "read_file", "args": {"path": "README.md"}},
+        code_action("unwrap(await tools.open_url({target:'task'}));"
+                    "unwrap(await tools.browser_navigate({target:'task'}));"
+                    + LOAD + WAIT + "return unwrap(await tools.browser_read({}));"),
+        code_action("unwrap(await tools.read_file({path:'result.json'}));"
+                    "return await tools.edit({path:'result.json',replacements:["
+                    "{old_string:'{',new_string:'{\"locality\":\"福州\",'}]});"),
+        code_action(
+            "for(const [path,old_string,new_string] of ["
+            "['result.json','{\"amount\": 0, \"code\": \"unknown\"}','{\"amount\": 347, \"code\": \"CEDAR_947\"}'],"
+            "['web/component.ts','unknown','CEDAR_947']]){"
+            "unwrap(await tools.read_file({path}));"
+            "unwrap(await tools.edit({path,replacements:[{old_string,new_string}]}));}"
+            "return null;"),
+        {"tool": "run", "args": {"command": {"check": "project-1"}}},
+        {"tool": "done", "args": {"summary": "The whole application passes npm test."}},
+        code_action("unwrap(await tools.read_file({path:'service/core.py'}));"
+                    "return unwrap(await tools.edit({path:'service/core.py',replacements:"
+                    "[{old_string:'AMOUNT = 0',new_string:'AMOUNT = 347'}]}));"),
+        {"tool": "run", "args": {"command": {"check": "project-1"}}},
+        {"tool": "run", "args": {"command": {"check": "project-2"}}},
+        {"tool": "done", "args": {"summary": "Updated the record."}},
+        {"tool": "browser_navigate", "args": {"target": "task"}},
+        {"tool": "done", "args": {"summary": f"The updated application displays 347 g and CEDAR_947. "
+                                      f"Record source {NATURAL_RECORD_URL}. Format source {NATURAL_FORMAT_URL}."}},
+    ])
+    report = mixed_run(directory, Target("http://scripted.test/v1", "fixture", 123456789, 15,
+                                         context_window_tokens=65536), natural=True)
+    assert report["passed"] is True, report
+    receipts = tool_receipts(directory / "state")
+    edits = [row.result for row in receipts if row.result.call.name == "edit"]
+    assert len(edits) == 5 and not edits[0].ok and "live record before editing" in edits[0].model_text
+    assert not edits[1].ok and "exactly these fields: amount, code" in edits[1].model_text
+    bindings = [decode_json_object(row.canonical["project_source_basis"]) for row in edits[2:] if row.ok]
+    refs = {binding["source_result_ref"] for binding in bindings}
+    assert len(refs) == 1 and any(row.identity in refs and row.result.call.name == "browser_read" for row in receipts)
+    reads = {row.identity: row.result for row in receipts if row.result.call.name == "read_file"}
+    for binding in bindings:
+        read = reads[require_json_string(binding["base_result_ref"], "base read")]
+        assert binding["path"] == read.call.args["path"] and binding["file_version"] == read.canonical["file_version"]
+    assert sum(row.result.call.name == "browser_click" for row in receipts) == 1
+    events = [parse_json_object(line) for line in (directory / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    runs = [event["command"] for event in events if event.get("type") == "tool" and event.get("tool_name") == "run"]
+    assert runs == ["npm test", "npm test", "python -m pytest"]
+    assert [row.result.call.args["url"] for row in receipts if row.result.call.name == "browser_navigate"] == [
+        NATURAL_RECORD_URL, NATURAL_VIEW_URL,
+    ]

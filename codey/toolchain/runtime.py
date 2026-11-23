@@ -865,12 +865,15 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
     return edit_file_at_version(root, rel, blocks)
 
 
-def edit_file_at_version(root: Path, rel: str, blocks: list[EditBlock], *, version: str = "") -> ToolOutcome:
+def edit_file_at_version(root: Path, rel: str, blocks: list[EditBlock], *, version: str = "",
+                         validate_content: Callable[[str], str] | None = None) -> ToolOutcome:
     prepared = prepare_edit(root, rel, blocks)
     if isinstance(prepared, ToolOutcome):
         return prepared
     if version and prepared.version != version:
         return ToolOutcome.error(STALE_READ_REFERENCE_ERROR, error_code=STALE_READ_REFERENCE_CODE)
+    if validate_content is not None and (validation_error := validate_content(prepared.text)):
+        return ToolOutcome.error(validation_error, error_code="file_field_mismatch")
     if not prepared.outcome.changed:
         return prepared.outcome
     error = _write_text_after_final_path_check(root, rel, prepared.text, tool="edit", expected_version=prepared.version)
