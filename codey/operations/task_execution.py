@@ -956,9 +956,9 @@ class ExecutionDelegate:
         if not isinstance(self._research_scope, AnswerScope):
             raise ValueError("submit_research_answer requires an original frozen whole-answer scope")
         declared = submit_answer(self._research_scope, call.args)
-        from codey.research.report_evidence import check_report_evidence
+        from codey.research.report_evidence import CLAIM_CHECK_VERSION, check_report_evidence
 
-        evidence_check = check_report_evidence(declared, tools.ledger.read_passages)
+        evidence_check = check_report_evidence(declared, tools.ledger.read_passages, claim_check_version=CLAIM_CHECK_VERSION)
         if self.session is not None:
             from codey.operations.browser_result_evidence import validate_current_result
 

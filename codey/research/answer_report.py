@@ -224,11 +224,15 @@ def compile_answer_report(session: TaskSession, ledger: ResearchLedger, store: K
     if submit_answer(AnswerScope.from_payload(submission["scope"]), result.call.args) != submission:
         raise ValueError("settled submission differs from the original tool arguments")
     if "research_evidence_check" in result.canonical:
-        from codey.research.report_evidence import check_report_evidence
+        from codey.research.report_evidence import CLAIM_CHECK_VERSION, check_report_evidence
 
         checked = decode_json_object(result.canonical["research_evidence_check"])
+        version = checked.get("claim_check_version")
+        if "claim_check_version" in checked and (type(version) is not int or version != CLAIM_CHECK_VERSION):
+            raise ValueError("unsupported research claim check version")
         actual = check_report_evidence(submission, ledger.read_passages,
-                                       verify_calculations="verified_calculations" in checked)
+                                       verify_calculations="verified_calculations" in checked,
+                                       claim_check_version=version if isinstance(version, int) else None)
         if {key: actual[key] for key in checked if key in actual} != checked:
             raise ValueError("citation validation differs from the original submission receipt")
     scope = submission["scope"]

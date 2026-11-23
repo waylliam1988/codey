@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,10 @@ import pytest
 from codey.operations.task_execution import ExecutionDelegate
 from codey.policies.tool_requirement import require_tool_success
 from codey.providers.api_generation import AttemptObserver
+from codey.research.answer_contract import AnswerScope, digest, submit_answer
+from codey.research.ledger import OpenedSource
+from codey.research.passages import ReadPassage
+from codey.research.report_evidence import check_report_evidence
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
@@ -82,7 +87,7 @@ def assert_submitting(directory: Path, *, sequence: bool = True) -> str:
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
 @pytest.mark.parametrize(("case", "native"), [
-    ("ready", False), ("early_read", False), ("partial_read", False), ("reload", False),
+    ("ready", False), ("legacy_claim_receipt", False), ("early_read", False), ("partial_read", False), ("reload", False),
     ("old_citation", False), ("lost_on_submit", False), ("undeclared", False),
     ("ready", True), ("old_citation", True), ("lost_on_submit", True),
     ("workflow", False), ("workflow_early_read", False), ("workflow_partial_read", False),
@@ -97,13 +102,19 @@ def test_production_handoff_requires_citable_read_on_current_document(
         monkeypatch.setattr(gate, "ExperimentProvider", NativeExperimentProvider)
     workflow = case.startswith("workflow")
     scenario = case.removeprefix("workflow_")
-    if scenario == "lost_on_submit":
+    if scenario in {"lost_on_submit", "legacy_claim_receipt"}:
         original = ExecutionDelegate._submit_research_answer
         reloaded = False
 
         def submit(delegate: ExecutionDelegate, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
             nonlocal reloaded
             outcome = original(delegate, call, tools)
+            if scenario == "legacy_claim_receipt" and outcome[1]:
+                result, _, exit_code = outcome
+                evidence = decode_json_object(result.canonical["research_evidence_check"])
+                assert evidence.pop("claim_check_version") == 1
+                assert isinstance(evidence.pop("claim_checks"), list)
+                return replace(result, canonical={**result.canonical, "research_evidence_check": evidence}), True, exit_code
             if outcome[1] and not reloaded:
                 assert delegate.browser_session is not None and delegate.browser_session.navigate(gate.URL).ok
                 reloaded = True
@@ -172,3 +183,35 @@ def test_production_handoff_requires_citable_read_on_current_document(
                                strict_research=True, research_sequence=not workflow and case != "undeclared",
                                explicit_wait=case != "undeclared")
     assert result["passed"] is True and result["stop_reason"] == "done", result
+
+
+def test_new_claim_checks_only_cover_the_matching_part_and_cited_version() -> None:
+    latest = "Test settings keep load stable. Revision 2 rejects high flow."
+    prior = "Revision 1 supports high flow."
+    url = "https://example.com/versioned"
+    passages = {
+        "new": ReadPassage("new", OpenedSource(url, url, "", "", "new"), latest, (), 0, len(latest),
+                           source_version=("edition", 2)),
+        "old": ReadPassage("old", OpenedSource(url, url, "", "", "old"), prior, (), 0, len(prior),
+                           source_version=("edition", 1)),
+    }
+    scope = AnswerScope(digest("task"), (("e1", "new"), ("e2", "old")), ("attempt",))
+    markdown = ("Test settings keep load stable; high flow mode never fails [e1].\n"
+                "Revision 1 supports high flow [e1].\n"
+                "Revision 1 supports high flow [e2].\n"
+                "This conclusion applies to all previous versions.")
+    submission = submit_answer(scope, {"state": "answered", "markdown": markdown})
+    legacy = check_report_evidence(submission, passages)
+    report = check_report_evidence(submission, passages, claim_check_version=1)
+    assert legacy == {key: report[key] for key in legacy}
+    checks = report["claim_checks"]
+    assert isinstance(checks, list)
+    rows = [decode_json_object(check) for check in checks]
+    assert [row["review_state"] for row in rows] == ["source_text_match", "needs_review", "needs_review", "source_text_match", "uncited"]
+    assert [markdown[int(str(row["report_start"])):int(str(row["report_end"]))] for row in rows] == [
+        "Test settings keep load stable", "high flow mode never fails", "Revision 1 supports high flow",
+        "Revision 1 supports high flow", "This conclusion applies to all previous versions",
+    ]
+    assert rows[0]["passage_refs"] == ["new"] and rows[3]["passage_refs"] == ["old"]
+    assert rows[3]["source_spans"] == [{"passage_ref": "old", "start": 0, "end": len(prior) - 1,
+                                       "source_version": ["edition", 1]}]
