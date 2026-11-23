@@ -1,4 +1,5 @@
 import type { HistoryTask } from './history_repository';
+import { messageSelectionOffsets, type MessageSelection } from './local_context_drawer';
 import { runtime } from './runtime';
 import { nestedOwnsScroll } from './scroll_owner';
 import type { Message, Project, Session } from './types/domain';
@@ -98,6 +99,7 @@ export interface ConversationUiDeps {
     text: string;
     focus: Element | null;
     quoteBody?: Element | null;
+    memory?: MessageSelection;
     sessionId?: string;
     scrollPositions?: ScrollPosition[];
   }
@@ -1026,11 +1028,19 @@ export interface ConversationUiDeps {
       node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
     const answer = parent(range.startContainer)?.closest('#chat .msg.asst .body');
     const quoteBody = answer?.contains(range.endContainer) ? answer : null;
+    const userBody = parent(range.startContainer)?.closest('#chat .msg.user .body');
+    const entryId = userBody?.closest<HTMLElement>('.msg.user[data-entry-id]')?.dataset.entryId;
+    const session = deps.activeSession();
+    const raw = session?.messages.find((message) => message.type === 'user' && message.entryId === entryId)?.text;
+    const text = selection.toString();
+    const offsets =
+      userBody && typeof raw === 'string' && entryId ? messageSelectionOffsets(raw, userBody, range, text) : null;
     return {
       range,
-      text: selection.toString(),
+      text,
       focus: document.activeElement,
       quoteBody,
+      memory: session && entryId && offsets ? { sessionId: session.id, entryId, quote: text, ...offsets } : undefined,
       sessionId: deps.getActiveId(),
     };
   }
@@ -1081,6 +1091,8 @@ export interface ConversationUiDeps {
     selectedCopy = snapshot;
     copyGeneration++;
     $('selection-quote').hidden = !snapshot.quoteBody;
+    const remember = $('selection-memory');
+    if (remember) remember.hidden = !snapshot.memory;
     copy.textContent = 'Copy';
     copy.disabled = false;
     $('selection-copy-status').hidden = true;
@@ -1123,6 +1135,22 @@ export interface ConversationUiDeps {
         $('selection-copy-status').hidden = false;
       }
     };
+    const remember = $('selection-memory');
+    if (remember)
+      remember.onclick = () => {
+        const snapshot = selectedCopy;
+        if (
+          !snapshot?.memory ||
+          snapshot.memory.sessionId !== deps.getActiveId() ||
+          !snapshot.range?.startContainer.isConnected ||
+          !snapshot.range.endContainer.isConnected
+        ) {
+          closeSelectionMenu();
+          return;
+        }
+        runtime.LocalContextDrawer.openSelection(snapshot.memory);
+        closeSelectionMenu();
+      };
     copy.onclick = async () => {
       const snapshot = selectedCopy,
         generation = copyGeneration;

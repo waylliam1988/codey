@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { runtime } from './runtime';
-import type { LocalContextDeps } from './local_context_drawer';
-import './local_context_drawer';
+import { messageSelectionOffsets, type LocalContextDeps, type MessageSelection } from './local_context_drawer';
 
 interface Drawer {
   init(deps: LocalContextDeps): void;
   open(): void;
+  openSelection(selection: MessageSelection): void;
   handleScopeChanged(): void;
 }
 function isDrawer(value: unknown): value is Drawer {
@@ -17,6 +17,8 @@ function isDrawer(value: unknown): value is Drawer {
     typeof value.init === 'function' &&
     'open' in value &&
     typeof value.open === 'function' &&
+    'openSelection' in value &&
+    typeof value.openSelection === 'function' &&
     'handleScopeChanged' in value &&
     typeof value.handleScopeChanged === 'function'
   );
@@ -105,6 +107,48 @@ beforeEach(async () => {
   });
   drawer().open();
   await vi.waitFor(() => expect(document.querySelectorAll('.local-context-row')).toHaveLength(2));
+});
+
+it('binds repeated Chinese selections using original code-point offsets', () => {
+  const quote = '用 Rust';
+  const raw = `🦀${quote}，再说一次：${quote}`;
+  const body = document.createElement('div');
+  const text = document.createTextNode(raw);
+  body.append(text);
+  const range = document.createRange();
+  range.setStart(text, raw.lastIndexOf(quote));
+  range.setEnd(text, raw.length);
+  expect(messageSelectionOffsets(raw, body, range, quote)).toEqual({
+    start: Array.from(raw.slice(0, raw.lastIndexOf(quote))).length,
+    end: Array.from(raw).length,
+  });
+  const another = document.createTextNode('another message');
+  document.body.append(body, another);
+  range.setEnd(another, another.length);
+  expect(messageSelectionOffsets(raw, body, range, quote)).toBeNull();
+});
+
+it('reuses the request id after a failed selection proposal', async () => {
+  drawer().openSelection({ sessionId: 's', entryId: 'entry-2', quote: '用 Rust', start: 2, end: 8 });
+  await vi.waitFor(() => expect(element('local-context-body').textContent).toContain('Remember selected text'));
+  failure = true;
+  click('Submit for review');
+  await vi.waitFor(() => expect(element('local-context-subtitle').textContent).toContain('storage unavailable'));
+  failure = false;
+  click('Submit for review');
+  await vi.waitFor(() => expect(actions).toHaveLength(2));
+  expect(actions[0]).toMatchObject({
+    action: 'propose_from_message',
+    session_id: 's',
+    scope_kind: 'project',
+    entry_id: 'entry-2',
+    quote: '用 Rust',
+    text: '用 Rust',
+    start: 2,
+    end: 8,
+    request_id: expect.any(String),
+  });
+  expect(actions[1]).toEqual(actions[0]);
 });
 afterEach(() => vi.unstubAllGlobals());
 

@@ -28,6 +28,7 @@ declare global {
     LocalContextDrawer: {
       init(deps: import('../local_context_drawer').LocalContextDeps): void;
       open(): void;
+      openSelection(selection: import('../local_context_drawer').MessageSelection): void;
       load(): Promise<void>;
       close(): void;
       render(data: unknown): void;

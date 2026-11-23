@@ -6,6 +6,35 @@ export interface LocalContextDeps {
   currentProjectPath(): string;
   copyText(text: string): Promise<boolean>;
 }
+export interface MessageSelection {
+  sessionId: string;
+  entryId: string;
+  quote: string;
+  start: number;
+  end: number;
+}
+
+export function messageSelectionOffsets(
+  raw: string,
+  body: Element,
+  range: Range,
+  quote: string,
+): Pick<MessageSelection, 'start' | 'end'> | null {
+  if (!quote.trim() || !body.contains(range.startContainer) || !body.contains(range.endContainer)) return null;
+  let position = raw.indexOf(quote);
+  if (position < 0) return null;
+  if (raw.indexOf(quote, position + 1) >= 0) {
+    if (body.textContent !== raw) return null;
+    const prefix = range.cloneRange();
+    prefix.selectNodeContents(body);
+    prefix.setEnd(range.startContainer, range.startOffset);
+    position = prefix.toString().length;
+    if (raw.slice(position, position + quote.length) !== quote) return null;
+  }
+  const start = Array.from(raw.slice(0, position)).length;
+  const end = start + Array.from(quote).length;
+  return Array.from(raw).slice(start, end).join('') === quote ? { start, end } : null;
+}
 interface Scope {
   session_id: string;
   project: string;
@@ -158,6 +187,7 @@ let deps: LocalContextDeps;
 let loadedScope: Scope | null = null;
 let generation = 0;
 let selectedScopeKind = '';
+let selectedMessage: MessageSelection | null = null;
 let pendingRequest: { key: string; id: string } | null = null;
 function setOpen(open: boolean): void {
   const state: unknown = runtime.UiState;
@@ -184,6 +214,7 @@ function close(): void {
   generation++;
   loadedScope = null;
   pendingRequest = null;
+  selectedMessage = null;
   $('body').replaceChildren();
   $('subtitle').textContent = 'Not loaded';
   setOpen(false);
@@ -310,7 +341,8 @@ function render(data: Summary): void {
   const form = document.createElement('form');
   form.className = 'local-context-proposal';
   const heading = document.createElement('h3');
-  heading.textContent = 'Propose an item';
+  const selection = selectedMessage;
+  heading.textContent = selection ? 'Remember selected text' : 'Propose an item';
   const kind = document.createElement('select');
   kind.setAttribute('aria-label', 'Item type');
   kind.add(new Option('Preference', 'preference'));
@@ -319,15 +351,20 @@ function render(data: Summary): void {
   const text = document.createElement('textarea');
   text.setAttribute('aria-label', 'Proposed item');
   text.placeholder = 'What should Codey keep in mind?';
-  const submit = button('Submit for review', () => {
-    if (text.value.trim()) void postAction('propose', { kind: kind.value, text: text.value.trim() });
-  });
-  submit.disabled = true;
+  if (selection) text.value = selection.quote;
+  const submit = button('Submit for review', () => {});
+  submit.disabled = !text.value.trim();
   text.oninput = () => {
     submit.disabled = !text.value.trim();
   };
   form.onsubmit = (event) => event.preventDefault();
-  form.append(heading, kind, text, submit);
+  form.append(heading);
+  if (selection) {
+    const quote = document.createElement('blockquote');
+    quote.textContent = selection.quote;
+    form.append(quote);
+  }
+  form.append(kind, text, submit);
   const slot = document.createElement('input');
   slot.placeholder = 'Preference slot, such as language (optional)';
   slot.setAttribute('aria-label', 'Preference slot');
@@ -360,7 +397,15 @@ function render(data: Summary): void {
     if (context.value) fields.context = context.value;
     if (expiry.value) fields.expires_at = new Date(expiry.value).toISOString();
     if (replaces.value) fields.supersedes = [replaces.value];
-    void postAction('propose', fields);
+    if (selection) {
+      void postAction('propose_from_message', {
+        ...fields,
+        entry_id: selection.entryId,
+        quote: selection.quote,
+        start: selection.start,
+        end: selection.end,
+      });
+    } else void postAction('propose', fields);
   };
   form.insertBefore(slot, submit);
   form.insertBefore(normalized, submit);
@@ -502,7 +547,7 @@ function renderSettings(body: HTMLElement, data: Summary): void {
   const selector = document.createElement('select');
   selector.setAttribute('aria-label', 'Memory scope');
   selector.add(new Option('Current workspace', ''));
-  selector.add(new Option('Across chats', 'user'));
+  if (!selectedMessage) selector.add(new Option('Across chats', 'user'));
   selector.add(new Option('This chat', 'session'));
   if (scope().project) selector.add(new Option('This project', 'project'));
   selector.value = selectedScopeKind;
@@ -628,6 +673,7 @@ async function postAction(action: string, payload: Record<string, unknown> = {})
     if (!response.ok || data.ok !== true)
       throw new Error(typeof data.error === 'string' ? data.error : 'Update failed');
     pendingRequest = null;
+    if (action === 'propose_from_message') selectedMessage = null;
     if (action === 'explain') {
       const preview = $('body').querySelector('[data-recall-preview]');
       if (preview)
@@ -661,6 +707,7 @@ function init(next: LocalContextDeps): void {
   deps = next;
   selectedScopeKind = '';
   pendingRequest = null;
+  selectedMessage = null;
   $('refresh').onclick = () => void load();
   $('export').onclick = () => void exportMemory();
 }
@@ -668,4 +715,10 @@ function open(): void {
   setOpen(true);
   void load();
 }
-runtime.LocalContextDrawer = { init, open, close, load, render, handleScopeChanged };
+function openSelection(selection: MessageSelection): void {
+  if (deps.getActiveId() !== selection.sessionId) return;
+  selectedMessage = selection;
+  selectedScopeKind = scope().project ? 'project' : 'session';
+  open();
+}
+runtime.LocalContextDrawer = { init, open, openSelection, close, load, render, handleScopeChanged };
