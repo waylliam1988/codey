@@ -75,6 +75,12 @@ class ElementRegistry(Generic[Handle]):
             raise ValueError("stale_ref")
         return record
 
+    def observed_context(self, identifier: str, document: JsonObject) -> ElementRecord[Handle] | None:
+        return next((record for record in reversed(self.records.values())
+                     if record.context is not None and record.context_node is not None
+                     and identifier == f"region-{record.context_backend_node_id}"
+                     and same_document(record.document, document)), None)
+
     def invalidate_document(self, document: JsonObject) -> None:
         for ref, record in tuple(self.records.items()):
             if same_document(record.document, document):

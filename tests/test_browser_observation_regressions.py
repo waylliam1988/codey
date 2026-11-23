@@ -8,6 +8,7 @@ from typing import NoReturn
 import pytest
 
 from codey.automation.browser_document import document_changed, same_document
+from codey.automation.browser_query import QueryObservationError
 from codey.automation.browser_session import BrowserSession
 from codey.operations import kernel_control
 from codey.operations.browser_followups import pending_click, query_click
@@ -100,8 +101,18 @@ def test_shadow_contexts_are_distinct_and_choose_the_corresponding_actual_contro
     assert isinstance(contexts, list) and len(contexts) == 2
     target = next(decode_json_object(row) for row in contexts if decode_json_object(row)['label'] == 'A-174')
     control = next(row for row in elements(snapshot) if row['context_id'] == target['id'])
+    scope = require_json_string(target['id'], 'context id')
+    scoped = browser.snapshot(scope_ref=scope)
+    assert scoped.ok and [row["name"] for row in elements(scoped.observation)] == ["Details"]
+    assert "box" in elements(scoped.observation)[0]
+    display = elements(parse_json_object(scoped.model_text))[0]
+    assert "box" not in display and display["ref"] == elements(scoped.observation)[0]["ref"]
+    assert "A-173" not in str(scoped.observation["text"])
+    assert not browser.click(scope).ok
     assert browser.click(require_json_string(control['ref'], 'ref')).ok
     assert browser.evaluate('window.chosen').observation['value'] == 'A-174'
+    mutate(browser, "document.getElementById('second').shadowRoot.querySelector('section').remove()")
+    assert not browser.snapshot(scope_ref=scope).ok
 
 
 def test_unrelated_region_insertion_does_not_invalidate_a_control(
@@ -139,11 +150,12 @@ def test_background_changes_in_a_hidden_target_do_not_confirm_a_visible_result(
     baseline = start_query(session, tools, browser, f'''<button aria-controls="result" onclick="
         document.querySelector('#result').textContent='Updated CORRECT_173';">Query</button>
         <article id="result" {hidden}>Previous result</article><article>Visible copy: Updated CORRECT_173</article>''')
-    page = browser.capture_query_result(baseline, pending='Unconfirmed')
-    assert page['query_confirmed'] is False and 'query_region' not in page
+    with pytest.raises(QueryObservationError, match="has not shown a confirmed update"):
+        browser.capture_query_result(baseline, pending='Unconfirmed')
     read, ok, _ = ExecutionDelegate(session=session, research_tools=tools).execute(ToolCall('browser_read', {}))
-    assert ok and read.canonical['read_passages']
-    assert 'query_click' not in read.audit
+    assert not ok and not read.canonical.get('read_passages')
+    assert read.canonical.get('query_read') == {"reason": "query_update_unconfirmed"}
+    assert read.audit.get('query_click') == 'query'
     assert pending_click(session._memory_results, browser.document_identity()) is not None
 
 

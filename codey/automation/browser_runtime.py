@@ -63,6 +63,7 @@ from codey.automation.browser_snapshot import (
     file_control_details,
     sample_available_controls,
     semantic_fingerprint,
+    snapshot_display,
 )
 from codey.policies.network import check_fetch_url
 from codey.types.json_value import (
@@ -594,12 +595,14 @@ class BrowserRuntime:
                 rows.append({"ref": ref, "role": role, "name": name, "text": str(text)[:500], "placeholder": placeholder})
             return BrowserToolOutput(json.dumps(rows, ensure_ascii=False), True,
                 {"action": "locate", "candidates": rows, "unique": len(rows) == 1, "document": context.document})
-        if args.get("scope_ref"):
-            await self._resolve(context, require_json_string(args["scope_ref"], "scope_ref"), purpose="scope")
+        scope_ref = require_json_string(args.get("scope_ref", ""), "scope_ref")
+        if scope_ref:
+            scope_ref = await self._snapshot_scope_ref(context, scope_ref)
+            await self._resolve(context, scope_ref, purpose="scope")
         current = await collect_snapshot(context, self._registry, revision=self._revision,
             max_elements=require_json_integer(args.get("max_elements", 80), "max_elements"),
             max_text=require_json_integer(args.get("max_text", 12000), "max_text"),
-            scope_ref=require_json_string(args.get("scope_ref", ""), "scope_ref"),
+            scope_ref=scope_ref,
             selector=require_json_string(args.get("selector", ""), "selector"))
         base = args.get("base_revision")
         value = diff_snapshot(self._observations.get(base) if type(base) is int and isinstance(base, int) else None, current)
@@ -610,7 +613,21 @@ class BrowserRuntime:
         receipt = {**current, **{key: value[key] for key in ("kind", "base_revision", "added", "changed", "removed") if key in value}}
         hint = ("\nControls are truncated. Inspect a listed container with browser_snapshot(scope_ref=ref) "
                 "or use a unique selector to narrow the scope." if current["elements_truncated"] is True else "")
-        return BrowserToolOutput(json.dumps(value, ensure_ascii=False) + hint, True, receipt)
+        display = json.dumps(snapshot_display(value), ensure_ascii=False, separators=(",", ":"))
+        return BrowserToolOutput(display + hint, True, receipt)
+
+    async def _snapshot_scope_ref(self, context: FrameContext, ref: str) -> str:
+        observed = self._registry.observed_context(ref, context.document) if ref.startswith("region-") else None
+        if observed is None or (handle := observed.context_node) is None:
+            return ref
+        metadata, owner = await element_metadata(handle)
+        if owner is not None:
+            await owner.dispose()
+        return self._registry.observe_node(ElementRecord(
+            handle, context.document, observed.context_backend_node_id, element_role(metadata),
+            str((observed.context or {}).get("label", "")), None, None, None, self._revision,
+            semantic_fingerprint(metadata), scope_only=True,
+        ))
 
     async def _capture(self, context: FrameContext) -> JsonObject:
         raw: object = await _evaluate(context.frame, """() => ({url:location.href,title:document.title,

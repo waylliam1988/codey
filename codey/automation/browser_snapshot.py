@@ -366,3 +366,15 @@ def diff_snapshot(base: Mapping[str, JsonValue] | None, current: JsonObject) -> 
             result[key] = current[key]
     return {**result, "kind": "delta", "base_revision": base.get("revision"),
             "added": added, "changed": changed, "removed": removed}
+
+
+def snapshot_display(snapshot: JsonObject) -> JsonObject:
+    """Keep control identity and state in the model view, with geometry in the receipt."""
+    display = dict(snapshot)
+    for key in ("elements", "added", "changed"):
+        rows = snapshot.get(key)
+        if isinstance(rows, list):
+            display[key] = [{field: value for field, value in row.items()
+                             if field != "box" and value is not None and (value != "" or field == "value")}
+                            if isinstance(row, dict) else row for row in rows]
+    return display
