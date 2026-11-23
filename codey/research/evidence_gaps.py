@@ -73,7 +73,7 @@ def _comparison_gaps(ledger: ResearchLedger, findings: Iterable[ToolCall]) -> It
     """Compare explicit directions only for the same reported study conditions."""
     from codey.knowledge.model import canonical_json
 
-    directional: dict[tuple[str, tuple[str, ...], tuple[str, ...]], dict[int, str]] = {}
+    directional: dict[tuple[str, tuple[str, ...], tuple[str, ...]], dict[int, set[str]]] = {}
     for call in findings:
         comparison = canonical_json_object(call.args.get("comparison", {}))
         fields = tuple(" ".join(str(comparison.get(key, "")).casefold().split())
@@ -90,16 +90,21 @@ def _comparison_gaps(ledger: ResearchLedger, findings: Iterable[ToolCall]) -> It
                 or not isinstance(question, str) or not isinstance(conditions, list)):
             continue
         cohort = (question, fields, tuple(sorted(canonical_json(condition) for condition in conditions)))
-        directional.setdefault(cohort, {})[direction_value] = passage
+        directional.setdefault(cohort, {}).setdefault(direction_value, set()).add(passage)
     for (question, fields, _conditions), reports in directional.items():
         if set(reports) != {-1, 1}:
             continue
-        refs = tuple(reports.values())
-        aliases = tuple((f"comparison-{index}", ref) for index, ref in enumerate(refs, 1))
-        if same_source_groups(ledger.read_passages, aliases):
-            continue
-        yield ResearchGap(question, " ".join(fields), "conflicting_findings", refs,
-                          "independent evidence under the same reported conditions")
+        refs = sorted(reports[-1] | reports[1])
+        groups = same_source_groups(ledger.read_passages, tuple((ref, ref) for ref in refs))
+        source = {ref: group[0] for group in groups for ref in group}
+        # A singleton's passage ref is its source key. Compare only independent pairs.
+        higher = sorted(reports[1])
+        for lower in sorted(reports[-1]):
+            other = next((ref for ref in higher if source.get(ref, ref) != source.get(lower, lower)), None)
+            if other is not None:
+                yield ResearchGap(question, " ".join(fields), "conflicting_findings", (lower, other),
+                                  "independent evidence under the same reported conditions")
+                break
 
 
 def conflict_search(ledger: ResearchLedger, *, remaining_searches: int,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import replace
+from itertools import permutations
 from pathlib import Path
 
 import pytest
@@ -118,6 +119,38 @@ def test_legacy_submission_diagnostics_survive_signed_calculation_support() -> N
                    "needs_review": [{"kind": "quantity_needs_context", "quantity": "8 kg", "labels": ["e1"]}]}
     reviews = current["needs_review"]
     assert isinstance(reviews, list) and decode_json_object(reviews[0])["quantity"] == "-8 kg"
+
+
+def test_conflict_search_keeps_independent_opposition_in_every_order() -> None:
+    ledger = ResearchLedger()
+    calls: list[ToolCall] = []
+    for ref, origin, direction in (
+        ("a", "first", "lower"),
+        ("b", "second", "higher"),
+        ("c", "first", "higher"),
+    ):
+        url = f"https://{origin}.example/paper"
+        source = OpenedSource(url, url, "", "", ref)
+        ledger.read_passages[ref] = ReadPassage(
+            ref, source, direction, (), 0, len(direction)
+        )
+        calls.append(ToolCall("save_finding", {
+            "question_ref": "q1",
+            "passage_ref": ref,
+            "conditions": [],
+            "comparison": {
+                "subject": "Atlas", "factor": "A", "comparator": "B",
+                "endpoint": "fuel", "direction": direction,
+            },
+        }))
+
+    for ordered in permutations(calls):
+        found = conflict_search(ledger, remaining_searches=1, findings=ordered)
+        assert found is not None, [call.args["passage_ref"] for call in ordered]
+        refs = found["passage_refs"]
+        assert isinstance(refs, list) and "a" in refs and "b" in refs
+
+    assert conflict_search(ledger, remaining_searches=1, findings=(calls[0], calls[2])) is None
 
 
 def test_conflict_search_requires_a_passage_and_a_remaining_slot() -> None:
