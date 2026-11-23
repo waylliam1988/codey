@@ -3,19 +3,109 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from codey.automation.browser_document import same_document
+from codey.completion.verification_policy import _command_family
 from codey.operations.browser_followups import NAVIGATE
+from codey.operations.kernel_provenance import _kernel_workspace_identity_of
+from codey.operations.tool_result_reader import ReceiptReader, resolve_result_output
+from codey.runtime.core.execution_receipt import execution_receipt
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import spec_for_tool
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer
+
+if TYPE_CHECKING:
+    from codey.operations.task_session import TaskSession
+    from codey.operations.tool_tasks import SettledCheckExecution
+    from codey.storage.managed_outputs import ManagedOutputStore
 
 # Repeated observations do not establish whether another effect was required
 # or occurred. These calls may be reminded, but cannot alone justify stopping.
 EFFECT_OBSERVATIONS = frozenset({"browser_click", "browser_fill", "browser_scroll", "browser_navigate",
     "browser_eval", "browser_upload", "browser_download", "browser_tab_new", "browser_tab_switch"})
+
+_ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_PYTEST_TALLY = re.compile(r"([0-9]+) (failed|errors?|passed|skipped|xfailed|xpassed|warnings?|deselected)")
+_PYTEST_END = re.compile(r"(.+) in [0-9]+(?:\.[0-9]+)?s(?: \([0-9:]+\))?")
+
+
+def pytest_failure_ids(stdout: str, exit_code: int) -> tuple[str, ...] | None:
+    """Trust only complete summaries whose failure/error counts match their rows."""
+    lines = [line for raw in stdout.splitlines()
+             if (line := _ANSI.sub("", raw).strip())]
+    if not lines or exit_code not in {0, 1, 2}:
+        return None
+    end = _PYTEST_END.fullmatch(lines[-1].strip("= "))
+    if end is None:
+        return None
+    parts = tuple(_PYTEST_TALLY.fullmatch(part) for part in end[1].split(", "))
+    tally = {match[2]: int(match[1]) for match in parts if match is not None}
+    if len(tally) != len(parts):
+        return None
+    counts = tally.get("failed", 0), tally.get("error", 0) + tally.get("errors", 0)
+    if bool(sum(counts)) != (exit_code != 0):
+        return None
+    if exit_code == 0:
+        return ()
+    marker = next((i for i, line in reversed(tuple(enumerate(lines)))
+                   if line.strip("= ") == "short test summary info"), None)
+    if marker is None:
+        return None
+    failures: set[str] = set()
+    errors: set[str] = set()
+    for line in lines[marker + 1:-1]:
+        kind, _, node = line.partition(" ")
+        node = node.split(" - ", 1)[0].strip()
+        if kind == "FAILED" and node:
+            failures.add(node)
+        elif kind == "ERROR" and node:
+            errors.add(node)
+    if (len(failures), len(errors)) != counts:
+        return None
+    return tuple(sorted([*(f"FAILED {node}" for node in failures), *(f"ERROR {node}" for node in errors)]))
+
+
+@dataclass(frozen=True)
+class ProjectCheckComparison:
+    command: str
+    cwd: str
+    workspace_fingerprint: str
+    exit_code: int
+    failure_ids: tuple[str, ...]
+    task_ref: str
+    execution_ref: str
+
+    @property
+    def key(self) -> tuple[str, str, str, str, int, tuple[str, ...]]:
+        return self.command, self.cwd, self.workspace_fingerprint, "exit", self.exit_code, self.failure_ids
+
+
+def compare_project_check(execution: SettledCheckExecution, *, session: TaskSession, store: ManagedOutputStore,
+                          session_id: str) -> ProjectCheckComparison | None:
+    result = execution.result
+    identity = _kernel_workspace_identity_of(result)
+    command, cwd = result.call.args.get("command"), result.call.args.get("path", ".")
+    if (identity is None or not identity.fingerprint or not isinstance(command, str) or not isinstance(cwd, str)
+            or _command_family(command) != "python:pytest"):
+        return None
+    try:
+        receipt = execution_receipt(result)
+        if receipt is None or receipt.status != "exit" or receipt.exit_code_scope != "process" or receipt.exit_code is None:
+            return None
+        output = resolve_result_output(ReceiptReader(session, store, session_id, execution.task_ref), result)
+        if output.source != "execution" or output.original_output_incomplete:
+            return None
+        failures = pytest_failure_ids(output.text.partition("\n[stderr]\n")[0], receipt.exit_code)
+        if failures is None:
+            return None
+        return ProjectCheckComparison(command, cwd, identity.fingerprint, receipt.exit_code, failures,
+                                      execution.task_ref, execution.execution_ref)
+    except (KeyError, OSError, ValueError, sqlite3.Error):
+        return None
 
 
 def _encoded(value: JsonValue) -> str:

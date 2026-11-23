@@ -25,7 +25,7 @@ from codey.operations.kernel_contracts import (
 )
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_preparation import capture_turn_snapshot, prepare_kernel_turn
-from codey.operations.kernel_progress import KernelProgress
+from codey.operations.kernel_progress import KernelProgress, project_check_feedback
 from codey.operations.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
 from codey.operations.kernel_trace import record_outbound, record_turn
 from codey.operations.project_prompt_context import prepare_coding_context
@@ -838,6 +838,23 @@ class KernelContext:
         self.sink.delivery_batch_id = action.delivery_batch_id
         self.sink.record_progress(previous, progress.snapshot())
 
+    def _project_check_reminder(self, results: Sequence[ToolResult]) -> str:
+        if not self.session.project:
+            return ""
+        from codey.operations.progress_comparison import ProjectCheckComparison, compare_project_check
+        from codey.operations.tool_tasks import settled_check_for_progress
+
+        receipts = self.session._memory_results
+
+        def compare(result: ToolResult) -> ProjectCheckComparison | None:
+            execution = settled_check_for_progress(self.durable, result, owner_task_id=self.sink.run_id, receipts=receipts)
+            if execution is None:
+                return None
+            return compare_project_check(execution, session=self.session, store=self.sink.managed_outputs,
+                                         session_id=self.sink.session_id)
+
+        return project_check_feedback(results, receipts, compare)
+
     def deliver_results(self, view: SessionView, action: RuntimeAction) -> None:
         state = view.state
         if state is None:
@@ -887,7 +904,7 @@ class KernelContext:
                 self.execution.research_tools.store if self.execution.research_tools is not None else None,
                 self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research_scope,
                 tool_names=snapshot.tool_names, provider=self.provider)
-        reminder = progress.repeat_feedback()
+        reminder = self._project_check_reminder(results) or progress.repeat_feedback()
         if reminder:
             from codey.operations.browser_task_handoff import observation_recovery_handoff
             from codey.operations.progress_comparison import progress_comparison

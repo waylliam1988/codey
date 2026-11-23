@@ -18,6 +18,17 @@ def project_check_call(spec: ToolSpec) -> JsonObject | None:
     return {"tool": "run", "args": {"command": CHECK}} if isinstance(binding, dict) and "command" in binding else None
 
 
+def matches_selected_check(spec: ToolSpec, args: JsonObject) -> bool:
+    """Compare an admitted concrete run with the original frozen check choices."""
+    binding = canonical_json_object(dict(spec.parameters)["command"]).get(_BINDING)
+    if not isinstance(binding, dict):
+        return False
+    choices = binding.get("choices")
+    candidates = choices.values() if isinstance(choices, dict) else (binding,)
+    return any(isinstance(candidate, dict) and candidate.get("command") == args.get("command")
+               and candidate.get("path") == args.get("path", ".") for candidate in candidates)
+
+
 def verification_spec(spec: ToolSpec, candidate: VerificationRequirement) -> ToolSpec:
     if isinstance(candidate, VerificationPlan):
         return verification_plan_spec(spec, candidate)

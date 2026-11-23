@@ -129,6 +129,50 @@ def tool_execution_result(durable: DurableSession, child: TaskCheckpoint, *, sto
 
 
 @dataclass(frozen=True)
+class SettledCheckExecution:
+    task_ref: str
+    execution_ref: str
+    result: ToolResult
+
+
+def settled_check_for_progress(
+    durable: DurableSession, caller_result: ToolResult, *, owner_task_id: str, receipts: Mapping[str, ToolResult],
+) -> SettledCheckExecution | None:
+    """Find the original terminal check behind a committed caller delivery."""
+    from codey.codemode.verification import matches_selected_check
+    from codey.operations.provider_receipts import restore_snapshot
+
+    if caller_result.call.name == "run" and caller_result.kind != "accepted":
+        reference = caller_result.canonical.get("tool_task")
+    elif caller_result.call.name == "task_output" and caller_result.ok:
+        reference = caller_result.canonical.get("value")
+    else:
+        return None
+    if (not isinstance(reference, dict) or not isinstance(task_ref := reference.get("task_ref"), str)
+            or reference.get("execution_ref") != (execution_ref := execution_effect_id(task_ref))):
+        return None
+    if caller_result.call.name == "task_output" and caller_result.call.args.get("task_ref") != task_ref:
+        return None
+    try:
+        child = owned_tool_task(durable, task_ref, owner_task_id=owner_task_id)
+        if child.status != "completed" or (original := receipts.get(execution_ref)) is None:
+            return None
+        request = ToolTaskInput.from_payload(child.state["tool_input"])
+        if (request.call_name != "run" or original.call.name != "run" or original.call.args != request.args
+                or request.args.get("tty") is True or request.args.get("stdin") is True):
+            return None
+        if caller_result.call.name == "run" and caller_result.call.args != request.args:
+            return None
+        snapshot = restore_snapshot(request.snapshot)
+        check = next((spec for spec in snapshot.frozen_specs if spec.name == "run"), None)
+        if check is None or not matches_selected_check(check, request.args):
+            return None
+    except (KeyError, ValueError):
+        return None
+    return SettledCheckExecution(task_ref, execution_ref, original)
+
+
+@dataclass(frozen=True)
 class _ToolSignal:
     durable: DurableSession
     task_id: str

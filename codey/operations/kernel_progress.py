@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol
 
 from codey.agents.runaway_guard import attempt_record, should_block_or_remind
 from codey.agents.state import SeenInfoLRU, ToolAttemptRecord, seen_info_key
-from codey.operations.progress_comparison import EFFECT_OBSERVATIONS, progress_comparison
+from codey.operations.progress_comparison import EFFECT_OBSERVATIONS, ProjectCheckComparison, progress_comparison
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.progress import ProgressSnapshot
 from codey.types.json_value import JsonObject
@@ -22,6 +22,44 @@ class ProgressSession(Protocol):
 
     @property
     def _memory_results(self) -> Mapping[str, ToolResult]: ...
+
+
+def project_check_feedback(
+    delivered: Sequence[ToolResult], history: Mapping[str, ToolResult],
+    compare: Callable[[ToolResult], ProjectCheckComparison | None],
+) -> str:
+    """Describe a repeated verified failure after an edit that changed no bytes."""
+    recent = tuple(history.values())[-16:]
+    for current in reversed(delivered):
+        latest = compare(current)
+        if latest is None or not latest.failure_ids:
+            continue
+        current_position = next((i for i, row in enumerate(recent) if row is current), None)
+        if current_position is None:
+            continue
+        no_ops: set[str] = set()
+        for previous in reversed(recent[:current_position]):
+            if previous.call.name == "edit":
+                if previous.audit.get("changed") is True:
+                    break
+                if previous.ok and previous.audit.get("changed") is False and isinstance(
+                    path := previous.call.args.get("path"), str
+                ):
+                    no_ops.add(path)
+            comparison = compare(previous)
+            if comparison is None or comparison.execution_ref == latest.execution_ref:
+                continue
+            if comparison.key == latest.key and no_ops:
+                failures = ", ".join(latest.failure_ids[:5])
+                from codey.knowledge.model import canonical_json
+
+                output = canonical_json({"tool": "task_output", "args": {"task_ref": latest.task_ref}})
+                return (f"The recent edit left {', '.join(sorted(no_ops))} unchanged, and the same project check "
+                        f"reported the same failures on the same workspace. Failures: {failures[:1000]}. "
+                        f"Execution receipt: {latest.execution_ref}. To read its original output use {output}. "
+                        "Find what produces the recorded failure before changing the file or rerunning the check.")
+            break
+    return ""
 
 
 class KernelProgress:
