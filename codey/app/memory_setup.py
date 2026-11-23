@@ -16,7 +16,7 @@ from codey.storage.managed_outputs import ManagedOutputStore
 from codey.workspace.context_admission import request_scope
 
 
-def _message_source(entry: EntryDraft, text: str) -> str:
+def message_source_ref(entry: EntryDraft, text: str) -> str:
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
     return f"message:{digest}:{entry.conversation_id}:{entry.entry_id}"
 
@@ -48,7 +48,7 @@ def source_available(durable: DurableSession, ref: str) -> bool:
         return bool(separator and durable.has_conversation(session_id)
                     and any(entry.entry_id == entry_id and entry.kind in {"user_message", "assistant_message"}
                             and isinstance(text := entry.payload.get("text"), str)
-                            and _message_source(entry, text) == ref for entry in durable.context(session_id)))
+                            and message_source_ref(entry, text) == ref for entry in durable.context(session_id)))
     if prefix in {"record", "decision"}:
         session_id, separator, entry_id = identity.rpartition(":")
         expected = "memory_decision" if prefix == "decision" else "memory_proposal"
@@ -101,9 +101,9 @@ def observe_terminal(memory: MemoryService, durable: DurableSession, run_id: str
         return True
     provenance: tuple[str, ...] = ("run:" + run_id, "conversation:" + task.conversation_id)
     if user is not None and isinstance(user_text, str):
-        provenance += (_message_source(user, user_text),)
+        provenance += (message_source_ref(user, user_text),)
     if assistant is not None and isinstance(answer, str):
-        provenance += (_message_source(assistant, answer),)
+        provenance += (message_source_ref(assistant, answer),)
     try:
         from codey.app.memory_observation import terminal_memory_facts
 

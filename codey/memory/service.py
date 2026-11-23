@@ -31,6 +31,7 @@ from codey.memory.contracts import (
     MemoryRetentionPolicy,
     MemoryReview,
 )
+from codey.memory.slots import SLOTS
 from codey.runtime.core.cancellation import DeadlineExceeded, TaskCancelled
 from codey.types.json_value import JsonValue
 
@@ -49,6 +50,17 @@ def valid_at(value: str, as_of: str) -> bool:
         return expiry.tzinfo is not None and now.tzinfo is not None and expiry > now
     except ValueError:
         return False
+
+
+def _preferred_slots(items: tuple[MemoryItem, ...], scopes: tuple[str, ...]) -> dict[str, str]:
+    # Compare only source-validated items. An unavailable project preference
+    # must not suppress a valid user default.
+    scoped = sorted(items, key=lambda item: (item.scope == "user", scopes.index(item.scope)))
+    preferred: dict[str, str] = {}
+    for item in scoped:
+        if item.kind == "preference" and item.slot in SLOTS:
+            preferred.setdefault(item.slot, item.item_id)
+    return preferred
 
 
 class MemoryService:
@@ -104,13 +116,18 @@ class MemoryService:
             return MemoryResult()
         try:
             result = self._capabilities.reader.retrieve(query)
-            accepted = tuple(item for item in result.items if self.admissible(item, query))[:query.max_items]
+            admissible = tuple(item for item in result.items if self.admissible(item, query))
+            preferred = _preferred_slots(admissible, query.scopes)
+            shadowed = {item.item_id for item in admissible if item.kind == "preference"
+                        and preferred.get(item.slot, item.item_id) != item.item_id}
+            accepted = tuple(item for item in admissible if item.item_id not in shadowed)[:query.max_items]
             accepted_ids = {item.item_id for item in accepted}
-            traces = tuple(replace(trace, reason="source_unavailable")
+            traces = tuple(replace(trace, reason="slot_shadowed" if trace.item_id in shadowed else "source_unavailable")
                            if trace.reason == "candidate" and trace.item_id not in accepted_ids else trace
                            for trace in result.traces)
             if not traces:
-                traces = tuple(trace_for_item(item, "candidate" if item in accepted else "source_unavailable")
+                traces = tuple(trace_for_item(item, "candidate" if item in accepted else
+                                              "slot_shadowed" if item.item_id in shadowed else "source_unavailable")
                                for item in result.items)
             return MemoryResult(accepted, traces)
         except (TaskCancelled, DeadlineExceeded):

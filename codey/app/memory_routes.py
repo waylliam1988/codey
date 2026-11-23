@@ -7,11 +7,14 @@ import logging
 from typing import TYPE_CHECKING
 
 from codey.app.memory_commands import command_ref, command_time, control_scopes, record_command, selected_scope
+from codey.app.memory_setup import message_source_ref
 from codey.durable.model import thaw_json
 from codey.memory.calibration import prediction_calibration
+from codey.memory.candidates import locate_candidate_quote
 from codey.memory.codec import item_from_payload, unique_scopes
 from codey.memory.context import retrieve_context
 from codey.memory.contracts import (
+    MEMORY_CANDIDATE_TEXT_LIMIT,
     MEMORY_CONTROLS,
     MEMORY_FAMILY_STATES,
     DeleteScopeRequest,
@@ -78,7 +81,62 @@ def memory_summary(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, d
         return 503, {"ok": False, "error": "memory unavailable"}
 
 
-def _propose(ctx: AppContext, payload: JsonObject, session_id: str, project: str, scope: str) -> dict[str, object]:
+def _validate_message_origin(ctx: AppContext, payload: JsonObject, session_id: str, project: str) -> JsonObject:
+    identity = require_json_string(payload.get("entry_id"), "entry_id")
+    entry = next((row for row in ctx.durable.context(session_id) if row.entry_id == identity
+                  and row.conversation_id == session_id and row.kind == "user_message"), None)
+    if entry is None or not isinstance(text := entry.payload.get("text"), str):
+        raise ValueError("Select an active user message in this conversation.")
+    source = message_source_ref(entry, text)
+    if ("source_ref" in payload and payload["source_ref"] != source
+            or "message_sha256" in payload and payload["message_sha256"] != source.split(":", 2)[1]):
+        raise ValueError("The source message changed. Select the current text.")
+    try:
+        task = ctx.durable.task(entry.by_task_id) if entry.by_task_id else None
+    except KeyError:
+        task = None
+    stored_project = task.state.get("project") if task is not None and task.conversation_id == session_id else None
+    actual_project = stored_project if isinstance(stored_project, str) else ""
+    if project and project != actual_project:
+        raise ValueError("The source message does not belong to this project.")
+    quote = require_json_string(payload.get("quote"), "quote")
+    if len(quote) > MEMORY_CANDIDATE_TEXT_LIMIT:
+        raise ValueError("The selected text exceeds the memory text limit.")
+    if ("start" in payload) != ("end" in payload):
+        raise ValueError("Memory selection offsets must be paired.")
+    span = (require_json_integer(payload["start"], "start"), require_json_integer(payload["end"], "end")) if (
+        "start" in payload
+    ) else None
+    start, end = locate_candidate_quote(text, quote, legacy_span=span)
+    return {"entry_id": identity, "source_ref": source, "quote": quote, "start": start, "end": end, "project": actual_project}
+
+
+def _validate_selection_proposal(ctx: AppContext, proposal_id: str, sources: tuple[str, ...],
+                                 session_id: str, scope: str) -> bool:
+    if not proposal_id.startswith("proposal:"):
+        return False
+    identity = proposal_id.removeprefix("proposal:")
+    for ref in sources:
+        origin_session, _, entry_id = ref.removeprefix("record:").rpartition(":")
+        if not ref.startswith("record:") or entry_id != identity:
+            continue
+        entry = next((row for row in ctx.durable.entries(origin_session) if row.entry_id == identity
+                      and row.kind == "memory_proposal"), None)
+        if entry is None:
+            raise ValueError("The original proposal command is no longer available.")
+        command = decode_json_object(thaw_json(entry.payload.get("command")))
+        if "origin" not in command:
+            continue
+        if origin_session != session_id or command.get("scope") != scope:
+            raise ValueError("Confirm the selection in its original conversation and scope.")
+        origin = decode_json_object(command["origin"])
+        _validate_message_origin(ctx, origin, session_id, require_json_string(origin["project"], "project"))
+        return True
+    return False
+
+
+def _propose(ctx: AppContext, payload: JsonObject, session_id: str, project: str, scope: str, *,
+             origin: JsonObject | None = None) -> dict[str, object]:
     fields: JsonObject = {key: payload[key] for key in
                          ("kind", "text", "slot", "value", "context", "supersedes", "expires_at", "confidence") if key in payload}
 
@@ -88,16 +146,47 @@ def _propose(ctx: AppContext, payload: JsonObject, session_id: str, project: str
         if checked.kind == "experience":
             raise ValueError("only preference, goal or hypothesis proposals are reviewable")
 
-    entry = record_command(ctx, session_id, "memory_proposal", {**fields, "scope": scope},
+    command: JsonObject = {**fields, "scope": scope}
+    if origin is not None:
+        command["origin"] = origin
+    entry = record_command(ctx, session_id, "memory_proposal", command,
                            require_json_string(payload.get("request_id", ""), "request_id"), validate=validate)
+    proposal_id = "proposal:" + entry.entry_id
+    sources: tuple[str, ...] = (f"record:{session_id}:{entry.entry_id}", "conversation:" + session_id)
+    if origin is not None:
+        sources += (require_json_string(origin["source_ref"], "source_ref"),)
     persisted = ctx.memory.observe(MemoryEvent(
-        "proposal:" + entry.entry_id, "memory.proposed", command_time(entry), session_id, project, "", scope,
-        fields, (f"record:{session_id}:{entry.entry_id}", "conversation:" + session_id),
-        control_scopes(project, session_id),
+        proposal_id, "memory.proposed", command_time(entry), session_id, project, "", scope,
+        fields, sources, control_scopes(project, session_id),
     ))
     if not persisted:
         raise OSError("proposal projection failed; retry the same request_id")
-    return {"ok": True, "proposal_id": "proposal:" + entry.entry_id}
+    if origin is None:
+        return {"ok": True, "proposal_id": proposal_id}
+    pending = next((row for row in ctx.memory.proposals(scope) if row.proposal_id == proposal_id), None)
+    if pending is not None:
+        return {"ok": True, "proposal_id": proposal_id, "version": pending.version, "scope": scope, "state": "pending"}
+    settled = next((row for row in ctx.durable.entries(session_id)
+                    if row.kind == "memory_decision" and row.payload.get("proposal_id") == proposal_id), None)
+    if settled is not None:
+        return {"ok": True, "proposal_id": proposal_id,
+                "version": require_json_string(settled.payload.get("version"), "version"), "scope": scope,
+                "state": "accepted" if settled.payload.get("accepted") is True else "rejected"}
+    raise ValueError("The selection proposal is no longer available.")
+
+
+def _propose_from_message(ctx: AppContext, payload: JsonObject, session_id: str, project: str) -> dict[str, object]:
+    if payload.get("scope_kind") == "user":
+        raise ValueError("First propose the selection for its conversation or project.")
+    if not require_json_string(payload.get("request_id"), "request_id"):
+        raise ValueError("Saving a message selection requires request_id.")
+    with ctx.durable.control_line():
+        origin = _validate_message_origin(ctx, payload, session_id, project)
+        actual_project = require_json_string(origin["project"], "project")
+        selector: JsonObject = {"scope_kind": "project" if project else "session", **payload}
+        scope = selected_scope(selector, session_id, actual_project)
+        proposal: JsonObject = {"kind": "preference", "text": origin["quote"], **payload}
+        return _propose(ctx, proposal, session_id, actual_project, scope, origin=origin)
 
 
 def _decide(ctx: AppContext, payload: JsonObject, session_id: str, scope: str, accepted: bool) -> dict[str, object]:
@@ -112,18 +201,29 @@ def _decide(ctx: AppContext, payload: JsonObject, session_id: str, scope: str, a
             raise ValueError("this proposal already has a different committed decision")
         if prior is not None and tuple(require_json_strings(thaw_json(prior.payload.get("supersedes", [])), "supersedes")) != replacements:
             raise ValueError("this proposal already has different committed replacement targets")
-        if prior is None and not any(row.proposal_id == proposal_id and row.version == version
-                                     for row in ctx.memory.proposals(scope)):
-            raise ValueError("proposal is missing, changed or already decided")
-        entry = prior if prior is not None else ctx.durable.append_message(session_id, "memory_decision", {
-            "proposal_id": proposal_id, "version": version,
-            "accepted": accepted, "occurred_at": ctx.memory.clock(),
-            "supersedes": list(replacements),
-        })
+        if prior is not None and "scope" in prior.payload and (prior.conversation_id != session_id
+                or prior.payload["scope"] != scope):
+            raise ValueError("The committed decision belongs to another conversation or scope.")
+        if prior is None:
+            proposal = next((row for row in ctx.memory.proposals(scope)
+                             if row.proposal_id == proposal_id and row.version == version), None)
+            if proposal is None:
+                raise ValueError("proposal is missing, changed or already decided")
+            decision: JsonObject = {
+                "proposal_id": proposal_id, "version": version,
+                "accepted": accepted, "occurred_at": ctx.memory.clock(),
+                "supersedes": list(replacements),
+            }
+            if accepted and _validate_selection_proposal(ctx, proposal_id, proposal.item.source_refs, session_id, scope):
+                decision["scope"] = scope
+            entry = ctx.durable.append_message(session_id, "memory_decision", decision)
+        else:
+            entry = prior
         decided_at = require_json_string(entry.payload.get("occurred_at"), "occurred_at")
         ctx.memory.decide(MemoryDecision(proposal_id, version, accepted,
                                         f"decision:{entry.conversation_id}:{entry.entry_id}", decided_at, replacements))
-        return {"ok": True}
+        return {"ok": True, **({"proposal_id": proposal_id, "version": version, "scope": scope}
+                                if entry.payload.get("scope") else {})}
 
 
 def _confirm_user_preference(ctx: AppContext, payload: JsonObject, session_id: str, scope: str) -> dict[str, object]:
@@ -141,6 +241,8 @@ def _confirm_user_preference(ctx: AppContext, payload: JsonObject, session_id: s
             command = decode_json_object(thaw_json(prior.payload.get("command")))
             if (command.get("proposal_id"), command.get("version"), command.get("text")) != (proposal_id, version, text):
                 raise ValueError("request_id already names a different preference confirmation")
+            if "source_scope" in command and command["source_scope"] != scope:
+                raise ValueError("request_id already names another source scope")
             entry = prior
         else:
             proposal = next((item for item in ctx.memory.proposals(scope) if item.proposal_id == proposal_id
@@ -151,6 +253,8 @@ def _confirm_user_preference(ctx: AppContext, payload: JsonObject, session_id: s
             command = {"proposal_id": proposal_id, "version": version, "text": text, "scope": "user",
                        "kind": item.kind, "slot": item.slot, "value": item.value, "context": item.context,
                        "expires_at": item.expires_at}
+            if _validate_selection_proposal(ctx, proposal_id, item.source_refs, session_id, scope):
+                command["source_scope"] = scope
             entry = record_command(ctx, session_id, "memory_user_confirmation", command, request_id)
         ref = "user-confirmed:" + entry.entry_id
         if not ctx.memory.observe(MemoryEvent(ref, "memory.user_confirmed", command_time(entry), "", "", "", "user",
@@ -210,8 +314,12 @@ def memory_action(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[s
         payload = decode_json_object(body)
         session_id = require_json_string(payload.get("session_id", ""), "session_id")
         project = require_json_string(payload.get("project", ""), "project")
-        scope = selected_scope(payload, session_id, project)
         action = payload.get("action")
+        if action == "propose_from_message":
+            if not session_id or not ctx.durable.has_conversation(session_id):
+                raise ValueError("an existing session_id is required")
+            return 200, _propose_from_message(ctx, payload, session_id, project)
+        scope = selected_scope(payload, session_id, project)
         if action in {"delete_scope", "reset"}:
             if not session_id or not ctx.durable.has_conversation(session_id):
                 raise ValueError("an existing session_id is required")
