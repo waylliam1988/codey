@@ -942,3 +942,15 @@ RunRegistry实际中间提交版本验收已完成：旧approval/coordinator源�
 Q016 RunRegistry类型/诊断投影已提交：`2a027a51`（refactor(runs): validate provider failure projections and type registry tests）。
 
 Q016主批完成：三生产文件完整检查与约定Any核验完成，教学取消修复将按独立变更提交；修改过的approval/coordinator及两完整审批测试已全文件零Any并完成必要验证。Q024只有因本次精确返回需要的coordinator单源完成，其余五文件仍未治理，明确标为部分完成。当前 **25 / 309批完整完成、52 / 996生产文件属于完整完成批次**；另5个部分批次文件独立验证，累计57个当前已验证生产文件。共有两次有效改前行为失败证据（注册表原flag、真实取消续跑原finish路径），中间残留卡片失败也已定位并修复，不将collection error记作复现。下一唯一主批Q016B：change_tracking.py的task-owned tracker选择；CLI/desktop/headless消费者仍待基础生命周期/context先行，不回到已验收server/registry追加可选优化。总goal仍active。
+
+
+Q016 教学取消修复已提交：`1a6d017b`（fix(approvals): cancel the waiting teaching record and remove stale actions）。
+
+### Q016B task-owned tracker 资源选择（完成）
+
+- change_tracking.py全42行及test_task_change_ownership.py完整脚本已读，路径归一化、显式scope、无scope扫描真实durable admission、只选择实际manifest、OrderedDict复用/更新/淘汰/禁用旧writer等路径已检查。没有确认新的业务bug或可删公开入口；不为造commit改limit为正的现有MAX_CHANGE_TRACKERS规则，也不引入新的latest-task指针。
+- 原相关行为基线 `python -m pytest -q tests/test_task_change_ownership.py tests/test_boundary_hardening_regression.py::SnapshotRequireBaselineTests tests/test_recovery_ownership_regression.py::ChangesGetTests tests/test_recovery_ownership_regression.py::RestoreLeaseTests --tb=short` → **0，14 passed，2.27秒**，q016b-behavior-baseline.json。源码完整强Any16条；源码收窄后原测试单独76条 → 9条 → 0，不将两次不同范围诊断混写为同一次总数。
+- state明确唯一真实AppContext调用方，TYPE_CHECKING避免运行时循环；checkpoint.project来自JSON，先保留原falsy跳过，再验证str再Path；无效非空项目仍TypeError，scope已有ValueError不变。缓存key、扫描顺序、文件判断、淘汰动作没有业务修改。整个测试的Path/bool参数、文件行列表/字符串diff明确校验；legacy task_change_tracker返回先作为object，实际isinstance ChangeTracker后使用，没有cast/ignore或筛掉坏行。
+- 补充有实际资源意义的LRU/current scope和evicted writer.disable_persistence边界、无缓存ephemeral、恢复跳过无manifest新scope而选有旧baseline。新typed十用例在HEAD原change_tracking.py实际 **0，10 passed，1.65秒**；额外非法project与scope四输入在同原源码 **0，4 passed，1.34秒**，q016b-fixture-baseline.json/q016b-invalid-fixture-baseline.json均finally精确恢复当前字节。没有把这些基线通过包装成bug修改前失败。
+- 最终同初始相关组 **0，20 passed，2.37秒**，无skip/cleanup警告；两完整文件加严Any/Pyrefly/ty/Ruff全部0，750文件生产三类型/precision全部0（35 suppressed/168 warnings），逐命令/退出码/稳定hash q016b-validation-final.json。未深入的其余共享回归脚本只执行明确类，不报整文件Any完成；operations/task_changes.py旧Any归原owning批次，本批仅隔离返回边界。
+- diff已审查，当前 **26 / 309批完整完成、53 / 996生产文件属于完整完成批次**；另5个部分批次文件独立验证，累计58个当前已验证生产文件。下一步先按实际入口细分Q017并治理durable/lifecycle/workspace lease基础资源，再推进context与CLI/desktop/headless消费者；原Q017 lazy import确定性待办和Q018/Q078等限制继续保留，总goal active。

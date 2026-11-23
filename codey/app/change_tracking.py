@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 from codey.workspace.changes import ChangeTracker, SnapshotStore
 
+if TYPE_CHECKING:
+    from codey.app.context import AppContext
 
-def change_tracker_for(state: Any, project: str | Path, *, persistent: bool,
+
+def change_tracker_for(state: AppContext, project: str | Path, *, persistent: bool,
                        task_id: str, limit: int) -> ChangeTracker:
     root = Path(project).expanduser().resolve()
     if not persistent:
@@ -16,8 +19,12 @@ def change_tracker_for(state: Any, project: str | Path, *, persistent: bool,
         # Recovery UI selects a task from original admission records, never
         # an independently maintained "latest task" pointer.
         for checkpoint in reversed(state.durable.tasks()):
-            project = checkpoint.state.get("project")
-            if not project or Path(project).expanduser().resolve() != root:
+            checkpoint_project = checkpoint.state.get("project")
+            if not checkpoint_project:
+                continue
+            if not isinstance(checkpoint_project, str):
+                raise TypeError("task project must be a path string")
+            if Path(checkpoint_project).expanduser().resolve() != root:
                 continue
             scope = checkpoint.state.get("change_scope")
             if scope is None:
