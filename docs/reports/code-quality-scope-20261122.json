@@ -2412,7 +2412,10 @@
         "tests/test_server.py::RunSnapshotTests::test_forgetting_session_clears_only_its_terminal_event",
         "tests/test_server.py::SessionThreadingTests::test_conversation_state_is_bounded"
       ],
-      "result": "Complete cache/snapshot/deletion ownership review. Controlled pre-fix2fail demonstrate capacity2>1 and old load replacing committed snapshot; publication lock now selects winner and enforces bound, no IO under cache lock. Separate stale callback regression before3fail/1pass shows deleted chat resurrection, new snapshot overwrite and evicted writeback; owned save path validates cached snapshot identity while holding existing history read lifetime, AppContext binds this path, raw explicit save API retained. After direct16 and scoped callers40pass, no skips. Two sources already strictAny0, full registry tests10->0, forget cleanup tests12->0 with dead private unused helper removed after usage/framework/package analysis; new regression0. Full7files strict Any/Pyrefly/ty/Ruff0; production mypy750/Pyrefly/ty/precision0, hashes stable. Q019B UI/config routes305Any and queue/Git responsibilities retain separate unfinished owners."
+      "result": "Complete cache/snapshot/deletion ownership review. Controlled pre-fix2fail demonstrate capacity2>1 and old load replacing committed snapshot; publication lock now selects winner and enforces bound, no IO under cache lock. Separate stale callback regression before3fail/1pass shows deleted chat resurrection, new snapshot overwrite and evicted writeback; owned save path validates cached snapshot identity while holding existing history read lifetime, AppContext binds this path, raw explicit save API retained. After direct16 and scoped callers40pass, no skips. Two sources already strictAny0, full registry tests10->0, forget cleanup tests12->0 with dead private unused helper removed after usage/framework/package analysis; new regression0. Full7files strict Any/Pyrefly/ty/Ruff0; production mypy750/Pyrefly/ty/precision0, hashes stable. Q019B UI/config routes305Any and queue/Git responsibilities retain separate unfinished owners.",
+      "commits": [
+        "415f84d3"
+      ]
     },
     {
       "id": "Q019B",
@@ -2421,7 +2424,7 @@
         "codey/app/control_conversations.py",
         "codey/app/conversation_routes.py"
       ],
-      "status": "not_started",
+      "status": "partial_follow_up",
       "reviewed_files": [
         "codey/app/control_conversations.py",
         "codey/app/conversation_routes.py"
@@ -2435,7 +2438,11 @@
         "Both complete files read during Q019 boundary mapping; ctx/UI/config and route Any not yet governed. Whole-file Any baseline queued; no governance-complete claim. Worktree destination must be tested without copying/creating repository worktrees.",
         "Full strict Any baseline from Q019: control_conversations104 diagnostics, conversation_routes201; source unchanged. Old Q015D passive config/UI contracts already located but full typed migration remains here. q019-baseline.json; do not count these fully read files as governed."
       ],
-      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
+      "result": "Paused at user request after Q019 commit415f84d3. Configuration/routes were fully read and old strong Any baseline104+201 exists; no production/test edits or behavioral baseline execution for Q019B. Full tests/test_conversation_tree_routes.py read, its fixture and nested response Any remain unaudited by a dedicated checker. Resume with explicit non-worktree baseline and whole-file typing; do not count reading or planned commands as passing execution.",
+      "reviewed_support": [
+        "tests/test_conversation_tree_routes.py"
+      ]
     },
     {
       "id": "Q019C",
@@ -2954,11 +2961,14 @@
       ],
       "id": "Q051",
       "status": "not_started",
-      "reviewed_files": [],
+      "reviewed_files": [
+        "codey/durable/control.py"
+      ],
       "verified_files": [],
       "candidate_test_count": 1,
       "followups": [
-        "Q015D inspected durable/control.py latest/receipt/write contracts; session and configuration/receipt dictionaries still declare Any in this owning module. No source edits or full-file type claim here. ControlService validates returned records before consuming values; complete whole-file typing in Q051."
+        "Q015D inspected durable/control.py latest/receipt/write contracts; session and configuration/receipt dictionaries still declare Any in this owning module. No source edits or full-file type claim here. ControlService validates returned records before consuming values; complete whole-file typing in Q051.",
+        "Q019B preparatory boundary review fully read durable/control.py. Legacy Any remains in latest/receipt/write session and config/result/params dictionaries. No dedicated strict Any baseline or behavioral tests executed for this dependency during Q019B; no source changes or governance-complete claim. Continue at user resume."
       ]
     },
     {

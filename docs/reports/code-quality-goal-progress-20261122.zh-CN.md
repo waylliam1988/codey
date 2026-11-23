@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：goal 已恢复。以下第一、二批是恢复前的历史证据；本轮从干净的 `7555d488` 继续，按文末全仓分区队列推进。历史未完成项仍保留，不将历史提交或本轮局部验收视为全仓治理完成。
+当前状态：goal 已按用户要求暂停（2026-11-23）。以下第一、二批是恢复前的历史证据；本轮从干净的 `7555d488` 继续，按文末全仓分区队列推进。历史未完成项仍保留，不将历史提交或本轮局部验收视为全仓治理完成。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1053,3 +1053,14 @@ Q018B 已提交：`ba3bff82`（refactor(knowledge): type observation metadata an
 - 为验证锁顺序完整读取HistoryLifetime，强Any基线0且未改源码；执行其三个现有跨进程/控制行/物理清理等待测试通过，单文件独立验收登记Q058部分完成，其另两源未治理。完整forget cleanup脚本12条Any中10条来自从未调用的私有_complete_pending；全仓无引用/导入，pytest/unittest不自动收集该名称，无fixture/plugin注册，测试不打包/无公开承诺，故删除该helper及唯一依赖import。其余容器期望及registry helper/callback/容器补具体类型，完整测试最终0，没有放宽原断言。
 - 最终`python -m pytest -q tests/test_conversation_snapshot_lifetime.py tests/test_conversation_registry.py tests/test_forget_session_cleanup.py tests/durable/test_app_context_store.py --tb=short` → **0，16 passed，5.30秒**；`python -m pytest -q tests/test_context_resource_publication.py tests/test_input_attachments.py tests/test_history_file_lifetime.py tests/durable/test_conversation_delete_commit.py tests/test_server.py::RunSnapshotTests::test_state_owns_runtime_operation_store_and_forget_deletes_it tests/test_server.py::RunSnapshotTests::test_forgetting_session_clears_only_its_terminal_event tests/test_server.py::SessionThreadingTests::test_conversation_state_is_bounded --tb=short` → **0，40 passed，8.00秒**。两批56项无skip，未运行整test_server/全仓pytest/创建worktree，q019-validation-final.json。
 - 七个完整源/测试（Context、registry、coordinator、history_lifetime及三个完整测试）强Any/Pyrefly/ty/Ruff全部0；生产mypy750/Pyrefly/ty/precision全0（35suppressed/168warnings仍在）；hash稳定、diff --check通过。已完成 **32 / 316批，62 / 996生产文件属于完整完成批次**；另6个部分批次源独立验证，累计68当前已验证生产文件。Q019B/C/D、Q09931Any、Q017D46Any等继续排队，后续进入Q019B配置/HTTP边界，禁止工作区复制。
+
+Q019 已提交：`415f84d3`（fix(conversations): fence cache publication and stale snapshot writes）。当前工作区仅外部两个PNG与一份审查报告，保留未暂存。
+
+### Q019B Canonical config / conversation HTTP branches（部分调研，用户要求暂停）
+
+- 两生产源已在前批完整读，强Any基线control_conversations104/conversation_routes201，尚未治理。开始限定UI配置、会话树与本地分支路径的行为基线，先排除会真正创建worktree的验证路径。
+
+- 用户要求“这一段做完先commit，然后停”；goal当前已paused。代码阶段Q019已由415f84d3完整提交并验收，当前只保存暂停交接记录，不继续Q019B修改或启动新测试。
+- Q019B仅完成边界调研：两生产源此前已全读且有104/201条旧Any基线；完整读了tests/test_conversation_tree_routes.py及其durable/control.py配置/收据依赖。新读脚本的fixture/响应容器Any与依赖的latest/receipt/write动态字段尚未完成治理，也未执行该批行为基线，不把阅读记成通过或完成。恢复后从此范围开始，避免真正创建worktree的测试路径。
+- 暂停时累计仍为32/316完整批次、62/996完整批次生产文件；另6个部分批次生产文件独立验证，累计68。最后代码验证为Q019两批56 passed及七文件严格Any/三类型工具/Ruff和生产门通过；本次仅Markdown/JSON进度更新，未重复运行pytest或类型门，已校验JSON、316批/996源唯一归属及diff。
+- 外部两张PNG与codey-single-agent-implementation-review-20261123.zh-CN.md保留未暂存。总目标未完成；等待用户明确恢复。
