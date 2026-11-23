@@ -11,7 +11,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
 if TYPE_CHECKING:
     from codey.runtime.core.cancellation import CapturedProcess
@@ -82,7 +82,7 @@ class ProjectWriteBusy(RuntimeError):
     """A second task tried to persist snapshots for a project already owned."""
 
 
-def _manifest_files_or_raise(payload: dict[str, Any], manifest_path: Path) -> dict[str, Any]:
+def _manifest_files_or_raise(payload: dict[str, object], manifest_path: Path) -> dict[str, object]:
     """Return the top-level ``files`` index or raise ``StoreCorruption``.
 
     Per-entry dirt is skipped by callers; a missing/broken top-level index
@@ -110,6 +110,17 @@ class RestoreResult:
     restored: list[str]
     conflicts: list[str]
     error: str | None = None
+
+
+RestoreState = Literal["already_restored", "restorable", "conflict", "unavailable"]
+
+
+def _restore_state(before: str, current: str, recorded_after: str | None) -> RestoreState:
+    if before == current:
+        return "already_restored"
+    if recorded_after is not None and recorded_after == current:
+        return "restorable"
+    return "conflict"
 
 
 class SnapshotStore:
@@ -275,7 +286,7 @@ class SnapshotStore:
         with with_file_lock(self._lock_target(resolved_root)):
             payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
             if payload is None:
-                files: dict[str, Any] = {}
+                files: dict[str, object] = {}
             else:
                 files = _manifest_files_or_raise(payload, manifest_path)
             if rel in files:
@@ -399,7 +410,7 @@ class SnapshotStore:
         result: str | None = body
         return result
 
-    def _disk_total_bytes_locked(self, resolved_root: Path, files: dict[str, Any]) -> int:
+    def _disk_total_bytes_locked(self, resolved_root: Path, files: dict[str, object]) -> int:
         # Disk-view size guard from manifest refs + stat sizes only.
         # Missing, renamed, linked, or non-regular bodies are corruption:
         # never silently skipped, never re-decoded here.
@@ -498,7 +509,7 @@ class SnapshotStore:
         self,
         resolved_root: Path,
         rel: str,
-        mutate: Callable[[dict[str, Any]], dict[str, Any]],
+        mutate: Callable[[dict[str, object]], dict[str, object]],
     ) -> None:
         manifest_path = self.path_for(resolved_root)
         payload = read_json_strict(manifest_path, max_bytes=MAX_SNAPSHOT_MANIFEST_BYTES)
@@ -689,7 +700,7 @@ class ChangeTracker:
             items.append(Snapshot(rel, before, after))
         return items
 
-    def collect(self, *, prune_clean: bool = False, paths: list[str] | None = None) -> dict[str, Any]:
+    def collect(self, *, prune_clean: bool = False, paths: list[str] | None = None) -> dict[str, object]:
         """Render the current change set; read-only unless pruning."""
 
         snapshots = self.snapshots(paths)
@@ -768,61 +779,53 @@ class ChangeTracker:
             self._after_hashes.pop(rel, None)
             self._total_bytes -= len((content or "").encode("utf-8"))
 
-    def restore(self, paths: list[str] | None = None) -> RestoreResult:
+    def _restore_paths(self, paths: list[str] | None) -> list[str]:
         with self._lock:
-            selected = sorted(set(paths or self._before.keys()))
+            return sorted(set(self._before if paths is None else paths))
+
+    def _restore_status(self, rel: str) -> tuple[RestoreState, Path | None]:
+        with self._lock:
+            if rel not in self._before:
+                return "unavailable", None
+            baseline = _content_hash(self._before[rel])
+            expected_hash = self._after_hashes.get(rel)
+        try:
+            path = _safe_join(self.root, rel)
+            if path.relative_to(self.root).as_posix() != rel:
+                return "unavailable", None
+            _ensure_not_symlink(path)
+            return _restore_state(baseline, _path_hash(path), expected_hash), path
+        except (OSError, ValueError):
+            return "unavailable", None
+
+    def preview_restore(self, paths: list[str] | None = None) -> tuple[tuple[str, RestoreState], ...]:
+        """Observe current per-file recoverability without removing any baselines."""
+        return tuple((rel, self._restore_status(rel)[0]) for rel in self._restore_paths(paths))
+
+    def restore(self, paths: list[str] | None = None) -> RestoreResult:
         restored: list[str] = []
         conflicts: list[str] = []
 
-        for rel in selected:
+        for rel in self._restore_paths(paths):
             with self._lock:
-                if rel not in self._before:
+                state, path = self._restore_status(rel)
+                if state == "already_restored":
+                    self._forget_locked(rel)
+                    continue
+                if state != "restorable" or path is None:
                     conflicts.append(rel)
                     continue
                 before = self._before[rel]
-                expected_hash = self._after_hashes.get(rel)
-            path = _safe_join(self.root, rel)
-            try:
-                _ensure_not_symlink(path)
-                current_hash = _path_hash(path)
-            except (OSError, ValueError):
-                conflicts.append(rel)
-                continue
-            if _content_hash(before) == current_hash:
-                with self._lock:
-                    self._forget_locked(rel)
-                continue
-            if expected_hash is None or current_hash != expected_hash:
-                conflicts.append(rel)
-                continue
-            try:
-                if path.is_symlink():
-                    # Fail closed: never write restored content through a
-                    # swapped-in link, even though os.replace would swap the
-                    # link itself. Deleting a link to restore absence is safe.
-                    if before is not None:
-                        conflicts.append(rel)
-                        continue
-                elif before is not None:
+                try:
                     _ensure_not_symlink(path)
-            except (OSError, ValueError):
-                conflicts.append(rel)
-                continue
-            if before is None:
-                try:
-                    if path.is_symlink() or path.exists():
-                        path.unlink()
-                except OSError:
+                    if before is None:
+                        path.unlink(missing_ok=True)
+                    else:
+                        write_text_atomic(path, before)
+                except (OSError, ValueError):
                     conflicts.append(rel)
                     continue
-            else:
-                try:
-                    write_text_atomic(path, before)
-                except OSError:
-                    conflicts.append(rel)
-                    continue
-            restored.append(rel)
-            with self._lock:
+                restored.append(rel)
                 self._forget_locked(rel)
 
         return RestoreResult(not conflicts, restored, conflicts, None if not conflicts else "restore conflict")
@@ -862,10 +865,18 @@ def is_git_repository(project: str | Path) -> bool:
     return is_repo
 
 
-def parse_git_status(short_status: str) -> list[dict[str, Any]]:
+class GitStatusRow(TypedDict):
+    path: str
+    status: str
+    additions: int
+    deletions: int
+    previous_path: NotRequired[str]
+
+
+def parse_git_status(short_status: str) -> list[GitStatusRow]:
     if "\x00" in (short_status or ""):
         return parse_git_status_nul(short_status)
-    files: list[dict[str, Any]] = []
+    files: list[GitStatusRow] = []
     for line in (short_status or "").splitlines():
         if not line.strip():
             continue
@@ -878,19 +889,19 @@ def parse_git_status(short_status: str) -> list[dict[str, Any]]:
         path, previous_path = change_file_paths(raw_path, "", status)
         if not path:
             continue
-        item = {"path": path, "status": status, "additions": 0, "deletions": 0}
+        item = GitStatusRow(path=path, status=status, additions=0, deletions=0)
         if previous_path:
             item["previous_path"] = previous_path
         files.append(item)
     return files
 
 
-def parse_git_status_nul(nul_status: str) -> list[dict[str, Any]]:
+def parse_git_status_nul(nul_status: str) -> list[GitStatusRow]:
     from codey.utils.change_paths import safe_change_path
 
     if nul_status and not nul_status.endswith("\x00"):
         raise ValueError("incomplete Git status record")
-    files: list[dict[str, Any]] = []
+    files: list[GitStatusRow] = []
     chunks = (nul_status or "").split("\x00")[:-1]
     index = 0
     while index < len(chunks):
@@ -910,7 +921,7 @@ def parse_git_status_nul(nul_status: str) -> list[dict[str, Any]]:
                 raise ValueError("unsafe Git rename source")
         if not path:
             raise ValueError("unsafe Git status path")
-        item = {"path": path, "status": status, "additions": 0, "deletions": 0}
+        item = GitStatusRow(path=path, status=status, additions=0, deletions=0)
         if previous:
             item["previous_path"] = previous
         files.append(item)
@@ -997,7 +1008,14 @@ def _expand_numstat_rename(text: str) -> str:
     return after
 
 
-def _untracked_file_preview(root: Path, rel: str) -> dict[str, Any]:
+class UntrackedFilePreview(TypedDict):
+    status: str
+    size: int
+    diff: NotRequired[str]
+    additions: NotRequired[int]
+
+
+def _untracked_file_preview(root: Path, rel: str) -> UntrackedFilePreview:
     """Return an explicit preview state for one untracked file."""
     try:
         link_path = root / rel
@@ -1043,10 +1061,10 @@ def _untracked_file_diff(root: Path, rel: str) -> tuple[str, int] | None:
     preview = _untracked_file_preview(root, rel)
     if preview.get("status") != "text":
         return None
-    return str(preview["diff"]), int(preview["additions"])
+    return preview["diff"], preview["additions"]
 
 
-def _git_failed_payload() -> dict[str, Any]:
+def _git_failed_payload() -> dict[str, object]:
     return {
         "ok": False,
         "error": "git command failed; output incomplete",
@@ -1056,7 +1074,7 @@ def _git_failed_payload() -> dict[str, Any]:
     }
 
 
-def _git_missing_payload(exc: BaseException) -> dict[str, Any]:
+def _git_missing_payload(exc: BaseException) -> dict[str, object]:
     return {
         "ok": False,
         "error": f"git unavailable: {exc}",
@@ -1066,7 +1084,7 @@ def _git_missing_payload(exc: BaseException) -> dict[str, Any]:
     }
 
 
-def _git_exit_payload(args: list[str], returncode: int, stderr: str = "") -> dict[str, Any]:
+def _git_exit_payload(args: list[str], returncode: int, stderr: str = "") -> dict[str, object]:
     excerpt = _bounded_stderr_excerpt(stderr)
     detail = f": {excerpt}" if excerpt else ""
     return {
@@ -1113,7 +1131,7 @@ def _run_one_git_command(
     return proc, None
 
 
-def _resolve_git_root(root: Path) -> tuple[Path | None, dict[str, Any] | None]:
+def _resolve_git_root(root: Path) -> tuple[Path | None, dict[str, object] | None]:
     from codey.runtime.core import cancellation as _cancellation
 
     try:
@@ -1163,7 +1181,7 @@ def _resolve_git_root(root: Path) -> tuple[Path | None, dict[str, Any] | None]:
     return git_root, None
 
 
-def _load_git_status_files(git_root: Path) -> tuple[list[dict[str, Any]] | None, dict[str, Any] | None]:
+def _load_git_status_files(git_root: Path) -> tuple[list[GitStatusRow] | None, dict[str, object] | None]:
     status_proc, error = _run_one_git_command(
         git_root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]
     )
@@ -1185,7 +1203,7 @@ def _load_git_status_files(git_root: Path) -> tuple[list[dict[str, Any]] | None,
     return files, None
 
 
-def _load_git_numstat_stats(git_root: Path) -> tuple[dict[str, dict[str, int]] | None, dict[str, Any] | None]:
+def _load_git_numstat_stats(git_root: Path) -> tuple[dict[str, dict[str, int]] | None, dict[str, object] | None]:
     unstaged_num, error = _run_one_git_command(git_root, ["diff", "--numstat", "-z"])
     if error is not None:
         return None, error
@@ -1210,7 +1228,7 @@ def _load_git_numstat_stats(git_root: Path) -> tuple[dict[str, dict[str, int]] |
     return stats, None
 
 
-def _load_git_diff_parts(git_root: Path) -> tuple[list[str] | None, bool, dict[str, Any] | None]:
+def _load_git_diff_parts(git_root: Path) -> tuple[list[str] | None, bool, dict[str, object] | None]:
     unstaged_diff, error = _run_one_git_command(git_root, ["diff", "--no-ext-diff", "--"])
     if error is not None:
         return None, False, error
@@ -1229,7 +1247,7 @@ def _load_git_diff_parts(git_root: Path) -> tuple[list[str] | None, bool, dict[s
 
 def _apply_untracked_diffs(
     git_root: Path,
-    files: list[dict[str, Any]],
+    files: list[GitStatusRow],
     stats: dict[str, dict[str, int]],
     diff_parts: list[str],
 ) -> None:
@@ -1237,7 +1255,8 @@ def _apply_untracked_diffs(
         path = file["path"]
         stat = stats.get(path)
         if stat:
-            file.update(stat)
+            file["additions"] = stat["additions"]
+            file["deletions"] = stat["deletions"]
         if file["status"] == "??":
             untracked = _untracked_file_diff(git_root, path)
             if untracked:
@@ -1257,7 +1276,7 @@ def _finalize_git_diff(diff_parts: list[str], capture_truncated: bool) -> tuple[
     return diff, truncated
 
 
-def collect_git_changes(project: str | Path | None) -> dict[str, Any]:
+def collect_git_changes(project: str | Path | None) -> dict[str, object]:
     if not project:
         return {"ok": False, "error": "project required", "files": [], "diff": ""}
     root = Path(project).expanduser().resolve()
@@ -1309,7 +1328,7 @@ def collect_git_changes(project: str | Path | None) -> dict[str, Any]:
     }
 
 
-def collect_git_file_diff(project: str | Path | None, rel: str) -> dict[str, Any]:
+def collect_git_file_diff(project: str | Path | None, rel: str) -> dict[str, object]:
     """Collect one file's diff independently from the aggregate diff budget."""
     if not project or not rel or not is_displayable_change_path(rel):
         return {"ok": False, "error": "file path invalid", "path": rel, "status": "invalid"}
@@ -1359,7 +1378,7 @@ def collect_git_file_diff(project: str | Path | None, rel: str) -> dict[str, Any
 def _empty_snapshot_changes(
     project: str | Path | None,
     error: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     root = str(Path(project).expanduser().resolve()) if project else ""
     return {
         "ok": True,
@@ -1376,7 +1395,7 @@ def _empty_snapshot_changes(
 def collect_changes(
     project: str | Path | None,
     tracker: ChangeTracker | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     if not project:
         return {"ok": False, "error": "project required", "files": [], "diff": ""}
     git_data = collect_git_changes(project)
@@ -1400,13 +1419,19 @@ def restore_snapshot_changes(
     project: str | Path | None,
     tracker: ChangeTracker | None,
     paths: list[str] | None = None,
-) -> tuple[int, dict[str, Any]]:
+    *,
+    preview: bool = False,
+) -> tuple[int, dict[str, object]]:
     if not project:
         return 400, {"ok": False, "error": "project required"}
     if tracker is None or not tracker.has_snapshots:
         return 404, {"ok": False, "error": "no snapshot changes to restore"}
+    if preview:
+        return 200, {"ok": True, "files": [
+            {"path": path, "state": state} for path, state in tracker.preview_restore(paths)
+        ]}
     result = tracker.restore(paths)
-    payload = {
+    payload: dict[str, object] = {
         "ok": result.ok,
         "restored": result.restored,
         "conflicts": result.conflicts,

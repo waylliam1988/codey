@@ -290,7 +290,8 @@ def render_declarations(snapshot: ToolCatalogSnapshot, *, budget_bytes: int = MO
     if json_edit:
         header.append("type JsonEditValue = null | boolean | number | string | JsonEditValue[] | {[key: string]: JsonEditValue};")
     header.extend((
-        "type ToolResult<T> = {ok: true; value: T; result_ref?: string} | {ok: false; error: string};",
+        'type PatchFileResult = {path: string; state: "changed" | "unchanged" | "failed" | "not_dispatched" | "unknown"; result_ref?: string};',
+        "type ToolResult<T> = ({ok: true; value: T; result_ref?: string} | {ok: false; error: string}) & {patch?: PatchFileResult[]};",
         "type Result<T> = Promise<ToolResult<T>>;",
         "declare function unwrap<T>(result: ToolResult<T>): T;",
         "declare const tools: {",

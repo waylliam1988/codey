@@ -563,7 +563,11 @@ def restore_changes_response(ctx: AppContext, body: dict[str, object]) -> tuple[
     paths = body.get("paths")
     if paths is not None and not isinstance(paths, list):
         return 400, {"ok": False, "error": "paths must be a list"}
-    clean_paths = [str(path) for path in paths] if paths is not None else None
+    submitted_paths: list[object] | None = paths
+    clean_paths = [str(path) for path in submitted_paths] if submitted_paths is not None else None
+    preview = body.get("preview", False)
+    if not isinstance(preview, bool):
+        return 400, {"ok": False, "error": "preview must be a boolean"}
     try:
         key = str(Path(project).expanduser().resolve())
     except (ValueError, OSError):
@@ -583,7 +587,7 @@ def restore_changes_response(ctx: AppContext, body: dict[str, object]) -> tuple[
         )
         if tracker is not None and not tracker.has_snapshots:
             tracker = None
-        response: object = restore_snapshot_changes(project, tracker, clean_paths)
+        response: object = restore_snapshot_changes(project, tracker, clean_paths, preview=preview)
         return _response_pair(response)
     finally:
         if acquired:

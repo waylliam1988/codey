@@ -7,6 +7,7 @@ from typing import Protocol
 from codey.codemode.identity import rpc_child_admission, rpc_child_allocator, rpc_child_index
 from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE, replace_json_fields
 from codey.codemode.navigation import TASK_SOURCE_TOOLS, resolve_task_navigation, resolve_task_source
+from codey.codemode.patch import PatchChild, PatchPreflightError, patch_summary
 from codey.codemode.types import ToolCatalogEntry
 from codey.codemode.verification import resolve_verification
 from codey.operations.browser_references import BrowserReferences
@@ -179,22 +180,34 @@ class CodeModeHost:
         if error := _check_spec_value_against_schema("edit", "args", contract, args, strict=True):
             return {"ok": False, "error": error}
         indices = (index, *self._allocate_children(len(files) - 1))
+        rows = tuple(decode_json_object(row) for row in files)
+        return self._apply_patch(rows, indices)
+
+    def _apply_patch(self, rows: tuple[JsonObject, ...], indices: tuple[int, ...]) -> JsonObject:
+        assert self._plan_patch is not None
+        paths = tuple(require_json_string(row.get("path"), "patch path") for row in rows)
         try:
-            planned = self._plan_patch(tuple(decode_json_object(row) for row in files), indices)
+            planned = self._plan_patch(rows, indices)
         except (OSError, ValueError) as exc:
-            return {"ok": False, "error": f"Patch preflight stopped before new writes: {exc}"}
+            failed = exc.path if isinstance(exc, PatchPreflightError) else ""
+            return {"ok": False, "error": f"Patch preflight stopped before new writes: {exc}",
+                    "patch": patch_summary(paths, {}, failed_path=failed)}
         written: list[str] = []
         statuses: list[str] = []
-        for child_index, row in zip(indices, planned, strict=True):
+        receipts: dict[str, PatchChild] = {}
+        for path, child_index, row in zip(paths, indices, planned, strict=True):
             receipt = self._invoke_one(child_index, "edit", row, query=False)
+            ref = receipt.audit.get("result_ref")
+            receipts[path] = PatchChild(receipt, ref if isinstance(ref, str) else "")
             if not receipt.ok:
                 return {"ok": False, "error": f"Patch stopped after writing {', '.join(written) or 'no files'}. "
                     f"{receipt.model_text} Read the failed and remaining files, then continue only the missing edits. "
-                    "The committed child receipts retain the written versions; do not repeat completed writes."}
+                    "The committed child receipts retain the written versions; do not repeat completed writes.",
+                    "patch": patch_summary(paths, receipts)}
             if receipt.audit.get("changed") is True:
-                written.append(str(row["path"]))
+                written.append(path)
             statuses.append(receipt.model_text)
-        return {"ok": True, "value": "\n".join(statuses)}
+        return {"ok": True, "value": "\n".join(statuses), "patch": patch_summary(paths, receipts)}
 
     def _semantic_edit(self, index: int, args: JsonObject) -> JsonObject:
         contract = canonical_json_object(self._catalog["edit"].parameters).get("x-codey-semantic-edit")
@@ -215,14 +228,7 @@ class CodeModeHost:
                 files.append({"path": row["path"], "replacements": row["replacements"],
                               "base_result_ref": require_json_string(receipt.audit["result_ref"], "read result_ref")})
             indices = self._allocate_children(len(files))
-            planned = self._plan_patch(tuple(files), indices)
-            statuses: list[str] = []
-            for position, row in zip(indices, planned, strict=True):
-                receipt = self._invoke_one(position, "edit", row, query=False)
-                if not receipt.ok:
-                    return {"ok": False, "error": "Semantic patch partially stopped. Keep committed receipts; " + receipt.model_text}
-                statuses.append(receipt.model_text)
-            return {"ok": True, "value": "\n".join(statuses)}
+            return self._apply_patch(tuple(files), indices)
         except (OSError, ValueError) as exc:
             return {"ok": False, "error": "Semantic patch preflight failed: " + str(exc)}
 

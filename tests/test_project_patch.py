@@ -18,18 +18,18 @@ from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain import runtime
 from codey.toolchain.runtime import ToolOutcome
-from codey.types.json_value import JsonObject
+from codey.types.json_value import JsonObject, decode_json_object
 from codey.workspace.revision import WorkspaceRevisionStore
 from tests.support.kernel_runtime import run_agent
 
 
-@pytest.mark.parametrize("scenario", ["absent", "syntax", "conflict", "success"])
+@pytest.mark.parametrize("scenario", ["missing_read", "absent", "syntax", "conflict", "guest_conflict", "noop", "success"])
 def test_patch_preflights_all_files_before_writing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scenario: str) -> None:
     project = tmp_path / "project"
     project.mkdir()
     for name in ("first.txt", "second.py"):
         (project / name).write_bytes(b"before\r\nkeep\n")
-    if scenario == "conflict":
+    if scenario in {"conflict", "guest_conflict"}:
         final_check = runtime._write_text_after_final_path_check
 
         def concurrent_write(root: Path, rel: str, content: str, *, tool: str, expected_version: str | None = None) -> ToolOutcome | None:
@@ -45,30 +45,55 @@ def test_patch_preflights_all_files_before_writing(tmp_path: Path, monkeypatch: 
         turn=1, project_path=project, allow_writes=True, tool_fns=AgentToolFns(), workspace_revision_store=revisions)
     result = execute_turn(session, [ToolCall("codemode", {"inputs": {
         "anchor": "absent" if scenario == "absent" else "before",
-        "replacement": "const invalid = 1;" if scenario == "syntax" else "after",
+        "replacement": {"syntax": "const invalid = 1;", "noop": "before"}.get(scenario, "after"),
+        "read_second": scenario != "missing_read",
+        "discard": scenario == "guest_conflict",
     }, "code": """
         const first = await tools.read_file({path: 'first.txt'});
-        await tools.read_file({path: 'second.py'});
-        return unwrap(await tools.edit({files: [
-            {path: 'first.txt', base_result_ref: first.result_ref, replacements: [{old_string: 'before', new_string: 'after'}]},
+        if (inputs.read_second) await tools.read_file({path: 'second.py'});
+        const patch = await tools.edit({files: [
+            {path: 'first.txt', base_result_ref: first.result_ref, replacements: [{old_string: 'before', new_string: inputs.replacement === 'before' ? 'before' : 'after'}]},
             {path: 'second.py', replacements: [{old_string: inputs.anchor, new_string: inputs.replacement}]}
-        ]}));
+        ]});
+        if (inputs.discard) return 'discarded';
+        if (patch.ok) return patch;
+        return unwrap(patch);
     """})], snapshot=snapshot, run_id="patch", effect_scope="test", turn=1, project_path=project,
         workspace_revision_store=revisions, executors={"codemode": executor})[0]
-    if scenario == "success":
+    patches = result.canonical["patches"]
+    assert isinstance(patches, list) and len(patches) == 1
+    files = decode_json_object(patches[0])["files"]
+    assert isinstance(files, list)
+    rows = [decode_json_object(file) for file in files]
+    assert [row["path"] for row in rows] == ["first.txt", "second.py"]
+    states = [row["state"] for row in rows]
+    if scenario in {"success", "noop", "conflict", "guest_conflict"}:
+        for row in rows:
+            ref = row["result_ref"]
+            assert isinstance(ref, str) and session._memory_results[ref].call.args["path"] == row["path"]
+    if scenario in {"success", "noop"}:
         assert result.ok, result.model_text
-        expected = b"after\r\nkeep\n"
+        assert states == (["changed", "changed"] if scenario == "success" else ["unchanged", "unchanged"])
+        returned = decode_json_object(result.canonical["value"])
+        assert returned["patch"] == files and isinstance(returned["value"], str)
+        expected = b"after\r\nkeep\n" if scenario == "success" else b"before\r\nkeep\n"
         assert {row.call.args["path"] for row in session._memory_results.values() if row.call.name == "edit" and row.ok} == {
             "first.txt", "second.py",
         }
-    elif scenario == "conflict":
-        assert not result.ok and "Patch stopped after writing first.txt" in result.model_text
+    elif scenario in {"conflict", "guest_conflict"}:
+        assert states == ["changed", "failed"]
+        if scenario == "guest_conflict":
+            assert result.ok and "Patch file receipts" in result.model_text
+        else:
+            assert not result.ok and "Patch stopped after writing first.txt" in result.model_text
         assert (project / "first.txt").read_bytes() == b"after\r\nkeep\n"
         assert (project / "second.py").read_bytes() == b"external\n"
         assert session.edited_files.keys() == {"first.txt"}
         return
     else:
         assert not result.ok and "Patch preflight stopped" in result.model_text
+        assert states == ["not_dispatched", "failed"]
+        assert all("result_ref" not in row for row in rows)
         expected = b"before\r\nkeep\n"
         assert all(row.call.name != "edit" for row in session._memory_results.values())
     assert (project / "first.txt").read_bytes() == (project / "second.py").read_bytes() == expected

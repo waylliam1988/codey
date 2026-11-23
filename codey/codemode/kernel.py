@@ -13,6 +13,7 @@ from codey.codemode.catalog import build_catalog_snapshot, snapshot_catalog
 from codey.codemode.host import CodeModeHost
 from codey.codemode.identity import child_call_index, parent_execution_id
 from codey.codemode.output import externalize_value
+from codey.codemode.patch import PatchChild, PatchPreflightError, patch_summary
 from codey.codemode.protocol import CodeModeInputError, parse_codemode_args
 from codey.codemode.replay import CodeModeRepairContext, DurableCodeModeReplay, ExecutionTrace, digest
 from codey.codemode.runtime import CodeModeRuntime, NodeWorkerRuntime
@@ -46,6 +47,34 @@ def _settled_child_description(ref: str, receipt: ToolResult) -> str:
     if receipt.kind == "accepted":
         description += f" admission={receipt.model_text}"
     return description
+
+
+def _project_patch_results(
+    result: ToolResult,
+    plans: Mapping[tuple[tuple[int, str], ...], str],
+    child_ids: Mapping[int, str],
+    receipts: Mapping[str, ToolResult],
+) -> ToolResult:
+    if not plans:
+        return result
+    groups: list[JsonObject] = []
+    incomplete: list[JsonObject] = []
+    for targets, failed_path in plans.items():
+        children: dict[str, PatchChild] = {}
+        for index, path in targets:
+            ref = child_ids.get(index, "")
+            receipt = receipts.get(ref)
+            if receipt is not None and receipt.call.name == "edit" and receipt.call.args.get("path") == path:
+                children[path] = PatchChild(receipt, ref)
+        rows = patch_summary(tuple(path for _, path in targets), children, failed_path=failed_path)
+        group: JsonObject = {"files": rows}
+        groups.append(group)
+        if any(isinstance(row, dict) and row["state"] not in {"changed", "unchanged"} for row in rows):
+            incomplete.append(group)
+    text = result.model_text
+    if incomplete:
+        text += "\nPatch file receipts: " + json.dumps(incomplete, ensure_ascii=False, separators=(",", ":"))
+    return replace(result, model_text=text, canonical={**result.canonical, "patches": groups})
 
 
 def _simplified_failure(result: ToolResult, spec: ToolSpec, children: Mapping[str, ToolResult]) -> ToolResult:
@@ -546,6 +575,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
         from codey.types.json_value import require_json_string
 
         instruction_targets: set[str] = set()
+        patch_plans: dict[tuple[tuple[int, str], ...], str] = {}
 
         def plan_patch(files: tuple[JsonObject, ...], indices: tuple[int, ...]) -> tuple[JsonObject, ...]:
             from codey.codemode.patch import preflight_patch
@@ -559,9 +589,11 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                     return repair_context.receipts.get(original)
                 return session._memory_results.get(turn_effect_id(f"{run_id}:{child_scope}:child:{index}", turn, index))
 
+            targets = tuple((index, require_json_string(file.get("path"), "patch path"))
+                            for index, file in zip(indices, files, strict=True))
+            patch_plans[targets] = ""
             pending: list[str] = []
-            for index, file in zip(indices, files, strict=True):
-                target = require_json_string(file.get("path"), "patch path")
+            for index, target in targets:
                 settled = receipt(index)
                 if settled is not None and settled.ok and settled.call.name == "edit" and settled.call.args.get("path") == target:
                     continue
@@ -573,7 +605,11 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                 raise ValueError("Observe repository instructions before writing: " + ", ".join(pending))
 
             prior_refs = tuple(ref for index, ref in child_effect_ids_by_index.items() if index < indices[0])
-            planned = preflight_patch(project_path, session, permission_profile, files, indices, receipt, prior_refs)
+            try:
+                planned = preflight_patch(project_path, session, permission_profile, files, indices, receipt, prior_refs)
+            except PatchPreflightError as exc:
+                patch_plans[targets] = exc.path
+                raise
             for args in planned:
                 _, error = _validate_tool_args("edit", args, frozen_specs=specs)
                 if error:
@@ -632,6 +668,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             )
         # References only: child facts stay in their original committed receipts.
         ordered_child_effect_ids = child_effect_ids()
+        result = _project_patch_results(result, patch_plans, child_effect_ids_by_index, session._memory_results)
         images = tuple(dict.fromkeys(image for identity in ordered_child_effect_ids
             for image in session._memory_results[identity].images))
         result = replace(result, canonical={**result.canonical, "child_effect_ids": ordered_child_effect_ids}, images=images)

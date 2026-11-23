@@ -29,9 +29,9 @@ from codey.workspace.task_changes import collect_task_changes
 from tests.test_codemode_replay_authority import _durable, _new_session, fixture
 
 
-@pytest.mark.parametrize("admitted", [False, True])
+@pytest.mark.parametrize("phase", ["before_admission", "after_admission", "after_write_before_receipt"])
 def test_patch_cold_restart_preserves_settled_write_and_original_baseline(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, admitted: bool,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, phase: str,
 ) -> None:
     class Crash(BaseException):
         pass
@@ -76,15 +76,19 @@ def test_patch_cold_restart_preserves_settled_write_and_original_baseline(
     def write(root: Path, rel: str, content: str, *, tool: str, expected_version: str | None = None) -> ToolOutcome | None:
         if rel == "b.py" and not writes:
             raise AssertionError("second file dispatched before the first write")
-        if admitted and rel == "b.py" and len(writes) == 1:
+        if phase == "after_admission" and rel == "b.py":
             raise Crash()
         writes.append(rel)
-        return original(root, rel, content, tool=tool, expected_version=expected_version)
+        result = original(root, rel, content, tool=tool, expected_version=expected_version)
+        if phase == "after_write_before_receipt" and rel == "b.py":
+            assert result is None and (project / rel).read_bytes() == b"limit = 37\r\n# keep\n"
+            raise Crash()
+        return result
 
     monkeypatch.setattr(runtime, "_write_text_after_final_path_check", write)
 
     def interrupt_before_admission(host: CodeModeHost, index: int, name: str, args: JsonObject, *, query: bool) -> ToolResult:
-        if not admitted and name == "edit" and args.get("path") == "b.py":
+        if phase == "before_admission" and name == "edit" and args.get("path") == "b.py":
             raise Crash()
         return invoke(host, index, name, args, query=query)
 
@@ -92,9 +96,11 @@ def test_patch_cold_restart_preserves_settled_write_and_original_baseline(
     try:
         with pytest.raises(Crash):
             run_task_kernel(session, request=request(sink, tracker))
-        assert writes == ["a.py"]
+        expected_writes = ["a.py", "b.py"] if phase == "after_write_before_receipt" else ["a.py"]
+        expected_b = b"limit = 37\r\n# keep\n" if phase == "after_write_before_receipt" else b"limit = 12\r\n# keep\n"
+        assert writes == expected_writes
         assert (project / "a.py").read_bytes() == b"limit = 37\r\n# keep\n"
-        assert (project / "b.py").read_bytes() == b"limit = 12\r\n# keep\n"
+        assert (project / "b.py").read_bytes() == expected_b
     finally:
         _durable(line).close()
 
@@ -115,9 +121,12 @@ def test_patch_cold_restart_preserves_settled_write_and_original_baseline(
     try:
         fresh = _new_session(project)
         outcome = run_task_kernel(fresh, request=request(resumed_sink, resumed_tracker))
-        if admitted:
+        if phase != "before_admission":
             assert not outcome.completed and "external outcome is unknown" in outcome.summary
-            assert writes == ["a.py"], "an unreceipted admitted write must not run again"
+            assert writes == expected_writes, "an unreceipted admitted write must not run again"
+            assert (project / "b.py").read_bytes() == expected_b
+            assert not any(result.ok and result.call.name == "edit" and result.call.args.get("path") == "b.py"
+                           for result in fresh._memory_results.values())
             return
         parents = [result for result in fresh._memory_results.values() if result.call.name == "codemode"]
         assert len(parents) == 1 and parents[0].ok, (outcome, parents)
@@ -128,3 +137,30 @@ def test_patch_cold_restart_preserves_settled_write_and_original_baseline(
         assert "-limit = 12" in str(changes["diff"]) and "+limit = 37" in str(changes["diff"])
     finally:
         durable.close()
+
+
+def test_selective_restore_rechecks_files_after_read_only_preview(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    tracker = ChangeTracker(project, SnapshotStore(tmp_path / "state", task_id="r"))
+    for name in ("ready.py", "changed.py", "undone.py"):
+        path = project / name
+        path.write_text("before\n", encoding="utf-8")
+        tracker.capture_before(name)
+        path.write_text("after\n", encoding="utf-8")
+        tracker.capture_after(name)
+    (project / "undone.py").write_text("before\n", encoding="utf-8")
+
+    assert dict(tracker.preview_restore(["ready.py", "changed.py", "undone.py", "missing.py"])) == {
+        "ready.py": "restorable", "changed.py": "restorable", "undone.py": "already_restored",
+        "missing.py": "unavailable",
+    }
+    assert (project / "ready.py").read_text(encoding="utf-8") == "after\n"
+    (project / "changed.py").write_text("user edit\n", encoding="utf-8")
+    assert tracker.restore([]).restored == []
+    assert (project / "ready.py").read_text(encoding="utf-8") == "after\n"
+    result = tracker.restore(["ready.py", "changed.py"])
+    assert result.restored == ["ready.py"] and result.conflicts == ["changed.py"]
+    assert (project / "ready.py").read_text(encoding="utf-8") == "before\n"
+    assert (project / "changed.py").read_text(encoding="utf-8") == "user edit\n"
+    assert tracker.preview_restore(["undone.py"]) == (("undone.py", "already_restored"),)
