@@ -13,7 +13,7 @@ from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.types.json_value import JsonObject, JsonValue, parse_json_object
 
-INPUT_VERSIONS: tuple[InputContractVersion, ...] = (11, 12, 13, 14, 15)
+INPUT_VERSIONS: tuple[InputContractVersion, ...] = (11, 12, 13, 14, 15, 16, 17, 18, 19, 20)
 CONTROL_VERSIONS: tuple[ControlPresentationVersion, ...] = (1, 2, 3, 4)
 
 
@@ -46,7 +46,7 @@ def test_input_version_rejects_nonintegers_without_coercion(version: JsonValue) 
         restore_snapshot(payload)
 
 
-@pytest.mark.parametrize("version", [-1, 0, 10, 16])
+@pytest.mark.parametrize("version", [-1, 0, 10, 21])
 def test_unsupported_input_version_is_rejected_before_shape_validation(version: int) -> None:
     with pytest.raises(ValueError, match="unsupported captured turn snapshot version; start a new request"):
         restore_snapshot({"schema_version": version})

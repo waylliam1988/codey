@@ -105,7 +105,7 @@ def _csv_row_field(schema: JsonObject) -> str | None:
 
 class _ShapeCheck:
     def __init__(self, source: bytes, catalog: ToolCatalogSnapshot, *, preflight: bool,
-                 inputs: Mapping[str, object], rewrite: bool) -> None:
+                 inputs: Mapping[str, object], rewrite: bool, file_reads: Sequence[str] | None) -> None:
         self.source = source
         self.preflight = preflight
         # Browser flow has an alternate result shape. Its ordinary output schema cannot prove absence.
@@ -115,6 +115,7 @@ class _ShapeCheck:
         self.values: dict[Node, _ToolValue] = {}
         self.inputs = inputs
         self.rewrite = rewrite
+        self.file_reads = set(file_reads) if file_reads is not None else None
         self.edits: list[_SourceEdit] = []
         self.receipt_bindings: dict[Node, str] = {}
         self.corrections = 0
@@ -308,6 +309,8 @@ class _ShapeCheck:
                     return diagnostic
                 if (value := self.infer(node)) is not None:
                     self.values[node] = value
+                    if node.type == "call_expression" and value.stage == "promise" and value.name == "read_data":
+                        self.acquire_file(node)
                 elif node.type == "call_expression":
                     # Host tools receive JSON copies. An unknown JS call may mutate earlier values.
                     self.forget()
@@ -321,6 +324,49 @@ class _ShapeCheck:
     def forget(self) -> None:
         self.bindings.clear()
         self.values.clear()
+
+    def acquire_file(self, node: Node) -> None:
+        paths = self.file_reads
+        parent = node.parent
+        if paths is None or parent is None or parent.type != "await_expression":
+            return
+        args = node.child_by_field_name("arguments")
+        values: list[Node] = [arg for arg in args.named_children if arg.type != "comment"] if args is not None else []
+        if len(values) != 1 or values[0].type != "object":
+            return
+        fields: dict[str, Node] = {}
+        for pair in values[0].named_children:
+            if pair.type == "comment":
+                continue
+            key, value = pair.child_by_field_name("key"), pair.child_by_field_name("value")
+            if pair.type != "pair" or key is None or key.type != "property_identifier" or value is None:
+                return
+            name = self.text(key)
+            if name in fields:
+                return
+            fields[name] = value
+        if set(fields) != {"path", "format"} or self.literal_input(fields["format"]) not in ("csv", "json", "quantities"):
+            return
+        path = self.literal_input(fields["path"])
+        if not isinstance(path, str) or not path.strip():
+            return
+        from codey.research.calculation import file_selector_key
+
+        canonical = file_selector_key(path)
+        if canonical not in paths:
+            argument = fields["path"]
+            text = self.text(argument)
+            self.edit(argument.start_byte, argument.end_byte,
+                      f"(unwrap(await tools.read_file({{path:{text}}})), {text})".encode())
+            paths.add(canonical)
+            self.corrections += 1
+
+    def literal_input(self, node: Node) -> object:
+        if node.type == "string" and node.named_child_count == 1 and node.named_children[0].type == "string_fragment":
+            return self.text(node.named_children[0])
+        if (field := self.field(node)) is not None and field[0].type == "identifier" and self.text(field[0]) == "inputs":
+            return self.inputs.get(field[2])
+        return None
 
     def readonly_program(self, root: Node, catalog: ToolCatalogSnapshot) -> bool:
         readonly = {entry.name for entry in catalog.entries if entry.read_only}
@@ -370,14 +416,22 @@ def _shadows_tool_api(root: Node, source: bytes) -> bool:
 
 
 def _check_shape(code: str, catalog: ToolCatalogSnapshot, *, preflight: bool,
-                 inputs: Mapping[str, object], rewrite: bool) -> tuple[str, int, SourceDiagnostic | None]:
+                 inputs: Mapping[str, object], rewrite: bool,
+                 file_reads: Sequence[str] | None = None) -> tuple[str, int, SourceDiagnostic | None]:
     source = code.encode("utf-8")
     root = Parser(Language(tree_sitter_javascript.language())).parse(source).root_node
     if root.has_error or _shadows_tool_api(root, source):
         return code, 0, None
-    check = _ShapeCheck(source, catalog, preflight=preflight, inputs=inputs, rewrite=rewrite)
+    check = _ShapeCheck(source, catalog, preflight=preflight, inputs=inputs, rewrite=rewrite, file_reads=file_reads)
     if preflight and not check.readonly_program(root, catalog):
         return code, 0, None
+    # Explicit reads remain the program's responsibility. This also avoids
+    # duplicating reads through helper functions or at an unknown path.
+    if check.file_reads is not None and ("read_file" not in check.schemas or any(
+        (field := check.field(node)) is not None and field[2] == "read_file" and check.text(field[0]) == "tools"
+        for node in _nodes(root)
+    )):
+        check.file_reads = None
     for statement in root.named_children:
         if (diagnostic := check.statement(statement)) is not None:
             return code, 0, diagnostic
@@ -396,7 +450,7 @@ def shape_failure(diagnostic: SourceDiagnostic) -> str:
     return f"CodeMode line {diagnostic.line}, column {diagnostic.column}: {diagnostic.message}"
 
 
-def preflight_plan(plan: ToolPlan, catalog: ToolCatalogSnapshot) -> ToolPlan:
+def preflight_plan(plan: ToolPlan, catalog: ToolCatalogSnapshot, *, file_reads: Sequence[str] | None = None) -> ToolPlan:
     """Lower provable data/receipt accesses before the canonical call is admitted."""
     calls: list[ToolCall] = []
     corrections = 0
@@ -404,7 +458,8 @@ def preflight_plan(plan: ToolPlan, catalog: ToolCatalogSnapshot) -> ToolPlan:
         if call.name == "codemode" and not call.args.get("repair_of") and isinstance(code := call.args.get("code"), str):
             raw_inputs = call.args.get("inputs")
             inputs = raw_inputs if isinstance(raw_inputs, dict) else {}
-            rewritten, count, diagnostic = _check_shape(code, catalog, preflight=True, inputs=inputs, rewrite=True)
+            rewritten, count, diagnostic = _check_shape(code, catalog, preflight=True, inputs=inputs,
+                                                        rewrite=True, file_reads=file_reads)
             if diagnostic is not None:
                 return ToolPlan([], None, protocol_error=shape_failure(diagnostic),
                                 protocol_error_kind=diagnostic.code, protocol_tool_name=call.name)

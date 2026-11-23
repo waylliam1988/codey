@@ -64,7 +64,8 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     snapshot = offer_browser_call(snapshot, session, "browser_navigate")
     if (ready_for_page and snapshot.task_navigation_url == links.application and snapshot.navigation_observes
             and "browser_navigate" in snapshot.tool_names and "browser_read" in snapshot.nested_tool_names):
-        snapshot = replace(snapshot, input_contract_version=19, navigation_verifies=True)
+        version = snapshot.input_contract_version if snapshot.input_contract_version >= 19 else 19
+        snapshot = replace(snapshot, input_contract_version=version, navigation_verifies=True)
     snapshot = bind_browser_references(session, snapshot, context, generation)
     from codey.operations.browser_followups import DIRECT_TOOLS
 

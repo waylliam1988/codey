@@ -105,12 +105,16 @@ def _pointer(value: JsonValue, pointer: str) -> JsonValue:
     return value
 
 
+def file_selector_key(path: str) -> str:
+    return path.replace("\\", "/").removeprefix("./")
+
+
 def _read_file_reference(path: str, session: AnswerSessionView) -> str:
-    selected = path.replace("\\", "/").removeprefix("./")
+    selected = file_selector_key(path)
     for ref, result in reversed(tuple(session._memory_results.items())):
         if ref not in session.executed or result.call.name != "read_file" or not result.ok:
             continue
-        if isinstance(observed := result.call.args.get("path"), str) and observed.replace("\\", "/").removeprefix("./") == selected:
+        if isinstance(observed := result.call.args.get("path"), str) and file_selector_key(observed) == selected:
             data = decode_json_object(result.canonical.get("value"))
             if (data.get("start_line") != 1 or data.get("next_offset") != 0
                     or data.get("end_line") != data.get("total_lines")):

@@ -142,6 +142,8 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
         payload["project_instructions"] = [rule.to_payload() for rule in snapshot.project_instructions]
     if snapshot.input_contract_version >= 19:
         payload["navigation_verifies"] = snapshot.navigation_verifies
+    if snapshot.input_contract_version >= 20:
+        payload["data_file_reads"] = list(snapshot.data_file_reads)
     payload["browser_fill_text"] = snapshot.browser_fill_text
     payload["browser_followups"] = snapshot.browser_followups
     payload["browser_references"] = snapshot.browser_references.payload() if snapshot.browser_references else None
@@ -285,8 +287,10 @@ def _snapshot_payload(raw: object) -> tuple[JsonObject, InputContractVersion]:
         expected.add("project_instructions")
     if version >= 19:
         expected.add("navigation_verifies")
+    if version >= 20:
+        expected.add("data_file_reads")
     match version:
-        case 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19:
+        case 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20:
             if set(payload) != expected:
                 raise ValueError("invalid captured turn snapshot version/shape")
             return payload, version
@@ -460,7 +464,8 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         input_contract_version=input_version, task_source_url=source_url,
         browser_followups=followups, browser_fill_text=fill_text, browser_references=references,
         project_instructions=_restore_project_instructions(payload, policy),
-        navigation_verifies=_restore_navigation_verification(payload, navigation_url, followups, names, nested))
+        navigation_verifies=_restore_navigation_verification(payload, navigation_url, followups, names, nested),
+        data_file_reads=tuple(require_json_strings(payload.get("data_file_reads", []), "data file reads")))
     from codey.toolchain.constants import PAGE_DETAIL_TOOL
 
     # Native disclosure reads have their own frozen choice contract. They

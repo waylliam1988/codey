@@ -304,6 +304,47 @@ return unwrap(await tools.calculate({operation:'weighted_mean',table:{
         assert all(row.call.name != "calculate" for row in receipts.values())
 
 
+@pytest.mark.parametrize("mode", ["automatic", "already_observed", "explicit", "legacy"])
+def test_data_acquisition_uses_one_read_and_replays_the_frozen_plan(tmp_path: Path, mode: str) -> None:
+    (tmp_path / "input.csv").write_bytes(b"cohort,value\nA,0.1\n")
+    task = session()
+    if mode == "already_observed":
+        original = build_turn_snapshot(task)
+        first = build_execute_turn_executor(session=task, snapshot=original, run_id="data", effect_scope="task",
+            turn=0, project_path=tmp_path)
+        observed, = execute_turn(task, [ToolCall("codemode", {"code": "return unwrap(await tools.read_file({path:'input.csv'}));"})],
+            project_path=tmp_path, snapshot=original, executors={"codemode": first}, run_id="data", effect_scope="task", turn=0)
+        assert observed.ok, observed.model_text
+    snapshot = build_turn_snapshot(task, native=True)
+    if mode == "legacy":
+        snapshot = replace(snapshot, input_contract_version=17)
+    code = """
+const first = await tools.read_data({path:inputs.path, format:'csv'});
+const second = await tools.read_data({path:'./input.csv', format:'csv'});
+return [unwrap(first).source_ref, unwrap(second).source_ref];
+"""
+    if mode == "explicit":
+        code = "unwrap(await tools.read_file({path:inputs.path}));\n" + code
+    reply = AssistantTurn(tool_calls=(ProviderToolCall("program", "codemode", {
+        "code": code, "inputs": {"path": "input.csv"},
+    }),))
+    frozen = restore_snapshot(snapshot_description(snapshot))
+    plan = normalize_turn(reply, snapshot=frozen)
+    assert not plan.protocol_error
+    assert plan.arg_repair_counts.get("codemode_source_shape", 0) == (1 if mode == "automatic" else 0)
+    executor = build_execute_turn_executor(session=task, snapshot=frozen, run_id="data", effect_scope="task",
+        turn=1, project_path=tmp_path)
+    result, = execute_turn(task, plan.calls, project_path=tmp_path, snapshot=frozen, executors={"codemode": executor},
+        run_id="data", effect_scope="task", turn=1)
+    assert normalize_turn(reply, snapshot=frozen) == plan
+    if mode == "legacy":
+        assert not result.ok and "read the selected file" in result.model_text
+    else:
+        assert result.ok, result.model_text
+        read_ref, = (ref for ref, row in task._memory_results.items() if row.call.name == "read_file")
+        assert result.canonical["value"] == [read_ref, read_ref]
+
+
 @pytest.mark.parametrize(("text", "format_name", "expected"), [
     ('{"value":0.1000000000000000001}', "json", {"value": "0.1000000000000000001"}),
     ("value,weight\n0.1,2\n0.2,3\n", "csv", [{"value": "0.1", "weight": "2"}, {"value": "0.2", "weight": "3"}]),

@@ -47,7 +47,7 @@ from codey.toolchain.tool_spec import (
 from codey.types.json_value import JsonValue, ToolArgs, canonical_json_object, decode_json_object
 
 MAX_NATIVE_CALLS_PER_TURN = 8
-InputContractVersion: TypeAlias = Literal[11, 12, 13, 14, 15, 16, 17, 18, 19]
+InputContractVersion: TypeAlias = Literal[11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 
 if TYPE_CHECKING:
     from codey.completion.verification_policy import VerificationCandidate
@@ -169,6 +169,7 @@ class TurnSnapshot:
     browser_references: BrowserReferences | None = None
     project_instructions: tuple[ProjectInstructionBinding, ...] = ()
     navigation_verifies: bool = False
+    data_file_reads: tuple[str, ...] = ()
 
     @property
     def bound_source_url(self) -> str | None:
@@ -568,6 +569,16 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     if browser_copy is not None and "codemode" in names:
         binding = ModelInputBinding("browser_copy", browser_copy.spec(by_name["codemode"]))
     executors = _frozen_custom_executors(inventory)
+    data_file_reads: tuple[str, ...] = ()
+    if scope is None and {"read_file", "read_data"} <= set(nested):
+        from codey.research.calculation import file_selector_key
+
+        input_version = 20
+        data_file_reads = tuple(sorted({
+            file_selector_key(path) for ref, result in session._memory_results.items()
+            if ref in session.executed and result.ok and result.call.name == "read_file"
+            and isinstance(path := result.call.args.get("path"), str)
+        }))
     return refresh_snapshot_contract(TurnSnapshot(
         allowed=allowed,
         contract_text="",
@@ -583,6 +594,7 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         input_binding=binding,
         task_navigation_url=task_navigation_url, task_source_url=task_source_url,
         input_contract_version=input_version,
+        data_file_reads=data_file_reads,
     ))
 
 
@@ -1020,7 +1032,8 @@ def normalize_turn(
         from codey.codemode.catalog import snapshot_catalog
         from codey.codemode.shape_repair import preflight_plan
 
-        return preflight_plan(plan, snapshot_catalog(snapshot))
+        return preflight_plan(plan, snapshot_catalog(snapshot),
+                              file_reads=snapshot.data_file_reads if snapshot.input_contract_version >= 20 else None)
     return plan
 
 
