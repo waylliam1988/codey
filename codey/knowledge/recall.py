@@ -9,7 +9,13 @@ from typing import Protocol
 from codey.knowledge.model import KnowledgeVersion, canonical_json
 from codey.knowledge.repository import KnowledgeRepository
 from codey.knowledge.search_text import query_terms
-from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, require_json_integer, require_json_string
+from codey.types.json_value import (
+    JsonObject,
+    JsonValue,
+    canonical_json_object,
+    require_json_integer,
+    require_json_string,
+)
 
 
 class _KnowledgeRow(Protocol):
