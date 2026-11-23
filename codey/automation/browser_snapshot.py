@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
@@ -179,7 +179,7 @@ class _ControlSample:
 async def _control_sample(
     context: FrameContext, root: ElementHandle, *, max_elements: int, root_id: int | None = None,
     revision: int = 0, include_text: bool = False, retained: set[int],
-) -> AsyncIterator[_ControlSample]:
+) -> AsyncGenerator[_ControlSample, None]:
     dom, identities, handles = await _dom_snapshot(context, root, max_elements, include_text=include_text)
     owned = {id(handle): handle for handle in handles.values()}
     try:
