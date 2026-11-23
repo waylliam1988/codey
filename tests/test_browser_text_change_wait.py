@@ -209,12 +209,15 @@ def test_navigation_comparison_preserves_visible_changes_and_arbitrary_program_v
 @pytest.mark.parametrize("transition", ["new_control", "enabled_control", "ref_churn", "still_loading", "text_progress",
                                        "wait_timeout", "wait_matched", "controls_timeout", "controls_matched",
                                        "controls_timeout_recaptured", "wait_timeout_recaptured",
-                                       "controls_prior_timeout_recaptured", "truncated_text", "declared_wait"])
+                                       "controls_prior_timeout_recaptured", "controls_explicit_timeout_recaptured",
+                                       "truncated_text", "declared_wait"])
 def test_control_wait_is_not_offered_after_the_next_control_is_already_observed(transition: str) -> None:
     from codey.operations.browser_next_step import BrowserNextStep
     from codey.operations.browser_task_handoff import browser_control_wait_handoff
 
     session, document = recorded_snapshot()
+    if transition == "controls_explicit_timeout_recaptured":
+        session.task_text = "Click Begin once. Wait for the Continue button to become available."
     initial = session._memory_results["original-snapshot"]
     value = decode_json_object(initial.canonical["value"])
     begin: JsonObject = {"ref": "begin", "role": "button", "name": "Begin", "context_id": "", "disabled": False}
@@ -263,13 +266,15 @@ def test_control_wait_is_not_offered_after_the_next_control_is_already_observed(
     ) else None
     _snapshot, hint = browser_control_wait_handoff(session, snapshot, context, generation, next_step=step)
     assert ('"condition": "text_changed"' in hint) is (transition == "ref_churn")
-    assert ('"condition": "controls_changed"' in hint) is (transition == "truncated_text")
+    assert ('"condition": "controls_changed"' in hint) is (transition in {"truncated_text", "controls_explicit_timeout_recaptured"})
     if transition == "declared_wait":
         assert hint == ""
     if transition in {"new_control", "enabled_control"}:
         assert "Continue" in hint and "already" in hint
     elif transition in {"wait_timeout", "wait_matched", "controls_timeout", "controls_matched"}:
         assert '"tool": "browser_snapshot"' in hint and "already settled" in hint
+    elif transition == "controls_explicit_timeout_recaptured":
+        assert '"tool": "browser_wait"' in hint and '"value": "fresh"' in hint
     elif transition.endswith("_recaptured"):
         assert "already settled" in hint and "Snapshot fresh" in hint
         assert '"tool": "browser_wait"' not in hint and '"tool": "browser_snapshot"' not in hint
@@ -313,6 +318,28 @@ def test_delayed_native_controls_can_continue_without_repeating_the_delivered_cl
         "return unwrap(await tools.browser_click({ref:{role:'button',name:'Continue'},purpose:'controls'}));", turn=3)
     assert finished.ok, finished.model_text
     assert browser.evaluate("window.clicks").observation["value"] == 2
+
+
+def test_once_only_click_is_blocked_after_timeout_on_the_same_document(
+    production_browser: tuple[TaskSession, ResearchTools, BrowserSession],
+) -> None:
+    session, tools, browser = production_browser
+    session.task_text = "Click Begin once. Wait for the Continue button to become available."
+    assert browser.navigate(URL).ok
+    install(browser, '<button onclick="window.clicks=(window.clicks||0)+1">Begin</button>')
+    body = "return await tools.browser_click({ref:{role:'button',name:'Begin'},purpose:'action'});"
+    first = program(session, tools, observed_snapshot(session, browser), body)
+    assert first.ok, first.model_text
+    after_click = observed_snapshot(session, browser)
+    assert after_click.browser_references is not None
+    ref = after_click.browser_references.receipt_ref
+    timed_out = program(session, tools, after_click,
+        "return await tools.browser_wait({condition:'controls_changed',value:"
+        + canonical_json(ref) + ",timeout_ms:100});", turn=2)
+    assert "timed out" in timed_out.model_text
+    repeat = program(session, tools, observed_snapshot(session, browser), body, turn=3)
+    assert "already dispatched" in repeat.model_text
+    assert browser.evaluate("window.clicks").observation["value"] == 1
 
 
 @pytest.mark.parametrize("stop", ["timeout", "cancel", "deadline", "navigation"])

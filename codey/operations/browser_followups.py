@@ -7,11 +7,12 @@ from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from codey.automation.browser_document import document_changed
+from codey.automation.browser_document import document_changed, same_document
 from codey.operations.browser_waits import BrowserWaitPlan, wait_plan
 from codey.policies.browser_requirement import BrowserPageRounds, BrowserResearchSequence, parse_browser_requirement
 from codey.policies.tool_requirement import parse_tool_success_check
 from codey.runtime.core.models import ToolResult
+from codey.task.instruction_text import instruction_text
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, thaw_schema_value
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 
@@ -43,6 +44,49 @@ PENDING = (
     "A changed page does not by itself prove that the requested result loaded."
 )
 UNCERTAIN = "Click delivery is uncertain. Inspect the page before taking another action."
+
+_ONCE = re.compile(r"\b(?:click|press|submit|prepare|release|confirm|activate)\b[^.!?;\n]{0,160}\bonce\s*(?=[.!?;\n]|$)"
+                   r"|(?:点击|提交|确认|按下)[^。！？；\n]{0,60}(?:只|仅)?一次\s*(?=[。！？；\n]|$)", re.I)
+_WAIT_FOR_CONTROL = re.compile(r"\bwait\s+for\b[^.!?;\n]{0,90}\b(?:control|button)\b[^.!?;\n]{0,50}\b(?:appear|available|enabled)\b"
+                               r"|等待[^。！？；\n]{0,32}(?:按钮|控件)[^。！？；\n]{0,20}(?:出现|可用|启用)", re.I)
+_ACTION_LABELS = frozenset({"prepare", "release", "submit", "confirm", "activate"})
+
+
+def waits_for_next_control(task: str) -> bool:
+    return _WAIT_FOR_CONTROL.search(instruction_text(task)) is not None
+
+
+def prior_single_click(task: str, results: Mapping[str, ToolResult], ref: str,
+                       document: JsonObject | None) -> str:
+    if not ref or document is None or not (clauses := tuple(_ONCE.finditer(instruction_text(task)))):
+        return ""
+    name = _observed_click_name(results, ref, document)
+    if not name or not any(_once_names_control(task[row.start():row.end()], name) for row in clauses):
+        return ""
+    return next((identity for identity, row in reversed(tuple(results.items()))
+                 if row.call.name == "browser_click" and row.call.args.get("ref") == ref
+                 and delivery(row) in {"delivered", "verified", "uncertain"}
+                 and same_document(row.audit.get("browser_document"), document)), "")
+
+
+def _observed_click_name(results: Mapping[str, ToolResult], ref: str, document: JsonObject) -> str:
+    for row in reversed(tuple(results.values())):
+        if row.call.name != "browser_snapshot" or not row.ok or not same_document(row.audit.get("browser_document"), document):
+            continue
+        value = row.canonical.get("value")
+        elements = value.get("elements") if isinstance(value, dict) else None
+        if isinstance(elements, list):
+            for control in elements:
+                if isinstance(control, dict) and control.get("ref") == ref and isinstance(name := control.get("name"), str):
+                    return " ".join(name.casefold().split())
+    return ""
+
+
+def _once_names_control(clause: str, name: str) -> bool:
+    text = " ".join(clause.casefold().split())
+    verb = name.split(maxsplit=1)[0]
+    labels = (name, verb) if verb in _ACTION_LABELS else (name,)
+    return any(re.search(r"(?<![a-z0-9_])" + re.escape(label) + r"(?![a-z0-9_])", text) for label in labels)
 
 
 def codemode_only(task: str) -> bool:

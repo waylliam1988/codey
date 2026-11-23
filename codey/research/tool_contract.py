@@ -74,9 +74,22 @@ class ContractResult:
 
 TOOL_CONTRACTS = {
     "read_data": ToolContract("read_data", data_schema(),
-        description="Parse original task-read evidence (evidence=eN) or a complete read_file result_ref as quantities, csv or json. Quantities data is an array of {value,unit,start,end,context}; CSV data is an array of row objects; JSON data preserves exact numeric strings. Keep the OUTER Result.result_ref, inspect unwrap(result).data. A calculation operand is {result_ref: result.result_ref, pointer: '/data/0/value'} for a quantity, or '/data/0/column' for CSV. pointer starts with /data/ and never includes result_ref. Select actual indices from data; never invent named fields or retype numbers."),
+        description="Parse an original eN evidence passage or a complete file already read in this task as quantities, CSV or JSON. "
+                    "Select file data by its read_file path or result_ref. Inspect unwrap(result).data. "
+                    "Use the outer read_data Result.result_ref when passing its data to calculate."),
     "calculate": ToolContract("calculate", calculation_schema(),
-        description="Exact Decimal arithmetic over committed read_data/calculate values. operands and weights are {result_ref,pointer} references. CodeMode example: const receipt=await tools.read_data({evidence:inputs.evidence,format:'quantities'}); const rows=unwrap(receipt).data; const selected=rows.map((row,i)=>({result_ref:receipt.result_ref,pointer:'/data/'+i+'/value'})); return unwrap(await tools.calculate({operation:'sum',operands:selected})); Keep receipt separate from rows: result_ref is on receipt, never inside unwrap(receipt). growth_rate uses [baseline,new]; percentage_points uses percentages; weighted_mean needs aligned referenced weights. Unit conversion, missing policy, precision and half-even rounding are explicit. Results remain semantically unreviewed. Research reports can use the offered {{calc:cN}} slots."),
+        description="Exact Decimal arithmetic over committed read_data/calculate receipts. Supply table for filtered CSV "
+                    "or explicit {result_ref,pointer} operands and weights. "
+                    "For a CSV in CodeMode: unwrap(await tools.read_file({path:inputs.path})); "
+                    "const table=await tools.read_data({path:inputs.path,format:'csv'}); "
+                    "const checked=unwrap(await tools.calculate({operation:'weighted_mean',table:{result_ref:table.result_ref,"
+                    "value_column:'value',weight_column:'weight',where:{column:'cohort',equals:inputs.group}}})); "
+                    "return {weighted_mean:checked.value,row_count:checked.inputs.length}; "
+                    "The host selects original rows and keeps values aligned with their weights. For a frozen web passage, "
+                    "read_data takes its eN evidence label. "
+                    "Keep result_ref on the outer receipt. growth_rate uses [baseline,new]; percentage_points uses percentages. "
+                    "Unit conversion, missing policy, precision and half-even rounding are explicit. Results remain semantically unreviewed. "
+                    "Research reports can use the offered {{calc:cN}} slots."),
     "research_plan": ToolContract(
         name="research_plan", input_schema=object_schema({
             'questions': {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1, 'maxItems': 8},

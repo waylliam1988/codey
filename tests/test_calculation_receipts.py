@@ -22,7 +22,7 @@ from codey.research.ledger_receipts import source_observation
 from codey.research.passages import ReadPassage
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import spec_for_tool
-from codey.types.json_value import JsonObject, JsonValue
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 from tests.test_finding_choices import read_receipt
 
 
@@ -120,15 +120,24 @@ def test_original_evidence_parsing_scope_and_report_slots() -> None:
         render_calculations("{{calc:c1}}", frozen.calculations, ())
 
 
-def test_codemode_filters_original_csv_and_calculates_through_kernel(tmp_path: Path) -> None:
+@pytest.mark.parametrize("mode", ["explicit", "table", "table_path"])
+def test_codemode_filters_original_csv_and_calculates_through_kernel(tmp_path: Path, mode: str) -> None:
     (tmp_path / "input.csv").write_bytes(b"cohort,value,weight\nA,0.1,1\nB,999,1\nA,0.2,3\n")
     task = session()
     snapshot = build_turn_snapshot(task)
     assert restore_snapshot(snapshot_description(snapshot)) == snapshot
+    read_data_spec = next(spec for spec in snapshot.frozen_specs if spec.name == "read_data")
+    assert set(dict(read_data_spec.parameters)) == {"result_ref", "format", "path"}
     executor = build_execute_turn_executor(session=task, snapshot=snapshot, run_id="calculation", effect_scope="task",
         turn=0, project_path=tmp_path)
-    code = """const source = await tools.read_file({path:'input.csv'});
-const parsed = await tools.read_data({result_ref: source.result_ref, format:'csv'});
+    read = "const source = await tools.read_file({path:'input.csv'});\n"
+    file_selector = "path:'input.csv'" if mode == "table_path" else "result_ref:source.result_ref"
+    read += "const parsed = await tools.read_data({" + file_selector + ", format:'csv'});\n"
+    if mode != "explicit":
+        code = read + """return unwrap(await tools.calculate({operation:'weighted_mean',table:{result_ref:parsed.result_ref,
+    value_column:'value',weight_column:'weight',where:{column:'cohort',equals:'A'}}}));"""
+    else:
+        code = read + """
 const rows = unwrap(parsed).data;
 const indices = rows.flatMap((row, i) => row.cohort === 'A' ? [i] : []);
 const references = column => indices.map(i => ({result_ref:parsed.result_ref,pointer:`/data/${i}/${column}`}));
@@ -138,6 +147,16 @@ return unwrap(await tools.calculate({operation:'weighted_mean',operands:referenc
     assert result.ok, result.model_text
     assert "0.175" in result.model_text
     assert [r.call.name for r in task._memory_results.values() if r.ok] == ["read_file", "read_data", "calculate", "codemode"]
+    checked = next(r for r in task._memory_results.values() if r.call.name == "calculate")
+    outcome = decode_json_object(checked.canonical["value"])
+    inputs = outcome["inputs"]
+    assert isinstance(inputs, list)
+    assert [decode_json_object(ref)["pointer"] for ref in inputs] == ["/data/0/value", "/data/2/value"]
+    if mode != "explicit":
+        selection = decode_json_object(checked.call.args["table"])
+        for column in ("missing", "value"):
+            with pytest.raises(ValueError):
+                calculate({"operation": "weighted_mean", "table": {**selection, "where": {"column": column, "equals": "A"}}}, task)
 
 
 def test_archive_rechecks_calculation_receipt_and_preserves_original_source(tmp_path: Path) -> None:

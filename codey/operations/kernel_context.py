@@ -435,10 +435,12 @@ class KernelContext:
                                      delivered_results=delivered_results)
         instructions = ""
         if self.execution.project_path is not None and "edit" in snapshot.inventory_names:
+            from codey.operations.project_delivery import declared_edit_target
             from codey.operations.project_instructions import instruction_handoff
 
+            targets = self.session.policy.edit_scope or tuple(filter(None, (declared_edit_target(self.session.task_text),)))
             bindings, instructions = instruction_handoff(
-                self.execution.project_path, self.session.read_files, self.session._memory_results)
+                self.execution.project_path, (*targets, *self.session.read_files), self.session._memory_results)
             version = snapshot.input_contract_version if snapshot.input_contract_version >= 18 else 18
             snapshot = replace(snapshot, input_contract_version=version, project_instructions=bindings)
         return snapshot, "\n\n".join(part for part in (assistance, instructions, hint) if part)

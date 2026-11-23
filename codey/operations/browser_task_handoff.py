@@ -23,7 +23,9 @@ from codey.operations.browser_followups import (
     delivery,
     interrupted_query,
     pending_click,
+    prior_single_click,
     unconfirmed_clicks,
+    waits_for_next_control,
 )
 from codey.operations.browser_next_step import BrowserNextStep, next_browser_step
 from codey.operations.browser_references import BrowserReferences
@@ -390,7 +392,9 @@ def browser_observation_handoff(session: TaskSession, snapshot: TurnSnapshot, co
     if ("browser_click" in snapshot.tool_names and snapshot.browser_followups
             and "controls" in click_followup_plan(session.policy.required_checks, set(snapshot.nested_tool_names)).plans):
         buttons: list[JsonObject] = [{"tool": "browser_click", "args": {"ref": choice, "purpose": "controls"}}
-            for choice in references.choices("browser_click") if isinstance(choice, dict) and choice.get("role") == "button"]
+            for choice in references.choices("browser_click") if isinstance(choice, dict) and choice.get("role") == "button"
+            and not prior_single_click(session.task_text, session._memory_results,
+                                       references.resolve(choice), context.browser_document)]
         if buttons:
             lines.append("Executable current button choices (select only the one required by the task):\n"
                 + json.dumps(buttons, ensure_ascii=False))
@@ -480,7 +484,7 @@ def browser_control_wait_handoff(session: TaskSession, snapshot: TurnSnapshot, c
         return snapshot, ""
     condition = "controls_changed"
     current_stage = browser_click_stage(records, results, document)
-    later_control = any(rule.tool in {"browser_click", "browser_fill", "browser_select", "browser_check"}
+    later_control = waits_for_next_control(session.task_text) or any(rule.tool in {"browser_click", "browser_fill", "browser_select", "browser_check"}
                         and rule.stage > current_stage
                         for check in session.policy.required_checks if (rule := parse_tool_success_check(check)) is not None)
     try:
@@ -494,7 +498,7 @@ def browser_control_wait_handoff(session: TaskSession, snapshot: TurnSnapshot, c
             condition = "text_changed"
     except ValueError:
         pass
-    if wait is not None:
+    if wait is not None and not _may_continue_control_wait(session, records, results, ref, wait[0], document):
         return snapshot, (f"Wait {wait[0]} already settled after click {ref}. Snapshot {current[0]} was taken afterwards. "
             "Use this observation to decide the next required step; a new snapshot reference alone does not require repeating the wait.")
     snapshot, offered, _error = handoff_call(session, snapshot, ToolCall("browser_wait", {
@@ -507,6 +511,17 @@ def browser_control_wait_handoff(session: TaskSession, snapshot: TurnSnapshot, c
         "otherwise observe once after the wait before choosing the next control. "
         "If the requested actions are already complete, report the observed result. "
         "A text change alone does not verify the business result.")
+
+
+def _may_continue_control_wait(session: TaskSession, records: Mapping[str, ExecutionRecord],
+                               results: Mapping[str, ToolResult], click: str, wait: str,
+                               document: JsonObject | None) -> bool:
+    if results[wait].ok or not waits_for_next_control(session.task_text):
+        return False
+    later = tuple(records)[tuple(records).index(click) + 1:]
+    waits = [row for ref in later if (row := results.get(ref)) is not None
+             and row.call.name == "browser_wait" and same_document(row.audit.get("browser_document"), document)]
+    return len(waits) == 1
 
 
 def _action_receipts(session: TaskSession, snapshot: TurnSnapshot,

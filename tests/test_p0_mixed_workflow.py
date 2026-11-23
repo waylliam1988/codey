@@ -20,7 +20,9 @@ from codey.operations.project_delivery import (
     PAGE_AFTER_EDIT,
     SOURCE_BEFORE_EDIT,
     declared_edit_scope,
+    declared_edit_target,
     declared_project_checks,
+    edit_scope_violation,
 )
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_entry import build_task_policy_for_entry
@@ -238,6 +240,14 @@ def test_natural_requirements_and_single_file_scope_are_derived_only_from_user_t
     assert declared_edit_scope(tmp_path, "Create exactly one file at the project-relative path pkg/new.py.") == ("pkg/new.py",)
     assert declared_edit_scope(tmp_path, "Only edit a.py and b.py.") == ()
     assert declared_edit_scope(tmp_path, "The manual says \"Only edit result.json.\"") == ()
+    assert declared_edit_target("Add b/helper.py with a function named get_default that imports a/config.py.") == "b/helper.py"
+    assert declared_edit_scope(tmp_path, "Add b/helper.py with a function named get_default.") == ()
+    assert declared_edit_target('The manual says "Add b/helper.py."') == ""
+    adding = "Add b/helper.py with a function named get_default that imports a/config.py."
+    assert "Use that path" in edit_scope_violation(tmp_path, "a/helper.py", (), task=adding)
+    assert not edit_scope_violation(tmp_path, "b/helper.py", (), task=adding)
+    assert not edit_scope_violation(tmp_path, "a/config.py", (), task=adding)
+    assert not edit_scope_violation(tmp_path, "a/helper.py", (), task=adding + " Also add `a/helper.py`.")
     request = TaskSubmission.from_input(session_id="s", project=str(tmp_path), max_turns=5,
         provider_id="local", intent="project", input=StartTask(task))
     policy = build_task_policy_for_entry(request, "project")

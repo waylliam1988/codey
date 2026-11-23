@@ -5,6 +5,7 @@ import csv
 import io
 import json
 import re
+from dataclasses import replace
 from decimal import ROUND_HALF_EVEN, Decimal, localcontext
 from typing import TYPE_CHECKING
 
@@ -21,6 +22,7 @@ from codey.types.json_value import (
 
 if TYPE_CHECKING:
     from codey.research.answer_contract import AnswerScope, AnswerSessionView
+    from codey.toolchain.tool_spec import ToolSpec
 
 OPERATIONS = ("sum", "subtract", "multiply", "divide", "percentage", "growth_rate", "percentage_points", "mean", "weighted_mean", "convert", "count")
 _UNITS = {"": ("scalar", "1"), "%": ("percent", "1"), "kg": ("mass", "1000"), "g": ("mass", "1"),
@@ -33,6 +35,9 @@ _UNITS = {"": ("scalar", "1"), "%": ("percent", "1"), "kg": ("mass", "1000"), "g
 _QUANTITY = re.compile(r"(?<![\w.])([+-]?\d+(?:\.\d+)?)\s*(" +
     "|".join(re.escape(unit) for unit in sorted(_UNITS, key=len, reverse=True) if unit) + r")(?![A-Za-z])", re.I)
 _OPERAND = object_schema({"result_ref": {"type": "string"}, "pointer": {"type": "string", "maxLength": 2048}}, "result_ref", "pointer")
+_TABLE = object_schema({"result_ref": {"type": "string"}, "value_column": {"type": "string"},
+    "weight_column": {"type": "string"}, "where": object_schema({"column": {"type": "string"},
+        "equals": {"type": "string"}}, "column", "equals")}, "result_ref", "value_column", "where")
 
 
 def is_exact_quantity(text: str) -> bool:
@@ -40,15 +45,29 @@ def is_exact_quantity(text: str) -> bool:
 
 
 def data_schema() -> JsonObject:
-    return object_schema({"evidence": {"type": "string"}, "result_ref": {"type": "string"},
+    return object_schema({"evidence": {"type": "string"}, "result_ref": {"type": "string"}, "path": {"type": "string"},
         "format": {"type": "string", "enum": ["quantities", "csv", "json"]}}, "format")
+
+
+def read_data_spec(spec: ToolSpec, scope: AnswerScope | None) -> ToolSpec:
+    from codey.toolchain.tool_spec import freeze_spec_parameters
+
+    if scope is not None and scope.aliases:
+        return freeze_spec_parameters(replace(spec, parameters=tuple((key,
+            {"type": "string", "enum": [label for label, _ in scope.aliases]} if key == "evidence" else value)
+            for key, value in spec.parameters)))
+    return freeze_spec_parameters(replace(spec,
+        parameters=tuple((key, value) for key, value in spec.parameters if key != "evidence"),
+        description="Parse a complete original read_file receipt. Choose the already-read path or its result_ref. "
+        "Read the file first. In CodeMode reuse the same path in tools.read_data after tools.read_file."))
 
 
 def calculation_schema() -> JsonObject:
     return object_schema({"operation": {"type": "string", "enum": list(OPERATIONS)},
         "operands": array_schema(_OPERAND, 1, 1000), "weights": array_schema(_OPERAND, 1, 1000),
+        "table": _TABLE,
         "unit": {"type": "string"}, "scale": {"type": "integer", "minimum": 0, "maximum": 12},
-        "missing": {"type": "string", "enum": ["error", "skip"]}}, "operation", "operands")
+        "missing": {"type": "string", "enum": ["error", "skip"]}}, "operation")
 
 
 def data_output_schema() -> JsonObject:
@@ -86,10 +105,24 @@ def _pointer(value: JsonValue, pointer: str) -> JsonValue:
     return value
 
 
+def _read_file_reference(path: str, session: AnswerSessionView) -> str:
+    selected = path.replace("\\", "/").removeprefix("./")
+    for ref, result in reversed(tuple(session._memory_results.items())):
+        if ref not in session.executed or result.call.name != "read_file" or not result.ok:
+            continue
+        if isinstance(observed := result.call.args.get("path"), str) and observed.replace("\\", "/").removeprefix("./") == selected:
+            data = decode_json_object(result.canonical.get("value"))
+            if (data.get("start_line") != 1 or data.get("next_offset") != 0
+                    or data.get("end_line") != data.get("total_lines")):
+                raise ValueError("read the entire selected file before parsing its data")
+            return ref
+    raise ValueError("read the selected file in this task before parsing its data")
+
+
 def read_data(args: JsonObject, session: AnswerSessionView, scope: AnswerScope | None) -> JsonObject:
-    evidence, reference = args.get("evidence"), args.get("result_ref")
-    if (evidence is None) == (reference is None):
-        raise ValueError("select exactly one observed evidence label or original read_file result_ref")
+    evidence, reference, path = args.get("evidence"), args.get("result_ref"), args.get("path")
+    if sum(value is not None for value in (evidence, reference, path)) != 1:
+        raise ValueError("select exactly one observed evidence label, read_file result_ref or already-read path")
     passage_refs: list[JsonValue] = []
     source_ref = ""
     version = ""
@@ -114,7 +147,8 @@ def read_data(args: JsonObject, session: AnswerSessionView, scope: AnswerScope |
         if not source_ref:
             raise ValueError("original passage receipt is unavailable")
     else:
-        source_ref = require_json_string(reference, "result_ref")
+        source_ref = (_read_file_reference(require_json_string(path, "path"), session) if path is not None
+                      else require_json_string(reference, "result_ref"))
         original = session._memory_results.get(source_ref)
         if source_ref not in session.executed or original is None or not original.ok or original.call.name != "read_file":
             raise ValueError("select a successful original read_file receipt")
@@ -208,7 +242,44 @@ def _convert(value: Decimal, source: str, target: str) -> Decimal:
     return value * Decimal(first[1]) / Decimal(second[1])
 
 
+def _table_operands(args: JsonObject, session: AnswerSessionView) -> JsonObject:
+    if "operands" in args or "weights" in args:
+        raise ValueError("choose a CSV table selection or explicit operands and weights")
+    table = decode_json_object(args["table"])
+    where = decode_json_object(table.get("where"))
+    ref = require_json_string(table.get("result_ref"), "table.result_ref")
+    value_column = require_json_string(table.get("value_column"), "table.value_column")
+    weight_column = require_json_string(table.get("weight_column", ""), "table.weight_column")
+    if bool(weight_column) != (args.get("operation") == "weighted_mean"):
+        raise ValueError("a CSV weight column is required only for weighted_mean")
+    column = require_json_string(where.get("column"), "table.where.column")
+    equals = require_json_string(where.get("equals"), "table.where.equals")
+    original = session._memory_results.get(ref)
+    if ref not in session.executed or original is None or not original.ok or original.call.name != "read_data":
+        raise ValueError("table.result_ref must select a committed CSV read_data receipt")
+    parsed = decode_json_object(original.canonical.get("value"))
+    rows = parsed.get("data")
+    if parsed.get("format") != "csv" or not isinstance(rows, list) or not rows:
+        raise ValueError("table selection requires a nonempty CSV read_data receipt")
+    fields = {column, value_column, *((weight_column,) if weight_column else ())}
+    selected: list[int] = []
+    for index, entry in enumerate(rows):
+        row = decode_json_object(entry)
+        if not fields <= row.keys():
+            raise ValueError("select columns from the original CSV receipt")
+        if row[column] == equals:
+            selected.append(index)
+
+    def pointers(name: str) -> list[JsonValue]:
+        token = name.replace("~", "~0").replace("/", "~1")
+        return [{"result_ref": ref, "pointer": f"/data/{index}/{token}"} for index in selected]
+
+    return {**args, "operands": pointers(value_column), **({"weights": pointers(weight_column)} if weight_column else {})}
+
+
 def calculate(args: JsonObject, session: AnswerSessionView) -> JsonObject:
+    if "table" in args:
+        args = _table_operands(args, session)
     raw = args.get("operands")
     if not isinstance(raw, list) or not 1 <= len(raw) <= 1000:
         raise ValueError("calculation needs 1..1000 referenced operands")

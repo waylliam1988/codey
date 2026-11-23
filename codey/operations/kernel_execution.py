@@ -316,7 +316,7 @@ def execute_tool_operation(
         from codey.operations.project_instructions import INSTRUCTION_CHANGE, changed_instruction_target
 
         try:
-            if violation := edit_scope_violation(project_path, target, session.policy.edit_scope):
+            if violation := edit_scope_violation(project_path, target, session.policy.edit_scope, task=session.task_text):
                 return _error_result(call, violation), False, None
             if source_basis is not None:
                 file_basis = project_file_basis(session, project_path, target, call.args)

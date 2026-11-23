@@ -41,6 +41,7 @@ _EDIT_SCOPE = re.compile(
     r"|(?:只|仅)(?:修改|编辑|改动))(?=\s|[\x60'\"“‘])", re.I,
 )
 _FILE_PATH = re.compile(r"(?P<path>(?:[^\s,;:<>?*\"'\x60/\\]+[/\\])*[^\s,;:<>?*\"'\x60/\\]+\.[A-Za-z0-9_-]{1,12})(?=$|[\s.!?;。；])")
+_EDIT_TARGET = re.compile(r"(?:^|[.!?;。；\n]\s+)(?:please\s+)?(?P<verb>add|create|edit|modify|update)\b", re.I)
 _PROJECT_LINK = re.compile(r"^(?:[-*]\s+)?(?P<role>record specification|application browser page):\s*"
                            r"<?(?P<url>https?://[^\s<>]+)>?\s*$", re.I | re.M)
 _RECORD_INTERFACE = re.compile(r"^(?:[-*][ \t]+)?record interface:[ \t]+`([^`\r\n]+)`[ \t]*$", re.I | re.M)
@@ -138,7 +139,23 @@ def declared_edit_scope(project: Path, task: str) -> tuple[str, ...]:
     match = _EDIT_SCOPE.search(instruction_text(task))
     if match is None:
         return ()
-    target_clause = task[match.end():].lstrip()
+    target, suffix = _leading_edit_path(task[match.end():].lstrip())
+    if not target or suffix.strip() and suffix.lstrip()[0] not in ".!?;。；":
+        return ()
+    root = project.resolve()
+    return (safe_join(root, target).relative_to(root).as_posix(),)
+
+
+def declared_edit_target(task: str) -> str:
+    return _named_edit_target(task)[0]
+
+
+def _named_edit_target(task: str) -> tuple[str, str]:
+    match = _EDIT_TARGET.search(instruction_text(task))
+    return (_leading_edit_path(task[match.end():].lstrip())[0], match["verb"].casefold()) if match else ("", "")
+
+
+def _leading_edit_path(target_clause: str) -> tuple[str, str]:
     target = quoted_value(target_clause)
     if target is not None:
         width = len(target_clause) - len(target_clause.lstrip("`")) if target_clause.startswith("`") else 1
@@ -146,22 +163,29 @@ def declared_edit_scope(project: Path, task: str) -> tuple[str, ...]:
     else:
         file_match = _FILE_PATH.match(target_clause)
         if file_match is None:
-            return ()
+            return "", ""
         target, suffix = file_match["path"], target_clause[file_match.end():]
-    if (not target or not _FILE_PATH.fullmatch(target)
-            or suffix.strip() and suffix.lstrip()[0] not in ".!?;。；"):
-        return ()
+    return (target, suffix) if target and _FILE_PATH.fullmatch(target) else ("", "")
+
+
+def edit_scope_violation(project: Path, path: str, scope: tuple[str, ...], *, task: str = "") -> str:
     root = project.resolve()
-    return (safe_join(root, target).relative_to(root).as_posix(),)
-
-
-def edit_scope_violation(project: Path, path: str, scope: tuple[str, ...]) -> str:
-    if not scope:
+    if scope:
+        if safe_join(root, path) not in {safe_join(root, allowed) for allowed in scope}:
+            return "The user authorized editing only " + ", ".join(scope) + ". No other file may be changed."
         return ""
-    root = project.resolve()
+    intended, verb = _named_edit_target(task)
+    if not intended or verb not in {"add", "create"}:
+        return ""
+    try:
+        requested = safe_join(root, intended)
+    except (OSError, ValueError):
+        return ""
     target = safe_join(root, path)
-    if target not in {safe_join(root, allowed) for allowed in scope}:
-        return "The user authorized editing only " + ", ".join(scope) + ". No other file may be changed."
+    alternate = target.relative_to(root).as_posix()
+    if (target != requested and target.name.casefold() == requested.name.casefold()
+            and re.search(r"(?<![\w./-])" + re.escape(alternate) + r"(?![\w/-])", task.replace("\\", "/"), re.I) is None):
+        return f"The user requested adding {requested.relative_to(root).as_posix()}. Use that path for the named file."
     return ""
 
 

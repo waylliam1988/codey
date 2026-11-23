@@ -3,11 +3,27 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from codey.knowledge.model import canonical_json
 from codey.research.answer_contract import AnswerScope, AnswerSessionView
 from codey.research.finding_stage import comparison_stage
 from codey.research.passages import read_passage_refs
 from codey.toolchain.tool_spec import ToolSpec, _check_spec_value_against_schema, freeze_spec_parameters
-from codey.types.json_value import JsonValue, canonical_json_object, decode_json_object, parse_json_object
+from codey.types.json_value import JsonValue, ToolArgs, canonical_json_object, decode_json_object, parse_json_object
+
+
+def resolve_finding_passages(args: ToolArgs, scope: AnswerScope, spec: ToolSpec) -> ToolArgs:
+    selection = canonical_json_object(dict(spec.parameters).get("passage_ref", {})).get("enum")
+    if not isinstance(selection, list):
+        return args
+    aliases = {label: ref for label, ref in scope.aliases if label in selection}
+    if not aliases:
+        return args
+    lowered = dict(args)
+    if isinstance(ref := args.get("passage_ref"), str):
+        lowered["passage_ref"] = aliases.get(ref, ref)
+    if isinstance(extra := args.get("additional_passage_refs"), list):
+        lowered["additional_passage_refs"] = [aliases.get(ref, ref) if isinstance(ref, str) else ref for ref in extra]
+    return lowered
 
 
 def finding_choices(spec: ToolSpec, scope: AnswerScope, session: AnswerSessionView) -> ToolSpec | None:
@@ -17,7 +33,12 @@ def finding_choices(spec: ToolSpec, scope: AnswerScope, session: AnswerSessionVi
     if not scope.passage_refs:
         return spec
     parameters = canonical_json_object(dict(spec.parameters))
-    parameters["passage_ref"] = {**decode_json_object(parameters["passage_ref"]), "enum": list(scope.passage_refs)}
+    selectors: list[JsonValue] = [label for label, _ in scope.aliases]
+    selectors.extend(scope.passage_refs)
+    parameters["passage_ref"] = {**decode_json_object(parameters["passage_ref"]), "enum": selectors,
+        "description": "Use the short evidence label eN shown with the passage. The host resolves its exact receipt."}
+    extras = decode_json_object(parameters["additional_passage_refs"])
+    parameters["additional_passage_refs"] = {**extras, "items": {"type": "string", "enum": selectors}}
     selected_refs = set(scope.passage_refs)
     sources: dict[str, str] = {}
     for result in session._memory_results.values():
@@ -47,4 +68,7 @@ def finding_choices(spec: ToolSpec, scope: AnswerScope, session: AnswerSessionVi
     if choices:
         parameters["comparison"] = {**decode_json_object(comparison), "enum": choices}
         required = tuple(dict.fromkeys((*required, "comparison")))
-    return freeze_spec_parameters(replace(spec, parameters=tuple(parameters.items()), required=required))
+    example = {"tool": spec.name, "args": {"claim": "One complete scoped finding.", "passage_ref": scope.aliases[0][0]}}
+    return freeze_spec_parameters(replace(spec, parameters=tuple(parameters.items()), required=required,
+        json_examples=(canonical_json(example),), description=spec.description.replace(
+            "Copy passage_ref=p... from the read result.", "Supply passage_ref=eN from the frozen evidence menu.")))

@@ -423,14 +423,10 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
     question_refs = tuple(f"q{index}" for index in range(1, len(session.research_questions) + 1))
     selected: list[ToolSpec] = []
     for spec in frozen:
-        if spec.name == "read_data" and scope is not None and scope.aliases:
-            from dataclasses import replace
+        if spec.name == "read_data":
+            from codey.research.calculation import read_data_spec
 
-            from codey.toolchain.tool_spec import freeze_spec_parameters
-
-            spec = freeze_spec_parameters(replace(spec, parameters=tuple((key,
-                {"type": "string", "enum": [label for label, _ in scope.aliases]} if key == "evidence" else value)
-                for key, value in spec.parameters)))
+            spec = read_data_spec(spec, scope)
         if spec.name == "semantic_definition" and (not session.project or not available_server()):
             continue
         if spec.name == "workspace_diff" and (not session.project or not session.policy.allows("project.write")):
@@ -844,6 +840,10 @@ def _lower_bound_inputs(
     lowered: list[tuple[str, ToolArgs, str]] = []
     for raw, args, call_id in items:
         name = _canonical_name(raw)
+        if name == "save_finding" and name in models and snapshot.research_scope is not None:
+            from codey.research.finding_choices import resolve_finding_passages
+
+            args = resolve_finding_passages(args, snapshot.research_scope, models[name])
         if name == "run" and name in models:
             from codey.codemode.verification import resolve_verification
 

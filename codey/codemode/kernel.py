@@ -598,7 +598,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             patch_plans[targets] = ""
             pending: list[str] = []
             for index, target in targets:
-                if violation := edit_scope_violation(project_path, target, session.policy.edit_scope):
+                if violation := edit_scope_violation(project_path, target, session.policy.edit_scope, task=session.task_text):
                     raise ValueError(violation)
                 settled = receipt(index)
                 if settled is not None and settled.ok and settled.call.name == "edit" and settled.call.args.get("path") == target:

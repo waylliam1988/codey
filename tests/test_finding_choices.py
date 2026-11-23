@@ -5,12 +5,13 @@ import hashlib
 from dataclasses import replace
 
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
+from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.answer_contract import AnswerScope, digest
 from codey.research.finding_choices import finding_choices
 from codey.research.ledger import OpenedSource
@@ -30,7 +31,7 @@ def read_receipt(url: str, text: str, source_id: str = "s1") -> tuple[str, ToolR
     return ref, result
 
 
-def test_finding_choices_preserve_canonical_ids_without_alias_repair() -> None:
+def test_finding_choices_lower_short_labels_to_original_passages() -> None:
     ref, result = read_receipt("https://example.org/study?sample=A%2FB#data", "Measured input was 24 kg.")
     spec = spec_for_tool("save_finding")
     assert spec is not None
@@ -41,21 +42,26 @@ def test_finding_choices_preserve_canonical_ids_without_alias_repair() -> None:
     chosen = finding_choices(spec, scope, session)
     assert chosen is not None
     properties = dict(chosen.parameters)
-    assert canonical_json_object(properties["passage_ref"])["enum"] == [ref]
+    assert canonical_json_object(properties["passage_ref"])["enum"] == ["e1", ref]
     assert canonical_json_object(properties["source_ref"])["enum"] == ["s1"]
     assert "enum" not in decode_json_object(dict(spec.parameters)["passage_ref"]), "mutated the registry contract"
     good: JsonObject = {"claim": "Measured input was 24 kg.", "passage_ref": ref}
     assert not validate_args_with_spec(chosen, good)
     assert not validate_args_with_spec(chosen, {**good, "source_ref": "s1"})
-    for invented in ("p1", "e1", f"[{ref}]"):
+    assert not validate_args_with_spec(chosen, {**good, "passage_ref": "e1"})
+    for invented in ("p1", "e9", f"[{ref}]"):
         assert validate_args_with_spec(chosen, {**good, "passage_ref": invented})
     assert validate_args_with_spec(chosen, {**good, "source_ref": "https://example.org/invented"})
     session.record_open(str(result.call.args["url"]), source_id="s1")
+    project_execution_record(session, "read", result.call, result, ok=True)
     snapshot = build_turn_snapshot(session)
     restored = restore_snapshot(snapshot_description(snapshot))
     assert restored == snapshot
     offered = next(row for row in restored.frozen_specs if row.name == "save_finding")
     assert canonical_json_object(dict(offered.parameters)["source_ref"])["enum"] == ["s1"]
+    reply = AssistantTurn(tool_calls=(ProviderToolCall("finding", "save_finding", {**good, "passage_ref": "e1"}),))
+    plan = normalize_turn(reply, snapshot=restored)
+    assert not plan.protocol_error and plan.calls[0].args == good
     lowered, problem = ExecutionDelegate(session=session)._lower_finding_source({**good, "source_ref": "s1"})
     assert not problem and lowered["source_ref"] == result.call.args["url"]
 
@@ -71,7 +77,7 @@ def test_failed_and_unselected_read_receipts_cannot_extend_the_menu() -> None:
     chosen = finding_choices(spec, scope, session)
     assert chosen is not None
     properties = dict(chosen.parameters)
-    assert canonical_json_object(properties["passage_ref"])["enum"] == [ref]
+    assert canonical_json_object(properties["passage_ref"])["enum"] == ["e1", ref]
     assert other not in str(properties["source_ref"])
     assert canonical_json_object(properties["source_ref"])["enum"] == ["s1"]
 

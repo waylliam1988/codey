@@ -282,11 +282,17 @@ class ExecutionDelegate:
                               or self._research_scope is not None
                               or (call.name in browser_text_report.METADATA_TOOLS and browser_text_report.report_scope(self.session) is not None)
                               or (call.name in browser_upload.UPLOAD_RECEIPTS and browser_upload.upload_scope(self.session) is not None)
-                              or call.name in {"browser_screenshot", "browser_snapshot", "browser_locate", "browser_inspect"}
+                              or call.name in {"browser_click", "browser_screenshot", "browser_snapshot", "browser_locate", "browser_inspect"}
                               or (call.name == "browser_eval" and call.args.get("code") == CAPTURE) or
                               (call.name in {"browser_eval", "browser_read"} and has_browser_field_bindings(checks, tool=call.name)))
             transition = call.name in PAGE_TRANSITIONS
             before = browser.document_identity() if trace_document and not transition else None
+            if call.name == "browser_click" and isinstance(ref := call.args.get("ref"), str):
+                prior = browser_followups.prior_single_click(self.session.task_text, self.session._memory_results, ref, before)
+                if prior:
+                    return ToolResult(call, f"Click {prior} was already dispatched under the user's once-only instruction. "
+                                      "Wait or observe the current page without repeating this control.", ok=False,
+                                      canonical={"value": {"delivery": "not_delivered", "prior_click": prior}}), False, None
             result, ok, code = self._execute_browser_operation(browser, call, turn=turn, tool_index=tool_index)
             if trace_document and (transition or before is not None):
                 try:

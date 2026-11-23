@@ -99,7 +99,8 @@ def test_patch_preflights_all_files_before_writing(tmp_path: Path, monkeypatch: 
     assert (project / "first.txt").read_bytes() == (project / "second.py").read_bytes() == expected
 
 
-def test_cross_directory_creation_observes_its_own_instructions_before_writing(tmp_path: Path) -> None:
+@pytest.mark.parametrize("named", [False, True])
+def test_cross_directory_creation_observes_its_own_instructions_before_writing(tmp_path: Path, named: bool) -> None:
     project = tmp_path / "project"
     for folder, rules in (("a", "A_SCOPE: keep existing public API"), ("b", "B_SCOPE: write B files with a sentinel")):
         (project / folder).mkdir(parents=True)
@@ -110,7 +111,7 @@ def test_cross_directory_creation_observes_its_own_instructions_before_writing(t
     replies: tuple[JsonObject, ...] = (
         {"tool": "read_file", "args": {"path": "a/reference.py"}},
         create,
-        create,
+        *(() if named else (create,)),
         {"tool": "done", "args": {"summary": "Created the file with the b scope sentinel."}},
     )
     prompts: list[str] = []
@@ -125,7 +126,7 @@ def test_cross_directory_creation_observes_its_own_instructions_before_writing(t
         def send(self, text: str, timeout: float | None = None) -> str:
             position = len(prompts)
             prompts.append(text)
-            if position <= 2:
+            if position <= (1 if named else 2):
                 assert not target.exists(), "The unfrozen edit wrote a file."
             return json.dumps(replies[min(position, len(replies) - 1)])
 
@@ -133,15 +134,17 @@ def test_cross_directory_creation_observes_its_own_instructions_before_writing(t
             pass
 
     with closing(HeadlessAppContext(tmp_path / "state", port=0, emit_jsonl=lambda _event: None)) as state:
+        directive = "Create b/created.py" if named else "Create the requested helper"
         result = run_agent(AgentRequest(
-            Provider(), project, "Create b/created.py using the project instructions. Do not run tests.",
+            Provider(), project, directive + " using the project instructions. Do not run tests.",
             provider_id="test", durable=state.durable, managed_outputs=state.managed_outputs,
             workspace_revision_store=state.workspace_revisions, runtime_mutations=state.runtime_mutations,
             max_turns=6, project_changes_required=True,
         ))
 
     assert result.stop_reason == "done", result
-    assert "a/AGENTS.md applies under a" in prompts[1] and "B_SCOPE:" not in prompts[1]
+    assert ("B_SCOPE:" in prompts[0]) is named
+    assert "a/AGENTS.md applies under a" in prompts[1] and ("B_SCOPE:" in prompts[1]) is named
     assert "b/AGENTS.md applies under b" in prompts[2] and "B_SCOPE:" in prompts[2]
     assert "a/AGENTS.md applies under a" in prompts[2]
     assert target.read_text(encoding="utf-8") == "LIMIT = 3\n# sentinel\n"
