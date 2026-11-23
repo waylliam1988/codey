@@ -5,10 +5,16 @@ import asyncio
 
 from playwright.async_api import async_playwright
 
+from codey.automation.browser_contracts import BrowserAction
 from codey.automation.browser_document import same_document
 from codey.automation.browser_frames import backend_node, frame_context, resolve_backend
+from codey.automation.browser_session import BrowserSession
+from codey.operations.task_session import TaskSession
+from codey.research.tools import ResearchTools
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string
 from tests.support.real_cdp import chromium_executable
+from tests.test_browser_context_delivery import URL, elements, install
+from tests.test_browser_context_delivery import production_browser as production_browser
 
 
 def test_duplicate_srcdoc_frames_have_distinct_documents_and_resolvable_nodes() -> None:
@@ -39,3 +45,28 @@ def test_duplicate_srcdoc_frames_have_distinct_documents_and_resolvable_nodes() 
             finally:
                 await browser.close()
     asyncio.run(exercise())
+
+
+def test_click_blocked_in_ancestor_frame_reports_the_actual_hit_layer(
+    production_browser: tuple[TaskSession, ResearchTools, BrowserSession],
+) -> None:
+    _, _, browser = production_browser
+    assert browser.navigate(URL).ok
+    install(browser, """<iframe title="Review" srcdoc="<button onclick='window.clicked=1'>Approve</button>"></iframe>
+        <div aria-label="Parent overlay" style="position:fixed;inset:0;z-index:10;background:white"></div>""")
+    frames = browser.action(BrowserAction.FRAME_LIST).observation["frames"]
+    assert isinstance(frames, list)
+    child = next(decode_json_object(frame) for frame in frames if decode_json_object(frame)["main"] is False)
+    assert browser.action(BrowserAction.FRAME_SELECT, {"frame_id": child["frame_id"]}).ok
+    document = browser.document_identity()
+    assert document is not None and document["frame_id"] == child["frame_id"]
+    button = next(row for row in elements(browser.snapshot().observation) if row["name"] == "Approve")
+    ref = require_json_string(button["ref"], "ref")
+    attempt = browser.click(ref)
+    assert not attempt.ok and attempt.observation["delivery"] == "not_delivered"
+    assert attempt.observation["ref"] == ref and attempt.observation["reason"] == "occluded"
+    assert attempt.observation["hit_frame_depth"] == 1 and attempt.observation["hit_frame_url"] == URL
+    point = decode_json_object(attempt.observation["hit_point"])
+    assert isinstance(point["x"], (int, float)) and isinstance(point["y"], (int, float))
+    assert same_document(attempt.observation["document"], document)
+    assert browser.evaluate("Boolean(window.clicked)").observation["value"] is False

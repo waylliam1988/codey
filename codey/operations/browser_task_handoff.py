@@ -10,7 +10,12 @@ from codey.automation.browser_document import same_document
 from codey.codemode.catalog import snapshot_catalog
 from codey.codemode.json_edit import edit_guidance
 from codey.completion.contract import CHECK_NOT_APPLICABLE, CHECK_PASS
-from codey.operations.browser_completion import PAGE_EVIDENCE_INVALIDATORS, committed_results, complete_page_passages
+from codey.operations.browser_completion import (
+    PAGE_EVIDENCE_INVALIDATORS,
+    browser_click_stage,
+    committed_results,
+    complete_page_passages,
+)
 from codey.operations.browser_followups import (
     DIRECT_TOOLS,
     click_followup_plan,
@@ -422,22 +427,29 @@ def _settled_post_click_wait(
 
 
 def browser_control_wait_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
-                                 generation: int | None) -> tuple[TurnSnapshot, str]:
+                                 generation: int | None, *,
+                                 next_step: BrowserNextStep | None = None) -> tuple[TurnSnapshot, str]:
     """Offer a read-only continuation when the next control may appear later."""
-    from codey.operations.browser_waits import snapshot_text_baseline
+    from codey.operations.browser_waits import snapshot_text_baseline, snapshot_wait_baseline
 
-    if (snapshot.input_binding is not None or snapshot.browser_copy is not None
+    document = context.browser_document
+    if (next_step is not None or document is None or snapshot.input_binding is not None or snapshot.browser_copy is not None
             or "browser_wait" not in snapshot.nested_tool_names or pending_click(session._memory_results, context.browser_document) is not None):
         return snapshot, ""
-    current = _current_snapshot(session, context, generation)
+    current = _current_snapshot(session, context, generation, require_text=False)
     records, results = tool_facts(session, context)
     actions = committed_results(records, results, PAGE_EVIDENCE_INVALIDATORS, include_failed=PAGE_EVIDENCE_INVALIDATORS)
-    if current is None or not actions:
+    if not actions:
         return snapshot, ""
     ref, action = actions[-1]
     if (not action.ok or action.call.name != "browser_click" or delivery(action) not in {"delivered", "verified"}
-            or not same_document(action.audit.get("browser_document"), context.browser_document)
-            or tuple(records).index(ref) >= tuple(records).index(current[0])):
+            or not same_document(action.audit.get("browser_document"), document)):
+        return snapshot, ""
+    if current is None:
+        snapshot, observe = _call_handoff(session, snapshot, ToolCall("browser_snapshot", {}))
+        return snapshot, (f"Click {ref} was delivered. To report a page value, observe the current page first. "
+                          "The click receipt does not contain the business outcome.\n" + observe)
+    if tuple(records).index(ref) >= tuple(records).index(current[0]):
         return snapshot, ""
     wait = _settled_post_click_wait(records, results, click_ref=ref, current_ref=current[0],
                                     document=context.browser_document)
@@ -454,6 +466,8 @@ def browser_control_wait_handoff(session: TaskSession, snapshot: TurnSnapshot, c
     if not isinstance(prior_value, dict) or not same_document(prior.audit.get("browser_document"), context.browser_document):
         return snapshot, ""
     try:
+        snapshot_wait_baseline(session, prior_ref, "controls_changed")
+        snapshot_wait_baseline(session, current[0], "controls_changed")
         previous = BrowserReferences.observe(prior_ref, decode_json_object(prior_value),
                                              parse_json_object(references.document_json))
         available = {argument_digest(choice) for choice in previous.choices()}
@@ -462,26 +476,35 @@ def browser_control_wait_handoff(session: TaskSession, snapshot: TurnSnapshot, c
             return snapshot, (f"Snapshot {current[0]} already exposes additional enabled controls after delivered click {ref}: "
                 + json.dumps(added, ensure_ascii=False) + ". Choose the requested next control from the current observation. "
                 "The earlier click does not need to be repeated to retrieve these controls.")
+    except ValueError:
+        return snapshot, ""
+    condition = "controls_changed"
+    current_stage = browser_click_stage(records, results, document)
+    later_control = any(rule.tool in {"browser_click", "browser_fill", "browser_select", "browser_check"}
+                        and rule.stage > current_stage
+                        for check in session.policy.required_checks if (rule := parse_tool_success_check(check)) is not None)
+    try:
         current_text, _document = snapshot_text_baseline(session, current[0])
         prior_text, _document = snapshot_text_baseline(session, prior_ref)
-        if current_text != prior_text:
+        if current_text != prior_text and not later_control:
             return snapshot, (f"Snapshot {current[0]} already shows changed visible text after delivered click {ref}. "
                 "Use the current observation to choose remaining work or report the observed outcome. "
                 "A visible change alone does not verify the business result.")
+        if not later_control:
+            condition = "text_changed"
     except ValueError:
-        if wait is None:
-            return snapshot, ""
+        pass
     if wait is not None:
         return snapshot, (f"Wait {wait[0]} already settled after click {ref}. Snapshot {current[0]} was taken afterwards. "
             "Use this observation to decide the next required step; a new snapshot reference alone does not require repeating the wait.")
     snapshot, offered, _error = handoff_call(session, snapshot, ToolCall("browser_wait", {
-        "condition": "text_changed", "value": current[0], "timeout_ms": 5000}))
+        "condition": condition, "value": current[0], "timeout_ms": 5000}))
     if offered is None:
         return snapshot, ""
     return snapshot, (f"Click {ref} was delivered and snapshot {current[0]} observed its current page. "
         "If another requested control has not appeared, wait from this snapshot rather than repeating the click: "
-        + json.dumps(offered, ensure_ascii=False) + ". Use the fresh snapshot after a successful direct wait; "
-        "an explicit CodeMode wait needs a separate snapshot before choosing the actual next control. "
+        + json.dumps(offered, ensure_ascii=False) + ". Use the fresh snapshot when delivered; "
+        "otherwise observe once after the wait before choosing the next control. "
         "If the requested actions are already complete, report the observed result. "
         "A text change alone does not verify the business result.")
 
@@ -658,7 +681,7 @@ def _download_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Com
     return snapshot, "\n".join(lines), None
 
 
-def _browser_step(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext, *,
+def browser_step(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext, *,
                   workflow: bool = False) -> BrowserNextStep | None:
     records, results = tool_facts(session, context)
     references = snapshot.browser_references
@@ -681,7 +704,7 @@ def _step_handoff(session: TaskSession, snapshot: TurnSnapshot, step: BrowserNex
 
 def browser_continuation_handoff(session: TaskSession, snapshot: TurnSnapshot,
                                  context: CompletionContext, *, workflow: bool = False) -> tuple[TurnSnapshot, str]:
-    step = _browser_step(session, snapshot, context, workflow=workflow)
+    step = browser_step(session, snapshot, context, workflow=workflow)
     return (snapshot, "") if step is None else _step_handoff(session, snapshot, step)
 
 
@@ -746,6 +769,14 @@ def _incomplete_observation_feedback(
 def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                           generation: int | None = None, *,
                           delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
+    return browser_task_handoff_for_step(session, snapshot, context, generation,
+        step=browser_step(session, snapshot, context), delivered_results=delivered_results)
+
+
+def browser_task_handoff_for_step(
+    session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext, generation: int | None = None, *,
+    step: BrowserNextStep | None, delivered_results: Sequence[ToolResult] = (),
+) -> tuple[TurnSnapshot, str]:
     if (snapshot.input_binding is not None or snapshot.browser_copy is not None
             or "browser_read" not in snapshot.inventory_names):
         return snapshot, ""
@@ -753,7 +784,6 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
     rules = [rule for check in session.policy.required_checks
              if (rule := parse_tool_success_check(check)) is not None]
     status = work_status(session, context)
-    step = _browser_step(session, snapshot, context)
     if step is not None and step.kind != "recovery":
         return _step_handoff(session, snapshot, step)
     snapshot, project_edit = _project_edit_handoff(session, snapshot, context, status)

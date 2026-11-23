@@ -22,19 +22,19 @@ _HIT_TEST = """async el => {
     const width = Math.min(innerWidth, box.right) - left, height = Math.min(innerHeight, box.bottom) - top;
     if (width <= 0 || height <= 0)
         return {ready: false, reason: 'stale_ref'};
-    const blocked = hit => ({ready: false, reason: 'occluded',
+    const blocked = (hit, x, y) => ({ready: false, reason: 'occluded', hit_point: {x, y},
         blocker: hit ? {tag: hit.tagName.toLowerCase(), role: hit.getAttribute('role') || '',
             name: (hit.getAttribute('aria-label') || hit.innerText || '').slice(0, 240)} : null});
     function blocker(x, y) {
         let target = el, root = el.getRootNode();
         while (root instanceof ShadowRoot) {
             const hit = root.elementFromPoint(x, y);
-            if (!hit || hit !== target && !target.contains(hit)) return blocked(hit);
+            if (!hit || hit !== target && !target.contains(hit)) return blocked(hit, x, y);
             target = root.host;
             root = target.getRootNode();
         }
         const hit = el.ownerDocument.elementFromPoint(x, y);
-        return !hit || hit !== target && !target.contains(hit) ? blocked(hit) : null;
+        return !hit || hit !== target && !target.contains(hit) ? blocked(hit, x, y) : null;
     }
     let firstBlocker = null;
     for (const [h,v] of [[.5,.5],[.25,.25],[.75,.25],[.25,.75],[.75,.75]]) {

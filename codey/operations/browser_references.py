@@ -203,6 +203,11 @@ def reference_spec(spec: ToolSpec, references: BrowserReferences | None) -> Tool
 def reference_failure(output: BrowserToolOutput, results: Mapping[str, ToolResult]) -> BrowserToolOutput:
     """Diagnose a missing live ref from original receipts, without rebinding it."""
     value = output.observation
+    if not output.ok and value.get("reason") == "occluded" and value.get("delivery") == "not_delivered":
+        hit: JsonObject = {key: value[key] for key in ("ref", "hit_point", "hit_frame_depth", "hit_frame_url", "blocker")
+                           if key in value}
+        return replace(output, model_text=output.model_text + " Observed the obstruction at "
+            + json.dumps(hit, ensure_ascii=False) + ". Observe the current page to identify the next allowed action.")
     supplied = value.get("ref")
     if (output.ok or value.get("reason") != "unknown_ref" or value.get("delivery") != "not_delivered"
             or not isinstance(supplied, str)):

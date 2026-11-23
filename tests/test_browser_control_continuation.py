@@ -65,6 +65,53 @@ def test_control_change_wait_does_not_treat_loading_text_as_a_new_control(
     assert output.observation["matched"] is False
 
 
+def test_same_named_controls_swapping_enabled_regions_count_as_a_change(
+    production_browser: tuple[TaskSession, ResearchTools, BrowserSession],
+) -> None:
+    session, tools, browser = production_browser
+    assert browser.navigate(URL).ok
+    install(browser, """<p>Waiting</p><button onclick="
+        window.clicks=(window.clicks||0)+1;
+        setTimeout(()=>{document.querySelector('#a').disabled=false;
+            document.querySelector('#b').disabled=true;},200)
+        ">Prepare</button>
+        <section aria-label="Region A"><button id="a" disabled
+            onclick="document.querySelector('p').textContent='Region A approved'">Review</button></section>
+        <section aria-label="Region B"><button id="b"
+            onclick="document.querySelector('p').textContent='Wrong region'">Review</button></section>""")
+    initial = observed_snapshot(session, browser)
+    changed = program(session, tools, initial, "return unwrap(await tools.browser_click("
+        "{ref:{role:'button',name:'Prepare'},purpose:'controls'}));")
+    assert changed.ok, changed.model_text
+    waits = [row for row in session._memory_results.values() if row.call.name == "browser_wait"]
+    assert len(waits) == 1 and waits[0].ok
+    current, _ = task_handoff(session, build_turn_snapshot(session), CompletionContext(), browser)
+    assert current.browser_references is not None
+    assert current.browser_references.resolve({"role": "button", "name": "Review", "context": "Region A"})
+    selected = program(session, tools, current, "return unwrap(await tools.browser_click("
+        "{ref:{role:'button',name:'Review',context:'Region A'},purpose:'action'}));", turn=3)
+    assert selected.ok, selected.model_text
+    assert browser.evaluate("document.querySelector('p').textContent").observation["value"] == "Region A approved"
+    assert browser.evaluate("window.clicks").observation["value"] == 1
+
+
+def test_truncated_control_sample_cannot_satisfy_a_wait(
+    production_browser: tuple[TaskSession, ResearchTools, BrowserSession],
+) -> None:
+    from codey.operations.browser_waits import snapshot_wait_baseline
+
+    session, _tools, browser = production_browser
+    assert browser.navigate(URL).ok
+    install(browser, "<p>Waiting</p><button>Original</button>")
+    snapshot = observed_snapshot(session, browser)
+    assert snapshot.browser_references is not None
+    controls, document = snapshot_wait_baseline(session, snapshot.browser_references.receipt_ref, "controls_changed")
+    assert isinstance(controls, list)
+    assert browser.evaluate("document.body.insertAdjacentHTML('beforeend','<button>Added</button>'.repeat(85))").ok
+    result = browser.wait_for_control_change(controls, document, 750)
+    assert not result.ok and result.observation["reason"] == "timeout"
+
+
 def test_research_controls_acquire_current_formal_text_and_reject_a_quote_from_the_old_source(
     production_browser: tuple[TaskSession, ResearchTools, BrowserSession], tmp_path: Path,
 ) -> None:

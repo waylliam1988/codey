@@ -31,7 +31,8 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
         bind_browser_references,
         browser_control_wait_handoff,
         browser_observation_handoff,
-        browser_task_handoff,
+        browser_step,
+        browser_task_handoff_for_step,
     )
     from codey.operations.kernel_protocol import offer_browser_call, offer_browser_tools
     from codey.operations.research_submission_handoff import research_browser_handoff, research_submission_handoff
@@ -50,7 +51,8 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     if actions:
         hints.append("Authoritative execution summary derived from committed receipts; reuse these counts and order:\n" + actions)
     hints.append(browser_observation_handoff(session, snapshot, context, generation))
-    snapshot, control_wait = browser_control_wait_handoff(session, snapshot, context, generation)
+    next_step = browser_step(session, snapshot, context)
+    snapshot, control_wait = browser_control_wait_handoff(session, snapshot, context, generation, next_step=next_step)
     hints.append(control_wait)
     from codey.codemode.verification import project_check_call
 
@@ -73,8 +75,8 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     if snapshot.browser_followups and set(DIRECT_TOOLS) <= set(snapshot.tool_names):
         hints.append("For browser steps, prefer the offered direct browser tools. "
                      "Use CodeMode for operations that need programming or composition.")
-    snapshot, hint = browser_task_handoff(session, snapshot, context, generation,
-                                           delivered_results=delivered_results)
+    snapshot, hint = browser_task_handoff_for_step(session, snapshot, context, generation, step=next_step,
+                                                  delivered_results=delivered_results)
     hints.append(hint)
     snapshot, hint = research_submission_handoff(session, snapshot, context, browser)
     hints.append(hint)

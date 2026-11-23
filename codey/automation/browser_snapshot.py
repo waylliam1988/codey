@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable, Mapping
+from collections import Counter
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
 from playwright.async_api import ElementHandle
 
@@ -10,13 +13,13 @@ from codey.automation.browser_document import same_document
 from codey.automation.browser_frames import FrameContext, backend_node, backend_nodes, frame_context, resolve_backend
 from codey.automation.browser_observation import ACTIONABLE_CANDIDATES, ELEMENT_METADATA, VISIBLE_TEXT
 from codey.automation.browser_refs import ElementRecord, ElementRegistry
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer, require_json_string
 
 MAX_ELEMENTS = 80
 MAX_TEXT = 12_000
 AX_CONTROL_ROLES = frozenset({"button", "link", "textbox", "checkbox", "combobox", "menuitem"})
 
-_DOM_SNAPSHOT = """(root, limit) => {
+_DOM_SNAPSHOT = """(root, [limit, includeText]) => {
     const selector = """ + json.dumps(ACTIONABLE_CANDIDATES) + """;
     const observe = (""" + ELEMENT_METADATA + """);
     const visibleText = (""" + VISIBLE_TEXT + """);
@@ -47,7 +50,7 @@ _DOM_SNAPSHOT = """(root, limit) => {
         rows.push({node: index(node), owner: index(contextNode), query: index(queryNode), metadata,
             box: {x: rect.x, y: rect.y, width: rect.width, height: rect.height}});
     }
-    return {nodes, view: {rows, text: visibleText(root), truncated}};
+    return {nodes, view: {rows, text: includeText ? visibleText(root) : '', truncated}};
 }"""
 
 
@@ -145,10 +148,10 @@ async def _scope_root(context: FrameContext, registry: ElementRegistry[ElementHa
     return root
 
 
-async def _dom_snapshot(context: FrameContext, root: ElementHandle, limit: int) -> tuple[
+async def _dom_snapshot(context: FrameContext, root: ElementHandle, limit: int, *, include_text: bool) -> tuple[
     JsonObject, dict[str, int], dict[str, ElementHandle],
 ]:
-    batch = await root.evaluate_handle(_DOM_SNAPSHOT, limit)
+    batch = await root.evaluate_handle(_DOM_SNAPSHOT, [limit, include_text])
     nodes = await batch.get_property("nodes")
     view = await batch.get_property("view")
     try:
@@ -164,31 +167,51 @@ async def _dom_snapshot(context: FrameContext, root: ElementHandle, limit: int) 
         await batch.dispose()
 
 
-async def collect_snapshot(context: FrameContext, registry: ElementRegistry[ElementHandle], *,
-                           revision: int, max_elements: int = MAX_ELEMENTS, max_text: int = MAX_TEXT,
-                           scope_ref: str = "", selector: str = "") -> JsonObject:
-    root = await _scope_root(context, registry, scope_ref, selector)
-    max_elements, max_text = max(1, min(max_elements, MAX_ELEMENTS)), max(1, min(max_text, MAX_TEXT))
-    dom, identities, handles = await _dom_snapshot(context, root, max_elements)
+@dataclass
+class _ControlSample:
+    controls: list[tuple[ElementRecord[ElementHandle], JsonObject]]
+    contexts: list[JsonValue]
+    text: str
+    truncated: bool
+
+
+@asynccontextmanager
+async def _control_sample(
+    context: FrameContext, root: ElementHandle, *, max_elements: int, root_id: int | None = None,
+    revision: int = 0, include_text: bool = False, retained: set[int],
+) -> AsyncIterator[_ControlSample]:
+    dom, identities, handles = await _dom_snapshot(context, root, max_elements, include_text=include_text)
+    owned = {id(handle): handle for handle in handles.values()}
+    try:
+        yield await _merge_controls(context, root, dom, identities, handles, owned,
+                                    max_elements=max_elements, root_id=root_id, revision=revision,
+                                    include_boxes=include_text)
+    finally:
+        for key, handle in owned.items():
+            if key not in retained:
+                await handle.dispose()
+
+
+async def _merge_controls(
+    context: FrameContext, root: ElementHandle, dom: JsonObject, identities: Mapping[str, int],
+    handles: Mapping[str, ElementHandle], owned: dict[int, ElementHandle], *, max_elements: int,
+    root_id: int | None, revision: int, include_boxes: bool,
+) -> _ControlSample:
     raw_text, dom_rows = dom["text"], dom["rows"]
     if not isinstance(raw_text, str) or not isinstance(dom_rows, list):
         raise ValueError("invalid DOM observation")
-    root_id = (registry.resolve(scope_ref, context.document).backend_node_id if scope_ref else
-               await backend_node(context, root) if selector else None)
     ax = await collect_ax_tree(context, root_id=root_id)
     known: set[int] = set()
-    rows: list[JsonValue] = []
+    rows: list[tuple[ElementRecord[ElementHandle], JsonObject]] = []
     contexts: list[JsonValue] = []
     contexts_by_node: dict[int, str] = {}
     elements_truncated = dom["truncated"] is True
-    retained: set[str] = set()
     for raw in dom_rows:
         entry = decode_json_object(raw)
         key = str(require_json_integer(entry["node"], "control index"))
         owner_key = str(require_json_integer(entry["owner"], "owner index"))
         query_key = str(require_json_integer(entry["query"], "query index"))
         handle, node = handles[key], identities[key]
-        retained.add(key)
         known.add(node)
         metadata, owner = decode_json_object(entry["metadata"]), handles.get(owner_key)
         role = str(ax.get(node, {}).get("role") or element_role(metadata))
@@ -198,7 +221,6 @@ async def collect_snapshot(context: FrameContext, registry: ElementRegistry[Elem
         context_id = ""
         owner_id = 0
         if owner is not None and owner_json is not None:
-            retained.add(owner_key)
             owner_id = identities[owner_key]
             context_id = contexts_by_node.get(owner_id, "")
             if not context_id:
@@ -208,18 +230,16 @@ async def collect_snapshot(context: FrameContext, registry: ElementRegistry[Elem
         semantics = semantic_fingerprint(metadata)
         target: JsonObject | None = ({"backend_node_id": identities[query_key], "relation": metadata["query_relation"]}
                                     if query_key in identities else None)
-        ref = registry.observe_node(ElementRecord(handle, context.document, node, role, name,
-            owner_json, owner, target, revision, semantics, owner_id))
-        box_raw: object = entry["box"] if context.frame.parent_frame is None else await handle.bounding_box()
-        row: JsonObject = {"ref": ref, "role": role, "name": name, "context_id": context_id,
+        record = ElementRecord(handle, context.document, node, role, name,
+            owner_json, owner, target, revision, semantics, owner_id)
+        row: JsonObject = {"role": role, "name": name, "context_id": context_id,
                            "disabled": metadata.get("disabled") is True, "value": metadata.get("value"),
                            "checked": metadata.get("checked"), "query_relation": metadata.get("query_relation", "")}
-        if isinstance(box_raw, dict):
-            row["box"] = decode_json_object(box_raw)
-        rows.append(row)
-    for key, handle in handles.items():
-        if key not in retained:
-            await handle.dispose()
+        if include_boxes:
+            box_raw: object = entry["box"] if context.frame.parent_frame is None else await handle.bounding_box()
+            if isinstance(box_raw, dict):
+                row["box"] = decode_json_object(box_raw)
+        rows.append((record, row))
     # AX-only actionable nodes are real DOM identities, not guessed selectors.
     for node, data in ax.items():
         if node in known or data.get("role") not in AX_CONTROL_ROLES:
@@ -228,31 +248,81 @@ async def collect_snapshot(context: FrameContext, registry: ElementRegistry[Elem
             elements_truncated = True
             break
         handle = await resolve_backend(context, node)
+        owned[id(handle)] = handle
         contained: object = await _evaluate(root, "(root,node) => root.contains(node)", handle)
         if contained is not True or not await handle.is_visible():
-            await handle.dispose()
             continue
         metadata, owner = await element_metadata(handle)
+        if owner is not None:
+            owned[id(owner)] = owner
         role, name = str(data.get("role") or element_role(metadata)), str(data.get("name") or metadata.get("name") or "")
-        ref = registry.observe_node(ElementRecord(handle, context.document, node, role, name, None, owner, None,
-            revision, semantic_fingerprint(metadata), await backend_node(context, owner) if owner is not None else 0))
-        rows.append({"ref": ref, "role": role, "name": name, "context_id": "", "disabled": metadata.get("disabled") is True,
-                     "value": metadata.get("value"), "checked": metadata.get("checked"), "query_relation": ""})
-    suggestions: list[JsonValue] = await _scope_suggestions(context, registry, root, revision) if elements_truncated else []
-    text_truncated = len(raw_text) > max_text
-    connected: object = await _evaluate(root, "el => el.isConnected && el.ownerDocument === document")
-    async with frame_context(context.frame.page, context.frame, str(context.document["target_id"])) as after:
-        if connected is not True or not same_document(context.document, after.document):
-            registry.invalidate_document(context.document)
-            raise RuntimeError("snapshot_document_changed")
-    if not scope_ref:
+        record = ElementRecord(handle, context.document, node, role, name, None, owner, None,
+            revision, semantic_fingerprint(metadata), await backend_node(context, owner) if owner is not None else 0)
+        row = {"role": role, "name": name, "context_id": "", "disabled": metadata.get("disabled") is True,
+               "value": metadata.get("value"), "checked": metadata.get("checked"), "query_relation": ""}
+        rows.append((record, row))
+    return _ControlSample(rows, contexts, raw_text, elements_truncated)
+
+
+def available_control_counts(rows: Iterable[JsonObject]) -> Counter[tuple[str, str, str]]:
+    """Count enabled controls using document-local region identity when available."""
+    counts: Counter[tuple[str, str, str]] = Counter()
+    for row in rows:
+        if row.get("disabled") is not True:
+            role = " ".join(require_json_string(row["role"], "control role").casefold().split())
+            name = " ".join(require_json_string(row["name"], "control name").split())[:240]
+            region = str(row.get("context_id") or row.get("context") or "")
+            counts[role, name, " ".join(region.split())] += 1
+    return counts
+
+
+async def sample_available_controls(context: FrameContext) -> Counter[tuple[str, str, str]] | None:
+    root = await context.frame.query_selector("body")
+    if root is None:
+        return None
+    try:
+        async with _control_sample(context, root, max_elements=MAX_ELEMENTS, retained=set()) as sampled:
+            return None if sampled.truncated else available_control_counts(row for _, row in sampled.controls)
+    finally:
         await root.dispose()
+
+
+async def collect_snapshot(context: FrameContext, registry: ElementRegistry[ElementHandle], *,
+                           revision: int, max_elements: int = MAX_ELEMENTS, max_text: int = MAX_TEXT,
+                           scope_ref: str = "", selector: str = "") -> JsonObject:
+    root = await _scope_root(context, registry, scope_ref, selector)
+    max_elements, max_text = max(1, min(max_elements, MAX_ELEMENTS)), max(1, min(max_text, MAX_TEXT))
+    rows: list[JsonValue] = []
+    retained: set[int] = set()
+    try:
+        root_id = (registry.resolve(scope_ref, context.document).backend_node_id if scope_ref else
+                   await backend_node(context, root) if selector else None)
+        async with _control_sample(context, root, max_elements=max_elements, root_id=root_id,
+                                   revision=revision, include_text=True, retained=retained) as sampled:
+            for record, row in sampled.controls:
+                ref = registry.observe_node(record)
+                retained.add(id(record.handle))
+                if record.context_node is not None:
+                    retained.add(id(record.context_node))
+                rows.append({"ref": ref, **row})
+        suggestions: list[JsonValue] = (
+            await _scope_suggestions(context, registry, root, revision) if sampled.truncated else []
+        )
+        connected: object = await _evaluate(root, "el => el.isConnected && el.ownerDocument === document")
+        async with frame_context(context.frame.page, context.frame, str(context.document["target_id"])) as after:
+            if connected is not True or not same_document(context.document, after.document):
+                registry.invalidate_document(context.document)
+                raise RuntimeError("snapshot_document_changed")
+    finally:
+        if not scope_ref:
+            await root.dispose()
+    text_truncated = len(sampled.text) > max_text
     return {"page_id": context.document["target_id"], "page_url": context.document["url"],
             "generation": revision, "revision": revision, "document": context.document,
             "scope": {"frame_id": context.document["frame_id"], "root_ref": scope_ref, "selector": selector,
                       "max_elements": max_elements, "max_text": max_text},
-            "complete": not text_truncated and not elements_truncated, "text_truncated": text_truncated,
-            "elements_truncated": elements_truncated, "text": raw_text[:max_text], "elements": rows, "contexts": contexts,
+            "complete": not text_truncated and not sampled.truncated, "text_truncated": text_truncated,
+            "elements_truncated": sampled.truncated, "text": sampled.text[:max_text], "elements": rows, "contexts": sampled.contexts,
             **({"scope_suggestions": suggestions} if suggestions else {})}
 
 

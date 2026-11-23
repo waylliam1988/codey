@@ -55,13 +55,13 @@ from codey.automation.browser_query import QueryObservationError, changed_query_
 from codey.automation.browser_query_async import bind_query_target
 from codey.automation.browser_refs import ElementRecord, ElementRegistry
 from codey.automation.browser_snapshot import (
-    AX_CONTROL_ROLES,
-    collect_ax_tree,
+    available_control_counts,
     collect_snapshot,
     diff_snapshot,
     element_metadata,
     element_role,
     file_control_details,
+    sample_available_controls,
     semantic_fingerprint,
 )
 from codey.policies.network import check_fetch_url
@@ -676,19 +676,23 @@ class BrowserRuntime:
         ready = decode_json_object(raw_ready)
         if ready.get("ready") is not True:
             return BrowserToolOutput("Input not dispatched: " + str(ready.get("reason", "unavailable")), False,
-                {"action": action.value, "ref": ref, "delivery": "not_delivered", **ready})
+                {"action": action.value, "ref": ref, "delivery": "not_delivered", "document": context.document,
+                 "hit_frame_depth": 0, "hit_frame_url": context.frame.url, **ready})
         ancestor = context.frame
-        while ancestor.parent_frame is not None:
+        depth = 0
+        while (parent := ancestor.parent_frame) is not None:
+            depth += 1
             owner = await ancestor.frame_element()
             try:
                 outer: object = await _evaluate(owner, _HIT_TEST)
                 readiness = decode_json_object(outer)
                 if readiness.get("ready") is not True:
                     return BrowserToolOutput("Input not dispatched: enclosing frame is occluded.", False,
-                        {"action": action.value, "ref": ref, "delivery": "not_delivered", **readiness})
+                        {"action": action.value, "ref": ref, "delivery": "not_delivered", "document": context.document,
+                         "hit_frame_depth": depth, "hit_frame_url": parent.url, **readiness})
             finally:
                 await owner.dispose()
-            ancestor = ancestor.parent_frame
+            ancestor = parent
         baseline: JsonObject | None = None
         if action == BrowserAction.CLICK and args.get("query") is True:
             baseline = await self._query_baseline(context, record, require_json_string(args.get("result_ref", ""), "result_ref"))
@@ -741,16 +745,11 @@ class BrowserRuntime:
             observed["query_baseline"] = baseline
         return BrowserToolOutput("Delivered " + action.value + " to " + ref, True, observed)
 
-    def _control_baseline(self, args: JsonObject) -> Counter[tuple[str, str]]:
+    def _control_baseline(self, args: JsonObject) -> Counter[tuple[str, str, str]]:
         baseline = args.get("baseline_controls")
         if not isinstance(baseline, list):
             raise ValueError("controls_changed requires its original observed controls")
-        controls: Counter[tuple[str, str]] = Counter()
-        for raw in baseline:
-            row = decode_json_object(raw)
-            if row.get("disabled") is not True:
-                controls[(require_json_string(row["role"], "control role"), require_json_string(row["name"], "control name"))] += 1
-        return controls
+        return available_control_counts(decode_json_object(raw) for raw in baseline)
 
     @asynccontextmanager
     async def _wait_frame(self, state: PageState, expected: JsonValue) -> AsyncGenerator[FrameContext, None]:
@@ -778,7 +777,7 @@ class BrowserRuntime:
         baseline_text = require_json_string(args.get("baseline_text"), "baseline_text") if condition == "text_changed" else ""
         if condition in {"text_changed", "controls_changed"} and not isinstance(expected, dict):
             raise ValueError(condition + " requires its original document")
-        controls = self._control_baseline(args) if condition == "controls_changed" else Counter[tuple[str, str]]()
+        controls = self._control_baseline(args) if condition == "controls_changed" else Counter[tuple[str, str, str]]()
         deadline = min(invocation.command.deadline, time.monotonic() + timeout_ms / 1000)
         while time.monotonic() < deadline:
             if condition in {"popup", "dialog", "download"}:
@@ -802,10 +801,8 @@ class BrowserRuntime:
                     matched = (value in str(body)) == (condition == "text")
                 elif condition in {"text_changed", "controls_changed"}:
                     if condition == "controls_changed":
-                        current = await collect_ax_tree(context)
-                        available = Counter((str(row.get("role", "")), " ".join(str(row.get("name", "")).split())[:240])
-                            for row in current.values() if row.get("role") in AX_CONTROL_ROLES and row.get("disabled") is not True)
-                        matched = any(count > controls[key] for key, count in available.items())
+                        available = await sample_available_controls(context)
+                        matched = available is not None and any(count > controls[key] for key, count in available.items())
                     else:
                         observed_text: object = await _evaluate(context.frame, "(" + VISIBLE_TEXT + ")(document.body)")
                         matched = require_json_string(observed_text, "visible text") != baseline_text
@@ -824,7 +821,7 @@ class BrowserRuntime:
                     matched = expected is not None and not same
                 else:
                     raise ValueError("unsupported_wait_condition")
-                if matched:
+                if matched and time.monotonic() < deadline:
                     return BrowserToolOutput("Wait condition matched.", True, {"action": "wait", "condition": condition,
                         "matched": True, "page_url": context.frame.url, "text": "", "document": context.document})
             await asyncio.sleep(min(0.1, max(0.0, deadline - time.monotonic())))

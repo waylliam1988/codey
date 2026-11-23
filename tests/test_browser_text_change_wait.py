@@ -209,8 +209,9 @@ def test_navigation_comparison_preserves_visible_changes_and_arbitrary_program_v
 @pytest.mark.parametrize("transition", ["new_control", "enabled_control", "ref_churn", "still_loading", "text_progress",
                                        "wait_timeout", "wait_matched", "controls_timeout", "controls_matched",
                                        "controls_timeout_recaptured", "wait_timeout_recaptured",
-                                       "controls_prior_timeout_recaptured"])
+                                       "controls_prior_timeout_recaptured", "truncated_text", "declared_wait"])
 def test_control_wait_is_not_offered_after_the_next_control_is_already_observed(transition: str) -> None:
+    from codey.operations.browser_next_step import BrowserNextStep
     from codey.operations.browser_task_handoff import browser_control_wait_handoff
 
     session, document = recorded_snapshot()
@@ -233,6 +234,8 @@ def test_control_wait_is_not_offered_after_the_next_control_is_already_observed(
         current["text"] = "All requested actions completed."
     if transition in {"new_control", "enabled_control"}:
         current["elements"] = [begin, {**next_control, "disabled": False}]
+    if transition == "truncated_text":
+        current.update(complete=False, text_truncated=True)
     observation = replace(initial, canonical={"value": current})
     prior_baseline = transition == "controls_prior_timeout_recaptured"
     if not prior_baseline:
@@ -255,8 +258,14 @@ def test_control_wait_is_not_offered_after_the_next_control_is_already_observed(
             project_execution_record(session, "fresh", recaptured.call, recaptured, ok=True)
     context = CompletionContext(browser_document=document)
     snapshot = bind_browser_references(session, offer_browser_tools(build_turn_snapshot(session), session), context, generation)
-    _snapshot, hint = browser_control_wait_handoff(session, snapshot, context, generation)
+    step = BrowserNextStep(ToolCall("browser_wait", {"condition": "text", "value": "Ready"}), "declared") if (
+        transition == "declared_wait"
+    ) else None
+    _snapshot, hint = browser_control_wait_handoff(session, snapshot, context, generation, next_step=step)
     assert ('"condition": "text_changed"' in hint) is (transition == "ref_churn")
+    assert ('"condition": "controls_changed"' in hint) is (transition == "truncated_text")
+    if transition == "declared_wait":
+        assert hint == ""
     if transition in {"new_control", "enabled_control"}:
         assert "Continue" in hint and "already" in hint
     elif transition in {"wait_timeout", "wait_matched", "controls_timeout", "controls_matched"}:
