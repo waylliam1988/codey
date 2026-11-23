@@ -991,3 +991,7 @@ Q017B 已提交：`e3fe9bc4`（fix(durable): close service ownership after sched
 - 最终补验：`python -m pytest -q tests/durable/test_app_context_store.py tests/test_control_runtime_ownership.py tests/test_coldstart_review_batch.py::ColdstartReviewBatchTests::test_knowledge_read_notes_batches_single_roundtrip tests/test_coldstart_review_batch.py::ColdstartReviewBatchTests::test_knowledge_index_close_fails_cleanly_on_reuse --tb=short` → **0，7 passed，2.24秒**；`python -m pytest -q tests/test_research_submission_handoff_production.py --tb=short` → **0，17 passed，366.44秒**。与前两批41/39项合计本批修改后四批104项通过、0失败/0跳过；未执行其他仓库测试，不把基线重复执行另计唯一覆盖。q018-validation-final.json。
 - 最终生产门串行：`python -m mypy codey --python-version 3.11` → **0，750文件**；`pyrefly check codey --python-version 3.11` → **0 errors，35 suppressed/168 warnings未显示**；`ty check codey --python-version 3.11` → **0**；`python -m tools.kernel_type_precision_gate` → **0**。四个变更源/测试hash全过程一致，diff --check通过。实际运行环境仍为Windows/Python3.12，目标类型版本3.11，未声称其他平台实测。
 - 当前验收完成，按生产发布竞态与测试fixture职责拆分两次本地提交；第二提交落地后才将Q018标完整完成。Q019 conversation_runtime明确剩余Any位置为__init__:15的emit/durable、admissions:21、prepare:23的ctx/payload/return，保留未修改且不计治理完成。
+
+Q018 生产发布竞态已提交：`9e984dd4`（fix(context): prevent lazy knowledge publication after disable）。测试资源清理和共享fixture整文件类型治理作为独立职责提交，不夹带两张外部PNG。
+
+Q018验收完成：当前 **28 / 311批完整完成，57 / 996生产文件属于完整完成批次**；另5个部分批次文件独立验证，累计62个当前已验证生产文件。context完整强Any0、附件167→0、conftest66→0、新回归0；合并两处同语义close重试，未删除无法证明无用的生产API。下一主批Q017 provider控制流，先复核已有lazy import三失败及其独立导入契约。总goal仍active；Q015F大测试类型债务、Q019等其余范围未完成。

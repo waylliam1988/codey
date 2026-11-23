@@ -5,12 +5,19 @@ import contextvars
 import os
 import sys
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from tests.support.pytest_temp import bootstrap as _bootstrap_temp
+
+if TYPE_CHECKING:
+    from _pytest.terminal import TerminalReporter
+
+    from codey.app.context import AppContext
+    from codey.types.json_value import JsonObject
 
 # AppContext now owns a durable SQLite lease and requires an explicit close.
 # A large body of older tests constructed contexts directly and relied on
@@ -18,14 +25,27 @@ from tests.support.pytest_temp import bootstrap as _bootstrap_temp
 # migrating the lifecycle contract: contexts created during one test are
 # closed before its temporary homes are removed.  No production lifecycle or
 # compatibility path is added.
-_TRACKED_CONTEXTS: list[object] = []
+_TRACKED_CONTEXTS: list[AppContext] = []
 _CLOSING_CONTEXTS: set[int] = set()
-_ACTIVE_CONTEXTS: contextvars.ContextVar[list[object] | None] = contextvars.ContextVar(
+_ACTIVE_CONTEXTS: contextvars.ContextVar[list[AppContext] | None] = contextvars.ContextVar(
     "_active_test_app_contexts", default=None
 )
-_APP_CONTEXT_INIT = None
+_APP_CONTEXT_CLEANUP_INSTALLED = False
 _TEMP_CLEANUP_GUARD = False
-_TEMP_CLEANUP = tempfile.TemporaryDirectory.cleanup
+_TEMP_DIRECTORY: type[tempfile.TemporaryDirectory[str]] = tempfile.TemporaryDirectory
+_TEMP_CLEANUP: Callable[[tempfile.TemporaryDirectory[str]], None] = _TEMP_DIRECTORY.cleanup
+_LIFECYCLE_PATCHES = pytest.MonkeyPatch()
+
+
+def _close_context(context: AppContext) -> None:
+    if context.closed:
+        return
+    for _ in range(4):
+        try:
+            if context.close():
+                break
+        except Exception:
+            break
 
 
 def _close_contexts_under(root: str | os.PathLike[str]) -> None:
@@ -34,34 +54,25 @@ def _close_contexts_under(root: str | os.PathLike[str]) -> None:
     for context in reversed(_TRACKED_CONTEXTS[:]):
         if id(context) in _CLOSING_CONTEXTS:
             continue
-        if getattr(context, "closed", False):
+        if context.closed:
             continue
         candidates: list[Path] = []
-        state_home = getattr(context, "state_home", None)
+        state_home = context.state_home
         if state_home is not None:
             candidates.append(Path(state_home))
-        ephemeral = getattr(context, "_ephemeral_runtime_home", None)
-        ephemeral_name = getattr(ephemeral, "name", None)
-        if ephemeral_name:
-            candidates.append(Path(ephemeral_name))
+        ephemeral = context._ephemeral_runtime_home
+        if ephemeral is not None and ephemeral.name:
+            candidates.append(Path(ephemeral.name))
         try:
             owned = any(path.resolve() == root_path or root_path in path.resolve().parents for path in candidates)
         except (OSError, RuntimeError, ValueError):
             owned = False
         if not owned:
             continue
-        close = getattr(context, "close", None)
-        if not callable(close):
-            continue
-        for _ in range(4):
-            try:
-                if close():
-                    break
-            except Exception:
-                break
+        _close_context(context)
 
 
-def _cleanup_with_contexts(self) -> None:
+def _cleanup_with_contexts(self: tempfile.TemporaryDirectory[str]) -> None:
     global _TEMP_CLEANUP_GUARD
     if not _TEMP_CLEANUP_GUARD:
         _TEMP_CLEANUP_GUARD = True
@@ -72,73 +83,71 @@ def _cleanup_with_contexts(self) -> None:
     _TEMP_CLEANUP(self)
 
 
-tempfile.TemporaryDirectory.cleanup = _cleanup_with_contexts
+_LIFECYCLE_PATCHES.setattr(_TEMP_DIRECTORY, "cleanup", _cleanup_with_contexts)
 
 
 def _install_app_context_cleanup() -> None:
-    global _APP_CONTEXT_INIT
+    global _APP_CONTEXT_CLEANUP_INSTALLED
     from codey.app.context import AppContext
 
-    if _APP_CONTEXT_INIT is not None:
+    if _APP_CONTEXT_CLEANUP_INSTALLED:
         return
     original = AppContext.__init__
-    _APP_CONTEXT_INIT = original
+    _APP_CONTEXT_CLEANUP_INSTALLED = True
     original_close = AppContext.close
 
-    def tracked_close(self, *args, **kwargs):
+    def tracked_close(self: AppContext) -> bool:
         marker = id(self)
         if marker in _CLOSING_CONTEXTS:
             return False
         _CLOSING_CONTEXTS.add(marker)
         try:
-            return original_close(self, *args, **kwargs)
+            return original_close(self)
         finally:
             _CLOSING_CONTEXTS.discard(marker)
 
-    AppContext.close = tracked_close
+    _LIFECYCLE_PATCHES.setattr(AppContext, "close", tracked_close)
 
-    def tracked_init(self, *args, **kwargs):
-        original(self, *args, **kwargs)
+    def tracked_init(
+        self: AppContext,
+        state_home: str | Path | None = None,
+        *,
+        replay_limit: int | None = None,
+        start_scheduler: bool = True,
+        memory_enabled: bool = True,
+    ) -> None:
+        original(self, state_home, replay_limit=replay_limit,
+                 start_scheduler=start_scheduler, memory_enabled=memory_enabled)
         _TRACKED_CONTEXTS.append(self)
         contexts = _ACTIVE_CONTEXTS.get()
         if contexts is not None:
             contexts.append(self)
 
-    AppContext.__init__ = tracked_init
+    _LIFECYCLE_PATCHES.setattr(AppContext, "__init__", tracked_init)
 
 
 @pytest.fixture(autouse=True)
 def _close_test_app_contexts() -> Iterator[None]:
     _install_app_context_cleanup()
-    contexts: list[object] = []
+    contexts: list[AppContext] = []
     token = _ACTIVE_CONTEXTS.set(contexts)
     try:
         yield
     finally:
         _ACTIVE_CONTEXTS.reset(token)
         for context in reversed(contexts):
-            if getattr(context, "closed", False):
-                continue
-            close = getattr(context, "close", None)
-            if not callable(close):
-                continue
-            for _ in range(4):
-                try:
-                    if close():
-                        break
-                except Exception:
-                    break
+            _close_context(context)
 
 
-@pytest.fixture
-def public_source_dns(monkeypatch):
+@pytest.fixture()
+def public_source_dns(monkeypatch: pytest.MonkeyPatch) -> None:
     """Resolve scripted sources locally while retaining the real URL policy."""
     import socket
     from types import SimpleNamespace
 
     from codey.policies import network
 
-    def resolve(host, port, **_kwargs):
+    def resolve(host: str, port: int, **_kwargs: object) -> list[tuple[int, int, int, str, tuple[str, int]]]:
         assert host == "example.com", f"No scripted DNS answer for {host}"
         return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", port))]
 
@@ -146,25 +155,34 @@ def public_source_dns(monkeypatch):
     monkeypatch.setattr(network, "DEFAULT_NETWORK_POLICY", network.NetworkPolicy())
 
 
-@pytest.fixture
-def scripted_local_api_connection(monkeypatch):
+@pytest.fixture()
+def scripted_local_api_connection(monkeypatch: pytest.MonkeyPatch) -> None:
     """A non-network admission scope for tests that inject a scripted provider."""
     from codey.providers import local_selection
     from codey.providers.local_config import LocalProviderConfig
 
     config = LocalProviderConfig(base_url="http://scripted.test/v1", model="scripted-fixture", connection_revision="scripted-fixture")
-    monkeypatch.setattr("codey.providers.local_config.load_local_config", lambda: config)
-    monkeypatch.setattr(local_selection, "load_local_config", lambda: config)
-    monkeypatch.setattr("codey.providers.local_tokens._metadata_json", lambda *_: {})
+    def load_config() -> LocalProviderConfig:
+        return config
+
+    def empty_metadata(_url: str, _api_key: str) -> JsonObject:
+        return {}
+
+    monkeypatch.setattr("codey.providers.local_config.load_local_config", load_config)
+    monkeypatch.setattr(local_selection, "load_local_config", load_config)
+    monkeypatch.setattr("codey.providers.local_tokens._metadata_json", empty_metadata)
 
 
-@pytest.fixture
-def no_external_advisor_models(monkeypatch):
+@pytest.fixture()
+def no_external_advisor_models(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Scripted entry tests select real services without probing user models."""
     from codey.app.provider_services import reset_provider_availability_cache
 
     reset_provider_availability_cache()
-    monkeypatch.setattr("codey.app.provider_services.provider_tab_availability", lambda **_: {})
+    def unavailable(*, allowed: set[str] | None = None) -> dict[str, bool]:
+        return {}
+
+    monkeypatch.setattr("codey.app.provider_services.provider_tab_availability", unavailable)
     try:
         yield
     finally:
@@ -249,22 +267,23 @@ _PYTEST_TEMP = _bootstrap_temp(Path(__file__).resolve().parents[1])
 _PYTEST_STATE_HOME = _install_isolated_state_home()
 
 
-def pytest_report_header(config):
+def pytest_report_header(config: pytest.Config) -> list[str] | None:
     if _PYTEST_TEMP is None:
         return None
-    pytest_temp = config.option.basetemp or os.environ.get("PYTEST_DEBUG_TEMPROOT") or tempfile.gettempdir()
+    basetemp: object = config.getoption("basetemp")
+    pytest_temp = basetemp or os.environ.get("PYTEST_DEBUG_TEMPROOT") or tempfile.gettempdir()
     return [
         f"RAM disk temporary files: {tempfile.gettempdir()}",
         f"pytest temporary root: {pytest_temp}; isolated home: {_PYTEST_STATE_HOME}",
     ]
 
 
-def pytest_sessionfinish(session, exitstatus):
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     if _PYTEST_TEMP is not None:
         _PYTEST_TEMP.finish(int(exitstatus))
 
 
-def pytest_terminal_summary(terminalreporter):
+def pytest_terminal_summary(terminalreporter: TerminalReporter) -> None:
     if _PYTEST_TEMP is not None:
         disposition = "retained after failure" if _PYTEST_TEMP.retained else "cleaned at process exit"
         terminalreporter.write_line(f"RAM disk: {_PYTEST_TEMP.root} ({disposition})")
@@ -292,4 +311,4 @@ if os.name == "nt":
                 return
             raise
 
-    _pytest_pathlib.cleanup_dead_symlinks = _windows_cleanup_dead_symlinks
+    _LIFECYCLE_PATCHES.setattr(_pytest_pathlib, "cleanup_dead_symlinks", _windows_cleanup_dead_symlinks)

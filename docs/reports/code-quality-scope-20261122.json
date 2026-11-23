@@ -2278,7 +2278,7 @@
         "codey/app/context.py"
       ],
       "id": "Q018",
-      "status": "in_progress",
+      "status": "completed_changed",
       "reviewed_files": [
         "codey/app/context.py"
       ],
@@ -2305,7 +2305,7 @@
         "tests/test_coldstart_review_batch.py::ColdstartReviewBatchTests::test_knowledge_index_close_fails_cleanly_on_reuse",
         "tests/test_research_submission_handoff_production.py"
       ],
-      "result": "Knowledge publication race fixed with locked enabled recheck; before 2 failed/2 passed, after all four cases pass. Whole context (842 lines) strong Any 0. Attachment fake accepted worker reservation and shared fixture typing independently validated; final four explicit pytest batches 41+39+7+17=104 passed, all exit0. Four full files pass strict Any/Pyrefly/ty/Ruff. Full production mypy750/Pyrefly/ty/precision pass (35 suppressed/168 warnings preserved); hashes stable. Production regression and support fixture changes are being committed separately; batch remains in_progress until both commits are recorded."
+      "result": "Complete full-file context governance: fixed lazy knowledge publication after disable/close with before 2 failed/2 passed and after 4 passed; production commit 9e984dd4. Independently repaired accepting attachment test stub ownership cleanup, typed full attachment/conftest/resource-regression files and merged duplicate four-attempt close loops. Four explicit final pytest batches 41+39+7+17=104 passed; no skips. Strict Any/Pyrefly/ty/Ruff four files exit0; production mypy750/Pyrefly/ty/precision exit0 (35 suppressed/168 warnings disclosed). Hashes stable; Windows subprocess encoding baseline failure separately explained and UTF8 environment validated. Support commit hash to be recorded with next progress update."
     },
     {
       "id": "Q018B",
