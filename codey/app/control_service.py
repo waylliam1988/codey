@@ -18,22 +18,12 @@ from codey.durable import control
 from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.runtime.core.api_selection import ApiRunSelection
 from codey.utils.object_fields import mapping_fields, object_fields, sequence_items
+from codey.utils.object_fields import require_object_fields as _fields
+from codey.utils.object_fields import require_object_rows as _rows
 
 if TYPE_CHECKING:
     from codey.app.context import AppContext
     from codey.durable.model import CommitResult, DurableMutation, TaskCheckpoint
-
-
-def _fields(value: object) -> dict[str, object]:
-    if not object_fields(value):
-        raise TypeError("control data must be an object with string keys")
-    return value
-
-
-def _rows(value: object) -> list[dict[str, object]]:
-    if not sequence_items(value):
-        raise TypeError("control records must be a sequence")
-    return [_fields(row) for row in value]
 
 
 def _text(fields: Mapping[str, object], key: str, default: str | None = None) -> str:

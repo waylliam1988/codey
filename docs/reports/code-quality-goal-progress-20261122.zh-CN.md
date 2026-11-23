@@ -1056,7 +1056,7 @@ Q018B 已提交：`ba3bff82`（refactor(knowledge): type observation metadata an
 
 Q019 已提交：`415f84d3`（fix(conversations): fence cache publication and stale snapshot writes）。当前工作区仅外部两个PNG与一份审查报告，保留未暂存。
 
-### Q019B Canonical config / conversation HTTP branches（部分调研，用户要求暂停）
+### Q019B Canonical config / conversation HTTP branches（已完成，提交后暂停）
 
 - 两生产源已在前批完整读，强Any基线control_conversations104/conversation_routes201，尚未治理。开始限定UI配置、会话树与本地分支路径的行为基线，先排除会真正创建worktree的验证路径。
 
@@ -1064,3 +1064,17 @@ Q019 已提交：`415f84d3`（fix(conversations): fence cache publication and st
 - Q019B仅完成边界调研：两生产源此前已全读且有104/201条旧Any基线；完整读了tests/test_conversation_tree_routes.py及其durable/control.py配置/收据依赖。新读脚本的fixture/响应容器Any与依赖的latest/receipt/write动态字段尚未完成治理，也未执行该批行为基线，不把阅读记成通过或完成。恢复后从此范围开始，避免真正创建worktree的测试路径。
 - 暂停时累计仍为32/316完整批次、62/996完整批次生产文件；另6个部分批次生产文件独立验证，累计68。最后代码验证为Q019两批56 passed及七文件严格Any/三类型工具/Ruff和生产门通过；本次仅Markdown/JSON进度更新，未重复运行pytest或类型门，已校验JSON、316批/996源唯一归属及diff。
 - 外部两张PNG与codey-single-agent-implementation-review-20261123.zh-CN.md保留未暂存。总目标未完成；等待用户明确恢复。
+
+- 用户澄清仅授权“把Q019B做完，commit，然后停”，本批重新执行，完成后不进入其他批次；总goal保持paused，不冒称已恢复全仓连续执行。修改前明确15个UI/config/tree/只读capability用例实际 **0，15 passed，87.95秒**，q019b-baseline.json保存完整命令与退出码，未创建worktree。
+- 两完整生产源改为AppContext/只读Mapping/具体响应字典；动态配置、UI记录、任务状态与历史输出先入object再验证字段/序列/被消费的字符串整数数值，不用无依据cast或ignore。UI列表复制后写回原state再保存，保留插入、排序、revision、偏好和额外字段语义；fork后台仍唯一拥有真实作业/文件系统操作。
+- 将ControlService原两个同语义_fields/_rows校验实现移动到已有utils.object_fields，保留旧私有名import alias及原异常类型/消息，配置和分支路由以及测试复用唯一入口；不新增生产模块/依赖/配置。两个此前完成文件因实际共同实现改动重新验证，完整五文件强Any/Pyrefly/ty/Ruff全0（Pyrefly5warnings未显示），本地树直接5项通过，q019b-first-validation.json。第一轮源诊断305→4，剩余为legacy latest/status条件中Any传播，边界拆为明确object后全部0；目前未建立新确定性bug证据，未据猜测修改业务。
+
+- 完整tree_routes脚本强Any **91→0**（两源104+201→0），合计396条原诊断消除；保留原5个用例及所有关键断言。新增5个无效分支请求（无效ID、空entry、bool/字符串revision、未知action）确认400且head不变；workspace创建/查询/重试/缺失或坏元数据通过有类型_ForkJobs替身验证，未调用真实Git worktree后端；完整脚本 **0，13 passed，3.21秒**，q019b-boundary-validation.json。五完整文件强Any/Pyrefly/ty/Ruff再次全部exit0，未引入cast/ignore/skip或降低断言。
+- diff已按生产职责审查；共享校验两函数为原ControlService实现原样迁移，异常类型/消息、行顺序、遇坏行立即失败与结果字典身份保持，旧私有调用符号通过alias保留；新调用点均使用同一入口，不通过过滤坏行消除类型问题。正在执行完整external_control及生命周期投影调用方、fresh-process导入/历史分页与生产类型门，尚未记通过或提交。
+
+- 最终调用方批次：`python -m pytest -q tests/test_external_control.py tests/test_task_lifecycle_projection.py tests/test_fork_capabilities.py::test_capability_route_reports_projectless_and_failed_checks_without_mutating_state --tb=short` → **0，39 passed，222.24秒**；导入/历史批次`python -m pytest -q tests/test_server_lazy_state.py tests/durable/test_history_snapshot_paging.py --tb=short` → **0，17 passed/6 subtests passed，7.87秒**，q019b-validation-final.json。完整external_control测试实际执行，包括控制身份、RPC/MCP本地协议等调用方；未将其原有动态类型宣布已治理。
+- 首次生产门全部exit0，但Pyrefly出现169而非原168warnings；`--min-severity warn --output-format json`定位新一项为typed entry_id仍包str的冗余转换，q019b-pyrefly-warnings.json。移除该单一转换后，`python -m pytest -q tests/test_chat_fork_workspaces.py::test_message_fork_keeps_whole_turn_and_origin_without_running_it tests/test_chat_fork_workspaces.py::test_invalid_fork_mode_is_rejected_without_mutating_history tests/test_control_service_contract.py --tb=short` → **0，20 passed，3.86秒**。这三个本地节点只创建小型临时Git仓库，未调用worktree创建；其余实际worktree测试未执行。通过重建旧route哈希确认只改_turn_tip该转换，其他四文件hash相同，因此先前长测的无关路径结果仍有效，未机械重复39项。
+- 最终四组互不重复nodeid范围 **13+39+17+20=89 passed，另6 subtests passed，0失败/0skip**。原5个tree测试方法与断言保留，新增8个参数用例，不把修改前基线与重复定向验证额外累计。五完整文件强Any/Pyrefly/ty/Ruff全exit0；生产mypy750/Pyrefly/ty/precision全exit0，Pyrefly恢复原35suppressed/168warnings，定向4项既有冗余query转换warning仍披露。q019b-validation-complete.json保存最终hash与命令；Windows/Python3.12实际运行、类型目标3.11，不声明其他平台实测。
+- 最后20项断言通过且pytest exit0，进程退出清理出现一次RAM目录WinError5 warning，指向本地Git fixture的只读object文件；实际文件只读属性已核对，在工作区忽略证据目录中自建只读小文件，独立复现shutil.rmtree→PermissionError WinError5，q019b-git-cleanup-warning.json。自己的小探针已按验证后的绝对路径清理；保留原失败清理目录作为证据。根因属于未修改的共享测试清理对Windows只读Git文件的处理，不是本批生产行为/断言失败；记录到测试基础设施待办，本次不扩展修复，不把目录清理宣称成功。
+- Q019B声明范围验收完成：类型与同语义校验职责收敛，没有猜测性bug修复、公开接口删除或真实worktree操作。当前 **33 / 316批完整完成，64 / 996生产文件属于完整完成批次**；另6个部分批次源独立验证，累计70个当前已验证生产文件。durable/control.py及UI存储生产者原Any保留在其所属未完成批次，当前消费者已验证未知数据边界，不借本批完成宣称生产者已治理。
+- 用户要求只做完Q019B并commit后停。完成diff/暂存检查后创建本批本地提交，随后保持goal paused，不进入Q019C或其他模块。两张外部PNG及用户审查报告保留未暂存；全仓目标尚未完成。
