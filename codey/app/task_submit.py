@@ -17,24 +17,48 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
+    from codey.agents.request import AgentRequest
     from codey.app.control_service import ControlService
     from codey.app.run_registry import RunSnapshot
     from codey.runtime.core.api_selection import ApiRunSelection
+    from codey.runtime.core.run_result import RunResult
+    from codey.workspace.changes import ChangeTracker
 
 from codey.automation.browser_worker import submit as submit_browser_task
 from codey.durable.errors import CommitConflict
 from codey.durable.model import TASK_TERMINAL_STATUSES, TaskStatus, thaw_json
-from codey.operations.project_adapter import run as agent_run
 from codey.operations.task_state import TaskSubmissionState
-from codey.providers.diagnostics import capture_provider_failure
+from codey.providers.diagnostics import ProviderFailure, capture_provider_failure
 from codey.providers.model_preferences import ModelDisabledError
 from codey.providers.snapshot import capture_provider_selection, provider_snapshot
 from codey.reviews.review_policy import load_review_policy
 from codey.task.kind import resolve_task_kind_values
 from codey.task.model import EditUserMessage, ResolveShellApproval, ResumeRun, StartTask, TaskInput, TaskSubmission
+from codey.utils.object_fields import object_fields
 from codey.workspace.task_changes import collect_task_changes
 
 SHELL_CONTINUATION_IDLE_TIMEOUT = 15.0
+
+
+def agent_run(request: AgentRequest) -> RunResult:
+    from codey.operations.project_adapter import run
+
+    return run(request)
+
+
+def _model_payload(selection: ApiRunSelection | None) -> dict[str, object]:
+    if selection is None:
+        return {}
+    payload: object = selection.to_payload()
+    if not object_fields(payload):
+        raise TypeError("model selection payload must be an object")
+    return payload
+
+
+def _capture_failure(*, model: str, action: str, page: object, error: BaseException) -> ProviderFailure:
+    return capture_provider_failure(model=model, action=action, page=page, error=error)
 
 
 def _control_service_for(state: TaskSubmissionState) -> ControlService | None:
@@ -114,15 +138,21 @@ def run_task(
             from codey.operations.task_entry import run_task_submission
             from codey.workspace.changes import collect_changes as collect_review_changes
 
+            def typed_review_changes(project: str | Path, tracker: ChangeTracker | None) -> dict[str, object]:
+                changes: object = collect_review_changes(project, tracker)
+                if not object_fields(changes):
+                    raise TypeError("review changes must be an object")
+                return changes
+
             if review_policy is None:
                 review_policy = load_review_policy()
             deps = build_task_deps(
                 state,
                 agent_run=agent_run,
                 collect_changes=collect_task_changes,
-                collect_review_changes=collect_review_changes,
+                collect_review_changes=typed_review_changes,
                 review_policy=review_policy,
-                capture_provider_failure=capture_provider_failure,
+                capture_provider_failure=_capture_failure,
             )
         except Exception:
             # Init-phase failure happens before TaskRuntime owns the slot: release
@@ -155,7 +185,7 @@ def run_task(
                     project_changes_required=project_changes_required,
                     denied_capabilities=tuple(denied_capabilities or ()),
                     review_source_run_id=review_source_run_id,
-                    model_selection=model_selection.to_payload() if model_selection is not None else {},
+                    model_selection=_model_payload(model_selection),
                 )
             else:
                 submission = TaskSubmission(
@@ -175,7 +205,7 @@ def run_task(
                     previous_run_id=(previous_run_id or ""),
                     initial_shell_results=tuple(initial_shell_results or ()),
                     review_source_run_id=review_source_run_id,
-                    model_selection=model_selection.to_payload() if model_selection is not None else {},
+                    model_selection=_model_payload(model_selection),
                     input=input,
                     output_format=output_format, output_schema=output_schema,
                     required_tools=required_tools,
@@ -303,7 +333,7 @@ def submit_task(
                 "previous_run_id": previous_run_id,
                 "initial_shell_results": list(initial_shell_results),
                 "review_source_run_id": review_source_run_id,
-                "model_selection": admitted_selection.to_payload() if admitted_selection is not None else {},
+                "model_selection": _model_payload(admitted_selection),
                 "input": _task_input_payload(input),
                 **({"message_metadata": message_metadata} if message_metadata else {}),
                 "output_format": output_format, "output_schema": output_schema,
@@ -318,6 +348,9 @@ def submit_task(
         if not _claim_admitted_task(state, reserved, existing_reservation=existing_reservation):
             return reserved_run_id
         state.task_runtime.claim_worker(reserved.run_id)
+        requested: tuple[str, ...] = tuple(requested_capabilities or ())
+        denied: tuple[str, ...] = tuple(denied_capabilities or ())
+        shell_results: tuple[dict[str, object], ...] = tuple(initial_shell_results or ())
         accepted = submit_browser_task(
             run_task,
             session_id,
@@ -328,13 +361,13 @@ def submit_task(
             provider_id,
             intent,
             reserved.run_id,
-            requested_capabilities=tuple(requested_capabilities or ()),
+            requested_capabilities=requested,
             strict_research=strict_research,
             sources_open_required=sources_open_required,
             project_changes_required=project_changes_required,
-            denied_capabilities=tuple(denied_capabilities or ()),
+            denied_capabilities=denied,
             previous_run_id=(previous_run_id or ""),
-            initial_shell_results=tuple(initial_shell_results or ()),
+            initial_shell_results=shell_results,
             input=input,
             get_state=lambda: state,
             review_policy=review_policy,

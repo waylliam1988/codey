@@ -1,37 +1,30 @@
 from __future__ import annotations
 
-import threading
+import os
+import sys
 import unittest
-from types import SimpleNamespace
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from typing import ParamSpec
 from unittest import mock
 
 from codey.app import task_submit
-from codey.app.active_provider_registry import ActiveProviderRegistry
-from codey.app.provider_registry import ProviderRegistry
-from codey.app.run_registry import RunRegistry, RunSnapshot
-from codey.app.task_runtime import TaskRuntimeCoordinator
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.app.context import AppContext
+from codey.app.run_registry import RunSnapshot
+from codey.operations.task_run import TaskRunDeps
+from codey.task.model import TaskSubmission
 from tests import http_context
 
+_P = ParamSpec("_P")
 
-class _FakeState:
-    def __init__(self, reserved=True):
-        self.lock = threading.Lock()
-        self._shell_spawn_gate = threading.Lock()
-        self.providers = ProviderRegistry()
-        self.durable = DurableSession(MemoryDurableStore())
-        self.durable_scheduler = SimpleNamespace(claim=mock.Mock(), retry=mock.Mock())
+
+class _FakeState(AppContext):
+    def __init__(self, reserved: bool = True) -> None:
+        super().__init__(start_scheduler=False, memory_enabled=False)
         self.reserved = reserved
         self.released: list[str] = []
         self.expired: list[str] = []
-        self.run_registry = RunRegistry()
-        self.task_runtime = TaskRuntimeCoordinator(
-            self.run_registry,
-            ActiveProviderRegistry(),
-            self.lock,
-            self._shell_spawn_gate,
-            wake_input=lambda: None,
-        )
 
     def admit_and_claim(self, session_id: str, run_id: str, task: str) -> None:
         self.durable.admit_input(
@@ -54,90 +47,119 @@ class _FakeState:
             run_id=run_id or "run-1", abort_if_stopped=abort_if_stopped,
         )
 
-    def release_run(self, run_id):
+    def release_run(self, run_id: str) -> None:
         self.released.append(run_id)
 
-    def expire_stale_shell_approvals(self, run_id):
-        self.expired.append(run_id)
+    def expire_stale_shell_approvals(self, active_run_id: str) -> None:
+        self.expired.append(active_run_id)
+
+    def close(self) -> bool:
+        # Every accepted job in this fixture is a stub, with no real worker.
+        for run in self.task_runtime.active_runs():
+            self.task_runtime.release_run(run.run_id)
+        return super().close()
+
+
+@dataclass
+class _BrowserQueue:
+    accepted: bool = True
+    error: RuntimeError | None = None
+    jobs: list[Callable[[], None]] = field(default_factory=list)
+
+    def submit(self, job: Callable[_P, None], *args: _P.args, **kwargs: _P.kwargs) -> bool:
+        assert job is task_submit.run_task
+        self.jobs.append(lambda: job(*args, **kwargs))
+        if self.error is not None:
+            raise self.error
+        return self.accepted
+
+
+@contextmanager
+def _browser_queue(*, accepted: bool = True, error: RuntimeError | None = None) -> Generator[_BrowserQueue, None, None]:
+    queue = _BrowserQueue(accepted=accepted, error=error)
+    with mock.patch.object(task_submit, "submit_browser_task", new=queue.submit):
+        yield queue
 
 
 class TaskSubmitTests(unittest.TestCase):
     def test_submit_task_returns_run_id_and_expires_approvals(self) -> None:
         state = _FakeState(reserved=True)
-        with mock.patch.object(task_submit, "submit_browser_task", return_value=True) as queued:
+        with _browser_queue() as queued:
             run_id = task_submit.submit_task(
                 "s", None, "hello", 8, False, "deepseek", get_state=lambda: state
             )
         self.assertEqual(run_id, "run-1")
-        self.assertEqual(state.expired, ["run-1"])
-        self.assertEqual(state.released, [])
-        queued.assert_called_once()
+        self.assertEqual(state.expired, list[str](["run-1"]))
+        self.assertEqual(state.released, list[str]())
+        self.assertEqual(len(queued.jobs), 1)
 
     def test_submit_task_returns_none_when_no_reservation(self) -> None:
         state = _FakeState(reserved=False)
-        with mock.patch.object(task_submit, "submit_browser_task") as queued:
+        with _browser_queue() as queued:
             self.assertIsNone(
                 task_submit.submit_task("s", None, "t", 8, False, "deepseek", get_state=lambda: state)
             )
-        queued.assert_not_called()
+        self.assertFalse(queued.jobs)
 
     def test_submit_task_releases_on_worker_error(self) -> None:
         state = _FakeState(reserved=True)
-        with mock.patch.object(
-            task_submit, "submit_browser_task", side_effect=RuntimeError("boom")
-        ), self.assertRaises(RuntimeError):
+        with _browser_queue(error=RuntimeError("boom")), self.assertRaises(RuntimeError):
             task_submit.submit_task("s", None, "t", 8, False, "deepseek", get_state=lambda: state)
-        self.assertEqual(state.released, ["run-1"])
+        self.assertEqual(state.released, list[str](["run-1"]))
 
     def test_submit_task_retains_durable_admission_when_worker_queue_is_full(self) -> None:
         state = _FakeState(reserved=True)
-        with mock.patch.object(task_submit, "submit_browser_task", return_value=False):
+        retry_calls: list[str] = []
+        with _browser_queue(accepted=False), mock.patch.object(
+            state.durable_scheduler, "retry", new=retry_calls.append,
+        ):
             run_id = task_submit.submit_task("s", None, "t", 8, False, "deepseek", get_state=lambda: state)
         self.assertEqual(run_id, "run-1")
-        self.assertEqual(state.released, [])
+        self.assertEqual(state.released, list[str]())
         self.assertEqual(state.durable.task("run-1").phase, "accepted")
         active = state.run_registry.current()
         assert active is not None and not active.worker_owned
-        state.durable_scheduler.retry.assert_called_once_with("run-1")
+        self.assertEqual(retry_calls, list[str](["run-1"]))
 
     def test_submit_task_rejects_invalid_policy_before_reserve(self) -> None:
-        import os
-
         state = _FakeState(reserved=True)
-        reserve_calls: list[dict] = []
+        reserve_calls: list[dict[str, object]] = []
         original_reserve = state.reserve_run
 
-        def tracking_reserve(**kwargs):
-            reserve_calls.append(kwargs)
-            return original_reserve(**kwargs)
+        def tracking_reserve(
+            *, session_id: str, project: str | None, task: str,
+            provider_id: str, run_id: str = "", abort_if_stopped: bool = False,
+        ) -> RunSnapshot | None:
+            reserve_calls.append(dict(session_id=session_id, project=project, task=task,
+                                      provider_id=provider_id, run_id=run_id, abort_if_stopped=abort_if_stopped))
+            return original_reserve(session_id=session_id, project=project, task=task,
+                                    provider_id=provider_id, run_id=run_id, abort_if_stopped=abort_if_stopped)
 
-        state.reserve_run = tracking_reserve  # type: ignore[method-assign]
-        with (
-            mock.patch.dict(os.environ, {"REVIEW_POLICY": "require_weeb"}),
-            mock.patch.object(task_submit, "submit_browser_task") as queued,
-            self.assertRaises(ValueError),
-        ):
-            task_submit.submit_task("s", None, "t", 8, False, "deepseek", get_state=lambda: state)
-        # Fail fast: no slot taken, nothing to release, worker never queued.
-        self.assertEqual(reserve_calls, [])
-        self.assertEqual(state.released, [])
-        queued.assert_not_called()
-        # The slot stays usable afterwards: a valid submit still reserves.
-        with mock.patch.object(task_submit, "submit_browser_task", return_value=True):
-            run_id = task_submit.submit_task(
-                "s", None, "t", 8, False, "deepseek", get_state=lambda: state
-            )
+        with mock.patch.object(state, "reserve_run", new=tracking_reserve):
+            with (
+                mock.patch.dict(os.environ, dict[str, str](REVIEW_POLICY="require_weeb")),
+                _browser_queue() as queued,
+                self.assertRaises(ValueError),
+            ):
+                task_submit.submit_task("s", None, "t", 8, False, "deepseek", get_state=lambda: state)
+            # Fail fast: no slot taken, nothing to release, worker never queued.
+            self.assertEqual(reserve_calls, list[dict[str, object]]())
+            self.assertEqual(state.released, list[str]())
+            self.assertFalse(queued.jobs)
+            # The slot stays usable afterwards: a valid submit still reserves.
+            with _browser_queue():
+                run_id = task_submit.submit_task(
+                    "s", None, "t", 8, False, "deepseek", get_state=lambda: state
+                )
         self.assertEqual(run_id, "run-1")
         self.assertEqual(len(reserve_calls), 1)
-        self.assertEqual(state.expired, ["run-1"])
+        self.assertEqual(state.expired, list[str](["run-1"]))
 
     def test_run_task_releases_reserved_slot_on_policy_error(self) -> None:
-        import os
-
         state = _FakeState(reserved=True)
         state.admit_and_claim("s", "run-9", "t")
         with (
-            mock.patch.dict(os.environ, {"REVIEW_POLICY": "require_weeb"}),
+            mock.patch.dict(os.environ, dict[str, str](REVIEW_POLICY="require_weeb")),
             self.assertRaises(ValueError),
         ):
             task_submit.run_task(
@@ -145,15 +167,13 @@ class TaskSubmitTests(unittest.TestCase):
                 get_state=lambda: state,
                 attempt_token=state.durable.task("run-9").attempt_token,
             )
-        self.assertEqual(state.released, ["run-9"])
+        self.assertEqual(state.released, list[str](["run-9"]))
 
     def test_run_task_releases_slot_when_lazy_import_fails(self) -> None:
-        import sys
-
         state = _FakeState(reserved=True)
         state.admit_and_claim("s", "run-9", "t")
         with (
-            mock.patch.dict(sys.modules, {"codey.operations.task_entry": None}),
+            mock.patch.dict(sys.modules, dict[str, object]({"codey.operations.task_entry": None})),
             self.assertRaises(ImportError),
         ):
             task_submit.run_task(
@@ -162,105 +182,104 @@ class TaskSubmitTests(unittest.TestCase):
                 attempt_token=state.durable.task("run-9").attempt_token,
                 review_policy="web_if_available",
             )
-        self.assertEqual(state.released, ["run-9"])
+        self.assertEqual(state.released, list[str](["run-9"]))
 
     def test_worker_releases_slot_when_accessor_breaks_after_submit(self) -> None:
-        import sys
-
         state = _FakeState(reserved=True)
-        holder = {"broken": False, "calls": 0}
+        broken, calls = False, 0
 
-        def get_state():
-            holder["calls"] += 1
-            if holder["broken"]:
+        def get_state() -> _FakeState:
+            nonlocal calls
+            calls += 1
+            if broken:
                 raise RuntimeError("accessor down")
             return state
 
         with (
-            mock.patch.dict(sys.modules, {"codey.operations.task_entry": None}),
-            mock.patch.object(task_submit, "submit_browser_task", return_value=True) as queued,
+            mock.patch.dict(sys.modules, dict[str, object]({"codey.operations.task_entry": None})),
+            _browser_queue() as queued,
         ):
             run_id = task_submit.submit_task(
                 "s", None, "t", 8, False, "deepseek", get_state=get_state
             )
             self.assertEqual(run_id, "run-1")
-            # The accessor breaks persistently after submit; nothing else can
-            # provide state. The queued worker must surface the original
-            # ImportError (never the accessor error) and still release.
-            # The worker runs inside the import block so the injected
-            # ImportError is the deterministic init failure.
-            holder["broken"] = True
-            fn = queued.call_args.args[0]
-            self.assertIs(fn, task_submit.run_task)
+            # The worker uses captured state even after the accessor breaks.
+            broken = True
+            self.assertEqual(len(queued.jobs), 1)
             with self.assertRaises(ImportError):
-                fn(*queued.call_args.args[1:], **queued.call_args.kwargs)
-            self.assertEqual(state.released, ["run-1"])
-        # The original accessor ran exactly once (at submit); the worker never
-        # called it again — cleanup used the captured state object.
-        self.assertEqual(holder["calls"], 1)
+                queued.jobs[0]()
+            self.assertEqual(state.released, list[str](["run-1"]))
+        self.assertEqual(calls, 1)
 
     def test_run_task_uses_captured_state_for_post_entry_cleanup(self) -> None:
-        import sys
+        from types import ModuleType
 
         state = _FakeState(reserved=True)
         state.admit_and_claim("s", "run-9", "t")
-        state.self_repair = SimpleNamespace(kick_if_idle=mock.Mock())
-        state.is_busy = mock.Mock(return_value=False)
-        holder = {"calls": 0}
+        supervisor = state.self_repair
+        kicks: list[Callable[[], bool]] = []
+        entries: list[TaskSubmission] = []
+        calls = 0
 
-        def get_state():
-            holder["calls"] += 1
-            if holder["calls"] > 1:
+        def get_state() -> _FakeState:
+            nonlocal calls
+            calls += 1
+            if calls > 1:
                 raise RuntimeError("accessor down after entry")
             return state
 
+        def entry(deps: TaskRunDeps, request: TaskSubmission) -> None:
+            self.assertIs(deps.state, state)
+            entries.append(request)
+
+        def kick(is_busy: Callable[[], bool]) -> bool:
+            kicks.append(is_busy)
+            return False
+
+        module = ModuleType("codey.operations.task_entry")
         with (
-            mock.patch.object(task_submit, "load_review_policy", return_value="web_if_available"),
-            mock.patch("codey.app.task_services.build_task_deps", return_value=object()),
-            mock.patch.dict(sys.modules, {"codey.operations.task_entry": mock.Mock()}),
+            mock.patch.object(module, "run_task_submission", new=entry, create=True),
+            mock.patch.dict(sys.modules, dict[str, object]({"codey.operations.task_entry": module})),
+            mock.patch.object(supervisor, "kick_if_idle", new=kick),
         ):
-            # The task entry itself is replaced below so this test isolates
-            # the cleanup accessor and does not depend on the agent runtime.
-            entry = sys.modules["codey.operations.task_entry"]
-            entry.run_task_submission = mock.Mock()
             task_submit.run_task(
                 "s", None, "t", 8, False, "deepseek", "auto", "run-9",
                 get_state=get_state,
                 attempt_token=state.durable.task("run-9").attempt_token,
                 review_policy="web_if_available",
             )
-
-        self.assertEqual(holder["calls"], 1)
-        state.self_repair.kick_if_idle.assert_called_once_with(state.is_busy)
+        self.assertEqual(calls, 1)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(kicks, list[Callable[[], bool]]([state.is_busy]))
 
     def test_after_slot_release_returns_none_when_stopped(self) -> None:
         state = _FakeState(reserved=True)
-        state.task_runtime = TaskRuntimeCoordinator(
-            SimpleNamespace(
-                stop_flag=SimpleNamespace(is_set=lambda: True),
-                wait_for_slot=mock.Mock(),
-            ),
-            ActiveProviderRegistry(),
-            state.lock,
-            state._shell_spawn_gate,
-            wake_input=lambda: None,
-        )
+        state.task_runtime.stop_flag.set()
         run_id = task_submit.submit_task_after_slot_release(
             "s", None, "t", 8, False, "deepseek", get_state=lambda: state
         )
         self.assertIsNone(run_id)
 
     def test_server_wrappers_bind_get_state(self) -> None:
+        state = _FakeState()
+        accessors: list[Callable[[], AppContext]] = []
+
+        def inner(
+            session_id: str, project: str | None, task: str, max_turns: int,
+            continue_task: bool, provider_id: str, intent: str = "auto", *,
+            get_state: Callable[[], AppContext], **kwargs: object,
+        ) -> str:
+            accessors.append(get_state)
+            return "run-9"
 
         with (
-            mock.patch.object(task_submit, "submit_task", return_value="run-9") as inner,
-            mock.patch("tests.http_context.get_context") as get_state,
+            mock.patch.object(task_submit, "submit_task", new=inner),
+            mock.patch("tests.http_context.get_context", new=lambda: state),
         ):
-            sentinel = object()
-            get_state.return_value = sentinel
             run_id = http_context.submit("s", None, "t", 8, False, "deepseek")
         self.assertEqual(run_id, "run-9")
-        self.assertEqual(inner.call_args.kwargs["get_state"](), sentinel)
+        self.assertEqual(len(accessors), 1)
+        self.assertIs(accessors[0](), state)
 
 
 if __name__ == "__main__":

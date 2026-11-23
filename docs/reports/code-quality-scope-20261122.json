@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 996,
   "region_count": 40,
-  "batch_count": 312,
+  "batch_count": 313,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -102,6 +102,7 @@
         "Q024",
         "Q025",
         "Q026",
+        "Q027A",
         "Q027",
         "Q018B"
       ],
@@ -1662,7 +1663,8 @@
       "result": "Confirmed cap=0 launches one advisor (3 failed/3 passed before fix) and swallowed TaskCancelled at availability/warning/close (3 failed/3 passed before fix). Both repaired; 53 direct + 15 audit + 24 service tests passed. Five whole files passed extra Any/mypy/Pyrefly/ty/Ruff; normal full-production gates passed with stable hashes. test_server.py timeout fixture repaired against ChatProvider numeric/None contract, with stronger send assertions. This shared test script still has 1709 strict Any diagnostics, so this batch is partial, not complete. Lazy import failures are identical with HEAD consensus; traced to browser_progress -> browser_binding -> Playwright and routed Q085/Q097/Q017.",
       "followups": [
         "Whole-file tests/test_server.py Any remains: unparameterized dict at line 68, untyped callback at line 83, json.loads and Mock propagation throughout, including ConsensusConnectionTests at lines 2190-2221; q008d-server-any.log has all 1709 diagnostics. Coordinate Q015 test migration; no claim of full governance.",
-        "Three existing lazy import failures need browser boundary repair; exact traced chain and original-source reproduction in q008d-lazy-import-chain.json and q008d-lazy-baseline.json."
+        "Three existing lazy import failures need browser boundary repair; exact traced chain and original-source reproduction in q008d-lazy-import-chain.json and q008d-lazy-baseline.json.",
+        "Import followup resolved in Q017/Q027A (consensus audit and task_submit adapter independent chains). Complete test_server_lazy_state current9passed/6subtests with original empty-browser assertions. Shared test_server typing debt remains; this resolution does not complete Q008D support governance."
       ],
       "commits": [
         "94f1cfad",
@@ -2262,12 +2264,15 @@
       ],
       "candidate_test_count": "recompute at responsibility entry",
       "followups": [
-        "Original3failures decomposed: consensus service input fixed; two remaining server/task_submit failures have independent task_submit->project_adapter->task_loop->kernel->Playwright path. q017-task-submit-import-chain.json and q017-consensus-first-validation.json (2failed/8passed/5subtests). Prior full-file lazy gate is not green; handle task_submit at Q027 next without weakening assertions."
+        "Resolved at Q027A: independent task_submit eager adapter import fixed with preserved agent_run seam; complete unchanged lazy assertions now9passed/6subtests. Q017 and Q027A together close original three lazy failures. Earlier2failed result remains historical evidence."
       ],
       "tests": [
         "tests/test_server_lazy_state.py"
       ],
-      "result": "Fixed module import-light contract: before consensus fresh-process subtest loads 56 browser/Playwright modules, after same helper/input/empty-list assertion succeeds. Core audit import deferred to actual execution. Entire consensus source strong Any21->0, lazy-state script4->0; 52 scoped advisor/audit/caller tests and 10 lifecycle tests pass, overlapping one support test not double-counted as unique coverage. Full production mypy750/Pyrefly/ty/precision pass after necessary ConsensusTask protocol alignment. Remaining lazy file2failures are pre-existing task_submit->project_adapter eager import path, separately traced and routed to Q027. task_run shared full-file Any31 explicitly left partial at Q099, no full-file completion claim."
+      "result": "Fixed module import-light contract: before consensus fresh-process subtest loads 56 browser/Playwright modules, after same helper/input/empty-list assertion succeeds. Core audit import deferred to actual execution. Entire consensus source strong Any21->0, lazy-state script4->0; 52 scoped advisor/audit/caller tests and 10 lifecycle tests pass, overlapping one support test not double-counted as unique coverage. Full production mypy750/Pyrefly/ty/precision pass after necessary ConsensusTask protocol alignment. Remaining lazy file2failures are pre-existing task_submit->project_adapter eager import path, separately traced and routed to Q027. task_run shared full-file Any31 explicitly left partial at Q099, no full-file completion claim.",
+      "commits": [
+        "a8c6dee6"
+      ]
     },
     {
       "id": "Q017D",
@@ -2481,6 +2486,27 @@
       "candidate_test_count": 13
     },
     {
+      "id": "Q027A",
+      "responsibility": "HTTP task admission, deferred agent runner and durable worker dispatch entry",
+      "files": [
+        "codey/app/task_submit.py"
+      ],
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/app/task_submit.py"
+      ],
+      "verified_files": [
+        "codey/app/task_submit.py"
+      ],
+      "tests": [
+        "tests/test_server_lazy_state.py",
+        "tests/test_task_submit.py",
+        "tests/test_task_submit_durable.py"
+      ],
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
+      "result": "Complete source and supporting full test governance: defer project adapter load via typed injected agent_run seam; before independent2lazy failures, after complete lazy9pass/6subtests. Final direct37pass/6subtests and entry callers26pass, no skips/errors. Strong Any source9->0, unit script76->0; all original11test methods/asserted behaviors retained with real context/durable/registry and typed stub queue, old ignore removed. Full production mypy750/Pyrefly/ty/precision exit0, hashes stable. No public API removed; existing 35 suppressed/168 production warnings disclosed."
+    },
+    {
       "responsibility": "codey/app: task kernel and execution",
       "files": [
         "codey/app/runtime_adapters.py",
@@ -2489,8 +2515,7 @@
         "codey/app/task_lifecycle.py",
         "codey/app/task_lifecycle_projection.py",
         "codey/app/task_runtime.py",
-        "codey/app/task_services.py",
-        "codey/app/task_submit.py"
+        "codey/app/task_services.py"
       ],
       "id": "Q027",
       "status": "not_started",
@@ -2498,7 +2523,7 @@
       "verified_files": [],
       "candidate_test_count": 35,
       "followups": [
-        "Q017 consensus lazy import fixed but independent task_submit eager top-level project_adapter import violates its own cold-start doc and keeps server/task_submit two failures. Actual fresh-process audit trace q017-task-submit-import-chain.json, original3failed baseline and partial2failed results preserved. Prioritize entry-only scoped fix next; retain dependency-injection agent_run callers and initialization-failure reservation cleanup."
+        "Historical lazy import entry followup resolved by dedicated Q027A task_submit batch, preserving global agent injection and init cleanup tests. Remaining seven runtime/assembly source files not yet governed."
       ]
     },
     {
@@ -8387,6 +8412,14 @@
         "Q017D"
       ],
       "reason": "Complete-file review confirms independent advisor execution vs browser diagnosis/click-teaching responsibilities and separate dynamic type boundaries. Fix confirmed import contract in advisor entry first; queue controls-backed return typing with teaching recovery. Both original files retain unique ownership, 996 production files unchanged."
+    },
+    {
+      "batch": "Q027",
+      "replacement": [
+        "Q027A",
+        "Q027"
+      ],
+      "reason": "Confirmed cold-start import contract defect isolated to598-line task_submit entry. Split large entry as its own verifiable batch before remaining registry/runtime/dependency assembly files; all996 production sources retain unique ownership. Priority driven by actual remaining server/task_submit lazy failures, not optional optimization."
     }
   ]
 }
