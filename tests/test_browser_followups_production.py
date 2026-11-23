@@ -155,7 +155,7 @@ def test_delayed_result_is_evidence_only_after_declared_wait(
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
-def test_opening_controls_returns_references_without_a_formal_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_opening_controls_observes_menu_before_reading_the_selected_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "controls"
     case = Case("打开筛选菜单，再查询详情并附来源。", """<button id="menu">Menu</button>
         <button id="detail" hidden>Detail</button><article id="record">No record loaded yet.</article>
@@ -181,9 +181,11 @@ def test_opening_controls_returns_references_without_a_formal_read(tmp_path: Pat
     install_http(monkeypatch, replies())
     result = run_arm(path, case, "A", TARGET, max_turns=4)
     assert result["stop_reason"] == "done" and decode_json_object(result["page_state"])["clicks"] == 2, result
-    receipts = [row.result.call.name for row in tool_receipts(path / "state")]
-    assert [name for name in receipts if name in DIRECT_TOOLS] == [
-        "browser_snapshot", "browser_click", "browser_snapshot", "browser_click", "browser_read"]
+    receipts = [row.result for row in tool_receipts(path / "state") if row.result.call.name in DIRECT_TOOLS]
+    assert [row.call.name for row in receipts] == [
+        "browser_snapshot", "browser_click", "browser_snapshot", "browser_read", "browser_click", "browser_read"]
+    assert "No record loaded yet" in receipts[3].model_text and "query_click" not in receipts[3].audit
+    assert "DETAIL_29" in receipts[-1].model_text and "query_click" in receipts[-1].audit
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")

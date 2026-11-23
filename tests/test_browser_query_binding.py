@@ -45,6 +45,11 @@ def test_original_result_node_is_bound_without_requiring_a_global_single_region(
     assert clicked.ok, clicked.model_text
     baseline = decode_json_object(clicked.observation['query_baseline'])
     assert isinstance(baseline.get('target'), dict)
+    if relation == 'aria':
+        with pytest.raises(QueryObservationError) as pending:
+            browser.capture_query_result(baseline, pending='Unconfirmed')
+        assert pending.value.reason == 'query_update_unconfirmed'
+        assert browser.evaluate("document.querySelector('#result').textContent='Current target'").ok
     before = browser.capture_query_result(baseline, pending='Unconfirmed')
     assert browser.evaluate("document.querySelector('#other').textContent='Unrelated update'").ok
     after = browser.capture_query_result(baseline, pending='Unconfirmed')
@@ -163,9 +168,9 @@ def test_target_update_is_not_inferred_from_other_regions_or_semantic_success(
         assert 'Query failed' in str(page['text'])
         assert 'query_success' not in page
     else:
-        page = browser.capture_query_result(baseline, pending='Unconfirmed')
-        assert page['query_confirmed'] is False
-        assert 'query_region' not in page
+        with pytest.raises(QueryObservationError) as pending:
+            browser.capture_query_result(baseline, pending='Unconfirmed')
+        assert pending.value.reason == 'query_update_unconfirmed'
 
 
 class BoundBrowser(BrowserSearchProvider):
