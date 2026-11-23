@@ -216,7 +216,8 @@ def test_completion_followup_preserves_submitted_report_format(native: bool) -> 
 
 
 def test_strict_report_has_one_preferred_example_without_changing_ordinary_done() -> None:
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.protocols.text_turn import decode_text_turn
     from codey.research.tool_contract import STRUCTURED_REPORT_EXAMPLE
 
     strict = TaskSession(policy=TaskPolicy(grants=frozenset({"control"}), strict_research=True))
@@ -231,11 +232,11 @@ def test_strict_report_has_one_preferred_example_without_changing_ordinary_done(
     assert sections["coverage"] == [
         {"question_ref": "q1", "state": "partial", "findings": ["f1"]}]
     assert STRUCTURED_REPORT_EXAMPLE not in examples(ordinary)
-    description = next(s.description for s in build_turn_snapshot(strict).frozen_specs if s.name == "done")
-    assert "exact pinned claim text" in description
-    assert "summary is the complete user-facing response" not in description
-    ordinary_description = next(s.description for s in build_turn_snapshot(ordinary).frozen_specs if s.name == "done")
-    assert "summary is the complete user-facing response" in ordinary_description
+    ordinary_snapshot = build_turn_snapshot(ordinary)
+    ordinary_done = next(s for s in ordinary_snapshot.model_specs if s.name == "done")
+    assert ordinary_done.required == ("summary",)
+    assert "report_sections" not in dict(ordinary_done.parameters)
+    assert not normalize_turn(decode_text_turn(ordinary_done.json_examples[0]), snapshot=ordinary_snapshot).protocol_error
 
 
 def test_request_scoped_contract_prompt_does_not_offer_ordinary_prose_or_duplicate_declarations() -> None:

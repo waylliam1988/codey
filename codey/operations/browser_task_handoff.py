@@ -100,7 +100,7 @@ def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall
 def handoff_call(session: TaskSession, snapshot: TurnSnapshot,
                  call: ToolCall) -> tuple[TurnSnapshot, JsonObject | None, str]:
     """Admit a suggested call through the interface actually offered this turn."""
-    if call.name not in snapshot.nested_tool_names:
+    if call.name not in snapshot.inventory_names:
         return snapshot, None, f"{call.name} is unavailable under the current frozen authorization."
     only = codemode_only(session.task_text)
     if not only:
@@ -116,22 +116,23 @@ def handoff_call(session: TaskSession, snapshot: TurnSnapshot,
         spec = next(spec for spec in snapshot.model_specs if spec.name == call.name)
         missing: list[str] = [name for name in spec.required if name not in call.args]
         error = validate_args_with_spec(spec, call.args)
+        action: JsonObject = {"tool": call.name, "args": call.args}
     else:
-        if "codemode" not in snapshot.tool_names:
-            return snapshot, None, "CodeMode is unavailable under the current frozen authorization."
+        args: JsonObject = {"code": f"return unwrap(await tools.{call.name}(inputs));", "inputs": call.args}
+        parent = next((spec for spec in snapshot.model_specs if spec.name == "codemode"), None)
+        if call.name not in snapshot.nested_tool_names or validate_args_with_spec(parent, args):
+            return snapshot, None, f"{call.name} is unavailable through CodeMode under the current frozen contract."
         entry = next(entry for entry in snapshot_catalog(snapshot).entries if entry.name == call.name)
         required = entry.parameters.get("required", ())
         missing = [name for name in required if isinstance(name, str) and name not in call.args] if isinstance(required, (list, tuple)) else []
         error = _check_spec_value_against_schema(call.name, "args", entry.parameters, call.args, strict=True)
+        action = {"tool": "codemode", "args": args}
     if missing:
         return snapshot, None, (f"Use {call.name}; supply {', '.join(missing)} from the task or current page. "
                                f"Known arguments: {json.dumps(call.args, ensure_ascii=False)}. "
                                f"CodeMode wrapper: return unwrap(await tools.{call.name}(inputs));")
     if error:
         return snapshot, None, f"The frozen arguments for {call.name} cannot execute: {error}"
-    action: JsonObject = ({"tool": call.name, "args": call.args}
-        if direct else
-        {"tool": "codemode", "args": {"code": f"return unwrap(await tools.{call.name}(inputs));", "inputs": call.args}})
     return snapshot, action, ""
 
 

@@ -46,8 +46,12 @@ def test_native_usage_and_generated_catalog_are_joined_only_at_rendering() -> No
     assert wire.description.count("declare const tools") == 1
 
 
-def test_schema_text_projects_frozen_tools_and_keeps_plain_text_examples() -> None:
-    session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "project.write"})), task_kind="project")
+@pytest.mark.parametrize("writable", [True, False])
+def test_schema_text_projects_frozen_tools_and_keeps_plain_text_examples(writable: bool) -> None:
+    grants = {"control", "project.read"}
+    if writable:
+        grants.add("project.write")
+    session = TaskSession(TaskPolicy(frozenset(grants)), task_kind="project")
     snapshot = build_turn_snapshot(session)
     specs = snapshot.model_specs
     grep = next(spec for spec in specs if spec.name == "grep")

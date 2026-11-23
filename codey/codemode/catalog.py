@@ -275,14 +275,27 @@ def _entry_signatures(entry: ToolCatalogEntry, *, json_edit: bool, include_ordin
     return tuple(signatures)
 
 
-def _entry_declarations(entry: ToolCatalogEntry, *, json_edit: bool, include_description: bool = True) -> tuple[str, ...]:
-    lines = [f"  // {line}" for line in entry.description.splitlines()] if include_description else []
+def _entry_comments(entry: ToolCatalogEntry, *, include_description: bool = True) -> list[str]:
+    lines = entry.description.splitlines() if include_description else []
     for name, schema in canonical_json_object(entry.parameters.get("properties", {})).items():
         description = canonical_json_object(schema).get("description")
         if isinstance(description, str) and description:
-            lines.append(f"  // {entry.name}.{name}: {description}")
-    lines.extend("  " + signature for signature in _entry_signatures(entry, json_edit=json_edit))
-    return tuple(lines)
+            lines.append(f"{entry.name}.{name}: {description}")
+    return lines
+
+
+def _entry_declarations(entry: ToolCatalogEntry, *, json_edit: bool, include_description: bool = True) -> tuple[str, ...]:
+    return (*(f"  // {line}" for line in _entry_comments(entry, include_description=include_description)),
+            *("  " + signature for signature in _entry_signatures(entry, json_edit=json_edit)))
+
+
+def _entry_type_declarations(entry: ToolCatalogEntry, *, json_edit: bool) -> tuple[str, ...]:
+    types: list[str] = []
+    if "x-codey-patch" in entry.parameters:
+        types.append(_PATCH_RESULT_TYPE)
+    if entry.name == "edit" and json_edit:
+        types.append(_JSON_EDIT_TYPE)
+    return tuple(types)
 
 
 def _compact_entry(entry: ToolCatalogEntry, outer: ToolSpec | None, *, guidance: str,
@@ -292,17 +305,13 @@ def _compact_entry(entry: ToolCatalogEntry, outer: ToolSpec | None, *, guidance:
     signatures = _entry_signatures(entry, json_edit=json_edit, include_ordinary=not same_input, compact=True)
     if not signatures:
         return (), ()
-    types: list[str] = []
     comments = [] if same_input else [entry.description]
-    if "x-codey-patch" in entry.parameters:
-        types.append(_PATCH_RESULT_TYPE)
-        if same_input:
-            comments.append(PATCH_DESCRIPTION)
+    if same_input and "x-codey-patch" in entry.parameters:
+        comments.append(PATCH_DESCRIPTION)
     if entry.name == "edit" and json_edit:
-        types.append(_JSON_EDIT_TYPE)
         comments.extend(guidance.splitlines())
     lines = ["  // " + line for comment in comments for line in comment.splitlines()]
-    return tuple(types), tuple((*lines, *("  " + signature for signature in signatures)))
+    return _entry_type_declarations(entry, json_edit=json_edit), (*lines, *("  " + signature for signature in signatures))
 
 
 def render_declarations(snapshot: ToolCatalogSnapshot, *, budget_bytes: int = MODEL_CATALOG_BUDGET_BYTES,
@@ -390,13 +399,15 @@ def _catalog_namespace(entry: ToolCatalogEntry) -> str:
 def _catalog_item(entry: ToolCatalogEntry, snapshot: ToolCatalogSnapshot) -> CatalogSearchItem:
     from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE
 
-    signatures = _entry_signatures(entry, json_edit=_edit_guidance(snapshot) == JSON_FIELD_EDIT_GUIDANCE)
-    declarations = _entry_declarations(entry, json_edit=_edit_guidance(snapshot) == JSON_FIELD_EDIT_GUIDANCE)
-    descriptions = [line.removeprefix("  // ") for line in declarations if line.startswith("  // ")]
-    if entry.name == "edit" and _edit_guidance(snapshot):
-        descriptions.append(_edit_guidance(snapshot))
-    return CatalogSearchItem("tools." + entry.name, "\n".join("tools." + line for line in signatures),
-                             "\n".join(descriptions))
+    guidance = _edit_guidance(snapshot) if entry.name == "edit" else ""
+    json_edit = guidance == JSON_FIELD_EDIT_GUIDANCE
+    signatures = _entry_signatures(entry, json_edit=json_edit, compact=True)
+    types = _entry_type_declarations(entry, json_edit=json_edit)
+    descriptions = _entry_comments(entry)
+    if guidance:
+        descriptions.append(guidance)
+    signature = "\n".join((*(f"tools.{line}" for line in signatures), *types))
+    return CatalogSearchItem("tools." + entry.name, signature, "\n".join(descriptions))
 
 
 def catalog_summary(snapshot: ToolCatalogSnapshot, *, budget: int = 2_000) -> CatalogSummary:

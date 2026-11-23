@@ -96,7 +96,7 @@ def _text_request_prompt(prompt: str, snapshot: TurnSnapshot, *, schema_constrai
         path, symbol = target
         return f"Edit {path}, definition {symbol}. Response format: one complete Python definition as source text.\n\n{prompt}"
     contract = snapshot.contract_text
-    if (schema_constrained and {"codemode", "edit"} <= set(snapshot.tool_names)
+    if (schema_constrained and snapshot.has_project_tools
             and snapshot.input_binding is None and snapshot.browser_copy is None
             and not snapshot.browser_followups and snapshot.research_scope is None):
         from codey.toolchain.tool_prompt import json_contract_text

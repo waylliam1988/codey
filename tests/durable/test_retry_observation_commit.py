@@ -23,6 +23,7 @@ from codey.operations.task_loop import run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult, TurnFinish
+from codey.providers.requests import SendTextRequest
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
 from codey.runtime.core.progress import ProgressSnapshot
 from codey.runtime.write.mutation_line import RuntimeMutationLine
@@ -32,6 +33,7 @@ from tests.durable.test_operation_execution_counters import _reopen, runtime
 from tests.support.kernel_restart import SimulatedExit
 
 request_for: Callable[[DurableSession, KernelEffectSink, object], KernelRunRequest] = probe_request
+_ORIGINAL_TASK = "Keep the original task after a cold retry."
 
 
 def reopen_retry(path: Path) -> tuple[DurableSession, RuntimeMutationLine, KernelEffectSink]:
@@ -54,6 +56,8 @@ def run_probe(path: Path, *, mode: str = "text", crash_leaf: str = "", reopen: b
 
     class TextProvider:
         def send(self, prompt: str) -> str:
+            if reopen:
+                assert _ORIGINAL_TASK in prompt and "Protocol error" in prompt
             calls.append("request")
             return '{"tool": broken'
 
@@ -85,7 +89,7 @@ def run_probe(path: Path, *, mode: str = "text", crash_leaf: str = "", reopen: b
         durable.subscribe_commits(committed)
     provider = TextProvider() if mode == "text" else NativeProvider()
     request = request_for(durable, sink, provider)
-    request = replace(request, transport=replace(request.transport, stagnant_turns=2))
+    request = replace(request, transport=replace(request.transport, stagnant_turns=2, user_task=_ORIGINAL_TASK))
     try:
         result = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control"})), max_turns=max_turns), request=request)
         again = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control"})), max_turns=max_turns), request=request)
@@ -120,6 +124,9 @@ def test_retry_observation_survives_before_and_after_request_freeze(tmp_path: Pa
     assert state.counters.length_continuation_used == (mode == "length")
     if request is not None:
         assert request.expected_counters == request.counters == state.counters
+        if mode == "text":
+            assert isinstance(request.request, SendTextRequest)
+            assert _ORIGINAL_TASK in request.request.prompt and "Protocol error" in request.request.prompt
     result, calls, counters = run_probe(tmp_path, mode=mode, reopen=True)
     assert result.stop_reason == ("provider_failure" if mode == "length" else "protocol")
     assert result.turns == 2

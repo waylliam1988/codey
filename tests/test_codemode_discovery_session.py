@@ -89,6 +89,9 @@ def test_compact_snapshot_preserves_edit_overloads_and_full_discovery() -> None:
     minimal = render_declarations(catalog, detail_budget_bytes=0, outer_specs=full.model_specs,
                                   detail_names=("edit",))
     assert "PatchFileResult" not in minimal and "JsonEditValue" not in minimal
+    assert "type JsonEditValue =" in edit.signature
+    assert "patch?: PatchFileResult[]" in edit.signature and "type PatchFileResult =" in edit.signature
+    assert edit in catalog.search("edit").items
 
 
 def test_session_start_returns_handle_and_wait_reports_events() -> None:

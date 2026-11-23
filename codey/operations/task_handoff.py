@@ -23,8 +23,7 @@ _SOURCE_DIRECT = frozenset({"open_url", "web_search", "source_search"})
 
 
 def _project_surface(session: TaskSession, snapshot: TurnSnapshot) -> bool:
-    return bool(session.project and "codemode" in snapshot.tool_names
-                and {"edit", "read_file"}.intersection(snapshot.tool_names)
+    return bool(session.project and snapshot.has_project_tools
                 and not session.policy.strict_research and snapshot.research_scope is None
                 and snapshot.input_binding is None and snapshot.browser_copy is None)
 
@@ -130,9 +129,6 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
 
     if delivery := project_delivery_context(session, context.browser_document, links):
         hints.append("User-requested delivery and current evidence:\n" + canonical_json(delivery))
-    if snapshot.task_source_url == links.specification and delivery.get("record_specification") == {"state": "unread"}:
-        hints.append("The observed project documentation names a record specification. "
-                     "Use open_url with target=task to read that specification.")
     if (ready_for_page
             and delivery.get("updated_application_page") == {"state": "read the updated application page after the final edit"}):
         if context.browser_document is not None and context.browser_document.get("url") == links.application:
@@ -190,5 +186,11 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     hints.append(hint)
     snapshot, hint = offer_page_details(session, snapshot, browser)
     hints.append(hint)
+    if snapshot.bound_source_url == links.specification and delivery.get("record_specification") == {"state": "unread"}:
+        from codey.codemode.navigation import TASK_TARGET
+
+        snapshot, read_specification, _ = handoff_call(session, snapshot, ToolCall("open_url", {"target": TASK_TARGET}))
+        if read_specification is not None:
+            hints.append("Read the record specification: " + canonical_json(read_specification))
     hints.extend(request_tool_guidance(snapshot, intent))
     return _project_catalog(session, snapshot, context, intent), "\n\n".join(dict.fromkeys((hint for hint in hints if hint), ""))

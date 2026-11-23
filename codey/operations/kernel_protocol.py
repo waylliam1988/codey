@@ -198,6 +198,10 @@ class TurnSnapshot:
         return tuple(names)
 
     @property
+    def has_project_tools(self) -> bool:
+        return "codemode" in self.tool_names and bool({"edit", "read_file"}.intersection(self.tool_names))
+
+    @property
     def model_specs(self) -> tuple[ToolSpec, ...]:
         binding = self.input_binding
         specs = tuple(binding.model_spec if binding is not None and spec.name == binding.model_spec.name else spec

@@ -1,6 +1,7 @@
 """Task URL binding through frozen production contracts, Host and receipts."""
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import replace
@@ -14,12 +15,19 @@ from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.replay import digest
 from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import TurnSnapshot, build_turn_snapshot, refresh_snapshot_contract
+from codey.operations.kernel_protocol import (
+    TurnSnapshot,
+    build_turn_snapshot,
+    normalize_turn,
+    refresh_snapshot_contract,
+)
 from codey.operations.project_delivery import ProjectDeliveryLinks
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_handoff import task_handoff
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy, build_task_policy
+from codey.protocols.text_turn import decode_text_turn
+from codey.research.ledger import OpenedSource
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.model import TaskSubmission
 from codey.task.web_intent import explicit_web_intent, source_requirements, source_url_key
@@ -49,6 +57,50 @@ def test_project_disclosure_reuses_documented_source_binding(monkeypatch: pytest
     restored = restore_snapshot(snapshot_description(selected))
     assert restored.bound_source_url == url
     assert "open_url" in restored.tool_names
+
+
+@pytest.mark.parametrize("nested_only", [False, True])
+def test_specification_handoff_executes_through_the_frozen_surface(
+    monkeypatch: pytest.MonkeyPatch, nested_only: bool,
+) -> None:
+    session = session_for("Modify app.py using the project specification.", kind="project",
+                          grants=GRANTS | {"project.write"})
+    session.project = "."
+    if nested_only:
+        session.model_tool_names = ("codemode", "read_file", "edit")
+    url = "https://example.com/project-format"
+    monkeypatch.setattr("codey.operations.project_delivery.observed_delivery_links",
+                        lambda _session: ProjectDeliveryLinks(specification=url))
+    selected, hint = task_handoff(session, build_turn_snapshot(session), CompletionContext(), None)
+    snapshot = restore_snapshot(snapshot_description(selected))
+    assert ("open_url" not in snapshot.tool_names) == nested_only
+    assert "open_url" in snapshot.nested_tool_names
+    _, marker, next_call = hint.partition("Read the record specification: ")
+    assert marker
+    suggested = next_call.splitlines()[0]
+    assert url not in suggested
+    plan = normalize_turn(decode_text_turn(suggested), snapshot=snapshot)
+    assert not plan.protocol_error and len(plan.calls) == 1, plan.protocol_error
+    assert plan.calls[0].name == ("codemode" if nested_only else "open_url")
+
+    def open_specification(call: ToolCall) -> ToolResult:
+        assert call.args == {"url": url}
+        body = "Fixture record specification"
+        source = OpenedSource(url, url, "Specification", "2026-11-23T00:00:00Z", hashlib.sha256(body.encode()).hexdigest()[:16])
+        return ToolResult(call, body, ok=True, canonical={
+            "value": body,
+            "research_observation": {"source": source.to_dict(), "text": body, "pages": []},
+            "read_passages": [{"start": 0, "end": len(body)}],
+        })
+
+    parent = build_execute_turn_executor(session=session, snapshot=snapshot, run_id="specification-handoff",
+        effect_scope="task", turn=1, executors={"open_url": open_specification})
+    result, = execute_turn(session, plan.calls, run_id="specification-handoff", effect_scope="task", turn=1,
+        snapshot=snapshot, executors={"codemode": parent, "open_url": open_specification})
+    assert result.ok, result.model_text
+    assert any(row.ok and row.call.name == "open_url" and row.call.args == {"url": url}
+               and row.canonical["value"] == "Fixture record specification" for row in session._memory_results.values())
+    assert url in session.source_ids.values()
 
 
 def test_read_only_project_keeps_discovery_and_omits_unused_outer_tools() -> None:
