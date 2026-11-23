@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 996,
   "region_count": 40,
-  "batch_count": 309,
+  "batch_count": 311,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -89,7 +89,9 @@
         "Q016C",
         "Q016D",
         "Q016E",
+        "Q017B",
         "Q017",
+        "Q017C",
         "Q018",
         "Q019",
         "Q020",
@@ -2161,6 +2163,9 @@
         "q016b-fixture-baseline.json",
         "q016b-invalid-fixture-baseline.json",
         "q016b-validation-final.json"
+      ],
+      "commits": [
+        "8c66a370"
       ]
     },
     {
@@ -2201,23 +2206,71 @@
       "tests": []
     },
     {
-      "responsibility": "codey/app: shared contracts and module services",
+      "id": "Q017B",
+      "responsibility": "Durable service lifecycle, application shutdown and workspace writer leases",
       "files": [
-        "codey/app/consensus_service.py",
         "codey/app/durable_services.py",
         "codey/app/lifecycle.py",
-        "codey/app/sibling_probe.py",
-        "codey/app/workflow_routes.py",
         "codey/app/workspace_leases.py"
       ],
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/app/durable_services.py",
+        "codey/app/lifecycle.py",
+        "codey/app/workspace_leases.py"
+      ],
+      "verified_files": [
+        "codey/app/durable_services.py",
+        "codey/app/lifecycle.py",
+        "codey/app/workspace_leases.py"
+      ],
+      "candidate_test_count": "recompute at responsibility entry",
+      "tests": [
+        "tests/durable/test_services_lifecycle.py",
+        "tests/test_app_lifecycle_coordinator.py",
+        "tests/test_workspace_lease_coordinator.py",
+        "tests/test_service_lifecycle.py",
+        "tests/test_control_runtime_ownership.py",
+        "tests/test_shell_approval_lifecycle.py::test_shutdown_preserves_undecided_approval",
+        "tests/test_shell_approval_lifecycle.py::test_failed_stop_write_still_invalidates_claimed_execution_ticket",
+        "tests/test_recovery_ownership_regression.py::RestoreLeaseTests"
+      ],
+      "result": "Confirmed startup failure resource leak: with real pending durable work, injected OS thread creation failure leaves opened session/database lease owned after open raises (original 1 failed/6 passed). open now invokes ordered service cleanup and rethrows; same input passes, database reopens with original task retained. Direct final 10 passed; service/approval/restore owners 23 passed. Three whole production sources and three whole tests strict Any/scoped checks pass; original three diagnostics in services test removed with real typed resources/SQLite store narrowing/row object boundary, old ignore removed. Production mypy750/Pyrefly/ty/precision pass (35 suppressed/168 warnings). AppLifecycle and workspace lease source whole review required no production change; no speculative close race or public API deletion. Real OS writer exclusivity and failed close retry boundaries verified.",
+      "evidence": [
+        "q017b-baseline.json",
+        "q017b-startup-before.json",
+        "q017b-startup-before-final.json",
+        "q017b-validation-first.json",
+        "q017b-workspace-baseline.json",
+        "q017b-validation-final.json",
+        "q017b-validation-complete.json"
+      ]
+    },
+    {
       "id": "Q017",
+      "responsibility": "Consensus, project audit and sibling provider control flows",
+      "files": [
+        "codey/app/consensus_service.py",
+        "codey/app/sibling_probe.py"
+      ],
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 8,
+      "candidate_test_count": "recompute at responsibility entry",
       "followups": [
         "Q008D caller verification: tests/test_server_lazy_state.py has same 3 failures with HEAD consensus source (3 failed/8 passed/4 subtests). Actual import trace consensus_service -> project_audit_advisor -> task_loop -> kernel_driver -> kernel_context -> kernel_actions -> kernel_execution -> browser_progress -> browser_binding -> Playwright violates consensus_service import-light doc contract. q008d-lazy-import-chain.json; preserve regression assertions and repair at owning import boundary."
       ]
+    },
+    {
+      "id": "Q017C",
+      "responsibility": "Workflow metadata history and branch admission routes",
+      "files": [
+        "codey/app/workflow_routes.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "candidate_test_count": "recompute at responsibility entry"
     },
     {
       "responsibility": "codey/app: context and checkpoint boundaries",
@@ -7817,6 +7870,7 @@
     "tests/test_workspace_bump_failure_does_not_reuse_old_revision.py",
     "tests/test_workspace_current_state_missing_file_concurrent_init.py",
     "tests/test_workspace_current_state_version_check_retries_on_concurrent_bump.py",
+    "tests/test_workspace_lease_coordinator.py",
     "tests/test_workspace_native_answers_and_tool_selection.py",
     "tests/test_workspace_native_turn_preparation_and_snapshot_ownership.py",
     "tests/test_workspace_no_store_never_fabricates_identity.py",
@@ -8245,6 +8299,15 @@
     {
       "goal_objective_file": "D:/E backup/软件工具/Codex API GUI/data/codex/attachments/123ef67f-6428-4a26-83c6-fcfa31cc10c8/goal-objective.md",
       "reason": "User updated total goal objective; full file read and retained current complete source scope, evidence and queue."
+    },
+    {
+      "batch": "Q017",
+      "replacement": [
+        "Q017B",
+        "Q017",
+        "Q017C"
+      ],
+      "reason": "Actual module interfaces separate resource ownership foundation, provider/browser control consumers and workflow HTTP routing. Start three resource owners before context/CLI/headless; retain known Q017 lazy-import defect and complete original source inventory."
     }
   ]
 }

@@ -954,3 +954,18 @@ Q016 教学取消修复已提交：`1a6d017b`（fix(approvals): cancel the waiti
 - 补充有实际资源意义的LRU/current scope和evicted writer.disable_persistence边界、无缓存ephemeral、恢复跳过无manifest新scope而选有旧baseline。新typed十用例在HEAD原change_tracking.py实际 **0，10 passed，1.65秒**；额外非法project与scope四输入在同原源码 **0，4 passed，1.34秒**，q016b-fixture-baseline.json/q016b-invalid-fixture-baseline.json均finally精确恢复当前字节。没有把这些基线通过包装成bug修改前失败。
 - 最终同初始相关组 **0，20 passed，2.37秒**，无skip/cleanup警告；两完整文件加严Any/Pyrefly/ty/Ruff全部0，750文件生产三类型/precision全部0（35 suppressed/168 warnings），逐命令/退出码/稳定hash q016b-validation-final.json。未深入的其余共享回归脚本只执行明确类，不报整文件Any完成；operations/task_changes.py旧Any归原owning批次，本批仅隔离返回边界。
 - diff已审查，当前 **26 / 309批完整完成、53 / 996生产文件属于完整完成批次**；另5个部分批次文件独立验证，累计58个当前已验证生产文件。下一步先按实际入口细分Q017并治理durable/lifecycle/workspace lease基础资源，再推进context与CLI/desktop/headless消费者；原Q017 lazy import确定性待办和Q018/Q078等限制继续保留，总goal active。
+
+
+Q016B 已提交：`8c66a370`（refactor(tracking): type task scope selection and recovery ownership tests）。
+
+### Q017B durable/app/project 资源生命周期（完成）
+
+- Q017按已读实际职责拆为Q017B三个基础资源owner、Q017 consensus/sibling两provider消费者、Q017C workflow HTTP单源；六文件不增不减，已登记Q017 lazy import失败仍保留在原provider批。完整范围996源/311批；先基础资源，再context和启动消费者，未缩减范围。
+- durable_services.py/lifecycle.py/workspace_leases.py以及两直接测试整文件已读；基线 **0，6 passed，1.59秒**，三个源本来强Any0，旧services测试3诊断含DurableStore.path接口不成立、SQLite fetchone动态值；另有原arg-type ignore依赖假Session/Scheduler。q017b-baseline.json。改为真实pair并追踪精确close回调，保留原scheduler→session顺序断言，去掉原ignore；SQLite store用真实isinstance收窄，SQL行先入object后断言不传播Any。
+- **确定性bug：scheduler启动失败没有关闭已经打开的durable owner。** open已经获取OS数据库lease、打开session并构造owner，再start dispatcher；原start失败直接抛出，没有走有序close。资源构造失败应清理所持资源，且持久事实不可删除，来自本模块显式生命周期owner契约及资源所有权不变量。
+- 输入为合法数据库中一条待恢复admission，实际scheduler启动路径仅对真实调度Thread.start注入RuntimeError。错误被pytest按预期捕获后，关键断言session_closed实际False、lease仍持有，**1，1 failed/6 passed，1.74秒**，q017b-startup-before-final.json。原首次空库没有pending工作，不会创建线程，DID NOT RAISE的结果保留q017b-startup-before.json，不计有效复现；补真实待恢复任务后才进入目标路径。不是把线程环境错误本身当bug，失败点是错误后的资源未清理断言。
+- 在scheduler.start失败时调用已有services.close，保持scheduler先停、session后关、lease最后释放及原异常重抛。没有删除/重建数据库、恢复默认配置、吞异常或放开第二owner。测试实际验证捕获的失败owner关闭标志/lease清空、再次获取OS lease、重开SQLite及原work任务仍可读；正常open、schema不兼容保留sentinel、第二owner拒绝和关闭重试对照保留。
+- 工作区lease源不需要生产改动，新增真实OS锁两例当前源基线 **0，2 passed，1.22秒**：路径别名排他/重复release/跨coordinator重用，以及close release首次故障仍保留owner供重试。durable close首次False同样保持数据库lease，成功后才释放，防止用启动修复破坏已有有序清理。lifecycle源按现有stop→conversation→scheduler→worker/shell→controls/stores顺序和ResourceSlot失败保留检查，不按猜测改并发close或签名兼容策略。
+- 最终 `python -m pytest -q tests/durable/test_services_lifecycle.py tests/test_app_lifecycle_coordinator.py tests/test_workspace_lease_coordinator.py --tb=short` → **0，10 passed，2.16秒**，无skip；service_lifecycle/runtime_ownership+两个审批持久边界+RestoreLeaseTests → **0，23 passed，5.89秒**，q017b-validation-final.json。仅声明这些执行范围，没有跑整仓或整test_server。
+- 三源+三完整测试加严Any/Pyrefly/ty/Ruff最终全部0，q017b-validation-complete.json。中间Thread类对象暴露的stdlib Any两处已用有类型回调和精确属性路径避免；mypy对调用close后可变字段仍保留先前收窄造成1条unreachable，改用独立断言函数观察真实lease，断言不放宽。原3诊断、过程中2诊断/1诊断与最终0区分，失败日志保留。750文件生产mypy/Pyrefly/ty/precision全0（35 suppressed/168 warnings）；最后只改测试断言函数，三个生产源hash与全生产验证时一致，不机械重跑已通过生产门。
+- diff/最终hash已核对。当前 **27 / 311批完整完成，56 / 996生产文件属于完整完成批次**；另5个部分批次文件独立验证，累计61个当前已验证生产文件。下一主批Q018 context.py，优先核对原idle attachment退出锁清理警告；Q017 provider lazy import、Q015F共享测试1673诊断、Q078库存等仍未完，总goal active。

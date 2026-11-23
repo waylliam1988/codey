@@ -75,7 +75,11 @@ class DurableAppServices:
             session.subscribe_commits(publish)
         services = cls(session, scheduler, _database_lease=lease)
         if start:
-            scheduler.start()
+            try:
+                scheduler.start()
+            except BaseException:
+                services.close()
+                raise
         return services
 
     def stop_scheduler(self, timeout: float = 5.0) -> bool:
