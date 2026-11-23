@@ -283,11 +283,14 @@ def test_parallel_result_delivery_and_child_identity_are_deterministic() -> None
     assert set(observed) == {("cm:child:0", "slow"), ("cm:child:1", "fast")}
 
 
-@pytest.mark.parametrize("read_path", ["a.py", "./a.py"])
-@pytest.mark.parametrize("tamper", [False, True, "runtime", "engine"])
+@pytest.mark.parametrize(("read_path", "tamper"), [
+    (path, modification)
+    for path in ("a.py", "./a.py") for modification in (False, True, "runtime", "engine")
+] + [("package/file.py", False)])
 def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, read_path: str, tamper: bool | str,
 ) -> None:
+    from codey.agents.tools import AgentToolFns
     from codey.codemode.runtime import NodeWorkerRuntime
     from codey.operations.generation_boundary import durable_generation_boundary_callback
     from codey.operations.kernel_contracts import (
@@ -305,6 +308,11 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(
         pass
 
     project, state, logdir, m, managed, revs, sink, session = fixture(tmp_path)
+    scoped = read_path == "package/file.py"
+    if scoped:
+        (project / "package").mkdir()
+        (project / "package/AGENTS.md").write_text("Use SCOPED = 29 for this package.\n", encoding="utf-8")
+        (project / read_path).write_bytes(b"SCOPED = 13\n")
     call = ToolCall("codemode", {"code": """
         const n = (await load('count')) ?? 0;
         await store('count', n+1);
@@ -329,11 +337,18 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(
 
     class Provider:
         native_tools = True
+        edit_requested = False
 
         def send_turn(self, *args: object) -> AssistantTurn:
             return AssistantTurn(tool_calls=(ProviderToolCall(call.call_id, call.name, call.args),))
 
-        def send_tool_results(self, *args: object) -> AssistantTurn:
+        def send_tool_results(self, *args: object, **kwargs: object) -> AssistantTurn:
+            if scoped and not self.edit_requested:
+                assert "Use SCOPED = 29 for this package." in repr((args, kwargs))
+                self.edit_requested = True
+                return AssistantTurn(tool_calls=(ProviderToolCall("edit", "edit", {
+                    "path": read_path, "replacements": [{"old_string": "SCOPED = 13", "new_string": "SCOPED = 29"}],
+                }),))
             return AssistantTurn(tool_calls=(ProviderToolCall("done", "done", {"summary": "finished"}),))
 
         def acknowledge_tool_results(self, *args: object) -> AssistantTurn:
@@ -343,6 +358,7 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(
         return KernelRunRequest(transport=KernelTransportDeps(provider=adapt_provider(Provider()), provider_id="local", run_id="r", effect_scope="outer"),
             execution=KernelExecutionDeps(
                 project_path=project,
+                tool_fns=AgentToolFns(),
                 workspace_revision_store=revs,
             ),
             observation=KernelObservationDeps(intent_sink=active_sink, on_boundary=durable_generation_boundary_callback(
@@ -384,6 +400,7 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(
     line = RuntimeMutationLine(durable=durable)
     resumed_sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="local", durable=durable, managed_outputs=managed)
     fresh = _new_session(project)
+    fresh.verification_forbidden = scoped
     from codey.operations import kernel_execution
     invoke = kernel_execution._run_via_delegate_or_fn
 
@@ -405,10 +422,14 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(
             assert not result.completed or parents[0].status == "error"
             assert decode_json_object(durable.task("r").state["codemode_state"])["count"] == 1
             return
-        assert result.completed, result
+        assert result.completed, (result, [(row.call.name, row.model_text) for row in fresh._memory_results.values()])
         restored = fresh._memory_results[parents[0].effect_id]
         assert restored.canonical["value"] == original_values[0]
         assert len(_child_refs(restored)) == 1
+        if scoped:
+            assert (project / read_path).read_bytes() == b"SCOPED = 29\n", [
+                (row.call.name, row.model_text) for row in fresh._memory_results.values()
+            ]
         assert decode_json_object(durable.task("r").state["codemode_state"])["count"] == 1
         assert all(effect.settlement is not None for effect in durable.effects("r"))
         # Running the same settled invocation again cannot re-enter the VM.

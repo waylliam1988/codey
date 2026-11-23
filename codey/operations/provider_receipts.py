@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from codey.operations.browser_copy import CopyTurn
     from codey.operations.kernel_contracts import ToolExecutor
     from codey.operations.kernel_protocol import InputContractVersion, ModelInputBinding, TurnSnapshot
+    from codey.operations.project_instructions import ProjectInstructionBinding
     from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.tool_spec import ToolSpec
 
@@ -137,6 +138,8 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
                           for name, fn in snapshot.custom_executors]}))
     if snapshot.input_contract_version >= 15:
         payload["task_source_url"] = snapshot.task_source_url
+    if snapshot.input_contract_version >= 18:
+        payload["project_instructions"] = [rule.to_payload() for rule in snapshot.project_instructions]
     payload["browser_fill_text"] = snapshot.browser_fill_text
     payload["browser_followups"] = snapshot.browser_followups
     payload["browser_references"] = snapshot.browser_references.payload() if snapshot.browser_references else None
@@ -276,8 +279,10 @@ def _snapshot_payload(raw: object) -> tuple[JsonObject, InputContractVersion]:
     version = require_json_integer(payload.get("schema_version"), "snapshot version")
     if version >= 15:
         expected.add("task_source_url")
+    if version >= 18:
+        expected.add("project_instructions")
     match version:
-        case 11 | 12 | 13 | 14 | 15 | 16 | 17:
+        case 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18:
             if set(payload) != expected:
                 raise ValueError("invalid captured turn snapshot version/shape")
             return payload, version
@@ -320,6 +325,18 @@ def _restore_bound_source(
             or "open_url" not in (*names, *nested) or not policy.allows("web.read")):
         raise ValueError("invalid captured task source binding")
     return source
+
+
+def _restore_project_instructions(payload: JsonObject, policy: TaskPolicy) -> tuple[ProjectInstructionBinding, ...]:
+    from codey.operations.project_instructions import ProjectInstructionBinding
+
+    raw = payload.get("project_instructions", [])
+    if not isinstance(raw, list):
+        raise ValueError("invalid captured project instruction collection")
+    instructions = tuple(ProjectInstructionBinding.from_payload(rule) for rule in raw)
+    if len({rule.name for rule in instructions}) != len(instructions) or instructions and not policy.allows("project.write"):
+        raise ValueError("invalid captured project instruction scope")
+    return instructions
 
 
 def restore_snapshot(payload: object) -> TurnSnapshot:
@@ -428,7 +445,8 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         research_scope=scope, ignore_runtime_claims=ignore_runtime_claims,
         browser_copy=copy, input_binding=input_binding, task_navigation_url=navigation_url,
         input_contract_version=input_version, task_source_url=source_url,
-        browser_followups=followups, browser_fill_text=fill_text, browser_references=references)
+        browser_followups=followups, browser_fill_text=fill_text, browser_references=references,
+        project_instructions=_restore_project_instructions(payload, policy))
     from codey.toolchain.constants import PAGE_DETAIL_TOOL
 
     # Native disclosure reads have their own frozen choice contract. They

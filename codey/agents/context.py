@@ -19,7 +19,7 @@ from codey.runtime.observe.prompt_envelope import (
     PromptEnvelopeSection,
     RenderedPromptSection,
 )
-from codey.toolchain.runtime import safe_join
+from codey.utils.refs import digest_text
 from codey.workspace.context_epoch import context_source_ref
 from codey.workspace.context_selection import ContextSpan
 from codey.workspace.context_source import (
@@ -28,6 +28,7 @@ from codey.workspace.context_source import (
     RenderedContextSource,
     render_context_sources_with_metadata,
 )
+from codey.workspace.paths import safe_join
 
 PROJECT_INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md")
 MAX_PROJECT_INSTRUCTION_CHARS = 12000
@@ -48,6 +49,8 @@ class ProjectInstruction:
     name: str
     content: str
     truncated: bool = False
+    scope_dir: str = "."
+    content_digest: str = ""
 
 
 @dataclass(frozen=True)
@@ -62,20 +65,37 @@ def load_project_instructions(
     root: Path,
     *,
     max_chars: int = MAX_PROJECT_INSTRUCTION_CHARS,
+    target: str = "",
+    target_is_directory: bool = False,
 ) -> list[ProjectInstruction]:
+    resolved_root = root.resolve()
+    if target:
+        resolved = safe_join(resolved_root, target)
+        directory = resolved if target_is_directory else resolved.parent
+        if not directory.is_relative_to(resolved_root):
+            raise ValueError("Instruction directory is outside the project.")
+        chain = (directory, *directory.parents)
+        scopes = tuple(reversed([scope for scope in chain if scope.is_relative_to(resolved_root)]))
+    else:
+        scopes = (resolved_root,)
     docs: list[ProjectInstruction] = []
-    for name in PROJECT_INSTRUCTION_FILES:
-        path = safe_join(root, name)
-        if not path.is_file():
-            continue
-        try:
-            content = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            continue
-        truncated = len(content) > max_chars
-        if truncated:
-            content = content[:max_chars].rstrip() + "\n\n[content truncated]"
-        docs.append(ProjectInstruction(name=name, content=content, truncated=truncated))
+    for scope in scopes:
+        relative = scope.relative_to(resolved_root)
+        for instruction in PROJECT_INSTRUCTION_FILES:
+            name = (relative / instruction).as_posix()
+            path = safe_join(resolved_root, name)
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                if not target:
+                    continue
+                raise ValueError(f"Cannot read directory instructions as UTF-8: {name}") from None
+            content_digest = digest_text(text)
+            truncated = len(text) > max_chars
+            content = text[:max_chars].rstrip() + "\n\n[content truncated]" if truncated else text
+            docs.append(ProjectInstruction(name, content, truncated, relative.as_posix(), content_digest))
     return docs
 
 

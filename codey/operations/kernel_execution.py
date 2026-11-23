@@ -289,10 +289,23 @@ def execute_tool_operation(
     session: TaskSession, call: ToolCall, *, delegate: ToolDelegate | None,
     runnable: Mapping[str, ToolExecutor], turn: int, tool_index: int, project_path: Path | None,
     workspace_revision_store: WorkspaceRevisionStore | None = None,
+    snapshot: TurnSnapshot | None = None,
 ) -> tuple[ToolResult, bool, int | None]:
     """The same business operation and normalization for inline and owned work."""
     from codey.toolchain.execution_options import split_execution_options
     from codey.workspace.revision import WorkspaceIdentity
+
+    if (call.name == "edit" and project_path is not None and snapshot is not None
+            and isinstance(target := call.args.get("path"), str)):
+        from codey.operations.project_instructions import INSTRUCTION_CHANGE, changed_instruction_target
+
+        try:
+            changed = changed_instruction_target(project_path, target, snapshot.project_instructions)
+        except (OSError, ValueError) as exc:
+            return _error_result(call, str(exc)), False, None
+        if changed is not None:
+            return replace(_error_result(call, f"Repository instructions for {changed} must be observed before writing."),
+                canonical={INSTRUCTION_CHANGE: [changed]}, audit={"error_code": INSTRUCTION_CHANGE}), False, None
 
     args, _options = split_execution_options(call.args)
     result, ok, code = _run_via_delegate_or_fn(delegate, runnable, session, replace(call, args=args), call.name,
@@ -782,7 +795,7 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
             with invocation_scope(browser_context):
                 result, ok, exit_code = execute_tool_operation(session, call, delegate=delegate, runnable=runnable,
                     turn=active_turn, tool_index=base_index + offset, project_path=project_path,
-                    workspace_revision_store=workspace_revision_store)
+                    workspace_revision_store=workspace_revision_store, snapshot=context.snapshot)
             if call.name.startswith("browser_"):
                 raw = result.canonical.get("value")
                 delivery = decode_json_object(raw).get("delivery") if isinstance(raw, dict) else None

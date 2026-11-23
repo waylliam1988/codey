@@ -47,10 +47,11 @@ from codey.toolchain.tool_spec import (
 from codey.types.json_value import JsonValue, ToolArgs, canonical_json_object, decode_json_object
 
 MAX_NATIVE_CALLS_PER_TURN = 8
-InputContractVersion: TypeAlias = Literal[11, 12, 13, 14, 15, 16, 17]
+InputContractVersion: TypeAlias = Literal[11, 12, 13, 14, 15, 16, 17, 18]
 
 if TYPE_CHECKING:
     from codey.completion.verification_policy import VerificationCandidate
+    from codey.operations.project_instructions import ProjectInstructionBinding
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.protocols.json_repair import JsonTailClosure
@@ -166,6 +167,7 @@ class TurnSnapshot:
     browser_followups: bool = False
     browser_fill_text: str | None = None
     browser_references: BrowserReferences | None = None
+    project_instructions: tuple[ProjectInstructionBinding, ...] = ()
 
     @property
     def bound_source_url(self) -> str | None:

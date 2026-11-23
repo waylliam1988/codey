@@ -542,6 +542,11 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
         declared_copy = (binding is not None and binding.kind == "declared_fields" and bool(binding.source_refs)
             and (binding.model_spec.name == "codemode" or isinstance(inputs, dict) and set(inputs) == {"path"}
                  and original_args.get("code") == lower_declared_fields(inputs, specs["edit"])["code"]))
+        from codey.operations.project_instructions import changed_instruction_target, record_blocked_instruction_targets
+        from codey.types.json_value import require_json_string
+
+        instruction_targets: set[str] = set()
+
         def plan_patch(files: tuple[JsonObject, ...], indices: tuple[int, ...]) -> tuple[JsonObject, ...]:
             from codey.codemode.patch import preflight_patch
 
@@ -553,6 +558,19 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                     original = next((child.effect_id for child in repair_context.children if child.position == index), "")
                     return repair_context.receipts.get(original)
                 return session._memory_results.get(turn_effect_id(f"{run_id}:{child_scope}:child:{index}", turn, index))
+
+            pending: list[str] = []
+            for index, file in zip(indices, files, strict=True):
+                target = require_json_string(file.get("path"), "patch path")
+                settled = receipt(index)
+                if settled is not None and settled.ok and settled.call.name == "edit" and settled.call.args.get("path") == target:
+                    continue
+                changed = changed_instruction_target(project_path, target, snapshot.project_instructions)
+                if changed is not None:
+                    pending.append(changed)
+            if pending:
+                instruction_targets.update(pending)
+                raise ValueError("Observe repository instructions before writing: " + ", ".join(pending))
 
             prior_refs = tuple(ref for index, ref in child_effect_ids_by_index.items() if index < indices[0])
             planned = preflight_patch(project_path, session, permission_profile, files, indices, receipt, prior_refs)
@@ -594,6 +612,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             semantic_plan=semantic_plan,
             bound_edit=bound_edit if declared_copy else None,
         ).execute(call)
+        result = record_blocked_instruction_targets(result, instruction_targets)
         if repair_context is not None:
             try:
                 repair_context.assert_complete()

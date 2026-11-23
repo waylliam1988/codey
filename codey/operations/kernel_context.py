@@ -433,7 +433,14 @@ class KernelContext:
                       if question.get("state") == "answered" else "")
         snapshot, hint = task_handoff(self.session, snapshot, self.completion_context, browser,
                                      delivered_results=delivered_results)
-        return snapshot, "\n\n".join(part for part in (assistance, hint) if part)
+        instructions = ""
+        if self.execution.project_path is not None and "edit" in snapshot.inventory_names:
+            from codey.operations.project_instructions import instruction_handoff
+
+            bindings, instructions = instruction_handoff(
+                self.execution.project_path, self.session.read_files, self.session._memory_results)
+            snapshot = replace(snapshot, input_contract_version=18, project_instructions=bindings)
+        return snapshot, "\n\n".join(part for part in (assistance, instructions, hint) if part)
 
     def freeze(self, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int, prompt: str = "",
                messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
