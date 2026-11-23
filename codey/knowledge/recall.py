@@ -9,7 +9,7 @@ from typing import Protocol
 from codey.knowledge.model import KnowledgeVersion, canonical_json
 from codey.knowledge.repository import KnowledgeRepository
 from codey.knowledge.search_text import query_terms
-from codey.types.json_value import JsonObject, canonical_json_object, require_json_integer, require_json_string
+from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, require_json_integer, require_json_string
 
 
 class _KnowledgeRow(Protocol):
@@ -164,22 +164,33 @@ def render_recall(hits: list[KnowledgeHit], *, max_chars: int = 6000, include_an
         lines.append("This summary is a locator. Use knowledge_read with the exact id and revision. "
                      "Source/evidence reads enter the original passage citation channel. "
                      "An old claim or answer never substitutes for reading its original evidence.")
+    if compact and len("\n".join(lines)) > max_chars:
+        return ""
     for hit in hits:
         version, value = hit.version, hit.version.value
-        # Clip only at presentation, leaving full content and provenance in SQLite.
-        conditions: object = value.conditions
-        provenance: object = value.provenance
-        row = {"id": value.id, "revision": version.revision, "kind": value.kind, "origin": value.origin,
-               "status": value.status, "dependencies_changed": version.dependencies_changed,
-               "interpretation_review": version.interpretation_review, "reason": hit.reason,
-               "path": list(hit.path), "content": value.content[:700], "conditions": canonical_json_object(conditions),
-               "provenance": canonical_json_object(provenance), "references": [
-                   {"target": r.target, "revision": r.revision, "relation": r.relation} for r in value.references]}
+        row: JsonObject = {"id": value.id, "revision": version.revision, "kind": value.kind,
+            "status": value.status, "dependencies_changed": version.dependencies_changed,
+            "interpretation_review": version.interpretation_review, "reason": hit.reason}
         if compact:
-            row = {key: row[key] for key in ("id", "revision", "kind", "status", "reason", "interpretation_review")}
-            row.update(content=value.content[:400], display_truncated=True, detail_available=True)
+            row.update(detail_available=True, condition_count=len(value.conditions))
+            if not version.dependencies_changed and len(value.content) <= 400:
+                row.update(content=value.content, conditions=canonical_json_object(value.conditions))
+        else:
+            # Clip only at presentation, leaving full content and provenance in SQLite.
+            references: list[JsonValue] = [
+                {"target": ref.target, "revision": ref.revision, "relation": ref.relation} for ref in value.references
+            ]
+            row.update(origin=value.origin, path=list[JsonValue](hit.path), content=value.content[:700],
+                conditions=canonical_json_object(value.conditions), provenance=canonical_json_object(value.provenance),
+                references=references)
+        remaining = max_chars - len("\n".join(lines)) - 1
         text = canonical_json(row)
-        if len("\n".join(lines)) + len(text) + 1 > max_chars:
+        if compact and len(text) > remaining:
+            # Keep a locator when the conclusion and its condition cannot travel together.
+            text = canonical_json({key: row[key] for key in (
+                "id", "revision", "status", "dependencies_changed", "condition_count", "detail_available",
+            )})
+        if len(text) > remaining:
             continue
         lines.append(text)
     return "\n".join(lines)

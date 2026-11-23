@@ -1,11 +1,14 @@
 from dataclasses import replace
+from pathlib import Path
 
 from codey.knowledge.model import KnowledgeMutation as M
 from codey.knowledge.model import KnowledgeObject as K
 from codey.knowledge.model import KnowledgeReference as R
+from codey.knowledge.model import KnowledgeVersion
 from codey.knowledge.recall import KnowledgeAccess, KnowledgeHit, KnowledgeRecall, render_recall
 from codey.knowledge.search_text import SEARCH_INDEX_VERSION, query_terms
 from codey.knowledge.store import KnowledgeStore
+from codey.types.json_value import parse_json_object
 
 QUERY = (
     "检索刚才关于队列唯一闸门的候选推论，读取其当前版本。我们尚未测量实际队列的工作负载，"
@@ -15,7 +18,7 @@ QUERY = (
 )
 
 
-def populate(store):
+def populate(store: KnowledgeStore) -> K:
     store.repository.commit(
         "premises",
         [
@@ -43,7 +46,13 @@ def populate(store):
     return value
 
 
-def test_chinese_revision_target_survives_english_distractor_and_background_budget(tmp_path):
+def _read_version(store: KnowledgeStore, identity: str) -> KnowledgeVersion:
+    version = store.repository.read(identity)
+    assert version is not None
+    return version
+
+
+def test_chinese_revision_target_survives_english_distractor_and_background_budget(tmp_path: Path) -> None:
     store = KnowledgeStore(tmp_path)
     try:
         populate(store)
@@ -53,13 +62,13 @@ def test_chinese_revision_target_survives_english_distractor_and_background_budg
         assert '"id":"queue-inference"' in background
         assert "not evidence strength" in background
         # Derived bigrams must not become semantic aliases or knowledge content.
-        assert store.repository.read("queue-inference").value.aliases == ()
+        assert _read_version(store, "queue-inference").value.aliases == ()
         assert len(query_terms(QUERY)) <= 76
     finally:
         store.close()
 
 
-def test_chinese_scope_filter_precedes_limit(tmp_path):
+def test_chinese_scope_filter_precedes_limit(tmp_path: Path) -> None:
     store = KnowledgeStore(tmp_path)
     try:
         value = populate(store)
@@ -83,10 +92,10 @@ def test_chinese_scope_filter_precedes_limit(tmp_path):
         store.close()
 
 
-def test_existing_index_upgrade_preserves_versions_and_commit_receipts(tmp_path):
+def test_existing_index_upgrade_preserves_versions_and_commit_receipts(tmp_path: Path) -> None:
     store = KnowledgeStore(tmp_path)
     value = populate(store)
-    before = store.repository.read(value.id).to_dict()
+    before = _read_version(store, value.id).to_dict()
     with store.index.transaction() as conn:
         conn.execute("DELETE FROM knowledge_meta WHERE key='structured_fts_version'")
         conn.execute("DELETE FROM knowledge_fts")
@@ -94,32 +103,64 @@ def test_existing_index_upgrade_preserves_versions_and_commit_receipts(tmp_path)
     store.close()
     store = KnowledgeStore(tmp_path)
     try:
-        assert store.repository.read(value.id).to_dict() == before
+        assert _read_version(store, value.id).to_dict() == before
         assert store.repository.committed("candidate", [M(value)]) == {value.id: 1}
         assert store.search(QUERY)[0].version.value.id == value.id
-        assert (
+        index_version: tuple[object, ...] | None = (
             store.index._read_conn()
             .execute("SELECT value FROM knowledge_meta WHERE key='structured_fts_version'")
-            .fetchone()[0]
-            == SEARCH_INDEX_VERSION
+            .fetchone()
         )
+        assert index_version is not None and index_version[0] == SEARCH_INDEX_VERSION
     finally:
         store.close()
 
 
-def test_oversized_recall_row_does_not_hide_later_small_candidate(tmp_path):
+def test_oversized_recall_row_does_not_hide_later_small_candidate(tmp_path: Path) -> None:
     store = KnowledgeStore(tmp_path)
     try:
         value = populate(store)
         large = replace(value, id="large", provenance={"detail": "x" * 6000})
         store.repository.commit("large", [M(large)])
         hits = [
-            KnowledgeHit(store.repository.read("large"), "text match"),
-            KnowledgeHit(store.repository.read(value.id), "text match"),
+            KnowledgeHit(_read_version(store, "large"), "text match"),
+            KnowledgeHit(_read_version(store, value.id), "text match"),
         ]
         text = render_recall(hits, max_chars=2000)
         assert len(text) <= 2000
         assert '"id":"queue-inference"' in text
         assert '"id":"large"' not in text
+    finally:
+        store.close()
+
+
+def test_compact_recall_keeps_complete_conditions_or_only_a_locator(tmp_path: Path) -> None:
+    store = KnowledgeStore(tmp_path)
+    try:
+        value = populate(store)
+        version = _read_version(store, value.id)
+        limited = replace(value, conditions={
+            "api_version": {"state": "reported", "value": "1.x"},
+            "journal_mode": {"state": "reported", "value": "WAL"},
+            "workload": {"state": "not_extracted"},
+        })
+        hit = KnowledgeHit(replace(version, value=limited), "test")
+        text = render_recall([hit], compact=True)
+        assert render_recall([hit], compact=True, max_chars=len(text)) == text
+        row = parse_json_object(text.splitlines()[-1])
+        assert row["conditions"] == limited.conditions and row["condition_count"] == 3
+        assert row["content"] == limited.content
+        for candidate in (
+            hit,
+            replace(hit, version=replace(hit.version, dependencies_changed=True)),
+            replace(hit, version=replace(hit.version, value=replace(limited, content="x" * 400 + " except after failover"))),
+        ):
+            layout = render_recall([candidate], compact=True, max_chars=len(text) - 1)
+            locator = parse_json_object(layout.splitlines()[-1])
+            assert locator["id"] == value.id and locator["revision"] == version.revision
+            assert locator["detail_available"] is True and "content" not in locator
+            assert locator["condition_count"] == 3 and "conditions" not in locator
+            assert locator["dependencies_changed"] is candidate.version.dependencies_changed
+        assert render_recall([hit], compact=True, max_chars=1) == ""
     finally:
         store.close()
