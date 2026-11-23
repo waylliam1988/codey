@@ -20,7 +20,7 @@ from codey.codemode.types import (
 from codey.operations.browser_references import BrowserReferences, reference_spec
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.toolchain.result_schema import model_output_schema, schema_typescript
-from codey.toolchain.tool_spec import ToolSpec, is_text_batch_tool
+from codey.toolchain.tool_spec import ToolSpec, _schema_for_spec, is_text_batch_tool
 from codey.types.json_value import JsonObject, canonical_json_object, require_json_strings
 
 if TYPE_CHECKING:
@@ -105,15 +105,7 @@ def build_catalog_from_specs(specs: Mapping[str, ToolSpec] | Iterable[ToolSpec])
         rows.append({
             "name": name,
             "description": spec.description,
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    key: canonical_json_object(schema) if isinstance(schema, Mapping) else {"type": "string"}
-                    for key, schema in spec.parameters
-                },
-                "required": list(spec.required),
-                "additionalProperties": False,
-            },
+            "parameters": _schema_for_spec(spec),
             "namespace": executor,
             "grant": spec.grant,
             "read_only": spec.read_only,
@@ -243,6 +235,13 @@ def _semantic_edit_catalog(entries: list[ToolCatalogEntry]) -> list[ToolCatalogE
 
 _PINNED = ("read_file", "grep", "browser_snapshot", "edit")
 MODEL_CATALOG_BUDGET_BYTES = 24_000
+_PATCH_RESULT_TYPE = (
+    'type PatchFileResult = {path: string; state: "changed" | "unchanged" | "failed" | "not_dispatched" | "unknown"; result_ref?: string};'
+)
+_JSON_EDIT_TYPE = "type JsonEditValue = null | boolean | number | string | JsonEditValue[] | {[key: string]: JsonEditValue};"
+_NESTED_SCHEMA_METADATA = frozenset({
+    "x-codey-patch", "x-codey-semantic-edit", "x-codey-browser-flow", "x-codey-click-plans", "x-codey-result-read",
+})
 
 
 def _edit_guidance(snapshot: ToolCatalogSnapshot) -> str:
@@ -256,15 +255,17 @@ def _edit_guidance(snapshot: ToolCatalogSnapshot) -> str:
                          tuple(canonical_json_object(parameters.get("properties", {}))))
 
 
-def _entry_signatures(entry: ToolCatalogEntry, *, json_edit: bool) -> tuple[str, ...]:
+def _entry_signatures(entry: ToolCatalogEntry, *, json_edit: bool, include_ordinary: bool = True,
+                      compact: bool = False) -> tuple[str, ...]:
     value = schema_typescript(entry.output_schema)
-    ordinary = f"{entry.name}(args: {schema_typescript(entry.parameters)}): Result<{value}>;"
-    signatures = [ordinary]
+    signatures = ([f"{entry.name}(args: {schema_typescript(entry.parameters)}): Result<{value}>;"]
+                  if include_ordinary else [])
     if entry.name == "edit" and json_edit:
         signatures.append(f"edit(args: {{base_result_ref: string; changes: Record<string, JsonEditValue>}}): Result<{value}>;")
     patch = canonical_json_object(entry.parameters).get("x-codey-patch")
     if isinstance(patch, dict):
-        signatures.append(f"edit(args: {schema_typescript(patch)}): Result<{value}>;")
+        result = (f"Promise<ToolResult<{value}> & {{patch?: PatchFileResult[]}}>" if compact else f"Result<{value}>")
+        signatures.append(f"edit(args: {schema_typescript(patch)}): {result};")
     semantic = canonical_json_object(entry.parameters).get("x-codey-semantic-edit")
     if isinstance(semantic, dict):
         signatures.append(f"edit(args: {schema_typescript(semantic)}): Result<{value}>;")
@@ -284,20 +285,47 @@ def _entry_declarations(entry: ToolCatalogEntry, *, json_edit: bool, include_des
     return tuple(lines)
 
 
+def _compact_entry(entry: ToolCatalogEntry, outer: ToolSpec | None, *, guidance: str,
+                   json_edit: bool) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    ordinary = {key: value for key, value in entry.parameters.items() if key not in _NESTED_SCHEMA_METADATA}
+    same_input = outer is not None and canonical_json_object(ordinary) == _schema_for_spec(outer)
+    signatures = _entry_signatures(entry, json_edit=json_edit, include_ordinary=not same_input, compact=True)
+    if not signatures:
+        return (), ()
+    types: list[str] = []
+    comments = [] if same_input else [entry.description]
+    if "x-codey-patch" in entry.parameters:
+        types.append(_PATCH_RESULT_TYPE)
+        if same_input:
+            comments.append(PATCH_DESCRIPTION)
+    if entry.name == "edit" and json_edit:
+        types.append(_JSON_EDIT_TYPE)
+        comments.extend(guidance.splitlines())
+    lines = ["  // " + line for comment in comments for line in comment.splitlines()]
+    return tuple(types), tuple((*lines, *("  " + signature for signature in signatures)))
+
+
 def render_declarations(snapshot: ToolCatalogSnapshot, *, budget_bytes: int = MODEL_CATALOG_BUDGET_BYTES,
-                        outer_descriptions: Mapping[str, str] | None = None) -> str:
+                        outer_descriptions: Mapping[str, str] | None = None,
+                        outer_specs: Iterable[ToolSpec] = (), detail_budget_bytes: int | None = None,
+                        detail_names: tuple[str, ...] = (), include_json_edit: bool = False) -> str:
     """Render a bounded model view; discovery retains the complete frozen contract."""
     from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE
 
     guidance = _edit_guidance(snapshot)
     json_edit = guidance == JSON_FIELD_EDIT_GUIDANCE
+    compact = detail_budget_bytes is not None
     header = ["// tools.NAME uses NAME's declared arguments; returns Result<T>."]
-    header.extend("// " + line for line in guidance.splitlines())
-    if json_edit:
-        header.append("type JsonEditValue = null | boolean | number | string | JsonEditValue[] | {[key: string]: JsonEditValue};")
+    if compact:
+        header.append("// Match tools by name with describe('tools.NAME'); search() also returns signatures.")
+    else:
+        header.extend("// " + line for line in guidance.splitlines())
+        if json_edit:
+            header.append(_JSON_EDIT_TYPE)
+        header.append(_PATCH_RESULT_TYPE)
+    patch_result = "" if compact else " & {patch?: PatchFileResult[]}"
     header.extend((
-        'type PatchFileResult = {path: string; state: "changed" | "unchanged" | "failed" | "not_dispatched" | "unknown"; result_ref?: string};',
-        "type ToolResult<T> = ({ok: true; value: T; result_ref?: string} | {ok: false; error: string}) & {patch?: PatchFileResult[]};",
+        "type ToolResult<T> = ({ok: true; value: T; result_ref?: string} | {ok: false; error: string})" + patch_result + ";",
         "type Result<T> = Promise<ToolResult<T>>;",
         "declare function unwrap<T>(result: ToolResult<T>): T;",
         "declare const tools: {",
@@ -309,8 +337,8 @@ def render_declarations(snapshot: ToolCatalogSnapshot, *, budget_bytes: int = MO
         "// Discovery only: await describe('tools.NAME') for the full omitted declaration. Calls still require authorization.",
         f"// catalog_digest={snapshot.digest}",
     ]
-    shared = {entry.name for entry in snapshot.entries
-              if outer_descriptions is not None and outer_descriptions.get(entry.name) == entry.description}
+    shared = {entry.name for entry in snapshot.entries if not compact
+              and outer_descriptions is not None and outer_descriptions.get(entry.name) == entry.description}
     if shared:
         footer.append("// Also callable as tools.NAME with the exact already-visible NAME arguments and Result<T>: "
                       + ", ".join(sorted(shared)) + ". Full signatures remain available through describe('tools.NAME').")
@@ -322,23 +350,36 @@ def render_declarations(snapshot: ToolCatalogSnapshot, *, budget_bytes: int = MO
     size = len("\n".join((*header, *footer)).encode("utf-8"))
     if type(budget_bytes) is not int or budget_bytes < size:
         raise ValueError(f"catalog budget must cover the {size}-byte discovery header")
+    if detail_budget_bytes is not None and detail_budget_bytes < 0:
+        raise ValueError("catalog detail budget must be non-negative")
+    remaining = budget_bytes - size
+    if detail_budget_bytes is not None:
+        remaining = min(remaining, detail_budget_bytes)
     selected: dict[str, tuple[str, ...]] = {}
-    priority = {name: index for index, name in enumerate(_PINNED)}
+    types: list[str] = []
+    outer = {spec.name: spec for spec in outer_specs}
+    priority = {name: index for index, name in enumerate(detail_names if compact else _PINNED)}
 
     def entry_order(entry: ToolCatalogEntry) -> tuple[int, str]:
         return priority.get(entry.name, len(priority)), entry.name
 
     for entry in sorted(snapshot.entries, key=entry_order):
-        if entry.name in shared:
+        if entry.name in shared or compact and entry.name not in priority:
             continue
-        lines = _entry_declarations(entry, json_edit=json_edit,
-            include_description=outer_descriptions is None or outer_descriptions.get(entry.name) != entry.description)
-        cost = len(("\n".join(lines) + "\n").encode("utf-8"))
-        if size + cost <= budget_bytes:
+        if compact:
+            dependencies, lines = _compact_entry(entry, outer.get(entry.name), guidance=guidance,
+                                                 json_edit=json_edit and include_json_edit)
+        else:
+            dependencies = ()
+            lines = _entry_declarations(entry, json_edit=json_edit,
+                include_description=outer_descriptions is None or outer_descriptions.get(entry.name) != entry.description)
+        cost = sum(len(line.encode("utf-8")) + 1 for line in (*dependencies, *lines))
+        if cost <= remaining:
             selected[entry.name] = lines
-            size += cost
+            types.extend(dependencies)
+            remaining -= cost
     body = [line for entry in snapshot.entries for line in selected.get(entry.name, ())]
-    return "\n".join((*header, *body, *footer))
+    return "\n".join((*header[:-1], *types, header[-1], *body, *footer))
 
 
 def _catalog_namespace(entry: ToolCatalogEntry) -> str:

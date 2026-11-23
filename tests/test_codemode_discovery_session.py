@@ -5,9 +5,19 @@ import time
 
 import pytest
 
-from codey.codemode.catalog import MODEL_CATALOG_BUDGET_BYTES, build_catalog_snapshot, render_declarations
+from codey.codemode.catalog import (
+    MODEL_CATALOG_BUDGET_BYTES,
+    build_catalog_snapshot,
+    render_declarations,
+    snapshot_catalog,
+)
 from codey.codemode.runtime import CodeModeHandle, CodeModeOutcome, CodeModeRequest, CodeModeSession, NodeWorkerRuntime
 from codey.codemode.types import CodeModeLimits, CodeModeResult, ToolCatalogEntry
+from codey.operations.kernel_prompt import _text_request_prompt
+from codey.operations.kernel_protocol import build_turn_snapshot, refresh_snapshot_contract
+from codey.operations.provider_receipts import restore_snapshot, snapshot_description
+from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core import cancellation
 from codey.types.json_value import decode_json_object
 
@@ -60,6 +70,25 @@ def test_model_catalog_budget_keeps_pinned_tools_and_discovery_retains_parameter
     item = catalog.describe("tools." + omitted.name)
     assert item is not None and "Observed exact path" in item.description
     assert item.signature.startswith("tools." + omitted.name + "(args:")
+
+
+def test_compact_snapshot_preserves_edit_overloads_and_full_discovery() -> None:
+    session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "project.write"})))
+    full = build_turn_snapshot(session)
+    catalog = snapshot_catalog(full)
+    compact = refresh_snapshot_contract(full, compact_catalog=True)
+    declarations = next(spec.declarations for spec in compact.model_specs if spec.name == "codemode")
+    assert 'edit(args: { "files":' in declarations and "type PatchFileResult" in declarations
+    assert 'edit(args: { "path":' not in declarations and "type JsonEditValue" not in declarations
+    assert "function describe" in declarations and "read_file(args:" not in declarations
+    restored = restore_snapshot(snapshot_description(compact))
+    assert _text_request_prompt("", restored) == _text_request_prompt("", compact)
+    assert snapshot_catalog(restored) == catalog
+    edit = catalog.describe("tools.edit")
+    assert edit is not None and "changes: Record" in edit.signature and '"files":' in edit.signature
+    minimal = render_declarations(catalog, detail_budget_bytes=0, outer_specs=full.model_specs,
+                                  detail_names=("edit",))
+    assert "PatchFileResult" not in minimal and "JsonEditValue" not in minimal
 
 
 def test_session_start_returns_handle_and_wait_reports_events() -> None:

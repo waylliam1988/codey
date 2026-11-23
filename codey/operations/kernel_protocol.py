@@ -230,7 +230,8 @@ def render_snapshot_contract(snapshot: TurnSnapshot) -> str:
     return text
 
 
-def refresh_snapshot_contract(snapshot: TurnSnapshot) -> TurnSnapshot:
+def refresh_snapshot_contract(snapshot: TurnSnapshot, *, compact_catalog: bool = False,
+                              include_json_edit: bool = False) -> TurnSnapshot:
     if snapshot.input_binding is not None and snapshot.input_binding.model_spec.name not in snapshot.tool_names:
         snapshot = replace(snapshot, input_binding=None)
     order = {name: index for index, name in enumerate(snapshot.inventory_names)}
@@ -244,11 +245,15 @@ def refresh_snapshot_contract(snapshot: TurnSnapshot) -> TurnSnapshot:
     snapshot = replace(snapshot,
         frozen_specs=tuple(sorted(snapshot.frozen_specs, key=spec_order)),
         custom_executors=tuple(sorted(snapshot.custom_executors, key=executor_order)))
-    if "codemode" in snapshot.tool_names:
+    if "codemode" in snapshot.tool_names and (
+            snapshot.input_binding is None or snapshot.input_binding.model_spec.name != "codemode"):
         from codey.codemode.catalog import render_declarations, snapshot_catalog
 
+        specs = snapshot.model_specs
         declarations = render_declarations(snapshot_catalog(snapshot),
-            outer_descriptions={spec.name: spec.description for spec in snapshot.model_specs})
+            outer_descriptions={spec.name: spec.description for spec in specs}, outer_specs=specs,
+            detail_budget_bytes=2_400 if compact_catalog else None, detail_names=("edit",),
+            include_json_edit=include_json_edit)
         snapshot = replace(snapshot, frozen_specs=tuple(
             replace(spec, declarations=declarations) if spec.name == "codemode" else spec for spec in snapshot.frozen_specs))
     return replace(snapshot, contract_text=render_snapshot_contract(snapshot))
@@ -507,7 +512,7 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     target = copy_target(session.task_text)
     frozen = _task_edit_specs(session, frozen)
     if "codemode" in names:
-        from codey.codemode.catalog import build_codemode_catalog, render_declarations
+        from codey.codemode.catalog import build_codemode_catalog
 
         aggregate_browser = any(spec.executor == "browser" for spec in frozen)
         # Browser aggregation keeps the real project edit action in the same
@@ -535,9 +540,6 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
             names = tuple(name for name in names if name not in browser_names)
             if browser_followups.codemode_only(session.task_text):
                 names = tuple(name for name in names if name not in nested and not is_text_batch_tool(name))
-        declarations = render_declarations(catalog)
-        frozen = tuple(replace(spec, declarations=declarations)
-                       if spec.name == "codemode" else spec for spec in frozen)
         if upload is not None and set(nested) >= STRUCTURED_UPLOAD_TOOLS:
             phase = upload_phase(session._memory_results)
             binding = ModelInputBinding("upload", upload_model_spec(structured_upload_spec(

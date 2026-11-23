@@ -457,6 +457,16 @@ class KernelContext:
                 self.execution.project_path, (*targets, *self.session.read_files), self.session._memory_results)
             version = snapshot.input_contract_version if snapshot.input_contract_version >= 18 else 18
             snapshot = replace(snapshot, input_contract_version=version, project_instructions=bindings)
+        if ("edit" in snapshot.tool_names and "codemode" in snapshot.tool_names and snapshot.input_binding is None
+                and snapshot.browser_copy is None and not self.session.policy.strict_research
+                and (browser is None or browser.document_identity() is None)):
+            from codey.operations.kernel_protocol import refresh_snapshot_contract
+            from codey.task.web_intent import explicit_web_intent
+
+            if not explicit_web_intent(self.session.task_text).browser_navigation_requested:
+                include_json_edit = (".json" in self.session.task_text.casefold()
+                                     or any(path.casefold().endswith(".json") for path in self.session.read_files))
+                snapshot = refresh_snapshot_contract(snapshot, compact_catalog=True, include_json_edit=include_json_edit)
         return snapshot, "\n\n".join(part for part in (assistance, instructions, hint) if part)
 
     def freeze(self, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int, prompt: str = "",

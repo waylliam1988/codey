@@ -10,10 +10,11 @@ import pytest
 from codey.operations.browser_task_handoff import browser_task_handoff
 from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel_context import KernelContext
-from codey.operations.kernel_protocol import TurnSnapshot, build_turn_snapshot
+from codey.operations.kernel_protocol import TurnSnapshot, build_turn_snapshot, normalize_turn
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
+from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject
 from tests.test_browser_failure_handoff import DOCUMENT, GRANTS, remember
@@ -25,7 +26,6 @@ from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import Target
 
 EDIT_HANDOFF = "The requested project modification still needs an actual edit receipt."
-BOUND_HANDOFF = "using only an allowed path"
 
 
 def project_session(*, declared: bool) -> TaskSession:
@@ -92,22 +92,30 @@ def test_pending_browser_action_precedes_project_continuation(delivery: str) -> 
 def test_ordinary_hybrid_executes_the_existing_continuation_with_restored_snapshots(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    hints: list[str] = []
+    snapshots: list[TurnSnapshot] = []
     original = KernelContext.request_snapshot
 
     def capture(context: KernelContext, snapshot: TurnSnapshot, *,
                 delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
         result = original(context, snapshot, delivered_results=delivered_results)
-        hints.append(result[1])
+        snapshots.append(result[0])
         return result
 
     monkeypatch.setattr(KernelContext, "request_snapshot", capture)
 
     def replies() -> Iterator[JsonObject]:
         yield code_action(ROUND)
-        assert BOUND_HANDOFF in hints[-1]
-        yield {"tool": "codemode", "args": {"path": "result.json"}}
-        assert BOUND_HANDOFF not in hints[-1]
+        snapshot = snapshots[-1]
+        binding = snapshot.input_binding
+        assert binding is not None and binding.kind == "declared_fields"
+        assert binding.source_refs
+        spec = binding.model_spec
+        assert spec.required == ("path",)
+        rejected = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("outside", spec.name, {"path": "other.json"}),)),
+                                  snapshot=snapshot)
+        assert rejected.protocol_error
+        yield {"tool": spec.name, "args": {"path": "result.json"}}
+        assert snapshots[-1].input_binding is None
         yield {"tool": "done", "args": {"summary": SUMMARY}}
 
     install_http(monkeypatch, replies())

@@ -21,7 +21,7 @@ from codey.toolchain.result_schema import text_output_schema
 from codey.toolchain.schema_validation import _valid_custom_schema
 from codey.toolchain.tool_prompt import json_contract_text as json_contract_text
 from codey.toolchain.tool_prompt import model_tool_description
-from codey.types.json_value import ToolArgs, canonical_json_object, parse_json_object
+from codey.types.json_value import JsonObject, ToolArgs, canonical_json_object, parse_json_object
 
 _TEXT_BATCH_TOOLS = frozenset({"parallel", "read_files"})
 SOURCE_GAPS_GUIDANCE = (
@@ -201,7 +201,7 @@ def _research_specs() -> dict[str, ToolSpec]:
             grant=grant,
             parameters=tuple(schema_object(schema, "properties").items()),
             required=tuple(schema_strings(schema, "required")),
-            json_examples=(contract.example,),
+            json_examples=(contract.example,) if contract.example else (),
             description=contract.description,
             executor="receipt" if name in {"read_data", "calculate"} else "source" if grant == "web.read" else "knowledge",
             replay_class="safe" if grant in {"knowledge.read", "control"} or name in {"knowledge_commit", "save_finding", "save_inference", "submit_research_answer"} else "unsafe",
@@ -656,8 +656,8 @@ def visible_tool_names_for_snapshot(
     return tuple(names)
 
 
-def _schema_for_spec(spec: ToolSpec) -> dict[str, object]:
-    properties: dict[str, object] = {}
+def _schema_for_spec(spec: ToolSpec) -> JsonObject:
+    properties: JsonObject = {}
     for param_name, schema in spec.parameters:
         properties[param_name] = canonical_json_object(schema) if isinstance(schema, Mapping) else {"type": "string"}
     return {
