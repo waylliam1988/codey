@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from codey.types.json_value import decode_json_object
+from codey.types.json_value import JsonObject, decode_json_object
 
 
 def normalized_doi(value: object) -> str:
@@ -21,18 +21,28 @@ class PublicationMetadata:
     doi: str = ""
     pmcid: str = ""
     status: str = ""
+    edition: str = ""
+    version: str = ""
+
+    def to_payload(self) -> JsonObject:
+        return {"doi": self.doi, "pmcid": self.pmcid, "status": self.status,
+                **({"edition": self.edition} if self.edition else {}),
+                **({"version": self.version} if self.version else {})}
 
     @classmethod
     def decode(cls, value: object) -> PublicationMetadata:
         row = decode_json_object(value)
-        if set(row) != {"doi", "pmcid", "status"}:
+        if not {"doi", "pmcid", "status"} <= set(row) <= {"doi", "pmcid", "status", "edition", "version"}:
             raise ValueError("invalid publication metadata fields")
         doi, pmcid, status = row["doi"], row["pmcid"], row["status"]
+        edition, version = row.get("edition", ""), row.get("version", "")
         if (not isinstance(doi, str) or doi != normalized_doi(doi) or not isinstance(pmcid, str)
                 or pmcid != normalized_pmcid(pmcid)
-                or not isinstance(status, str) or status not in {"", "retracted", "retraction_notice"}):
+                or not isinstance(status, str) or status not in {"", "retracted", "retraction_notice"}
+                or not isinstance(edition, str) or edition not in {"", "preprint", "accepted", "published"}
+                or not isinstance(version, str) or re.fullmatch(r"[a-zA-Z0-9._-]{0,40}", version) is None):
             raise ValueError("invalid publication metadata")
-        return cls(doi, pmcid, status)
+        return cls(doi, pmcid, status, edition, version)
 
 
 @dataclass(frozen=True)

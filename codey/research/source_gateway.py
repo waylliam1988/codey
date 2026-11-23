@@ -22,8 +22,10 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import re
 from dataclasses import dataclass, field, replace
 from typing import Protocol, runtime_checkable
+from urllib.parse import quote
 
 from codey.policies.network import check_fetch_url
 from codey.research.ledger import ResearchLedger
@@ -65,18 +67,48 @@ SEARCH_LIMIT = 8
 PDF_SOURCE_SEARCH_MAX_PAGES = 30
 
 
-def _full_text_candidate(page: dict[str, object]) -> tuple[str, str] | None:
+@dataclass(frozen=True)
+class FullTextCandidate:
+    url: str
+    kind: str
+    doi: str = ""
+
+
+def _full_text_candidates(page: dict[str, object]) -> tuple[FullTextCandidate, ...]:
     if page.get("status") != "ok" or page.get("content_kind") != "abstract":
-        return None
+        return ()
     parsed = parsed_url(page.get("url"))
+    results: list[FullTextCandidate] = []
     if parsed.scheme == "https" and parsed.netloc == "arxiv.org" and parsed.path.startswith("/abs/"):
         identity = parsed.path.removeprefix("/abs/")
         if is_valid_arxiv_id(identity):
-            return f"https://arxiv.org/pdf/{identity}", "pdf"
+            results.append(FullTextCandidate(f"https://arxiv.org/pdf/{identity}", "pdf"))
     publication = page.get("publication")
     if parsed.scheme == "https" and parsed.netloc == "pubmed.ncbi.nlm.nih.gov" and isinstance(publication, PublicationMetadata) and publication.pmcid:
-        return f"https://pmc.ncbi.nlm.nih.gov/articles/{publication.pmcid}/", "html"
-    return None
+        results.append(FullTextCandidate(f"https://pmc.ncbi.nlm.nih.gov/articles/{publication.pmcid}/", "html"))
+    if isinstance(publication, PublicationMetadata) and publication.doi:
+        results.append(FullTextCandidate("https://doi.org/" + quote(publication.doi, safe="/"), "html", publication.doi))
+    return tuple(results)
+
+
+def _identified_full_text(candidate: FullTextCandidate, fetched: dict[str, object], abstract: dict[str, object]) -> bool:
+    final_url = fetched.get("url")
+    if not isinstance(final_url, str) or fetched.get("content_kind", "html") != candidate.kind:
+        return False
+    if not candidate.doi:
+        expected = {candidate.url, candidate.url + ".pdf"} if candidate.kind == "pdf" else {candidate.url, candidate.url.rstrip("/")}
+        return final_url in expected
+    if parsed_url(final_url).scheme != "https" or final_url == candidate.url:
+        return False
+    body = str(fetched.get("text") or "")
+    if len(body) < max(900, len(str(abstract.get("text") or "")) * 2):
+        return False
+    doi = re.escape(candidate.doi)
+    title = " ".join(str(abstract.get("title") or "").casefold().split())
+    captured_title = " ".join(str(fetched.get("title") or "").casefold().split())
+    headings = set(re.findall(r"(?im)^\s*(?:#{1,6}\s*)?(?:materials and )?(methods|results)\s*$", body))
+    return (bool(title) and title in captured_title and {row.casefold() for row in headings} == {"methods", "results"}
+            and re.search(r"(?:https?://(?:dx\.)?doi\.org/|(?<![\w/]))" + doi + r"(?![\w/-])", body[:4000], re.I) is not None)
 
 
 @runtime_checkable
@@ -182,41 +214,47 @@ class ResearchSourceGateway:
             return OpenedSource(status="error", detail=f"open failed: {exc}",
                                 failure_code="execution_failed")
         cancellation.check()
-        if candidate := _full_text_candidate(page):
-            full_url, kind = candidate
-            upgraded = self._open_full_text(url, full_url, kind, page, pages=pages)
-            if upgraded is not None:
-                return upgraded
+        candidates = _full_text_candidates(page)
+        if candidates:
+            return self._open_full_text(url, candidates, page, pages=pages)
         return self._receive_capture(url, page, pages=pages)
 
-    def _open_full_text(self, url: str, candidate: str, kind: str, abstract: dict[str, object], *, pages: str) -> OpenedSource | None:
-        reason = check_fetch_url(candidate, use_cache=True)
+    def _open_full_text(self, url: str, candidates: tuple[FullTextCandidate, ...], abstract: dict[str, object],
+                        *, pages: str) -> OpenedSource:
+        original = with_attempt(abstract, "connector", url)
+        attempts = [original]
+        for candidate in candidates:
+            acquired = self._fetch_full_text(candidate, abstract)
+            attempts.append(acquired)
+            preferred = self._receive_capture(url, combine_acquisitions(*attempts), pages=pages)
+            if preferred.status == "ok":
+                return preferred
+            self._fail("browser", "open_full_text", preferred.detail, candidate.url)
+        return self._receive_capture(url, {**original, "acquisition": combine_acquisitions(*attempts)["acquisition"]}, pages=pages)
+
+    def _fetch_full_text(self, candidate: FullTextCandidate, abstract: dict[str, object]) -> dict[str, object]:
+        reason = check_fetch_url(candidate.url, use_cache=True)
         if reason:
-            self._fail("browser", "open_full_text", reason, candidate)
-            return None
+            return with_attempt({"status": "error", "failure_code": "policy_denied", "detail": reason,
+                                 "delivery": "not_attempted"}, "browser", candidate.url)
         fetched: dict[str, object]
         try:
-            fetched = self.search_provider.fetch(candidate)
+            fetched = self.search_provider.fetch(candidate.url)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
             fetched = {"status": "error", "failure_code": "request_failed", "detail": str(exc) or type(exc).__name__}
         cancellation.check()
-        final_url = fetched.get("url")
-        expected = {candidate, candidate + ".pdf"} if kind == "pdf" else {candidate, candidate.rstrip("/")}
-        if fetched.get("status") == "ok" and (fetched.get("content_kind", "html") != kind
-                or not isinstance(final_url, str) or final_url not in expected):
-            fetched = {"status": "error", "url": final_url if isinstance(final_url, str) else candidate,
-                       "failure_code": "document_unreadable", "detail": "The candidate did not return the identified full-text article."}
-        fetched["publication"] = abstract.get("publication")
-        original = with_attempt(abstract, "connector", url)
-        acquired = with_attempt(fetched, "browser", candidate)
-        preferred = self._receive_capture(url, combine_acquisitions(original, acquired), pages=pages)
-        if preferred.status == "ok":
-            return preferred
-        self._fail("browser", "open_full_text", preferred.detail, candidate)
-        fallback = self._receive_capture(url, original, pages=pages)
-        return replace(fallback, acquisition=preferred.acquisition) if preferred.acquisition else fallback
+        if fetched.get("status") == "ok" and not _identified_full_text(candidate, fetched, abstract):
+            final_url = fetched.get("url")
+            failed: dict[str, object] = {"status": "error", "url": final_url if isinstance(final_url, str) else candidate.url,
+                      "failure_code": "document_unreadable", "delivery": "confirmed",
+                      "detail": "The candidate did not return the identified full-text article."}
+            return with_attempt(failed, "browser", candidate.url)
+        publication = abstract.get("publication")
+        if candidate.doi and isinstance(publication, PublicationMetadata):
+            publication = replace(publication, edition="", version="")
+        return with_attempt({**fetched, "publication": publication}, "browser", candidate.url)
 
     def capture(self, url: str, page: dict[str, object], *, pages: str = "") -> OpenedSource:
         """Admit an already captured page through the ordinary source receiver."""
@@ -321,7 +359,8 @@ class ResearchSourceGateway:
             )
             if isinstance(document, PdfSkipped):
                 return document
-            return replace(document, pdf_sha256=hashlib.sha256(pdf_bytes).hexdigest())
+            return replace(document, pdf_sha256=hashlib.sha256(pdf_bytes).hexdigest(),
+                           publication=publication if isinstance(publication, PublicationMetadata) else None)
         text = str(page.get("text") or "")
         region = page.get("query_region")
         target = region.get("text") if isinstance(region, dict) else None

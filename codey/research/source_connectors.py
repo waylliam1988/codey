@@ -249,7 +249,7 @@ _SAFE_QUERY_STOP_TERMS = frozenset({
     "如何",
     "是否",
 })
-_ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
+_ATOM_NS = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
 _CONNECTOR_ALLOWED_HOSTS = {
     "arxiv": frozenset({"arxiv.org"}),
     "pubmed": frozenset({"pubmed.ncbi.nlm.nih.gov"}),
@@ -866,6 +866,8 @@ def parse_arxiv_atom_fixture(xml_text: str, *, query: str = "", limit: int = MAX
             canonical_url=canonical,
             published_at=_xml_text(entry, "atom:published"),
             metadata_refs=(f"arxiv:{arxiv_id}",) if arxiv_id else (),
+            publication=PublicationMetadata(doi=normalized_doi(_xml_text(entry, "arxiv:doi")), edition="preprint",
+                version=version[0] if (version := re.findall(r"v([1-9][0-9]*)$", arxiv_id)) else ""),
             score=max(0.0, 1.0 - (len(hits) * 0.05)),
         ))
     return source_result_from_hits("arxiv", query=query, hits=hits)
@@ -900,7 +902,8 @@ def parse_pubmed_fixture(xml_text: str, *, query: str = "", limit: int = MAX_CON
         corrections = {node.get("RefType") for node in article.findall("./MedlineCitation/CommentsCorrectionsList/CommentsCorrections")}
         status = ("retracted" if "Retracted Publication" in kinds or "RetractionIn" in corrections else
                   "retraction_notice" if "Retraction of Publication" in kinds or "RetractionOf" in corrections else "")
-        publication = PublicationMetadata(doi, pmcid, status) if doi or pmcid or status else None
+        edition = "preprint" if "Preprint" in kinds else ""
+        publication = PublicationMetadata(doi, pmcid, status, edition) if doi or pmcid or status or edition else None
         metadata = [f"pmid:{pmid}"]
         if doi:
             metadata.append("doi:" + identifier(doi, 80))

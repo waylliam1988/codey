@@ -3,28 +3,35 @@
 from __future__ import annotations
 
 import unittest
+from collections.abc import Mapping, Sequence
 
 import pytest
 
+from codey.policies.network import check_fetch_url
 from codey.research.ledger import ResearchLedger
+from codey.research.ledger_receipts import source_observation
+from codey.research.source_document import PublicationMetadata
 from codey.research.source_gateway import ResearchSourceGateway
+from codey.runtime.core.cancellation import TaskCancelled
+from codey.types.json_value import JsonObject, decode_json_object
 
 pytestmark = pytest.mark.usefixtures("public_source_dns")
 
 
 class _FakeSearch:
-    def __init__(self, results=(), pages=None, errors=None) -> None:
+    def __init__(self, results: Sequence[JsonObject] = (), pages: Mapping[str, Mapping[str, object]] | None = None,
+                 errors: Mapping[str, BaseException] | None = None) -> None:
         self._results = list(results)
         self._pages = dict(pages or {})
         self._errors = dict(errors or {})
         self.name = "fake-search"
 
-    def search(self, query: str, limit: int = 8):
+    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
         if "search" in self._errors:
             raise self._errors["search"]
         return list(self._results)[:limit]
 
-    def fetch(self, url: str):
+    def fetch(self, url: str) -> dict[str, object]:
         if url in self._errors:
             raise self._errors[url]
         if url in self._pages:
@@ -32,8 +39,10 @@ class _FakeSearch:
         raise ValueError(f"no fixture for {url}")
 
 
-def _gateway(pages=None, results=(), errors=None):
-    failures: list[tuple] = []
+def _gateway(pages: Mapping[str, Mapping[str, object]] | None = None, results: Sequence[JsonObject] = (),
+             errors: Mapping[str, BaseException] | None = None
+             ) -> tuple[ResearchSourceGateway, ResearchLedger, list[tuple[str, str, str, str]]]:
+    failures: list[tuple[str, str, str, str]] = []
     ledger = ResearchLedger()
     gateway = ResearchSourceGateway(
         search_provider=_FakeSearch(results, pages, errors),
@@ -167,7 +176,7 @@ class GatewayOpenTests(unittest.TestCase):
 
 
 class GatewaySearchInsideTests(unittest.TestCase):
-    def _opened(self, gateway, url="https://example.com/article"):
+    def _opened(self, gateway: ResearchSourceGateway, url: str = "https://example.com/article") -> str:
         outcome = gateway.open(url)
         self.assertEqual(outcome.status, "ok")
         return outcome
@@ -186,6 +195,66 @@ class GatewaySearchInsideTests(unittest.TestCase):
         self.assertEqual(outcome.final_url, "https://example.com/article")
         self.assertTrue(outcome.hits)
         self.assertTrue(all("aluminum" in hit.snippet.lower() for hit in outcome.hits))
+
+
+@pytest.mark.parametrize("case", ["publisher", "wrong_identity", "all_unavailable", "cancelled"])
+def test_full_text_candidates_keep_attempts_and_original_work_identity(case: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    def check_fixture_url(url: str, *, use_cache: bool = True) -> str | None:
+        return check_fetch_url(url, resolve=False, use_cache=use_cache)
+
+    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", check_fixture_url)
+    url = "https://pubmed.ncbi.nlm.nih.gov/16466392/"
+    archive = "https://pmc.ncbi.nlm.nih.gov/articles/PMC123456/"
+    resolver = "https://doi.org/10.1234/atlas"
+    landing = "https://example.com/article/atlas"
+    title = "Atlas test report"
+    article = (title + "\nDOI: 10.1234/atlas\n# Methods\n" + "We measured the inputs and outputs ten times. " * 20
+               + "\n# Results\n" + "The median input changed after calibration. " * 12)
+    metadata = PublicationMetadata("10.1234/atlas", "PMC123456", "", "preprint", "2")
+    pages: dict[str, dict[str, object]] = {
+        url: {"status": "ok", "url": url, "title": title, "text": "This abstract describes an Atlas comparison.",
+              "content_kind": "abstract", "publication": metadata},
+        archive: {"status": "error", "url": archive, "detail": "archive temporarily unavailable",
+                  "failure_code": "page_unavailable"},
+        resolver: {"status": "ok", "url": landing, "title": title, "text": article, "content_kind": "html"},
+    }
+    errors: dict[str, BaseException] = {}
+    if case == "wrong_identity":
+        pages[resolver]["text"] = article.replace("10.1234/atlas", "10.1234/another")
+    if case == "all_unavailable":
+        errors[resolver] = OSError("unavailable")
+    if case == "cancelled":
+        errors[archive] = TaskCancelled()
+    gateway, ledger, _failures = _gateway(pages=pages, errors=errors)
+
+    if case == "cancelled":
+        with pytest.raises(TaskCancelled):
+            gateway.open(url)
+        assert not ledger.opened_sources
+        return
+    result = gateway.open(url)
+    assert result.status == "ok" and result.document is not None
+    assert len(ledger.opened_sources) == 1
+    attempts = result.acquisition["attempts"]
+    assert isinstance(attempts, list)
+    acquisitions = [decode_json_object(row) for row in attempts]
+    assert [row["requested_url"] for row in acquisitions] == [url, archive, resolver]
+    if case == "publisher":
+        assert result.document.content_kind == "html" and result.document.final_url == landing
+        assert result.document.text == article
+        assert acquisitions[2]["status"] == "ok"
+        assert result.document.publication == PublicationMetadata("10.1234/atlas", "PMC123456")
+    else:
+        assert result.document.content_kind == "abstract" and result.document.final_url == url
+        assert result.document.publication == metadata
+        assert acquisitions[2]["status"] == "error"
+    recovered, body, _ = source_observation(result.observation)
+    assert recovered.publication == result.document.publication and body == result.document.text
+
+
+def test_legacy_publication_payload_still_decodes_and_roundtrips() -> None:
+    old = {"doi": "10.1234/atlas", "pmcid": "PMC123456", "status": "retracted"}
+    assert PublicationMetadata.decode(old).to_payload() == old
 
 
 if __name__ == "__main__":

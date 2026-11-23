@@ -226,7 +226,10 @@ def source_search_observation(observation: object) -> SourceSearchObservation:
 
 def source_snapshot(source: OpenedSource, text: str, pages: dict[int, str]) -> JsonObject:
     """Encode and validate the same source capture for acquisition and recovery."""
-    payload: dict[str, object] = {"source": encode_transport_value(source), "text": text,
+    metadata = canonical_json_object(encode_transport_value(source))
+    if source.publication is not None:
+        metadata["publication"] = source.publication.to_payload()
+    payload: dict[str, object] = {"source": metadata, "text": text,
         "pages": [{"number": number, "text": body} for number, body in pages.items()]}
     observation = canonical_json_object(payload)
     source_observation(observation)
