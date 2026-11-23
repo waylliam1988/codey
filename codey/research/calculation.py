@@ -35,6 +35,10 @@ _QUANTITY = re.compile(r"(?<![\w.])([+-]?\d+(?:\.\d+)?)\s*(" +
 _OPERAND = object_schema({"result_ref": {"type": "string"}, "pointer": {"type": "string", "maxLength": 2048}}, "result_ref", "pointer")
 
 
+def is_exact_quantity(text: str) -> bool:
+    return _QUANTITY.fullmatch(text) is not None
+
+
 def data_schema() -> JsonObject:
     return object_schema({"evidence": {"type": "string"}, "result_ref": {"type": "string"},
         "format": {"type": "string", "enum": ["quantities", "csv", "json"]}}, "format")

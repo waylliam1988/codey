@@ -13,7 +13,12 @@ from codey.operations.kernel_protocol import build_turn_snapshot, offer_browser_
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.answer_contract import AnswerScope, digest, submit_answer
-from codey.research.evidence_gaps import conflict_search
+from codey.research.evidence_gaps import (
+    comparison_gap_observations,
+    conflict_search,
+    same_source_groups,
+    suspected_source_pairs,
+)
 from codey.research.ledger import EvidenceItem, OpenedSource, ResearchLedger
 from codey.research.passages import ReadPassage, read_passage_refs
 from codey.research.reference import ResearchReference
@@ -151,6 +156,72 @@ def test_conflict_search_keeps_independent_opposition_in_every_order() -> None:
         assert isinstance(refs, list) and "a" in refs and "b" in refs
 
     assert conflict_search(ledger, remaining_searches=1, findings=(calls[0], calls[2])) is None
+
+
+def test_conflict_search_keeps_reported_cohorts_after_literal_query_deduplication() -> None:
+    ledger = ResearchLedger()
+    ledger.questions = ("Compare Atlas fuel consumption between method A and method B.",)
+    findings: list[ToolCall] = []
+    for workload in (10, 100):
+        for direction in ("lower", "higher"):
+            ref = f"{workload}-{direction}"
+            url = f"https://{direction}.example/{workload}"
+            text = f"Atlas method A versus method B fuel consumption at {workload} L was {direction}."
+            ledger.read_passages[ref] = ReadPassage(ref, OpenedSource(url, url, "", "", ref), text, (), 0, len(text))
+            findings.append(ToolCall("save_finding", {"question_ref": "q1", "passage_ref": ref,
+                "conditions": [{"name": "workload", "state": "reported", "value": f"{workload} L"}],
+                "comparison": {"subject": "Atlas", "factor": "method A", "comparator": "method B",
+                               "endpoint": "fuel consumption", "direction": direction}}))
+    first = conflict_search(ledger, remaining_searches=2, findings=findings)
+    assert first is not None and isinstance(query := first["query"], str)
+    assert first == conflict_search(ledger, remaining_searches=2, findings=reversed(findings))
+    assert "10 l" in query.lower()
+    ledger.record_search(query, [])
+    second = conflict_search(ledger, remaining_searches=1, findings=findings)
+    assert second is not None and "100 l" in str(second["query"]).lower()
+    assert first["comparison_group"] != second["comparison_group"]
+    assert conflict_search(ledger, remaining_searches=0, findings=findings) is None
+    before = comparison_gap_observations(ledger, findings)
+    assert [row["query_attempted"] for row in before] == [True, False]
+    assert [row["additional_passage_refs"] for row in before] == [[], []]
+    url = "https://validation.example/combined"
+    text = "Atlas method A versus method B fuel consumption was independently measured at 10 L and 100 L."
+    ledger.read_passages["independent"] = ReadPassage(
+        "independent", OpenedSource(url, url, "", "", "independent"), text, (), 0, len(text)
+    )
+    after = comparison_gap_observations(ledger, findings)
+    assert [row["query_attempted"] for row in after] == [True, False]
+    assert [row["additional_passage_refs"] for row in after] == [["independent"], ["independent"]]
+    assert conflict_search(ledger, remaining_searches=1, findings=findings) is None
+
+
+def test_near_duplicate_candidates_leave_source_identity_and_versions_intact() -> None:
+    ledger = ResearchLedger()
+    shared = (
+        "實驗團隊先把所有容器留在同一個恆溫室，再依照隨機順序逐組測量標本，並記錄校準後的重量與溫度。"
+        "每次測量間隔三分鐘，兩位操作員以預先設定的方法分別處理儀器與記錄，以便事後重現。"
+        "結果以編碼取代產品名稱，並把未完成的觀察另外列出，避免計算平均值時遺漏資料。"
+        "第三批標本在送達過程中有明顯溫度變化，因此研究者另行保存該批讀數與原始時間戳記。"
+        "分析總表依照事先登記的程序呈現結果，相關圖表提供完整圖例與各欄位的單位。"
+        "只有通過兩次校準的讀數進入主要分析。替代分析也列出相同範圍資料以便比較。"
+        "場站兩次溫控紀錄有顯著差異，研究者補載場站識別碼以利後續核查。"
+        "試驗管採用同批次封蓋並使用獨立標記。有任何未達規格的容器都留待另外分析。"
+        "原始資料包含錯誤值處理過程，且保留測量者提供的關於實驗室環境變化的觀察。"
+        "讀者可依附件查回每次實驗的紀錄。研究團隊保留全部表格，以免遺漏任何有效讀數。"
+    )
+    template = "欢迎访问本站，点击此处浏览最新公告，相关联系信息可查看当前网站页脚的统一帮助信息。"
+    for ref, text in (("a", shared), ("b", shared + "資料整理者補充了一條簡短腳註。"),
+                      ("c", (template + "\n") * 30 + "实验在海上进行，测量降水。"),
+                      ("d", (template + "\n") * 30 + "研究记录山地风力变化。")):
+        url = f"https://{ref}.example/article"
+        ledger.read_passages[ref] = ReadPassage(ref, OpenedSource(url, url, "", "", ref), text, (), 0, len(text))
+    aliases = tuple((ref, ref) for ref in ledger.read_passages)
+    candidates = suspected_source_pairs(ledger.read_passages, aliases)
+    assert [row["passage_refs"] for row in candidates.pairs] == [["a", "b"]]
+    assert same_source_groups(ledger.read_passages, aliases) == []
+    assert not candidates.limit_reached and candidates.compared == 1
+    capped = suspected_source_pairs(ledger.read_passages, aliases, max_pairs=0)
+    assert capped.limit_reached and not capped.pairs
 
 
 def test_conflict_search_requires_a_passage_and_a_remaining_slot() -> None:

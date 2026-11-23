@@ -236,9 +236,10 @@ def _render_context(session: TaskSession, ledger: ResearchLedger | None, scope: 
     from codey.operations.kernel_prompt import operation_receipts
 
     operations = operation_receipts(session)
-    from codey.research.evidence_gaps import same_source_groups
+    from codey.research.evidence_gaps import same_source_groups, suspected_source_pairs
 
     related_sources: list[list[str]] = same_source_groups(ledger.read_passages, scope.aliases) if ledger is not None else []
+    similarity = suspected_source_pairs(ledger.read_passages, scope.aliases) if ledger is not None else None
     locators = projection["locators"]
     assert isinstance(locators, list)
     lines.append(canonical_json({"source_locators": [
@@ -266,6 +267,10 @@ def _render_context(session: TaskSession, ledger: ResearchLedger | None, scope: 
     if related_sources:
         lines.append("Shared source groups list read labels with the same source identity or identical reposted text. "
                      "Count each group once when describing independent support and keep its citations selectable.")
+    if similarity is not None and (similarity.pairs or similarity.limit_reached):
+        lines.append("Similar source text may warrant looking for independent material. Source identity remains unconfirmed.\n"
+                     + canonical_json({"pairs": list(similarity.pairs), "compared": similarity.compared,
+                                       "pair_limit_reached": similarity.limit_reached}))
     # When comparing prior work, keep the actual originals nearest the task.
     lines = [*lines, *originals] if prior else [*originals, *lines]
     lines.extend(["Complete user task (verbatim):\n" + session.task_text, ANSWER_GUIDANCE])

@@ -53,7 +53,7 @@ def task_working_context(session: TaskSession, research_ledger: ResearchLedger |
         parts.append(render_research_observations(session, research_ledger, knowledge_store, session_id=knowledge_session_id))
         if research_ledger is not None and tool_names is not None and "web_search" in tool_names:
             from codey.knowledge.model import canonical_json
-            from codey.research.evidence_gaps import gap_search_candidates
+            from codey.research.evidence_gaps import comparison_gap_observations, gap_search_candidates
 
             limits = session.research_acquisition_limits
             used = sum(value == "search" for value in session.research_acquisition_slots.values())
@@ -61,6 +61,11 @@ def task_working_context(session: TaskSession, research_ledger: ResearchLedger |
             if candidates:
                 parts.append("One suggested follow-up search for an open evidence gap. Reuse its question_ref and query if useful:\n"
                              + canonical_json(candidates))
+            findings = (result.call for ref, result in session._memory_results.items()
+                        if ref in session.executed and result.ok and result.call.name == "save_finding")
+            if comparisons := comparison_gap_observations(research_ledger, findings):
+                parts.append("Comparison investigations by reported conditions. Additional passages are material for review.\n"
+                             + canonical_json(comparisons))
         if session.policy.strict_research and session.task_text.strip():
             from codey.knowledge.model import canonical_json
             from codey.research.task_requirements import task_requirement_context
