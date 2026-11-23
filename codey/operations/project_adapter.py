@@ -50,6 +50,7 @@ def _project_context(request: AgentRequest, *, memory_sources: tuple[ContextCand
     rendered = build_agent_context(
         project=request.project,
         request_text=request.task,
+        include_user_task=False,
         system_prompt_text="",
         profile=profile_for_name(request.permission_profile),
         list_directory=tool_fns.list_directory,

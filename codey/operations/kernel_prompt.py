@@ -688,7 +688,7 @@ def working_context(session: TaskSession) -> str:
                            "This obligation list does not replace the task's prerequisites or ordering. "
                            "Obtain source evidence before copying its fields; verify requested changes after editing. ")
     operations = operation_receipts(session)
-    return ("Current work observations (runtime records):\n" + json.dumps(dict[str, object](user_task=session.task_text,
+    return ("Current work observations (runtime records):\n" + json.dumps(dict[str, object](
         project=session.project, workspace_revision=session.workspace_revision,
         workspace_fingerprint=session.workspace_fingerprint, changed_files=list(session.edited_files),
         read_files=sorted(session.read_files),

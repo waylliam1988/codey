@@ -104,6 +104,7 @@ def build_agent_context(
     work_checkpoint: str,
     completion_repair_context: str,
     memory_sources: tuple[ContextCandidate, ...] = (),
+    include_user_task: bool = True,
 ) -> AgentContext:
     def intro_source(
         key: str,
@@ -202,11 +203,9 @@ def build_agent_context(
     context = rendered_context.text
     context_block = f"{context}\n\n" if context else ""
     workspace_intro = "Project workspace: use paths relative to the project root.\n"
-    request_context = (
-        workspace_intro +
-        f"{context_block}"
-        f"User task:\n{request_text}"
-    )
+    request_context = workspace_intro + context_block
+    if include_user_task:
+        request_context += f"User task:\n{request_text}"
     rendered = PromptEnvelope((
         PromptEnvelopeSection(
             name="coding_system_prompt",
@@ -222,7 +221,7 @@ def build_agent_context(
             freshness="run_start",
             source_refs=(
                 "project:workspace",
-                "request:user_task",
+                *(("request:user_task",) if include_user_task else ()),
                 *(context_source_ref(source.key) for source in rendered_context.sources),
             ),
             budget=sum(source.budget for source in rendered_context.sources),

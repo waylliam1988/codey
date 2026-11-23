@@ -245,3 +245,20 @@ def test_request_scoped_contract_prompt_does_not_offer_ordinary_prose_or_duplica
     assert "FROZEN DECLARATIONS" not in text
     assert "Deliver the final answer with done" in text
     assert "as normal text" not in text and "Answer directly" not in text
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_project_task_occurs_once_in_assembled_prompt(tmp_path: Path, native: bool) -> None:
+    from codey.agents.request import AgentRequest
+    from codey.operations.project_adapter import _project_context
+    from codey.operations.provider_session import ProviderAdapter
+
+    task = "TASK_UNIQUE_09c4 read the project"
+    workspace = _project_context(AgentRequest(project=tmp_path, task=task, provider=ProviderAdapter(object())))
+    session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), task_text=task)
+    prompt = kernel_prompt.kernel_prompt_for_session(
+        session, tool_names=(), context_text=workspace, native=native,
+    )
+    assert task not in workspace
+    assert task not in kernel_prompt.working_context(session)
+    assert prompt.count(task) == 1
