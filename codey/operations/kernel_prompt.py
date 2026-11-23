@@ -88,14 +88,21 @@ def _tool_contract_parts(tool_names: tuple[str, ...], contract_text: str, *, nat
     return parts
 
 
-def _text_request_prompt(prompt: str, snapshot: TurnSnapshot) -> str:
+def _text_request_prompt(prompt: str, snapshot: TurnSnapshot, *, schema_constrained: bool = False) -> str:
     """Every text continuation carries its own frozen executable contract."""
     from codey.operations.edit_base import bound_symbol_retry
 
     if (target := bound_symbol_retry(snapshot)) is not None:
         path, symbol = target
         return f"Edit {path}, definition {symbol}. Response format: one complete Python definition as source text.\n\n{prompt}"
-    return "\n\n".join([*_tool_contract_parts(snapshot.tool_names, snapshot.contract_text, native=False),
+    contract = snapshot.contract_text
+    if (schema_constrained and {"codemode", "edit"} <= set(snapshot.tool_names)
+            and snapshot.input_binding is None and snapshot.browser_copy is None
+            and not snapshot.browser_followups and snapshot.research_scope is None):
+        from codey.toolchain.tool_prompt import json_contract_text
+
+        contract = json_contract_text(snapshot.model_specs, schema_constrained=True)
+    return "\n\n".join([*_tool_contract_parts(snapshot.tool_names, contract, native=False),
                          prompt, _TEXT_ACTION_RULE])
 
 

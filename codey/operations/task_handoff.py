@@ -22,6 +22,24 @@ _PROJECT_DIRECT = frozenset({
 _SOURCE_DIRECT = frozenset({"open_url", "web_search", "source_search"})
 
 
+def _project_surface(session: TaskSession, snapshot: TurnSnapshot) -> bool:
+    return bool(session.project and "codemode" in snapshot.tool_names
+                and {"edit", "read_file"}.intersection(snapshot.tool_names)
+                and not session.policy.strict_research and snapshot.research_scope is None
+                and snapshot.input_binding is None and snapshot.browser_copy is None)
+
+
+def _project_catalog(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
+                     intent: WebIntent) -> TurnSnapshot:
+    from codey.operations.kernel_protocol import refresh_snapshot_contract
+
+    compact = (_project_surface(session, snapshot) and context.browser_document is None
+               and not intent.browser_navigation_requested and not snapshot.browser_followups)
+    json_edit = compact and (".json" in session.task_text.casefold()
+                             or any(path.casefold().endswith(".json") for path in session.read_files))
+    return refresh_snapshot_contract(snapshot, compact_catalog=compact, include_json_edit=json_edit)
+
+
 def _select_outer_tools(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                         intent: WebIntent, *, ready_for_page: bool, task_controls: frozenset[str]) -> TurnSnapshot:
     from codey.operations.kernel_protocol import offer_browser_call, offer_browser_tools
@@ -33,9 +51,7 @@ def _select_outer_tools(session: TaskSession, snapshot: TurnSnapshot, context: C
     browser_steps = (context.browser_document is not None or intent.browser_navigation_requested
                      or any(name.startswith("browser_") for name in required)
                      or any(parse_browser_requirement(check) is not None for check in session.policy.required_checks))
-    if (session.project and not browser_steps and not session.policy.strict_research
-            and session.model_tool_names is None and snapshot.research_scope is None and snapshot.input_binding is None
-            and snapshot.browser_copy is None and {"codemode", "edit"} <= set(snapshot.tool_names)):
+    if _project_surface(session, snapshot) and not browser_steps and session.model_tool_names is None:
         preferred = _PROJECT_DIRECT | task_controls | set(required)
         if intent.requested or snapshot.task_source_url:
             preferred |= _SOURCE_DIRECT
@@ -73,7 +89,6 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
         browser_task_handoff_for_step,
         handoff_call,
     )
-    from codey.operations.kernel_protocol import refresh_snapshot_contract
     from codey.operations.project_completion_checks import (
         project_evidence_checks,
         resolve_verification_requirement,
@@ -176,4 +191,4 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     snapshot, hint = offer_page_details(session, snapshot, browser)
     hints.append(hint)
     hints.extend(request_tool_guidance(snapshot, intent))
-    return refresh_snapshot_contract(snapshot), "\n\n".join(dict.fromkeys((hint for hint in hints if hint), ""))
+    return _project_catalog(session, snapshot, context, intent), "\n\n".join(dict.fromkeys((hint for hint in hints if hint), ""))

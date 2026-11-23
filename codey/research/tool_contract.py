@@ -21,7 +21,7 @@ from codey.research.knowledge_schema import (
     schema_strings,
 )
 from codey.research.questions import QUESTION_BOUND_TOOLS
-from codey.toolchain.tool_spec import EXECUTION_CLAIMS_GUIDANCE, SOURCE_GAPS_GUIDANCE, ToolSpec
+from codey.toolchain.tool_spec import EXECUTION_CLAIMS_GUIDANCE, ToolSpec
 from codey.types.json_value import (
     JsonObject,
     ToolArgs,
@@ -300,9 +300,15 @@ def done_spec_for_purpose(spec: ToolSpec, purpose: str, *, task: str = "", quest
     example: ToolArgs
     if purpose in {"ordinary", "chat"}:
         removed = {"source_gaps", "execution_claims"} if purpose == "chat" else {"source_gaps"}
-        return replace(spec, parameters=tuple((key, value) for key, value in spec.parameters if key not in removed),
-            description=spec.description.replace(EXECUTION_CLAIMS_GUIDANCE, "" if purpose == "chat" else EXECUTION_CLAIMS_GUIDANCE)
-            .replace(SOURCE_GAPS_GUIDANCE, "The runtime checks required source coverage. "))
+        parameters = tuple((key, value) for key, value in spec.parameters if key not in removed)
+        fields = dict(parameters)
+        description = "Finish the task with the complete answer in summary, in the user's requested format. "
+        if "knowledge_refs" in fields:
+            description += "Optional knowledge_refs selects exact saved versions read for this task. "
+        if "execution_claims" in fields:
+            description += EXECUTION_CLAIMS_GUIDANCE
+        description += "Use actual source coverage to explain any limitations."
+        return replace(spec, parameters=parameters, description=description)
     if purpose == "evidence":
         schema = object_schema({"summary": {"type": "string"}}, "summary")
         example = {"tool": "done", "args": {"summary": "Saved findings and remaining evidence gaps"}}

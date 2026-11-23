@@ -373,10 +373,11 @@ def render_declarations(snapshot: ToolCatalogSnapshot, *, budget_bytes: int = MO
             dependencies = ()
             lines = _entry_declarations(entry, json_edit=json_edit,
                 include_description=outer_descriptions is None or outer_descriptions.get(entry.name) != entry.description)
-        cost = sum(len(line.encode("utf-8")) + 1 for line in (*dependencies, *lines))
+        new_types = tuple(dependency for dependency in dependencies if dependency not in types)
+        cost = sum(len(line.encode("utf-8")) + 1 for line in (*new_types, *lines))
         if cost <= remaining:
             selected[entry.name] = lines
-            types.extend(dependencies)
+            types.extend(new_types)
             remaining -= cost
     body = [line for entry in snapshot.entries for line in selected.get(entry.name, ())]
     return "\n".join((*header[:-1], *types, header[-1], *body, *footer))

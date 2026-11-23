@@ -14,6 +14,7 @@ from codey.codemode.catalog import build_catalog_snapshot, render_declarations, 
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.shape_repair import readonly_settled, shape_diagnostic
 from codey.codemode.types import ToolCatalogEntry
+from codey.memory.candidates import CANDIDATE_FIELD
 from codey.operations.browser_followups import click_followup_plan
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import evaluate
@@ -315,7 +316,8 @@ def test_strict_research_selects_its_contract_without_explanation_or_chat(
     assert "paragraphs" not in dict(selected.parameters) and "summary" not in dict(selected.parameters)
     assert not normalize_turn(decode_text_turn(selected.json_examples[0]), snapshot=snapshot).protocol_error
     if kind == "research":
-        assert "done" not in snapshot.tool_names
+        post_submission = next(spec for spec in snapshot.model_specs if spec.name == "done")
+        assert post_submission.required == ("summary",) and "knowledge_refs" not in dict(post_submission.parameters)
     else:
         source = next(spec for spec in snapshot.frozen_specs if spec.name == "open_url")
         assert "question_ref" in source.required
@@ -359,7 +361,7 @@ def test_restore_rejects_obsolete_explanation_contract_even_with_supported_snaps
         frozen_specs=tuple(obsolete if spec.name == "done" else spec for spec in snapshot.frozen_specs)))
     payload = snapshot_description(snapshot)
     payload["implementation_id"] = "previous-build"
-    assert payload["schema_version"] == 10
+    assert restore_snapshot(snapshot_description(build_turn_snapshot(session, native=native))).policy == session.policy
     with pytest.raises(ValueError, match="unsupported captured explanation contract"):
         restore_snapshot(payload)
 
@@ -396,7 +398,9 @@ def test_bound_field_entry_and_catalog_offer_the_same_receipt_copy_template() ->
                           task_kind="hybrid", task_text="Read record.json and update its declared amount.")
     snapshot = build_turn_snapshot(session)
     edit = next(spec for spec in snapshot.frozen_specs if spec.name == "edit")
-    assert set(dict(edit.parameters)) == {"path", "content", "base_result_ref", "declared_fields"}
+    fields = dict(edit.parameters)
+    assert {"path", "base_result_ref", "declared_fields"} <= fields.keys()
+    assert canonical_json_object(fields["declared_fields"])["enum"] == [True]
     declarations = render_declarations(snapshot_catalog(snapshot))
     prepared = prepare_kernel_turn(session, user_task=session.task_text, context_text="", task_guidance="", native=False)
     assert "declared_fields:true" in declarations and "declared_fields:true" in prepared.prompt
@@ -538,16 +542,15 @@ def test_repair_stays_restricted_after_receipt_read_protocol_retry_and_restore(
         assert snapshot["nested_tool_names"] == []
         restored = restore_snapshot(snapshot)
         done = next(spec for spec in restored.model_specs if spec.name == "done")
-        assert tuple(key for key, _ in done.parameters) == ("paragraphs",)
         assert done.required == ("paragraphs",)
+        assert set(dict(done.parameters)) <= {"paragraphs", CANDIDATE_FIELD}
+        valid = normalize_turn(decode_text_turn(done.json_examples[0]), snapshot=restored)
+        assert not valid.protocol_error
         assert _schema_for_spec(done)["additionalProperties"] is False
         messages = provider_requests(directory)[-1]["messages"]
         assert isinstance(messages, list)
         content = [decode_json_object(message).get("content") for message in messages]
         prompt = "\n".join(item for item in content if isinstance(item, str))
-        assert "exactly one property: paragraphs" in prompt
-        assert "Do not add summary, report_sections or any other property." in prompt
-        assert ("Native done arguments" if native else "Complete done tool call") + " example" in prompt
         if expected_error:
             assert expected_error in prompt
 
@@ -609,14 +612,16 @@ def test_explanation_repair_exhausts_a_finite_budget_without_repeating_browser(
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
 def test_ordinary_hybrid_rejects_same_program_edit_then_copies_from_receipt_without_browser_repeat(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     directory = tmp_path / "hybrid"
-    replies: list[JsonObject] = [
-        code_action(LOAD + WAIT + "unwrap(await tools.browser_read({}));"
+    def replies() -> Iterator[JsonObject]:
+        yield code_action(LOAD + WAIT + "unwrap(await tools.browser_read({}));"
             "const read=await tools.read_file({path:'result.json'});"
-            "return unwrap(await tools.edit({base_result_ref:read.result_ref,changes:{amount:'173',code:'QUARTZ_851'}}));"),
-        {"tool": "codemode", "args": {"path": "result.json"}},
-        {"tool": "done", "args": {"summary": "已写入净重 173 克和校验码 QUARTZ_851。"}},
-    ]
-    install_http(monkeypatch, replies)
+            "return unwrap(await tools.edit({base_result_ref:read.result_ref,changes:{amount:'173',code:'QUARTZ_851'}}));")
+        binding = restore_snapshot(last_snapshot(directory)).input_binding
+        assert binding is not None and binding.kind == "declared_fields"
+        yield {"tool": binding.model_spec.name, "args": {"path": "result.json"}}
+        yield {"tool": "done", "args": {"summary": "已写入净重 173 克和校验码 QUARTZ_851。"}}
+
+    install_http(monkeypatch, replies())
     row = run_case(directory, "hybrid", Target("http://scripted.test/v1", "fixture", 123456789, 10),
                    declare_required_tools=False, restore_snapshots=True, max_turns=7)
     assert row["passed"] is True, row
@@ -628,5 +633,7 @@ def test_ordinary_hybrid_rejects_same_program_edit_then_copies_from_receipt_with
     # The source-acquisition boundary rejects the original program before an
     # edit executes. The next frozen input copies the source's numeric type.
     assert len(edits) == 1 and edits[0].ok
-    assert parse_json_object(str(edits[0].call.args["content"])) == {"amount": 173, "code": "QUARTZ_851"}
+    assert parse_json_object((directory / "project-result.json").read_text(encoding="utf-8")) == {
+        "amount": 173, "code": "QUARTZ_851",
+    }
     assert sum(receipt.result.call.name == "browser_read" for receipt in receipts) == 1

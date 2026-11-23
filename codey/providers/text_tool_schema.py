@@ -6,13 +6,11 @@ path and ordinary prose requests are unaffected.
 """
 from __future__ import annotations
 
-from typing import Any
-
 from codey.providers.base import ProviderToolDefinition
-from codey.toolchain.tool_spec import thaw_schema_value
+from codey.types.json_value import JsonObject, JsonValue, canonical_json_object
 
 
-def _sampling_schema(value: Any) -> Any:
+def _sampling_schema(value: JsonValue) -> JsonValue:
     # Finite string repetitions expand large grammar graphs in local samplers;
     # KoboldCpp 1.117.1 can silently discard the entire grammar. Execution still
     # checks lengths against the original frozen tool schema. Token budgets
@@ -25,15 +23,15 @@ def _sampling_schema(value: Any) -> Any:
     return value
 
 
-def text_tool_schema(tools: list[ProviderToolDefinition]) -> dict[str, Any]:
+def text_tool_schema(tools: list[ProviderToolDefinition]) -> JsonObject:
     if not tools:
         raise ValueError("a constrained tool request requires declared tools")
     # Separate allOf components preserve tool-before-args order even in servers
     # that sort object keys before compiling JSON Schema into a grammar.
-    variants = [{"allOf": [
+    variants: list[JsonObject] = [{"allOf": [
         {"type": "object", "properties": {"tool": {"type": "string", "enum": [tool.name]}},
          "required": ["tool"]},
-        {"type": "object", "properties": {"args": _sampling_schema(thaw_schema_value(tool.parameters))},
+        {"type": "object", "properties": {"args": _sampling_schema(canonical_json_object(tool.parameters))},
          "required": ["args"]},
     ], "unevaluatedProperties": False} for tool in tools]
-    return variants[0] if len(variants) == 1 else {"oneOf": variants}
+    return variants[0] if len(variants) == 1 else {"oneOf": [*variants]}

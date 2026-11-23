@@ -32,6 +32,7 @@ from codey.operations.kernel_receipts import restore_result_receipt
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession, turn_effect_id
+from codey.operations.tool_task_delivery import active_tool_task_controls
 from codey.operations.tool_tasks import control_tool_task, run_tool_task, wait_tool_task
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
@@ -113,6 +114,16 @@ def test_acceptance_is_atomic_and_replays_one_child_without_verification(runtime
     row = RuntimeEffectStore(durable=durable).load_effects("s", "r")[0]
     restored = restore_result_receipt(row, store=runtime.app.managed_outputs, session_id="s", run_id="r")
     assert restored.kind == "accepted"
+
+
+def test_stdin_only_task_exposes_input_without_terminal_controls(runtime: Runtime) -> None:
+    durable = runtime.app.durable
+    assert active_tool_task_controls(durable, "r") == frozenset()
+    result = runtime.execute(ToolCall("run", {
+        "command": "python -m pytest -q", "run_in_background": True, "stdin": True,
+    }, "input-run"))
+    assert result.ok and result.kind == "accepted", result.model_text
+    assert active_tool_task_controls(durable, "r") == {"task_output", "task_cancel", "task_input"}
 
 
 def test_admission_prompt_and_receipt_reader_point_to_task_output(runtime: Runtime) -> None:

@@ -49,6 +49,18 @@ def test_project_disclosure_reuses_documented_source_binding(monkeypatch: pytest
     restored = restore_snapshot(snapshot_description(selected))
     assert restored.bound_source_url == url
     assert "open_url" in restored.tool_names
+
+
+def test_read_only_project_keeps_discovery_and_omits_unused_outer_tools() -> None:
+    session = session_for("Inspect app.py for the current interface.", kind="project")
+    session.project = "."
+    initial = build_turn_snapshot(session)
+    selected, _ = task_handoff(session, initial, CompletionContext(), None)
+    assert {"read_file", "codemode"} <= set(selected.tool_names)
+    assert "edit" not in selected.inventory_names
+    assert "web_search" in selected.nested_tool_names and "web_search" not in selected.tool_names
+    codemode = next(spec for spec in selected.model_specs if spec.name == "codemode")
+    assert "function describe" in codemode.declarations and "web_search(args:" not in codemode.declarations
 GRANTS = frozenset({"control", "project.read", "web.read", "browser.observe", "browser.interact"})
 ORIGINAL = "https://EXAMPLE.COM/A-b_C?x=A%2FB&n=0042#Part-1"
 

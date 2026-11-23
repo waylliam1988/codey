@@ -112,10 +112,14 @@ def request_tool_guidance(snapshot: TurnSnapshot, intent: WebIntent) -> tuple[st
         parts.append("Browser actions in CodeMode are sequential. Use refs from the latest snapshot and take a "
                      "fresh snapshot after page mutations. If delivery is uncertain, inspect the page before retrying. "
                      "browser_read returns citable source text.")
-    if ("shell" in snapshot.tool_names and snapshot.policy is not None and snapshot.policy.allows("web.read")
-            and intent.requested and not {"open_url", "web_search"}.intersection(snapshot.inventory_names)):
-        parts.append("For an authorized HTTP lookup, shell can request curl.exe on Windows or curl elsewhere "
-                     "with explicit connection and total timeouts. Shell approval applies.")
+    if "codemode" in snapshot.tool_names:
+        parts.append("CodeMode has no fetch, process, or imports. Use the authorized host tools for those operations.")
+    if (intent.requested or snapshot.bound_source_url or snapshot.research_scope is not None) and (
+            snapshot.policy is not None and snapshot.policy.allows("web.read")):
+        parts.append("Use the returned source and observation times when reporting time-sensitive facts.")
+        if "shell" in snapshot.tool_names and not {"open_url", "web_search"}.intersection(snapshot.inventory_names):
+            parts.append("For an authorized HTTP lookup, shell can request curl.exe on Windows or curl elsewhere "
+                         "with explicit connection and total timeouts. Shell approval applies.")
     return tuple(parts)
 
 

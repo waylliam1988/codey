@@ -6,7 +6,7 @@ This object contains dependencies and rebuildable caches only.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Protocol
 
@@ -35,7 +35,7 @@ from codey.operations.provider_request_context import ProviderRequestContext
 from codey.operations.task_guidance import task_result_context, task_working_context
 from codey.operations.task_session import TaskSession, turn_effect_id
 from codey.protocols.text_turn import decode_text_turn
-from codey.providers.base import AssistantTurn, ProviderToolDefinition, ProviderToolResult, TurnFinish, tools_from_specs
+from codey.providers.base import AssistantTurn, ProviderToolResult, TurnFinish, tools_from_specs
 from codey.providers.requests import (
     AcknowledgeToolResultsBoundRequest,
     AcknowledgeToolResultsRequest,
@@ -459,16 +459,6 @@ class KernelContext:
                 self.execution.project_path, (*targets, *self.session.read_files), self.session._memory_results)
             version = snapshot.input_contract_version if snapshot.input_contract_version >= 18 else 18
             snapshot = replace(snapshot, input_contract_version=version, project_instructions=bindings)
-        if ("edit" in snapshot.tool_names and "codemode" in snapshot.tool_names and snapshot.input_binding is None
-                and snapshot.browser_copy is None and not self.session.policy.strict_research
-                and (browser is None or browser.document_identity() is None)):
-            from codey.operations.kernel_protocol import refresh_snapshot_contract
-            from codey.task.web_intent import explicit_web_intent
-
-            if not explicit_web_intent(self.session.task_text).browser_navigation_requested:
-                include_json_edit = (".json" in self.session.task_text.casefold()
-                                     or any(path.casefold().endswith(".json") for path in self.session.read_files))
-                snapshot = refresh_snapshot_contract(snapshot, compact_catalog=True, include_json_edit=include_json_edit)
         return snapshot, "\n\n".join(part for part in (assistance, instructions, hint) if part)
 
     def freeze(self, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int, prompt: str = "",
@@ -505,6 +495,10 @@ class KernelContext:
             results=self.session._memory_results, enabled=not acknowledge and not explanation_only,
             native=self.native, prompt=prompt, messages=messages)
         scoped_contract = self.request_scoped_context
+        schema_constrained = (scoped_contract and self.capabilities.text_tool_format == "json_schema"
+                              and not is_compact_symbol_retry(snapshot))
+        scoped_tool_contract = (kernel_prompt._text_request_prompt("", snapshot, schema_constrained=schema_constrained)
+                                if scoped_contract else "")
         if not self.native and not scoped_contract and state.leaf not in {operation_payload.LEAF_WRITER_RUNNING, operation_payload.LEAF_REPAIR_RUNNING}:
             prompt = kernel_prompt._text_request_prompt(prompt, snapshot)
         self.snapshots[turn] = snapshot
@@ -534,7 +528,7 @@ class KernelContext:
             # The sampling schema is not prompt prose. The provider counts its
             # real wire envelope at admission; serializing it here counts a
             # second textual tool catalog that this request never sends.
-            declaration = (kernel_prompt._text_request_prompt("", snapshot)
+            declaration = ((scoped_tool_contract or kernel_prompt._text_request_prompt("", snapshot))
                            if not self.native else canonical_json(json_value(tools)))
             fixed = "\n\n".join(part for part in (prompt, delivery_handoff,
                 self.transport.context_text if self.transport.context_text not in prompt else "",
@@ -562,16 +556,13 @@ class KernelContext:
                     options = replace(options, tool_call_history_groups=1)
         if scoped_contract:
             options = replace(options, supplied=options.supplied | {"tool_call_contract"},
-                tool_call_contract=kernel_prompt._text_request_prompt("", snapshot))
+                tool_call_contract=scoped_tool_contract)
             if text_result_spans:
                 options = replace(options, tool_call_results=text_result_spans)
-        if (scoped_contract and self.capabilities.text_tool_format == "json_schema"
-                and not is_compact_symbol_retry(snapshot)):
+        if schema_constrained:
             from codey.providers.text_tool_schema import text_tool_schema
 
-            _text_tool_schema: Callable[[list[ProviderToolDefinition]], object] = text_tool_schema
-
-            options = replace(options, tool_call_json=True, tool_call_schema=decode_json_object(_text_tool_schema(list(tools))))
+            options = replace(options, tool_call_json=True, tool_call_schema=text_tool_schema(list(tools)))
         request: ProviderRequest
         if self.native and messages:
             results = tuple(messages)

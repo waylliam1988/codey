@@ -32,6 +32,7 @@ from codey.types.json_value import canonical_json_object, decode_json_object, re
 
 if TYPE_CHECKING:
     from codey.operations.kernel_context import KernelContext
+    from codey.operations.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
     from codey.operations.task_session import TaskSession
 
 
@@ -203,6 +204,39 @@ def no_progress_result(session: TaskSession, turn: int) -> KernelResult:
                         "blocked" if obstruction is not None else "no_progress")
 
 
+def _retry_snapshot(context: KernelContext, received: ReceivedProviderTurn, *, text_reply: bool,
+                    error: str) -> tuple[TurnSnapshot, str | None]:
+    from codey.operations.edit_base import compact_symbol_retry, is_compact_symbol_retry
+    from codey.operations.kernel_preparation import capture_turn_snapshot
+    from codey.operations.research_submission_handoff import SUBMISSION_TOOLS
+
+    snapshot = received.snapshot
+    # Submission and detail handoffs depend on the current document.
+    refresh = text_reply or PAGE_DETAIL_TOOL in snapshot.tool_names or snapshot.tool_names == SUBMISSION_TOOLS
+    if refresh:
+        snapshot = capture_turn_snapshot(context.session, native=context.native)
+    if text_reply and context.capabilities.text_tool_format == "json_schema":
+        snapshot = (received.snapshot if error and is_compact_symbol_retry(received.snapshot)
+                    else compact_symbol_retry(snapshot, received.reply, session=context.session))
+    if is_compact_symbol_retry(snapshot):
+        return snapshot, ""
+    if refresh:
+        return context.request_snapshot(snapshot)
+    return snapshot, None
+
+
+def _retry_prompt(context: KernelContext, snapshot: TurnSnapshot, decision: RetryDecision, *, text_reply: bool) -> str:
+    from codey.operations.edit_base import bound_symbol_retry
+
+    task = str(context.transport.user_task or context.session.task_text).strip()
+    if bound_symbol_retry(snapshot) is not None and not decision["error"]:
+        return task
+    # A retry can be sent over a newly connected provider with no warm chat history.
+    if text_reply and task:
+        return "User task (verbatim):\n" + task + "\n\n" + decision["prompt"]
+    return decision["prompt"]
+
+
 def prepare_control_delivery(context: KernelContext, state: RuntimeOperationState) -> None:
     decision = context.decision(state)
     received = context.response(state)
@@ -245,19 +279,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         messages: list[ProviderToolResult] | None = None
         if context.native and ids:
             messages = []
-        snapshot = received.snapshot
-        from codey.operations.research_submission_handoff import SUBMISSION_TOOLS
-
-        # A submission handoff must recheck the current document on repair.
-        # Other native rejection replies keep their original declarations.
-        if messages is None or PAGE_DETAIL_TOOL in snapshot.tool_names or snapshot.tool_names == SUBMISSION_TOOLS:
-            from codey.operations.kernel_preparation import capture_turn_snapshot
-            snapshot = capture_turn_snapshot(context.session, native=context.native)
-        if messages is None and context.capabilities.text_tool_format == "json_schema":
-            from codey.operations.edit_base import compact_symbol_retry, is_compact_symbol_retry
-
-            snapshot = (received.snapshot if decision["error"] and is_compact_symbol_retry(received.snapshot)
-                        else compact_symbol_retry(snapshot, received.reply, session=context.session))
+        snapshot, handoff = _retry_snapshot(context, received, text_reply=messages is None, error=decision["error"])
         # Both request-scoped providers and text-only providers render the
         # same frozen repair basis, including after a successful local write.
         research = context.execution.research_tools
@@ -266,17 +288,14 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
                 research.store if research is not None else None,
                 research.session_id if research is not None else "", research_scope=snapshot.research_scope,
                 tool_names=snapshot.tool_names)
-        from codey.operations.edit_base import bound_symbol_retry
-
-        retry_prompt = (context.session.task_text if bound_symbol_retry(snapshot) is not None and not decision["error"]
-                        else decision["prompt"])
+        retry_prompt = _retry_prompt(context, snapshot, decision, text_reply=messages is None)
         prompt = "\n\n".join(part for part in (observations, retry_prompt) if part)
         if messages is not None:
             messages = [ProviderToolResult(identity, "ERROR: " + (decision["error"] or prompt)) for identity in ids]
             if decision["error"]:
                 messages[-1] = replace(messages[-1], user_content=prompt)
         context.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages,
-                       counters=counters)
+                       counters=counters, handoff=handoff)
         return
     if decision["purpose"] == "question":
         from codey.durable.questions import DurableUserQuestionStore

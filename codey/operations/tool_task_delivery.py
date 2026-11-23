@@ -35,8 +35,12 @@ def active_tool_task_controls(durable: DurableSession, owner_task_id: str) -> fr
             continue
         names.add("task_cancel")
         request = ToolTaskInput.from_payload(child.state["tool_input"])
-        if request.call_name == "run" and request.args.get("tty") is True:
-            names.update(("task_input", "task_signal", "task_resize"))
+        if request.call_name == "run":
+            tty = request.args.get("tty") is True
+            if request.args.get("stdin", tty) is True:
+                names.add("task_input")
+            if tty:
+                names.update(("task_signal", "task_resize"))
     return frozenset(names)
 
 

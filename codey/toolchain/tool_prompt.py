@@ -30,12 +30,13 @@ def model_tool_description(spec: ToolSpec) -> str:
     return usage + "\n" + spec.declarations if spec.declarations else usage
 
 
-def json_contract_text(specs: Iterable[ToolSpec]) -> str:
+def json_contract_text(specs: Iterable[ToolSpec], *, schema_constrained: bool = False) -> str:
     """Render each frozen tool's usage once, with arguments and original examples."""
     blocks = []
     for spec in specs:
         lines = [f"- {spec.name}: {spec.description}", f"  {tool_signature(spec)}"]
-        lines.extend(f"  {example}" for example in spec.json_examples)
+        if not schema_constrained or spec.name in {"edit", "run", "codemode", "done", "parallel"}:
+            lines.extend(f"  {example}" for example in spec.json_examples)
         if spec.declarations:
             lines.append(spec.declarations)
         blocks.append("\n".join(lines))
