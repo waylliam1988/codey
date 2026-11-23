@@ -717,11 +717,7 @@ class BrowserRuntime:
         await self._mark(invocation, "input_dispatch", dispatch="unknown")
         observed: JsonObject = {"action": action.value, "ref": ref, "page_url": context.document["url"]}
         if action == BrowserAction.CLICK:
-            position = decode_json_object(ready["position"])
-            x, y = position["x"], position["y"]
-            if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
-                raise ValueError("invalid verified click position")
-            await record.handle.click(timeout=5000, no_wait_after=True, position={"x": x, "y": y})
+            observed.update(await self._click_control(record, ready, baseline))
         elif action == BrowserAction.FILL:
             await record.handle.fill(require_json_string(args["value"], "value"), timeout=5000)
         elif action == BrowserAction.PRESS:
@@ -758,9 +754,29 @@ class BrowserRuntime:
             verified = observed["checked"] == args["checked"]
             observed.update(delivery="verified" if verified else "unverified", effect_verified=verified)
             return BrowserToolOutput("Checked state verified " + ref if verified else "Check readback differed.", verified, observed)
-        if baseline is not None:
-            observed["query_baseline"] = baseline
         return BrowserToolOutput("Delivered " + action.value + " to " + ref, True, observed)
+
+    async def _click_control(self, record: ElementRecord[ElementHandle], ready: JsonObject,
+                             baseline: JsonObject | None) -> JsonObject:
+        position = decode_json_object(ready["position"])
+        x, y = position["x"], position["y"]
+        if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+            raise ValueError("invalid verified click position")
+        navigation: object = False
+        if record.role == "link":
+            navigation = await _evaluate(record.handle, """el => {
+                if (!el.matches('a[href]:not([download])')) return false;
+                const target = (el.target || document.querySelector('base[target]')?.target || '_self').toLowerCase();
+                const url = new URL(el.href, document.baseURI);
+                const current = new URL(document.URL);
+                url.hash = current.hash = '';
+                return target === '_self' && /^https?:$/.test(url.protocol) && url.href !== current.href;
+            }""")
+        await record.handle.click(timeout=5000, no_wait_after=True, position={"x": x, "y": y})
+        observed: JsonObject = {"query_baseline": baseline} if baseline is not None else {}
+        if navigation is True:
+            observed["link_origin"] = record.document
+        return observed
 
     def _control_baseline(self, args: JsonObject) -> Counter[tuple[str, str, str]]:
         baseline = args.get("baseline_controls")

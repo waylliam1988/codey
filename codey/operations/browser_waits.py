@@ -11,7 +11,89 @@ from codey.types.json_value import JsonObject, JsonValue, decode_json_object, pa
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession
     from codey.operations.task_session import TaskSession
+    from codey.runtime.core.models import ToolResult
     from codey.storage.managed_outputs import ManagedOutputStore
+
+
+def clicked_link_origin(session: TaskSession | None, result_ref: str) -> JsonObject:
+    from codey.operations.browser_completion import committed_results
+    from codey.operations.browser_followups import delivery
+
+    if session is not None:
+        clicks = dict(committed_results(session.executed, session._memory_results, frozenset({"browser_click"})))
+        click = clicks.get(result_ref)
+        if click is not None and delivery(click) == "delivered" and isinstance(origin := click.audit.get("link_origin"), dict):
+            return decode_json_object(origin)
+    raise ValueError("new_document requires the original delivered link click receipt")
+
+
+def pending_link_click(session: TaskSession, ref: str, document: JsonObject | None) -> str:
+    from codey.automation.browser_document import normalize_element_ref, same_document
+    from codey.operations.browser_completion import committed_results
+
+    waits = committed_results(session.executed, session._memory_results, frozenset({"browser_wait"}),
+                              include_failed=frozenset({"browser_wait"}))
+    for _, wait in reversed(waits):
+        reference = wait.call.args.get("value")
+        value = wait.canonical.get("value")
+        if (wait.ok or wait.call.args.get("condition") != "new_document" or not isinstance(reference, str)
+                or not isinstance(value, dict) or value.get("reason") != "timeout"):
+            continue
+        click = session._memory_results.get(reference)
+        if (reference in session.executed and click is not None and click.ok and click.call.name == "browser_click"
+                and isinstance(prior_ref := click.call.args.get("ref"), str)
+                and normalize_element_ref(prior_ref) == normalize_element_ref(ref)
+                and isinstance(origin := click.audit.get("link_origin"), dict)
+                and document is not None and origin.get("url") == document.get("url")
+                and same_document(origin, document)):
+            return "" if observed_link_outcome(session, reference, document) else reference
+    return ""
+
+
+def _modal_ids(result: ToolResult) -> set[str] | None:
+    value = result.canonical.get("value")
+    if not isinstance(value, dict) or value.get("elements_truncated") is not False:
+        return None
+    scope, contexts = value.get("scope"), value.get("contexts")
+    if (not isinstance(scope, dict) or scope.get("root_ref") != "" or scope.get("selector") != ""
+            or not isinstance(contexts, list)):
+        return None
+    return {identity for row in contexts if isinstance(row, dict) and row.get("kind") in {"dialog", "alertdialog"}
+            and isinstance(identity := row.get("id"), str)}
+
+
+def observed_link_outcome(session: TaskSession, click: str, document: JsonObject | None, *,
+                          through: str | None = None) -> bool:
+    from codey.automation.browser_document import same_document
+    from codey.operations.browser_completion import PAGE_EVIDENCE_INVALIDATORS, committed_results
+
+    positions = {ref: index for index, ref in enumerate(session.executed)}
+    action = session._memory_results.get(click)
+    if action is None or click not in positions or not same_document(action.audit.get("link_origin"), document):
+        return False
+    action_position = positions[click]
+    end = positions.get(through, -1) if through is not None else len(positions)
+    if end <= action_position:
+        return False
+    previous: set[str] | None = None
+    for ref, result in committed_results(session.executed, session._memory_results,
+                                         PAGE_EVIDENCE_INVALIDATORS | {"browser_snapshot", "browser_read"}):
+        position = positions[ref]
+        if position > end:
+            break
+        if position > action_position and result.call.name in PAGE_EVIDENCE_INVALIDATORS:
+            return False
+        if not same_document(result.audit.get("browser_document"), document):
+            continue
+        if result.call.name == "browser_read":
+            if position > action_position and result.audit.get("query_click") == click:
+                return True
+        elif (current := _modal_ids(result)) is not None:
+            if position < action_position:
+                previous = current
+            elif previous is not None and current - previous:
+                return True
+    return False
 
 
 def _snapshot_baseline(session: TaskSession, result_ref: str) -> tuple[JsonObject, JsonObject]:

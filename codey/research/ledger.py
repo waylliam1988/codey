@@ -608,7 +608,7 @@ def classify_source_quality(url: str, text: str = "") -> SourceQuality:
         # the meaningful quality stamp, so it wins over the TLD shape.
         kind = "data"
         level = "primary"
-    elif source_domains.is_government_host(host):
+    elif source_domains.is_official_host(host):
         # Strong trust is granted only by registered-suffix host shapes;
         # lookalikes (sec.gov.evil.example) stay plain web/secondary.
         kind = "official"

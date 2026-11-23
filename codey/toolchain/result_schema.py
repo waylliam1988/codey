@@ -36,7 +36,7 @@ def browser_output_schema(name: str) -> dict[str, object]:
         "text_truncated": boolean, "elements_truncated": boolean, "elements": array(element),
         "added": array(element), "changed": array(element), "removed": array(string),
         "scope_suggestions": array(record({"ref": string, "label": string}, ("ref", "label"))),
-        "contexts": array(record({key: string for key in ("id", "kind", "label", "basis")})),
+        "contexts": array(record({key: string for key in ("id", "kind", "label", "basis", "text")})),
         "file_controls": array(record({**{key: string for key in ("id", "name", "dom_id", "field_name", "group")}, "disabled": boolean})),
     }
     action: dict[str, object] = {"action": string, "delivery": string, "text": string}

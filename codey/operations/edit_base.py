@@ -9,7 +9,67 @@ from codey.toolchain.constants import FULL_READ_REFERENCE_HINT
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer, require_json_string
 
 if TYPE_CHECKING:
+    from codey.operations.kernel_protocol import TurnSnapshot
     from codey.operations.task_session import TaskSession
+    from codey.providers.base import AssistantTurn
+    from codey.runtime.core.models import ToolResult
+
+SYMBOL_EDIT_FIELDS = ("path", "symbol", "content")
+
+
+def symbol_read_refs(results: Mapping[str, ToolResult], executed: Mapping[str, object]) -> dict[str, str]:
+    from codey.research.calculation import file_selector_key
+
+    refs: dict[str, str] = {}
+    for ref, result in results.items():
+        raw = result.canonical.get("value")
+        if (ref in executed and result.ok and result.call.name in {"read", "read_file"}
+                and isinstance(raw, dict) and not result.truncated and raw.get("text_complete") is True
+                and raw.get("start_line") == 1 and raw.get("next_offset") == 0
+                and raw.get("end_line") == raw.get("total_lines")
+                and isinstance(path := raw.get("path"), str) and Path(path).suffix.casefold() == ".py"):
+            refs[file_selector_key(path)] = ref
+    return refs
+
+
+def bind_symbol_read(args: JsonObject, reads: Mapping[str, str]) -> JsonObject:
+    from codey.research.calculation import file_selector_key
+
+    if "symbol" not in args or "base_result_ref" in args:
+        return args
+    path = require_json_string(args.get("path"), "edit path")
+    ref = reads.get(file_selector_key(path))
+    if ref is None:
+        raise ValueError("Read the complete target file before editing its symbol.")
+    return {**args, "base_result_ref": ref}
+
+
+def compact_symbol_retry(snapshot: TurnSnapshot, reply: AssistantTurn | str) -> TurnSnapshot:
+    """Narrow a truncated edit retry without accepting any of its arguments."""
+    import re
+    from dataclasses import replace
+
+    from codey.operations.kernel_protocol import refresh_snapshot_contract
+    from codey.providers.base import AssistantTurn, TurnFinish
+    from codey.toolchain.tool_spec import freeze_spec_parameters
+
+    spec = next((item for item in snapshot.model_specs if item.name == "edit"), None)
+    if (not isinstance(reply, AssistantTurn) or reply.finish is not TurnFinish.OUTPUT_LIMIT or reply.tool_calls
+            or re.match(r'^\s*\{\s*"tool"\s*:\s*"edit"', reply.text) is None
+            or not snapshot.symbol_read_refs or spec is None or snapshot.input_binding is not None
+            or "symbol" not in dict(spec.parameters)):
+        return snapshot
+    parameters = tuple((key, {"type": "string", "enum": [path for path, _ in snapshot.symbol_read_refs]}
+                       if key == "path" else schema)
+                       for key, schema in spec.parameters if key in {"path", "symbol", "content", "base_result_ref"})
+    compact = freeze_spec_parameters(replace(spec, parameters=parameters, required=SYMBOL_EDIT_FIELDS,
+        description="Replace one Python definition in the observed file.", json_examples=()))
+    return refresh_snapshot_contract(replace(snapshot,
+        frozen_specs=tuple(compact if item.name == "edit" else item for item in snapshot.frozen_specs)))
+
+
+def is_compact_symbol_retry(snapshot: TurnSnapshot) -> bool:
+    return any(spec.name == "edit" and spec.required == SYMBOL_EDIT_FIELDS for spec in snapshot.frozen_specs)
 
 
 def _edit_base(session: TaskSession | None, project: Path, path: str, ref: str) -> tuple[str, str]:
@@ -90,6 +150,51 @@ def edit_base_version(session: TaskSession | None, project: Path, path: str, ref
 
     text, version = _edit_base(session, project, path, ref)
     return version or content_hash(text)
+
+
+def symbol_edit_args(session: TaskSession | None, project: Path, path: str, args: JsonObject) -> JsonObject:
+    """Expand a replacement definition using only the versioned read receipt."""
+    import ast
+    from io import StringIO
+
+    from codey.toolchain.syntax_query import python_definitions, reindent_python_source
+
+    if session is None or Path(path).suffix.lower() != ".py":
+        raise ValueError("symbol edits require a task-read Python file")
+    reference = args.get("base_result_ref")
+    if not isinstance(reference, str):
+        raise ValueError("symbol edits require a complete read of the target file")
+    before = edit_base_text(session, project, path, reference)
+    name = require_json_string(args["symbol"], "symbol")
+    replacement = reindent_python_source(require_json_string(args["content"], "replacement definition"))
+    try:
+        matches = [node for node in python_definitions(before) if node.name == name]
+        body = ast.parse(replacement).body
+    except SyntaxError as exc:
+        raise ValueError(f"symbol edit requires valid Python: {exc.msg}") from exc
+    if len(matches) != 1:
+        raise ValueError(f"symbol {name!r} must occur exactly once in the original file")
+    original = matches[0]
+    if (len(body) != 1 or not isinstance(node := body[0], (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            or node.name != name or node.decorator_list or original.end_lineno is None):
+        raise ValueError("supply one definition of the selected symbol, without its existing decorators")
+    old = ast.get_source_segment(before, original)
+    if not old:
+        raise ValueError("symbol has no original source range")
+    source_lines = StringIO(before, newline="").readlines()
+    line = source_lines[original.lineno - 1]
+    prefix = line.encode("utf-8")[:original.col_offset].decode("utf-8")
+    newline = "\r\n" if line.endswith("\r\n") else "\r" if line.endswith("\r") else "\n"
+    replacement = reindent_python_source(replacement, prefix).removeprefix(prefix).replace("\n", newline)
+    start = sum(map(len, source_lines[:original.lineno - 1])) + len(prefix)
+    content = before[:start] + replacement + before[start + len(old):]
+    try:
+        after = python_definitions(content)
+    except SyntaxError as exc:
+        raise ValueError(f"symbol replacement produces invalid Python: {exc.msg}") from exc
+    if sum(node.name == name for node in after) != 1:
+        raise ValueError("replacement introduces another definition of the selected symbol")
+    return {"path": path, "base_result_ref": reference, "content": content}
 
 
 def content_edit_version(session: TaskSession | None, project: Path, path: str, args: Mapping[str, JsonValue]) -> str | None:

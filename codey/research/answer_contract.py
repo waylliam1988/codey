@@ -21,6 +21,7 @@ from codey.research.answer_values import (
     AnswerSubmission,
     CitationOccurrence,
     UnsignedAnswerSubmission,
+    evidence_status_suffix,
 )
 from codey.research.knowledge_updates import normalize_updates, updates_schema
 from codey.research.passages import read_passage_refs
@@ -138,6 +139,7 @@ class AnswerScope:
     execution_summary: str = ""
     execution_refs: tuple[str, ...] = ()
     calculations: tuple[JsonObject, ...] = ()
+    primary_passages: tuple[str, ...] | None = None
 
     @property
     def passage_refs(self) -> tuple[str, ...]:
@@ -155,13 +157,15 @@ class AnswerScope:
             payload["execution_refs"] = list(self.execution_refs)
         if self.schema_version >= 9:
             payload["calculations"] = list(self.calculations)
+        if self.primary_passages is not None:
+            payload["primary_passages"] = list(self.primary_passages)
         return payload
 
     @classmethod
     def from_payload(cls, raw: object) -> AnswerScope:
         raw = decode_json_object(raw)
         version = raw.get("schema_version")
-        if type(version) is not int or version not in {4, 5, 6, 7, 8, 9}:
+        if type(version) is not int or version not in {4, 5, 6, 7, 8, 9, 10}:
             raise ValueError("invalid whole-task research scope")
         expected = {"task_digest", "aliases", "attempt_refs", "schema_version"} | ({"fields"} if version >= 5 else set())
         if version >= 7:
@@ -170,6 +174,8 @@ class AnswerScope:
             expected.update(("execution_summary", "execution_refs"))
         if version >= 9:
             expected.add("calculations")
+        if version >= 10:
+            expected.add("primary_passages")
         if set(raw) != expected:
             raise ValueError("invalid whole-task research scope")
         task_digest = require_json_string(raw.get("task_digest"), "task_digest")
@@ -209,9 +215,19 @@ class AnswerScope:
         calculations = raw.get("calculations", [])
         if not isinstance(calculations, list) or any(not isinstance(row, dict) for row in calculations):
             raise ValueError("invalid frozen calculations")
+        primary = _primary_refs(raw["primary_passages"], bindings) if version >= 10 else None
         return cls(task_digest, tuple(bindings), attempt_refs, version, fields,
                    require_json_boolean(raw.get("declared_fields_ready", True), "declared_fields_ready"), summary, refs,
-                   tuple(decode_json_object(row) for row in calculations))
+                   tuple(decode_json_object(row) for row in calculations), primary)
+
+
+def _primary_refs(raw: object, bindings: list[tuple[str, str]]) -> tuple[str, ...]:
+    if not isinstance(raw, list):
+        raise ValueError("primary_passages must identify original task reads")
+    primary = tuple(require_json_string(ref, "primary passage") for ref in raw)
+    if len(set(primary)) != len(primary) or set(primary) - {ref for _, ref in bindings}:
+        raise ValueError("primary_passages must identify original task reads")
+    return primary
 
 
 def answer_scope(session: AnswerSessionView) -> AnswerScope:
@@ -250,9 +266,13 @@ def answer_scope(session: AnswerSessionView) -> AnswerScope:
     from codey.research.calculation import calculation_fields
 
     calculations = calculation_fields(session)
-    return AnswerScope(digest(session.task_text), aliases, tuple(attempts), schema_version=9 if calculations else ANSWER_SCOPE_VERSION,
+    from codey.research.primary_sources import primary_passage_refs, requires_primary_sources
+
+    primary = primary_passage_refs(results, (ref for _, ref in aliases)) if requires_primary_sources(session.task_text) else None
+    version = 10 if primary is not None else (9 if calculations else ANSWER_SCOPE_VERSION)
+    return AnswerScope(digest(session.task_text), aliases, tuple(attempts), schema_version=version,
                        fields=tuple(fields), declared_fields_ready=declared_fields_ready, execution_summary=summary,
-                       execution_refs=execution_refs, calculations=calculations)
+                       execution_refs=execution_refs, calculations=calculations, primary_passages=primary)
 
 
 def citation_occurrences(markdown: str) -> list[CitationOccurrence]:
@@ -281,17 +301,24 @@ def submit_answer(scope: AnswerScope, args: ToolArgs) -> AnswerSubmission:
         raise ValueError("declared_fields_unavailable: the task-declared source fields are not established by formal reads. "
             "Complete the intended query and read its actual result before submitting answered. "
             "A partial/unresolved report must describe the real gap. Do not invent values or repeat an unchanged read.")
-    markdown = render_fields(scope.fields, markdown_value.strip(), state)
+    status = evidence_status_suffix(scope.schema_version, state)
+    authored = markdown_value.strip().removesuffix(status)
+    if scope.schema_version >= 10:
+        terminal = mask_markdown_code(authored).splitlines()[-1].strip() if authored else ""
+        if re.match(r"(?:[-*+] |[0-9]+[.)] )\*\*\S", terminal) and terminal.count("**") == 1:
+            raise ValueError("report_tail_incomplete: the final list item has unclosed bold markup.")
+    markdown = render_fields(scope.fields, authored, state)
     if scope.calculations or "{{calc:" in markdown:
         from codey.research.calculation import render_calculations
 
         markdown = render_calculations(markdown, scope.calculations, scope.aliases)
     if scope.execution_summary and not markdown.endswith(scope.execution_summary):
         markdown += "\n\n" + scope.execution_summary
-    if len(markdown) > MAX_ANSWER_CHARACTERS:
+    if len(markdown) + len(status) > MAX_ANSWER_CHARACTERS:
         raise ValueError("Expanded answer exceeds the Markdown size limit.")
     if scope.schema_version >= 6:
         _validate_report_tail(markdown)
+    markdown += status
     citations = citation_occurrences(markdown)
     from codey.research.answer_fields import validate_fields
 
@@ -302,6 +329,9 @@ def submit_answer(scope: AnswerScope, args: ToolArgs) -> AnswerSubmission:
     if unknown:
         raise ValueError("Unknown or unread evidence: " + ", ".join(sorted(unknown))
                          + ". Use the task-read [eN] labels, or read the original material first.")
+    if (state == "answered" and scope.primary_passages is not None
+            and not any(aliases[row["label"]] in scope.primary_passages for row in citations)):
+        raise ValueError("primary_source_unverified: cite a passage from an opened first-party source, or report the gap as partial/unresolved.")
     if not scope.attempt_refs:
         raise ValueError("Investigate the task before submitting; failed acquisition attempts may support a gap report.")
     if not citations and args["state"] != "unresolved":

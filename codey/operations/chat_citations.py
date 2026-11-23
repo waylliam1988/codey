@@ -1,4 +1,4 @@
-"""Resolve explicit Chat citations from the existing committed source views."""
+"""Resolve explicit citations from the existing committed source views."""
 from __future__ import annotations
 
 import json
@@ -11,12 +11,17 @@ from codey.utils.citation_scanner import mask_markdown_code
 _REFERENCE = re.compile(r"(?<![!\[])\[([sr][0-9][^\]\n]*)\]")
 
 
+def _source_link(label: str, url: str) -> str:
+    destination = quote(url, safe=":/?#[]@!$&'()*+,;=%~-._")
+    return f"[{label}](<{destination}>)"
+
+
 def render_source_citations(text: str, *, sources: Mapping[str, str], searches: Mapping[str, str],
-                            literal: bool = False) -> str:
+                            literal: bool = False, required_sources: tuple[str, ...] = ()) -> str:
     """Render once before the existing completion result is persisted.
 
-    Citation syntax is reserved in prose. JSON and Markdown code are literal;
-    no inferred references, URL correction, extra sources or footer is added.
+    Citation syntax is reserved in prose. JSON and Markdown code are literal.
+    A caller may supply explicitly required sources from committed receipts.
     """
     if literal:
         return text
@@ -49,8 +54,14 @@ def render_source_citations(text: str, *, sources: Mapping[str, str], searches: 
                 raise ValueError(f"Unknown source label [{label}]. Available read sources: "
                     + (", ".join(sources) or "none") + "; search links: " + (", ".join(searches) or "none")
                     + ". Reuse acquired results and select only sources used in the answer; do not invent URLs.")
-            destination = quote(url, safe=":/?#[]@!$&'()*+,;=%~-._")
-            links.append(f"[{label}](<{destination}>)")
+            links.append(_source_link(label, url))
         parts.extend((text[offset:match.start()], "".join(links)))
         offset = match.end()
-    return "".join(parts) + text[offset:]
+    rendered = "".join(parts) + text[offset:]
+    if required_sources:
+        prose = mask_markdown_code(rendered)
+        missing = [link for label in required_sources
+                   if (url := sources[label]) not in prose and (link := _source_link(label, url)) not in prose]
+        if missing:
+            return rendered.rstrip() + "\n\n## Sources\n" + "\n".join("- " + link for link in missing)
+    return rendered

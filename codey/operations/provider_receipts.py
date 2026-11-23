@@ -144,6 +144,8 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
         payload["navigation_verifies"] = snapshot.navigation_verifies
     if snapshot.input_contract_version >= 20:
         payload["data_file_reads"] = list(snapshot.data_file_reads)
+    if snapshot.input_contract_version >= 22:
+        payload["symbol_read_refs"] = dict(snapshot.symbol_read_refs)
     payload["browser_fill_text"] = snapshot.browser_fill_text
     payload["browser_followups"] = snapshot.browser_followups
     payload["browser_references"] = snapshot.browser_references.payload() if snapshot.browser_references else None
@@ -289,8 +291,10 @@ def _snapshot_payload(raw: object) -> tuple[JsonObject, InputContractVersion]:
         expected.add("navigation_verifies")
     if version >= 20:
         expected.add("data_file_reads")
+    if version >= 22:
+        expected.add("symbol_read_refs")
     match version:
-        case 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20:
+        case 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22:
             if set(payload) != expected:
                 raise ValueError("invalid captured turn snapshot version/shape")
             return payload, version
@@ -465,7 +469,9 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         browser_followups=followups, browser_fill_text=fill_text, browser_references=references,
         project_instructions=_restore_project_instructions(payload, policy),
         navigation_verifies=_restore_navigation_verification(payload, navigation_url, followups, names, nested),
-        data_file_reads=tuple(require_json_strings(payload.get("data_file_reads", []), "data file reads")))
+        data_file_reads=tuple(require_json_strings(payload.get("data_file_reads", []), "data file reads")),
+        symbol_read_refs=tuple(sorted((path, require_json_string(ref, "symbol read receipt"))
+                               for path, ref in decode_json_object(payload.get("symbol_read_refs", {})).items())))
     from codey.toolchain.constants import PAGE_DETAIL_TOOL
 
     # Native disclosure reads have their own frozen choice contract. They

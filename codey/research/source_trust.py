@@ -13,9 +13,8 @@ consumer's job.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any
 
 from codey.research import source_domains
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
@@ -118,11 +117,12 @@ class SourceTrustProjection:
         return payload
 
 
-def _object_getter(source: object) -> Any:
+def _object_getter(source: object) -> Callable[[str], object]:
     """getattr-style getter with a None default for non-mapping sources."""
 
-    def get(name: Any, default: Any = None) -> Any:
-        return getattr(source, name, default)
+    def get(name: str) -> object:
+        value: object = getattr(source, name, None)
+        return value
 
     return get
 
@@ -134,7 +134,7 @@ def project_source_trust(source: object) -> SourceTrustProjection | None:
     usable identity, so callers can drop half facts instead of guessing.
     """
 
-    get = source.get if isinstance(source, Mapping) else _object_getter(source)
+    get: Callable[[str], object] = source.get if isinstance(source, Mapping) else _object_getter(source)
     raw_id = str(get("source_id") or "")
     ref = _normalize_runtime_ref(raw_id, kind="source")
     host = _host_of(get("host"), get("final_url_ref"), get("requested_url_ref"))
@@ -235,7 +235,7 @@ def _classify(*, host: str, kind: str, level: str) -> tuple[str, ...]:
             # Host-backed dataset repositories are the only path into the
             # strong dataset class; a declared data kind never grants it.
             add("dataset")
-        if source_domains.is_government_host(lowered):
+        if source_domains.is_official_host(lowered):
             add("official")
         elif source_domains.is_education_host(lowered):
             add("primary")
@@ -256,6 +256,13 @@ def _classify(*, host: str, kind: str, level: str) -> tuple[str, ...]:
         else:
             add("unknown")
     return tuple(classes)
+
+
+def primary_source_url(url: str) -> bool:
+    from codey.research.urls import host_key
+
+    classes = _classify(host=host_key(url), kind="", level="")
+    return bool({"official", "primary", "dataset", "filing", "standard"} & set(classes))
 
 
 def _class_token(value: object) -> str:

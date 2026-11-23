@@ -23,6 +23,7 @@ from codey.operations.browser_upload import (
     upload_model_spec,
     upload_phase,
 )
+from codey.operations.edit_base import bind_symbol_read, symbol_read_refs
 from codey.operations.kernel_contracts import ToolExecutor
 from codey.operations.kernel_tool_args import (
     _canonical_name,
@@ -47,7 +48,7 @@ from codey.toolchain.tool_spec import (
 from codey.types.json_value import JsonValue, ToolArgs, canonical_json_object, decode_json_object
 
 MAX_NATIVE_CALLS_PER_TURN = 8
-InputContractVersion: TypeAlias = Literal[11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+InputContractVersion: TypeAlias = Literal[11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
 
 if TYPE_CHECKING:
     from codey.completion.verification_policy import VerificationCandidate
@@ -170,6 +171,7 @@ class TurnSnapshot:
     project_instructions: tuple[ProjectInstructionBinding, ...] = ()
     navigation_verifies: bool = False
     data_file_reads: tuple[str, ...] = ()
+    symbol_read_refs: tuple[tuple[str, str], ...] = ()
 
     @property
     def bound_source_url(self) -> str | None:
@@ -593,9 +595,18 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         browser_copy=browser_copy,
         input_binding=binding,
         task_navigation_url=task_navigation_url, task_source_url=task_source_url,
-        input_contract_version=input_version,
+        input_contract_version=_current_input_version(input_version, inventory, nested),
         data_file_reads=data_file_reads,
+        symbol_read_refs=tuple(sorted(symbol_read_refs(session._memory_results, session.executed).items()))
+                         if "edit" in inventory else (),
     ))
+
+
+def _current_input_version(previous: InputContractVersion, inventory: tuple[str, ...],
+                           nested: tuple[str, ...]) -> InputContractVersion:
+    if "edit" in inventory:
+        return 22
+    return 21 if {"browser_click", "browser_wait", "browser_snapshot"} <= set(nested) else previous
 
 
 def _task_navigation_url(session: KernelSessionView) -> str | None:
@@ -856,11 +867,12 @@ def _lower_bound_inputs(
             from codey.research.finding_choices import resolve_finding_passages
 
             args = resolve_finding_passages(args, snapshot.research_scope, models[name])
-        if name == "run" and name in models:
+        if name in {"run", "edit"} and name in models:
             from codey.codemode.verification import resolve_verification
 
             try:
-                args = resolve_verification(args, {"properties": canonical_json_object(dict(models[name].parameters))})
+                args = (resolve_verification(args, {"properties": canonical_json_object(dict(models[name].parameters))})
+                        if name == "run" else bind_symbol_read(args, dict(snapshot.symbol_read_refs)))
             except ValueError as exc:
                 return _invalid_plan(str(exc), tool=name)
         if name in TASK_SOURCE_TOOLS and name in models and snapshot.input_contract_version >= 13 and snapshot.bound_source_url is not None:

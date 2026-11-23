@@ -3,15 +3,21 @@
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
+from codey.knowledge.store import KnowledgeStore
 from codey.operations import kernel_prompt
+from codey.operations.completion_context import CompletionContext
+from codey.operations.completion_gate import evaluate
 from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.task_session import TaskSession
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.answer_context import answer_context
 from codey.research.answer_contract import answer_scope
 from codey.research.context_view import read_evidence_projection, read_intervals
+from codey.research.ledger import ResearchLedger
 from tests.test_research_deterministic_completion import _run
 from tests.test_research_findings import URL, execute, setup
 from tests.test_research_long_term_loop import strict_session
@@ -74,14 +80,20 @@ def test_new_field_errors_produce_new_diagnosis_and_ignore_provider_call_ids():
     assert "markdown" in first and "state" in second
 
 
-def test_plain_prose_is_diagnosed_without_becoming_an_answer():
-    snapshot = build_turn_snapshot(strict_session(), native=True)
+def test_plain_prose_without_a_submission_is_rejected_by_the_completion_gate(tmp_path: Path) -> None:
+    session: TaskSession = strict_session()
+    snapshot = build_turn_snapshot(session, native=True)
     reply = AssistantTurn(text="Plain prose that was never submitted.")
     plan = normalize_turn(reply, snapshot=snapshot)
-    assert plan.protocol_error
-    prompt = kernel_prompt._repair_prompt(plan, snapshot=snapshot, native=True, reply=reply)
-    assert "Plain prose" in prompt and "submit_research_answer" in prompt
-    assert not plan.calls and plan.control is None
+    assert not plan.calls and plan.control is not None and plan.control.kind == "done"
+    store = KnowledgeStore(tmp_path)
+    try:
+        verdict = evaluate(session, plan.control.body,
+                           context=CompletionContext(research_ledger=ResearchLedger(), knowledge_store=store))
+        assert not verdict.complete and verdict.research_report is None
+        assert "whole research answer has not been submitted" in verdict.followup
+    finally:
+        store.close()
 
 
 @pytest.mark.parametrize("ranges,expected", [([], [[0, 12000]]),

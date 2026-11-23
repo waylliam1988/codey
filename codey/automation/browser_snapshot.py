@@ -29,7 +29,7 @@ _DOM_SNAPSHOT = """(root, [limit, includeText]) => {
         for (const node of scope.querySelectorAll('*'))
             if (node.shadowRoot) yield* descendants(node.shadowRoot);
     }
-    const nodes = [], rows = [], identities = new Map();
+    const nodes = [], rows = [], identities = new Map(), regions = {};
     const index = node => {
         if (!node) return -1;
         if (!identities.has(node)) { identities.set(node, nodes.length); nodes.push(node); }
@@ -47,10 +47,13 @@ _DOM_SNAPSHOT = """(root, [limit, includeText]) => {
         if (closed && node !== closed && !closed.querySelector(':scope > summary')?.contains(node)) continue;
         if (rows.length === limit) { truncated = true; break; }
         const {metadata, contextNode, queryNode} = observe(node);
-        rows.push({node: index(node), owner: index(contextNode), query: index(queryNode), metadata,
+        const owner = index(contextNode);
+        if (includeText && contextNode && ['article', 'tr', 'row'].includes(metadata.context.kind) && !(owner in regions))
+            regions[owner] = visibleText(contextNode).slice(0, 240);
+        rows.push({node: index(node), owner, query: index(queryNode), metadata,
             box: {x: rect.x, y: rect.y, width: rect.width, height: rect.height}});
     }
-    return {nodes, view: {rows, text: includeText ? visibleText(root) : '', truncated}};
+    return {nodes, view: {rows, regions, text: includeText ? visibleText(root) : '', truncated}};
 }"""
 
 
@@ -201,6 +204,7 @@ async def _merge_controls(
     if not isinstance(raw_text, str) or not isinstance(dom_rows, list):
         raise ValueError("invalid DOM observation")
     ax = await collect_ax_tree(context, root_id=root_id)
+    region_text = decode_json_object(dom["regions"])
     known: set[int] = set()
     rows: list[tuple[ElementRecord[ElementHandle], JsonObject]] = []
     contexts: list[JsonValue] = []
@@ -226,7 +230,8 @@ async def _merge_controls(
             if not context_id:
                 context_id = f"region-{owner_id}"
                 contexts_by_node[owner_id] = context_id
-                contexts.append({"id": context_id, **owner_json})
+                text = region_text.get(owner_key)
+                contexts.append({"id": context_id, **owner_json, **({"text": text} if isinstance(text, str) else {})})
         semantics = semantic_fingerprint(metadata)
         target: JsonObject | None = ({"backend_node_id": identities[query_key], "relation": metadata["query_relation"]}
                                     if query_key in identities else None)

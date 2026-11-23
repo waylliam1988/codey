@@ -275,13 +275,20 @@ def _normalize_edit(
     args: Mapping[str, JsonValue],
     limits: ToolArgLimits,
 ) -> ToolArgsRepairResult:
-    _reject_unknown_args(args, {"path", "cwd", "content", "replacements", "base_result_ref", "expected_version"}, context="edit")
+    _reject_unknown_args(args, {"path", "cwd", "content", "symbol", "replacements", "base_result_ref", "expected_version"}, context="edit")
     norm_path, rewrites, counts = _resolve_path_arg(
         args, missing_msg="edit requires a top-level path and can only edit one file",
     )
     call_args: ToolArgs = {"path": norm_path}
     if ("content" in args) == ("replacements" in args):
         raise ToolArgsRepairError("edit requires exactly one mode: content or replacements", repair_kind="invalid_args")
+    if "symbol" in args:
+        if "content" not in args:
+            raise ToolArgsRepairError("symbol requires content", repair_kind="invalid_args")
+        symbol, _ = _require_text_arg(args, ("symbol",), "symbol", allow_blank=False)
+        if not symbol.isidentifier():
+            raise ToolArgsRepairError("symbol must be a Python identifier", repair_kind="invalid_args")
+        call_args["symbol"] = symbol
     if "content" in args:
         if "expected_version" in args:
             raise ToolArgsRepairError("expected_version requires replacements", repair_kind="invalid_args")

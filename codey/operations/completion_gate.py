@@ -543,14 +543,18 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
         return GateVerdict(False, str(exc), None)
     if block := _browser_completion_block(session, text, context, metadata):
         return block
+    from codey.operations.project_delivery import project_citation_labels, project_delivery_checks
+
     try:
         text, report = prepare_research_completion(session, text, context)
-        if session.task_kind == "chat" and not session.policy.strict_research and session.policy.allows("web.read"):
+        project_citations = project_citation_labels(session) if not session.policy.strict_research else ()
+        if ((session.task_kind == "chat" or project_citations)
+                and not session.policy.strict_research and session.policy.allows("web.read")):
             from codey.operations.chat_citations import render_source_citations
             from codey.policies.output_requirement import is_output_check
 
             text = render_source_citations(text, sources=session.source_ids, searches=session.search_results,
-                literal=any(is_output_check(check) for check in session.policy.required_checks))
+                literal=any(is_output_check(check) for check in session.policy.required_checks), required_sources=project_citations)
     except ValueError as exc:
         # Field paths, allowed references and acquisition guidance belong to
         # the domain preparation error; the generic exception handler hides them.
@@ -564,7 +568,6 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
     if execution_check is not None:
         checks.append(execution_check)
     from codey.operations.project_completion_checks import project_evidence_checks
-    from codey.operations.project_delivery import project_delivery_checks
 
     checks.extend(project_evidence_checks(session, context))
     checks.extend(project_delivery_checks(session, context.browser_document))

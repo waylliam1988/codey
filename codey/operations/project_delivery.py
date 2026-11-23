@@ -9,7 +9,12 @@ from typing import TYPE_CHECKING
 
 from codey.automation.browser_document import same_document
 from codey.completion.contract import CompletionCheck
-from codey.operations.browser_completion import PAGE_EVIDENCE_INVALIDATORS, complete_page_passages, page_effect_possible
+from codey.operations.browser_completion import (
+    PAGE_EVIDENCE_INVALIDATORS,
+    committed_results,
+    complete_page_passages,
+    page_effect_possible,
+)
 from codey.operations.browser_followups import delivery
 from codey.operations.browser_references import BrowserReferences
 from codey.operations.kernel_provenance import _kernel_workspace_identity_of
@@ -47,6 +52,7 @@ _PROJECT_LINK = re.compile(r"^(?:[-*]\s+)?(?P<role>record specification|applicat
 _RECORD_INTERFACE = re.compile(r"^(?:[-*][ \t]+)?record interface:[ \t]+`([^`\r\n]+)`[ \t]*$", re.I | re.M)
 _RECORD_JSON_FIELDS = re.compile(r"^(?:[-*][ \t]+)?record JSON fields in `([^`\r\n]+)`:[ \t]+"
                                  r"(`[^`\r\n]+`(?:,[ \t]*`[^`\r\n]+`){0,31})[ \t]*$", re.I | re.M)
+_CITE_SOURCES = re.compile(r"(?:^|[.!?。！？;；\n]\s*)(?:(?:please\s+)?cite\b|(?:请)?引用)", re.I)
 
 
 @dataclass(frozen=True)
@@ -322,6 +328,27 @@ def project_write_basis(session: TaskSession) -> tuple[tuple[str, ToolResult] | 
     if specification and not _read_ref_for_url(session, specification):
         return None, "Read the record specification listed in the project documentation before editing."
     return basis, ""
+
+
+def project_citation_labels(session: TaskSession) -> tuple[str, ...]:
+    """Select the actual record and documented format used for the requested edit."""
+    if SOURCE_BEFORE_EDIT not in session.policy.required_checks or not _CITE_SOURCES.search(instruction_text(session.task_text)):
+        return ()
+    refs = dict.fromkeys(ref for _, edit in committed_results(session.executed, session._memory_results, frozenset({"edit"}))
+                         if isinstance(basis := edit.canonical.get("project_source_basis"), dict)
+                         and isinstance(ref := basis.get("source_result_ref"), str))
+    if not refs:
+        return ()
+    if (spec := observed_delivery_links(session).specification) and (ref := _read_ref_for_url(session, spec)):
+        refs[ref] = None
+    labels: dict[str, None] = {}
+    for ref in refs:
+        read = session._memory_results.get(ref)
+        if (ref in session.executed and read is not None and (url := _read_url(read))
+                and isinstance(label := read.canonical.get("source_id"), str)
+                and session.source_ids.get(label) == url):
+            labels[label] = None
+    return tuple(labels)
 
 
 def _action_page(result: ToolResult) -> str:

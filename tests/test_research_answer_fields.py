@@ -454,7 +454,8 @@ n===1?'Value: 173 units.':'No longer available.'">Refresh quantity</button>
     install_http(monkeypatch, replies(), native=native)
     result = live.run_case(directory, case, Target('http://scripted.test/v1', 'fixture', 123456789, 10))
     assert result['stop_reason'] == 'done' and result['source_stable'], result
-    assert 'Not established' in str(result['answer']) and '173' not in str(result['answer'])
+    body, _, _ = str(result['answer']).partition('\n\n## 程序回执记录')
+    assert 'Not established' in body and '173' not in body
     receipts = [row.result for row in tool_receipts(directory / 'state')]
     queries = [row for row in receipts if row.ok and row.call.name == 'browser_read' and row.audit.get('query_click')]
     assert len(queries) == 2

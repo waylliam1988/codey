@@ -25,7 +25,7 @@ LIVE_RECORD_ACTION = r"\bmatch\s+the\s+(?:current|live)\s+(?:record|data)\s+at\b
 _OPEN = re.compile(r"打开|访问|读取|浏览|看看|查看|分析|了解|导航到|导航至|"
                    r"请(?:结合|参考|参照|对照|核对|依据|根据)|"
                    rf"{LIVE_RECORD_ACTION}|"
-                   r"\b(?:open|visit|inspect|read|look at|navigate to|consult|refer to|compare with)\b", re.IGNORECASE)
+                   r"\b(?:open|visit|inspect|read|look at|navigate to|consult|refer to|compare with|use and cite)\b", re.IGNORECASE)
 _NAVIGATION = re.compile(r"\bbrowser_navigate\b|导航到|导航至|\bnavigate to\b", re.IGNORECASE)
 _NEGATED = re.compile(r"(?:不要|勿|禁止|不允许|无需|不需要|不用|不必|do not|don't|never|without)"
                       r"(?:\s|直接|使用|调用|用|再|去|帮我|请|directly\b|call\b)*$", re.IGNORECASE)

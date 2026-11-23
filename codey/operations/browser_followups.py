@@ -222,6 +222,15 @@ def click_plans(checks: tuple[str, ...], names: set[str]) -> JsonObject:
     return click_followup_plan(checks, names).plans
 
 
+def add_link_observation(plans: JsonObject, checks: tuple[str, ...], *, enabled: bool) -> None:
+    controls = plans.get("controls")
+    if enabled and not checks and isinstance(controls, list) and len(controls) >= 2:
+        plans["observed_link"] = [
+            {"name": "browser_wait", "args": {"condition": "new_document", "timeout_ms": 3000}},
+            {"name": "browser_snapshot", "args": JsonObject()},
+        ]
+
+
 def fill_args(args: JsonObject, original: str | None) -> JsonObject:
     if "source" not in args:
         return dict(args)

@@ -43,6 +43,8 @@ def snapshot_catalog(
         task_source_selector=snapshot.input_contract_version >= 13 and snapshot.bound_source_url is not None,
         browser_followup_checks=(snapshot.policy.required_checks if snapshot.policy else ())
         if snapshot.browser_followups else None,
+        observe_link_navigation=(snapshot.input_contract_version >= 21
+                                 and snapshot.research_scope is None),
         browser_result_reads=snapshot.research_scope is not None,
         browser_references=snapshot.browser_references if observed_choices else None,
         browser_flows=snapshot.input_contract_version >= 16 and snapshot.browser_followups,
@@ -129,6 +131,7 @@ def build_codemode_catalog(
     task_source_selector: bool = True,
     task_source_url: str | None = None,
     browser_followup_checks: tuple[str, ...] | None = None,
+    observe_link_navigation: bool = False,
     browser_result_reads: bool = False,
     browser_references: BrowserReferences | None = None,
     browser_flows: bool = False,
@@ -158,6 +161,9 @@ def build_codemode_catalog(
         control_steps = plans.get("controls")
         if isinstance(control_steps, list) and any(spec.name == "browser_read" and not spec.required for spec in values):
             plans["controls"] = [*control_steps, {"name": "browser_read", "args": JsonObject()}]
+        from codey.operations.browser_followups import add_link_observation
+
+        add_link_observation(plans, browser_followup_checks, enabled=observe_link_navigation)
         purposes = tuple(purpose for purpose in PURPOSES if purpose in plans)
         values = tuple(model_spec(spec, None, click_purposes=purposes)
                        if spec.name == "browser_click" else spec for spec in values)

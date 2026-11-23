@@ -11,6 +11,8 @@ from codey.codemode.catalog import build_codemode_catalog, render_declarations, 
 from codey.codemode.host import CodeModeHost
 from codey.codemode.runtime import NodeWorkerRuntime
 from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
+from codey.operations.browser_waits import observed_link_outcome, pending_link_click
+from codey.operations.kernel_facts import project_execution_record
 from codey.operations.kernel_prompt import _browser_followup_context, _browser_read_context
 from codey.operations.kernel_protocol import build_turn_snapshot, offer_browser_tools
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
@@ -53,7 +55,7 @@ def test_followup_presentation_uses_settled_receipts_without_source_marker(kind:
 
 
 @pytest.mark.parametrize("purpose,expected", [
-    ("action", ["browser_click"]), ("controls", ["browser_click", "browser_snapshot"]),
+    ("action", ["browser_click"]), ("controls", ["browser_click", "browser_snapshot", "browser_read"]),
     ("result", ["browser_click", "browser_wait", "browser_read"]),
 ])
 def test_frozen_contract_dispatches_each_leaf_once(purpose: str, expected: list[str]) -> None:
@@ -171,7 +173,77 @@ def test_composite_freezes_arguments_once_before_selecting_the_plan() -> None:
         'await tools.browser_click(args); return reads;', catalog=catalog.entries,
         invoke=_browser_host(catalog.entries, invoke).invoke)
     assert result.ok and result.value == 1, result
-    assert calls == [("browser_click", {"ref": "observed"}), ("browser_snapshot", {})]
+    assert calls == [("browser_click", {"ref": "observed"}), ("browser_snapshot", {}), ("browser_read", {})]
+
+
+@pytest.mark.parametrize(("purpose", "modal"), [(None, False), ("action", False), ("controls", False),
+                                               ("result", False), ("result", True)])
+def test_link_timeout_settles_one_click_then_observes_without_replay(purpose: str | None, modal: bool) -> None:
+    session = TaskSession(TaskPolicy(GRANTS), task_kind="hybrid")
+    catalog = snapshot_catalog(offer_browser_tools(build_turn_snapshot(session), session))
+    document: JsonObject = {"target_id": "page", "frame_id": "main", "loader_id": "old", "url": "https://example.test"}
+    calls: list[tuple[str, JsonObject]] = []
+    scope: JsonObject = {"root_ref": "", "selector": ""}
+    initial = ToolResult(ToolCall("browser_snapshot", {}), "", ok=True, audit={"browser_document": document},
+                         canonical={"value": {"scope": scope, "elements_truncated": False, "contexts": []}})
+    session._memory_results["initial"] = initial
+    project_execution_record(session, "initial", initial.call, initial, ok=True)
+
+    def invoke(name: str, args: JsonObject) -> ToolResult:
+        calls.append((name, args))
+        call = ToolCall(name, args)
+        ref = name.removeprefix("browser_")
+        audit: JsonObject = {"result_ref": ref, "browser_document": document}
+        value = _valid_browser_value(name)
+        if name == "browser_click":
+            audit["link_origin"] = document
+        elif name == "browser_wait":
+            value = {"reason": "timeout"}
+        elif name == "browser_snapshot":
+            contexts: list[JsonValue] = [{"id": "modal", "kind": "dialog"}] if modal else []
+            value = {**decode_json_object(value), "scope": scope, "contexts": contexts}
+        result = ToolResult(call, name, ok=name != "browser_wait", audit=audit, canonical={"value": value})
+        session._memory_results[ref] = result
+        project_execution_record(session, ref, call, result, ok=result.ok)
+        return result
+
+    args: JsonObject = {"ref": "observed", **({"purpose": purpose} if purpose else {})}
+    reply = NodeWorkerRuntime().execute("return await tools.browser_click(inputs);", catalog=catalog.entries,
+        inputs=args, invoke=_browser_host(catalog.entries, invoke, link_result_observed=lambda click, observation:
+            observed_link_outcome(session, click, document, through=observation)).invoke)
+    assert reply.ok and decode_json_object(reply.value)["ok"] is (purpose != "result" or modal)
+    assert calls == [("browser_click", {"ref": "observed"}),
+        ("browser_wait", {"condition": "new_document", "timeout_ms": 3000, "value": "click"}), ("browser_snapshot", {}),
+        *([("browser_read", {})] if modal else [])]
+    assert pending_link_click(session, "[observed]", document) == ("" if modal else "click")
+    assert not pending_link_click(session, "observed", {**document, "loader_id": "new"})
+
+
+def test_same_document_modal_settles_the_original_link_click() -> None:
+    session = TaskSession(TaskPolicy(GRANTS), task_kind="hybrid")
+    document: JsonObject = {"target_id": "page", "frame_id": "main", "loader_id": "old", "url": "https://example.test"}
+    scope: JsonObject = {"root_ref": "", "selector": ""}
+
+    def receipt(ref: str, tool: str, args: JsonObject, value: JsonObject, *, ok: bool = True) -> None:
+        call = ToolCall(tool, args)
+        audit: JsonObject = {"browser_document": document}
+        if tool == "browser_click":
+            audit["link_origin"] = document
+        result = ToolResult(call, "", ok=ok, audit=audit, canonical={"value": value})
+        session._memory_results[ref] = result
+        project_execution_record(session, ref, call, result, ok=ok)
+
+    receipt("initial", "browser_snapshot", {}, {"scope": scope, "elements_truncated": False, "contexts": []})
+    receipt("click", "browser_click", {"ref": "[observed]"}, {"delivery": "delivered"})
+    receipt("wait", "browser_wait", {"condition": "new_document", "value": "click"}, {"reason": "timeout"}, ok=False)
+    assert pending_link_click(session, "observed", document) == "click"
+    receipt("unrelated", "browser_snapshot", {}, {"scope": scope, "elements_truncated": False,
+                                                "contexts": [{"id": "area", "kind": "article"}]})
+    assert pending_link_click(session, "observed", document) == "click"
+    receipt("dialog", "browser_snapshot", {}, {"scope": scope, "elements_truncated": False,
+                                             "contexts": [{"id": "modal", "kind": "dialog"}]})
+    assert not pending_link_click(session, "observed", document)
+    assert not observed_link_outcome(session, "click", document, through="unrelated")
 
 
 def _valid_browser_value(name: str) -> JsonValue:
@@ -190,8 +262,10 @@ def _valid_browser_value(name: str) -> JsonValue:
             "observation": "leaf", "effect_verified": True, "page_url": "https://example.test"}
 
 
-def _browser_host(catalog: Sequence[ToolCatalogEntry], invoke: Callable[[str, JsonObject], ToolResult]) -> CodeModeHost:
+def _browser_host(catalog: Sequence[ToolCatalogEntry], invoke: Callable[[str, JsonObject], ToolResult], *,
+                  link_result_observed: Callable[[str, str], bool] | None = None) -> CodeModeHost:
     def execute(call: ToolCall) -> ToolResult:
         return invoke(call.name, call.args)
 
-    return CodeModeHost(execution_id="test", catalog=catalog, execute=execute, allow_writes=True)
+    return CodeModeHost(execution_id="test", catalog=catalog, execute=execute, allow_writes=True,
+                        link_result_observed=link_result_observed)

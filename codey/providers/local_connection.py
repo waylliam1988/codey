@@ -85,19 +85,17 @@ def connect_local( *, config: _local_config.LocalProviderConfig | None = None,
             "no OpenAI-compatible /models endpoint"
         )
     effective = _local_config.resolve_effective_local_config(config, selection, endpoint)
+    if not effective.model:
+        raise RuntimeError(
+            f"local model at {effective.base_url} returned no usable model"
+        )
+    metadata = model_metadata(effective.base_url, effective.model, api_key=effective.api_key)
     if verify_thinking and config.thinking_enabled is not None:
-        from codey.providers.local_selection import model_metadata
-
-        metadata = model_metadata(effective.base_url, effective.model, api_key=effective.api_key)
         options = metadata.get("thinking_options")
         if not isinstance(options, list) or not options:
             raise ValueError("This model does not advertise a supported thinking control.")
         if config.reasoning_effort is not None and config.reasoning_effort not in options:
             raise ValueError("This model does not support the selected thinking effort.")
-    if not effective.model:
-        raise RuntimeError(
-            f"local model at {effective.base_url} returned no usable model"
-        )
     from codey.providers.local_tokens import admitted_context_budget, counter_for
 
     counter, budget = admitted_context_budget(effective.base_url, effective.api_key, config.api_protocol, effective.context)
@@ -120,7 +118,7 @@ def connect_local( *, config: _local_config.LocalProviderConfig | None = None,
         reasoning_effort=config.reasoning_effort if selection.base_url == config.base_url else None,
         api_protocol=config.api_protocol,
         native_tools=native_tools,
-        supports_images=model_metadata(effective.base_url, effective.model, api_key=effective.api_key).get("supports_images") is True,
+        supports_images=metadata.get("supports_images") is True,
         # Text tool compatibility changes framing, not transport ownership.
         # KoboldCpp only monitors client disconnects for streamed requests.
         stream=effective.native_tools,

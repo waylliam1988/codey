@@ -329,8 +329,11 @@ class ExecutionDelegate:
                 output = reference_failure(output, self.session._memory_results)
             value = dict(output.observation)
             baseline = value.pop("query_baseline", None)
+            link_origin = value.pop("link_origin", None)
             value["text"] = value.get("text", output.model_text)
             audit: JsonObject = {"query_baseline": baseline} if baseline is not None else {}
+            if link_origin is not None:
+                audit["link_origin"] = link_origin
             if (call.name == "browser_wait" and output.ok and self.session is not None
                     and browser_followups.pending_click(self.session._memory_results, browser.document_identity()) is not None):
                 audit["query_wait_document"] = browser.document_identity()
@@ -356,11 +359,17 @@ class ExecutionDelegate:
                                     selector=require_json_string(args.get("selector", ""), "selector"),
                                     base_revision=require_json_integer(args["base_revision"], "base_revision") if "base_revision" in args else None)
         if call.name == "browser_click":
-            if (self.session is not None and (pending := browser_followups.pending_click(
-                    self.session._memory_results, browser.document_identity())) is not None
-                    and browser.matches_query_control(ref, decode_json_object(pending[1].audit["query_baseline"]))):
-                from codey.automation.browser_session import BrowserToolOutput
+            from codey.automation.browser_session import BrowserToolOutput
+            from codey.operations.browser_waits import observed_link_outcome, pending_link_click
 
+            document = browser.document_identity() if self.session is not None else None
+            if self.session is not None and (prior := pending_link_click(self.session, ref, document)):
+                return BrowserToolOutput("The link click was already delivered. Observe the current document.",
+                    False, {"action": "click", "ref": ref, "delivery": "not_delivered", "prior_click": prior})
+            if (self.session is not None and (pending := browser_followups.pending_click(
+                    self.session._memory_results, document)) is not None
+                    and not observed_link_outcome(self.session, pending[0], document)
+                    and browser.matches_query_control(ref, decode_json_object(pending[1].audit["query_baseline"]))):
                 message = (browser_followups.UNCERTAIN if browser_followups.delivery(pending[1]) == "uncertain"
                            else browser_followups.PENDING)
                 return BrowserToolOutput(message, False, {"action": "click", "ref": ref, "delivery": "not_delivered"})
@@ -373,6 +382,12 @@ class ExecutionDelegate:
         if call.name == "browser_wait":
             if args.get("condition") in {"text_changed", "controls_changed"}:
                 return self._wait_for_observed_text(browser, call)
+            if args.get("condition") == "new_document" and args.get("value"):
+                from codey.operations.browser_waits import clicked_link_origin
+
+                origin = clicked_link_origin(self.session, require_json_string(args["value"], "click receipt"))
+                return browser.wait("new_document", "", require_json_integer(args["timeout_ms"], "timeout_ms"),
+                                    expected_document=origin)
             if self._browser_wait_document is not None:
                 return browser.wait(str(args.get("condition") or ""), str(args.get("value") or ""),
                     require_json_integer(args.get("timeout_ms"), "timeout_ms"),
@@ -607,6 +622,13 @@ class ExecutionDelegate:
                     if outcome.ok else outcome)
         if args.get("declared_fields") is True:
             return self._declared_field_edit(project_path, path, canonical, args)
+        if "symbol" in args:
+            from codey.operations.edit_base import symbol_edit_args
+
+            try:
+                args = symbol_edit_args(self.session, project_path, canonical, args)
+            except ValueError as exc:
+                return ToolOutcome.error(str(exc))
         if "content" in args:
             return self._write_content(project_path, path, canonical, args)
         from codey.operations.file_field_binding import file_rules
@@ -968,9 +990,14 @@ class ExecutionDelegate:
 
     def _submit_research_answer(self, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
         from codey.research.answer_contract import AnswerScope, submit_answer
+        from codey.research.primary_sources import PRIMARY_ACQUISITION_IDS
 
         if not isinstance(self._research_scope, AnswerScope):
             raise ValueError("submit_research_answer requires an original frozen whole-answer scope")
+        last = next(reversed(self.session._memory_results.items()), None) if self.session is not None else None
+        if (last is not None and last[1].call.call_id in PRIMARY_ACQUISITION_IDS and last[1].ok
+                and last[0] not in self._research_scope.attempt_refs and call.args.get("state") == "answered"):
+            raise ValueError("first_party_followup_available: review the just-acquired source results before submitting.")
         declared = submit_answer(self._research_scope, call.args)
         from codey.research.report_evidence import CLAIM_CHECK_VERSION, check_report_evidence
 

@@ -180,6 +180,8 @@ class CodeModeKernelExecutor:
         original_browser_wait: Callable[[int], JsonObject | None] | None = None,
         plan_patch: Callable[[tuple[JsonObject, ...], tuple[int, ...]], tuple[JsonObject, ...]] | None = None,
         semantic_plan: Callable[[str], tuple[JsonObject, ...]] | None = None,
+        symbol_reads: Mapping[str, str] | None = None,
+        link_result_observed: Callable[[str, str], bool] | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
@@ -209,6 +211,8 @@ class CodeModeKernelExecutor:
         self.original_browser_wait = original_browser_wait
         self.plan_patch = plan_patch
         self.semantic_plan = semantic_plan
+        self.symbol_reads = dict(symbol_reads or {})
+        self.link_result_observed = link_result_observed
 
     def execute(self, call: ToolCall) -> ToolResult:
         try:
@@ -251,6 +255,8 @@ class CodeModeKernelExecutor:
             bound_edit=self.bound_edit,
             plan_patch=self.plan_patch,
             semantic_plan=self.semantic_plan,
+            symbol_reads=self.symbol_reads,
+            link_result_observed=self.link_result_observed,
         )
         trace: ExecutionTrace | None = None
 
@@ -583,6 +589,14 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             receipt = session._memory_results.get(identity)
             return receipt.call.args if receipt is not None and receipt.call.name == "browser_wait" else None
 
+        def link_result_observed(click: str, observation: str) -> bool:
+            from codey.operations.browser_waits import observed_link_outcome
+
+            receipt = session._memory_results.get(observation)
+            document = receipt.audit.get("browser_document") if receipt is not None else None
+            return isinstance(document, dict) and observed_link_outcome(
+                session, click, decode_json_object(document), through=observation)
+
         from codey.operations.declared_field_input import lower as lower_declared_fields
 
         binding = snapshot.input_binding
@@ -674,6 +688,8 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             original_browser_wait=original_browser_wait,
             plan_patch=plan_patch,
             semantic_plan=semantic_plan,
+            symbol_reads=dict(snapshot.symbol_read_refs),
+            link_result_observed=link_result_observed,
             bound_edit=bound_edit if declared_copy else None,
         ).execute(call)
         result = record_blocked_instruction_targets(result, instruction_targets)

@@ -339,7 +339,8 @@ def _metadata_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Com
 
 
 def _current_snapshot(session: TaskSession, context: CompletionContext,
-                      generation: int | None, *, require_text: bool = True) -> tuple[str, JsonObject] | None:
+                      generation: int | None, *, require_text: bool = True,
+                      allow_partial_controls: bool = False) -> tuple[str, JsonObject] | None:
     records, results = tool_facts(session, context)
     snapshots = committed_results(records, results, frozenset({"browser_snapshot", "browser_screenshot"}))
     raw = snapshots[-1][1].canonical.get("value") if snapshots else None
@@ -347,7 +348,8 @@ def _current_snapshot(session: TaskSession, context: CompletionContext,
     if (value is None or snapshots[-1][1].truncated
             or snapshots[-1][1].audit.get("browser_document") != context.browser_document
             or context.browser_document is None or value.get("generation") != generation
-            or (require_text and value.get("complete") is not True) or value.get("elements_truncated") is not False):
+            or (require_text and value.get("complete") is not True)
+            or (not allow_partial_controls and value.get("elements_truncated") is not False)):
         return None
     return snapshots[-1][0], value
 
@@ -620,7 +622,9 @@ def _navigation_handoff(session: TaskSession, snapshot: TurnSnapshot, context: C
     ref, navigation = navigations[-1]
     current = _current_snapshot(session, context, generation, require_text=False)
     actions = _action_receipts(session, snapshot, context)
-    if (current is None and navigation.ok and "browser_snapshot" in snapshot.nested_tool_names
+    partial = (_current_snapshot(session, context, generation, require_text=False, allow_partial_controls=True)
+               if snapshot.input_contract_version >= 21 and current is None else current)
+    if (partial is None and navigation.ok and "browser_snapshot" in snapshot.nested_tool_names
             and same_document(navigation.audit.get("browser_document"), context.browser_document)
             and (not actions or tuple(records).index(actions[-1][0]) < tuple(records).index(ref))):
         snapshot, action = _call_handoff(session, snapshot, ToolCall("browser_snapshot", {}))

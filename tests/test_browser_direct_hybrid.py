@@ -14,7 +14,7 @@ from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
 from codey.protocols.text_turn import decode_text_turn
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, decode_json_object, require_json_strings
 from tests.test_model_input_binding import copy_snapshot, upload_snapshot
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tests.test_structured_surface import ScriptedExperimentProvider
@@ -142,10 +142,10 @@ def test_hybrid_fills_refreshes_waits_reads_and_edits_once(
                 parent.result.call.name == "codemode" and parent.result.ok
                 and isinstance(refs := parent.result.canonical.get("child_effect_ids"), list) and child.identity in refs
                 for parent in receipts) for child in receipts)
-    requests = [decode_json_object(item["payload"])["args"] for _, item in artifacts(directory / "state")
+    requests = [decode_json_object(item["payload"])["snapshot"] for _, item in artifacts(directory / "state")
                 if item.get("kind") == "provider_request"]
-    assert any(isinstance(args, list) and any(isinstance(value, str) and "prefer the offered direct browser tools" in value
-               for value in args) for args in requests)
+    assert any(set(DIRECT_TOOLS) <= set(require_json_strings(decode_json_object(snapshot)["tool_names"], "tool_names"))
+               for snapshot in requests)
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")

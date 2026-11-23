@@ -253,6 +253,10 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         if messages is None or PAGE_DETAIL_TOOL in snapshot.tool_names or snapshot.tool_names == SUBMISSION_TOOLS:
             from codey.operations.kernel_preparation import capture_turn_snapshot
             snapshot = capture_turn_snapshot(context.session, native=context.native)
+        if messages is None and context.capabilities.text_tool_format == "json_schema":
+            from codey.operations.edit_base import compact_symbol_retry
+
+            snapshot = compact_symbol_retry(snapshot, received.reply)
         # Both request-scoped providers and text-only providers render the
         # same frozen repair basis, including after a successful local write.
         research = context.execution.research_tools

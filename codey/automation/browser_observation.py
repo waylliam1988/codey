@@ -59,7 +59,7 @@ VISIBLE_TEXT = r"""(root, structured = false) => {
 }"""
 
 _CONTEXT = """node => {
-    const owners = 'article,section,tr,[role=row],[role=region],fieldset';
+    const owners = 'article,section,tr,[role=row],[role=region],fieldset,dialog[open],[role=dialog],[role=alertdialog]';
     const clean = value => (value || '').replace(/\\s+/g, ' ').trim();
     if (!node.matches(owners)) return null;
     const named = clean((node.getAttribute('aria-labelledby') || '').split(/\\s+/)
@@ -67,7 +67,8 @@ _CONTEXT = """node => {
     const heading = node.querySelector(':scope > h1,:scope > h2,:scope > h3,:scope > h4,' +
         ':scope > th[scope=row],:scope > legend');
     const label = clean(node.getAttribute('aria-label')) || named || clean(heading?.innerText);
-    return label ? {kind: node.getAttribute('role') || node.tagName.toLowerCase(), label: label.slice(0, 240),
+    const kind = node.getAttribute('role') || node.tagName.toLowerCase();
+    return label || kind === 'dialog' || kind === 'alertdialog' ? {kind, label: label.slice(0, 240),
         basis: node.getAttribute('aria-label') ? 'aria-label' : named ? 'aria-labelledby' : 'heading'} : null;
 }"""
 

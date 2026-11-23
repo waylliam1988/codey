@@ -430,10 +430,11 @@ def _browser_followup_context(result: ToolResult, session: TaskSession) -> str:
     committed = committed_children(session._memory_results)
     children = [session._memory_results[ref] for ref in refs if isinstance(ref, str) and ref in committed]
     action = next((child for child in reversed(children)
-                   if child.call.name in {"browser_fill", "browser_click"}), None)
+                   if child.call.name in {"browser_navigate", "browser_fill", "browser_click"}), None)
     if action is None or delivery(action) not in ("verified", "delivered", "uncertain"):
         return ""
-    browser_children = [child for child in children if child.call.name.startswith("browser_")]
+    browser_children = [child for child in children if child.call.name.startswith("browser_")
+                        and child.call.name != "browser_read"]
     observation = browser_children[-1]
     if observation.call.name == "browser_snapshot" and observation.ok:
         return "\n\nBrowser snapshot from settled child receipts. Use these observed refs:\n" + observation.model_text

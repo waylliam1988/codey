@@ -6,6 +6,7 @@ import re
 import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codey.automation.browser_document import same_document
@@ -33,6 +34,18 @@ _PYTEST_TALLY = re.compile(r"([0-9]+) (failed|errors?|passed|skipped|xfailed|xpa
 _PYTEST_END = re.compile(r"(.+) in [0-9]+(?:\.[0-9]+)?s(?: \([0-9:]+\))?")
 _UNITTEST_END = re.compile(r"Ran ([0-9]+) tests? in [0-9]+(?:\.[0-9]+)?s")
 _UNITTEST_TALLY = re.compile(r"(failures|errors)=([0-9]+)")
+_PYTHON_FRAME = re.compile(r'^\s*File "([^"]+)", line ([1-9][0-9]{0,6}), in ([^\r\n]+)\r?\n[ \t]+([^\r\n]+)', re.MULTILINE)
+
+
+def project_failure_frames(output: str, project: Path) -> tuple[JsonObject, ...]:
+    frames: dict[tuple[str, int], JsonObject] = {}
+    for match in _PYTHON_FRAME.finditer(output):
+        path = Path(match[1])
+        if not path.is_absolute() or not (path := path.resolve()).is_relative_to(project):
+            continue
+        relative, line = path.relative_to(project).as_posix(), int(match[2])
+        frames[relative, line] = {"path": relative, "line": line, "function": match[3][:120], "source": match[4][:320]}
+    return tuple(frames.values())[-4:]
 
 
 def pytest_failure_ids(stdout: str, exit_code: int) -> tuple[str, ...] | None:
@@ -101,6 +114,14 @@ class ProjectCheckComparison:
     failure_ids: tuple[str, ...]
     task_ref: str
     execution_ref: str
+    frames: tuple[JsonObject, ...] = ()
+
+    def observation(self) -> JsonObject:
+        reads: list[JsonValue] = [{"tool": "read_file", "args": {"path": frame["path"],
+            "offset": max(1, require_json_integer(frame["line"], "failure line") - 2), "limit": 7}}
+            for frame in self.frames]
+        return {"execution_ref": self.execution_ref, "exit_code": self.exit_code,
+                "failed_tests": list(self.failure_ids), "project_frames": list(self.frames), "inspect": reads}
 
     @property
     def key(self) -> tuple[str, str, str, str, int, tuple[str, ...]]:
@@ -129,8 +150,9 @@ def compare_project_check(execution: SettledCheckExecution, *, session: TaskSess
                     unittest_failure_ids(stderr if separator else stdout, receipt.exit_code))
         if failures is None:
             return None
+        frames = project_failure_frames(output.text, Path(session.project).resolve()) if failures and session.project else ()
         return ProjectCheckComparison(command, cwd, identity.fingerprint, receipt.exit_code, failures,
-                                      execution.task_ref, execution.execution_ref)
+                                      execution.task_ref, execution.execution_ref, frames)
     except (KeyError, OSError, ValueError, sqlite3.Error):
         return None
 

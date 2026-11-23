@@ -78,7 +78,15 @@ def test_other_contracts_do_not_gain_compatibility(kind: str, strict: bool) -> N
     session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=strict), task_kind=kind)
     snapshot = build_turn_snapshot(session)
     assert not snapshot.ignore_runtime_claims
-    assert proposal({"summary": "answer", "source_gaps": 9}, snapshot, False).protocol_error
+    args: JsonObject = {"summary": "answer", "source_gaps": 9}
+    plan = proposal(args, snapshot, False)
+    if kind == "research":
+        # Ordinary completion discards obsolete source-gap declarations but
+        # still validates execution claims from the captured contract.
+        assert not plan.protocol_error and plan.control_args == {"summary": "answer"}
+        assert proposal({**args, "execution_claims": 9}, snapshot, False).protocol_error
+    else:
+        assert plan.protocol_error
 
 
 @pytest.mark.parametrize("native", [False, True])
@@ -209,7 +217,7 @@ def test_legacy_snapshots_preserve_claim_validation(version: int) -> None:
 @pytest.mark.parametrize("marker", [None, 0, 1, "true", []])
 def test_snapshot_compatibility_marker_requires_a_boolean(marker: JsonValue) -> None:
     payload = snapshot_description(build_turn_snapshot(TaskSession(TaskPolicy(frozenset({"control"})), task_kind="chat")))
-    assert payload["schema_version"] == 10
+    assert restore_snapshot(payload).ignore_runtime_claims
     payload["ignore_runtime_claims"] = marker
     with pytest.raises(ValueError, match="boolean"):
         restore_snapshot(payload)

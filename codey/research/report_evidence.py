@@ -5,7 +5,7 @@ import re
 from collections.abc import Iterator, Mapping
 from decimal import Decimal
 
-from codey.research.answer_values import AnswerSubmission
+from codey.research.answer_values import AnswerSubmission, evidence_status_suffix
 from codey.research.evidence_gaps import same_source_groups
 from codey.research.passages import ReadPassage
 from codey.types.json_value import JsonObject, JsonValue
@@ -142,7 +142,8 @@ def check_report_evidence(submission: AnswerSubmission, passages: Mapping[str, R
                           verify_calculations: bool = True, claim_check_version: int | None = None) -> JsonObject:
     if claim_check_version is not None and (type(claim_check_version) is not int or claim_check_version != CLAIM_CHECK_VERSION):
         raise ValueError("unsupported research claim check version")
-    markdown = mask_markdown_code(submission["markdown"])
+    status = evidence_status_suffix(submission["scope"]["schema_version"], submission["state"])
+    markdown = mask_markdown_code(submission["markdown"].removesuffix(status))
     browser = bool(submission["scope"].get("execution_refs"))
     validated: list[JsonValue] = []
     unverified: list[JsonValue] = []

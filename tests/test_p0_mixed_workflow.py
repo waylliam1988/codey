@@ -288,11 +288,14 @@ def test_natural_mixed_entry_requires_observed_source_and_fresh_application_page
         {"tool": "done", "args": {"summary": "Updated the record."}},
         {"tool": "browser_navigate", "args": {"target": "task"}},
         {"tool": "done", "args": {"summary": f"The updated application displays 347 g and CEDAR_947. "
-                                      f"Record source {NATURAL_RECORD_URL}. Format source {NATURAL_FORMAT_URL}."}},
+                                      f"Record source {NATURAL_RECORD_URL}."}},
     ])
     report = mixed_run(directory, Target("http://scripted.test/v1", "fixture", 123456789, 15,
                                          context_window_tokens=65536), natural=True)
     assert report["passed"] is True, report
+    answer = require_json_string(report["answer"], "mixed answer")
+    assert answer.count(NATURAL_RECORD_URL) == answer.count(NATURAL_FORMAT_URL) == 1
+    assert NATURAL_VIEW_URL not in answer
     receipts = tool_receipts(directory / "state")
     edits = [row.result for row in receipts if row.result.call.name == "edit"]
     assert len(edits) == 5 and not edits[0].ok and "live record before editing" in edits[0].model_text

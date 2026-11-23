@@ -203,6 +203,7 @@ def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, ca
     tools = delegate._observation_tools(source_read=True)
     document = None
     query_ref = ""
+    modal_result = False
     session = delegate.session
     if call.name == PAGE_DETAIL_TOOL:
         specs = delegate._frozen_specs
@@ -225,12 +226,18 @@ def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, ca
                        and same_document(row.audit.get("query_wait_document"), document)]
             if not all(any(row.call.args == wait for row in settled) for wait in waits):
                 raise RuntimeError(browser_followups.PENDING + " Complete the declared wait first.")
-            try:
-                page = browser.capture_query_result(baseline, pending=browser_followups.PENDING)
-            except QueryObservationError as exc:
-                return ToolResult(ok=False, call=call, model_text=str(exc),
-                    canonical={"query_read": {"reason": exc.reason}},
-                    audit={"query_click": query_ref, "browser_document": document}), False, None
+            from codey.operations.browser_waits import observed_link_outcome
+
+            modal_result = observed_link_outcome(session, query_ref, document)
+            if modal_result:
+                page = browser.capture()
+            else:
+                try:
+                    page = browser.capture_query_result(baseline, pending=browser_followups.PENDING)
+                except QueryObservationError as exc:
+                    return ToolResult(ok=False, call=call, model_text=str(exc),
+                        canonical={"query_read": {"reason": exc.reason}},
+                        audit={"query_click": query_ref, "browser_document": document}), False, None
     url = str(page.get("url") or "")
     opened = render_source_read(
         tools.gateway.capture(url, page), tools.ledger,
@@ -241,7 +248,7 @@ def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, ca
     result, ok, code = delegate._opened_result(call, opened, url, ledger=tools.ledger, turn=turn, tool_index=tool_index)
     if ok and document is not None:
         result = replace(result, audit={**result.audit, "browser_document": document})
-    if ok and query_ref and page.get("query_confirmed") is True:
+    if ok and query_ref and (modal_result or page.get("query_confirmed") is True):
         result = replace(result, audit={**result.audit, "query_click": query_ref})
         region = page.get("query_region")
         if isinstance(region, dict):

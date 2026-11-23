@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol
 
 from codey.codemode.identity import rpc_child_admission, rpc_child_allocator, rpc_child_index
@@ -68,6 +68,8 @@ class CodeModeHost:
         bound_edit: Callable[[int, JsonObject], JsonObject] | None = None,
         plan_patch: Callable[[tuple[JsonObject, ...], tuple[int, ...]], tuple[JsonObject, ...]] | None = None,
         semantic_plan: Callable[[str], tuple[JsonObject, ...]] | None = None,
+        symbol_reads: Mapping[str, str] | None = None,
+        link_result_observed: Callable[[str, str], bool] | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
@@ -95,6 +97,8 @@ class CodeModeHost:
         self._bound_edit = bound_edit
         self._plan_patch = plan_patch
         self._semantic_plan = semantic_plan
+        self._symbol_reads = dict(symbol_reads or {})
+        self._link_result_observed = link_result_observed
         self._next_child = 0
         self._complete_reads: dict[str, ToolResult] = {}
         self._control_snapshot_ref = browser_references.receipt_ref if browser_references is not None else ""
@@ -122,22 +126,18 @@ class CodeModeHost:
             steps = (*steps, ("browser_read", JsonObject()))
         step_indices = self._allocate_children(len(steps))
         raw = self._invoke_one(index, tool_name, click_args, query=query)
-        if raw.ok and steps:
-            for step_index, (step_name, step_args) in zip(step_indices, steps, strict=True):
-                try:
-                    followup = self._invoke_one(step_index, step_name, step_args, query=query)
-                except (ValueError, TypeError, RecursionError) as exc:
-                    error = str(exc)
-                else:
-                    if followup.ok:
-                        continue
-                    value = followup.canonical.get("value")
-                    if (not query and step_name == "browser_wait" and step_args.get("condition") == "controls_changed"
-                            and isinstance(value, dict) and decode_json_object(value).get("reason") == "timeout"):
-                        continue
-                    error = followup.model_text
-                return {"ok": False, "error": f"Click delivered; {step_name} failed: {error}"
-                        ". Continue from the committed receipts; do not repeat the click."}
+        link_followup = False
+        if (tool_name == "browser_click" and raw.ok
+                and raw.audit.get("link_origin") is not None and isinstance(ref := raw.audit.get("result_ref"), str)):
+            plans = canonical_json_object(self._catalog[tool_name].parameters).get("x-codey-click-plans")
+            if isinstance(plans, dict) and "observed_link" in plans:
+                link_steps = self._click_steps(plans["observed_link"], link_ref=ref)
+                steps = (*link_steps, *((name, args) for name, args in steps if name == "browser_read"))
+                step_indices = (*step_indices, *self._allocate_children(len(steps) - len(step_indices)))
+                link_followup = True
+        if raw.ok and steps and (error := self._run_click_followups(
+                step_indices, steps, query=query, link_followup=link_followup)):
+            return {"ok": False, "error": error}
         if not raw.ok:
             error = raw.model_text
             if json_edit and raw.audit.get("error_code") == STALE_READ_REFERENCE_CODE:
@@ -150,6 +150,36 @@ class CodeModeHost:
             output["result_ref"] = ref
 
         return output
+
+    def _run_click_followups(self, indices: tuple[int, ...], steps: tuple[tuple[str, JsonObject], ...], *,
+                             query: bool, link_followup: bool) -> str:
+        navigation_pending = ""
+        for index, (name, args) in zip(indices, steps, strict=True):
+            if name == "browser_read" and navigation_pending:
+                continue
+            try:
+                followup = self._invoke_one(index, name, args, query=query)
+            except (ValueError, TypeError, RecursionError) as exc:
+                error = str(exc)
+            else:
+                if followup.ok:
+                    if (navigation_pending and name == "browser_snapshot" and self._link_result_observed is not None
+                            and isinstance(snapshot_ref := followup.audit.get("result_ref"), str)
+                            and self._link_result_observed(navigation_pending, snapshot_ref)):
+                        navigation_pending = ""
+                    continue
+                value = followup.canonical.get("value")
+                condition = args.get("condition")
+                if ((not query or link_followup) and name == "browser_wait"
+                        and condition in {"controls_changed", "new_document"}
+                        and isinstance(value, dict) and decode_json_object(value).get("reason") == "timeout"):
+                    if condition == "new_document":
+                        navigation_pending = require_json_string(args.get("value"), "link click reference")
+                    continue
+                error = followup.model_text
+            return (f"Click delivered; {name} failed: {error}. "
+                    "Continue from the committed receipts; do not repeat the click.")
+        return "Click delivered; the destination document has not been observed yet." if navigation_pending and query else ""
 
     def _observe_result(self, tool_name: str, args: JsonObject, raw: ToolResult, value: object) -> None:
         if ref := raw.audit.get("result_ref"):
@@ -297,6 +327,12 @@ class CodeModeHost:
             decoded_args = resolve_task_source(decoded_args, self._task_source_url)
         if tool_name == "run":
             decoded_args = resolve_verification(decoded_args, canonical_json_object(self._catalog[tool_name].parameters))
+        if tool_name == "edit" and "symbol" in decoded_args:
+            from codey.operations.edit_base import bind_symbol_read, symbol_read_refs
+
+            decoded_args = bind_symbol_read(decoded_args, {
+                **self._symbol_reads, **symbol_read_refs(self._complete_reads, self._complete_reads),
+            })
         json_edit = tool_name == "edit" and "changes" in decoded_args
         if json_edit:
             try:
@@ -337,9 +373,13 @@ class CodeModeHost:
         plans = canonical_json_object(self._catalog[name].parameters).get("x-codey-click-plans")
         purpose = args["purpose"]
         if (not isinstance(plans, dict) or not isinstance(purpose, str) or purpose not in plans
-                or set(args) != {"ref", "purpose"}):
+                or purpose == "observed_link" or set(args) != {"ref", "purpose"}):
             raise ValueError("The requested click follow-up is unavailable or its arguments are invalid.")
-        steps = plans[purpose]
+        return {"ref": args["ref"]}, purpose == "result", self._click_steps(
+            plans[purpose], bind_controls=purpose == "controls")
+
+    def _click_steps(self, steps: JsonValue, *, link_ref: str = "",
+                     bind_controls: bool = False) -> tuple[tuple[str, JsonObject], ...]:
         if not isinstance(steps, list):
             raise ValueError("The requested click follow-up is unavailable or its arguments are invalid.")
         parsed: list[tuple[str, JsonObject]] = []
@@ -350,12 +390,14 @@ class CodeModeHost:
             if not isinstance(step_name, str) or step_name not in self._catalog:
                 raise ValueError("The requested click follow-up contains an unavailable tool.")
             step_args = decode_json_object(item["args"])
-            if step_name == "browser_wait" and step_args.get("condition") == "controls_changed" and purpose == "controls":
+            if bind_controls and step_name == "browser_wait" and step_args.get("condition") == "controls_changed":
                 if not self._control_snapshot_ref:
                     continue
                 step_args["value"] = self._control_snapshot_ref
+            if step_name == "browser_wait" and link_ref:
+                step_args["value"] = link_ref
             parsed.append((step_name, step_args))
-        return {"ref": args["ref"]}, purpose == "result", tuple(parsed)
+        return tuple(parsed)
 
     def _json_edit_args(self, args: JsonObject) -> JsonObject:
         ref = args.get("base_result_ref")

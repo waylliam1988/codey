@@ -15,7 +15,7 @@ do not get free trust.
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Iterable
 
 from codey.utils.refs import is_valid_hostname as _is_valid_hostname
 
@@ -58,6 +58,7 @@ PEER_REVIEWED_HOSTS = (
 REPO_HOSTS = ("github.com", "gitlab.com", "bitbucket.org")
 FILING_HOSTS = ("sec.gov", "finra.org", "edi.gov")
 STANDARD_HOSTS = ("iso.org", "ieee.org", "ietf.org", "ansi.org", "w3.org", "itu.int")
+PROJECT_DOCUMENTATION_HOSTS = ("sqlite.org",)
 DATASET_HOSTS = (
     "data.gov",
     "data.nasa.gov",
@@ -109,7 +110,11 @@ def host_matches(host: str, domain: str) -> bool:
     return host == domain or host.endswith("." + domain)
 
 
-def matches_any(host: str, domains: Any) -> bool:
+def is_official_host(host: str) -> bool:
+    return is_government_host(host) or matches_any(host, PROJECT_DOCUMENTATION_HOSTS)
+
+
+def matches_any(host: str, domains: Iterable[str]) -> bool:
     """Fail-closed domain match.
 
     Malformed hostnames (empty labels, doubled dots, single labels, bad

@@ -182,9 +182,42 @@ def answer_context(session: TaskSession, ledger: ResearchLedger | None, scope: A
         visible = tuple(row for row in visible if row[1] not in remove)
         text = _render_context(session, ledger, scope, visible)
         tokens = count_tokens(text)
+    if not visible and ledger is not None and scope.primary_passages:
+        priority = _primary_excerpt_priority(session.task_text, ledger, scope.primary_passages)
+        # A long read can exceed the entire evidence budget. Try exact
+        # passages across the opened sources before retaining only locators.
+        for size in range(len(priority), 0, -1):
+            selected = set(priority[:size])
+            excerpts = _render_context(session, ledger, scope, tuple(row for row in scope.aliases if row[1] in selected))
+            if count_tokens(excerpts) <= token_budget:
+                return excerpts
     if tokens > token_budget:
         raise ValueError("non-evidence research work view exceeds the token budget")
     return text
+
+
+def _primary_excerpt_priority(task: str, ledger: ResearchLedger, refs: tuple[str, ...]) -> tuple[str, ...]:
+    from codey.research.proof_terms import normalized_search_text, question_terms, search_term_present
+    from codey.research.task_requirements import text_units
+    from codey.task.instruction_text import instruction_text
+    from codey.task.web_intent import explicit_web_intent
+    from codey.types.json_value import require_json_string
+
+    text = instruction_text(task)
+    for url in sorted(explicit_web_intent(text).original_urls, key=lambda value: (-len(value), value)):
+        text = text.replace(url, " ")
+    terms = {term for row in text_units(text, sentences=True)
+             for term in question_terms(require_json_string(row["text"], "task sentence"))}
+    best: dict[str, tuple[int, int, str]] = {}
+    for ref in refs:
+        passage = ledger.read_passages[ref]
+        excerpt = normalized_search_text(passage.excerpt)
+        score = sum(search_term_present(term, excerpt) for term in terms)
+        candidate = (-score, len(passage.excerpt), ref)
+        url = passage.source.final_url
+        if url not in best or candidate < best[url]:
+            best[url] = candidate
+    return tuple(ref for _, _, ref in sorted(best.values())[:8])
 
 
 def _render_context(session: TaskSession, ledger: ResearchLedger | None, scope: AnswerScope,

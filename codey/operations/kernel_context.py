@@ -12,8 +12,10 @@ from typing import TYPE_CHECKING, Protocol
 
 from codey.durable.checkpoint import checkpoint_entries
 from codey.durable.model import ArtifactRecord, thaw_json
+from codey.knowledge.model import canonical_json
 from codey.operations import kernel_actions as wiring
 from codey.operations import kernel_events, kernel_prompt, kernel_protocol
+from codey.operations.edit_base import is_compact_symbol_retry
 from codey.operations.kernel_capabilities import KernelCapabilityView
 from codey.operations.kernel_contracts import (
     ClosingDecision,
@@ -71,8 +73,11 @@ class _ResearchProjector(Protocol):
     def project_urls(self, tools: ResearchTools) -> None: ...
 
 
-def _host_search_result(result: ToolResult) -> bool:
-    return result.call.name == "web_search" and not result.call.call_id
+def _host_acquisition_result(result: ToolResult) -> bool:
+    from codey.research.primary_sources import PRIMARY_ACQUISITION_IDS
+
+    return ((result.call.name == "web_search" and not result.call.call_id)
+            or result.call.call_id in PRIMARY_ACQUISITION_IDS)
 
 
 class KernelContext:
@@ -465,7 +470,8 @@ class KernelContext:
             messages = repair_messages(messages, prompt, rejected_control=state.leaf == operation_payload.LEAF_CONTROL_READY)
         elif handoff is None and not acknowledge:
             snapshot, handoff = self.request_snapshot(snapshot)
-        if handoff:
+        delivery_handoff = handoff if self.request_scoped_observations and not acknowledge else ""
+        if handoff and not delivery_handoff:
             if self.native and messages:
                 messages[-1] = replace(messages[-1], user_content="\n\n".join(
                     part for part in (messages[-1].user_content, handoff) if part))
@@ -503,14 +509,13 @@ class KernelContext:
         if explanation_only:
             options = replace(options, tool_call_observations=prompt, tool_call_history_groups=1)
         elif self.request_scoped_observations and not (self.native and acknowledge):
-            from codey.knowledge.model import canonical_json
             from codey.providers.response_record import json_value
             # The sampling schema is not prompt prose. The provider counts its
             # real wire envelope at admission; serializing it here counts a
             # second textual tool catalog that this request never sends.
             declaration = (kernel_prompt._text_request_prompt("", snapshot)
                            if not self.native else canonical_json(json_value(tools)))
-            fixed = "\n\n".join(part for part in (prompt,
+            fixed = "\n\n".join(part for part in (prompt, delivery_handoff,
                 self.transport.context_text if self.transport.context_text not in prompt else "",
                 coding if coding not in prompt else "", declaration,
                 canonical_json(json_value(messages)) if messages else "") if part)
@@ -523,7 +528,7 @@ class KernelContext:
             # carry its frozen context without relying on a warm wire history.
             context = self.transport.context_text
             options = replace(options, supplied=options.supplied | {"tool_call_observations"}, tool_call_observations="\n\n".join(part for part in (
-                context if context and context not in prompt else "", observations,
+                context if context and context not in prompt else "", observations, delivery_handoff,
                 coding if coding and coding not in prompt else "") if part))
             if self.session.task_kind == "research" and self.session.policy.strict_research:
                 options = replace(options, output_token_limit=4096)
@@ -538,7 +543,8 @@ class KernelContext:
                 tool_call_contract=kernel_prompt._text_request_prompt("", snapshot))
             if text_result_spans:
                 options = replace(options, tool_call_results=text_result_spans)
-        if scoped_contract and self.capabilities.text_tool_format == "json_schema":
+        if (scoped_contract and self.capabilities.text_tool_format == "json_schema"
+                and not is_compact_symbol_retry(snapshot)):
             from codey.providers.text_tool_schema import text_tool_schema
 
             _text_tool_schema: Callable[[list[ProviderToolDefinition]], object] = text_tool_schema
@@ -783,7 +789,7 @@ class KernelContext:
             # Recovery must preserve that slot when resuming its submission.
             scope = f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id
             first = self.session._memory_results.get(turn_effect_id(scope, turn, 0))
-            if first is not None and _host_search_result(first):
+            if first is not None and _host_acquisition_result(first):
                 calls.insert(0, first.call)
         self._execute_calls(calls, received.snapshot, turn=turn)
         return None
@@ -803,6 +809,14 @@ class KernelContext:
 
         limits = self.session.research_acquisition_limits
         used = sum(value == "search" for value in self.session.research_acquisition_slots.values())
+        if (snapshot.research_scope is not None and snapshot.research_scope.primary_passages is not None
+                and any(call.name == "submit_research_answer" and call.args.get("state") == "answered" for call in calls)):
+            from codey.research.primary_sources import primary_acquisition
+
+            if primary := primary_acquisition(self.session, resources.ledger,
+                    missing_primary=not snapshot.research_scope.primary_passages,
+                    may_search=limits is None or used < limits[0], may_open="open_result" in snapshot.tool_names):
+                return primary
         findings = (result.call for ref, result in self.session._memory_results.items()
                     if ref in self.session.executed and result.ok and result.call.name == "save_finding")
         candidate = conflict_search(resources.ledger, remaining_searches=1 if limits is None else limits[0] - used,
@@ -833,8 +847,8 @@ class KernelContext:
         if not self.native:
             return results, boundary_prompt
         supplemental = "\n\n".join(task_result_context(self.session, row, snapshot.research_scope,
-            tool_names=snapshot.tool_names) for row in results if _host_search_result(row))
-        return ([row for row in results if not _host_search_result(row)],
+            tool_names=snapshot.tool_names) for row in results if _host_acquisition_result(row))
+        return ([row for row in results if not _host_acquisition_result(row)],
                 "\n\n".join(part for part in (boundary_prompt, supplemental) if part))
 
     def observe_progress(self, view: SessionView, action: RuntimeAction) -> None:
@@ -895,7 +909,7 @@ class KernelContext:
 
         if (report_completes_task(self.session) and not self.cancelled() and results and results[-1].ok
                 and results[-1].call.name == "submit_research_answer"
-                and all(_host_search_result(row) for row in results[:-1])
+                and all(_host_acquisition_result(row) for row in results[:-1])
                 and submitted_answer(self.session) is not None):
             self.advance(state, operation_payload.LEAF_COMPLETION_PENDING)
             return
@@ -926,9 +940,13 @@ class KernelContext:
                 self.execution.research_tools.store if self.execution.research_tools is not None else None,
                 self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research_scope,
                 tool_names=snapshot.tool_names, provider=self.provider)
-        check_cycle = None
-        if progress.warning_batch_id == action.delivery_batch_id:
-            _, check_cycle = self._project_check_observations(results)
+        check_facts, check_cycle = self._project_check_observations(results)
+        if progress.warning_batch_id != action.delivery_batch_id:
+            check_cycle = None
+        failures = [fact.observation() for fact in check_facts.values() if fact.failure_ids]
+        if failures:
+            handoff = "\n\n".join(part for part in (handoff, "Project check failures:\n" +
+                canonical_json(failures)) if part)
         reminder = check_cycle.feedback if check_cycle is not None else progress.repeat_feedback()
         if reminder:
             from codey.operations.browser_task_handoff import observation_recovery_handoff

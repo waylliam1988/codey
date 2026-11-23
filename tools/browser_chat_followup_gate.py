@@ -23,10 +23,12 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 from unittest.mock import patch
 
+from codey.automation.browser_query import QueryObservationError
 from codey.automation.browser_session import BrowserSession
 from codey.codemode.kernel import CodeModeKernelExecutor
 from codey.operations import completion_gate, kernel_context, kernel_protocol, provider_receipts
 from codey.operations.browser_copy import committed_children
+from codey.operations.browser_result_evidence import _confirmed_region_passages
 from codey.operations.browser_text_report import BrowserMetadata, MetadataPending
 from codey.operations.browser_waits import wait_plan as upload_wait_plan
 from codey.operations.kernel_context import KernelContext
@@ -285,10 +287,17 @@ def normalize_candidate(reply: DecodedTextTurn | AssistantTurn, snapshot: TurnSn
 
 # Use visible semantic result regions. The candidate never receives the fixture's
 # expected answer, expected region selector or expected update time.
-REGIONS = """() => [...document.querySelectorAll('article, [role=status], [role=region], [aria-live]')]
-  .filter(el => el.getClientRects().length && getComputedStyle(el).visibility === 'visible')
+REGIONS = """() => {
+  const busy = el => {
+    for (let node = el; node; node = node.parentElement)
+      if (node.getAttribute('aria-busy') === 'true') return true;
+    return false;
+  };
+  return [...document.querySelectorAll('article, [role=status], [role=region], [aria-live]')]
+  .filter(el => (el.offsetWidth || el.offsetHeight) && getComputedStyle(el).visibility === 'visible')
   .map((el, i) => ({key: el.id || `${el.tagName}:${i}`, text: el.innerText.replace(/\\s+/g, ' ').trim(),
-                  busy: !!el.closest('[aria-busy=true]')}))"""
+                  busy: busy(el)}));
+}"""
 
 
 def observe_regions(browser: BrowserSession) -> JsonObject:
@@ -339,7 +348,8 @@ def guard_capture(browser: BrowserSession, baseline: JsonObject, *, wait_seconds
             body = capture.get("text")
             if (capture.get("status") == "ok" and isinstance(body, str)
                     and region in " ".join(body.split()) and observe_regions(browser) == current):
-                return capture
+                return {**capture, "query_confirmed": True,
+                        "query_region": {"text": region, "visible": True}}
         if time.monotonic() >= deadline:
             raise RuntimeError(PENDING)
         cancellation.wait(0.1)
@@ -358,7 +368,7 @@ def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
     original_specs: Callable[[TurnSnapshot], tuple[ToolSpec, ...]] = model_specs_property.__get__
     original_freeze = KernelContext.freeze
     original_execute = ExecutionDelegate._execute_browser_operation
-    original_capture = BrowserSession.capture
+    original_query_capture = BrowserSession.capture_query_result
     original_parent = CodeModeKernelExecutor.execute
     original_gate = completion_gate.evaluate
     active: dict[str, str] = {}
@@ -401,13 +411,13 @@ def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
     def request_snapshot(context: KernelContext, snapshot: TurnSnapshot, *,
                          delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
         baseline, handoff = original_snapshot(context, snapshot, delivered_results=delivered_results)
-        candidate = baseline
+        candidate = replace(baseline, browser_followups=False, browser_fill_text=None)
         research = context.execution.research_tools
         browser = research.browser_session if research is not None else None
         # Receipt progress now produces handoff text on ordinary browser turns too.
         # Exposure still intersects the frozen nested tools, policy and allowlist.
         if arm != "codemode" and not context.session.policy.strict_research and browser is not None:
-            offered = base.expose_leaves(baseline, context.session)
+            offered = base.expose_leaves(candidate, context.session)
             if set(base.DIRECT_TOOLS) <= set(offered.tool_names) and browser.document_identity() is not None:
                 candidate = offered
         if arm == "bound_text" and can_bind_fill(candidate) and (value := explicit_fill_text(context.session.task_text)):
@@ -491,12 +501,15 @@ def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
                    for expected in expected_waits):
                 return ToolResult(call, PENDING + " Complete the declared wait first.", ok=False), False, None
 
-        def capture(resource: BrowserSession) -> dict[str, object]:
+        def capture(resource: BrowserSession, original: JsonObject, *, pending: str) -> dict[str, object]:
             if resource is not browser:
-                return original_capture(resource)
-            return guard_capture(resource, baseline, wait_seconds=2.5)
+                return original_query_capture(resource, original, pending=pending)
+            try:
+                return guard_capture(resource, baseline, wait_seconds=2.5)
+            except RuntimeError as exc:
+                raise QueryObservationError("query_update_unconfirmed", str(exc)) from exc
 
-        with patch.object(BrowserSession, "capture", capture):
+        with patch.object(BrowserSession, "capture_query_result", capture):
             result, ok, code = original_execute(delegate, browser, call, turn=turn, tool_index=tool_index)
         if ok:
             result = replace(result, audit={**result.audit, "query_click": ref})
@@ -585,6 +598,16 @@ def assert_stable(source: str, harness: str) -> None:
         raise RuntimeError("Production or harness changed during the run. Discard this matrix and start a new one.")
 
 
+def _scored_browser_body(result: ToolResult, click: str) -> str | None:
+    body = _browser_body(result)
+    if body is not None:
+        return body
+    document, region = result.audit.get("browser_document"), result.audit.get("query_region")
+    if isinstance(document, dict) and isinstance(url := document.get("url"), str) and _confirmed_region_passages(result, click, url):
+        return require_json_string(decode_json_object(region)["text"], "queried region")
+    return None
+
+
 def score(directory: Path, name: str, case: base.Case, row: JsonObject) -> JsonObject:
     receipts = tool_receipts(directory / "state")
     expected_clicks = 0 if name == "visible" else 2 if name == "controls" else 1
@@ -599,7 +622,7 @@ def score(directory: Path, name: str, case: base.Case, row: JsonObject) -> JsonO
     reads = [item for item in receipts[last_click + 1:] if item.result.ok and
              item.result.call.name == ("browser_read" if expected_clicks else "open_url")]
     answer = str(row["answer"])
-    matching = [item for item in reads if (body := _browser_body(item.result)) is not None
+    matching = [item for item in reads if (body := _scored_browser_body(item.result, last_click_ref)) is not None
                 and ab.facts_present(body, case.facts) and "STALE_041" not in body]
     citations = {match.group()[1:-1] for match in re.finditer(r"\[[^\[\]\s]+\]", answer)}
     exact = [item for item in matching if citations.intersection(read_passage_refs(item.result.canonical["read_passages"]))]

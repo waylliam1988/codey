@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 import ast
+import token
+import tokenize
+from io import StringIO
 from pathlib import Path
+from typing import TypeAlias
 
 import tree_sitter_javascript
 import tree_sitter_typescript
@@ -11,6 +15,35 @@ from tree_sitter import Language, Parser
 from codey.toolchain.runtime import ToolOutcome, safe_join
 from codey.types.json_value import JsonObject, JsonValue
 from codey.workspace.paths import content_hash, ensure_not_symlink
+
+PythonDefinition: TypeAlias = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+
+
+def python_definitions(text: str) -> list[PythonDefinition]:
+    return [node for node in ast.walk(ast.parse(text))
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+
+
+def reindent_python_source(text: str, prefix: str = "") -> str:
+    """Shift physical code lines without changing multiline string contents."""
+    text = StringIO(text, newline=None).read().strip("\n")
+    lines = text.split("\n")
+    old_prefix = lines[0][:len(lines[0]) - len(lines[0].lstrip(" \t\f"))]
+    literal_lines: set[int] = set()
+    formatted: list[int] = []
+    try:
+        for item in tokenize.generate_tokens(StringIO(text).readline):
+            kind = token.tok_name[item.type]
+            if kind == "STRING":
+                literal_lines.update(range(item.start[0] + 1, item.end[0] + 1))
+            elif kind == "FSTRING_START":
+                formatted.append(item.start[0])
+            elif kind == "FSTRING_END":
+                literal_lines.update(range(formatted.pop() + 1, item.end[0] + 1))
+    except (tokenize.TokenError, IndentationError) as exc:
+        raise ValueError("symbol edit requires a complete Python definition") from exc
+    return "\n".join(line if number in literal_lines or not line else prefix + line.removeprefix(old_prefix)
+                     for number, line in enumerate(lines, 1))
 
 
 def syntax_query(root: Path, rel: str, node_type: str, *, limit: int = 40) -> ToolOutcome:

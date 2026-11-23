@@ -223,7 +223,7 @@ TOOL_DEFINITIONS = (
         ),
         description=(
             f"Edit existing files with up to {MAX_REPLACEMENTS} exact replacements, preserving unrelated code. "
-            "For replacements, omit content and base_result_ref. "
+            "For replacements, omit content and base_result_ref. For a Python definition, use symbol and content. "
             "Create new files with content. For a whole-file update, use content plus base_result_ref. "
             "base_result_ref must be a complete read_file receipt from this task; changed versions are rejected. "
             + EXACT_REPLACEMENT_CONTEXT_HINT
@@ -235,6 +235,8 @@ TOOL_DEFINITIONS = (
             ("path", {"type": "string"}),
             ("content", {"type": "string", "description":
                 "Complete file text; preserve unrelated content. Prefer replacements for focused edits."}),
+            ("symbol", {"type": "string", "minLength": 1, "description":
+                "Unique Python function or class in the latest complete read. content is the replacement definition."}),
             ("expected_version", {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$",
                 "description": "Raw file version for a preflighted replacement edit."}),
             ("base_result_ref", {
