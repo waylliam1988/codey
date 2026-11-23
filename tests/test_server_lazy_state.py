@@ -54,13 +54,13 @@ class ServerLazyStateTests(unittest.TestCase):
         self.assertEqual(completed.stdout.strip(), "lazy")
 
     def test_server_import_loads_no_browser_stack(self) -> None:
-        self.assertEqual(_heavy_after_import("codey.app.server"), [])
+        self.assertEqual(_heavy_after_import("codey.app.server"), list[str]())
 
     def test_api_import_loads_no_browser_stack(self) -> None:
-        self.assertEqual(_heavy_after_import("codey.app.api"), [])
+        self.assertEqual(_heavy_after_import("codey.app.api"), list[str]())
 
     def test_context_import_loads_no_browser_stack(self) -> None:
-        self.assertEqual(_heavy_after_import("codey.app.context"), [])
+        self.assertEqual(_heavy_after_import("codey.app.context"), list[str]())
 
     def test_service_modules_import_loads_no_browser_stack(self) -> None:
         for dotted in (
@@ -72,7 +72,7 @@ class ServerLazyStateTests(unittest.TestCase):
             "codey.operations.task_state",
         ):
             with self.subTest(module=dotted):
-                self.assertEqual(_heavy_after_import(dotted), [])
+                self.assertEqual(_heavy_after_import(dotted), list[str]())
 
     def test_import_starts_no_browser_thread(self) -> None:
         script = (

@@ -17,7 +17,7 @@ from pathlib import Path
 from threading import Event
 from typing import TYPE_CHECKING, Protocol
 
-from codey.agents.consensus import ConsensusAdvice, ConsensusResult
+from codey.agents.consensus import ConsensusAdvice, ConsensusResult, ConsensusSender
 from codey.agents.handoff import ConversationContext
 from codey.agents.request import AgentRequest
 from codey.knowledge.store import KnowledgeStore
@@ -97,7 +97,7 @@ class CaptureProviderFailure(Protocol):
 
 
 class ConsensusTask(Protocol):
-    def __call__(self, *, selected_provider: object, selected_provider_id: str, task: str,
+    def __call__(self, *, selected_provider: ConsensusSender, selected_provider_id: str, task: str,
                  context: str = "", draft: str = "", plan: bool = False, draft_first: bool = False,
                  owner_prompt: str = "", trace_recorder: object | None = None) -> ConsensusResult | None: ...
 

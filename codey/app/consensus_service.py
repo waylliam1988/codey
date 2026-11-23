@@ -9,29 +9,33 @@ from __future__ import annotations
 
 from contextlib import ExitStack
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 from codey.agents.consensus import (
     ConsensusAdvice,
     ConsensusResult,
+    ConsensusSender,
 )
 from codey.agents.consensus import (
     run_consensus as run_consensus_core,
 )
 from codey.app import provider_services as providers
-from codey.operations.project_audit_advisor import (
-    run_project_audit as run_project_audit_core,
-)
 from codey.operations.task_state import TaskState, TaskSubmissionState
+from codey.providers.base import ChatProvider
 from codey.providers.catalog import API_CONNECTIONS, PROVIDER_LABELS
+from codey.utils.object_fields import object_fields, sequence_items
+
+if TYPE_CHECKING:
+    from codey.policies.task_policy import TaskPolicy
 
 
-def connect_consensus_provider(selected_provider: Any, provider_id: str) -> Any:
+def connect_consensus_provider(selected_provider: object, provider_id: str) -> ChatProvider:
     """Use an already-open sibling tab while a Writer provider is active."""
 
     if provider_id in API_CONNECTIONS:
         return providers.connect_existing_provider(provider_id)
-    owner_page = getattr(getattr(selected_provider, "session", None), "page", None)
+    session: object = getattr(selected_provider, "session", None)
+    owner_page: object = getattr(session, "page", None)
     if owner_page is not None:
         helper = providers.borrow_open_provider(provider_id, owner_page)
         if helper is None:
@@ -42,15 +46,20 @@ def connect_consensus_provider(selected_provider: Any, provider_id: str) -> Any:
     return providers.connect_existing_provider(provider_id)
 
 
-def _scoped_advisor(ctx: TaskState, selected_provider: Any, provider_id: str, leases: ExitStack) -> Any:
+def _scoped_advisor(ctx: TaskState, selected_provider: object, provider_id: str, leases: ExitStack) -> ChatProvider:
     with ExitStack() as candidate:
         if provider_id in API_CONNECTIONS:
             from codey.providers.api_connections import capture_selection, open_selection
 
-            choices = ctx.providers.model_preferences.snapshot()["sources"][provider_id]
-            if not choices["enabled"] or not choices["models"]:
+            preferences: object = ctx.providers.model_preferences.snapshot()
+            if (not object_fields(preferences) or not object_fields(sources := preferences.get("sources"))
+                    or not object_fields(choices := sources.get(provider_id))):
+                raise ValueError("Invalid model preferences")
+            models = choices.get("models")
+            if (choices.get("enabled") is not True or not sequence_items(models) or not models
+                    or not isinstance(model := models[0], str)):
                 raise ValueError("Selected model is disabled")
-            selection = capture_selection(provider_id, {"model": choices["models"][0]})
+            selection = capture_selection(provider_id, {"model": model})
             candidate.enter_context(providers.use_model(ctx, provider_id, selection.model_id))
             provider = open_selection(selection)
         else:
@@ -63,7 +72,7 @@ def _scoped_advisor(ctx: TaskState, selected_provider: Any, provider_id: str, le
 def run_consensus(
     ctx: TaskState,
     *,
-    selected_provider: Any,
+    selected_provider: ConsensusSender,
     selected_provider_id: str,
     task: str,
     context: str = "",
@@ -95,14 +104,18 @@ def run_consensus(
 def run_project_audit(
     ctx: TaskSubmissionState,
     *,
-    parent_policy: Any,
+    parent_policy: TaskPolicy,
     project: str | Path,
-    selected_provider: Any = None,
+    selected_provider: object = None,
     selected_provider_id: str,
     task: str,
     context: str = "",
     trace_recorder: object | None = None,
 ) -> tuple[ConsensusAdvice, ...]:
+    from codey.operations.project_audit_advisor import (
+        run_project_audit as run_project_audit_core,
+    )
+
     with ExitStack() as leases:
         return run_project_audit_core(
             parent_policy=parent_policy,

@@ -995,3 +995,18 @@ Q017B 已提交：`e3fe9bc4`（fix(durable): close service ownership after sched
 Q018 生产发布竞态已提交：`9e984dd4`（fix(context): prevent lazy knowledge publication after disable）。测试资源清理和共享fixture整文件类型治理作为独立职责提交，不夹带两张外部PNG。
 
 Q018验收完成：当前 **28 / 311批完整完成，57 / 996生产文件属于完整完成批次**；另5个部分批次文件独立验证，累计62个当前已验证生产文件。context完整强Any0、附件167→0、conftest66→0、新回归0；合并两处同语义close重试，未删除无法证明无用的生产API。下一主批Q017 provider控制流，先复核已有lazy import三失败及其独立导入契约。总goal仍active；Q015F大测试类型债务、Q019等其余范围未完成。
+
+Q018支持提交：`20ab7a7a`（refactor(tests): type lifecycle fixtures and release fake worker ownership）。两提交后工作区仅剩他人两个未跟踪PNG。
+
+### Q017 Consensus / sibling provider 控制流（进行中）
+
+- 两个生产源和test_server_lazy_state.py已完整读。consensus_service模块明确承诺import-light，不得在import时加载浏览器栈；旧实际导入链记录与当前顶层project_audit_advisor导入吻合。先实际复跑当前源码行为失败和完整Any基线，再决定最小延迟导入及类型边界修复。
+
+- 当前源码lazy复现 **1，3 failed/8 passed/4 subtests passed，11.33秒**，三处均实际加载56个浏览器/Playwright模块；非导入异常。两源和完整lazy回归强Any共71条，q017-baseline.json。共识/审计连接、模型占用及共享调用方行为基线 **0，39 passed，12.42秒**，q017-consensus-behavior-before.json。
+- 基于真实独立职责将原两个源拆为Q017（consensus_service）与Q017D（sibling_probe）；库存996源不增不减、每源唯一归属，总批次312，不减少总范围。sibling_probe全文件已读但Any尚未治理，request.page、pending metadata及controls.resolve_captured_control动态返回/Locator handler契约仍待所属恢复批；不为本批导入修复顺带重写controls1500行或冒称该源已完成。
+- 顶层project_audit_advisor导入移至真正执行project audit的函数内；公开run_project_audit签名/调用路径保留，不更改浏览器底层加载时机或删测试。consensus入口补ConsensusSender/ChatProvider/TaskPolicy，session/page仅作不透明对象转交；旧model snapshot在边界验证字符串键/启用标志/所选模型字符串后继续原capture+ExitStack路径。完整lazy测试仅给空期望列表显式str元素类型，原零浏览器模块断言不变。实际修改后验证进行中。
+
+- 首次候选复验lazy文件 **1，2 failed/8 passed/5 subtests passed，10.26秒**：consensus输入已通过，但server/task_submit仍加载浏览器。新的真实audit-hook栈指向task_submit:27→project_adapter→task_loop→kernel→browser_binding，与已移除的consensus→audit路径不同，q017-task-submit-import-chain.json；原基线相同两个输入已失败，不归为新回归，也不宣称lazy全绿。复用原_heavy_after_import函数、原consensus输入及原[]关键断言独立复核 **0**，q017-consensus-import-after.json。
+- 整个consensus源强Any **21→0**，lazy完整脚本 **4→0**，Pyrefly/ty/Ruff定向0。生产ty首次暴露ConsensusTask原object输入与真实Sender要求不一致；已确认两个生产调用方均交入ChatProvider，只将共享callback契约收窄至既有ConsensusSender。task_run.py完整785行已读，强Any基线31，未借机修改其他生命周期逻辑；其反射/可选callback与OperationOutcome类表达式诊断保留Q099部分完成，禁止称该共享文件已全面治理。
+- `python -m pytest -q tests/test_consensus.py tests/test_server.py::ConsensusConnectionTests tests/test_model_preferences.py::test_consensus_uses_selected_api_model_and_holds_it_during_advice tests/test_model_preferences.py::test_failed_advisor_connection_releases_its_model_scope tests/test_shared_task_service_consumers.py tests/test_project_audit_advisor_kernel.py tests/test_consensus_audit_split.py --tb=short` → **0，52 passed，15.35秒**。随后精确契约对齐后的`python -m pytest -q tests/test_task_setup_cleanup.py tests/test_task_runtime_coordinator.py tests/test_shared_task_service_consumers.py tests/test_model_preferences.py::test_consensus_discovers_enabled_zen_and_cline_after_api_probes --tb=short` → **0，10 passed，3.34秒**；其中共享consumer1项重复，不把52+10当62个唯一用例。q017-consensus-final-validation.json/q017-consensus-complete-validation.json。
+- 最终生产mypy750/Pyrefly/ty/precision全部exit0（35 suppressed/168 warnings仍在），必要protocol调整后的结果在q017-consensus-contract-alignment.json；定向强Any2文件0、Ruff3文件0。首次ty失败与修复后结果明确保留；源hash稳定。此次没有删除公开API或合并非重复业务逻辑。Q017源范围完成，Q017D恢复/教学仍未治理；当前 **29 / 312批完整完成，58 / 996生产文件属于完整完成批次**，另5部分源独立验证，累计63当前已验证生产文件。下一主批从Q027拆出task_submit入口处理剩余cold-start失败。

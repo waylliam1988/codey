@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 996,
   "region_count": 40,
-  "batch_count": 311,
+  "batch_count": 312,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -91,6 +91,7 @@
         "Q016E",
         "Q017B",
         "Q017",
+        "Q017D",
         "Q017C",
         "Q018",
         "Q019",
@@ -2248,18 +2249,45 @@
     },
     {
       "id": "Q017",
-      "responsibility": "Consensus, project audit and sibling provider control flows",
+      "responsibility": "Consensus and project audit advisor selection, scoped model ownership, import-light service entry",
       "files": [
-        "codey/app/consensus_service.py",
+        "codey/app/consensus_service.py"
+      ],
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/app/consensus_service.py"
+      ],
+      "verified_files": [
+        "codey/app/consensus_service.py"
+      ],
+      "candidate_test_count": "recompute at responsibility entry",
+      "followups": [
+        "Original3failures decomposed: consensus service input fixed; two remaining server/task_submit failures have independent task_submit->project_adapter->task_loop->kernel->Playwright path. q017-task-submit-import-chain.json and q017-consensus-first-validation.json (2failed/8passed/5subtests). Prior full-file lazy gate is not green; handle task_submit at Q027 next without weakening assertions."
+      ],
+      "tests": [
+        "tests/test_server_lazy_state.py"
+      ],
+      "result": "Fixed module import-light contract: before consensus fresh-process subtest loads 56 browser/Playwright modules, after same helper/input/empty-list assertion succeeds. Core audit import deferred to actual execution. Entire consensus source strong Any21->0, lazy-state script4->0; 52 scoped advisor/audit/caller tests and 10 lifecycle tests pass, overlapping one support test not double-counted as unique coverage. Full production mypy750/Pyrefly/ty/precision pass after necessary ConsensusTask protocol alignment. Remaining lazy file2failures are pre-existing task_submit->project_adapter eager import path, separately traced and routed to Q027. task_run shared full-file Any31 explicitly left partial at Q099, no full-file completion claim."
+    },
+    {
+      "id": "Q017D",
+      "responsibility": "Sibling browser diagnosis, flow recovery and user click teaching",
+      "files": [
         "codey/app/sibling_probe.py"
       ],
       "status": "not_started",
-      "reviewed_files": [],
+      "reviewed_files": [
+        "codey/app/sibling_probe.py"
+      ],
       "verified_files": [],
-      "candidate_test_count": "recompute at responsibility entry",
+      "tests": [
+        "tests/test_teach_cancellation.py",
+        "tests/test_server.py::SessionThreadingTests"
+      ],
       "followups": [
-        "Q008D caller verification: tests/test_server_lazy_state.py has same 3 failures with HEAD consensus source (3 failed/8 passed/4 subtests). Actual import trace consensus_service -> project_audit_advisor -> task_loop -> kernel_driver -> kernel_context -> kernel_actions -> kernel_execution -> browser_progress -> browser_binding -> Playwright violates consensus_service import-light doc contract. q008d-lazy-import-chain.json; preserve regression assertions and repair at owning import boundary."
-      ]
+        "Complete file read at Q017 entry, strict Any baseline remains in owner_page/return, candidate generator, request.page and pending metadata, dynamic resolve_captured_control return. Provider controls set_teach_handler contract expects Playwright Locator, but resolver return is legacy Any. Preserve real cancellation and deadline semantics; narrow dynamic boundary with validation or repair the provider contract and validate actual browser teaching, rather than replacing Any with an unchecked Locator assertion. No sibling source changes or governance-complete claim."
+      ],
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
     },
     {
       "id": "Q017C",
@@ -2305,7 +2333,11 @@
         "tests/test_coldstart_review_batch.py::ColdstartReviewBatchTests::test_knowledge_index_close_fails_cleanly_on_reuse",
         "tests/test_research_submission_handoff_production.py"
       ],
-      "result": "Complete full-file context governance: fixed lazy knowledge publication after disable/close with before 2 failed/2 passed and after 4 passed; production commit 9e984dd4. Independently repaired accepting attachment test stub ownership cleanup, typed full attachment/conftest/resource-regression files and merged duplicate four-attempt close loops. Four explicit final pytest batches 41+39+7+17=104 passed; no skips. Strict Any/Pyrefly/ty/Ruff four files exit0; production mypy750/Pyrefly/ty/precision exit0 (35 suppressed/168 warnings disclosed). Hashes stable; Windows subprocess encoding baseline failure separately explained and UTF8 environment validated. Support commit hash to be recorded with next progress update."
+      "result": "Complete full-file context governance: fixed lazy knowledge publication after disable/close with before 2 failed/2 passed and after 4 passed; production commit 9e984dd4. Independently repaired accepting attachment test stub ownership cleanup, typed full attachment/conftest/resource-regression files and merged duplicate four-attempt close loops. Four explicit final pytest batches 41+39+7+17=104 passed; no skips. Strict Any/Pyrefly/ty/Ruff four files exit0; production mypy750/Pyrefly/ty/precision exit0 (35 suppressed/168 warnings disclosed). Hashes stable; Windows subprocess encoding baseline failure separately explained and UTF8 environment validated. Support commit 20ab7a7a; both commits created and worktree source clean.",
+      "commits": [
+        "9e984dd4",
+        "20ab7a7a"
+      ]
     },
     {
       "id": "Q018B",
@@ -2464,7 +2496,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 35
+      "candidate_test_count": 35,
+      "followups": [
+        "Q017 consensus lazy import fixed but independent task_submit eager top-level project_adapter import violates its own cold-start doc and keeps server/task_submit two failures. Actual fresh-process audit trace q017-task-submit-import-chain.json, original3failed baseline and partial2failed results preserved. Prioritize entry-only scoped fix next; retain dependency-injection agent_run callers and initialization-failure reservation cleanup."
+      ]
     },
     {
       "responsibility": "codey/automation: package entry and composition",
@@ -3509,12 +3544,15 @@
         "codey/operations/task_changes.py"
       ],
       "id": "Q099",
-      "status": "not_started",
-      "reviewed_files": [],
+      "status": "partial_follow_up",
+      "reviewed_files": [
+        "codey/operations/task_run.py"
+      ],
       "verified_files": [],
       "candidate_test_count": 38,
       "followups": [
-        "Q009 caller verification: checkpoint True-done node waits indefinitely for an owned tool task; no worker threads in py-spy dump. Test constructs MemoryDurableStore without scheduler and calls _run_one_writer_attempt directly. Original HEAD writer_failover call-phase bounded reproduction has same wait_tool_task stack, 0 calls into governed module; interrupted exit 2, no completed test count. Route fixture runtime/scheduler contract investigation, retain assertions. Evidence q009-caller-baseline.json / q009-caller-wait-stack.log."
+        "Q009 caller verification: checkpoint True-done node waits indefinitely for an owned tool task; no worker threads in py-spy dump. Test constructs MemoryDurableStore without scheduler and calls _run_one_writer_attempt directly. Original HEAD writer_failover call-phase bounded reproduction has same wait_tool_task stack, 0 calls into governed module; interrupted exit 2, no completed test count. Route fixture runtime/scheduler contract investigation, retain assertions. Evidence q009-caller-baseline.json / q009-caller-wait-stack.log.",
+        "Q017 full task_run.py785-line review for ConsensusTask provider contract alignment: actual project_completion_flow/project_writer_phase pass ChatProvider to a sender-requiring core. Tightened only callback parameter object->ConsensusSender, full production type gates and lifecycle tests pass. Full-file strict Any baseline31 still pending at reflection calls191/195/332/409/433/548/700/764/770 and OperationOutcome class expressions375/382; optional compatibility callbacks need concrete protocol migration preserving legacy behavior. This shared file is not fully governed; no verified-file credit."
       ]
     },
     {
@@ -8341,6 +8379,14 @@
       "runtime_python_listed": 750,
       "runtime_python_tracked": 750,
       "runtime_python_missing": []
+    },
+    {
+      "batch": "Q017",
+      "replacement": [
+        "Q017",
+        "Q017D"
+      ],
+      "reason": "Complete-file review confirms independent advisor execution vs browser diagnosis/click-teaching responsibilities and separate dynamic type boundaries. Fix confirmed import contract in advisor entry first; queue controls-backed return typing with teaching recovery. Both original files retain unique ownership, 996 production files unchanged."
     }
   ]
 }
