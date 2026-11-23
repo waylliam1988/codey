@@ -146,7 +146,7 @@ class ShellApprovalCoordinator:
             return None
         with self._context.lock:
             self._context.approvals.pop_shell(approval_id)
-        return cast(dict[str, object], pending)
+        return pending
 
     def resolve(self, approval_id: str) -> dict[str, object] | None:
         from codey.operations.shell_approval_receipt import resolve_shell_approval
@@ -177,7 +177,7 @@ class ShellApprovalCoordinator:
     def pending(self) -> dict[str, dict[str, object]]:
         with self._context.lock:
             value = self._context.approvals.shell_snapshot()
-        return cast(dict[str, dict[str, object]], value)
+        return value
 
     def discard_pending(self, approval_id: str) -> None:
         """Remove a UI approval projection after its durable decision commits."""

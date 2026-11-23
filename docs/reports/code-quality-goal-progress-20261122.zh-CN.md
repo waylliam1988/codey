@@ -937,3 +937,8 @@ Q015F 构造修复已提交：`7d1b731f`（fix(http): close the listener when se
 - 主批三个源已读和验证，独立RunRegistry类型变更与教学取消修复分两commit。先对旧approval/coordinator+新registry的实际中间提交版本做独立限定测试/全生产类型门，保证第一个commit不依赖未提交教学修复；当前结果逐命令q016-registry-commit-validation.json。未确认reserve/replace冲突输入的对外策略，没有据偏好改变注册身份行为或删除仍公开的兼容入口。
 
 RunRegistry实际中间提交版本验收已完成：旧approval/coordinator源码+本次registry和完整typed测试，**11 passed，1.13秒**；两完整路径严格Any/Pyrefly/ty/Ruff、750文件生产三类型/precision均0，35 suppressed/168 warnings。q016-registry-commit-validation.json确认finally精确恢复本轮approval/coordinator。先按四明确路径暂存registry、其完整测试和两记录，不夹带仍待独立提交的教学修复。主批仍进行中，完整完成统计不变24/309、49/996。
+
+
+Q016 RunRegistry类型/诊断投影已提交：`2a027a51`（refactor(runs): validate provider failure projections and type registry tests）。
+
+Q016主批完成：三生产文件完整检查与约定Any核验完成，教学取消修复将按独立变更提交；修改过的approval/coordinator及两完整审批测试已全文件零Any并完成必要验证。Q024只有因本次精确返回需要的coordinator单源完成，其余五文件仍未治理，明确标为部分完成。当前 **25 / 309批完整完成、52 / 996生产文件属于完整完成批次**；另5个部分批次文件独立验证，累计57个当前已验证生产文件。共有两次有效改前行为失败证据（注册表原flag、真实取消续跑原finish路径），中间残留卡片失败也已定位并修复，不将collection error记作复现。下一唯一主批Q016B：change_tracking.py的task-owned tracker选择；CLI/desktop/headless消费者仍待基础生命周期/context先行，不回到已验收server/registry追加可选优化。总goal仍active。

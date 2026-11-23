@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import unittest
 
 from codey.agents.shell_approval import shell_command_payload
@@ -7,7 +8,7 @@ from codey.app.approval_registry import ApprovalRegistry
 from codey.app.run_registry import RunSnapshot
 
 
-def _complete(base: dict) -> dict:
+def _complete(base: dict[str, object]) -> dict[str, object]:
     fields = shell_command_payload(str(base.get("command") or "test"))
     pending = dict(base)
     if "command" not in pending:
@@ -20,6 +21,36 @@ def _complete(base: dict) -> dict:
 
 
 class ApprovalRegistryTests(unittest.TestCase):
+    def test_cancel_teach_updates_the_waiting_callers_record_before_waking_it(self) -> None:
+        approvals = ApprovalRegistry()
+        wake = threading.Event()
+        pending: dict[str, object] = {"event": wake, "cancelled": False}
+        # sibling_probe.handle_control_teach waits on this event, then reads
+        # cancellation from the same record it registered.
+        approvals.add_teach("teach-1", pending)
+
+        cancelled = approvals.cancel_teach()
+
+        self.assertTrue(wake.is_set())
+        self.assertIs(pending["cancelled"], True)
+        self.assertEqual(len(cancelled), 1)
+        self.assertIs(cancelled[0]["cancelled"], True)
+        self.assertFalse(approvals.teach_snapshot())
+        self.assertFalse(approvals.resume_teach("teach-1"))
+
+    def test_resume_teach_wakes_without_marking_cancellation(self) -> None:
+        approvals = ApprovalRegistry()
+        wake = threading.Event()
+        pending: dict[str, object] = {"event": wake, "cancelled": False}
+        approvals.add_teach("teach-1", pending)
+        snapshot = approvals.teach_snapshot()["teach-1"]
+        snapshot["cancelled"] = True
+
+        self.assertTrue(approvals.resume_teach("teach-1"))
+        self.assertTrue(wake.is_set())
+        self.assertIs(pending["cancelled"], False)
+        self.assertFalse(approvals.resume_teach("missing"))
+
     def test_expire_shell_results_clears_pending_and_reports_denials(self) -> None:
         approvals = ApprovalRegistry()
         approvals.add_shell("shell-1", _complete({
@@ -32,7 +63,7 @@ class ApprovalRegistryTests(unittest.TestCase):
 
         events = approvals.expire_shell_results()
 
-        self.assertEqual(approvals.shell_snapshot(), {})
+        self.assertEqual(approvals.shell_snapshot(), dict[str, dict[str, object]]())
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["type"], "shell_result")
         self.assertFalse(events[0]["approved"])
@@ -61,9 +92,11 @@ class ApprovalRegistryTests(unittest.TestCase):
             output="expired",
         )
 
-        self.assertEqual([event["id"] for event in events], ["shell-old"])
+        event_ids: list[object] = [event["id"] for event in events]
+        self.assertEqual(event_ids, list[str](["shell-old"]))
         self.assertEqual(events[0]["output"], "expired")
-        self.assertEqual(set(approvals.shell_snapshot()), {"shell-new"})
+        remaining_ids: set[str] = set(approvals.shell_snapshot())
+        self.assertEqual(remaining_ids, set[str](["shell-new"]))
 
     def test_expire_shell_results_can_keep_current_run(self) -> None:
         approvals = ApprovalRegistry()
@@ -84,8 +117,10 @@ class ApprovalRegistryTests(unittest.TestCase):
 
         events = approvals.expire_shell_results(exclude_run_id="run-current")
 
-        self.assertEqual([event["id"] for event in events], ["shell-old"])
-        self.assertEqual(set(approvals.shell_snapshot()), {"shell-current"})
+        event_ids: list[object] = [event["id"] for event in events]
+        self.assertEqual(event_ids, list[str](["shell-old"]))
+        remaining_ids: set[str] = set(approvals.shell_snapshot())
+        self.assertEqual(remaining_ids, set[str](["shell-current"]))
 
     def test_pending_ui_event_prefers_active_run_scope(self) -> None:
         approvals = ApprovalRegistry()
@@ -105,7 +140,7 @@ class ApprovalRegistryTests(unittest.TestCase):
 
         self.assertEqual(
             approvals.pending_ui_event(active),
-            {"type": "teach_request", "run_id": "run-new"},
+            dict[str, object](type="teach_request", run_id="run-new"),
         )
         self.assertIsNone(approvals.pending_ui_event(
             RunSnapshot(
@@ -128,7 +163,7 @@ class ApprovalRegistryTests(unittest.TestCase):
 
         self.assertEqual(
             approvals.pending_ui_event(None),
-            {"type": "teach_request", "run_id": "run-new"},
+            dict[str, object](type="teach_request", run_id="run-new"),
         )
 
     def test_stop_all_bumps_generation_even_when_map_is_empty(self) -> None:
@@ -161,8 +196,10 @@ class ApprovalRegistryTests(unittest.TestCase):
 
         events = approvals.expire_session("s-a")
 
-        self.assertEqual([event["id"] for event in events], ["shell-a"])
-        self.assertEqual(set(approvals.shell_snapshot()), {"shell-b"})
+        event_ids: list[object] = [event["id"] for event in events]
+        self.assertEqual(event_ids, list[str](["shell-a"]))
+        remaining_ids: set[str] = set(approvals.shell_snapshot())
+        self.assertEqual(remaining_ids, set[str](["shell-b"]))
 
 
 if __name__ == "__main__":

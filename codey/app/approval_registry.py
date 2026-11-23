@@ -3,16 +3,31 @@
 from __future__ import annotations
 
 import threading
-from typing import Any
+from typing import Protocol, runtime_checkable
 
 from codey.agents.shell_approval import shell_command_event_fields
 from codey.app.run_registry import RunSnapshot
+from codey.utils.object_fields import object_fields
+
+
+@runtime_checkable
+class _WakeSignal(Protocol):
+    def set(self) -> None: ...
+
+
+def _wake(signal: object) -> bool:
+    if signal is None:
+        return False
+    if not isinstance(signal, _WakeSignal):
+        raise TypeError("pending teaching event must expose set")
+    signal.set()
+    return True
 
 
 class ApprovalRegistry:
     def __init__(self) -> None:
-        self._pending_shell: dict[str, dict[str, Any]] = {}
-        self._pending_teach: dict[str, dict[str, Any]] = {}
+        self._pending_shell: dict[str, dict[str, object]] = {}
+        self._pending_teach: dict[str, dict[str, object]] = {}
         self._lock = threading.RLock()
         # Monotonic epoch: Stop (expire-all) always bumps it, even when the
         # map is already empty, so an Allow that already popped its entry can
@@ -29,26 +44,28 @@ class ApprovalRegistry:
         with self._lock:
             return self._generation
 
-    def add_shell(self, approval_id: str, pending: dict[str, Any]) -> None:
+    def add_shell(self, approval_id: str, pending: dict[str, object]) -> None:
         with self._lock:
             record = dict(pending)
             record["_approval_generation"] = self._generation
             self._pending_shell[approval_id] = record
 
-    def pop_shell(self, approval_id: str) -> dict[str, Any] | None:
+    def pop_shell(self, approval_id: str) -> dict[str, object] | None:
         with self._lock:
             pending = self._pending_shell.pop(approval_id, None)
             return dict(pending) if pending is not None else None
 
-    def shell_snapshot(self) -> dict[str, dict[str, Any]]:
+    def shell_snapshot(self) -> dict[str, dict[str, object]]:
         with self._lock:
             return {key: dict(value) for key, value in self._pending_shell.items()}
 
-    def add_teach(self, teach_id: str, pending: dict[str, Any]) -> None:
+    def add_teach(self, teach_id: str, pending: dict[str, object]) -> None:
         with self._lock:
-            self._pending_teach[teach_id] = dict(pending)
+            # The waiting caller observes cancellation on this record after
+            # its shared event is set. Snapshots and returned rows stay copies.
+            self._pending_teach[teach_id] = pending
 
-    def pop_teach(self, teach_id: str) -> dict[str, Any] | None:
+    def pop_teach(self, teach_id: str) -> dict[str, object] | None:
         with self._lock:
             pending = self._pending_teach.pop(teach_id, None)
             return dict(pending) if pending is not None else None
@@ -57,22 +74,18 @@ class ApprovalRegistry:
         with self._lock:
             pending = self._pending_teach.get(teach_id)
         event = pending.get("event") if pending is not None else None
-        if event is None:
-            return False
-        event.set()
-        return True
+        return _wake(event)
 
-    def cancel_teach(self) -> tuple[dict[str, Any], ...]:
+    def cancel_teach(self) -> tuple[dict[str, object], ...]:
         with self._lock:
             pending = tuple(self._pending_teach.values())
+            self._pending_teach.clear()
         for item in pending:
             item["cancelled"] = True
-            event = item.get("event")
-            if event is not None:
-                event.set()
+            _wake(item.get("event"))
         return tuple(dict(item) for item in pending)
 
-    def teach_snapshot(self) -> dict[str, dict[str, Any]]:
+    def teach_snapshot(self) -> dict[str, dict[str, object]]:
         with self._lock:
             return {key: dict(value) for key, value in self._pending_teach.items()}
 
@@ -83,8 +96,8 @@ class ApprovalRegistry:
         exclude_run_id: str = "",
         session_id: str = "",
         output: str = "Task stopped; command approval expired.",
-    ) -> tuple[dict[str, Any], ...]:
-        stale: list[dict[str, Any]] = []
+    ) -> tuple[dict[str, object], ...]:
+        stale: list[dict[str, object]] = []
         with self._lock:
             for approval_id, pending in list(self._pending_shell.items()):
                 pending_run_id = str(pending.get("run_id") or "")
@@ -100,7 +113,7 @@ class ApprovalRegistry:
             # they remove something.
             if stale or (not run_id and not exclude_run_id and not session_id):
                 self._generation += 1
-        results: list[dict[str, Any]] = []
+        results: list[dict[str, object]] = []
         for pending in stale:
             try:
                 command_fields = shell_command_event_fields(pending)
@@ -127,11 +140,11 @@ class ApprovalRegistry:
         session_id: str,
         *,
         output: str = "Chat cleared; command approval expired.",
-    ) -> tuple[dict[str, Any], ...]:
+    ) -> tuple[dict[str, object], ...]:
         """Expire pending shell approvals for one session (new-chat path)."""
         return self.expire_shell_results(session_id=session_id, output=output)
 
-    def pending_ui_event(self, active: RunSnapshot | None) -> dict[str, Any] | None:
+    def pending_ui_event(self, active: RunSnapshot | None) -> dict[str, object] | None:
         candidates: list[dict[str, object]] = []
         with self._lock:
             pending_items = [
@@ -140,7 +153,7 @@ class ApprovalRegistry:
             ]
         for pending in pending_items:
             event = pending.get("ui_event")
-            if isinstance(event, dict):
+            if object_fields(event):
                 candidates.append(event)
         if active is not None:
             for event in candidates:

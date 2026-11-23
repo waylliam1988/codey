@@ -2097,14 +2097,16 @@
         "codey/app/run_registry.py",
         "codey/app/run_state_projection.py"
       ],
-      "status": "in_progress",
+      "status": "completed_changed",
       "reviewed_files": [
         "codey/app/approval_registry.py",
         "codey/app/run_registry.py",
         "codey/app/run_state_projection.py"
       ],
       "verified_files": [
-        "codey/app/run_registry.py"
+        "codey/app/approval_registry.py",
+        "codey/app/run_registry.py",
+        "codey/app/run_state_projection.py"
       ],
       "candidate_test_count": "recompute at responsibility entry",
       "tests": [
@@ -2114,7 +2116,22 @@
         "tests/test_task_lifecycle_projection.py",
         "tests/test_forget_session_cleanup.py"
       ],
-      "result": "Whole registry/approval/projection review performed. Confirmed teaching cancellation alias bug reproduced by registry and real continuation; fix independently verified but next commit. Independent RunRegistry dynamic failure payload validation and whole typed tests verified on actual staged intermediate sources. Main batch in progress until teaching commit."
+      "result": "Teaching cancellation bug: add_teach copied the caller record, so cancellation woke the same Event with caller.cancelled=False and real continuation finalized capture. Original registry 1 failed/9 passed; real continuation original source 1 behavior failure. Shared caller record and locked removal of cancelled pending entries fix cancellation and stale UI actions; public snapshots remain copies, shell metadata still copied and generation-pinned. Final direct 22 passed; projection/caller group 15; approval/stop/restart boundaries 7. Eight complete files strong Any 223 -> 11 -> 6 -> 0; production mypy750/Pyrefly/ty/precision pass (35 suppressed/168 warnings). Necessary coordinator two redundant casts removed; all modified tests typed. RunRegistry failure boundary independently verified as commit 2a027a51 with old approval/coordinator sources, 11 passed and all type gates. RunStateProjection unchanged after whole review and strict Any audit; existing casts supported by known internal TypedDict/JSON projection schema, no new cast or JSON budget. Source remains unique-owned.",
+      "commits": [
+        "2a027a51"
+      ],
+      "evidence": [
+        "q016-baseline.json",
+        "q016-teach-before.json",
+        "q016-teach-continuation-before-final.json",
+        "q016-teach-partial-fix.json",
+        "q016-teach-final-first.json",
+        "q016-projection-callers.json",
+        "q016-validation-final.json",
+        "q016-validation-complete.json",
+        "q016-registry-fixture-baseline.json",
+        "q016-registry-commit-validation.json"
+      ]
     },
     {
       "id": "Q016B",
@@ -2301,10 +2318,18 @@
         "codey/app/shell_service.py"
       ],
       "id": "Q024",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 23
+      "status": "partial_follow_up",
+      "reviewed_files": [
+        "codey/app/shell_approval_coordinator.py"
+      ],
+      "verified_files": [
+        "codey/app/shell_approval_coordinator.py"
+      ],
+      "candidate_test_count": 23,
+      "result": "Q016 required caller type update: ApprovalRegistry precise returns make two coordinator casts redundant; remove only those, whole file read and strict Any/scoped tools passed. Relevant Q016 approval claim/stop/restart tests 7 passed and production gates pass. Other five Q024 production files not yet governed; keep batch partial.",
+      "followups": [
+        "Complete original Q024 remaining five production files; coordinator was reviewed/typed with Q016 and does not need optional re-review absent real changes."
+      ]
     },
     {
       "responsibility": "codey/app: answer and report projection",
