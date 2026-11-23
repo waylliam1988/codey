@@ -31,6 +31,8 @@ EFFECT_OBSERVATIONS = frozenset({"browser_click", "browser_fill", "browser_scrol
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _PYTEST_TALLY = re.compile(r"([0-9]+) (failed|errors?|passed|skipped|xfailed|xpassed|warnings?|deselected)")
 _PYTEST_END = re.compile(r"(.+) in [0-9]+(?:\.[0-9]+)?s(?: \([0-9:]+\))?")
+_UNITTEST_END = re.compile(r"Ran ([0-9]+) tests? in [0-9]+(?:\.[0-9]+)?s")
+_UNITTEST_TALLY = re.compile(r"(failures|errors)=([0-9]+)")
 
 
 def pytest_failure_ids(stdout: str, exit_code: int) -> tuple[str, ...] | None:
@@ -69,6 +71,27 @@ def pytest_failure_ids(stdout: str, exit_code: int) -> tuple[str, ...] | None:
     return tuple(sorted([*(f"FAILED {node}" for node in failures), *(f"ERROR {node}" for node in errors)]))
 
 
+def unittest_failure_ids(output: str, exit_code: int) -> tuple[str, ...] | None:
+    """Recognize a complete unittest footer and its named failure blocks."""
+    lines = [line for raw in output.splitlines() if (line := _ANSI.sub("", raw).strip())]
+    if (len(lines) < 2 or (total := _UNITTEST_END.fullmatch(lines[-2])) is None or int(total[1]) == 0):
+        return None
+    if exit_code == 0 and lines[-1] == "OK":
+        return ()
+    if exit_code != 1 or not lines[-1].startswith("FAILED (") or not lines[-1].endswith(")"):
+        return None
+    parts = lines[-1][8:-1].split(", ")
+    tally = {match[1]: int(match[2]) for part in parts if (match := _UNITTEST_TALLY.fullmatch(part)) is not None}
+    blocks = {line for before, line, after in zip(lines, lines[1:], lines[2:], strict=False)
+              if before.startswith("=" * 20) and after.startswith("-" * 20)}
+    failures = {line for line in blocks if line.startswith("FAIL: ")}
+    errors = {line for line in blocks if line.startswith("ERROR: ")}
+    if (len(tally) != len(parts) or not (failures or errors)
+            or (len(failures), len(errors)) != (tally.get("failures", 0), tally.get("errors", 0))):
+        return None
+    return tuple(sorted(failures | errors))
+
+
 @dataclass(frozen=True)
 class ProjectCheckComparison:
     command: str
@@ -89,8 +112,10 @@ def compare_project_check(execution: SettledCheckExecution, *, session: TaskSess
     result = execution.result
     identity = _kernel_workspace_identity_of(result)
     command, cwd = result.call.args.get("command"), result.call.args.get("path", ".")
-    if (identity is None or not identity.fingerprint or not isinstance(command, str) or not isinstance(cwd, str)
-            or _command_family(command) != "python:pytest"):
+    if identity is None or not identity.fingerprint or not isinstance(command, str) or not isinstance(cwd, str):
+        return None
+    family = _command_family(command)
+    if family not in {"python:pytest", "python:unittest"}:
         return None
     try:
         receipt = execution_receipt(result)
@@ -99,7 +124,9 @@ def compare_project_check(execution: SettledCheckExecution, *, session: TaskSess
         output = resolve_result_output(ReceiptReader(session, store, session_id, execution.task_ref), result)
         if output.source != "execution" or output.original_output_incomplete:
             return None
-        failures = pytest_failure_ids(output.text.partition("\n[stderr]\n")[0], receipt.exit_code)
+        stdout, separator, stderr = output.text.partition("\n[stderr]\n")
+        failures = (pytest_failure_ids(stdout, receipt.exit_code) if family == "python:pytest" else
+                    unittest_failure_ids(stderr if separator else stdout, receipt.exit_code))
         if failures is None:
             return None
         return ProjectCheckComparison(command, cwd, identity.fingerprint, receipt.exit_code, failures,

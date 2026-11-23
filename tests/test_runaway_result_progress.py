@@ -12,7 +12,7 @@ from codey.agents.runaway_guard import attempt_record, should_block_or_remind
 from codey.app.headless_runner import HeadlessAppContext
 from codey.completion.verification_policy import VerificationCandidate
 from codey.operations.kernel_progress import KernelProgress, project_check_cycle
-from codey.operations.progress_comparison import ProjectCheckComparison, pytest_failure_ids
+from codey.operations.progress_comparison import ProjectCheckComparison, pytest_failure_ids, unittest_failure_ids
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -54,6 +54,25 @@ def test_pytest_summary_requires_all_failure_and_error_rows() -> None:
     assert pytest_failure_ids(stdout, 0) is None
     assert pytest_failure_ids(stdout, 125) is None
     assert pytest_failure_ids("2 passed in 0.11s", 0) == ()
+
+
+def test_unittest_stderr_uses_the_actual_named_failure_and_count() -> None:
+    output = """F.
+======================================================================
+FAIL: test_display (test_app.Names.test_display)
+----------------------------------------------------------------------
+AssertionError: '[ Hello, World! ]' != '[hello-world]'
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+FAILED (failures=1)
+"""
+    assert unittest_failure_ids(output, 1) == ("FAIL: test_display (test_app.Names.test_display)",)
+    assert unittest_failure_ids(output.replace("failures=1", "failures=2"), 1) is None
+    assert unittest_failure_ids(output.rsplit("FAILED", 1)[0], 1) is None
+    assert unittest_failure_ids(output, 0) is None
+    assert unittest_failure_ids("Ran 2 tests in 0.001s\n\nOK\n", 0) == ()
 
 
 @pytest.mark.parametrize("change", ["same", "failure", "cwd", "fingerprint", "already_delivered", "real_edit"])
