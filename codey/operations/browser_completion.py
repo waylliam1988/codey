@@ -105,6 +105,19 @@ def committed_results(records: Mapping[str, ExecutionRecord], results: Mapping[s
             and result.call.call_id == row["call_id"]]
 
 
+def complete_snapshot_text(result: ToolResult) -> tuple[str, str] | None:
+    """Read the full visible text independently of the control inventory limit."""
+    if (result.ok and result.call.name == "browser_snapshot"
+            and isinstance(value := result.canonical.get("value"), dict)
+            and isinstance(result.audit.get("browser_document"), dict)
+            and isinstance(url := value.get("page_url"), str) and url
+            and isinstance(text := value.get("text"), str) and text.strip()
+            and ((truncated := value.get("text_truncated")) is False
+                 or truncated is None and value.get("complete") is True)):
+        return url, text
+    return None
+
+
 def matches_wait(result: ToolResult, *, url: str, condition: str, value: str) -> bool:
     return (result.call.args.get("condition") == condition and result.call.args.get("value") == value
             and wait_matched_on_page(result, url))

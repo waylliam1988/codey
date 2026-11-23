@@ -12,10 +12,10 @@ def failure_excerpt(output: str, *, limit: int = 1600) -> str:
         return ""
     lines = [_ANSI.sub("", line).strip() for line in output.splitlines()]
     summaries = [line.strip("= ") for line in lines if _SUMMARY.match(line)]
-    failed = [line for line in lines if line.startswith(("FAILED ", "ERROR ", "ERROR: "))]
-    details = [line for line in lines if line.startswith("E ")]
+    failed = [line for line in lines if line.startswith(("FAILED ", "FAIL: ", "ERROR ", "ERROR: "))]
+    details = [line for line in lines if line.startswith(("E ", "AssertionError: ", "NameError: "))]
     selected: list[str] = []
-    for line in [*summaries[-1:], *failed, *details[:3]]:
+    for line in [*summaries[-1:], *failed[:3], *details[:3], *failed[3:]]:
         if line not in selected:
             selected.append(line)
     if not selected:

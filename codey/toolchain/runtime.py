@@ -51,7 +51,7 @@ from codey.toolchain.edit_text import TextEdit, count_matches, exact_raw_edit, n
 from codey.toolchain.indentation import align_replacement, boundary_replacement, valid_python
 from codey.toolchain.line_prefix import strip_line_number_prefixes as _strip_line_number_prefixes
 from codey.toolchain.presentation import edit_preview
-from codey.types.json_value import JsonValue
+from codey.types.json_value import JsonObject, JsonValue
 from codey.utils.failure_output import failure_excerpt
 from codey.utils.references import find_reference_hints
 from codey.utils.scan_report import render_scan_coverage
@@ -757,7 +757,9 @@ class PreparedEdit:
     syntax_regression: bool = False
 
 
-def prepare_edit(root: Path, rel: str, blocks: list[EditBlock]) -> PreparedEdit | ToolOutcome:
+def prepare_edit(root: Path, rel: str, blocks: list[EditBlock], *,
+                 expected_version: str = "",
+                 transform_content: Callable[[str, str], tuple[str, JsonObject]] | None = None) -> PreparedEdit | ToolOutcome:
     if problem := _edit_block_error(blocks):
         return ToolOutcome.error(problem)
 
@@ -774,6 +776,11 @@ def prepare_edit(root: Path, rel: str, blocks: list[EditBlock]) -> PreparedEdit 
         return ToolOutcome.error(f"not utf-8 text: {rel}")
     except (OSError, ValueError):
         return ToolOutcome.error(f"cannot read file: {rel}")
+    from codey.workspace.paths import content_hash
+
+    version = content_hash(content)
+    if expected_version and version != expected_version:
+        return ToolOutcome.error(STALE_READ_REFERENCE_ERROR, error_code=STALE_READ_REFERENCE_CODE)
 
     updated = content
     aligned = 0
@@ -831,11 +838,11 @@ def prepare_edit(root: Path, rel: str, blocks: list[EditBlock]) -> PreparedEdit 
         start = view.find(old)
         updated = TextEdit(start, start + len(old), new).apply(updated)
 
-    from codey.workspace.paths import content_hash
-
-    version = content_hash(content)
     if updated == content:
         return PreparedEdit(updated, version, ToolOutcome(f"edited {rel} (no changes)", True))
+    assistance: JsonObject = {}
+    if transform_content is not None:
+        updated, assistance = transform_content(content, updated)
     if len(updated.encode("utf-8")) > WRITE_MAX_FILE_BYTES:
         return ToolOutcome.error(f"file too large to write: {rel}")
     if (aligned or boundary_adjusted or (whitespace_adjusted and Path(rel).suffix.lower() == ".py")) and not valid_python(normalized_text(updated)):
@@ -855,7 +862,7 @@ def prepare_edit(root: Path, rel: str, blocks: list[EditBlock]) -> PreparedEdit 
         + syntax_hint,
         True,
         changed=True,
-        audit=assistance_audit,
+        audit={**assistance_audit, **assistance},
         presentation={"preview": edit_preview(rel, content, updated)},
     )
     return PreparedEdit(updated, version, outcome, syntax_regression=bool(syntax_hint))
@@ -866,12 +873,11 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
 
 
 def edit_file_at_version(root: Path, rel: str, blocks: list[EditBlock], *, version: str = "",
-                         validate_content: Callable[[str], str] | None = None) -> ToolOutcome:
-    prepared = prepare_edit(root, rel, blocks)
+                         validate_content: Callable[[str], str] | None = None,
+                         transform_content: Callable[[str, str], tuple[str, JsonObject]] | None = None) -> ToolOutcome:
+    prepared = prepare_edit(root, rel, blocks, expected_version=version, transform_content=transform_content)
     if isinstance(prepared, ToolOutcome):
         return prepared
-    if version and prepared.version != version:
-        return ToolOutcome.error(STALE_READ_REFERENCE_ERROR, error_code=STALE_READ_REFERENCE_CODE)
     if validate_content is not None and (validation_error := validate_content(prepared.text)):
         return ToolOutcome.error(validation_error, error_code="file_field_mismatch")
     if not prepared.outcome.changed:

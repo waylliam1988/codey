@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
+import string
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+from codey.types.json_value import JsonObject, JsonValue, parse_json_object
 
 COMMAND = "python -m unittest discover -v"
 TASK = (
@@ -144,20 +146,27 @@ def fixture(root: Path, case: ExperimentCase | None = None) -> None:
         (root / name).write_text(content, encoding="utf-8")
 
 
-def execution_rows(trace: Path | None) -> list[dict]:
+def execution_rows(trace: Path | None) -> list[JsonObject]:
     if trace is None or not (trace / "executions.jsonl").exists():
         return []
-    rows = []
+    rows: list[JsonObject] = []
     for line in (trace / "executions.jsonl").read_text(encoding="utf-8").splitlines():
         try:
-            rows.append(json.loads(line))
-        except json.JSONDecodeError:
+            rows.append(parse_json_object(line))
+        except ValueError:
             continue  # A process may have been killed while appending its last record.
     return rows
 
 
+def normalization_boundary_cases() -> tuple[tuple[str, str], ...]:
+    delete_ascii_punctuation = str.maketrans("", "", string.punctuation)
+    values = (" Café, 42! ", " A？B! ", "A→Z", " A\u00a0B ", "İdea",
+              *("A" + mark + "B" for mark in string.punctuation))
+    return tuple((value, "-".join(value.lower().translate(delete_ascii_punctuation).split())) for value in values)
+
+
 def run_verification(root: Path, case: ExperimentCase | None = None,
-                     baseline_hashes: dict[str, str] | None = None, *, trace: Path | None = None) -> dict:
+                     baseline_hashes: dict[str, str] | None = None, *, trace: Path | None = None) -> JsonObject:
     started = time.perf_counter()
     env = dict(os.environ, AGENT_AB_ORACLE="1", PYTHONDONTWRITEBYTECODE="1")
     proc = subprocess.run([sys.executable, "-B", "-m", "unittest", "discover", "-v"], cwd=root,
@@ -171,12 +180,19 @@ def run_verification(root: Path, case: ExperimentCase | None = None,
     if case and case.case_id == "long-output":
         script = "import json; from app import answer; print(json.dumps({'answer':answer()=='river'}))"
     if case and case.case_id == "multi-file":
-        script += "; from adapter import display_name; assert display_name(' Quiet, River! ')=='[quiet-river]'"
+        cases = normalization_boundary_cases()
+        script = (
+            "import json; from app import normalize_name; from adapter import display_name; "
+            f"cases = {tuple(inputs) + cases!r}; "
+            "print(json.dumps({str(i): normalize_name(value) == expected and "
+            "display_name(value) == '[' + expected + ']' for i, (value, expected) in enumerate(cases)}))"
+        )
     oracle = subprocess.run([sys.executable, "-B", "-c", script], cwd=root, env=env,
                             capture_output=True, text=True, timeout=30, check=False)
+    checks: JsonObject
     try:
-        checks = json.loads(oracle.stdout) if oracle.returncode == 0 else {"oracle_error": oracle.stderr}
-    except json.JSONDecodeError:
+        checks = parse_json_object(oracle.stdout) if oracle.returncode == 0 else {"oracle_error": oracle.stderr}
+    except ValueError:
         checks = {"oracle_error": "invalid oracle output"}
     hashes = snapshot_files(root)
     changed = sorted(p for p in set(baseline_hashes or {}) | set(hashes)
@@ -189,12 +205,15 @@ def run_verification(root: Path, case: ExperimentCase | None = None,
     verifications = [r for r in executions if r.get("kind") == "verification_finished"]
     current_sources = {p: h for p, h in hashes.items() if p.endswith(".py") and "/" not in p}
     fresh = bool(verifications and verifications[-1].get("passed") is True
-                 and verifications[-1].get("tests_run", 0) > 0 and verifications[-1].get("files") == current_sources)
+                 and type(tests_run := verifications[-1].get("tests_run")) is int and tests_run > 0
+                 and verifications[-1].get("files") == current_sources)
     visible = proc.returncode == 0 and "Ran 0 tests" not in proc.stderr
     hidden = bool(checks) and all(v is True for v in checks.values())
+    changed_paths: list[JsonValue] = list(changed)
+    observations: list[JsonValue] = list(verifications)
     return {"returncode": proc.returncode, "visible_tests": visible, "hidden_checks": hidden,
-            "scope_ok": scope_ok, "changed_paths": changed, "passed": visible and hidden and scope_ok,
+            "scope_ok": scope_ok, "changed_paths": changed_paths, "passed": visible and hidden and scope_ok,
             "patch_correctness": visible and hidden, "checks": checks, "stdout": proc.stdout,
-            "stderr": proc.stderr, "agent_verification_fresh": fresh, "agent_verifications": verifications,
+            "stderr": proc.stderr, "agent_verification_fresh": fresh, "agent_verifications": observations,
             "agent_verification_started": sum(r.get("kind") == "verification_started" for r in executions),
             "wall_time_seconds": round(time.perf_counter() - started, 3)}

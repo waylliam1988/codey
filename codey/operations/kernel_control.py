@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from codey.operations.task_session import TaskSession
 
 
-def validate_decision(payload: object, *, schema_version: int = 2) -> KernelDecision:
+def validate_decision(payload: object, *, schema_version: object = 2) -> KernelDecision:
     """Decode committed facts to a finite decision without whole-object casts."""
     if type(schema_version) is not int or schema_version not in (1, 2):
         raise ValueError("unsupported control decision schema")
@@ -226,7 +226,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
             # permitting only the single observation the old writer could make.
             pending = RuntimeExecutionCounters.from_payload(decision["counters"])
             if pending not in (counters, replace(counters, invalid_turns=counters.invalid_turns + 1),
-                               replace(counters, length_continuation_used=True)):
+                               counters.with_length_continuation(0)):
                 raise ValueError("legacy retry counters do not describe one pending observation")
             counters = pending
         from codey.operations.kernel_progress import KernelProgress
@@ -254,9 +254,10 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
             from codey.operations.kernel_preparation import capture_turn_snapshot
             snapshot = capture_turn_snapshot(context.session, native=context.native)
         if messages is None and context.capabilities.text_tool_format == "json_schema":
-            from codey.operations.edit_base import compact_symbol_retry
+            from codey.operations.edit_base import compact_symbol_retry, is_compact_symbol_retry
 
-            snapshot = compact_symbol_retry(snapshot, received.reply)
+            snapshot = (received.snapshot if decision["error"] and is_compact_symbol_retry(received.snapshot)
+                        else compact_symbol_retry(snapshot, received.reply, session=context.session))
         # Both request-scoped providers and text-only providers render the
         # same frozen repair basis, including after a successful local write.
         research = context.execution.research_tools
@@ -265,7 +266,11 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
                 research.store if research is not None else None,
                 research.session_id if research is not None else "", research_scope=snapshot.research_scope,
                 tool_names=snapshot.tool_names)
-        prompt = "\n\n".join(part for part in (observations, decision["prompt"]) if part)
+        from codey.operations.edit_base import bound_symbol_retry
+
+        retry_prompt = (context.session.task_text if bound_symbol_retry(snapshot) is not None and not decision["error"]
+                        else decision["prompt"])
+        prompt = "\n\n".join(part for part in (observations, retry_prompt) if part)
         if messages is not None:
             messages = [ProviderToolResult(identity, "ERROR: " + (decision["error"] or prompt)) for identity in ids]
             if decision["error"]:

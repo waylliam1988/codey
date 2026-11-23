@@ -15,7 +15,7 @@ from codey.durable.model import ArtifactRecord, thaw_json
 from codey.knowledge.model import canonical_json
 from codey.operations import kernel_actions as wiring
 from codey.operations import kernel_events, kernel_prompt, kernel_protocol
-from codey.operations.edit_base import is_compact_symbol_retry
+from codey.operations.edit_base import bound_symbol_retry, is_compact_symbol_retry
 from codey.operations.kernel_capabilities import KernelCapabilityView
 from codey.operations.kernel_contracts import (
     ClosingDecision,
@@ -78,6 +78,15 @@ def _host_acquisition_result(result: ToolResult) -> bool:
 
     return ((result.call.name == "web_search" and not result.call.call_id)
             or result.call.call_id in PRIMARY_ACQUISITION_IDS)
+
+
+def _symbol_retry_observation(session: TaskSession, snapshot: TurnSnapshot, options: ProviderRequestOptions,
+                              observations: str) -> tuple[ProviderRequestOptions, str]:
+    if (target := bound_symbol_retry(snapshot)) is not None and (
+            basis := session._memory_results.get(dict(snapshot.symbol_read_refs).get(target[0], ""))) is not None:
+        return replace(options, tool_call_history_groups=1), task_result_context(
+            session, basis, snapshot.research_scope, tool_names=snapshot.tool_names)
+    return options, observations
 
 
 class KernelContext:
@@ -524,6 +533,7 @@ class KernelContext:
                 self.execution.research_tools.store if self.execution.research_tools is not None else None,
                 self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research_scope,
                 tool_names=snapshot.tool_names, provider=self.provider, fixed_context=fixed)
+            options, observations = _symbol_retry_observation(self.session, snapshot, options, observations)
             # Canonical replay excludes optional memory candidates. Each continuation must
             # carry its frozen context without relying on a warm wire history.
             context = self.transport.context_text
@@ -683,8 +693,10 @@ class KernelContext:
         if self.native and not isinstance(reply, AssistantTurn):
             raise RecoveryFailed("native provider did not return a structured turn")
         if isinstance(reply, AssistantTurn) and reply.finish is TurnFinish.OUTPUT_LIMIT:
-            if state.counters.length_continuation_used:
-                self.close(state, KernelResult(False, "provider output truncated twice", turn, "provider_failure"))
+            counters = state.counters.with_length_continuation(turn)
+            if counters is None:
+                self.close(state, KernelResult(False, "provider output truncated without a new recovery opportunity",
+                                               turn, "provider_failure"))
                 return None
             if not reply.tool_calls:
                 completion = ("submit_research_answer for the complete task" if snapshot.research_scope is not None else
@@ -693,7 +705,7 @@ class KernelContext:
                            "Use smaller complete tool calls for the remaining work; do not repeat completed work. "
                            "Submit the next required tool call, or call " + completion + ". "
                            "Do not output ordinary explanation or continue partial tool arguments.",
-                           counters=replace(state.counters, length_continuation_used=True))
+                           counters=counters)
                 return
         decoded = decode_text_turn(reply) if isinstance(reply, str) else reply
         plan = kernel_protocol.normalize_turn(decoded, snapshot=snapshot)

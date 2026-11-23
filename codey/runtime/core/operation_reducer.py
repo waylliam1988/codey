@@ -103,9 +103,12 @@ def admit_request_counters(
     current: RuntimeExecutionCounters, proposed: RuntimeExecutionCounters,
 ) -> RuntimeExecutionCounters:
     proposed = RuntimeExecutionCounters.from_payload(proposed.to_payload())
+    lengths = proposed.length_continuations
     if (proposed.closing_round < current.closing_round
             or proposed.closing_round > current.closing_round + 1
-            or (current.length_continuation_used and not proposed.length_continuation_used)
+            or (lengths != current.length_continuations and (
+                not lengths or (updated := current.with_length_continuation(lengths[-1])) is None
+                or lengths != updated.length_continuations))
             or proposed.invalid_turns not in {0, current.invalid_turns, current.invalid_turns + 1}):
         raise RuntimeOperationTransitionError("request cannot reset or skip execution budgets")
     if (current.progress != proposed.progress and (current.progress.last_batch_id
@@ -133,7 +136,8 @@ def record_progress_observation(
         if current != observed:
             raise RuntimeOperationTransitionError("batch progress is immutable")
         return ()
-    if current != expected or observed.last_batch_id != batch_id or not batch_id:
+    if (current != expected or observed.last_batch_id != batch_id or not batch_id
+            or not current.recovery_progress_turn <= observed.recovery_progress_turn <= state.turn):
         raise RuntimeOperationTransitionError("progress observation has stale counters or identity")
     batch = _batch_by_id(view.batches, batch_id)
     if (state.leaf != LEAF_TOOL_DELIVERY_PENDING or pending_for(view).delivery_batch_id != batch_id

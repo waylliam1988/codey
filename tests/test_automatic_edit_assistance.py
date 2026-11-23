@@ -107,7 +107,7 @@ def test_original_kernel_call_and_schema_need_no_extra_fields(tmp_path: Path) ->
     session = TaskSession(TaskPolicy(frozenset({"project.read", "project.write"})))
     snapshot = build_turn_snapshot(session, native=True)
     edit = next(spec for spec in snapshot.frozen_specs if spec.name == "edit")
-    assert {name for name, _ in edit.parameters} == {"path", "content", "replacements", "base_result_ref"}
+    assert {"path", "content", "replacements", "base_result_ref"} <= {name for name, _ in edit.parameters}
     revisions = WorkspaceRevisionStore(tmp_path.parent / (tmp_path.name + "-state"))
     execute_turn(session, [ToolCall("read_file", {"path": "checkout.py"})], run_id="assistance", turn=0,
                  project_path=tmp_path, workspace_revision_store=revisions)

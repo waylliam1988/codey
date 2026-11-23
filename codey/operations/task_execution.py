@@ -54,6 +54,7 @@ if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
     from codey.agents.tools import AgentToolFns
     from codey.automation.browser_session import BrowserSession, BrowserToolOutput
+    from codey.durable.session import DurableSession
     from codey.operations.kernel_contracts import ToolExecutor
     from codey.operations.task_session import TaskSession
     from codey.policies.action import ActionPolicyDecision
@@ -130,6 +131,7 @@ class ExecutionDelegate:
         frozen_specs: Mapping[str, ToolSpec] | None = None,
         custom_executors: Mapping[str, ToolExecutor | None] | None = None,
         research_scope: AnswerScope | None = None,
+        durable: DurableSession | None = None,
     ) -> None:
         self.session = session
         self.project_path: Path | None = Path(str(project_path)).expanduser() if project_path else None
@@ -149,6 +151,7 @@ class ExecutionDelegate:
         self._frozen_specs = frozen_specs
         self._custom_executors = custom_executors
         self._research_scope = research_scope
+        self.durable = durable
         if self.tool_fns is None and self.project_path is not None:
             from codey.agents.tools import build_project_tool_fns
 
@@ -230,7 +233,8 @@ class ExecutionDelegate:
             from codey.operations.tool_result_reader import ReceiptReader, read_tool_result
 
             assert self.session is not None
-            result = read_tool_result(ReceiptReader(self.session, self.managed_outputs, self.session_id, self.run_id), call)
+            result = read_tool_result(ReceiptReader(self.session, self.managed_outputs, self.session_id, self.run_id),
+                                      call, durable=self.durable)
             return result, result.ok, None
         if executor == "project":
             return self._execute_project(call)
@@ -622,7 +626,8 @@ class ExecutionDelegate:
                     if outcome.ok else outcome)
         if args.get("declared_fields") is True:
             return self._declared_field_edit(project_path, path, canonical, args)
-        if "symbol" in args:
+        symbol_only = "symbol" in args
+        if symbol_only:
             from codey.operations.edit_base import symbol_edit_args
 
             try:
@@ -630,7 +635,7 @@ class ExecutionDelegate:
             except ValueError as exc:
                 return ToolOutcome.error(str(exc))
         if "content" in args:
-            return self._write_content(project_path, path, canonical, args)
+            return self._write_content(project_path, path, canonical, args, symbol_only=symbol_only)
         from codey.operations.file_field_binding import file_rules
 
         if self.session is not None and file_rules(self.session.policy.required_checks, canonical):
@@ -655,14 +660,18 @@ class ExecutionDelegate:
 
         version = args.get("expected_version")
         fields = documented_record_fields(self.session, canonical)
-        if isinstance(version, str) or fields:
+        from codey.operations.python_edit_assistance import python_edit_transform, render_python_edit
+
+        transform = python_edit_transform(self.session, project_path, canonical) if not fields else None
+        if isinstance(version, str) or fields or transform is not None:
             from codey.toolchain.runtime import edit_file_at_version
 
             def validator(content: str) -> str:
                 return record_field_error(canonical, fields, content)
 
             outcome = edit_file_at_version(project_path, path, edit_blocks, version=version if isinstance(version, str) else "",
-                                           validate_content=validator if fields else None)
+                                           validate_content=validator if fields else None, transform_content=transform)
+            outcome = render_python_edit(outcome)
         else:
             outcome = self.tool_fns.edit_file(project_path, path, edit_blocks)
         if outcome.ok and outcome.changed and self.change_tracker is not None:
@@ -681,7 +690,8 @@ class ExecutionDelegate:
         prepared = bound_content(self.session, canonical, baseline, self.browser_session.document_identity())
         return self._write_content(project, path, canonical, {**args, "content": prepared})
 
-    def _write_content(self, project: Path, path: str, canonical: str, args: ToolArgs) -> ToolOutcome:
+    def _write_content(self, project: Path, path: str, canonical: str, args: ToolArgs, *,
+                       symbol_only: bool = False) -> ToolOutcome:
         from codey.operations.edit_base import content_edit_version
 
         assert self.tool_fns is not None
@@ -702,8 +712,21 @@ class ExecutionDelegate:
                 from codey.toolchain.runtime import ToolOutcome
 
                 return ToolOutcome.error(error, error_code="file_field_mismatch")
+        assistance: JsonObject = {}
+        if symbol_only:
+            from codey.operations.edit_base import edit_base_text
+            from codey.operations.python_edit_assistance import python_edit_transform
+
+            if transform := python_edit_transform(self.session, project, canonical, allow_import=False):
+                original = edit_base_text(self.session, project, canonical,
+                                          require_json_string(args["base_result_ref"], "base_result_ref"))
+                content, assistance = transform(original, content)
         outcome = (self.tool_fns.write_file(project, path, content) if version is None else
                    self.tool_fns.write_file(project, path, content, expected_version=version))
+        if assistance and outcome.ok:
+            from codey.operations.python_edit_assistance import render_python_edit
+
+            outcome = render_python_edit(replace(outcome, audit={**outcome.audit, **assistance}))
         if outcome.ok and outcome.changed and self.change_tracker is not None:
             self.change_tracker.capture_after(path)
         return outcome

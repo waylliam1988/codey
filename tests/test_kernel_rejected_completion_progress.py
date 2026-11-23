@@ -1,52 +1,76 @@
 """Rejected reports share the durable kernel progress budget, in both protocols."""
 
 import json
+from collections.abc import Callable, Mapping
+from pathlib import Path
+from typing import Protocol
 
 import pytest
 
+from codey.operations.browser_text_report import BrowserMetadata, MetadataPending
 from codey.operations.completion_gate import GateVerdict
-from codey.operations.kernel_contracts import KernelRunRequest, KernelTransportDeps
+from codey.operations.kernel_contracts import KernelResult, KernelRunRequest, KernelTransportDeps
+from codey.operations.provider_session import adapt_provider
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.providers.base import AssistantTurn, ProviderToolCall
-from tests.support.kernel_runtime import run_task_kernel
+from codey.policies.tool_requirement import ToolObservation
+from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult
+from codey.research.run_result import ResearchRunResult
+from codey.types.json_value import JsonObject, decode_json_object, parse_json_object, require_json_string
+from tests.support.kernel_runtime import run_task_kernel as isolated_kernel
+
+
+class IsolatedKernel(Protocol):
+    def __call__(self, session: TaskSession, *, request: KernelRunRequest) -> KernelResult: ...
+
+
+run_task_kernel: IsolatedKernel = isolated_kernel
 
 
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("changing", [False, True])
-def test_repeated_rejected_completion_stops_but_real_revisions_get_another_attempt(monkeypatch, native, changing):
-    monkeypatch.setattr("codey.operations.kernel_transport.provider_uses_native", lambda *a, **k: native)
-    monkeypatch.setattr("codey.operations.completion_gate.evaluate", lambda *a, **k: GateVerdict(
-        complete=False, followup="report_sections.counter needs a citation", proof=None))
+def test_repeated_rejected_completion_stops_but_real_revisions_get_another_attempt(
+    monkeypatch: pytest.MonkeyPatch, native: bool, changing: bool,
+) -> None:
+    def provider_uses_native(*_args: object, **_kwargs: object) -> bool:
+        return native
+
+    def reject(*_args: object, **_kwargs: object) -> GateVerdict:
+        return GateVerdict(complete=False, followup="report_sections.counter needs a citation", proof=None)
+
+    monkeypatch.setattr("codey.operations.kernel_transport.provider_uses_native", provider_uses_native)
+    monkeypatch.setattr("codey.operations.completion_gate.evaluate", reject)
 
     class Provider:
-        def __init__(self):
+        def __init__(self) -> None:
             self.turns = 0
-            self.closed = []
+            self.closed: list[str] = []
 
-        def reply(self):
+        def reply(self) -> AssistantTurn | str:
             self.turns += 1
-            args = {"summary": f"draft-{self.turns}" if changing else "same rejected draft"}
+            args: JsonObject = {"summary": f"draft-{self.turns}" if changing else "same rejected draft"}
             return (AssistantTurn(tool_calls=(ProviderToolCall(
                 id=f"done-{self.turns}", name="done", arguments=args),)) if native
                 else json.dumps({"tool": "done", "args": args}))
 
-        def send(self, prompt):
+        def send(self, prompt: str) -> AssistantTurn | str:
             return self.reply()
 
-        def send_turn(self, prompt, tools):
+        def send_turn(self, prompt: str, tools: list[ProviderToolDefinition]) -> AssistantTurn | str:
             return self.reply()
 
-        def send_tool_results(self, messages, tools):
+        def send_tool_results(self, messages: list[ProviderToolResult],
+                              tools: list[ProviderToolDefinition]) -> AssistantTurn | str:
             return self.reply()
 
-        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+        def acknowledge_tool_results(self, results: list[ProviderToolResult], declared_tools: list[ProviderToolDefinition],
+                                     timeout: float | None = None) -> AssistantTurn:
             self.closed.extend(row.call_id for row in results)
             return AssistantTurn()
 
     provider = Provider()
     session = TaskSession(policy=TaskPolicy(frozenset({"control"})), max_turns=9)
-    result = run_task_kernel(session, request=KernelRunRequest(transport=KernelTransportDeps(provider)))
+    result = run_task_kernel(session, request=KernelRunRequest(transport=KernelTransportDeps(adapt_provider(provider))))
     assert not result.completed
     assert result.stop_reason == ("max_turns" if changing else "no_progress"), result.summary
     assert provider.turns == (9 + int(native) if changing else 3)
@@ -57,7 +81,7 @@ def test_repeated_rejected_completion_stops_but_real_revisions_get_another_attem
         assert f"done-{provider.turns}" in provider.closed
 
 
-def test_completion_repeat_history_survives_checkpoint_roundtrip_without_fake_tool_batch():
+def test_completion_repeat_history_survives_checkpoint_roundtrip_without_fake_tool_batch() -> None:
     from codey.operations.kernel_progress import KernelProgress
     from codey.runtime.core.models import ToolCall, ToolResult
     from codey.runtime.core.progress import ProgressSnapshot
@@ -69,19 +93,19 @@ def test_completion_repeat_history_survives_checkpoint_roundtrip_without_fake_to
     for turn in (1, 2):
         session.turn = turn
         progress.reject_completion({"summary": "unchanged"}, "counter needs citation", session)
-    saved = ProgressSnapshot.from_payload(json.loads(json.dumps(progress.snapshot().to_payload())))
+    saved = ProgressSnapshot.from_payload(parse_json_object(json.dumps(progress.snapshot().to_payload())))
     restored = KernelProgress(snapshot=saved)
-    assert not restored.stopped
+    assert not bool(restored.stopped)
     session.turn = 3
     restored.reject_completion({"summary": "unchanged"}, "counter needs citation", session)
-    assert restored.stopped
+    assert bool(restored.stopped)
     assert restored.snapshot().last_batch_id == "actual-settled-batch"
     # A genuinely new read resets stagnation and interrupts the exact cycle.
     restored.observe([ToolResult(observation.call, "new evidence", ok=True)], session, batch_id="next-real-batch")
     assert not restored.stopped
 
 
-def test_novel_findings_cannot_reset_same_local_report_rejection_forever():
+def test_novel_findings_cannot_reset_same_local_report_rejection_forever() -> None:
     from codey.operations.kernel_progress import KernelProgress
     from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -96,7 +120,7 @@ def test_novel_findings_cannot_reset_same_local_report_rejection_forever():
 
 
 @pytest.mark.parametrize("observations", [0, 5, 20])
-def test_domain_repair_budget_survives_history_eviction_and_restarts(observations):
+def test_domain_repair_budget_survives_history_eviction_and_restarts(observations: int) -> None:
     from codey.operations.kernel_progress import KernelProgress
     from codey.runtime.core.models import ToolCall, ToolResult
     from codey.runtime.core.progress import ProgressSnapshot
@@ -108,30 +132,30 @@ def test_domain_repair_budget_survives_history_eviction_and_restarts(observation
             batch = f"batch-{number}-{index}"
             result = ToolResult(ToolCall("knowledge_read", {"id": batch}), batch, ok=True)
             progress.observe([result], session, batch_id=batch)
-            saved = ProgressSnapshot.from_payload(json.loads(json.dumps(progress.snapshot().to_payload())))
+            saved = ProgressSnapshot.from_payload(parse_json_object(json.dumps(progress.snapshot().to_payload())))
             progress = KernelProgress(stagnant_turns=3, snapshot=saved)
             progress.observe([result], session, batch_id=batch)
             assert progress.snapshot() == saved  # redelivery does not change either budget
         progress.reject_completion({"findings": [f"f{number + 1}"]}, f"Too long: {1200 + number}", session,
                                    failure_key="report_length:Report format r1")
-        saved = ProgressSnapshot.from_payload(json.loads(json.dumps(progress.snapshot().to_payload())))
+        saved = ProgressSnapshot.from_payload(parse_json_object(json.dumps(progress.snapshot().to_payload())))
         progress = KernelProgress(stagnant_turns=3, snapshot=saved)
         assert saved.repair_rejections == number + 1
         assert saved.schema_version == 2
         assert progress.stopped == (number == 2)
     # New tool output does not erase an exhausted domain budget.
     progress.observe([ToolResult(ToolCall("save_finding", {"claim": "another variant"}), "new f9", ok=True)], session)
-    assert progress.stopped
+    assert bool(progress.stopped)
     # A different validation issue is a new episode, rather than a label/text change.
     progress.reject_completion({}, "Missing citation", session, failure_key="citation:coverage[0]")
     assert not progress.stopped and progress.snapshot().repair_rejections == 1
 
 
-def test_legacy_progress_preserves_payload_and_upgrades_only_with_domain_observation():
+def test_legacy_progress_preserves_payload_and_upgrades_only_with_domain_observation() -> None:
     from codey.operations.kernel_progress import KernelProgress
     from codey.runtime.core.progress import ProgressSnapshot
 
-    payload = {"limit": 3, "seen": [], "attempts": [], "idle": 0, "last_batch_id": ""}
+    payload: dict[str, object] = {"limit": 3, "seen": [], "attempts": [], "idle": 0, "last_batch_id": ""}
     legacy = ProgressSnapshot.from_payload(payload)
     assert legacy.to_payload() == payload
     progress = KernelProgress(3, snapshot=legacy)
@@ -149,7 +173,7 @@ def test_legacy_progress_preserves_payload_and_upgrades_only_with_domain_observa
     {"repair_rejections": -1}, {"repair_rejections": 4}, {"repair_rejections": 0},
     {"repair_failure_key": ""}, {"repair_failure_key": 42}, {"unexpected": 0},
 ])
-def test_repair_progress_codec_rejects_invalid_observations(changes):
+def test_repair_progress_codec_rejects_invalid_observations(changes: dict[str, object]) -> None:
     from codey.runtime.core.progress import ProgressSnapshot
 
     payload = ProgressSnapshot(limit=3, schema_version=2, repair_failure_key="length:report", repair_rejections=1).to_payload()
@@ -157,7 +181,17 @@ def test_repair_progress_codec_rejects_invalid_observations(changes):
         ProgressSnapshot.from_payload({**payload, **changes})
 
 
-def run_domain_repair_probe(root, *, native=False, boundary="", resume=False):
+class ResearchProbeProvider(Protocol):
+    send: Callable[[str], str]
+
+
+class ResearchProbe(Protocol):
+    def __call__(self, root: Path, *, native: bool, boundary: str, boundary_turn: int, resume: bool, budget: int,
+                 provider_factory: Callable[[ResearchProbeProvider], ResearchProbeProvider]) -> ResearchRunResult: ...
+
+
+def run_domain_repair_probe(root: Path, *, native: bool = False, boundary: str = "",
+                            resume: bool = False) -> ResearchRunResult:
     """Exercise durable domain budgets after the actual complete-answer gate."""
     from dataclasses import replace
     from unittest.mock import patch
@@ -168,35 +202,42 @@ def run_domain_repair_probe(root, *, native=False, boundary="", resume=False):
 
     original_gate = completion_gate.evaluate
 
-    def rejected(*args, **kwargs):
-        verdict = original_gate(*args, **kwargs)
+    def rejected(session: TaskSession, done_text: object, *, context: object = None,
+                 observations: Mapping[str, ToolObservation] | None = None,
+                 metadata: BrowserMetadata | MetadataPending | None = None) -> GateVerdict:
+        verdict = original_gate(session, done_text, context=context, observations=observations, metadata=metadata)
         assert verdict.complete, verdict.followup
         issue = ResearchIssue("controlled_domain_issue", "markdown", "Controlled delivery constraint remains unmet")
         return replace(verdict, complete=False, proof=None, followup=str(issue), research_issue=issue.to_payload())
 
-    def factory(provider):
+    def factory(provider: ResearchProbeProvider) -> ResearchProbeProvider:
         original = provider.send
 
-        def reply(prompt):
-            row = json.loads(original(prompt))
+        def reply(prompt: str) -> str:
+            row = parse_json_object(original(prompt))
             if row["tool"] == "submit_research_answer":
-                calls = [json.loads(line) for line in (root / "calls.jsonl").read_text().splitlines()]
+                calls = [parse_json_object(line) for line in (root / "calls.jsonl").read_text().splitlines()]
                 turn = next(event["turn"] for event in reversed(calls) if "turn" in event)
-                row["args"]["markdown"] += f" Revision {turn}."
+                args = decode_json_object(row["args"])
+                args["markdown"] = require_json_string(args["markdown"], "report markdown") + f" Revision {turn}."
+                row["args"] = args
             return json.dumps(row)
 
         provider.send = reply
         return provider
 
+    run: ResearchProbe = _run
     with patch.object(completion_gate, "evaluate", rejected):
-        return _run(root, native=native, boundary=boundary, boundary_turn=4 if boundary == "control_ready" else 5,
-                    resume=resume, budget=15, provider_factory=factory)
+        return run(root, native=native, boundary=boundary, boundary_turn=4 if boundary == "control_ready" else 5,
+                   resume=resume, budget=15, provider_factory=factory)
 
 
 @pytest.mark.usefixtures("public_source_dns")
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("boundary", ["control_ready", "provider_request_ready"])
-def test_domain_budget_survives_process_exit_on_rejection_and_request_admission(tmp_path, native, boundary):
+def test_domain_budget_survives_process_exit_on_rejection_and_request_admission(
+    tmp_path: Path, native: bool, boundary: str,
+) -> None:
     import subprocess
     import sys
 
@@ -211,15 +252,18 @@ def test_domain_budget_survives_process_exit_on_rejection_and_request_admission(
     assert child.returncode == 74, child.stderr.decode(errors="replace")
     durable = DurableSession(SQLiteDurableStore(tmp_path / "state.sqlite"))
     try:
-        saved = operation_from_checkpoint(durable.task("r"), "s").counters.progress
-        assert saved.schema_version == 2 and saved.repair_rejections == 2
+        state = operation_from_checkpoint(durable.task("r"), "s")
+        assert state is not None
+        saved = state.counters.progress
+        assert saved.schema_version == 4 and saved.repair_rejections == 2
+        assert saved.recovery_progress_turn == 2
         assert saved.repair_failure_key.startswith("controlled_domain_issue:")
     finally:
         durable.close()
     result = run_domain_repair_probe(tmp_path, native=native, resume=True)
     expected_turns = 2 + saved.limit
     assert result.stop_reason == "no_progress" and result.turns == expected_turns, result.summary
-    calls = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    calls = [parse_json_object(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
     assert sum("attempt" in row for row in calls) == expected_turns
     assert not any("publication" in row for row in calls)
     before = (tmp_path / "calls.jsonl").read_bytes()

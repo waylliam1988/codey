@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from codey.operations.task_session import TaskSession
 from codey.runtime.core.execution_receipt import ExecutionOutputReference, execution_receipt
@@ -12,6 +12,9 @@ from codey.runtime.core.models import ToolCall, ToolResult
 from codey.storage.execution_output_store import ExecutionOutputStore
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_string
+
+if TYPE_CHECKING:
+    from codey.durable.session import DurableSession
 
 
 class ReceiptReaderContext(Protocol):
@@ -103,7 +106,22 @@ def _admission_navigation(result: ToolResult) -> JsonObject:
     return {"kind": "accepted", "next_read": {"tool": "task_output", "args": {"task_ref": value["task_ref"], "wait_ms": 30000}}}
 
 
-def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall) -> ToolResult:
+def _execution_origin(context: ReceiptReaderContext, result: ToolResult,
+                      durable: DurableSession | None) -> tuple[ReceiptReaderContext, ToolResult]:
+    ref = result.canonical.get("tool_task")
+    if (durable is None or not isinstance(ref, dict) or not isinstance(task := ref.get("task_ref"), str)
+            or not isinstance(execution := ref.get("execution_ref"), str)):
+        return context, result
+    from codey.operations.tool_tasks import owned_tool_task, tool_execution_result
+
+    child = owned_tool_task(durable, task, owner_task_id=context.run_id)
+    original = tool_execution_result(durable, child, store=context.managed_outputs)
+    if original is None or original[0] != execution or original[1].call.name != result.call.name:
+        raise ValueError("the command result does not identify its original execution")
+    return ReceiptReader(context.session, context.managed_outputs, child.conversation_id, child.task_id), original[1]
+
+
+def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall, *, durable: DurableSession | None = None) -> ToolResult:
     known: JsonObject = {}
     try:
         if not delegate.session.policy.allows("control"):
@@ -131,7 +149,8 @@ def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall) -> ToolResu
         if result is None:
             raise ValueError("stored result unavailable in this task; use a receipt handle or complete result_ref, "
                              "not an out_ artifact handle, search result id or source id")
-        execution = execution_receipt(result)
+        output_reader, output_receipt = _execution_origin(delegate, result, durable) if view == "output" else (delegate, result)
+        execution = execution_receipt(output_receipt)
         if execution is not None:
             known["execution"] = execution.facts()
         available_views: list[JsonValue] = ["output", "value"] if "value" in result.canonical else ["output"]
@@ -146,7 +165,7 @@ def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall) -> ToolResu
                               sort_keys=True, separators=(",", ":"), allow_nan=False)
             resolved = ResolvedOutput(text, "value", {}, False, False, False, None, False, True)
         else:
-            resolved = resolve_result_output(delegate, result)
+            resolved = resolve_result_output(output_reader, output_receipt)
             text = resolved.text
         match_offset = None
         if isinstance(query, str):
@@ -162,7 +181,8 @@ def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall) -> ToolResu
                 "offset": offset, "next_offset": offset + limit if offset + limit < len(text) else None,
                 "stored_chars": len(text), "original_output_incomplete": resolved.original_output_incomplete,
                 "text": excerpt, "available_views": available_views, "capture_truncated": resolved.capture_truncated,
-                "storage_truncated": resolved.storage_truncated, "display_truncated": resolved.display_truncated,
+                "storage_truncated": resolved.storage_truncated,
+                "display_truncated": resolved.display_truncated or view == "output" and result.truncated,
                 "page_truncated": offset > 0 or len(excerpt) < len(text),
                 "storage_complete": resolved.storage_complete, "output_source": resolved.source,
                 "output_reference": resolved.reference, "full_output_recoverable": resolved.full_output_recoverable}

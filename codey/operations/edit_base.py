@@ -1,6 +1,7 @@
 """Resolve a whole-file edit baseline from the original task receipt."""
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -9,10 +10,13 @@ from codey.toolchain.constants import FULL_READ_REFERENCE_HINT
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer, require_json_string
 
 if TYPE_CHECKING:
+    import ast
+
     from codey.operations.kernel_protocol import TurnSnapshot
     from codey.operations.task_session import TaskSession
     from codey.providers.base import AssistantTurn
     from codey.runtime.core.models import ToolResult
+    from codey.toolchain.tool_spec import ToolSpec
 
 SYMBOL_EDIT_FIELDS = ("path", "symbol", "content")
 
@@ -44,7 +48,33 @@ def bind_symbol_read(args: JsonObject, reads: Mapping[str, str]) -> JsonObject:
     return {**args, "base_result_ref": ref}
 
 
-def compact_symbol_retry(snapshot: TurnSnapshot, reply: AssistantTurn | str) -> TurnSnapshot:
+def _partial_edit_target(reply: str, snapshot: TurnSnapshot, session: TaskSession | None) -> tuple[str, tuple[str, ...]]:
+    import re
+
+    from codey.research.calculation import file_selector_key
+    from codey.toolchain.syntax_query import python_definitions
+    from codey.types.json_value import parse_json_value
+
+    field = r'"(?:[^"\\]|\\.)*"'
+    match = re.match(r'^\s*\{\s*"tool"\s*:\s*"edit"\s*,\s*"args"\s*:\s*\{\s*'
+                     rf'(?:(?:"symbol"|"base_result_ref")\s*:\s*{field}\s*,\s*)*'
+                     rf'"path"\s*:\s*({field})', reply)
+    if session is None or not session.project or match is None:
+        return "", ()
+    try:
+        path = file_selector_key(require_json_string(parse_json_value(match[1]), "edit path"))
+        reference = dict(snapshot.symbol_read_refs).get(path)
+        if reference is None:
+            return "", ()
+        source = edit_base_text(session, Path(session.project), path, reference)
+        counts = Counter(node.name for node in python_definitions(source))
+    except (ValueError, SyntaxError):
+        return "", ()
+    return path, tuple(sorted(name for name, count in counts.items() if count == 1))
+
+
+def compact_symbol_retry(snapshot: TurnSnapshot, reply: AssistantTurn | str, *,
+                         session: TaskSession | None = None) -> TurnSnapshot:
     """Narrow a truncated edit retry without accepting any of its arguments."""
     import re
     from dataclasses import replace
@@ -59,17 +89,104 @@ def compact_symbol_retry(snapshot: TurnSnapshot, reply: AssistantTurn | str) -> 
             or not snapshot.symbol_read_refs or spec is None or snapshot.input_binding is not None
             or "symbol" not in dict(spec.parameters)):
         return snapshot
-    parameters = tuple((key, {"type": "string", "enum": [path for path, _ in snapshot.symbol_read_refs]}
-                       if key == "path" else schema)
+    path, symbols = _partial_edit_target(reply.text, snapshot, session)
+    paths = [path] if path and symbols else [name for name, _ in snapshot.symbol_read_refs]
+    domains: dict[str, object] = {"path": {"type": "string", "enum": paths}}
+    if symbols:
+        domains["symbol"] = {"type": "string", "enum": list(symbols)}
+    single_target = (len(symbols) == 1 and snapshot.task_navigation_url is None
+                     and snapshot.bound_source_url is None and snapshot.browser_references is None)
+    mandatory = ("content",) if single_target else SYMBOL_EDIT_FIELDS
+    parameters = tuple((key, domains.get(key, schema))
                        for key, schema in spec.parameters if key in {"path", "symbol", "content", "base_result_ref"})
-    compact = freeze_spec_parameters(replace(spec, parameters=parameters, required=SYMBOL_EDIT_FIELDS,
+    compact = freeze_spec_parameters(replace(spec, parameters=parameters, required=mandatory,
         description="Replace one Python definition in the observed file.", json_examples=()))
+    if single_target:
+        return refresh_snapshot_contract(replace(snapshot, tool_names=("edit",), nested_tool_names=(),
+            frozen_specs=(compact,), custom_executors=tuple(row for row in snapshot.custom_executors if row[0] == "edit")))
     return refresh_snapshot_contract(replace(snapshot,
         frozen_specs=tuple(compact if item.name == "edit" else item for item in snapshot.frozen_specs)))
 
 
 def is_compact_symbol_retry(snapshot: TurnSnapshot) -> bool:
-    return any(spec.name == "edit" and spec.required == SYMBOL_EDIT_FIELDS for spec in snapshot.frozen_specs)
+    return any(spec.name == "edit" and (spec.required == SYMBOL_EDIT_FIELDS or _bound_edit_target(spec) is not None)
+               for spec in snapshot.frozen_specs)
+
+
+def bound_symbol_retry(snapshot: TurnSnapshot) -> tuple[str, str] | None:
+    return _bound_edit_target(snapshot.model_specs[0]) if snapshot.tool_names == ("edit",) else None
+
+
+def raw_symbol_content(text: str) -> str:
+    import ast
+    import re
+
+    source = text.strip()
+    if fenced := re.fullmatch(r"```(?:python|py)?[ \t]*\r?\n([\s\S]*?)\r?\n```", source):
+        source = fenced[1]
+    if re.match(r"^(?:async\s+def|def|class)\s+[^\W\d]", source):
+        return source
+    try:
+        body = ast.parse(source).body
+    except SyntaxError:
+        return ""
+    if (len(body) < 2 or not isinstance(fn := body[-1], (ast.FunctionDef, ast.AsyncFunctionDef))
+            or not all(isinstance(node, (ast.Import, ast.ImportFrom)) for node in body[:-1])):
+        return ""
+    return _definition_with_local_imports(source, fn, body[:-1])
+
+
+def _definition_with_local_imports(source: str, fn: ast.FunctionDef | ast.AsyncFunctionDef, imports: list[ast.stmt]) -> str:
+    import ast
+
+    if fn.decorator_list or fn.body[0].lineno == fn.lineno:
+        return ""
+    names: set[str] = set()
+    for node in imports:
+        if (not isinstance(node, (ast.Import, ast.ImportFrom))
+                or isinstance(node, ast.ImportFrom) and node.module == "__future__"
+                or any(alias.name == "*" for alias in node.names)):
+            return ""
+        names.update(alias.asname or alias.name.partition(".")[0] for alias in node.names)
+    signature = (fn.args, *(() if fn.returns is None else (fn.returns,)))
+    if (any(isinstance(node, ast.Name) and node.id in names for item in signature for node in ast.walk(item))
+            or any(isinstance(node, (ast.Global, ast.Nonlocal)) and names.intersection(node.names) for node in ast.walk(fn))):
+        return ""
+    definition = ast.get_source_segment(source, fn)
+    if definition is None:
+        return ""
+    lines = definition.splitlines(keepends=True)
+    first = fn.body[0]
+    offset = first.lineno - fn.lineno
+    prefix = lines[offset][:first.col_offset]
+    if ast.get_docstring(fn, clean=False) is not None and first.end_lineno is not None:
+        offset = first.end_lineno - fn.lineno + 1
+    if offset and not lines[offset - 1].endswith("\n"):
+        lines[offset - 1] += "\n"
+    lines[offset:offset] = [prefix + ast.unparse(node) + "\n" for node in imports]
+    return "".join(lines)
+
+
+def _bound_edit_target(spec: ToolSpec) -> tuple[str, str] | None:
+    if spec.required != ("content",):
+        return None
+    from codey.toolchain.tool_spec import thaw_schema_value
+
+    params = dict(spec.parameters)
+    fields: list[str] = []
+    for key in ("path", "symbol"):
+        schema = thaw_schema_value(params.get(key))
+        choices = schema.get("enum") if isinstance(schema, dict) else None
+        if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], str):
+            return None
+        fields.append(choices[0])
+    return fields[0], fields[1]
+
+
+def lower_compact_symbol_edit(args: JsonObject, spec: ToolSpec) -> JsonObject:
+    if (target := _bound_edit_target(spec)) is None:
+        return args
+    return {"path": target[0], "symbol": target[1], **args}
 
 
 def _edit_base(session: TaskSession | None, project: Path, path: str, ref: str) -> tuple[str, str]:

@@ -55,6 +55,24 @@ def test_short_command_returns_the_original_execution_result(runtime: Runtime) -
     assert "Execution facts:" not in context
 
 
+def test_read_caller_receipt_reaches_original_owned_command_output(runtime: Runtime) -> None:
+    (runtime.project / "test_sample.py").write_text(
+        "def test_noisy():\n    print('leading ' * 900)\n"
+        "    print('ACTUAL_COMMAND_MARKER')\n    print('trailing ' * 900)\n    assert False\n", encoding="utf-8")
+    call = ToolCall("run", {"command": "python -m pytest -q -s"})
+    caller = runtime.execute(call)
+    assert caller.truncated and "ACTUAL_COMMAND_MARKER" not in caller.model_text
+    ref = next(identity for identity, result in runtime.session._memory_results.items() if result is caller)
+    reply = runtime.execute(ToolCall("read_tool_result",
+        {"result_ref": ref, "view": "output", "query": "ACTUAL_COMMAND_MARKER"}), turn=1)
+    assert reply.ok, reply.model_text
+    payload = decode_json_object(json.loads(reply.model_text))
+    assert payload["output_source"] == "execution"
+    assert payload["original_output_incomplete"] is False and payload["display_truncated"] is True
+    assert "ACTUAL_COMMAND_MARKER" in require_json_string(payload["text"], "text")
+    assert len(runtime.app.durable.owned_tasks("r")) == 1
+
+
 def test_long_command_returns_same_task_and_never_starts_twice(
     runtime: Runtime, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -275,7 +293,7 @@ def test_notification_failure_distinguishes_unsent_from_uncertain_delivery(
     assert pending.refs == ((child.task_id,) if not_sent else ())
 
 
-def test_legacy_admission_restores_original_args_and_v2_detaches_inputs() -> None:
+def test_legacy_admission_restores_original_args_and_current_version_detaches_inputs() -> None:
     from codey.durable.tool_task import ToolTaskInput
     from codey.types.json_value import JsonObject
 
@@ -285,6 +303,7 @@ def test_legacy_admission_restores_original_args_and_v2_detaches_inputs() -> Non
     args["command"] = "changed"
     assert ToolTaskInput.from_payload(payload).args["command"] == "python -m pytest -q"
     payload["schema_version"] = 1
+    payload.pop("resource_binding")
     legacy = ToolTaskInput.from_payload(payload)
     assert legacy.args == {"command": "python -m pytest -q", "run_in_background": True}
     payload["args"] = legacy.args

@@ -147,7 +147,7 @@ def _build_delegate(
     frozen_specs: Mapping[str, ToolSpec] | None = None,
     custom_executors: Mapping[str, ToolExecutor | None] | None = None,
     research_scope: AnswerScope | None = None,
-    *, browser_session: BrowserSession | None = None,
+    *, browser_session: BrowserSession | None = None, durable: DurableSession | None = None,
 ) -> ToolDelegate | None:
     """Build the production delegate; fail closed when a project needs one."""
     try:
@@ -171,6 +171,7 @@ def _build_delegate(
             frozen_specs=dict(frozen_specs) if frozen_specs is not None else None,
             custom_executors=dict(custom_executors) if custom_executors is not None else None,
             research_scope=research_scope,
+            durable=durable,
         )
     except Exception as exc:
         if project_path is not None:
@@ -526,6 +527,7 @@ def execute_turn(
         custom_executors=frozen_custom_executor_map(snapshot),
         research_scope=snapshot.research_scope if snapshot is not None else None,
         browser_session=browser_session,
+        durable=durable if isinstance(durable, DurableSession) else None,
     )
     _begin_pending_intents(
         intent_sink, calls, session, delivered_map, identity_ref, active_turn, base_index,

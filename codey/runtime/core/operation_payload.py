@@ -7,6 +7,9 @@ import re
 from dataclasses import dataclass, field, replace
 
 from codey.runtime.core.progress import ProgressSnapshot
+from codey.types.json_value import require_json_integer
+
+MAX_LENGTH_CONTINUATIONS = 3
 
 
 class RuntimeOperationTransitionError(Exception):
@@ -18,28 +21,50 @@ class RuntimeExecutionCounters:
     """Bounded execution history; it carries no independent execution phase."""
 
     invalid_turns: int = 0
-    length_continuation_used: bool = False
+    length_continuations: tuple[int, ...] = ()
     closing_round: int = 0
     progress: ProgressSnapshot = field(default_factory=ProgressSnapshot)
 
+    @property
+    def length_continuation_used(self) -> bool:
+        return bool(self.length_continuations)
+
+    def with_length_continuation(self, turn: int) -> RuntimeExecutionCounters | None:
+        used = self.length_continuations
+        if (len(used) >= MAX_LENGTH_CONTINUATIONS
+                or used and (self.progress.recovery_progress_turn <= used[-1] or turn <= used[-1])):
+            return None
+        return replace(self, length_continuations=(*used, turn))
+
     def to_payload(self) -> dict[str, object]:
         return {"invalid_turns": self.invalid_turns,
-                "length_continuation_used": self.length_continuation_used,
+                "length_continuations": list(self.length_continuations),
                 "closing_round": self.closing_round, "progress": self.progress.to_payload()}
 
     @classmethod
     def from_payload(cls, value: object) -> RuntimeExecutionCounters:
         if (not isinstance(value, dict)
-                or set(value) != {"invalid_turns", "length_continuation_used", "closing_round", "progress"}
+                or set(value) not in ({"invalid_turns", "length_continuation_used", "closing_round", "progress"},
+                                      {"invalid_turns", "length_continuations", "closing_round", "progress"})
                 or type(value["invalid_turns"]) is not int or value["invalid_turns"] < 0
-                or type(value["length_continuation_used"]) is not bool
                 or type(value["closing_round"]) is not int or not 0 <= value["closing_round"] <= 4):
             raise RuntimeOperationTransitionError("invalid operation execution counters")
+        lengths: object = value.get("length_continuations")
+        if "length_continuation_used" in value:
+            if type(legacy := value["length_continuation_used"]) is not bool:
+                raise RuntimeOperationTransitionError("invalid legacy continuation")
+            legacy_lengths: list[int] = [0] if legacy else []
+            lengths = legacy_lengths
+        if (not isinstance(lengths, list) or len(lengths) > MAX_LENGTH_CONTINUATIONS
+                or any(type(turn) is not int or turn < 0 for turn in lengths)
+                or any(before >= after for before, after in zip(lengths, lengths[1:], strict=False))):
+            raise RuntimeOperationTransitionError("invalid length continuations")
+        used = tuple(require_json_integer(turn, "continuation turn") for turn in lengths)
         try:
             progress = ProgressSnapshot.from_payload(value["progress"])
         except ValueError as exc:
             raise RuntimeOperationTransitionError(str(exc)) from exc
-        return cls(value["invalid_turns"], value["length_continuation_used"], value["closing_round"], progress)
+        return cls(value["invalid_turns"], used, value["closing_round"], progress)
 
 
 def _parse_final_delivery(value: object) -> str:

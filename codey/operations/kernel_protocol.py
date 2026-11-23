@@ -23,7 +23,13 @@ from codey.operations.browser_upload import (
     upload_model_spec,
     upload_phase,
 )
-from codey.operations.edit_base import bind_symbol_read, symbol_read_refs
+from codey.operations.edit_base import (
+    bind_symbol_read,
+    bound_symbol_retry,
+    lower_compact_symbol_edit,
+    raw_symbol_content,
+    symbol_read_refs,
+)
 from codey.operations.kernel_contracts import ToolExecutor
 from codey.operations.kernel_tool_args import (
     _canonical_name,
@@ -872,7 +878,8 @@ def _lower_bound_inputs(
 
             try:
                 args = (resolve_verification(args, {"properties": canonical_json_object(dict(models[name].parameters))})
-                        if name == "run" else bind_symbol_read(args, dict(snapshot.symbol_read_refs)))
+                        if name == "run" else bind_symbol_read(
+                            lower_compact_symbol_edit(args, models[name]), dict(snapshot.symbol_read_refs)))
             except ValueError as exc:
                 return _invalid_plan(str(exc), tool=name)
         if name in TASK_SOURCE_TOOLS and name in models and snapshot.input_contract_version >= 13 and snapshot.bound_source_url is not None:
@@ -986,6 +993,9 @@ def _try_close_done(reply: DecodedTextTurn | AssistantTurn, snapshot: TurnSnapsh
 def _validate_control_plan(
     items: ToolPlan, snapshot: TurnSnapshot | None, frozen: Mapping[str, ToolSpec] | None,
 ) -> ToolPlan:
+    if (snapshot is not None and bound_symbol_retry(snapshot) is not None
+            and items.control is not None and not items.protocol_error):
+        return _invalid_plan("The bound edit requires a complete Python definition.", tool="edit")
     if (snapshot is not None and snapshot.browser_copy is not None and items.control is not None
             and items.control.kind == "done" and "done" not in snapshot.tool_names):
         return _invalid_plan("Finish the browser copy before reporting completion.", tool="done")
@@ -1023,7 +1033,9 @@ def normalize_turn(
             return _invalid_plan(f"invalid tool snapshot: {exc}")
     else:
         allowed = None if controller_allowed is None else {(n or "").strip().lower() for n in controller_allowed}
-    items = _response_objects(reply)
+    source = (_bound_symbol_source(reply) if snapshot is not None and bound_symbol_retry(snapshot) is not None else "")
+    items: list[tuple[str, ToolArgs, str]] | ToolPlan
+    items = [("edit", {"content": source}, "")] if source else _response_objects(reply)
     if isinstance(items, ToolPlan):
         if items.protocol_error and (closed := _try_close_done(reply, snapshot)) is not None:
             return closed
@@ -1047,6 +1059,12 @@ def normalize_turn(
         return preflight_plan(plan, snapshot_catalog(snapshot),
                               file_reads=snapshot.data_file_reads if snapshot.input_contract_version >= 20 else None)
     return plan
+
+
+def _bound_symbol_source(reply: DecodedTextTurn | AssistantTurn) -> str:
+    if isinstance(reply, AssistantTurn) and reply.finish is TurnFinish.COMPLETE and not reply.tool_calls:
+        return raw_symbol_content(reply.text)
+    return raw_symbol_content(reply.text) if isinstance(reply, TextAnswer) else ""
 
 
 __all__ = [

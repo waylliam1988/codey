@@ -9,6 +9,8 @@ from typing import Protocol
 from codey.agents.runaway_guard import attempt_record, should_block_or_remind
 from codey.agents.state import SeenInfoLRU, ToolAttemptRecord, seen_info_key
 from codey.knowledge.model import canonical_json
+from codey.operations.browser_completion import complete_snapshot_text
+from codey.operations.kernel_provenance import _kernel_workspace_identity_of
 from codey.operations.progress_comparison import EFFECT_OBSERVATIONS, ProjectCheckComparison, progress_comparison
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.progress import ProgressSnapshot
@@ -70,6 +72,35 @@ def project_check_cycle(
     return None
 
 
+def _settled_project_edit(result: ToolResult, receipts: Mapping[str, ToolResult]) -> bool:
+    if result.call.name == "edit":
+        return result.ok and result.audit.get("changed") is True and _kernel_workspace_identity_of(result) is not None
+    children = result.canonical.get("child_effect_ids")
+    if result.call.name != "codemode" or not isinstance(children, list):
+        return False
+    return any(isinstance(ref, str) and (child := receipts.get(ref)) is not None
+               and child.call.name == "edit" and _settled_project_edit(child, receipts) for ref in children)
+
+
+def _source_observations(result: ToolResult, receipts: Mapping[str, ToolResult]) -> tuple[tuple[str, str, str], ...]:
+    from codey.research.passages import read_passage_refs
+
+    if result.call.name == "codemode":
+        children = result.canonical.get("child_effect_ids")
+        return tuple(key for ref in children if isinstance(ref, str) and (child := receipts.get(ref)) is not None
+                     and child.call.name != "codemode" for key in _source_observations(child, receipts)
+                     ) if isinstance(children, list) else ()
+    if (page := complete_snapshot_text(result)) is not None:
+        return (seen_info_key("recovery_page", *page),)
+    observation = result.canonical.get("research_observation")
+    if (not result.ok or result.call.name not in {"browser_read", "open_url", "open_result", "open_hit"}
+            or not isinstance(observation, dict) or not isinstance(source := observation.get("source"), dict)
+            or not isinstance(url := source.get("final_url"), str) or not url):
+        return ()
+    refs = read_passage_refs(result.canonical.get("read_passages", []))
+    return tuple(seen_info_key("recovery_source", url, ref) for ref in refs)
+
+
 class KernelProgress:
     def __init__(self, stagnant_turns: int | None = None, *, snapshot: ProgressSnapshot | None = None) -> None:
         requested_limit = max(1, stagnant_turns) if stagnant_turns is not None else 4
@@ -89,11 +120,13 @@ class KernelProgress:
         self.warned_check_cycle = snapshot.warned_check_cycle
         self.warning_batch_id = snapshot.warning_batch_id
         self.check_cycle_repeated = snapshot.check_cycle_repeated
+        self.recovery_progress_turn = snapshot.recovery_progress_turn
 
     def snapshot(self) -> ProgressSnapshot:
         return ProgressSnapshot(self.limit, self.seen.keys(), tuple(self.attempts), self.idle, self.last_batch_id,
                                 self.schema_version, self.repair_failure_key, self.repair_rejections,
-                                self.warned_check_cycle, self.warning_batch_id, self.check_cycle_repeated)
+                                self.warned_check_cycle, self.warning_batch_id, self.check_cycle_repeated,
+                                self.recovery_progress_turn)
 
     @property
     def stopped(self) -> bool:
@@ -162,7 +195,7 @@ class KernelProgress:
             self.check_cycle_repeated = self.warned_check_cycle == cycle and self.warning_batch_id != batch_id
             if not self.check_cycle_repeated:
                 self.warned_check_cycle, self.warning_batch_id = cycle, batch_id
-            self.schema_version = 3
+            self.schema_version = max(self.schema_version, 3)
         elif progress:
             self.warned_check_cycle, self.warning_batch_id, self.check_cycle_repeated = "", "", False
 
@@ -179,6 +212,7 @@ class KernelProgress:
         progress = False
         epoch = max([0, *session.edited_files.values()])
         check_moved = False
+        recovered_progress = False
         for index, result in enumerate(results):
             try:
                 fact = check_facts.get(index) if check_facts is not None else None
@@ -187,16 +221,20 @@ class KernelProgress:
                     if settled is not None:
                         progress = progress or settled
                         check_moved = check_moved or settled
+                        recovered_progress = recovered_progress or settled and fact.exit_code == 0
                         continue
                 comparison = progress_comparison(result, session._memory_results)
                 call = comparison.call
                 record = attempt_record(call, comparison.result, turn=session.turn, edit_epoch=epoch)
+                source_novelty = [self.seen.add(key) for key in _source_observations(result, session._memory_results)]
             except Exception:
                 continue
             self.attempts.append(record)
             if call.name == "run" and result.kind == "accepted":
                 continue
             changed = result.audit.get("changed") is True
+            recovered_progress = (recovered_progress or any(source_novelty)
+                                  or _settled_project_edit(result, session._memory_results))
             check_moved = check_moved or changed
             key = seen_info_key(call.name, str(call.args.get("path") or call.args.get("url") or
                                              call.args.get("id") or ""), comparison.information)
@@ -209,6 +247,9 @@ class KernelProgress:
                 progress = True
         self.idle = 0 if progress else self.idle + 1
         self.last_batch_id = batch_id
+        if batch_id and recovered_progress and session.turn > self.recovery_progress_turn:
+            self.recovery_progress_turn = session.turn
+            self.schema_version = 4
         self._commit_check_observation(batch_id=batch_id, cycle=check_cycle, progress=check_moved)
         # A newly changed file or genuinely new output must never be stopped
         # merely because its call arguments appeared earlier in the session.

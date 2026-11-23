@@ -5,16 +5,20 @@ import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
+from typing import Protocol
 
 import pytest
 
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.checkpoint import operation_from_checkpoint
+from codey.durable.model import CommitResult, DurableMutation
+from codey.operations.kernel_contracts import KernelResult
 from codey.operations.kernel_progress import KernelProgress
+from codey.operations.provider_session import adapt_provider
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
+from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult, TurnFinish
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.operation_payload import (
     RuntimeExecutionCounters,
@@ -25,10 +29,18 @@ from codey.runtime.core.progress import ProgressSnapshot
 from codey.runtime.effects.effect_records import RuntimeEffectError, RuntimeEffectIntent
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
-from tests.durable.test_provider_response_receipts import runtime
+from tests.durable.test_provider_response_receipts import runtime as receipt_runtime
 
 
-def _reopen(path):
+class ReceiptRuntime(Protocol):
+    def __call__(self, root: Path, /, *, sqlite: bool = False) -> tuple[
+            DurableSession, RuntimeMutationLine, ManagedOutputStore, KernelEffectSink]: ...
+
+
+runtime: ReceiptRuntime = receipt_runtime
+
+
+def _reopen(path: Path) -> tuple[DurableSession, RuntimeMutationLine, KernelEffectSink]:
     durable = DurableSession(SQLiteDurableStore(path / "runtime.sqlite"))
     durable.recover_scheduler_state()
     if durable.task("r").status == "pending":
@@ -39,9 +51,10 @@ def _reopen(path):
     return durable, line, sink
 
 
-def _kernel(path: Path, *, mode: str, reopen: bool = False, crash_at: int = 0):
+def _kernel(path: Path, *, mode: str, reopen: bool = False, crash_at: int = 0) -> tuple[
+        KernelResult, list[str], RuntimeExecutionCounters]:
     from codey.operations.generation_boundary import durable_generation_boundary_callback
-    from tests.support.kernel_runtime import (
+    from codey.operations.task_loop import (
         KernelExecutionDeps,
         KernelObservationDeps,
         KernelRunRequest,
@@ -53,12 +66,12 @@ def _kernel(path: Path, *, mode: str, reopen: bool = False, crash_at: int = 0):
         durable, line, sink = _reopen(path)
     else:
         durable, line, _, sink = runtime(path, sqlite=True)
-    calls = []
+    calls: list[str] = []
 
     class Provider:
         native_tools = True
 
-        def send_turn(self, prompt, tools):
+        def send_turn(self, prompt: str, tools: list[ProviderToolDefinition]) -> AssistantTurn:
             calls.append("request")
             if mode == "length":
                 return AssistantTurn(finish=TurnFinish.OUTPUT_LIMIT)
@@ -66,20 +79,20 @@ def _kernel(path: Path, *, mode: str, reopen: bool = False, crash_at: int = 0):
                 return AssistantTurn(tool_calls=(ProviderToolCall("read-1", "read_file", {"path": "a.py"}),))
             return AssistantTurn(tool_calls=(ProviderToolCall("bad-1", "unknown_tool", {}),))
 
-        def send_tool_results(self, results, tools):
+        def send_tool_results(self, results: list[ProviderToolResult], tools: list[ProviderToolDefinition]) -> AssistantTurn:
             calls.append("repair")
             if mode == "progress":
                 return AssistantTurn(tool_calls=(ProviderToolCall("read-2", "read_file", {"path": "a.py"}),))
             return AssistantTurn(tool_calls=(ProviderToolCall("bad-2", "unknown_tool", {}),))
 
-        def acknowledge_tool_results(self, results, tools):
+        def acknowledge_tool_results(self, results: list[ProviderToolResult], tools: list[ProviderToolDefinition]) -> AssistantTurn:
             calls.append("close")
             return AssistantTurn(tool_calls=(ProviderToolCall("still-open", "read_file", {"path": "a.py"}),)) if mode == "closing" else AssistantTurn()
 
     if crash_at:
         import os
 
-        def committed(result, mutation):
+        def committed(result: CommitResult, mutation: DurableMutation) -> None:
             if (mode == "closing" and sink.counters().closing_round == 2
                     and any(a.metadata.get("kind") == "provider_response" for a in mutation.artifacts)):
                 os._exit(73)
@@ -92,7 +105,7 @@ def _kernel(path: Path, *, mode: str, reopen: bool = False, crash_at: int = 0):
         durable.subscribe_commits(committed)
     try:
         result = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control", "project.read"})), max_turns=1 if mode == "closing" else 4),
-            request=KernelRunRequest(transport=KernelTransportDeps(provider=Provider(),
+            request=KernelRunRequest(transport=KernelTransportDeps(provider=adapt_provider(Provider()),
                 provider_id="local", run_id="r", stagnant_turns=2), execution=KernelExecutionDeps(
                     executors={"read_file": lambda call: ToolResult(call, "same", ok=True)}),
                 observation=KernelObservationDeps(intent_sink=sink, on_boundary=durable_generation_boundary_callback(
@@ -103,7 +116,9 @@ def _kernel(path: Path, *, mode: str, reopen: bool = False, crash_at: int = 0):
 
 
 @pytest.mark.parametrize("mode,stop,requests", [("length", "provider_failure", []), ("protocol", "protocol", ["close"])])
-def test_restart_of_second_response_keeps_original_budget_and_logical_turn(tmp_path, mode, stop, requests):
+def test_restart_of_second_response_keeps_original_budget_and_logical_turn(
+    tmp_path: Path, mode: str, stop: str, requests: list[str],
+) -> None:
     script = "from pathlib import Path; import sys; from tests.durable.test_operation_execution_counters import _kernel; _kernel(Path(sys.argv[1]), mode=sys.argv[2], crash_at=2)"
     child = subprocess.run([sys.executable, "-c", script, str(tmp_path), mode], capture_output=True, text=True, timeout=30)
     assert child.returncode == 73, child.stderr
@@ -114,7 +129,7 @@ def test_restart_of_second_response_keeps_original_budget_and_logical_turn(tmp_p
     assert counters.invalid_turns == (2 if mode == "protocol" else 0)
 
 
-def test_closing_budget_is_not_renewed_by_process_restart(tmp_path):
+def test_closing_budget_is_not_renewed_by_process_restart(tmp_path: Path) -> None:
     script = "from pathlib import Path; import sys; from tests.durable.test_operation_execution_counters import _kernel; _kernel(Path(sys.argv[1]), mode='closing', crash_at=99)"
     child = subprocess.run([sys.executable, "-c", script, str(tmp_path)], capture_output=True, text=True, timeout=30)
     assert child.returncode == 73, child.stderr
@@ -127,7 +142,7 @@ def test_closing_budget_is_not_renewed_by_process_restart(tmp_path):
     assert calls == [] and counters.closing_round == 4
 
 
-def test_progress_snapshot_round_trip_retains_original_batch_and_stopping_decision():
+def test_progress_snapshot_round_trip_retains_original_batch_and_stopping_decision() -> None:
     session = TaskSession(TaskPolicy(frozenset({"control", "project.read"})))
     result = ToolResult(ToolCall("read_file", {"path": "a.py"}), "same", ok=True)
     progress = KernelProgress(2)
@@ -143,7 +158,7 @@ def test_progress_snapshot_round_trip_retains_original_batch_and_stopping_decisi
     assert stopped.snapshot() == restored.snapshot()
 
 
-def test_progress_committed_before_process_death_is_reused_without_counting_the_batch_again(tmp_path):
+def test_progress_committed_before_process_death_is_reused_without_counting_the_batch_again(tmp_path: Path) -> None:
     script = "from pathlib import Path; import sys; from tests.durable.test_operation_execution_counters import _kernel; _kernel(Path(sys.argv[1]), mode='progress', crash_at=99)"
     child = subprocess.run([sys.executable, "-c", script, str(tmp_path)], capture_output=True, text=True, timeout=30)
     assert child.returncode == 73, child.stderr
@@ -164,7 +179,9 @@ def test_progress_committed_before_process_death_is_reused_without_counting_the_
         durable.close()
 
 
-def test_same_progress_commit_retries_without_counting_batch_or_revision_again(tmp_path, monkeypatch):
+def test_same_progress_commit_retries_without_counting_batch_or_revision_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from codey.durable.errors import CommitConflict
     from codey.runtime.effects.effect_records import RuntimeEffectSettlement
     from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent, DeliveryBatchItem, compute_batch_digest
@@ -182,7 +199,7 @@ def test_same_progress_commit_retries_without_counting_batch_or_revision_again(t
     commit = durable.store.commit
     first = True
 
-    def lost_result(mutation):
+    def lost_result(mutation: DurableMutation) -> CommitResult:
         nonlocal first
         result = commit(mutation)
         if first:
@@ -203,7 +220,7 @@ def test_same_progress_commit_retries_without_counting_batch_or_revision_again(t
         durable.close()
 
 
-def test_provider_admission_rejects_stale_counter_update_without_creating_effect(tmp_path):
+def test_provider_admission_rejects_stale_counter_update_without_creating_effect(tmp_path: Path) -> None:
     durable, line, _, sink = runtime(tmp_path)
     before = sink.counters()
     try:
@@ -217,13 +234,15 @@ def test_provider_admission_rejects_stale_counter_update_without_creating_effect
 
 
 @pytest.mark.parametrize("current,proposed", [
-    (RuntimeExecutionCounters(length_continuation_used=True), RuntimeExecutionCounters()),
+    (RuntimeExecutionCounters(length_continuations=(1,)), RuntimeExecutionCounters()),
     (RuntimeExecutionCounters(closing_round=2), RuntimeExecutionCounters(closing_round=1)),
     (RuntimeExecutionCounters(), RuntimeExecutionCounters(closing_round=2)),
     (RuntimeExecutionCounters(invalid_turns=1), RuntimeExecutionCounters(invalid_turns=3)),
     (RuntimeExecutionCounters(), RuntimeExecutionCounters(progress=ProgressSnapshot(idle=2))),
 ])
-def test_request_cannot_reset_budgets_or_replace_batch_progress(current, proposed):
+def test_request_cannot_reset_budgets_or_replace_batch_progress(
+    current: RuntimeExecutionCounters, proposed: RuntimeExecutionCounters,
+) -> None:
     from codey.runtime.core.operation_reducer import admit_request_counters
 
     with pytest.raises(RuntimeOperationTransitionError):
@@ -232,10 +251,11 @@ def test_request_cannot_reset_budgets_or_replace_batch_progress(current, propose
 
 @pytest.mark.parametrize("changes", [{"invalid_turns": True}, {"closing_round": 5}, {"length_continuation_used": 1},
                                      {"progress": {"idle": 0}}])
-def test_operation_counter_codec_rejects_corruption(tmp_path, changes):
+def test_operation_counter_codec_rejects_corruption(tmp_path: Path, changes: dict[str, object]) -> None:
     durable, _, _, _ = runtime(tmp_path)
     try:
         state = operation_from_checkpoint(durable.task("r"), "s")
+        assert state is not None
         payload = state.to_payload()
         payload["counters"] = {**state.counters.to_payload(), **changes}
         assert RuntimeOperationState.from_payload(payload) is None
@@ -243,11 +263,13 @@ def test_operation_counter_codec_rejects_corruption(tmp_path, changes):
         durable.close()
 
 
-def test_legacy_active_operation_cannot_silently_receive_new_budgets(tmp_path):
+def test_legacy_active_operation_cannot_silently_receive_new_budgets(tmp_path: Path) -> None:
     durable, _, _, _ = runtime(tmp_path)
     try:
         task = durable.task("r")
-        payload = operation_from_checkpoint(task, "s").to_payload()
+        state = operation_from_checkpoint(task, "s")
+        assert state is not None
+        payload = state.to_payload()
         payload["schema_version"] = 2
         payload.pop("counters")
         legacy = replace(task, state={**task.state, "operation": payload})
@@ -256,6 +278,7 @@ def test_legacy_active_operation_cannot_silently_receive_new_budgets(tmp_path):
         payload["leaf"] = "accepted"
         legacy = replace(task, state={**task.state, "operation": payload})
         admitted = operation_from_checkpoint(legacy, "s")
+        assert admitted is not None
         assert admitted.counters == RuntimeExecutionCounters()
         migrated = replace(task, state={**task.state, "operation": admitted.to_payload()})
         assert operation_from_checkpoint(migrated, "s") == admitted
