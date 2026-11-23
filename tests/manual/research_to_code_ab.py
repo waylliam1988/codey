@@ -27,9 +27,8 @@ import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -37,14 +36,22 @@ if __package__ in (None, ""):
 import contextlib
 
 from codey.agents.request import AgentRequest
+from codey.app.headless_runner import HeadlessAppContext
 from codey.knowledge.brief import KnowledgeBriefBuilder
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.provider_session import (
+    ProviderAdapter,
+    adapt_provider,
+    reply_text_for_accounting,
+    request_text_for_accounting,
+)
 from codey.providers import controls as provider_controls
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
+from codey.providers.requests import ProviderRequest
 from codey.runtime.observe.events import RunEvent, render_run_event
+from codey.utils.refs import coerce_int
 from codey.utils.text_budget import clip_middle
-from codey.workspace.revision import WorkspaceRevisionStore
 from tests.manual import ab_harness_common as common
 from tests.manual.ab_harness_common import (
     ArmRunLayout,
@@ -61,6 +68,51 @@ from tests.support.kernel_runtime import run_agent as _agent_kernel_request
 # Shared manual-layer plumbing (journaling provider, schedules, atomic JSON);
 # the alias keeps the historical name for existing tests and callers.
 TracingProvider = common.TracingProvider
+
+
+class _ArmTracingProvider(ProviderAdapter):
+    """Journal the finite API transport without dropping its request options."""
+
+    def __init__(
+        self, provider: object, trace: TracingProvider,
+    ) -> None:
+        super().__init__(provider)
+        self.trace = trace
+
+    @property
+    def prompts(self) -> list[str]:
+        return self.trace.prompts
+
+    def new_chat(self, timeout: float | None = None) -> object:
+        return super().new_chat(timeout if timeout is not None else self.trace.new_chat_timeout)
+
+    def execute_request(self, request: ProviderRequest) -> object:
+        trace = self.trace
+        prompt = request_text_for_accounting(request)
+        trace.send_index += 1
+        turn = trace.send_index
+        trace.prompt_chars += len(prompt)
+        journal = trace.journal
+        if journal is not None:
+            journal.record_send_start(case=trace.case, arm=trace.arm, turn=turn, prompt=prompt)
+        if request.options.timeout is None and trace.timeout is not None:
+            request = replace(request, options=replace(request.options, timeout=trace.timeout))
+        try:
+            reply = super().execute_request(request)
+            reply_text = reply_text_for_accounting(reply)
+        except Exception as exc:
+            if journal is not None:
+                journal.record_send_error(case=trace.case, arm=trace.arm, turn=turn, error=f"{type(exc).__name__}: {exc}")
+            raise
+        trace.prompts.append(prompt)
+        trace.replies.append(reply_text)
+        trace.reply_count += 1
+        trace.reply_chars += len(reply_text)
+        trace.last_turn, trace.last_reply = turn, reply_text
+        if journal is not None:
+            event = journal.record_reply(case=trace.case, arm=trace.arm, turn=turn, prompt=prompt, reply=reply_text)
+            trace.transcript_refs.append(dict(event.content_ref))
+        return reply
 
 
 
@@ -304,7 +356,7 @@ def _brief_trap_in_key_conclusions(brief_text: str) -> bool:
     return any(TRAP_TOKEN in item for item in _rendered_section_items(brief_text, "Key conclusions:"))
 
 
-def score_arm(*, summary: str, changed_files: tuple[str, ...], root: Path) -> dict[str, Any]:
+def score_arm(*, summary: str, changed_files: tuple[str, ...], root: Path) -> dict[str, bool]:
     """Deterministic scorer over one finished arm."""
 
     blob_parts = [str(summary or "")]
@@ -350,13 +402,14 @@ class _ScriptedProvider:
 
 
 def _run_arm(
-    provider,
+    provider: _ScriptedProvider | _ArmTracingProvider,
     case: AbCase,
     arm: str,
     *,
     max_turns: int,
     briefs: dict[str, str] | None = None,
-) -> dict[str, Any]:
+    provider_id: str = "self-test",
+) -> dict[str, object]:
     # Single-case probe; the case name only labels rows, and both arms share
     # one fixture + task so any delta comes from the rendered handoff.
     briefs = briefs or _arm_briefs()
@@ -371,28 +424,34 @@ def _run_arm(
         root.mkdir()
         _write_case(root)
         prompts_before = len(provider.prompts)
-        result = _agent_kernel_request(AgentRequest(
-            provider=provider,
-            project=root,
-            task=TASK,
-            workspace_revision_store=WorkspaceRevisionStore(home / "state"),
-            max_turns=max_turns,
-            on_event=events.append,
-            fresh_chat=True,
-            provider_id=getattr(provider, "id", ""),
-            research_context=brief_text,
-        ))
+        with contextlib.closing(HeadlessAppContext(
+            home / "state", port=0, emit_jsonl=lambda _event: None,
+        )) as state:
+            result = _agent_kernel_request(AgentRequest(
+                provider=adapt_provider(provider),
+                project=root,
+                task=TASK,
+                workspace_revision_store=state.workspace_revisions,
+                durable=state.durable,
+                managed_outputs=state.managed_outputs,
+                runtime_mutations=state.runtime_mutations,
+                max_turns=max_turns,
+                on_event=events.append,
+                fresh_chat=True,
+                provider_id=provider_id,
+                research_context=brief_text,
+            ))
         elapsed = round(time.time() - started, 3)
         changed = _changed_files(root)
         independent_check = _run_process(root, (sys.executable, "-B", "-m", "pytest", "-q"))
         scores = score_arm(
-            summary=str(getattr(result, "summary", "")),
+            summary=result.summary,
             changed_files=changed,
             root=root,
         )
 
     prompts = provider.prompts[prompts_before:]
-    report: dict[str, Any] = {
+    report: dict[str, object] = {
         "case": case.name,
         "arm": arm,
         "seconds": elapsed,
@@ -421,28 +480,29 @@ def _run_arm(
     return report
 
 
-def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    summary: dict[str, Any] = {"arms": {}}
+def _summarize(rows: list[dict[str, object]]) -> dict[str, object]:
+    arms: dict[str, dict[str, int]] = {}
+    summary: dict[str, object] = {"arms": arms}
     for arm in ARMS:
         arm_rows = [row for row in rows if row.get("arm") == arm and "error" not in row]
-        summary["arms"][arm] = {
+        arms[arm] = {
             "count": len(arm_rows),
             "success": sum(1 for row in arm_rows if row.get("success")),
             "key_conclusion_applied": sum(1 for row in arm_rows if row.get("key_conclusion_applied")),
             "trap_misused": sum(1 for row in arm_rows if row.get("trap_misused")),
             "independent_check_passed": sum(1 for row in arm_rows if row.get("independent_check_passed")),
-            "sent_chars": sum(int(row.get("sent_chars") or 0) for row in arm_rows),
-            "brief_chars": sum(int(row.get("brief_chars") or 0) for row in arm_rows),
-            "turns": sum(int(row.get("turns") or 0) for row in arm_rows),
-            "tool_calls": sum(int(row.get("tool_calls") or 0) for row in arm_rows),
-            "protocol_errors": sum(int(row.get("protocol_errors") or 0) for row in arm_rows),
+            "sent_chars": sum(coerce_int(row.get("sent_chars")) for row in arm_rows),
+            "brief_chars": sum(coerce_int(row.get("brief_chars")) for row in arm_rows),
+            "turns": sum(coerce_int(row.get("turns")) for row in arm_rows),
+            "tool_calls": sum(coerce_int(row.get("tool_calls")) for row in arm_rows),
+            "protocol_errors": sum(coerce_int(row.get("protocol_errors")) for row in arm_rows),
             "brief_trap_in_key_conclusions": sum(1 for row in arm_rows if row.get("brief_trap_in_key_conclusions")),
         }
-    baseline = summary["arms"].get("baseline", {})
-    projection = summary["arms"].get("projection", {})
+    baseline = arms.get("baseline", {})
+    projection = arms.get("projection", {})
     if baseline.get("count") and projection.get("count"):
         summary["projection_delta_vs_baseline"] = {
-            key: int(projection.get(key) or 0) - int(baseline.get(key) or 0)
+            key: projection.get(key, 0) - baseline.get(key, 0)
             for key in (
                 "success",
                 "key_conclusion_applied",
@@ -464,11 +524,11 @@ def _arm_schedule(repeats: int) -> list[tuple[str, int]]:
 
 
 def _gate_verdict(
-    rows: list[dict[str, Any]],
+    rows: list[dict[str, object]],
     *,
     repeats: int = 1,
     cases: tuple[str, ...] = ("discount-before-tax",),
-) -> dict[str, Any]:
+) -> dict[str, bool | dict[str, bool]]:
     """Release-gate verdict: the projection arm must not regress on any gate
     metric vs the baseline arm, and the run matrix must be complete -- every
     (case, repeat) pair has exactly one baseline and one projection row and
@@ -479,7 +539,7 @@ def _gate_verdict(
     proj_rows = [row for row in rows if row.get("arm") == "projection" and "error" not in row]
     error_rows = [row for row in rows if "error" in row]
 
-    def total(rs: list[dict[str, Any]], key: str) -> int:
+    def total(rs: list[dict[str, object]], key: str) -> int:
         return sum(1 for row in rs if row.get(key))
 
     criteria = {
@@ -528,7 +588,7 @@ def run_live(
         arms=ARMS,
         summarize=_summarize,
     )
-    payload = store.payload
+    payload: dict[str, object] = store.payload
     payload["repeats_per_arm"] = repeat_count
     payload["arm_order_note"] = "interleaved per repeat to cancel order bias"
     briefs = _arm_briefs()
@@ -602,7 +662,8 @@ def run_live(
                 arm=arm,
             )
             try:
-                row = _run_arm(tracing, case, arm, max_turns=max_turns, briefs=briefs)
+                row = _run_arm(_ArmTracingProvider(raw_provider, tracing), case, arm, max_turns=max_turns,
+                               briefs=briefs, provider_id=provider_id)
             except Exception as exc:
                 row = {
                     "case": case.name,
@@ -718,23 +779,42 @@ def _self_test() -> None:
         '{"tool":"done","args":{"summary":"Implemented pre-tax discount per research."}}',
     )
     case = CASES[0]
+    brief_sizes: dict[str, int] = {}
     for arm in ARMS:
+        scripted = _ScriptedProvider(*replies)
         row = _run_arm(
-            _ScriptedProvider(*replies),
+            scripted,
             case,
             arm,
             max_turns=6,
             briefs=briefs,
         )
+        assert scripted.prompts and briefs[arm] in scripted.prompts[0], arm
         assert row["stop_reason"] == "done", row
         assert row["key_conclusion_applied"], row
         assert not row["trap_misused"], row
         assert row["independent_check_passed"], row
         assert row["success"], row
-    baseline_row = _run_arm(_ScriptedProvider(*replies), case, "baseline", max_turns=6, briefs=briefs)
-    projection_row = _run_arm(_ScriptedProvider(*replies), case, "projection", max_turns=6, briefs=briefs)
-    assert baseline_row["brief_chars"] > projection_row["brief_chars"]
+        brief_size = row["brief_chars"]
+        assert isinstance(brief_size, int), row
+        brief_sizes[arm] = brief_size
+    assert brief_sizes["baseline"] > brief_sizes["projection"]
     print("self-test ok")
+
+
+class Options(argparse.Namespace):
+    provider: str
+    port: int
+    timeout: float
+    new_chat_timeout: float
+    repeats: int
+    max_turns: int
+    output: Path | None
+    trace_output: Path | None
+    no_live_trace: bool
+    rerun_failed: bool
+    keep_open: bool
+    self_test: bool
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -768,7 +848,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--keep-open", action="store_true")
     parser.add_argument("--self-test", action="store_true")
-    args = parser.parse_args(argv)
+    args = parser.parse_args(argv, namespace=Options())
     if args.self_test:
         _self_test()
         return 0
