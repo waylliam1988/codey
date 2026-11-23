@@ -140,7 +140,9 @@ def test_csv_row_lowering_requires_a_unique_read_only_table(
         code += "await tools.edit({});"
     original = ToolCall("codemode", {"code": code + "return table['rows'];", "inputs": {"format": "csv"}}, "shape")
     plan = preflight_plan(ToolPlan([original], None), catalog)
-    if corrected:
+    if writable:
+        assert plan.calls == [original] and not plan.protocol_error and not plan.arg_repair_counts
+    elif corrected:
         assert plan.calls[0].args["code"] == code + 'return unwrap(table)["data"];'
         assert plan.calls[0].call_id == "shape"
         assert plan.arg_repair_counts["codemode_source_shape"] == 1

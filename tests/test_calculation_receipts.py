@@ -262,6 +262,48 @@ return {raw:file.text, rows:table.rows.filter(row => row.cohort === 'A')};
     assert records[table_ref].call.args["result_ref"] == file_ref
 
 
+@pytest.mark.parametrize("observed", [False, True])
+def test_codemode_read_data_keeps_the_original_file_receipt_or_failure(tmp_path: Path, observed: bool) -> None:
+    (tmp_path / "input.csv").write_bytes(b"cohort,value,weight\nA,0.1,1\nA,0.2,3\n")
+    task = session()
+    run_id = "observed-table"
+    if observed:
+        snapshot = build_turn_snapshot(task)
+        reader = build_execute_turn_executor(session=task, snapshot=snapshot, run_id=run_id, effect_scope="task",
+            turn=0, project_path=tmp_path)
+        opened, = execute_turn(task, [ToolCall("codemode", {"code": (
+            "return unwrap(await tools.read_file({path:'input.csv'}));"
+        )})], project_path=tmp_path, executors={"codemode": reader}, snapshot=snapshot,
+            run_id=run_id, effect_scope="task", turn=0)
+        assert opened.ok, opened.model_text
+    snapshot = build_turn_snapshot(task)
+    executor = build_execute_turn_executor(session=task, snapshot=snapshot, run_id=run_id, effect_scope="task",
+        turn=1, project_path=tmp_path)
+    code = """
+const table = await tools.read_data({path:'input.csv',format:'csv'});
+return unwrap(await tools.calculate({operation:'weighted_mean',table:{
+    result_ref:table.result_ref,value_column:'value',weight_column:'weight',where:{column:'cohort',equals:'A'}
+}}));
+"""
+    if not observed:
+        code = "await tools.read_data({path:'another.csv',format:'csv'});\n" + code
+    result, = execute_turn(task, [ToolCall("codemode", {"code": code})], project_path=tmp_path,
+        executors={"codemode": executor}, snapshot=snapshot, run_id=run_id, effect_scope="task", turn=1)
+    assert result.ok is observed, result.model_text
+    receipts = task._memory_results
+    file_reads = [ref for ref, row in receipts.items() if row.call.name == "read_file"]
+    _, parsed = next((ref, row) for ref, row in receipts.items() if row.call.name == "read_data")
+    if observed:
+        file_ref, = file_reads
+        assert decode_json_object(parsed.canonical["value"])["source_ref"] == file_ref
+        assert decode_json_object(result.canonical["value"])["value"] == "0.175"
+    else:
+        assert not file_reads and not parsed.ok
+        assert "read the selected file in this task before parsing its data" in parsed.model_text
+        assert result.model_text.count(parsed.model_text) == 1
+        assert all(row.call.name != "calculate" for row in receipts.values())
+
+
 @pytest.mark.parametrize(("text", "format_name", "expected"), [
     ('{"value":0.1000000000000000001}', "json", {"value": "0.1000000000000000001"}),
     ("value,weight\n0.1,2\n0.2,3\n", "csv", [{"value": "0.1", "weight": "2"}, {"value": "0.2", "weight": "3"}]),

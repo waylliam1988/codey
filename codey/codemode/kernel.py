@@ -50,6 +50,23 @@ def _settled_child_description(ref: str, receipt: ToolResult) -> str:
     return description
 
 
+def _failure_detail(result: ToolResult, refs: Sequence[str], receipts: Mapping[str, ToolResult]) -> str:
+    detail = result.model_text
+    if result.audit.get("error_code") == "argument_encoding":
+        # A failed read_data has no result_ref. Keep the upstream receipt
+        # visible when downstream argument encoding fails.
+        upstream = dict.fromkeys(
+            receipt.model_text for ref in refs if (receipt := receipts[ref]).call.name == "read_data"
+            and not receipt.ok and receipt.model_text not in detail
+        )
+        detail = "\n".join((*upstream, detail))
+    if refs:
+        detail += "\nSettled child receipts (the parent failure does not undo them): " + ", ".join(
+            _settled_child_description(ref, receipts[ref]) for ref in refs)
+        detail += "\nContinue only the missing work. Do not resubmit the original program to repeat completed actions."
+    return detail
+
+
 def _project_patch_results(
     result: ToolResult,
     plans: Mapping[tuple[tuple[int, str], ...], str],
@@ -694,12 +711,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             from codey.toolchain.result_schema import schema_typescript
             from codey.toolchain.tool_prompt import tool_repair_text
 
-            detail = result.model_text
-            if ordered_child_effect_ids:
-                detail += "\nSettled child receipts (the parent failure does not undo them): " + ", ".join(
-                    _settled_child_description(ref, session._memory_results[ref])
-                    for ref in ordered_child_effect_ids)
-                detail += "\nContinue only the missing work. Do not resubmit the original program to repeat completed actions."
+            detail = _failure_detail(result, ordered_child_effect_ids, session._memory_results)
             if result.audit.get("error_code") == "syntax_error":
                 detail += (
                     "\nSyntax repair required: submit one new syntactically valid CodeMode program; "

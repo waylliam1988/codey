@@ -376,8 +376,8 @@ def _check_shape(code: str, catalog: ToolCatalogSnapshot, *, preflight: bool,
     if root.has_error or _shadows_tool_api(root, source):
         return code, 0, None
     check = _ShapeCheck(source, catalog, preflight=preflight, inputs=inputs, rewrite=rewrite)
-    if check.rewrite:
-        check.rewrite = check.readonly_program(root, catalog)
+    if preflight and not check.readonly_program(root, catalog):
+        return code, 0, None
     for statement in root.named_children:
         if (diagnostic := check.statement(statement)) is not None:
             return code, 0, diagnostic
