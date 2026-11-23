@@ -37,6 +37,11 @@ def test_project_disclosure_reuses_documented_source_binding(monkeypatch: pytest
     selected, _ = task_handoff(session, snapshot, CompletionContext(), None)
     assert "browser_navigate" not in selected.tool_names
     assert "browser_navigate" in selected.nested_tool_names
+    assert "task_output" not in selected.tool_names and "task_output" in selected.nested_tool_names
+    active, _ = task_handoff(session, snapshot, CompletionContext(), None,
+                             task_controls=frozenset({"task_output", "task_cancel"}))
+    assert {"task_output", "task_cancel"} <= set(active.tool_names)
+    assert "task_input" not in active.tool_names
     url = "https://example.com/project-format"
     monkeypatch.setattr("codey.operations.project_delivery.observed_delivery_links",
                         lambda _session: ProjectDeliveryLinks(specification=url))

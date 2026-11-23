@@ -182,13 +182,6 @@ def kernel_prompt_for_session(
         )
     if "shell" in visible_names:
         parts.append(f"Execution host platform: {sys.platform}. " + session.shell.guidance())
-        parts.append(
-            "When a public URL or API can answer the request, shell can request a bounded noninteractive HTTP command "
-            "such as curl.exe on Windows or curl elsewhere, with explicit connection and total timeouts. "
-            "This does not open a browser. Keep shell approval intact; never put fetch, process or imports in CodeMode. "
-            "Do not launch a browser as a fallback for an ordinary data lookup unless the user requests browser interaction. "
-            "Use returned source and observation times when reporting time-sensitive facts."
-        )
     return "\n\n".join(parts)
 
 
@@ -460,17 +453,20 @@ def _execution_result_context(result: ToolResult) -> str:
     return text + ("\nExecution facts: " + json.dumps(receipt.facts(), ensure_ascii=False) if receipt is not None else "")
 
 
-def _result_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool = True) -> str:
+def _result_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool = True,
+                    tool_names: tuple[str, ...] | None = None) -> str:
     text = (result.model_text or "")
     if result.kind == "accepted":
         value = decode_json_object(result.canonical["value"])
         task_ref = require_json_string(value["task_ref"], "task_ref")
         task_args: dict[str, object] = {"task_ref": task_ref, "wait_ms": 30000}
-        return (text + '\n\nBackground admission only. The command result is not in this receipt. '
-                'Final status and bounded output will be delivered automatically; do not poll or repeat the command. '
-                'If intermediate output is useful now, inspect task_output('
-                + json.dumps(task_args)
-                + '). Use task_cancel to stop it. Wait for the final result before reporting its outcome.')
+        text += ('\n\nBackground admission only. The command result is not in this receipt. '
+                 'Final status and bounded output will be delivered automatically; do not poll or repeat the command.')
+        if tool_names is None or "task_output" in tool_names:
+            text += ' If intermediate output is useful now, inspect task_output(' + json.dumps(task_args) + ').'
+        if tool_names is None or "task_cancel" in tool_names:
+            text += ' Use task_cancel to stop it.'
+        return text + ' Wait for the final result before reporting its outcome.'
     if result.call.name == "codemode":
         if result.ok:
             text = f"Result data (JSON):\n{text}"
@@ -631,7 +627,7 @@ def operation_receipts(session: TaskSession) -> list[JsonObject]:
     return rows[-12:]
 
 
-def working_context(session: TaskSession) -> str:
+def working_context(session: TaskSession, *, tool_names: tuple[str, ...] | None = None) -> str:
     """Fresh execution facts; narrative checkpoints cannot amend these observations."""
     import json
 
@@ -647,10 +643,12 @@ def working_context(session: TaskSession) -> str:
             continue
         if result is not None and result.kind == "accepted":
             value = decode_json_object(result.canonical["value"])
-            executions.append({"admission_ref": identity, "task_ref": value["task_ref"],
+            admission: dict[str, object] = {"admission_ref": identity, "task_ref": value["task_ref"],
                 "command": args.get("command", ""), "cwd": args.get("path", "."),
-                "status": "accepted", "result_available": False,
-                "next_read": {"tool": "task_output", "args": {"task_ref": value["task_ref"], "wait_ms": 30000}}})
+                "status": "accepted", "result_available": False}
+            if tool_names is None or "task_output" in tool_names:
+                admission["next_read"] = {"tool": "task_output", "args": {"task_ref": value["task_ref"], "wait_ms": 30000}}
+            executions.append(admission)
             continue
         fingerprint = record.get("workspace_fingerprint")
         audit: Mapping[str, object] = result.audit if result is not None else {}

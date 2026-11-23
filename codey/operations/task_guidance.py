@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codey.policies.capabilities import BROWSER_CAPABILITIES
 from codey.policies.output_requirement import guidance
 from codey.policies.task_policy import TaskPolicy
 from codey.research.answer_contract import whole_research_policy
@@ -12,11 +11,13 @@ from codey.research.completion_guidance import render_completion_guidance
 
 if TYPE_CHECKING:
     from codey.knowledge.store import KnowledgeStore
+    from codey.operations.kernel_protocol import TurnSnapshot
     from codey.operations.task_session import TaskSession
     from codey.research.answer_contract import AnswerScope
     from codey.research.ledger import ResearchLedger
     from codey.research.staging import StagedKnowledgeStore
     from codey.runtime.core.models import ToolResult
+    from codey.task.web_intent import WebIntent
 
 
 def task_working_context(session: TaskSession, research_ledger: ResearchLedger | None = None,
@@ -32,7 +33,7 @@ def task_working_context(session: TaskSession, research_ledger: ResearchLedger |
     # parent reports/plans in investigations and obscures the latest evidence.
     research_only = (session.task_kind in {"research", "evidence_followup"}
                      and not session.policy.allows("project.write"))
-    parts = [] if research_only else [working_context(session)]
+    parts = [] if research_only else [working_context(session, tool_names=tool_names)]
     from codey.research.answer_contract import answer_scope, whole_research
 
     scope = research_scope or (answer_scope(session) if whole_research(session) else None)
@@ -101,13 +102,21 @@ def task_guidance_for_policy(policy: TaskPolicy, *, task_kind: str) -> str:
          "copy their actual ids and revisions. If background recall lacks the requested topic or object kind, "
          "search for that target before editing. A related premise is not the inference being revised."
          if policy.allows("knowledge.read") and policy.allows("knowledge.write") and not policy.strict_research else ""),
-        ("Browser actions in CodeMode are sequential: use refs from the latest snapshot and take a fresh snapshot "
-         "after page mutations. browser_read returns citable source text as a string; an offered inspect_page_detail "
-         "action also returns citable source text. Other browser actions are observations. If delivery is uncertain, inspect the current page "
-         "before retrying."
-         if any(policy.allows(grant) for grant in BROWSER_CAPABILITIES) else ""),
         guidance(policy.required_checks),
     ) if part)
+
+
+def request_tool_guidance(snapshot: TurnSnapshot, intent: WebIntent) -> tuple[str, ...]:
+    parts: list[str] = []
+    if snapshot.browser_followups and "codemode" in snapshot.tool_names:
+        parts.append("Browser actions in CodeMode are sequential. Use refs from the latest snapshot and take a "
+                     "fresh snapshot after page mutations. If delivery is uncertain, inspect the page before retrying. "
+                     "browser_read returns citable source text.")
+    if ("shell" in snapshot.tool_names and snapshot.policy is not None and snapshot.policy.allows("web.read")
+            and intent.requested and not {"open_url", "web_search"}.intersection(snapshot.inventory_names)):
+        parts.append("For an authorized HTTP lookup, shell can request curl.exe on Windows or curl elsewhere "
+                     "with explicit connection and total timeouts. Shell approval applies.")
+    return tuple(parts)
 
 
 def task_result_context(session: TaskSession, result: ToolResult, research_scope: AnswerScope | None, *,
@@ -142,5 +151,5 @@ def task_result_context(session: TaskSession, result: ToolResult, research_scope
                 return ("Read succeeded. The original window is pinned for citation as "
                         + ", ".join(f"[{labels[ref]}]" for ref in rows) + ".\n"
                         + render_result_metadata(identity, tool=result.call.name, ok=True))
-    return _result_context(result, session, receipt_recovery=(not isinstance(research_scope, AnswerScope)
+    return _result_context(result, session, tool_names=tool_names, receipt_recovery=(not isinstance(research_scope, AnswerScope)
                            and (tool_names is None or "read_tool_result" in tool_names)))

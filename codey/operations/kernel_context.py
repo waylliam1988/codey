@@ -441,12 +441,14 @@ class KernelContext:
         browser = self.execution.browser_session
         from codey.operations.browser_resources import resume_assistance_observation
         from codey.operations.task_handoff import task_handoff
+        from codey.operations.tool_task_delivery import active_tool_task_controls
 
         question = decode_json_object(thaw_json(self.durable.task(self.sink.run_id).state.get("question", {})))
         assistance = (resume_assistance_observation(browser, question.get("continuation", {}), self.session._memory_results)
                       if question.get("state") == "answered" else "")
         snapshot, hint = task_handoff(self.session, snapshot, self.completion_context, browser,
-                                     delivered_results=delivered_results)
+                                     delivered_results=delivered_results,
+                                     task_controls=active_tool_task_controls(self.durable, self.sink.run_id))
         instructions = ""
         if self.execution.project_path is not None and "edit" in snapshot.inventory_names:
             from codey.operations.project_delivery import declared_edit_target

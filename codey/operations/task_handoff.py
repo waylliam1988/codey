@@ -18,13 +18,12 @@ if TYPE_CHECKING:
 
 _PROJECT_DIRECT = frozenset({
     "list_dir", "read_file", "read_files", "grep", "find_references", "edit", "run",
-    "task_output", "task_input", "task_signal", "task_resize", "task_cancel",
 })
 _SOURCE_DIRECT = frozenset({"open_url", "web_search", "source_search"})
 
 
 def _select_outer_tools(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
-                        intent: WebIntent, *, ready_for_page: bool) -> TurnSnapshot:
+                        intent: WebIntent, *, ready_for_page: bool, task_controls: frozenset[str]) -> TurnSnapshot:
     from codey.operations.kernel_protocol import offer_browser_call, offer_browser_tools
     from codey.policies.browser_requirement import parse_browser_requirement
     from codey.policies.tool_requirement import parse_tool_success_check
@@ -37,7 +36,7 @@ def _select_outer_tools(session: TaskSession, snapshot: TurnSnapshot, context: C
     if (session.project and not browser_steps and not session.policy.strict_research
             and session.model_tool_names is None and snapshot.research_scope is None and snapshot.input_binding is None
             and snapshot.browser_copy is None and {"codemode", "edit"} <= set(snapshot.tool_names)):
-        preferred = _PROJECT_DIRECT | set(required)
+        preferred = _PROJECT_DIRECT | task_controls | set(required)
         if intent.requested or snapshot.task_source_url:
             preferred |= _SOURCE_DIRECT
         names = tuple(name for name in snapshot.tool_names
@@ -62,7 +61,8 @@ def report_completes_task(session: TaskSession) -> bool:
 
 def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                  browser: BrowserSession | None, *,
-                 delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
+                 delivered_results: Sequence[ToolResult] = (),
+                 task_controls: frozenset[str] = frozenset()) -> tuple[TurnSnapshot, str]:
     from codey.completion.verification_policy import VerificationPlan
     from codey.operations.browser_detail import offer_page_details, offer_query_controls
     from codey.operations.browser_task_handoff import (
@@ -80,6 +80,7 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
         verification_plan_feedback,
     )
     from codey.operations.research_submission_handoff import research_browser_handoff, research_submission_handoff
+    from codey.operations.task_guidance import request_tool_guidance
     from codey.runtime.core.models import ToolCall
     from codey.task.web_intent import explicit_web_intent
 
@@ -99,7 +100,8 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
         for row in project_evidence_checks(session, context))))
     if ready_for_page and "browser_navigate" in snapshot.nested_tool_names and snapshot.browser_copy is None:
         snapshot = replace(snapshot, task_navigation_url=links.application)
-    snapshot = _select_outer_tools(session, snapshot, context, intent, ready_for_page=ready_for_page)
+    snapshot = _select_outer_tools(session, snapshot, context, intent, ready_for_page=ready_for_page,
+                                   task_controls=task_controls)
     if (ready_for_page and snapshot.task_navigation_url == links.application and snapshot.navigation_observes
             and "browser_navigate" in snapshot.tool_names and "browser_read" in snapshot.nested_tool_names):
         version = snapshot.input_contract_version if snapshot.input_contract_version >= 19 else 19
@@ -173,4 +175,5 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     hints.append(hint)
     snapshot, hint = offer_page_details(session, snapshot, browser)
     hints.append(hint)
+    hints.extend(request_tool_guidance(snapshot, intent))
     return refresh_snapshot_contract(snapshot), "\n\n".join(dict.fromkeys((hint for hint in hints if hint), ""))

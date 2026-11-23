@@ -25,6 +25,21 @@ from codey.storage.managed_outputs import ManagedOutputStore
 NOTIFICATION_MAX_CHARS = 12_000
 
 
+def active_tool_task_controls(durable: DurableSession, owner_task_id: str) -> frozenset[str]:
+    names: set[str] = set()
+    for child in durable.owned_tasks(owner_task_id):
+        if child.execution_kind != "tool" or child.status in TASK_TERMINAL_STATUSES:
+            continue
+        names.add("task_output")
+        if child.state.get("cancel_requested"):
+            continue
+        names.add("task_cancel")
+        request = ToolTaskInput.from_payload(child.state["tool_input"])
+        if request.call_name == "run" and request.args.get("tty") is True:
+            names.update(("task_input", "task_signal", "task_resize"))
+    return frozenset(names)
+
+
 @dataclass(frozen=True)
 class ToolTaskNotifications:
     refs: tuple[str, ...] = ()
