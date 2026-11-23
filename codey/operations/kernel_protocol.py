@@ -1011,11 +1011,17 @@ def normalize_turn(
         if isinstance(lowered, ToolPlan):
             return lowered
         items = lowered
-    return _plan_from_tool_objects(
+    plan = _plan_from_tool_objects(
         items, policy=policy, controller_allowed=allowed,
         snapshot_names=snapshot_names, frozen_specs=frozen,
         ignore_runtime_claims=snapshot.ignore_runtime_claims if snapshot is not None else False,
     )
+    if snapshot is not None and any(call.name == "codemode" and not call.args.get("repair_of") for call in plan.calls):
+        from codey.codemode.catalog import snapshot_catalog
+        from codey.codemode.shape_repair import preflight_plan
+
+        return preflight_plan(plan, snapshot_catalog(snapshot))
+    return plan
 
 
 __all__ = [

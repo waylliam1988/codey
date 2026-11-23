@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from codey.codemode.catalog import build_catalog_snapshot
 from codey.codemode.kernel import CodeModeKernelExecutor
 from codey.codemode.protocol import (
     CodeModeInputError,
@@ -12,8 +13,10 @@ from codey.codemode.protocol import (
     parse_codemode_text,
 )
 from codey.codemode.runtime import NodeWorkerRuntime
+from codey.codemode.shape_repair import preflight_plan, preflight_shape_diagnostic
 from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
-from codey.runtime.core.models import ToolCall, ToolResult
+from codey.research.calculation import data_output_schema
+from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.types.json_value import JsonObject
 
 
@@ -84,6 +87,89 @@ def test_entire_program_is_checked_before_any_kernel_child_action() -> None:
 
     corrected = executor.execute(ToolCall("codemode", {"code": code.replace(r"\nconst", "\nconst")}))
     assert corrected.ok and len(children) == 1
+
+
+@pytest.mark.parametrize(("expression", "hint"), [
+    ("result.rows.filter(Boolean)", "'rows'"),
+    ("unwrap(result)['rows']", "'rows'"),
+    ("unwrap(result).result_ref", "'result_ref'"),
+    ("result.value.result_ref", "'result_ref'"),
+])
+def test_catalog_shape_is_checked_before_starting_a_program(expression: str, hint: str) -> None:
+    children: list[ToolCall] = []
+
+    def execute_child(call: ToolCall) -> ToolResult:
+        children.append(call)
+        return ToolResult(call=call, ok=True, model_text="read", canonical={"value": {
+            "format": "csv", "data": [{"value": "0.1"}], "source_ref": "original",
+            "source_version": "1", "passage_refs": [],
+        }})
+
+    executor = CodeModeKernelExecutor(
+        execution_id="shape-preflight", catalog=(ToolCatalogEntry("read_data", "read", output_schema=data_output_schema()),),
+        execute_child=execute_child,
+    )
+    code = "const result = await tools.read_data({});\nreturn " + expression + ";"
+    failed = executor.execute(ToolCall("codemode", {"code": code}))
+    assert failed.audit.get("error_code") == "source_shape", failed.model_text
+    assert not failed.ok and failed.audit["child_calls"] == 0 and not children
+    assert "line 2" in failed.model_text and hint in failed.model_text
+
+    corrected = executor.execute(ToolCall("codemode", {"code": code.replace(expression, "unwrap(result).data")}))
+    assert corrected.ok and corrected.canonical["value"] == [{"value": "0.1"}]
+    assert len(children) == 1
+
+
+@pytest.mark.parametrize(("selection", "writable", "corrected"), [
+    ("{format:'csv'}", False, True),
+    ("{format:inputs.format}", False, True),
+    ("{format:'csv',format:'json'}", False, False),
+    ("{format:csv}", False, False),
+    ("{format:'json'}", False, False),
+    ("{format:'csv'}", True, False),
+])
+def test_csv_row_lowering_requires_a_unique_read_only_table(
+    selection: str, writable: bool, corrected: bool,
+) -> None:
+    catalog = build_catalog_snapshot((
+        ToolCatalogEntry("read_data", "read", output_schema=data_output_schema()),
+        ToolCatalogEntry("edit", "write", read_only=False, grant="project.write"),
+    ))
+    code = f"const table = await tools.read_data({selection});"
+    if writable:
+        code += "await tools.edit({});"
+    original = ToolCall("codemode", {"code": code + "return table['rows'];", "inputs": {"format": "csv"}}, "shape")
+    plan = preflight_plan(ToolPlan([original], None), catalog)
+    if corrected:
+        assert plan.calls[0].args["code"] == code + 'return unwrap(table)["data"];'
+        assert plan.calls[0].call_id == "shape"
+        assert plan.arg_repair_counts["codemode_source_shape"] == 1
+    else:
+        assert plan.protocol_error_kind == "source_shape" and not plan.calls
+
+
+@pytest.mark.parametrize("code", [
+    "const table = unwrap(await tools.read_data({})); return table.data;",
+    "const table = unwrap(await tools.read_data({})); table.rows = []; return table.rows;",
+    "const table = unwrap(await tools.read_data({})); return [Object.assign(table,{rows:[]}), table.rows];",
+    "const table = unwrap(await tools.read_data({})); return table.rows === undefined;",
+    "const table = unwrap(await tools.read_data({})); return table.data.result_ref;",
+    "const table = await tools.dynamic({}); return unwrap(table).result_ref;",
+    "const table = unwrap(await tools.variants({})); return table.result_ref;",
+    "const snapshot = unwrap(await tools.browser_snapshot({flow: []})); return snapshot.steps;",
+    "const unwrap = () => ({rows: []}); return unwrap(await tools.read_data({})).rows;",
+    "const table = unwrap(await tools.read_data({})); return []; const unused = table.rows;",
+])
+def test_shape_preflight_defers_when_a_real_value_may_have_the_property(code: str) -> None:
+    closed: JsonObject = {"type": "object", "properties": {"data": {}}, "additionalProperties": False}
+    variants: JsonObject = {"oneOf": [closed, {**closed, "properties": {"result_ref": {"type": "string"}}}]}
+    catalog = build_catalog_snapshot((
+        ToolCatalogEntry("read_data", "read", output_schema=data_output_schema()),
+        ToolCatalogEntry("dynamic", "read", output_schema={"type": "object", "additionalProperties": {}}),
+        ToolCatalogEntry("variants", "read", output_schema=variants),
+        ToolCatalogEntry("browser_snapshot", "observe", {"x-codey-browser-flow": {}}, output_schema=closed),
+    ))
+    assert preflight_shape_diagnostic(code, catalog) is None
 
 
 def test_runtime_entry_uses_same_preflight_before_invoking_tools() -> None:

@@ -5,7 +5,7 @@ import secrets
 import time
 from collections.abc import Callable, Collection, Mapping, Sequence
 from contextlib import AbstractContextManager
-from dataclasses import asdict, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
@@ -17,6 +17,7 @@ from codey.codemode.patch import PatchChild, PatchPreflightError, patch_summary
 from codey.codemode.protocol import CodeModeInputError, parse_codemode_args
 from codey.codemode.replay import CodeModeRepairContext, DurableCodeModeReplay, ExecutionTrace, digest
 from codey.codemode.runtime import CodeModeRuntime, NodeWorkerRuntime
+from codey.codemode.shape_repair import preflight_shape_diagnostic, readonly_settled, shape_diagnostic, shape_failure
 from codey.codemode.state import CodeModeStateStore
 from codey.codemode.types import CodeModeLimits, DeliveryReference, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.operations.browser_references import BrowserReferences
@@ -131,8 +132,7 @@ class CodeModeReplay(CodeModeStateStore, Protocol):
 
 
 def _runtime_contract(runtime: CodeModeRuntime, limits: CodeModeLimits) -> str:
-    limit_payload: dict[str, int] = asdict(limits)
-    return digest({"runtime": runtime.contract_digest(), "limits": limit_payload})
+    return digest({"runtime": runtime.contract_digest(), "limits": limits.as_dict()})
 
 
 class CodeModeKernelExecutor:
@@ -205,6 +205,11 @@ class CodeModeKernelExecutor:
             "catalog_digest": self.catalog.digest,
         }
         repair = self.repair_context
+        if (repair is None and self.replay is None
+                and (diagnostic := preflight_shape_diagnostic(program.code, self.catalog)) is not None):
+            detail = shape_failure(diagnostic)
+            return ToolResult(ok=False, call=call, model_text=detail, canonical={"error": detail},
+                              audit={**audit, "error_code": diagnostic.code, "child_calls": 0})
 
         def replay_child(index: int, name: str, args: JsonObject) -> ToolResult:
             assert repair is not None
@@ -679,8 +684,6 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             for image in session._memory_results[identity].images))
         result = replace(result, canonical={**result.canonical, "child_effect_ids": ordered_child_effect_ids}, images=images)
         if not result.ok and result.audit.get("error_code") in {"missing_return", "result_encoding", "execution_error", "result_contract"}:
-            from codey.codemode.shape_repair import readonly_settled, shape_diagnostic
-
             source = call.args.get("code")
             readonly = readonly_settled(parent_id, ordered_child_effect_ids, session._memory_results, catalog)
             if (isinstance(source, str) and result.audit.get("child_calls") == len(ordered_child_effect_ids)

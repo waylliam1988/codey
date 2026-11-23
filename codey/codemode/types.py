@@ -41,16 +41,19 @@ class CodeModeLimits:
     max_pending_promises: int = 64
     max_rpc_bytes: int = 1_000_000
 
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "source_bytes": self.source_bytes,
+            "timeout_ms": self.timeout_ms,
+            "max_child_calls": self.max_child_calls,
+            "max_concurrent_calls": self.max_concurrent_calls,
+            "max_output_bytes": self.max_output_bytes,
+            "max_pending_promises": self.max_pending_promises,
+            "max_rpc_bytes": self.max_rpc_bytes,
+        }
+
     def __post_init__(self) -> None:
-        for field_name, value in (
-            ("source_bytes", self.source_bytes),
-            ("timeout_ms", self.timeout_ms),
-            ("max_child_calls", self.max_child_calls),
-            ("max_concurrent_calls", self.max_concurrent_calls),
-            ("max_output_bytes", self.max_output_bytes),
-            ("max_pending_promises", self.max_pending_promises),
-            ("max_rpc_bytes", self.max_rpc_bytes),
-        ):
+        for field_name, value in self.as_dict().items():
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"{field_name} must be a positive integer")
         if self.max_concurrent_calls > self.max_child_calls:

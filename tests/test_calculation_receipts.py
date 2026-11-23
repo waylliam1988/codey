@@ -10,10 +10,11 @@ from codey.codemode.kernel import build_execute_turn_executor
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
+from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.answer_contract import AnswerScope, answer_scope, answer_spec, submit_answer
 from codey.research.answer_report import AnswerReport, compile_answer_report
 from codey.research.calculation import calculate, calculation_fields, read_data, render_calculations
@@ -189,6 +190,76 @@ def test_archive_rechecks_calculation_receipt_and_preserves_original_source(tmp_
             compile_answer_report(task, ledger, store, project="", session_id="calculation")
     finally:
         store.close()
+
+
+@pytest.mark.parametrize(("second_value", "expected"), [("0.4", "0.325"), ("0.2", None)])
+def test_codemode_assertion_checks_a_changed_calculation_input(
+    tmp_path: Path, second_value: str, expected: str | None,
+) -> None:
+    table = "cohort,value,weight\nA,0.1,1\nB,999,1\nA,0.2,3\n"
+    (tmp_path / "original.csv").write_text(table, encoding="utf-8")
+    (tmp_path / "changed.csv").write_text(table.replace("A,0.2,3", f"A,{second_value},3"), encoding="utf-8")
+    task = session()
+    snapshot = build_turn_snapshot(task)
+    executor = build_execute_turn_executor(session=task, snapshot=snapshot, run_id="sensitivity", effect_scope="task",
+        turn=0, project_path=tmp_path)
+    code = """
+async function mean(path) {
+    const file = await tools.read_file({path});
+    const table = await tools.read_data({result_ref:file.result_ref, format:'csv'});
+    const proof = unwrap(await tools.calculate({operation:'weighted_mean', table:{
+        result_ref:table.result_ref, value_column:'value', weight_column:'weight', where:{column:'cohort',equals:'A'}
+    }}));
+    if (proof.inputs.length !== 2) throw new Error('wrong selection');
+    return proof.value;
+}
+const baseline = await mean('original.csv');
+const changed = await mean('changed.csv');
+if (!(Number(changed) > Number(baseline))) throw new Error('weighted mean did not increase');
+return {baseline, changed};
+"""
+    result, = execute_turn(task, [ToolCall("codemode", {"code": code})], project_path=tmp_path,
+        executors={"codemode": executor}, snapshot=snapshot, run_id="sensitivity", effect_scope="task", turn=0)
+    assert result.ok is (expected is not None), result.model_text
+    if expected is None:
+        assert "weighted mean did not increase" in result.model_text
+    else:
+        assert result.canonical["value"] == {"baseline": "0.175", "changed": expected}
+
+
+@pytest.mark.parametrize("mode", ["inline_binding", "named_receipt", "inline_access"])
+def test_codemode_lowers_csv_rows_and_receipt_access_before_dispatch(tmp_path: Path, mode: str) -> None:
+    csv = "cohort,value\nA,0.1\nB,999\n"
+    (tmp_path / "table.csv").write_bytes(csv.encode())
+    task = session()
+    snapshot = build_turn_snapshot(task, native=True)
+    read = "await tools.read_file({path:inputs.path})"
+    file_code = (f"const file = unwrap({read});" if mode == "inline_binding"
+                 else f"const receipt = {read}; const file = unwrap(receipt);")
+    ref = "unwrap(receipt).result_ref" if mode == "inline_access" else "alias.result_ref"
+    code = file_code + """
+const alias = file;
+const table = await tools.read_data({result_ref:ORIGINAL_REF, format:inputs.format});
+return {raw:file.text, rows:table.rows.filter(row => row.cohort === 'A')};
+"""
+    code = code.replace("ORIGINAL_REF", ref)
+    reply = AssistantTurn(tool_calls=(ProviderToolCall("program", "codemode", {
+        "code": code, "inputs": {"path": "table.csv", "format": "csv"},
+    }),))
+    plan = normalize_turn(reply, snapshot=snapshot)
+    assert not plan.protocol_error and plan.arg_repair_counts["codemode_source_shape"] == 2
+    call, = plan.calls
+    assert call.call_id == "program" and call.args["code"] != code
+    executor = build_execute_turn_executor(session=task, snapshot=snapshot, run_id="normalize", effect_scope="task",
+        turn=0, project_path=tmp_path)
+    result, = execute_turn(task, plan.calls, project_path=tmp_path, executors={"codemode": executor},
+        snapshot=snapshot, run_id="normalize", effect_scope="task", turn=0)
+    assert result.ok, result.model_text
+    assert result.canonical["value"] == {"raw": csv, "rows": [{"cohort": "A", "value": "0.1"}]}
+    records = {ref: row for ref, row in task._memory_results.items() if row.call.name != "codemode"}
+    assert [row.call.name for row in records.values()] == ["read_file", "read_data"]
+    file_ref, table_ref = records
+    assert records[table_ref].call.args["result_ref"] == file_ref
 
 
 @pytest.mark.parametrize(("text", "format_name", "expected"), [
