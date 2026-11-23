@@ -5,19 +5,8 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from codey.agents.shell_approval import shell_command_payload
 from tests.app_state import make_app_state
 from tests.support.shell_approval import add_pending_approval, admit_shell_task
-
-
-def _complete_pending(base: dict) -> dict:
-    fields = shell_command_payload(str(base.get("command") or ""))
-    pending = dict(base)
-    pending["command_preview"] = fields["command"]
-    pending["command_sha256"] = fields["command_sha256"]
-    pending["command_chars"] = fields["command_chars"]
-    pending["command_truncated"] = fields["command_truncated"]
-    return pending
 
 
 class ForgetSessionCleanupTests(unittest.TestCase):
@@ -57,7 +46,7 @@ class ForgetSessionCleanupTests(unittest.TestCase):
         failures = state.forget_conversation("session-1")
 
         self.assertNotIn("approvals", failures)
-        self.assertEqual(set(state.pending_shell_approvals()), {"shell-2"})
+        self.assertEqual(set[str](state.pending_shell_approvals()), set[str]({"shell-2"}))
         self.assertNotIn(run.run_id, state.research_changes)
         self.assertIn("run-other", state.research_changes)
         denied = state.run_registry.last_shell_result()
@@ -93,7 +82,7 @@ class ForgetSessionCleanupTests(unittest.TestCase):
             failures = state.forget_conversation("session-1")
 
         self.assertIn("conversation", failures)
-        self.assertEqual(state.pending_shell_approvals(), {})
+        self.assertEqual(state.pending_shell_approvals(), dict[str, dict[str, object]]())
         self.assertNotIn(run.run_id, state.research_changes)
         denied = state.run_registry.last_shell_result()
         assert denied is not None

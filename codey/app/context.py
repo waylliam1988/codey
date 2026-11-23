@@ -324,7 +324,7 @@ class AppContext:
     def _save_durable_conversation_snapshot(
         self, session_id: str, snapshot: ConversationSnapshot
     ) -> None:
-        self.conversation_coordinator.save_snapshot(session_id, snapshot)
+        self.conversation_coordinator.save_current_snapshot(session_id, snapshot)
 
     def acquire_project_writer(self, project: str | Path) -> bool:
         return self.workspace_leases.acquire(project)

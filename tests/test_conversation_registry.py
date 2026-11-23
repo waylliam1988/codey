@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import threading
 import unittest
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 
 from codey.agents.handoff import ConversationSnapshot
 from codey.app.conversation_registry import ConversationRegistry
 
 
-def _registry(snapshots: dict[str, ConversationSnapshot], *, max_states: int = 4, load=None, save=None) -> ConversationRegistry:
+def _registry(
+    snapshots: dict[str, ConversationSnapshot], *, max_states: int = 4,
+    load: Callable[[str], ConversationSnapshot | None] | None = None,
+    save: Callable[[str, ConversationSnapshot], None] | None = None,
+) -> ConversationRegistry:
     return ConversationRegistry(
         None,
         max_states=max_states,
@@ -17,6 +23,52 @@ def _registry(snapshots: dict[str, ConversationSnapshot], *, max_states: int = 4
 
 
 class ConversationRegistryTests(unittest.TestCase):
+    def test_concurrent_misses_do_not_exceed_the_cache_capacity(self) -> None:
+        entered, release = threading.Event(), threading.Event()
+
+        def load(session_id: str) -> None:
+            if session_id == "slow":
+                entered.set()
+                assert release.wait(timeout=5)
+
+        registry = _registry({}, max_states=1, load=load)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(registry.for_session, "slow")
+            try:
+                self.assertTrue(entered.wait(timeout=5))
+                fast = registry.for_session("fast")
+            finally:
+                release.set()
+            slow = pending.result(timeout=5)
+        self.assertLessEqual(len(registry.contexts), registry.max_states)
+        self.assertIs(registry.contexts["slow"], slow)
+        self.assertIsNone(fast.on_change)
+
+    def test_obsolete_load_does_not_replace_a_committed_session_update(self) -> None:
+        snapshots = {"chat": ConversationSnapshot(mode="chat", goal="old")}
+        entered, release = threading.Event(), threading.Event()
+
+        def load(session_id: str) -> ConversationSnapshot | None:
+            snapshot = snapshots.get(session_id)
+            if not entered.is_set():
+                entered.set()
+                assert release.wait(timeout=5)
+            return snapshot
+
+        registry = _registry(snapshots, load=load)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(registry.for_session, "chat")
+            try:
+                self.assertTrue(entered.wait(timeout=5))
+                winner = registry.for_session("chat")
+                winner.update_snapshot(ConversationSnapshot(mode="chat", goal="committed"))
+                self.assertEqual(snapshots["chat"].goal, "committed")
+            finally:
+                release.set()
+            late = pending.result(timeout=5)
+        self.assertEqual(registry.for_session("chat").snapshot.goal, "committed")
+        self.assertIs(late, winner)
+
     def test_persists_and_restores_session_snapshot(self) -> None:
         snapshots: dict[str, ConversationSnapshot] = {}
         first = _registry(snapshots)
@@ -31,7 +83,7 @@ class ConversationRegistryTests(unittest.TestCase):
         registry.for_session("chat-3")
         old.update_snapshot(ConversationSnapshot(mode="chat", goal="stale"))
         fresh = registry.for_session("chat-1")
-        self.assertEqual(set(registry.contexts), {"chat-3", "chat-1"})
+        self.assertEqual(set[str](registry.contexts), set[str]({"chat-3", "chat-1"}))
         self.assertEqual(fresh.snapshot.goal, "")
 
     def test_eviction_saves_last_state_and_stale_writes_do_not_overwrite(self) -> None:
@@ -57,7 +109,7 @@ class ConversationRegistryTests(unittest.TestCase):
         registry = _registry(snapshots, max_states=1, save=save)
         registry.for_session("chat-1").update_snapshot(ConversationSnapshot(mode="chat", goal="keep me"))
         registry.for_session("chat-2")
-        self.assertEqual(seen_locked, [False])
+        self.assertEqual(seen_locked, list[bool]([False]))
 
     def test_forget_detaches_callback_and_forgets_cached_context(self) -> None:
         snapshots: dict[str, ConversationSnapshot] = {}
@@ -79,7 +131,7 @@ class ConversationRegistryTests(unittest.TestCase):
 
         registry = _registry({}, load=load)
         registry.for_session("chat-1")
-        self.assertEqual(seen_locked, [False])
+        self.assertEqual(seen_locked, list[bool]([False]))
 
     def test_forget_during_load_does_not_leave_cached_context(self) -> None:
         entered = threading.Event()

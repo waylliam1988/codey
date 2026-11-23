@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 996,
   "region_count": 40,
-  "batch_count": 313,
+  "batch_count": 316,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -95,6 +95,9 @@
         "Q017C",
         "Q018",
         "Q019",
+        "Q019B",
+        "Q019C",
+        "Q019D",
         "Q020",
         "Q021",
         "Q022",
@@ -2342,6 +2345,14 @@
       "commits": [
         "9e984dd4",
         "20ab7a7a"
+      ],
+      "reopen_reason": "Q019 newly reproduced delayed snapshot callbacks resurrect deleted chats. Necessary one-line AppContext snapshot callback binding switched to owner-checked coordinator path; whole-file strict Any and four resource cases/attachment/canonical store/deletion callers revalidated, then completed status retained.",
+      "revalidations": [
+        {
+          "evidence": "q019-validation-final.json",
+          "reason": "owned snapshot callback binding changed",
+          "result": "strict Any whole context0; relevant4resource+19attachment tests, canonical store and lifetime/deletion callers pass; production gates0"
+        }
       ]
     },
     {
@@ -2365,31 +2376,98 @@
       ],
       "candidate_test_count": "recompute at batch entry",
       "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
-      "result": "Complete observation projection file and supporting receipt file review. No independently established bug/dead-code deletion. Type convergence only: typed reference ordering retains target/revision comparison; source provenance outer object validated before consumed url/hash keys; receipt fixture uses JsonObject and existing InvestigationRecord. Strong Any source10->0 and full test1->0, Pyrefly/ty/Ruff0. Baseline18pass; final18 direct plus13 knowledge-version/maintenance caller tests pass, no skips. Full production mypy750/Pyrefly/ty/precision0, 35suppressed/168warnings disclosed, hashes stable. Source/schema dependencies only contract-located, not claimed fully governed."
+      "result": "Complete observation projection file and supporting receipt file review. No independently established bug/dead-code deletion. Type convergence only: typed reference ordering retains target/revision comparison; source provenance outer object validated before consumed url/hash keys; receipt fixture uses JsonObject and existing InvestigationRecord. Strong Any source10->0 and full test1->0, Pyrefly/ty/Ruff0. Baseline18pass; final18 direct plus13 knowledge-version/maintenance caller tests pass, no skips. Full production mypy750/Pyrefly/ty/precision0, 35suppressed/168warnings disclosed, hashes stable. Source/schema dependencies only contract-located, not claimed fully governed.",
+      "commits": [
+        "ba3bff82"
+      ]
     },
     {
-      "responsibility": "codey/app: conversation and input lifecycle",
+      "responsibility": "Conversation context cache, durable snapshot ownership and coordinated deletion",
       "files": [
-        "codey/app/control_conversations.py",
-        "codey/app/conversation_coordinator.py",
         "codey/app/conversation_registry.py",
-        "codey/app/conversation_routes.py",
-        "codey/app/fork_workspaces.py",
-        "codey/app/input_queue_routes.py",
-        "codey/app/conversation_runtime.py",
-        "codey/app/input_queue.py"
+        "codey/app/conversation_coordinator.py"
       ],
       "id": "Q019",
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/app/conversation_registry.py",
+        "codey/app/conversation_coordinator.py"
+      ],
+      "verified_files": [
+        "codey/app/conversation_registry.py",
+        "codey/app/conversation_coordinator.py"
+      ],
+      "candidate_test_count": 12,
+      "followups": [],
+      "tests": [
+        "tests/test_conversation_registry.py",
+        "tests/test_conversation_snapshot_lifetime.py",
+        "tests/test_forget_session_cleanup.py",
+        "tests/durable/test_app_context_store.py",
+        "tests/test_context_resource_publication.py",
+        "tests/test_input_attachments.py",
+        "tests/test_history_file_lifetime.py",
+        "tests/durable/test_conversation_delete_commit.py",
+        "tests/test_server.py::RunSnapshotTests::test_state_owns_runtime_operation_store_and_forget_deletes_it",
+        "tests/test_server.py::RunSnapshotTests::test_forgetting_session_clears_only_its_terminal_event",
+        "tests/test_server.py::SessionThreadingTests::test_conversation_state_is_bounded"
+      ],
+      "result": "Complete cache/snapshot/deletion ownership review. Controlled pre-fix2fail demonstrate capacity2>1 and old load replacing committed snapshot; publication lock now selects winner and enforces bound, no IO under cache lock. Separate stale callback regression before3fail/1pass shows deleted chat resurrection, new snapshot overwrite and evicted writeback; owned save path validates cached snapshot identity while holding existing history read lifetime, AppContext binds this path, raw explicit save API retained. After direct16 and scoped callers40pass, no skips. Two sources already strictAny0, full registry tests10->0, forget cleanup tests12->0 with dead private unused helper removed after usage/framework/package analysis; new regression0. Full7files strict Any/Pyrefly/ty/Ruff0; production mypy750/Pyrefly/ty/precision0, hashes stable. Q019B UI/config routes305Any and queue/Git responsibilities retain separate unfinished owners."
+    },
+    {
+      "id": "Q019B",
+      "responsibility": "Canonical conversation configuration, sidebar reconstruction and HTTP branch routes",
+      "files": [
+        "codey/app/control_conversations.py",
+        "codey/app/conversation_routes.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [
+        "codey/app/control_conversations.py",
+        "codey/app/conversation_routes.py"
+      ],
+      "verified_files": [],
+      "tests": [
+        "tests/test_external_control.py",
+        "tests/test_conversation_tree_routes.py"
+      ],
+      "followups": [
+        "Both complete files read during Q019 boundary mapping; ctx/UI/config and route Any not yet governed. Whole-file Any baseline queued; no governance-complete claim. Worktree destination must be tested without copying/creating repository worktrees.",
+        "Full strict Any baseline from Q019: control_conversations104 diagnostics, conversation_routes201; source unchanged. Old Q015D passive config/UI contracts already located but full typed migration remains here. q019-baseline.json; do not count these fully read files as governed."
+      ],
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+    },
+    {
+      "id": "Q019C",
+      "responsibility": "Durable conversation input admission, queued worker lifecycle and HTTP input commands",
+      "files": [
+        "codey/app/conversation_runtime.py",
+        "codey/app/input_queue.py",
+        "codey/app/input_queue_routes.py"
+      ],
       "status": "not_started",
       "reviewed_files": [
         "codey/app/conversation_runtime.py"
       ],
       "verified_files": [],
-      "candidate_test_count": 12,
       "followups": [
-        "Q015D inspected control_conversations.py configuration/UI JSON contracts and input_queue.get/list/create signatures to isolate service boundaries. Their ctx/return dictionary Any remain at those owning files (for example configurations/config_for and input_queue methods); no full-file governance or typing completion claim. Service ports now validate outer record/sequence and consumed scalars; do not treat this as migration of their implementations.",
-        "Q018 root-cause audit fully read conversation_runtime.py (54 lines): close correctly rejects worker-owned live runs; no production change. Any remains at __init__ line15 (emit/durable), admissions line21, prepare line23 (ctx/payload/return). Entire file typing still belongs to Q019; reading is not verification/governance completion."
-      ]
+        "Q018 read conversation_runtime close contract and identified fixture fake worker ownership; runtime full-file Any at init/admissions/prepare remains. Input queue and routes headers only inventoried, not fully read."
+      ],
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+    },
+    {
+      "id": "Q019D",
+      "responsibility": "Owned Git fork workspace job state and subprocess boundaries",
+      "files": [
+        "codey/app/fork_workspaces.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "followups": [
+        "No repository worktree copying/creation authorized. Review and validate pure boundaries or mocked subprocess fixtures without invoking actual worktree creation. Header-only mapping is not governance completion."
+      ],
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
     },
     {
       "responsibility": "codey/app: conversation and input lifecycle",
@@ -2997,10 +3075,19 @@
         "codey/durable/sqlite_history.py"
       ],
       "id": "Q058",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "partial_follow_up",
+      "reviewed_files": [
+        "codey/durable/history_lifetime.py"
+      ],
+      "verified_files": [
+        "codey/durable/history_lifetime.py"
+      ],
+      "candidate_test_count": 0,
+      "tests": [
+        "tests/test_history_file_lifetime.py",
+        "tests/durable/test_conversation_delete_commit.py"
+      ],
+      "result": "Only HistoryLifetime full-file review completed at Q019 required locking boundary: read/exclusive order and fail-fast nested admission retained, strictAny/Pyrefly/ty/Ruff0. Its three explicit lifetime tests (cross-process deletion waiting, nested control read rejecting deletion instead of deadlock, physical cleanup waiting for selected provider file) and shared Q019 deletion regressions pass. No source changes. input_receipts.py/sqlite_history.py remain unreviewed/unverified; entire batch partial."
     },
     {
       "responsibility": "codey/durable: completion review and edit validation",
@@ -7011,6 +7098,7 @@
     "tests/test_conversation_questions.py",
     "tests/test_conversation_registry.py",
     "tests/test_conversation_resume_reuses_bound_window.py",
+    "tests/test_conversation_snapshot_lifetime.py",
     "tests/test_conversation_tool_details.py",
     "tests/test_conversation_tree_routes.py",
     "tests/test_counterexample_review_evidence_contracts.py",
@@ -8431,6 +8519,16 @@
         "Q027"
       ],
       "reason": "Confirmed cold-start import contract defect isolated to598-line task_submit entry. Split large entry as its own verifiable batch before remaining registry/runtime/dependency assembly files; all996 production sources retain unique ownership. Priority driven by actual remaining server/task_submit lazy failures, not optional optimization."
+    },
+    {
+      "batch": "Q019",
+      "replacement": [
+        "Q019",
+        "Q019B",
+        "Q019C",
+        "Q019D"
+      ],
+      "reason": "Actual interfaces separate cache/snapshot/deletion ownership foundations (2files), passive configuration/branch HTTP (2files), durable queued input/worker lifecycle (3files), and isolated Git workspace subprocess jobs (1file). Inspect foundations first with controlled cache race evidence; preserve all8 original files once and no worktree creation. Four files fully read; other headers inventoried only."
     }
   ]
 }

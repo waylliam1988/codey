@@ -30,12 +30,9 @@ class ConversationRegistry:
             if context is not None:
                 self.contexts[session_id] = context
                 return context
-            evicted = self._evict_oldest_if_needed()
             generation = self._forget_generations.get(session_id, 0)
         # DurableSession owns restartable conversation facts.  This registry
         # is deliberately only a bounded provider-window cache.
-        if evicted is not None:
-            _oldest_id, _oldest_context = evicted
         loaded = ConversationContext()
         if self._load_snapshot is not None:
             snapshot = self._load_snapshot(session_id)
@@ -48,6 +45,12 @@ class ConversationRegistry:
             if self._forget_generations.get(session_id, 0) != generation:
                 loaded.on_change = None
                 return loaded
+            winner = self.contexts.pop(session_id, None)
+            if winner is not None:
+                self.contexts[session_id] = winner
+                loaded.on_change = None
+                return winner
+            self._evict_oldest_if_needed()
             self.contexts[session_id] = loaded
             return loaded
 
@@ -58,20 +61,23 @@ class ConversationRegistry:
                 context.on_change = None
             self._forget_generations[session_id] = self._forget_generations.get(session_id, 0) + 1
 
-    def _evict_oldest_if_needed(self) -> tuple[str, ConversationContext] | None:
-        """Detach the oldest entry; caller saves it outside ``self.lock``.
+    def owns_snapshot(self, session_id: str, snapshot: ConversationSnapshot) -> bool:
+        with self.lock:
+            context = self.contexts.get(session_id)
+            return context is not None and context.snapshot is snapshot and context.on_change is not None
 
-        Detach only severs in-memory links and tokens. Durable save happens
-        in :meth:`for_session` after the lock is released so slow disk IO
-        never stalls other sessions. The detached context stays detached
-        (``on_change=None``) so late writes cannot repopulate the store.
+    def _evict_oldest_if_needed(self) -> None:
+        """Detach the oldest entry before publication under ``self.lock``.
+
+        Snapshot changes already persist through ``on_change`` outside this
+        lock. Detaching the callback prevents an evicted context's late writes
+        from overwriting the current durable snapshot.
         """
         if len(self.contexts) < self.max_states:
-            return None
+            return
         oldest = next(iter(self.contexts))
         evicted = self.contexts.pop(oldest)
         evicted.on_change = None
-        return (oldest, evicted)
 
 
 __all__ = ["ConversationRegistry"]
