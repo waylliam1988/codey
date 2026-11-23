@@ -19,6 +19,7 @@ from codey.runtime.core.models import ToolResult
 from codey.runtime.effects.effect_records import RuntimeEffectSettlement
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
+from codey.utils.object_fields import object_fields
 from codey.workspace.revision import WorkspaceIdentity
 
 TerminalReceipt = tuple[ToolResult, RuntimeEffectSettlement]
@@ -33,6 +34,10 @@ def _public_metadata(value: object) -> bool:
 def _receipt_ref(settlement: RuntimeEffectSettlement) -> JsonObject:
     return {"effect_id": settlement.effect_id, "sha256": settlement.result_payload_sha256,
             "artifact": settlement.result_ref}
+
+
+def _reference_order(reference: KnowledgeReference) -> tuple[str, int]:
+    return reference.target, reference.revision
 
 
 def _project_facts(decision: DoneDecision, receipts: Sequence[TerminalReceipt]) -> tuple[
@@ -101,10 +106,11 @@ def project_completed_observations(task: TaskCheckpoint, settled_receipts: Seque
     if not material:
         return []
     identity = stable_identity("observation", task.task_id)
+    ordered_references = tuple(sorted(references, key=_reference_order))
     observation = KnowledgeObject(identity, "observation", "\n".join(material), "observed_result",
         title="Verified project and browser observations" if project else "Verified browser observations",
         status="active", scope="project" if project else "session", scope_id=project or task.conversation_id,
-        provenance=provenance, references=tuple(sorted(references, key=lambda item: (item.target, item.revision))))
+        provenance=provenance, references=ordered_references)
     return [KnowledgeMutation(observation, expected_revision=0)]
 
 
@@ -116,10 +122,11 @@ def _read_source_reference(store: KnowledgeStore, project: str, session_id: str,
     # The archive creates each immutable captured body at revision 1. Later
     # revisions can withdraw or change it and should mark the observation stale.
     version = store.repository.read(identity, 1)
-    if (version is not None and access.allows(version) and version.value.kind == "source"
-            and version.value.provenance.get("url") == url
-            and version.value.provenance.get("content_hash") == content_hash):
-        return KnowledgeReference(identity, version.revision, "from_source")
+    if version is not None and access.allows(version) and version.value.kind == "source":
+        provenance: object = version.value.provenance
+        if (object_fields(provenance) and provenance.get("url") == url
+                and provenance.get("content_hash") == content_hash):
+            return KnowledgeReference(identity, version.revision, "from_source")
     return None
 
 

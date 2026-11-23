@@ -1024,3 +1024,16 @@ Q017 已提交：`a8c6dee6`（fix(consensus): defer audit kernel imports and typ
 - 最终`python -m pytest -q tests/test_server_lazy_state.py tests/test_task_submit.py tests/test_task_submit_durable.py --tb=short` → **0，37 passed/6 subtests passed，11.14秒**；`python -m pytest -q tests/test_input_attachments.py tests/test_shared_task_service_consumers.py tests/test_headless_real_kernel_lifecycle.py tests/test_server.py::SessionThreadingTests::test_run_task_keeps_selected_provider_through_agent_completion tests/test_server.py::SessionThreadingTests::test_run_task_emits_provider_failure_diagnostic_on_error tests/test_server.py::SessionThreadingTests::test_run_task_uses_second_model_for_approved_review tests/test_server.py::SessionThreadingTests::test_existing_project_uses_read_only_audit_reports_before_writer --tb=short` → **0，26 passed，12.55秒**。两批63项与6子测试均通过，0skip；q027a-validation-final.json。这里只执行test_server明确四节点，没有整文件或全仓pytest。
 - 最终生产mypy750、Pyrefly、ty、precision全exit0，35suppressed/168warnings仍披露；强Any两文件0，source hash稳定。AST核对原11个测试方法全部保留；空预期、worker调用次数/身份、retry次数及run身份、原ImportError/ValueError、captured state/getter单次和post-entry kick关键断言都保留；stub签名自引入失败已修复，无skip/放宽预期。diff及暂存前核对完成。
 - Q027A完成：**30 / 313批完整完成，59 / 996生产文件属于完整完成批次**；另5部分批次源独立验证，累计64个当前已验证生产文件。原3个lazy失败已由Q017/Q027A共同修复并重跑完整lazy回归；Q008D共享server类型、Q09931Any、Q017D46Any等继续待办。下一主批Q018B knowledge observation，离开已完成的启动导入文件，不继续可选优化；总goal仍active。
+
+Q027A 已提交：`4038ca13`（fix(task-submit): defer agent loading and type admission boundaries）。源码工作区干净，仅保留他人两张未跟踪PNG。
+
+### Q018B Knowledge observation 持久化投影（进行中）
+
+- 下一主批为knowledge_observation.py与实际知识观察测试，先整文件审查及验证基线，不重新打开已验收启动导入代码。
+
+- 全文件确认按committed done decision及原始terminal receipts投影，project事实要求可信final版本/proof与同版本成功check，browser引用固定source revision1并由知识库标记后续版本过时；原内容不直接进入观测事实，existing观测避免重复创建。当前未建立新确定性bug证据，不以偏好改变这些流程，也无可证明死代码/同语义重复业务实现可删除合并。
+- 基线`python -m pytest -q tests/test_p1_p2_receipts.py --tb=short` → **0，18 passed，2.30秒**；完整强Any源10/测试1共11条，q018b-baseline.json。source排序lambda在tuple/构造上下文失去参数类型，改明确KnowledgeReference→(str,int)比较键，顺序规则不变；旧provenance在消费url/content_hash前入object并验证字符串键。测试既有字段改为明确JsonObject，调查fixture复用已有InvestigationRecord，所有业务断言保持。
+- 中间诊断11→4→1→0；最初局部排序结果注解未消除lambda隐式Any，JsonObject调查变量也不满足已有TypedDict，均按真实类型契约修正，未增ignore/cast。Pyrefly额外发现原passage_refs空列表推断Any，也由完整InvestigationRecord解决；新import的Ruff排序错误已纠正。q018b-first-validation.json/q018b-types-final.json保留中间失败，最终以q018b-validation-final.json为准。
+- 最终`python -m pytest -q tests/test_p1_p2_receipts.py --tb=short` → **0，18 passed，2.28秒**；`python -m pytest -q tests/test_knowledge_version_graph.py tests/test_long_term_knowledge.py tests/test_memory_maintenance_runtime.py --tb=short` → **0，13 passed，2.96秒**。31项无skip，覆盖原browser observation的作用域、去私有正文、source修订stale、图与重放/维护调用方；未声称遍历所有生产输入或全仓pytest。
+- 两完整文件强Any/Pyrefly/ty/Ruff0；生产mypy750/Pyrefly/ty/precision全0（仍35suppressed/168warnings），hash稳定，diff --check通过。当前 **31 / 313批完整完成，60 / 996生产文件属于完整完成批次**；另5部分源独立验证，累计65当前已验证生产文件。下一主批Q019 conversation/input lifecycle，按实际所有权边界先核对队列再推进。
+- 外部新增未跟踪docs/reports/codey-single-agent-implementation-review-20261123.zh-CN.md，保留不暂存、不修改；两张外部设计PNG同样保留。

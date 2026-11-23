@@ -26,6 +26,7 @@ from codey.research.evidence_gaps import evidence_gaps, gap_search_candidates, s
 from codey.research.ledger import EvidenceItem, OpenedSource, ResearchLedger
 from codey.research.ledger_receipts import source_observation, source_snapshot
 from codey.research.passages import ReadPassage
+from codey.research.receipt_types import InvestigationRecord
 from codey.research.reference import ResearchReference
 from codey.research.report_evidence import check_report_evidence
 from codey.research.source_document import SourceDocument, SourcePage
@@ -163,7 +164,8 @@ def test_gap_query_is_fenced_by_budget_and_attempted_receipts() -> None:
     suggested = gap_search_candidates(ledger, max_queries=1)
     assert len(suggested) == 1
     query = require_json_string(suggested[0]["query"], "query")
-    ledger.investigations["a1"] = {"tool": "web_search", "ok": False, "question_ref": "q1", "args": {"query": query}, "passage_refs": []}
+    attempt: InvestigationRecord = {"tool": "web_search", "ok": False, "question_ref": "q1", "args": {"query": query}, "passage_refs": []}
+    ledger.investigations["a1"] = attempt
     assert gap_search_candidates(ledger, max_queries=1) == []
 
 
@@ -187,8 +189,9 @@ def test_browser_observation_is_versioned_scoped_and_rechecked_when_its_source_c
     url, version = "https://example.org/record", "original-capture"
     with closing(KnowledgeStore(tmp_path / "knowledge")) as store:
         source_id = stable_identity("source", "project", project, url, version)
+        source_provenance: JsonObject = {"url": url, "content_hash": version}
         source = KnowledgeObject(source_id, "source", "Original contents", "source", scope="project", scope_id=project,
-                                 provenance={"url": url, "content_hash": version}, status="active")
+                                 provenance=source_provenance, status="active")
         store.commit_knowledge("original-source", [KnowledgeMutation(source)])
         task = TaskCheckpoint("run", "chat", "submitted", "completed", 2, {}, {"project": project, "stop_reason": "done"})
         decision = DoneDecision(purpose="done", result=KernelResult(True, "done", 4, "done").to_payload(),

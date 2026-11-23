@@ -2350,14 +2350,22 @@
       "files": [
         "codey/app/knowledge_observation.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/app/knowledge_observation.py"
+      ],
+      "verified_files": [
+        "codey/app/knowledge_observation.py"
+      ],
       "tests": [
-        "tests/test_p1_p2_receipts.py"
+        "tests/test_p1_p2_receipts.py",
+        "tests/test_knowledge_version_graph.py",
+        "tests/test_long_term_knowledge.py",
+        "tests/test_memory_maintenance_runtime.py"
       ],
       "candidate_test_count": "recompute at batch entry",
-      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
+      "result": "Complete observation projection file and supporting receipt file review. No independently established bug/dead-code deletion. Type convergence only: typed reference ordering retains target/revision comparison; source provenance outer object validated before consumed url/hash keys; receipt fixture uses JsonObject and existing InvestigationRecord. Strong Any source10->0 and full test1->0, Pyrefly/ty/Ruff0. Baseline18pass; final18 direct plus13 knowledge-version/maintenance caller tests pass, no skips. Full production mypy750/Pyrefly/ty/precision0, 35suppressed/168warnings disclosed, hashes stable. Source/schema dependencies only contract-located, not claimed fully governed."
     },
     {
       "responsibility": "codey/app: conversation and input lifecycle",
@@ -2504,7 +2512,10 @@
         "tests/test_task_submit_durable.py"
       ],
       "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
-      "result": "Complete source and supporting full test governance: defer project adapter load via typed injected agent_run seam; before independent2lazy failures, after complete lazy9pass/6subtests. Final direct37pass/6subtests and entry callers26pass, no skips/errors. Strong Any source9->0, unit script76->0; all original11test methods/asserted behaviors retained with real context/durable/registry and typed stub queue, old ignore removed. Full production mypy750/Pyrefly/ty/precision exit0, hashes stable. No public API removed; existing 35 suppressed/168 production warnings disclosed."
+      "result": "Complete source and supporting full test governance: defer project adapter load via typed injected agent_run seam; before independent2lazy failures, after complete lazy9pass/6subtests. Final direct37pass/6subtests and entry callers26pass, no skips/errors. Strong Any source9->0, unit script76->0; all original11test methods/asserted behaviors retained with real context/durable/registry and typed stub queue, old ignore removed. Full production mypy750/Pyrefly/ty/precision exit0, hashes stable. No public API removed; existing 35 suppressed/168 production warnings disclosed.",
+      "commits": [
+        "4038ca13"
+      ]
     },
     {
       "responsibility": "codey/app: task kernel and execution",
