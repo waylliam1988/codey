@@ -2278,13 +2278,34 @@
         "codey/app/context.py"
       ],
       "id": "Q018",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "in_progress",
+      "reviewed_files": [
+        "codey/app/context.py"
+      ],
+      "verified_files": [
+        "codey/app/context.py"
+      ],
       "candidate_test_count": 89,
       "followups": [
-        "Q015B baseline and post-fix test_input_attachments.py::test_idle_attachment_input_dispatches_without_changing_its_durable_metadata pass but process cleanup reports WinError32 retaining RAM temp state/.durable.sqlite3.lock. Baseline 39 passed and final 47 passed both show it; classify as fixture/runtime lifecycle cleanup warning pending localization, not proven race or production defect. Source changes were documents/attachment_routes only. q015b-baseline.json and q015b-validation-first.json. Investigate with current context lifecycle batch, without skipping assertions or manually clearing user services."
-      ]
+        "Resolved Q015B idle-attachment lock cleanup warning: accepting test stub set worker ownership but never returned reservation; diagnostic release makes context closeTrue/lease gone. Test now returns its own fake reservation in finally. Distinct from fixed lazy knowledge publication race. q018-attachment-owner-probe.json, q018-conftest-typed-validation.json."
+      ],
+      "tests": [
+        "tests/test_context_resource_publication.py",
+        "tests/test_input_attachments.py",
+        "tests/test_service_lifecycle.py",
+        "tests/test_app_lifecycle_coordinator.py",
+        "tests/test_pytest_cleanup_guard.py",
+        "tests/test_pytest_home_isolation.py",
+        "tests/test_pytest_home_isolation_preserves_playwright_cache.py",
+        "tests/test_pytest_home_isolation_preserves_bun_runtime.py",
+        "tests/test_pytest_ramdisk.py",
+        "tests/durable/test_app_context_store.py",
+        "tests/test_control_runtime_ownership.py",
+        "tests/test_coldstart_review_batch.py::ColdstartReviewBatchTests::test_knowledge_read_notes_batches_single_roundtrip",
+        "tests/test_coldstart_review_batch.py::ColdstartReviewBatchTests::test_knowledge_index_close_fails_cleanly_on_reuse",
+        "tests/test_research_submission_handoff_production.py"
+      ],
+      "result": "Knowledge publication race fixed with locked enabled recheck; before 2 failed/2 passed, after all four cases pass. Whole context (842 lines) strong Any 0. Attachment fake accepted worker reservation and shared fixture typing independently validated; final four explicit pytest batches 41+39+7+17=104 passed, all exit0. Four full files pass strict Any/Pyrefly/ty/Ruff. Full production mypy750/Pyrefly/ty/precision pass (35 suppressed/168 warnings preserved); hashes stable. Production regression and support fixture changes are being committed separately; batch remains in_progress until both commits are recorded."
     },
     {
       "id": "Q018B",
@@ -2315,11 +2336,14 @@
       ],
       "id": "Q019",
       "status": "not_started",
-      "reviewed_files": [],
+      "reviewed_files": [
+        "codey/app/conversation_runtime.py"
+      ],
       "verified_files": [],
       "candidate_test_count": 12,
       "followups": [
-        "Q015D inspected control_conversations.py configuration/UI JSON contracts and input_queue.get/list/create signatures to isolate service boundaries. Their ctx/return dictionary Any remain at those owning files (for example configurations/config_for and input_queue methods); no full-file governance or typing completion claim. Service ports now validate outer record/sequence and consumed scalars; do not treat this as migration of their implementations."
+        "Q015D inspected control_conversations.py configuration/UI JSON contracts and input_queue.get/list/create signatures to isolate service boundaries. Their ctx/return dictionary Any remain at those owning files (for example configurations/config_for and input_queue methods); no full-file governance or typing completion claim. Service ports now validate outer record/sequence and consumed scalars; do not treat this as migration of their implementations.",
+        "Q018 root-cause audit fully read conversation_runtime.py (54 lines): close correctly rejects worker-owned live runs; no production change. Any remains at __init__ line15 (emit/durable), admissions line21, prepare line23 (ctx/payload/return). Entire file typing still belongs to Q019; reading is not verification/governance completion."
       ]
     },
     {
@@ -3155,7 +3179,8 @@
       "verified_files": [],
       "candidate_test_count": 3,
       "followups": [
-        "Q014C dependency test_release_control.py::test_browser_session_survives_service_replacement_but_bootstrap_does_not failed at snapshot/read_runtime before authentication: published descriptor has 876 files versus actual 877; missing codey/operations/browser_result_evidence.py (existing commit 1292e668). q014c-runtime-inventory.json. Q014C changes only typed auth tests; preserve rejection and refresh generated inventory via normal publisher when validating release/runtime scope. Runtime read_runtime explicit Any remains at Q078; diagnostic-path inspection is not whole-file governance."
+        "Q014C dependency test_release_control.py::test_browser_session_survives_service_replacement_but_bootstrap_does_not failed at snapshot/read_runtime before authentication: published descriptor has 876 files versus actual 877; missing codey/operations/browser_result_evidence.py (existing commit 1292e668). q014c-runtime-inventory.json. Q014C changes only typed auth tests; preserve rejection and refresh generated inventory via normal publisher when validating release/runtime scope. Runtime read_runtime explicit Any remains at Q078; diagnostic-path inspection is not whole-file governance.",
+        "2026-11-23 external 303e7724 refreshed runtime descriptor; old missing browser_result_evidence/http_response names now present. Current file-name Python inventory checked at Q018 entry: listed 750, tracked 750, missing []. Old 876/877 observation is historical, not a current blocker proof. Runtime activation/copying tests remain unexecuted; validate current descriptor fully in Q078 without copying a worktree."
       ]
     },
     {
@@ -6888,6 +6913,7 @@
     "tests/test_context_delta_ab.py",
     "tests/test_context_delta_session_window_vs_handoff.py",
     "tests/test_context_epoch.py",
+    "tests/test_context_resource_publication.py",
     "tests/test_context_source.py",
     "tests/test_context_tool_group_requires_exact_result_ids.py",
     "tests/test_context_work_state_portability_across_models_and_protocols.py",
@@ -8308,6 +8334,13 @@
         "Q017C"
       ],
       "reason": "Actual module interfaces separate resource ownership foundation, provider/browser control consumers and workflow HTTP routing. Start three resource owners before context/CLI/headless; retain known Q017 lazy-import defect and complete original source inventory."
+    },
+    {
+      "head": "303e7724",
+      "reason": "External branding commit observed between Q016B and Q017B; generated web/runtime descriptor and icons changed, no owned production source changed. Two untracked design PNGs belong to external work and are not staged/touched. Recheck old runtime inventory blocker rather than repeat stale 876/877 counts.",
+      "runtime_python_listed": 750,
+      "runtime_python_tracked": 750,
+      "runtime_python_missing": []
     }
   ]
 }

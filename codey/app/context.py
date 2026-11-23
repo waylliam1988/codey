@@ -346,7 +346,7 @@ class AppContext:
         fresh = KnowledgeStore(root)
         with self.lock:
             winner: KnowledgeStore | None = self._knowledge_store
-            if winner is None:
+            if winner is None and self._knowledge_store_enabled:
                 self._knowledge_store = fresh
                 return fresh
         _close_if_discarded(fresh)
