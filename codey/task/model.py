@@ -7,8 +7,9 @@ tool execution imports.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Literal
 
 TaskKind = Literal["chat", "project", "research", "review", "planning"]
 
@@ -48,6 +49,23 @@ class ResumeRun:
 
 
 @dataclass(frozen=True)
+class HandoffRun:
+    source_run_id: str
+    instruction: str
+    observe_only: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source_run_id, str) or not self.source_run_id.strip():
+            raise ValueError("source_run_id is required")
+        if not isinstance(self.instruction, str) or not self.instruction.strip():
+            raise ValueError("handoff instruction is required")
+
+
+class ModelHandoffRejected(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
 class ResolveShellApproval:
     approval_id: str
 
@@ -56,7 +74,7 @@ class ResolveShellApproval:
             raise ValueError("approval_id is required")
 
 
-TaskInput = StartTask | EditUserMessage | ResumeRun | ResolveShellApproval
+TaskInput = StartTask | EditUserMessage | ResumeRun | HandoffRun | ResolveShellApproval
 
 
 @dataclass(frozen=True)
@@ -121,11 +139,14 @@ class TaskSubmission:
         output_format: str = "text", output_schema: str = "",
         required_tools: tuple[str, ...] = (),
     ) -> TaskSubmission:
-        task = input.text if isinstance(input, (StartTask, EditUserMessage)) else (
-            input.instruction or "Continue the source run"
-            if isinstance(input, ResumeRun)
-            else "Resolve the shell approval"
-        )
+        if isinstance(input, (StartTask, EditUserMessage)):
+            task = input.text
+        elif isinstance(input, HandoffRun):
+            task = input.instruction
+        elif isinstance(input, ResumeRun):
+            task = input.instruction or "Continue the source run"
+        else:
+            task = "Resolve the shell approval"
         return cls(
             session_id=session_id,
             project=project,
@@ -176,7 +197,7 @@ class TaskSubmission:
 
 
 def derive_project_changes_required(
-    body: dict[str, Any] | None,
+    body: Mapping[str, object] | None,
     *,
     intent: str = "",
     project: str | None = None,

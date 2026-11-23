@@ -42,7 +42,7 @@ from codey.runs.details import load_run_details
 from codey.runtime.core.api_selection import ApiRunSelection
 from codey.storage.local_store import StoreCorruption
 from codey.task.entry_auth import EntryAuth, derive_entry_auth
-from codey.task.model import EditUserMessage
+from codey.task.model import EditUserMessage, HandoffRun, ModelHandoffRejected, ResumeRun, StartTask
 from codey.utils.object_fields import object_fields, sequence_items
 from codey.utils.refs import coerce_int
 from codey.workspace.changes import (
@@ -659,6 +659,38 @@ def _completion_fields(body: dict[str, object]) -> TaskSubmitOptions:
     return fields
 
 
+def _submission_input(value: object) -> StartTask | EditUserMessage | ResumeRun | HandoffRun | None:
+    if value is None:
+        return None
+    if not object_fields(value):
+        raise ValueError("input must be an object")
+    kind = str(value.get("kind") or "").strip().lower()
+    if kind in {"start_task", "edit_user_message"}:
+        text = value.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("input.text required")
+        if kind == "start_task":
+            return StartTask(text.strip())
+        entry_id, revision = value.get("entry_id"), value.get("expected_revision")
+        if not isinstance(entry_id, str) or not entry_id.strip():
+            raise ValueError("input.entry_id required")
+        if type(revision) is not int or revision < 0:
+            raise ValueError("input.expected_revision must be a non-negative integer")
+        return EditUserMessage(entry_id, text.strip(), revision)
+    if kind not in {"resume_run", "handoff_run"}:
+        raise ValueError("unsupported input.kind")
+    source = value.get("source_run_id")
+    if not isinstance(source, str) or not source.strip():
+        raise ValueError("input.source_run_id required")
+    instruction = value.get("instruction", "")
+    if kind == "resume_run":
+        return ResumeRun(source.strip(), str(instruction).strip())
+    observe = value.get("observe_only", False)
+    if not isinstance(instruction, str) or not instruction.strip() or not isinstance(observe, bool):
+        raise ValueError("handoff requires an instruction and a boolean observe_only")
+    return HandoffRun(source.strip(), instruction.strip(), observe)
+
+
 def run_submit_response(  # noqa: C901, PLR0912
     body: object,
     submit_task: TaskSubmitter,
@@ -671,33 +703,11 @@ def run_submit_response(  # noqa: C901, PLR0912
         return 400, {"error": "invalid json"}
     if "continue_task" in body:
         return 400, {"error": "continue_task is no longer accepted; use input.kind=resume_run"}
-    input_payload = body.get("input")
-    input_kind = "start_task"
-    input_source_run = ""
-    edit_input: EditUserMessage | None = None
-    if input_payload is not None:
-        if not object_fields(input_payload):
-            return 400, {"error": "input must be an object"}
-        input_kind = str(input_payload.get("kind") or "").strip().lower()
-        if input_kind in {"start_task", "edit_user_message"}:
-            input_text = input_payload.get("text")
-            if not isinstance(input_text, str) or not input_text.strip():
-                return 400, {"error": "input.text required"}
-            if input_kind == "edit_user_message":
-                entry_id = input_payload.get("entry_id")
-                expected_revision = input_payload.get("expected_revision")
-                if not isinstance(entry_id, str) or not entry_id.strip():
-                    return 400, {"error": "input.entry_id required"}
-                if type(expected_revision) is not int or expected_revision < 0:
-                    return 400, {"error": "input.expected_revision must be a non-negative integer"}
-                edit_input = EditUserMessage(entry_id, input_text.strip(), expected_revision)
-        elif input_kind == "resume_run":
-            source_run = input_payload.get("source_run_id")
-            if not isinstance(source_run, str) or not source_run.strip():
-                return 400, {"error": "input.source_run_id required"}
-            input_source_run = source_run.strip()
-        else:
-            return 400, {"error": "unsupported input.kind"}
+    try:
+        input = _submission_input(body.get("input"))
+    except ValueError as exc:
+        return 400, {"error": str(exc)}
+    input_source_run = input.source_run_id if isinstance(input, ResumeRun) else ""
     session_id = str(body.get("session_id") or "").strip() or "default"
     question = _pending_question(ctx, session_id)
     if question is not None:
@@ -711,13 +721,9 @@ def run_submit_response(  # noqa: C901, PLR0912
     if not isinstance(client_run_id, str) or (client_run_id and not re.fullmatch(r"run_[a-f0-9]{32}", client_run_id)):
         return 400, {"error": "invalid run_id"}
     project = str(body.get("project") or "").strip() or None
-    task = str(
-        (input_payload or {}).get("text")
-        if input_kind in {"start_task", "edit_user_message"} and input_payload is not None
-        else (input_payload or {}).get("instruction", "") if input_kind == "resume_run" and input_payload is not None
-        else body.get("task") or ""
-    ).strip()
-    continue_task = input_kind == "resume_run"
+    task = input.text if isinstance(input, (StartTask, EditUserMessage)) else (
+        input.instruction if isinstance(input, (ResumeRun, HandoffRun)) else str(body.get("task") or "").strip())
+    continue_task = isinstance(input, ResumeRun)
     provider_id = str(body.get("provider") or DEFAULT_PROVIDER_ID).strip().lower()
     intent = str(body.get("intent") or "auto").strip().lower()
     entry_auth = captured_auth or derive_entry_auth({**body, "task": task}, project=project)
@@ -741,7 +747,7 @@ def run_submit_response(  # noqa: C901, PLR0912
     except (TypeError, ValueError, OverflowError):
         return 400, {"error": "invalid max_turns"}
     max_turns = max(1, min(max_turns, 500))
-    if not task and input_kind == "resume_run":
+    if not task and continue_task:
         task = "Continue the source run"
     if not task:
         return 400, {"error": "task required"}
@@ -781,8 +787,13 @@ def run_submit_response(  # noqa: C901, PLR0912
     if review_source_run_id:
         submit_kwargs["review_source_run_id"] = review_source_run_id
     submit_kwargs.update(output_fields)
-    if edit_input is not None:
-        submit_kwargs["input"] = edit_input
+    if isinstance(input, HandoffRun):
+        if provider_id not in API_CONNECTIONS or not isinstance(body.get("model_selection"), dict) or intent == "review":
+            return 400, {"error": "handoff requires an explicit API model selection for a model task"}
+        if input.observe_only and entry_auth.project_changes_required:
+            return 400, {"error": "observation-only handoff cannot require project writes"}
+    if isinstance(input, (EditUserMessage, HandoffRun)):
+        submit_kwargs["input"] = input
     if client_run_id:
         submit_kwargs["run_id"] = client_run_id
     if input_source_run:
@@ -816,6 +827,8 @@ def _submit_task_response(submit_task: TaskSubmitter, args: _SubmissionArgs, kwa
         return 503, {"error": "browser worker busy", "hint": "retry"}
     except ModelDisabledError as exc:
         return 409, {"error": str(exc), "code": "model_disabled"}
+    except ModelHandoffRejected as exc:
+        return 409, {"error": str(exc), "code": "model_handoff_rejected"}
     except (CommitConflict, IdempotencyConflict) as exc:
         return 409, {"error": str(exc), "code": "conversation_conflict"}
     except Exception as exc:

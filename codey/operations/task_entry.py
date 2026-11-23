@@ -52,7 +52,7 @@ from codey.operations.task_loop import (
 )
 from codey.policies.capabilities import BROWSER_CAPABILITIES
 from codey.task.kind import ui_mode
-from codey.task.model import TaskSubmission
+from codey.task.model import HandoffRun, ModelHandoffRejected, TaskSubmission
 
 
 class ProjectMode(Protocol):
@@ -699,6 +699,8 @@ def _admit_api_selection(state: TaskState, request: TaskSubmission) -> TaskSubmi
             durable_payload = dict(candidate)
             break
     payload = durable_payload or request.model_selection
+    if isinstance(request.input, HandoffRun) and not payload:
+        raise ModelHandoffRejected("Handoff requires an explicit API model selection.")
     if payload:
         selection = ApiRunSelection.from_payload(payload)
         if request.provider_id != selection.connection_id:
@@ -710,7 +712,18 @@ def _admit_api_selection(state: TaskState, request: TaskSubmission) -> TaskSubmi
             raise ValueError("original API selection is unavailable; cannot guess a recovery model")
         selection = capture_selection(request.provider_id)
     else:
+        if isinstance(request.input, HandoffRun):
+            raise ModelHandoffRejected("Handoff requires an explicit API model selection.")
         return request
+    if isinstance(request.input, HandoffRun):
+        from codey.operations.model_handoff import OBSERVATION_DENIALS, authorize_model_handoff
+
+        if request.continue_task or request.previous_run_id or request.input.observe_only and request.project_changes_required:
+            raise ModelHandoffRejected("Handoff must begin a new run with compatible task requirements.")
+        authorize_model_handoff(state.durable, request=request.input, target=selection, session_id=request.session_id,
+                                run_id=request.run_id, project=request.project)
+        if request.input.observe_only:
+            request = replace(request, denied_capabilities=tuple(sorted(set(request.denied_capabilities) | OBSERVATION_DENIALS)))
     state.run_registry.bind_api_selection(request.run_id, selection)
     selection_payload: dict[str, object] = selection.to_payload()
     return replace(request, model_selection=selection_payload)

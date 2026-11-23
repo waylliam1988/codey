@@ -46,7 +46,7 @@ from codey.providers.capabilities import rank_providers
 from codey.research.search_factory import default_research_search_provider
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 from codey.task.kind import startup_failover_mode, trace_mode
-from codey.task.model import TaskSubmission
+from codey.task.model import HandoffRun, TaskSubmission
 from codey.workspace.config import ProjectConfigLoadResult, preferred_provider_for
 
 
@@ -122,6 +122,15 @@ def connect_and_build_frame(
     )
     conversation_plan.apply()
     conversation_plan = conversation_plan.activate_model_summary(provider, trace)
+    handoff = ""
+    if isinstance(request.input, HandoffRun):
+        from codey.operations.model_handoff import authorize_model_handoff, render_model_handoff
+        from codey.runtime.core.api_selection import ApiRunSelection
+
+        source, effects = authorize_model_handoff(state.durable, request=request.input,
+            target=ApiRunSelection.from_payload(request.model_selection), session_id=request.session_id,
+            run_id=run_id, project=project)
+        handoff = render_model_handoff(source, effects, deps.managed_outputs)
     project_text = str(Path(project).expanduser().resolve()) if project else ""
     frame = RunFrame(
         request=request,
@@ -132,8 +141,8 @@ def connect_and_build_frame(
         project_text=project_text,
         conversation=conversation_plan.conversation,
         fresh_chat=conversation_plan.fresh_chat,
-        handoff=conversation_plan.handoff,
-        research_handoff=conversation_plan.research_handoff,
+        handoff="\n\n".join(part for part in (handoff, conversation_plan.handoff) if part),
+        research_handoff="\n\n".join(part for part in (handoff, conversation_plan.research_handoff) if part),
         prior_snapshot=conversation_plan.prior_snapshot,
         recovered_owner_prompt=conversation_plan.recovered_owner_prompt,
         provider_session_changed=conversation_plan.provider_session_changed,

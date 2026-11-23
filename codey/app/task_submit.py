@@ -35,7 +35,17 @@ from codey.providers.model_preferences import ModelDisabledError
 from codey.providers.snapshot import capture_provider_selection, provider_snapshot
 from codey.reviews.review_policy import load_review_policy
 from codey.task.kind import resolve_task_kind_values
-from codey.task.model import EditUserMessage, ResolveShellApproval, ResumeRun, StartTask, TaskInput, TaskSubmission
+from codey.task.model import (
+    EditUserMessage,
+    HandoffRun,
+    ModelHandoffRejected,
+    ResolveShellApproval,
+    ResumeRun,
+    StartTask,
+    TaskInput,
+    TaskSubmission,
+)
+from codey.types.json_value import decode_json_object, require_json_boolean, require_json_integer, require_json_string
 from codey.utils.object_fields import object_fields
 from codey.workspace.task_changes import collect_task_changes
 
@@ -278,6 +288,13 @@ def submit_task(
     with state.task_runtime.admission_line():
         if service is not None and service.draining:
             return None
+        if isinstance(input, HandoffRun):
+            from codey.operations.model_handoff import authorize_model_handoff
+
+            if continue_task or previous_run_id or input.observe_only and project_changes_required:
+                raise ModelHandoffRejected("Handoff must begin a new run with compatible task requirements.")
+            authorize_model_handoff(state.durable, request=input, target=admitted_selection,
+                                    session_id=session_id, run_id=run_id, project=project)
         if not state.providers.model_preferences.allows(provider_id, admitted_selection.model_id if admitted_selection else ""):
             raise ModelDisabledError("Selected model is disabled. Choose an enabled model in Settings.")
         if isinstance(input, ResolveShellApproval):
@@ -442,6 +459,9 @@ def _task_input_payload(input: TaskInput | None) -> dict[str, object] | None:
         return {"kind": "start_task", "text": input.text}
     if isinstance(input, ResumeRun):
         return {"kind": "resume_run", "source_run_id": input.source_run_id, "instruction": input.instruction}
+    if isinstance(input, HandoffRun):
+        return {"kind": "handoff_run", "source_run_id": input.source_run_id, "instruction": input.instruction,
+                "observe_only": input.observe_only}
     if isinstance(input, ResolveShellApproval):
         return {"kind": "resolve_shell_approval", "approval_id": input.approval_id}
     return None
@@ -543,15 +563,21 @@ def _dispatch_durable_task(checkpoint: object, *, state: TaskSubmissionState) ->
 def _task_input_from_payload(value: object) -> TaskInput | None:
     if not isinstance(value, dict):
         return None
-    kind = str(value.get("kind") or "")
+    row = decode_json_object(value)
+    kind = str(row.get("kind") or "")
     if kind == "edit_user_message":
-        return EditUserMessage(value["entry_id"], value["text"], value["expected_revision"])
+        return EditUserMessage(require_json_string(row["entry_id"], "entry_id"), require_json_string(row["text"], "text"),
+                               require_json_integer(row["expected_revision"], "expected_revision"))
     if kind == "start_task":
-        return StartTask(str(value.get("text") or ""))
+        return StartTask(str(row.get("text") or ""))
     if kind == "resume_run":
-        return ResumeRun(str(value.get("source_run_id") or ""), str(value.get("instruction") or ""))
+        return ResumeRun(str(row.get("source_run_id") or ""), str(row.get("instruction") or ""))
+    if kind == "handoff_run":
+        return HandoffRun(require_json_string(row["source_run_id"], "source_run_id"),
+                          require_json_string(row["instruction"], "instruction"),
+                          require_json_boolean(row["observe_only"], "observe_only"))
     if kind == "resolve_shell_approval":
-        return ResolveShellApproval(str(value.get("approval_id") or ""))
+        return ResolveShellApproval(str(row.get("approval_id") or ""))
     raise ValueError(f"unknown durable task input kind: {kind}")
 
 

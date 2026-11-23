@@ -338,6 +338,7 @@ def _run_headless_task(
             "continue_task": request.continue_task or isinstance(request.input, (ResumeRun, ResolveShellApproval)),
         }, project=str(project) if project is not None else None)
         intent = auth.inferred_intent or _request_intent(request.intent)
+        from codey.app.task_submit import _task_input_payload
         from codey.providers.snapshot import capture_provider_selection, provider_snapshot
 
         admitted_selection = capture_provider_selection(
@@ -387,7 +388,7 @@ def _run_headless_task(
                 "denied_capabilities": list(auth.denied_capabilities),
                 "review_source_run_id": request.review_source_run_id,
                 "model_selection": selection_payload,
-                "input": None,
+                "input": _task_input_payload(request.input),
             },
         )
         state.durable.claim_task(run_id)
