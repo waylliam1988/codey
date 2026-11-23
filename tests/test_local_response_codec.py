@@ -64,6 +64,16 @@ def test_local_gemma_frame_accepts_direct_argument_object() -> None:
     assert call.arguments == {"path": "app.py"}
 
 
+def test_local_gemma_keyword_frame_uses_the_same_literal_grammar() -> None:
+    call = parse_local_tool_markup(
+        '<|tool_call>call:browser_navigate(url="https://books.toscrape.com/?q=(a=b)")<tool_call|>'
+    )
+    assert call is not None and call.name == "browser_navigate"
+    assert call.arguments == {"url": "https://books.toscrape.com/?q=(a=b)"}
+    for arguments in ('("a")', '(url="a",url="b")', '(url=get_url())', '(url="a"))', '(url="a")prose'):
+        assert parse_local_tool_markup(f"<|tool_call>call:browser_navigate{arguments}<tool_call|>") is None
+
+
 def test_local_gemma_frame_accepts_tools_namespace() -> None:
     call = parse_local_tool_markup(
         '<|tool_call>call:tools.grep{args:{query:"RATE",path:"."}}<tool_call|>'

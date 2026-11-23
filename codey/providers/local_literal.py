@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import re
-from typing import cast
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _NUMBER = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
@@ -46,7 +45,7 @@ class _Parser:
                     # Marker strings use JSON escapes, with ordinary quotes
                     # as data rather than as delimiters. Unlike JSON quotes,
                     # marker delimiters also permit literal control characters.
-                    value = json.loads('"' + "".join(encoded) + '"')
+                    value: object = json.loads('"' + "".join(encoded) + '"')
                     if type(value) is not str:
                         raise ValueError("expected a string")
                     return value
@@ -77,27 +76,32 @@ class _Parser:
                     encoded.append('\\"' if char == '"' else char)
         raise ValueError("unterminated string")
 
+    def mapping(self, closing: str, separator: str) -> dict[str, object]:
+        result: dict[str, object] = {}
+        if self.take(closing):
+            return result
+        while True:
+            self.whitespace()
+            identifier = _IDENTIFIER.match(self.source, self.pos)
+            if identifier:
+                key = identifier.group()
+                self.pos = identifier.end()
+            elif separator == ":":
+                key = self.string()
+            else:
+                raise ValueError("expected a keyword argument")
+            if key in result or not self.take(separator):
+                raise ValueError(f"duplicate key or missing {separator!r}")
+            result[key] = self.value()
+            if self.take(closing):
+                return result
+            if not self.take(","):
+                raise ValueError("expected object separator")
+
     def value(self) -> object:
         self.whitespace()
         if self.take("{"):
-            result: dict[str, object] = {}
-            if self.take("}"):
-                return result
-            while True:
-                self.whitespace()
-                identifier = _IDENTIFIER.match(self.source, self.pos)
-                if identifier:
-                    key = identifier.group()
-                    self.pos = identifier.end()
-                else:
-                    key = self.string()
-                if key in result or not self.take(":"):
-                    raise ValueError("duplicate key or missing colon")
-                result[key] = self.value()
-                if self.take("}"):
-                    return result
-                if not self.take(","):
-                    raise ValueError("expected object separator")
+            return self.mapping("}", ":")
         if self.take("["):
             items: list[object] = []
             if self.take("]"):
@@ -115,19 +119,25 @@ class _Parser:
         number = _NUMBER.match(self.source, self.pos)
         if number:
             self.pos = number.end()
-            return json.loads(number.group())
+            value: object = json.loads(number.group())
+            return value
         return self.string()
 
 
 def parse_mapping_diagnostic(source: str) -> tuple[dict[str, object] | None, str]:
     parser = _Parser(source)
     try:
-        value = parser.value()
+        if parser.take("{"):
+            value = parser.mapping("}", ":")
+        elif parser.take("("):
+            value = parser.mapping(")", "=")
+        else:
+            return None, f"unexpected argument data at character {parser.pos + 1}"
         parser.whitespace()
-        if parser.pos != len(source) or type(value) is not dict:
+        if parser.pos != len(source):
             return None, f"unexpected argument data at character {parser.pos + 1}"
         json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
-        return cast(dict[str, object], value), ""
+        return value, ""
     except (SyntaxError, ValueError, TypeError, MemoryError, RecursionError) as exc:
         if parser.pos >= len(source.rstrip()):
             return None, ("The argument object ended before all containers or strings were closed. "

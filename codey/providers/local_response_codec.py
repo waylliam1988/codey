@@ -12,7 +12,6 @@ import hashlib
 import json
 import re
 from dataclasses import replace
-from typing import cast
 
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.providers.local_literal import parse_mapping, parse_mapping_diagnostic
@@ -51,24 +50,24 @@ def parse_local_tool_markup(text: str) -> ProviderToolCall | None:
     if prefix is None:
         return None
     body = text[len(prefix):-len(_FRAME_SUFFIX)]
-    brace = body.find("{")
-    if brace <= 0 or not body.endswith("}"):
+    opening = re.match(r"([A-Za-z_][A-Za-z0-9_.]*)[({]", body)
+    if opening is None:
         return None
-    name = _canonical_tool_name(body[:brace])
+    name = _canonical_tool_name(opening.group(1))
     if name is None:
         return None
-    arguments = parse_mapping(body[brace:])
+    arguments = parse_mapping(body[opening.end() - 1:])
     if arguments is None:
         return None
+    raw_args: object = arguments
     if "args" in arguments:
-        if len(arguments) != 1 or type(arguments["args"]) is not dict:
+        nested = arguments["args"]
+        if len(arguments) != 1 or not isinstance(nested, dict):
             return None
-        arguments = cast(dict[str, object], arguments["args"])
-    if any(type(key) is not str for key in arguments):
-        return None
+        raw_args = nested
     call_id = "local-" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
     try:
-        decoded = decode_json_object(arguments)
+        decoded = decode_json_object(raw_args)
     except ValueError:
         return None
     return ProviderToolCall(id=call_id, name=name, arguments=decoded)
@@ -128,7 +127,7 @@ def normalize_local_reply(reply: str | AssistantTurn) -> str | AssistantTurn:
         if reply.lstrip().startswith("<|tool_call>"):
             frame = reply.strip()
             name = re.match(
-                r"<\|tool_call>call:(?:tool:)?((?:[A-Za-z_][A-Za-z0-9_]*\.)*[A-Za-z_][A-Za-z0-9_]*)\{",
+                r"<\|tool_call>call:(?:tool:)?((?:[A-Za-z_][A-Za-z0-9_]*\.)*[A-Za-z_][A-Za-z0-9_]*)[({]",
                 frame,
             )
             detail = ("Local tool frame is missing the closing <tool_call|> marker. "
