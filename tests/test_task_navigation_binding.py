@@ -12,9 +12,12 @@ from codey.codemode import kernel as kernel_module
 from codey.codemode.catalog import render_declarations, snapshot_catalog
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.replay import digest
+from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_protocol import TurnSnapshot, build_turn_snapshot, refresh_snapshot_contract
+from codey.operations.project_delivery import ProjectDeliveryLinks
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
+from codey.operations.task_handoff import task_handoff
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -25,6 +28,22 @@ from tests.test_task_contract_fixed_replies import TARGET, install_original_http
 from tools.browser_production_live_gate import URL, run_case
 from tools.completion_artifact_audit import tool_receipts
 
+
+def test_project_disclosure_reuses_documented_source_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = session_for("Modify app.py using the project specification.", kind="project",
+                          grants=GRANTS | {"project.write"})
+    session.project = "."
+    snapshot = build_turn_snapshot(session)
+    selected, _ = task_handoff(session, snapshot, CompletionContext(), None)
+    assert "browser_navigate" not in selected.tool_names
+    assert "browser_navigate" in selected.nested_tool_names
+    url = "https://example.com/project-format"
+    monkeypatch.setattr("codey.operations.project_delivery.observed_delivery_links",
+                        lambda _session: ProjectDeliveryLinks(specification=url))
+    selected, _ = task_handoff(session, snapshot, CompletionContext(), None)
+    restored = restore_snapshot(snapshot_description(selected))
+    assert restored.bound_source_url == url
+    assert "open_url" in restored.tool_names
 GRANTS = frozenset({"control", "project.read", "web.read", "browser.observe", "browser.interact"})
 ORIGINAL = "https://EXAMPLE.COM/A-b_C?x=A%2FB&n=0042#Part-1"
 
