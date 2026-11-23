@@ -3,14 +3,42 @@ from __future__ import annotations
 import threading
 import unittest
 
-from codey.app.run_registry import RunRegistry, same_project
+from codey.app.run_registry import RunRegistry, RunSnapshot, same_project
+from codey.providers.diagnostics import ProviderFailure
+from codey.types.json_value import JsonObject, JsonValue
 
 
 class RunRegistryTests(unittest.TestCase):
+    def test_provider_failure_keeps_scalar_facts_and_empty_fact_omission(self) -> None:
+        registry = RunRegistry()
+        failure = ProviderFailure(
+            model="fixture", action="send", url="", title="", message="failed", time="now",
+            facts={"http_status": 429, "composer_visible": False},
+        )
+        registry.set_last_provider_failure(failure)
+        payload = registry.payload(pending_event=lambda _active: None, research_restore_runs=())
+        projected = payload["provider_failure"]
+        assert isinstance(projected, dict)
+        self.assertEqual(projected["message"], "failed")
+        self.assertEqual(projected["model"], "fixture")
+        facts = projected["facts"]
+        assert isinstance(facts, dict)
+        self.assertEqual(facts["http_status"], 429)
+        self.assertIs(facts["composer_visible"], False)
+
+        registry.set_last_provider_failure(ProviderFailure(
+            model="fixture", action="send", url="", title="", message="failed", time="now",
+        ))
+        projected = registry.payload(pending_event=lambda _active: None, research_restore_runs=())["provider_failure"]
+        assert isinstance(projected, dict)
+        self.assertNotIn("facts", projected)
+        registry.set_last_provider_failure(None)
+        self.assertIsNone(registry.payload(pending_event=lambda _active: None, research_restore_runs=())["provider_failure"])
+
     def test_reserve_is_atomic(self) -> None:
         registry = RunRegistry()
         barrier = threading.Barrier(8)
-        results = []
+        results: list[RunSnapshot | None] = []
 
         def reserve() -> None:
             barrier.wait()
@@ -125,7 +153,7 @@ class RunRegistryTests(unittest.TestCase):
         )
         assert run is not None
         registry.start(run.run_id)
-        pending = {"type": "shell_request", "run_id": run.run_id}
+        pending: JsonObject = {"type": "shell_request", "run_id": run.run_id}
 
         payload = registry.payload(
             pending_event=(
@@ -139,7 +167,7 @@ class RunRegistryTests(unittest.TestCase):
         self.assertTrue(payload["busy"])
         self.assertEqual(payload["run_id"], run.run_id)
         self.assertEqual(payload["pending_event"], pending)
-        self.assertEqual(payload["research_restore_runs"], ["run-a"])
+        self.assertEqual(payload["research_restore_runs"], list[JsonValue](["run-a"]))
 
     def test_payload_does_not_call_pending_event_under_registry_lock(self) -> None:
         registry = RunRegistry()
@@ -151,10 +179,10 @@ class RunRegistryTests(unittest.TestCase):
         )
         assert run is not None
         registry.start(run.run_id)
-        payloads: list[dict] = []
+        payloads: list[JsonObject] = []
         errors: list[BaseException] = []
 
-        def pending_event(_active) -> dict | None:
+        def pending_event(_active: RunSnapshot | None) -> JsonObject | None:
             current = registry.current()
             return {"type": "shell_request", "run_id": current.run_id if current else ""}
 
@@ -174,8 +202,10 @@ class RunRegistryTests(unittest.TestCase):
         thread.join(timeout=1.0)
 
         self.assertFalse(thread.is_alive())
-        self.assertEqual(errors, [])
-        self.assertEqual(payloads[0]["pending_event"]["run_id"], run.run_id)
+        self.assertEqual(errors, list[BaseException]())
+        projected = payloads[0]["pending_event"]
+        assert isinstance(projected, dict)
+        self.assertEqual(projected["run_id"], run.run_id)
 
     def test_distinct_sessions_have_independent_active_runs_and_stop_flags(self) -> None:
         registry = RunRegistry()
@@ -187,8 +217,11 @@ class RunRegistryTests(unittest.TestCase):
         )
         self.assertIsNotNone(first)
         self.assertIsNotNone(second)
-        self.assertEqual(registry.active_for(session_id="session-a").run_id, "run-a")
-        self.assertEqual(registry.active_for(session_id="session-b").run_id, "run-b")
+        active_a = registry.active_for(session_id="session-a")
+        active_b = registry.active_for(session_id="session-b")
+        assert active_a is not None and active_b is not None
+        self.assertEqual(active_a.run_id, "run-a")
+        self.assertEqual(active_b.run_id, "run-b")
         registry.request_stop("run-a")
         self.assertTrue(registry.stop_flag_for("run-a").is_set())
         self.assertFalse(registry.stop_flag_for("run-b").is_set())
@@ -204,7 +237,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
-def test_scoped_stop_before_admission_rejects_only_that_identity():
+def test_scoped_stop_before_admission_rejects_only_that_identity() -> None:
     registry = RunRegistry()
     registry.request_stop('cancelled')
     assert registry.reserve(session_id='a', project=None, task='work', provider_id='deepseek', run_id='cancelled') is None

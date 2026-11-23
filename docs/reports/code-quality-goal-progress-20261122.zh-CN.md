@@ -917,3 +917,23 @@ Q015F 构造资源修复与批次移交：
 - 最终 `python -m pytest -q tests/test_server_construction.py tests/test_service_lifecycle.py tests/test_control_runtime_ownership.py --tb=short` → **0，21 passed，3.11秒**，无skip。相同失败输入现在fileno=-1；真实正常初始化/认证/激活/关闭、初始化前拒绝release以及drain期间保留所有权边界同时通过。两完整文件加严Any/Pyrefly/ty/Ruff全0；生产750文件mypy/Pyrefly/ty/precision再次全0，35 suppressed/168 warnings不变，q015f-construction-final.json，hash稳定。
 - Q015F两个生产源和本轮修改的直接测试已完成本身的类型/行为验收；**整个Q015F标记部分完成，拆出共享test_server.py的1673诊断债务**，不把6727行跨provider/review/kernel/research脚本的欠账隐藏在“生产零Any”后面。此脚本本批未修改；保留已验证的独立生产成果，按生产职责分配支持脚本后续治理，不无限停留在server同一实现。
 - 当前 **24 / 305批完整完成，49 / 996生产文件属于完整完成批次**；Q015F两个源加其他部分批次两个源均独立验证，累计53个当前已验证生产文件，统计明确区分。原共享测试3个lazy import失败、Q018清理警告、Q078库存等仍保持原处置，未全量pytest。下一主批Q016先依实际职责进一步拆分注册表/投影、tracking、CLI、desktop、headless，优先基础注册表，未缩减总范围。总goal active。
+
+
+Q015F 构造修复已提交：`7d1b731f`（fix(http): close the listener when service initialization fails）。
+
+### Q016 注册表与运行状态投影（进行中）
+
+- 用户更新总目标文件为 attachments/123ef67f-6428-4a26-83c6-fcfa31cc10c8/goal-objective.md，已实际完整读取；新目标保留全仓分批治理、证据、验证、commit、禁止worktree等原约束，并声明长期维护者可决定设计。继续同一active总goal和队列，不创建新goal或丢失原范围。
+- 原Q016八文件实际职责混合，按已读接口拆为Q016注册表/审批/状态投影三文件、Q016B change_tracking、Q016C CLI、Q016D desktop/startup、Q016E headless。八文件逐项唯一归属不变，完整范围996源/309批；优先基础注册表，不同时深入改CLI/desktop/headless。源三文件和两原测试已全读；task_lifecycle_projection.py为投影接口深读，全文件额外Any核验0，归Q027不冒充整个Q027已治理。
+- 基线 `python -m pytest -q tests/test_approval_registry.py tests/test_run_registry.py --tb=short` → **0，18 passed，1.55秒**；四源（含task_lifecycle_projection）+两测试强Any **223条/4文件**，另外两文件本来0，q016-baseline.json。
+- **确定性bug：教学取消记录复制使等待方误认为Resume。** sibling_probe.handle_control_teach把pending注册后等待其中Event，再读取同一原pending.cancelled；ApprovalRegistry.add_teach却复制字典，cancel_teach只更新副本后唤醒共享Event。旧值False导致实际调用finish_click_capture而非取消捕获并抛ControlTeachCancelled。该预期来自真实调用方等待/取消控制流和Stop不应完成已取消捕获的不变量，不仅来自新断言；非竞态推测。
+- 注册表回归先运行 **1，1 failed/9 passed，1.22秒**，原pending.cancelled实际False，q016-teach-before.json。真实AppContext+真实handle_control_teach连续路径、仅点击捕获副作用使用有类型函数替身，原HEAD approval源 **1，1 failed，1.24秒**，实际走finish而触发cancelled teaching attempted to finalize断言，q016-teach-continuation-before-final.json；第一次错误import造成collection error保留为q016-teach-continuation-before.json，不计有效复现，修正为真实providers.controls后才得到行为失败。全部finally精确恢复源字节，没有worktree。
+- add_teach保留等待方record身份，shell登记仍复制并钉generation，两种职责不混合；公开pop/snapshot/cancel返回仍复制。中间仅共享record时，真实取消路径已正确抛取消，却剩pending记录/卡片，实际回归 **1，1 failed，1.23秒**，q016-teach-partial-fix.json。因此取消在registry锁内先移除全部本次待办，再将原record标cancelled并唤醒；不让已取消捕获继续作为可恢复UI操作。最终同输入断言取消异常、实际cancel_click_capture、未finish、无pending记录和无pending UI卡片全部通过。
+- 教学Event用仅暴露set的运行时Protocol收窄；元数据仍容纳真实request/token对象，只有消费的signal/UI dict边界收窄，不把所有metadata谎报JSON。resume和cancel的signal操作归唯一_wake，None/正常set行为一致，未知不具备set的对象明确报类型错误；不改有效resume语义。两源原重复的signal消费只在输入/副作用一致处共享，未把shell记录复制和teach共享强行抽象。
+- RunRegistry单独类型边界：ProviderFailure.to_dict旧Any返回先作object，按真实ProviderFailure标量字段+sanitize_failure_facts单层标量map验证，保留事实False/整数和空facts省略，未引入JSON深度/大小预算或重写diagnostic生产者。完整registry测试参数/容器/回调强类型，原所有断言保留。新增provider failure正/空/None对照和完整typed旧用例，在HEAD原registry实际 **0，11 passed，1.14秒**，q016-registry-fixture-baseline.json，finally精确恢复。
+- 主批另一个run_state_projection源本来无Any，无必要业务修改。现有cast未新增：ApprovalStatus字段为已检查TypedDict的str/int，TaskLifecyclePayload来自registry固定run/active/event字段与workflow状态，pending UI来自现有shell/teach构建的JSON事件；它们是已知内部投影的泛型信息恢复，不声称完成其外部builder全文件类型治理。已查看实际两个UI事件生产点；不用加新的无依据cast或额外预算来消除诊断。
+- 三直接测试最终 **0，22 passed，1.99秒**，q016-teach-final-first.json。task lifecycle/forget-session+六明确server节点组 **0，15 passed，7.23秒**，q016-projection-callers.json；审批持久失败/关闭/重启+四明确server过期节点 **0，7 passed，9.43秒**，q016-validation-final.json。无skip，未运行全量test_server。运行真实恢复/停止边界，未声称执行浏览器UI或真实点击捕获。
+- 完整强Any **223 → 11 → 6 → 0**；额外真实教学回归也0。生产首轮类型因本次ApprovalRegistry精确返回使coordinator两个旧cast冗余而失败（mypy2错，ty2条诊断，Pyrefly170warnings），保留q016-validation-final.json；已经在必需的coordinator边界只删两个冗余cast，整coordinator已读并加入全文件Any检查，不去扩展其余Q024。最终八完整文件严格Any/Pyrefly/ty/Ruff全0；750文件生产mypy/Pyrefly/ty/precision全0（35 suppressed/168warnings），q016-validation-complete.json，所有检查hash稳定。属于本轮引入并解决的检查失败，不归为历史问题。
+- 主批三个源已读和验证，独立RunRegistry类型变更与教学取消修复分两commit。先对旧approval/coordinator+新registry的实际中间提交版本做独立限定测试/全生产类型门，保证第一个commit不依赖未提交教学修复；当前结果逐命令q016-registry-commit-validation.json。未确认reserve/replace冲突输入的对外策略，没有据偏好改变注册身份行为或删除仍公开的兼容入口。
+
+RunRegistry实际中间提交版本验收已完成：旧approval/coordinator源码+本次registry和完整typed测试，**11 passed，1.13秒**；两完整路径严格Any/Pyrefly/ty/Ruff、750文件生产三类型/precision均0，35 suppressed/168 warnings。q016-registry-commit-validation.json确认finally精确恢复本轮approval/coordinator。先按四明确路径暂存registry、其完整测试和两记录，不夹带仍待独立提交的教学修复。主批仍进行中，完整完成统计不变24/309、49/996。

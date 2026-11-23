@@ -18,6 +18,26 @@ from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.providers.diagnostics import ProviderFailure
 from codey.runtime.core.api_selection import ApiRunSelection
 from codey.types.json_value import JsonObject, JsonValue
+from codey.utils.object_fields import object_fields
+
+
+def _failure_payload(value: object) -> JsonObject:
+    if not object_fields(value):
+        raise TypeError("provider failure must be an object")
+    payload: JsonObject = {}
+    for key, item in value.items():
+        if item is None or isinstance(item, (str, bool, int, float)):
+            payload[key] = item
+        elif key == "facts" and object_fields(item):
+            facts: JsonObject = {}
+            for name, fact in item.items():
+                if fact is not None and not isinstance(fact, (str, bool, int, float)):
+                    raise TypeError("provider failure facts must be scalar values")
+                facts[name] = fact
+            payload[key] = facts
+        else:
+            raise TypeError("invalid provider failure field")
+    return payload
 
 
 @dataclass(frozen=True)
@@ -371,7 +391,10 @@ class RunRegistry:
             ]
             terminal = dict(self._last_terminal_event) if self._last_terminal_event else None
             shell_result = dict(self._last_shell_result) if self._last_shell_result else None
-            provider_failure = self._last_provider_failure.to_dict() if self._last_provider_failure else None
+            provider_failure: JsonObject | None = None
+            if self._last_provider_failure is not None:
+                raw_failure: object = self._last_provider_failure.to_dict()
+                provider_failure = _failure_payload(raw_failure)
             payload: JsonObject = {
                 "run_id": active.run_id if active else str((terminal or {}).get("run_id") or ""),
                 "session_id": active.session_id if active else str((terminal or {}).get("session_id") or ""),
