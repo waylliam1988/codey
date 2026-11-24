@@ -2740,12 +2740,17 @@
         "tests/test_task_lifecycle_coordinator.py",
         "tests/test_task_submit_durable.py",
         "tests/test_shell_approval_lifecycle.py",
-        "tests/test_conversation_lifecycle.py"
+        "tests/test_conversation_lifecycle.py",
+        "tests/test_public_event_feed_invalid_cursor.py"
       ],
       "reviewed_support": [
-        "tests/test_durable_event_bridge.py"
+        "tests/test_durable_event_bridge.py",
+        "tests/test_public_event_feed_invalid_cursor.py"
       ],
-      "result": "Independent bridge race fix ready: original controlled append-versus-last-flush interleaving fails1 with zero delivered after both futures finish; queue mutex serializes lock check/append and drain, fixed same input passes. Whole bridge test5 and explicit lifecycle/admission/approval/conversation callers49pass. Both whole bridge files strictAny/Pyrefly/ty/Ruff0. Public feed and replay work remains in progress; no whole-batch completion claim."
+      "result": "Independent bridge race fix ready: original controlled append-versus-last-flush interleaving fails1 with zero delivered after both futures finish; queue mutex serializes lock check/append and drain, fixed same input passes. Whole bridge test5 and explicit lifecycle/admission/approval/conversation callers49pass. Both whole bridge files strictAny/Pyrefly/ty/Ruff0. Public feed and replay work remains in progress; no whole-batch completion claim. Independent invalid-cursor commit: three original string/list/dict inputs fail on Git50a9b50b, minimal index-only change moves int/key into existing failure handler, same3+six pure feed nodes9pass. Cache/type work remains unstaged and not part of this commit.",
+      "commits": [
+        "0c51f863"
+      ]
     },
     {
       "responsibility": "codey/app: knowledge and memory",
@@ -7768,6 +7773,7 @@
     "tests/test_provider_wrapper_contracts.py",
     "tests/test_providers.py",
     "tests/test_public_event_feed.py",
+    "tests/test_public_event_feed_invalid_cursor.py",
     "tests/test_published_run_modes_are_released_at_terminal.py",
     "tests/test_pyrefly_type_boundary_regressions.py",
     "tests/test_pytest_cleanup_guard.py",

@@ -139,9 +139,9 @@ class PublicEventFeed:
             self.sequence = sequence
             if not self.subscribers:
                 return
-            commit = int(event.get("commit_seq") or 0)
-            key = ("commit", commit) if event.get("type") == "durable_commit" else ("event", sequence)
             try:
+                commit = int(event.get("commit_seq") or 0)
+                key = ("commit", commit) if event.get("type") == "durable_commit" else ("event", sequence)
                 body = self._encode(key, event)
             except PrivateEvent:
                 return
