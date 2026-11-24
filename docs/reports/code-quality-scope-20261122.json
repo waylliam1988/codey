@@ -3386,7 +3386,10 @@
       "reviewed_support": [
         "tests/test_browser_frame_group_cleanup.py"
       ],
-      "result": "Cancellation while deleting a temporary marker prevented releasing the Chromium object group in both node paths. Two real Chromium regressions failed before and passed after. Unified node group cleanup and reused already-decoded identity comparisons. Full batch 48 passed. Scoped strong Any, Pyrefly, ty and Ruff, full production types and precision passed."
+      "result": "Cancellation while deleting a temporary marker prevented releasing the Chromium object group in both node paths. Two real Chromium regressions failed before and passed after. Unified node group cleanup and reused already-decoded identity comparisons. Full batch 48 passed. Scoped strong Any, Pyrefly, ty and Ruff, full production types and precision passed.",
+      "commits": [
+        "5160ff98"
+      ]
     },
     {
       "id": "Q030B",
@@ -3394,14 +3397,25 @@
       "files": [
         "codey/automation/browser_snapshot.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/automation/browser_snapshot.py"
+      ],
+      "verified_files": [
+        "codey/automation/browser_snapshot.py"
+      ],
       "tests": [
         "tests/test_browser_observation_regressions.py",
         "tests/test_browser_async_runtime.py",
-        "tests/test_browser_readable_references.py"
-      ]
+        "tests/test_browser_readable_references.py",
+        "tests/test_browser_native_actions.py",
+        "tests/test_browser_snapshot_availability.py",
+        "tests/test_browser_navigation_continuation.py::test_observed_disabled_state_matches_native_fieldset_and_legend_semantics"
+      ],
+      "reviewed_support": [
+        "tests/test_browser_snapshot_availability.py"
+      ],
+      "result": "Snapshot state now uses Chromium accessibility disabled state along with DOM state. Real button in disabled ARIA group formerly reported enabled, then passed unchanged regression. Direct 58 passed and native fieldset/legend controls 4 passed. Scoped strict Any, Pyrefly, ty and Ruff and full production type and precision gates passed."
     },
     {
       "id": "Q030C",
@@ -7737,6 +7751,7 @@
     "tests/test_browser_search_recovery.py",
     "tests/test_browser_settle_window.py",
     "tests/test_browser_shadow_query_regressions.py",
+    "tests/test_browser_snapshot_availability.py",
     "tests/test_browser_snapshot_recovery.py",
     "tests/test_browser_stale_ref_injection.py",
     "tests/test_browser_structured_edit_ab.py",

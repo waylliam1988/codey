@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q030。Q026 的生产修复已验证，项目生命周期用例待跟进。下一批为 Q030B。保留历史验收，复核后续提交实际影响的范围。
+当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q030B。Q026 的生产修复已验证，项目生命周期用例待跟进。下一批为 Q030C。保留历史验收，复核后续提交实际影响的范围。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1443,3 +1443,12 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_async_frames.py tests/test_browser_element_registry.py tests/test_browser_navigation_handoff.py --tb=short`，基线 46 passed。最终加入 `tests/test_browser_frame_group_cleanup.py`，48 passed，无失败或跳过，退出 0。测试覆盖实际框架、节点引用、导航恢复。快照及详情后续有各自批次。
 - 对三源及回归执行定向严格 mypy（禁 Any 三标志）、Pyrefly、ty、Ruff，均退出 0。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 和 kernel_type_precision_gate 均通过。日志 `.e2e-artifacts/code-quality-20261122/q030-*.log`。
 - Q030 完成。累计 51/330 批，完成批覆盖 103/1009 个生产文件。接续 Q030B 的 DOM 快照、控件语义和版本差异。
+
+
+### Q030B DOM 快照与控件状态
+
+- Q030 已提交 `5160ff98`。完整检查 `browser_snapshot.py` 的 DOM 和 AX 合并、控件作用域、句柄与快照差异。依据是 ARIA `aria-disabled` 对可聚焦后代的禁用语义，以及该快照对控件可用性的合同。输入为真实 Chromium 页面的禁用 group、内部按钮 Queue 及外部普通按钮 Send。
+- `python -m pytest -q tests/test_browser_snapshot_availability.py --tb=short` 修改前 1 failed、退出 1。Queue 的 disabled 实际为 False。让 DOM 及 AX 补充节点保留 Chromium 已观察到的禁用值。相同回归随后 1 passed，Queue 为禁用，Send 为可用。未改变操作授权。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_observation_regressions.py tests/test_browser_async_runtime.py tests/test_browser_native_actions.py tests/test_browser_readable_references.py --tb=short`，基线 57 passed。最终加 `tests/test_browser_snapshot_availability.py`，58 passed。补查 `tests/test_browser_navigation_continuation.py::test_observed_disabled_state_matches_native_fieldset_and_legend_semantics`，4 个参数均通过。最终 62 passed，无跳过，退出 0。
+- 为快照 JS 参数声明现有 JsonValue 容器，清除唯一强 Any 诊断。两文件定向 mypy、Pyrefly、ty、Ruff 均退出 0。Pyrefly 定向有 1 条未展示警告。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 和 precision 均通过。日志 `.e2e-artifacts/code-quality-20261122/q030b-*.log`。
+- Q030B 完成。累计 52/330 批，完成批覆盖 104/1009 个生产文件。下一批 Q030C 为控件观察、记录区域和查询绑定。

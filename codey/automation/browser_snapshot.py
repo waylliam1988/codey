@@ -187,7 +187,8 @@ async def _scope_root(context: FrameContext, registry: ElementRegistry[ElementHa
 async def _dom_snapshot(context: FrameContext, root: ElementHandle, limit: int, *, include_text: bool) -> tuple[
     JsonObject, dict[str, int], dict[str, ElementHandle],
 ]:
-    batch = await root.evaluate_handle(_DOM_SNAPSHOT, [limit, include_text])
+    arguments: list[JsonValue] = [limit, include_text]
+    batch = await root.evaluate_handle(_DOM_SNAPSHOT, arguments)
     nodes = await batch.get_property("nodes")
     view = await batch.get_property("view")
     try:
@@ -251,8 +252,9 @@ async def _merge_controls(
         handle, node = handles[key], identities[key]
         known.add(node)
         metadata, owner = decode_json_object(entry["metadata"]), handles.get(owner_key)
-        role = str(ax.get(node, {}).get("role") or element_role(metadata))
-        name = " ".join(str(ax.get(node, {}).get("name") or metadata.get("name") or "").split())[:240]
+        accessibility = ax.get(node, {})
+        role = str(accessibility.get("role") or element_role(metadata))
+        name = " ".join(str(accessibility.get("name") or metadata.get("name") or "").split())[:240]
         owner_data = metadata.get("context")
         owner_json = decode_json_object(owner_data) if isinstance(owner_data, dict) else None
         context_id = ""
@@ -271,7 +273,8 @@ async def _merge_controls(
         record = ElementRecord(handle, context.document, node, role, name,
             owner_json, owner, target, revision, semantics, owner_id)
         row: JsonObject = {"role": role, "name": name, "context_id": context_id,
-                           "disabled": metadata.get("disabled") is True, "value": metadata.get("value"),
+                           "disabled": metadata.get("disabled") is True or accessibility.get("disabled") is True,
+                           "value": metadata.get("value"),
                            "checked": metadata.get("checked"), "query_relation": metadata.get("query_relation", "")}
         if entry.get("pointer") is True:
             row["pointer_candidate"] = True
@@ -300,7 +303,8 @@ async def _merge_controls(
         role, name = str(data.get("role") or element_role(metadata)), str(data.get("name") or metadata.get("name") or "")
         record = ElementRecord(handle, context.document, node, role, name, None, owner, None,
             revision, semantic_fingerprint(metadata), await backend_node(context, owner) if owner is not None else 0)
-        row = {"role": role, "name": name, "context_id": "", "disabled": metadata.get("disabled") is True,
+        row = {"role": role, "name": name, "context_id": "",
+               "disabled": metadata.get("disabled") is True or data.get("disabled") is True,
                "value": metadata.get("value"), "checked": metadata.get("checked"), "query_relation": ""}
         rows.append((record, row))
     return _ControlSample(rows, contexts, raw_text, elements_truncated)
