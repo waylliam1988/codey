@@ -1026,9 +1026,17 @@ class ExecutionDelegate:
                 and last[0] not in self._research_scope.attempt_refs and call.args.get("state") == "answered"):
             raise ValueError("first_party_followup_available: review the just-acquired source results before submitting.")
         declared = submit_answer(self._research_scope, call.args)
-        from codey.research.report_evidence import CLAIM_CHECK_VERSION, check_report_evidence
+        from codey.research.report_evidence import CLAIM_CHECK_VERSION, check_report_evidence, review_submission_issues
 
         evidence_check = check_report_evidence(declared, tools.ledger.read_passages, claim_check_version=CLAIM_CHECK_VERSION)
+        issues = review_submission_issues(declared, evidence_check, tools.ledger.read_passages)
+        if issues:
+            issue = issues[0]
+            feedback = (f"Research submission needs review. The draft says {issue['claim']!r}. "
+                        f"Its cited [{issue['label']}] says {issue['original']!r}. "
+                        "Reconcile the claim with the cited original, cite other evidence that supports it, "
+                        "or describe the unresolved point and submit the supported parts.")
+            return ToolResult(call, feedback, ok=False, canonical={"research_submission_issue": issue}), False, None
         if self.session is not None:
             from codey.operations.browser_result_evidence import validate_current_result
 

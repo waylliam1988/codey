@@ -2,6 +2,7 @@
 import json
 from dataclasses import fields
 from importlib.util import find_spec
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -18,7 +19,7 @@ from codey.storage.managed_outputs import ManagedOutputStore
 from tests.project_candidate_recovery_fixture import scenario
 
 
-def test_punctuation_requirement_has_only_registered_verification_and_current_review(tmp_path):
+def test_punctuation_requirement_has_only_registered_verification_and_current_review(tmp_path: Path) -> None:
     result = scenario(tmp_path, fault='runtime_validation')
     assert result['terminal']['stop_reason'] == 'done'
     assert result['terminal']['receipt']['verification']['checks_passed'] is True
@@ -29,7 +30,7 @@ def test_punctuation_requirement_has_only_registered_verification_and_current_re
     assert 'Qr7t' not in result['reviews'][-1]['facts']
 
 
-def test_unindexed_archive_does_not_gain_receipt_authority_from_a_special_tool_name(tmp_path):
+def test_unindexed_archive_does_not_gain_receipt_authority_from_a_special_tool_name(tmp_path: Path) -> None:
     store = ManagedOutputStore(tmp_path / 'outputs')
     ref = store.write_tool_output(session_id='s', run_id='r', tool_id='probe',
         permission_profile='coding_writer', tool_name='behavioral_verification', display_ref='.',
@@ -42,14 +43,14 @@ def test_unindexed_archive_does_not_gain_receipt_authority_from_a_special_tool_n
     assert 'does not authorize re-execution' in result.model_text
 
 
-def test_task_specific_modules_and_project_state_are_removed():
+def test_task_specific_modules_and_project_state_are_removed() -> None:
     for name in ('codey.completion.behavioral_checks', 'codey.operations.behavioral_verification',
                  'codey.operations.behavioral_probe_worker'):
         assert find_spec(name) is None
     assert not {'behavioral_plan', 'behavioral_observation'} & {field.name for field in fields(ProjectRun)}
 
 
-def test_visible_checks_and_review_do_not_gain_an_implicit_punctuation_oracle(tmp_path):
+def test_visible_checks_and_review_do_not_gain_an_implicit_punctuation_oracle(tmp_path: Path) -> None:
     source = ("import string\ndef clean_name(text):\n"
               "    return '-'.join(''.join(' ' if c in string.punctuation else c for c in text).lower().split())\n")
     result = scenario(tmp_path, source=source, fault='runtime_validation')
@@ -61,16 +62,17 @@ def test_visible_checks_and_review_do_not_gain_an_implicit_punctuation_oracle(tm
 
 
 @pytest.mark.parametrize('approved', [True, False])
-def test_review_repair_still_requires_a_new_approved_current_review(monkeypatch, approved):
+def test_review_repair_still_requires_a_new_approved_current_review(monkeypatch: pytest.MonkeyPatch, approved: bool) -> None:
     ctx = SimpleNamespace(result=RunResult('Repaired', 'done', 5), task_changed=True,
+                          deps=SimpleNamespace(review=SimpleNamespace(run=Mock())),
                           work=SimpleNamespace(operation=None), repaired_once=False,
                           review_cycle=SimpleNamespace(review_repair_attempted=True,
                                                       approved_current_snapshot=False), blocked_reason='')
     monkeypatch.setattr(project_candidate_validation, 'validate_stopped_candidate', Mock())
     monkeypatch.setattr(project_candidate_validation, 'submit_readonly_completion_candidate', Mock())
-    attempts = []
+    attempts: list[bool] = []
 
-    def review(ctx, *, allow_repair):
+    def review(ctx: SimpleNamespace, *, allow_repair: bool) -> None:
         attempts.append(allow_repair)
         if not allow_repair:
             ctx.review_cycle.approved_current_snapshot = approved

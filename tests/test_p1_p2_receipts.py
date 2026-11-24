@@ -9,6 +9,7 @@ import pytest
 from codey.app.context import AppContext
 from codey.app.knowledge_observation import project_completed_observations
 from codey.app.memory_routes import memory_action
+from codey.completion.contract import COMPLETION_COMPLETE, CompletionProof
 from codey.durable.model import TaskCheckpoint
 from codey.knowledge.archive import stable_identity
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
@@ -17,6 +18,7 @@ from codey.memory.candidates import candidate_from_payload
 from codey.memory.context import retrieve_context
 from codey.operations.edit_base import edit_base_version
 from codey.operations.kernel_contracts import DoneDecision, KernelResult
+from codey.operations.source_gaps import source_interaction_context
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.api_provider import ApiProvider
@@ -211,6 +213,43 @@ def test_browser_observation_is_versioned_scoped_and_rechecked_when_its_source_c
         assert store.search("same-document result update", project=project + "-other", session_id="new", depth=0) == []
         store.commit_knowledge("revised-source", [KnowledgeMutation(replace(source, content="Changed contents"), expected_revision=1)])
         assert store.search("same-document result update", project=project, session_id="new", depth=0)[0].version.dependencies_changed
+
+
+def test_project_observation_records_a_repaired_check_with_both_workspace_versions(tmp_path: Path) -> None:
+    task = TaskCheckpoint("run", "chat", "submitted", "completed", 2, {},
+        {"project": str(tmp_path), "stop_reason": "done"})
+    proof = CompletionProof("proof", "project", "project", "run", COMPLETION_COMPLETE, True, "", (), (), (), (), (), (), (), ())
+    before, after = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+    decision = DoneDecision(purpose="done", result=KernelResult(True, "done", 4, "done", proof).to_payload(),
+        workspace_revision=2, workspace_fingerprint=after)
+    call = ToolCall("run", {"command": "python -m pytest", "path": "."})
+    failed = ToolResult(call, "check failed", ok=False,
+        audit={"workspace_revision": 1, "workspace_fingerprint": before})
+    updated = {"workspace_revision": 2, "workspace_fingerprint": after}
+    edit = ToolResult(ToolCall("edit", {"path": "importer.py"}), "edited", ok=True, audit={**updated, "changed": True})
+    passed = ToolResult(call, "check passed", ok=True, audit=updated)
+    facts = project_completed_observations(task, [
+        (failed, RuntimeEffectSettlement("failed", "tool_call", "chat", "run", status="error", exit_code=1)),
+        (edit, RuntimeEffectSettlement("edited", "tool_call", "chat", "run")),
+        (passed, RuntimeEffectSettlement("passed", "tool_call", "chat", "run", exit_code=0)),
+    ], decision=decision, decision_ref="done")
+    observation, = facts
+    repairs = observation.value.provenance["repaired_checks"]
+    assert isinstance(repairs, list)
+    row = decode_json_object(repairs[0])
+    assert decode_json_object(row["failed"])["workspace_fingerprint"] == before
+    assert decode_json_object(row["passed"])["effect_id"] == "passed"
+    assert observation.value.provenance["workspace_fingerprint"] == after
+
+
+def test_source_interaction_hint_clears_after_an_original_source_read() -> None:
+    url = "https://example.org/record"
+    session = TaskSession(TaskPolicy(frozenset({"control", "web.read"})))
+    session._memory_results["failed"] = ToolResult(ToolCall("open_url", {"url": url}), "login", ok=False,
+        canonical={"source_failure": {"url": url, "detail": "sign in", "code": "login_required"}})
+    assert '"state": "needs_human"' in source_interaction_context(session)
+    session.record_open(url)
+    assert source_interaction_context(session) == ""
 
 
 @pytest.mark.parametrize("pdf_available", [True, False])

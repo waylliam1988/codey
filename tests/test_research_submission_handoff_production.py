@@ -15,12 +15,13 @@ from codey.providers.api_generation import AttemptObserver
 from codey.research.answer_contract import AnswerScope, digest, submit_answer
 from codey.research.ledger import OpenedSource
 from codey.research.passages import ReadPassage
-from codey.research.report_evidence import check_report_evidence
+from codey.research.report_evidence import CLAIM_CHECK_VERSION, check_report_evidence, review_submission_issues
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tools import browser_prerequisite_ab as fixture
 from tools import browser_production_live_gate as gate
+from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import ExperimentProvider, Target
 
 
@@ -215,3 +216,53 @@ def test_new_claim_checks_only_cover_the_matching_part_and_cited_version() -> No
     assert rows[0]["passage_refs"] == ["new"] and rows[3]["passage_refs"] == ["old"]
     assert rows[3]["source_spans"] == [{"passage_ref": "old", "start": 0, "end": len(prior) - 1,
                                        "source_version": ["edition", 1]}]
+
+
+@pytest.mark.parametrize(("original", "claim", "problem"), [
+    ("A 组响应率 24%。", "B 组响应率 24%", "group_conflict"),
+    ("A 组响应率 24%。", "A 组响应率 42%", "quantity_conflict"),
+    ("Group A shipped 24 g.", "Group A shipped 24 kg", "quantity_conflict"),
+    ("Group A shipped 24 g.", "Group A shipped 24.0 g", ""),
+    ("Group A shipped 24 g.", "A 组发货 24 克", ""),
+    ("Group A shipped 24 g.", "Group A's shipment weighed 24 g", ""),
+    ("Group A shipped 24 g.", "Group A shipped 24 g", ""),
+])
+def test_review_flags_only_aligned_quantitative_conflicts(original: str, claim: str, problem: str) -> None:
+    url = "https://example.com/official"
+    passage = ReadPassage("p1", OpenedSource(url, url, "", "", "hash"), original, (), 0, len(original))
+    passages = {passage.ref: passage}
+    scope = AnswerScope(digest("task"), (("e1", passage.ref),), ("attempt",))
+    submission = submit_answer(scope, {"state": "answered", "markdown": f"{claim} [e1]."})
+    report = check_report_evidence(submission, passages, claim_check_version=CLAIM_CHECK_VERSION)
+    issues = review_submission_issues(submission, report, passages)
+    if problem:
+        issue, = issues
+        assert issue["kind"] == problem and issue["claim"] == claim
+        assert issue["passage_ref"] == passage.ref and issue["label"] == "e1"
+    else:
+        assert issues == []
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
+def test_quantitative_citation_conflict_returns_to_current_writer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    directory = tmp_path / "run"
+    url = "https://example.com/atlas/shipping-results"
+    original = "Group A shipped 24 g. The Atlas scale was calibrated before the comparison."
+
+    def replies() -> Iterator[JsonObject]:
+        assert "Group A shipped 24 g" in json.dumps(requests(directory)[-1]["messages"])
+        yield {"tool": "submit_research_answer", "args": {"markdown": "Group B shipped 24 g [e1].", "state": "answered"}}
+        feedback = json.dumps(requests(directory)[-1]["messages"])
+        assert "The draft says 'Group B shipped 24 g'" in feedback and "Its cited [e1] says 'Group A shipped 24 g'" in feedback
+        yield {"tool": "submit_research_answer", "args": {"markdown": "Group A shipped 24 g [e1].", "state": "answered"}}
+
+    install_http(monkeypatch, replies(), native=False)
+    result = gate.run_case(directory, "research", Target("http://scripted.test/v1", "fixture", 123, 20),
+        strict_research=True, declare_required_tools=False, source_pages={url: f"<article>{original}</article>"},
+        task_transform=lambda _: f"Read the official shipping report at {url}. Report which group shipped 24 g and cite the report.")
+    assert result["stop_reason"] == "done"
+    receipts = tool_receipts(directory / "state")
+    submissions = [row.result for row in receipts if row.result.call.name == "submit_research_answer"]
+    assert [row.ok for row in submissions] == [False, True]
+    assert decode_json_object(submissions[0].canonical["research_submission_issue"])["kind"] == "group_conflict"
+    assert sum(row.result.call.name == "open_url" for row in receipts) == 1

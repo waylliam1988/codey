@@ -37,7 +37,11 @@ def task_working_context(session: TaskSession, research_ledger: ResearchLedger |
     from codey.research.answer_contract import answer_scope, whole_research
 
     scope = research_scope or (answer_scope(session) if whole_research(session) else None)
+    from codey.operations.source_gaps import source_gap_context, source_interaction_context
     from codey.research.answer_contract import AnswerScope
+
+    if interaction := source_interaction_context(session, research_ledger):
+        parts.append(interaction)
 
     if isinstance(scope, AnswerScope):
         from codey.research.answer_context import answer_context, work_view_limits
@@ -45,8 +49,6 @@ def task_working_context(session: TaskSession, research_ledger: ResearchLedger |
         count, cap = work_view_limits(provider, fixed_context=fixed_context)
         parts.append(answer_context(session, research_ledger, scope, count_tokens=count, token_budget=cap))
         return "\n\n".join(parts)
-    from codey.operations.source_gaps import source_gap_context
-
     failure_context = source_gap_context(session, research_ledger)
     if failure_context:
         parts.append(failure_context)

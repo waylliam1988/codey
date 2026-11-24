@@ -186,14 +186,16 @@ def _planning_deps(deps: TaskRunDeps) -> PlanningFlowDeps:
     )
 
 
-def project_completion_deps(deps: TaskRunDeps) -> ProjectCompletionDeps:
+def project_completion_deps(deps: TaskRunDeps, *, review_source_run_id: str = "") -> ProjectCompletionDeps:
+    from codey.operations.project_review_phase import review_not_requested
+
     return ProjectCompletionDeps(
         state=deps.state,
         agent=AgentAccess(
             run=deps.agent_run,
             capture_provider_failure=deps.capture_provider_failure,
-            run_consensus=deps.run_consensus,
-            run_project_audit=deps.run_project_audit,
+            run_consensus=deps.run_consensus if deps.project_review else None,
+            run_project_audit=deps.run_project_audit if deps.project_review else None,
             is_git_repository=deps.is_git_repository or (lambda _project: False),
         ),
         persistence=PersistenceAccess(
@@ -209,7 +211,7 @@ def project_completion_deps(deps: TaskRunDeps) -> ProjectCompletionDeps:
             workspace_revisions=deps.workspace_revisions,
         ),
         review=ReviewAccess(
-            run=deps.run_review,
+            run=deps.run_review if deps.project_review or review_source_run_id else review_not_requested,
             review_fix_turns=deps.review_fix_turns,
             review_log_lines=deps.review_log_lines,
         ),

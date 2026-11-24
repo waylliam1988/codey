@@ -41,16 +41,18 @@ def _reference_order(reference: KnowledgeReference) -> tuple[str, int]:
 
 
 def _project_facts(decision: DoneDecision, receipts: Sequence[TerminalReceipt]) -> tuple[
-    dict[str, JsonObject], dict[tuple[str, str], JsonObject],
+    dict[str, JsonObject], dict[tuple[str, str], JsonObject], dict[tuple[str, str], JsonObject],
 ]:
     proof = decode_json_object(decision["result"]).get("proof")
     if not isinstance(proof, dict) or proof.get("satisfied") is not True:
-        return {}, {}
+        return {}, {}, {}
     final = WorkspaceIdentity.trusted_pair(decision["workspace_revision"], decision["workspace_fingerprint"])
     if not final.trusted:
-        return {}, {}
+        return {}, {}, {}
     edits: dict[str, JsonObject] = {}
     checks: dict[tuple[str, str], JsonObject] = {}
+    failed: dict[tuple[str, str], tuple[int, JsonObject]] = {}
+    repaired: dict[tuple[str, str], JsonObject] = {}
     for result, settlement in receipts:
         version = WorkspaceIdentity.from_audit(result.audit)
         if (result.call.name in {"edit", "write_file"} and result.audit.get("changed") is True
@@ -59,11 +61,21 @@ def _project_facts(decision: DoneDecision, receipts: Sequence[TerminalReceipt]) 
             if isinstance(path, str) and _public_metadata(path):
                 edits[path] = {**_receipt_ref(settlement), "path": path, "workspace_revision": version.revision,
                                "workspace_fingerprint": version.fingerprint}
-        elif result.call.name == "run" and version == final and settlement.exit_code == 0:
+        elif result.call.name == "run" and version.trusted and settlement.exit_code is not None:
             command, cwd = result.call.args.get("command"), result.call.args.get("path", ".")
             if isinstance(command, str) and isinstance(cwd, str) and _public_metadata(command) and _public_metadata(cwd):
-                checks[command, cwd] = {**_receipt_ref(settlement), "command": command, "cwd": cwd}
-    return edits, checks
+                key = command, cwd
+                receipt: JsonObject = {**_receipt_ref(settlement), "command": command, "cwd": cwd}
+                if settlement.exit_code == 0 and result.ok and version == final:
+                    checks[key] = receipt
+                    if (previous := failed.get(key)) is not None and any(
+                            isinstance(revision := edit.get("workspace_revision"), int) and previous[0] < revision
+                            for edit in edits.values()):
+                        repaired[key] = {"failed": previous[1], "passed": receipt}
+                elif settlement.exit_code != 0 and version.revision < final.revision:
+                    failed[key] = (version.revision, {**receipt, "workspace_revision": version.revision,
+                        "workspace_fingerprint": version.fingerprint, "exit_code": settlement.exit_code})
+    return edits, checks, repaired
 
 
 def project_completed_observations(task: TaskCheckpoint, settled_receipts: Sequence[TerminalReceipt], *,
@@ -73,7 +85,7 @@ def project_completed_observations(task: TaskCheckpoint, settled_receipts: Seque
         return []
     project = task.state.get("project")
     project = str(Path(project).expanduser().resolve()) if isinstance(project, str) and project else ""
-    edits, checks = _project_facts(decision, settled_receipts if project else ())
+    edits, checks, repaired = _project_facts(decision, settled_receipts if project else ())
     material: list[str] = []
     provenance: JsonObject = {"run_id": task.task_id, "completion_receipt": decision_ref}
     if edits and checks:
@@ -83,6 +95,10 @@ def project_completed_observations(task: TaskCheckpoint, settled_receipts: Seque
         provenance.update(workspace_revision=decision["workspace_revision"],
                           workspace_fingerprint=decision["workspace_fingerprint"],
                           edits=list[JsonValue](edits.values()), checks=list[JsonValue](checks.values()))
+        if repaired:
+            material.append("Checks that failed before an edit and passed on the final workspace version: " + "; ".join(
+                f"{command} (cwd {cwd})" for command, cwd in sorted(repaired)) + ".")
+            provenance["repaired_checks"] = list[JsonValue](repaired.values())
     browser: list[JsonValue] = []
     observed_actions: set[str] = set()
     references: set[KnowledgeReference] = set()
@@ -148,8 +164,10 @@ def observe_knowledge(store: KnowledgeStore, durable: DurableSession, outputs: M
         receipts = [row for effect in durable.settled_effects(run_id)
                     if effect.category == "tool_call" and effect.intent.get("tool_name") in _TOOLS
                     and effect.settlement is not None and effect.settlement.get("result_payload_sha256")
-                    and effect.settlement.get("status") == "ok"
-                    and (row := terminal_tool_result(effect, outputs, session_id=task.conversation_id))[0].ok]
+                    and (effect.settlement.get("status") == "ok" or effect.intent.get("tool_name") == "run"
+                         and effect.settlement.get("status") == "error")
+                    and ((row := terminal_tool_result(effect, outputs, session_id=task.conversation_id))[0].ok
+                         or row[0].call.name == "run" and row[1].exit_code is not None)]
         mutations = project_completed_observations(task, receipts, decision=decision, decision_ref=ref, store=store)
         if mutations:
             project = mutations[0].value.scope_id if mutations[0].value.scope == "project" else ""

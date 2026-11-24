@@ -8,7 +8,7 @@ from decimal import Decimal
 from codey.research.answer_values import AnswerSubmission, evidence_status_suffix
 from codey.research.evidence_gaps import same_source_groups
 from codey.research.passages import ReadPassage
-from codey.types.json_value import JsonObject, JsonValue
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 from codey.utils.citation_scanner import mask_markdown_code
 
 _DIRECT_QUOTE = re.compile(r'"([^"\n]+)"|“([^”\n]+)”|「([^」\n]+)」|『([^』\n]+)』')
@@ -24,6 +24,8 @@ _COMMON_WORDS = frozenset({"about", "average", "according", "approximately", "be
 CLAIM_CHECK_VERSION = 1
 _CLAIM_BREAK = re.compile(r"(?<=[.!?])\s+|[;；。！？\n]+|(?:,\s*)?\b(?:but|whereas|however)\b|，(?:但|然而)", re.I)
 _CLAIM_LEADING = re.compile(r"\s*(?:[-*+] |\d+[.)] )?[*_]*")
+_GROUP_LABEL = re.compile(r"\b(group|arm|cohort)\s+([a-z0-9]+)\b|(?<![a-z0-9])([a-z0-9]+)\s*(?=组)", re.I)
+_EQUIVALENT_UNITS = {"克": "g", "公斤": "kg", "小时": "h", "μg": "µg"}
 
 
 def _passage_span(passage: ReadPassage, quote: str) -> tuple[int, int] | None:
@@ -215,3 +217,59 @@ def _adjacent_groups(groups: dict[tuple[int, int], dict[str, ReadPassage]]) -> d
         else:
             result[start, end] = labels
     return result
+
+
+def review_submission_issues(submission: AnswerSubmission, evidence_check: JsonObject,
+                             passages: Mapping[str, ReadPassage]) -> list[JsonObject]:
+    """Identify incompatible details in closely aligned quantitative statements."""
+    checks = evidence_check.get("claim_checks")
+    if not isinstance(checks, list):
+        return []
+    markdown = submission["markdown"]
+    labels = {row["passage_ref"]: row["label"] for row in submission["citations"]}
+    issues: list[JsonObject] = []
+    for raw in checks:
+        row = decode_json_object(raw)
+        start, stop, refs = row.get("report_start"), row.get("report_end"), row.get("passage_refs")
+        if (row.get("review_state") != "needs_review" or not isinstance(start, int)
+                or not isinstance(stop, int) or not isinstance(refs, list)):
+            continue
+        claim = markdown[start:stop]
+        normalized = " ".join(claim.split())
+        if len(normalized) > 500 or not _QUANTITY.search(normalized):
+            continue
+        originals = [(ref, body, " ".join(body.split()))
+                     for ref in refs if isinstance(ref, str) and (passage := passages.get(ref)) is not None
+                     for _, body in _claim_parts(passage.excerpt, 0, len(passage.excerpt))]
+        if any(original.casefold() == normalized.casefold() for _, _, original in originals):
+            continue
+        for ref, body, original in originals:
+            kind = _quantity_conflict(normalized, original)
+            if kind:
+                issues.append({"kind": kind, "report_start": start, "report_end": stop, "claim": claim,
+                               "passage_ref": ref, "label": labels[ref], "original": body})
+                break
+    return issues
+
+
+def _quantity_conflict(claim: str, original: str) -> str:
+    reported = tuple(_QUANTITY.finditer(claim))
+    sourced = tuple(_QUANTITY.finditer(original))
+    if len(reported) != 1 or len(sourced) != 1:
+        return ""
+    left, right = reported[0], sourced[0]
+    left_unit = _EQUIVALENT_UNITS.get(left[2], left[2])
+    right_unit = _EQUIVALENT_UNITS.get(right[2], right[2])
+    # Commas are ambiguous across locales. Leave their interpretation to the writer.
+    if "," in left[1] or "," in right[1]:
+        return ""
+    if (Decimal(left[1]), left_unit) != (Decimal(right[1]), right_unit):
+        if _QUANTITY.sub("<quantity>", claim).casefold() == _QUANTITY.sub("<quantity>", original).casefold():
+            return "quantity_conflict"
+    else:
+        subject, source_subject = _GROUP_LABEL.search(claim), _GROUP_LABEL.search(original)
+        if (subject is not None and source_subject is not None
+                and (subject[2] or subject[3]).casefold() != (source_subject[2] or source_subject[3]).casefold()
+                and _GROUP_LABEL.sub(r"\1<group>", claim).casefold() == _GROUP_LABEL.sub(r"\1<group>", original).casefold()):
+            return "group_conflict"
+    return ""

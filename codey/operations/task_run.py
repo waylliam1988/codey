@@ -134,6 +134,7 @@ class TaskRunDeps:
     runtime_mutations: RuntimeMutationLine | None = None
     runtime_effects: RuntimeEffectStore | None = None
     connect_provider: Callable[[str], ChatProvider] | None = None
+    project_review: bool = True
 
     @classmethod
     def from_submission_stores(
@@ -153,6 +154,7 @@ class TaskRunDeps:
         review_fix_turns: int = 12,
         review_log_lines: int = 80,
         connect_provider: Callable[[str], ChatProvider] | None = None,
+        project_review: bool = True,
     ) -> TaskRunDeps:
         """Assemble task dependencies from one explicit resource bundle."""
         return cls(
@@ -180,6 +182,7 @@ class TaskRunDeps:
             runtime_mutations=stores.runtime_mutations,
             runtime_effects=stores.runtime_effects,
             connect_provider=connect_provider,
+            project_review=project_review,
         )
 
 
@@ -673,7 +676,7 @@ def execute_task_run(deps: TaskRunDeps, request: TaskSubmission) -> OperationOut
         if early is not None:
             return early
 
-        completion_deps = project_completion_deps(deps)
+        completion_deps = project_completion_deps(deps, review_source_run_id=request.review_source_run_id)
         open_run_ledger(
             deps, workload.work, setup.request,
             run_id=setup.run_id, task_kind=setup.task_kind, provider_id=setup.provider_id,

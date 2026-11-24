@@ -24,13 +24,17 @@ from codey.operations.task_context import (
 )
 from codey.operations.task_state import stop_flag_for
 from codey.providers.compat_transport import require_callable
-from codey.reviews.coordinator import ReviewCoordinator, change_state
+from codey.reviews.coordinator import ReviewCoordinator, ReviewCycleResult, change_state
 from codey.reviews.core import ReviewResult
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.reviews.persistence import append_review_result_ledger
 from codey.runtime.core import cancellation
 from codey.runtime.core.run_result import RunResult
 from codey.utils.object_fields import object_fields
+
+
+def review_not_requested(**_kwargs: object) -> None:
+    """Review port for project runs governed by writer verification alone."""
 
 
 def _render_review_change_brief(ctx: ProjectRun) -> str:
@@ -262,6 +266,10 @@ def validate_candidate(ctx: ProjectRun, *, allow_review_repair: bool = True) -> 
 
     validate_stopped_candidate(ctx)
     submit_readonly_completion_candidate(ctx)
+    if ctx.deps.review.run is review_not_requested:
+        if ctx.result is not None:
+            ctx.review_cycle = ReviewCycleResult(ctx.result, ctx.task_changed, ctx.task_changes, ctx.task_changes_dirty)
+        return
     run_review_phase(ctx, allow_repair=allow_review_repair)
     repaired_after_review = ctx.review_cycle.review_repair_attempted
     if repaired_after_review and ctx.result is not None and ctx.result.stop_reason == 'done':

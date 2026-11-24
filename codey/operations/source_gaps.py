@@ -94,6 +94,24 @@ def source_read_required(session: TaskSession) -> bool:
     return bool(session.policy.sources_open_required or session.required_source_urls)
 
 
+def source_interaction_context(session: TaskSession, ledger: ResearchLedger | None = None) -> str:
+    coverage = task_source_coverage(session, ledger)
+    pending: list[JsonObject] = []
+    for failure in coverage.acquisition_failures:
+        result = session._memory_results[failure.result_ref]
+        detail = decode_json_object(result.canonical["source_failure"])
+        if detail.get("code") == "login_required":
+            pending.append({"state": "needs_human", "reason": "login_required", "url": failure.url,
+                            "result_ref": failure.result_ref})
+    if not pending:
+        return ""
+    return ("Sources waiting for user interaction (committed acquisition receipts):\n"
+            + json.dumps(pending, ensure_ascii=False)
+            + "\nFor a source needed to finish the task, ask the user to sign in directly in the browser and tell you when "
+              "it is ready. Resume reading the source after confirmation and reuse previously acquired evidence. "
+              "If the source is optional or the user cannot sign in, report the gap with the supported findings.")
+
+
 def source_gap_context(session: TaskSession, ledger: ResearchLedger | None = None) -> str:
     coverage = task_source_coverage(session, ledger)
     if session.task_kind != "chat" or session.policy.strict_research:
