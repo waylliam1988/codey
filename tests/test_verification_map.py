@@ -10,9 +10,10 @@ from codey.completion.verification_map import build_verification_map
 from codey.runs.work_checkpoint import CheckpointCheck
 
 
-def _changes(*paths: str, diff: str = "") -> dict:
+def _changes(*paths: str, diff: str = "") -> dict[str, object]:
+    files: list[dict[str, str]] = [{"path": path, "status": "M"} for path in paths]
     return {
-        "files": [{"path": path, "status": "M"} for path in paths],
+        "files": files,
         "diff": diff,
     }
 
@@ -264,6 +265,7 @@ class VerificationMapTests(unittest.TestCase):
 
         self.assertTrue(limited.truncated)
         self.assertIn("map truncated by character budget", clipped)
+        self.assertLessEqual(len(clipped), 80)
 
     def test_total_byte_budget_marks_only_overflow_and_keeps_prior_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -305,10 +307,9 @@ class VerificationMapTests(unittest.TestCase):
                 )
 
         self.assertTrue(result.truncated)
-        self.assertEqual(
-            [item.path for item in result.test_candidates],
-            ["tests/test_0.py"],
-        )
+        actual_paths = [item.path for item in result.test_candidates]
+        expected_paths: list[str] = ["tests/test_0.py"]
+        self.assertEqual(actual_paths, expected_paths)
         self.assertIn("additional relevant tests may exist", result.render())
 
 

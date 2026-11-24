@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import ast
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any
 
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.workspace.changed_symbols import changed_symbol_names
@@ -96,12 +95,13 @@ class VerificationMap:
         text = "\n".join(lines)
         if len(text) <= MAX_RENDER_CHARS:
             return text
-        return text[:MAX_RENDER_CHARS].rstrip() + "\n- map truncated by character budget"
+        notice = "\n- map truncated by character budget"[:MAX_RENDER_CHARS]
+        return text[:MAX_RENDER_CHARS - len(notice)].rstrip() + notice
 
 
 def build_verification_map(
     project: str | Path,
-    changes: dict[str, Any],
+    changes: Mapping[str, object],
     *,
     checks_after_last_change: Sequence[object] = (),
     project_map: str = "",
@@ -173,8 +173,21 @@ def build_verification_map(
     )
 
 
-def render_verification_map(*args: Any, **kwargs: Any) -> str:
-    return build_verification_map(*args, **kwargs).render()
+def render_verification_map(
+    project: str | Path,
+    changes: Mapping[str, object],
+    *,
+    checks_after_last_change: Sequence[object] = (),
+    project_map: str = "",
+    recommended_commands: Sequence[str] = (),
+) -> str:
+    return build_verification_map(
+        project,
+        changes,
+        checks_after_last_change=checks_after_last_change,
+        project_map=project_map,
+        recommended_commands=recommended_commands,
+    ).render()
 
 
 def _section(lines: list[str], title: str, values: Sequence[str], fallback: str = "") -> None:
@@ -185,12 +198,16 @@ def _section(lines: list[str], title: str, values: Sequence[str], fallback: str 
         lines.append(f"- {fallback}")
 
 
-def _changed_paths(changes: dict[str, Any]) -> tuple[str, ...]:
+def _changed_paths(changes: Mapping[str, object]) -> tuple[str, ...]:
+    files = changes.get("files")
+    if not isinstance(files, Iterable):
+        return ()
     result: list[str] = []
-    for item in changes.get("files") or []:
+    for item in files:
         if len(result) >= MAX_CHANGED_FILES or not isinstance(item, dict):
             break
-        value = str(item.get("path") or "").replace("\\", "/").strip("/")
+        fields: dict[object, object] = item
+        value = str(fields.get("path") or "").replace("\\", "/").strip("/")
         path = PurePosixPath(value)
         if not value or path.is_absolute() or ".." in path.parts:
             continue
@@ -302,7 +319,8 @@ def _python_import_matches(source: str, imports: set[str]) -> bool:
 def _javascript_import_matches(root: Path, test: Path, source: str, text: str) -> bool:
     source_path = (root / source).resolve()
     source_no_ext = source_path.with_suffix("")
-    for specifier in JS_IMPORT_RE.findall(text):
+    for match in JS_IMPORT_RE.finditer(text):
+        specifier: str = match[1]
         if not specifier.startswith("."):
             continue
         resolved = (test.parent / specifier).resolve()
@@ -316,13 +334,18 @@ def _javascript_import_matches(root: Path, test: Path, source: str, text: str) -
 def _observed_checks(values: Sequence[object]) -> tuple[ObservedCheck, ...]:
     result: list[ObservedCheck] = []
     for value in values:
-        command = str(getattr(value, "command", "") or "").strip()
-        cwd = str(getattr(value, "cwd", ".") or ".").strip() or "."
         if isinstance(value, dict):
-            command = str(value.get("command") or "").strip()
-            cwd = str(value.get("cwd") or ".").strip() or "."
+            fields: dict[object, object] = value
+            raw_command = fields.get("command")
+            raw_cwd = fields.get("cwd")
         elif isinstance(value, str):
-            command = value.strip()
+            raw_command = value
+            raw_cwd = "."
+        else:
+            raw_command = getattr(value, "command", "")
+            raw_cwd = getattr(value, "cwd", ".")
+        command = str(raw_command or "").strip()
+        cwd = str(raw_cwd or ".").strip() or "."
         if command:
             item = ObservedCheck(command[:500], cwd[:240])
             if item not in result:
@@ -366,7 +389,9 @@ def _broader_commands(project_map: str) -> tuple[str, ...]:
                 )
                 if not match:
                     continue
-                cwd, command = match.groups()
+                cwd: str | None = match[1]
+                observed_command: str = match[2]
+                command = observed_command
                 if cwd and cwd != ".":
                     command = f"{cwd.rstrip('/')}/: {command}"
             if command and command not in result:

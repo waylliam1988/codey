@@ -1679,3 +1679,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_completion_verification.py tests/test_completion_proof_authority.py tests/test_completion_engine.py tests/test_completion_projection_latest_observation_wins.py tests/test_p0_mixed_workflow.py::test_mixed_verification_requires_current_success_for_each_path tests/test_coldstart_contract_cleanup.py::CompletionEvidenceDirectTests --tb=short`，最终 48 passed、18 subtests passed，0 失败、错误或跳过，退出 0。冷启动与混合工作流只执行命名范围，其余跨区域用例按各自批次验证。
 - `python -m mypy codey/completion/verification.py tests/test_completion_verification.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 退出 0，基线分开执行生产文件 30 条、测试文件 101 条诊断，均包含 Any 或类型精度问题。两文件 Ruff、生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均通过。
 - Q042B 完成。累计完成 75/342 批，完成批覆盖 138/1009 个生产文件，另有 17 批部分完成。下一批 Q042C 为验证候选映射。
+
+
+### Q042C 验证候选映射
+
+- Q042B 已提交 `e738b80e`。完整检查 `verification_map.py` 和 `test_verification_map.py`。候选映射声明输出受 `MAX_RENDER_CHARS` 限制，旧实现先截正文再附加通知。给原测试的 80 字符预算增加长度断言，`python -m pytest -q tests/test_verification_map.py::VerificationMapTests::test_scan_and_render_budgets_are_explicit --tb=short` 修改前 1 failed、退出 1，实际长度 116。将通知纳入预算后同命令 1 passed、退出 0。通过 `python -` 校验 0、10、80 字符、完整输出前一位、刚好等长和大于完整输出的预算，全部通过。
+- 为变更映射、扫描行、正则捕获和渲染入口声明具体类型。读取观察记录继续支持对象、字典和字符串。启用两文件严格 mypy（禁 Any 三标志），源和测试基线分别 25 与 26 条诊断，最终 0。两文件 Ruff、全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_verification_map.py tests/test_work_checkpoint_flow.py::WorkCheckpointFlowTests::test_review_verification_map_uses_only_checks_after_latest_edit tests/test_work_checkpoint_flow.py::WorkCheckpointFlowTests::test_verification_map_failure_does_not_block_review --tb=short`，15 passed、2 failed、0 skipped，退出 1。基线单跑候选测试 15 passed。将 `e738b80e` 的映射模块加载进内存并单独复跑同两个 checkpoint 节点，两条仍在读取 `review.call_args.kwargs` 前失败，审查替身均未调用。后一个夹具已经替换整个渲染入口，因此该节点的失败发生于映射输出参与前。关联 Q026、Q042 的审查入口未调用现象，交给 Q090 继续定位，涉及上下文渲染调用时关联 Q088。
+- Q042C 完成。累计完成 76/342 批，完成批覆盖 139/1009 个生产文件，另有 17 批部分完成。下一批 Q043 为验证策略。

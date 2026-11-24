@@ -3886,10 +3886,12 @@
       "responsibility": "Verification candidate discovery and model-visible map",
       "files": ["codey/completion/verification_map.py"],
       "id": "Q042C",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/test_verification_map.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/completion/verification_map.py"],
+      "verified_files": ["codey/completion/verification_map.py"],
+      "tests": ["tests/test_verification_map.py", "tests/test_work_checkpoint_flow.py"],
+      "reviewed_support": ["tests/test_verification_map.py"],
+      "result": "Include the truncation notice in the character cap and type the map and render boundaries. All 15 direct tests, scoped strict Any, Ruff and production gates passed. Two checkpoint review call-site failures reproduce with the baseline renderer and are routed to Q090."
     },
     {
       "responsibility": "codey/completion: completion review and edit validation",
