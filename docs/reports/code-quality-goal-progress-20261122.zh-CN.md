@@ -1670,3 +1670,12 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 两个桌面与 CLI 审查对等用例在桌面入口的 reviewer 调用数均为 0。仅在内存加载 `ba53edd9` 版 `edit_scope.py` 后单独运行 `pytest.main(['-q', 'tests/test_desktop_cli_project_review_parity.py', '--tb=short'])`，同两条断言失败，退出 1。另用单用例 pytest 钩子观察到读取、写入、验证工具都成功，随后任务结束，未发生 reviewer 调用。生产调用或夹具选择的根因尚未确定，交由 Q090 项目审查流程批次，关联 Q026 服务边界。CLI 分支受桌面断言阻断，未执行。
 - 使用 `python -m mypy codey/completion/edit_scope.py tests/test_completion_scope_python_names.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 和 `ruff check` 检查同两文件。全生产 `python -m mypy codey --python-version 3.11`（763 文件）、`pyrefly check codey --python-version 3.11`（0 errors、35 suppressed、164 warnings 未展示）、`ty check codey --python-version 3.11` 与 `python -m tools.kernel_type_precision_gate` 均退出 0。
 - Q042 完成。累计完成 74/342 批，完成批覆盖 137/1009 个生产文件，另有 17 批部分完成。下一批 Q042B 为验证证据和完成证明。
+
+
+### Q042B 验证证据和完成证明
+
+- Q042 已提交 `ad3cfdf2`。完整检查 `verification.py` 和 `test_completion_verification.py`。在 `D:\codey` 执行 `python -m pytest -q tests/test_completion_verification.py tests/test_completion_proof_authority.py --tb=short`，基线 34 passed、18 subtests passed，退出 0。
+- 合并三种验证证据的工作区版本与指纹筛选，保留失败和环境错误的旧字段及现字段优先顺序。以 `CheckEvidence` 校验动态行。证明直接调用既有局限投影函数。分析引用按原顺序去重，签名接受调用方已有的命令与目录对迭代器。主测试使用具体 `ExecutionEvidence`，移除未使用的函数局部测试类。使用 `python -` 注入只含旧字段的证据，断言旧失败字段、旧环境字段、过期行过滤，以及现字段显式为空时的优先级，全部通过。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_completion_verification.py tests/test_completion_proof_authority.py tests/test_completion_engine.py tests/test_completion_projection_latest_observation_wins.py tests/test_p0_mixed_workflow.py::test_mixed_verification_requires_current_success_for_each_path tests/test_coldstart_contract_cleanup.py::CompletionEvidenceDirectTests --tb=short`，最终 48 passed、18 subtests passed，0 失败、错误或跳过，退出 0。冷启动与混合工作流只执行命名范围，其余跨区域用例按各自批次验证。
+- `python -m mypy codey/completion/verification.py tests/test_completion_verification.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 退出 0，基线分开执行生产文件 30 条、测试文件 101 条诊断，均包含 Any 或类型精度问题。两文件 Ruff、生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均通过。
+- Q042B 完成。累计完成 75/342 批，完成批覆盖 138/1009 个生产文件，另有 17 批部分完成。下一批 Q042C 为验证候选映射。

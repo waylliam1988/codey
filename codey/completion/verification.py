@@ -27,7 +27,7 @@ Three vocabularies live here:
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -330,55 +330,38 @@ def coding_verification_state(
 
 
 def _current_successful_checks(evidence: ExecutionEvidence) -> tuple[CheckEvidence, ...]:
-    return tuple(
-        item
-        for item in getattr(evidence, "successful_checks", ())
-        if _check_matches_current_workspace(evidence, item)
-    )
+    return _current_checks(evidence, "successful_checks")
 
 
 def _current_failed_checks(evidence: ExecutionEvidence) -> tuple[CheckEvidence, ...]:
-    rows = getattr(evidence, "failed_checks", None)
-    if rows is not None:
-        return tuple(
-            item
-            for item in rows
-            if _check_matches_current_workspace(evidence, item)
-        )
-    return tuple(
-        item
-        for item in getattr(evidence, "failed_checks_after_edit", ())
-        if _check_matches_current_workspace(evidence, item)
-    )
+    return _current_checks(evidence, "failed_checks", "failed_checks_after_edit")
 
 
 def _current_environment_failures(evidence: ExecutionEvidence) -> tuple[CheckEvidence, ...]:
-    rows = getattr(evidence, "environment_failures", None)
-    if rows is not None:
-        return tuple(
-            item
-            for item in rows
-            if _check_matches_current_workspace(evidence, item)
-        )
+    return _current_checks(evidence, "environment_failures", "environment_failures_after_edit")
+
+
+def _current_checks(
+    evidence: ExecutionEvidence,
+    attribute: str,
+    legacy_attribute: str = "",
+) -> tuple[CheckEvidence, ...]:
+    rows: object = getattr(evidence, attribute, None)
+    if rows is None and legacy_attribute:
+        rows = getattr(evidence, legacy_attribute, ())
+    if not isinstance(rows, Iterable):
+        return ()
+    current_revision: object = getattr(evidence, "workspace_revision", 0)
+    fingerprint: object = getattr(evidence, "workspace_fingerprint", "")
+    current_fingerprint = valid_workspace_fingerprint(fingerprint)
+    if not current_fingerprint:
+        return ()
     return tuple(
         item
-        for item in getattr(evidence, "environment_failures_after_edit", ())
-        if _check_matches_current_workspace(evidence, item)
-    )
-
-
-def _check_matches_current_workspace(
-    evidence: ExecutionEvidence,
-    item: CheckEvidence,
-) -> bool:
-    current_revision = getattr(evidence, "workspace_revision", 0)
-    current_fingerprint = valid_workspace_fingerprint(
-        getattr(evidence, "workspace_fingerprint", "")
-    )
-    return (
-        getattr(item, "workspace_revision", 0) == current_revision
-        and bool(current_fingerprint)
-        and getattr(item, "workspace_fingerprint", "") == current_fingerprint
+        for item in rows
+        if isinstance(item, CheckEvidence)
+        and item.workspace_revision == current_revision
+        and item.workspace_fingerprint == current_fingerprint
     )
 
 
@@ -447,7 +430,7 @@ def _analysis_run_cwd_digest(cwd: object, project: str | Path | None) -> str:
 
 def matching_analysis_run_refs(
     analysis_runs: object,
-    pairs: tuple[tuple[str, str], ...],
+    pairs: Iterable[tuple[str, str]],
     project: str | Path | None = None,
 ) -> tuple[str, ...]:
     """Latest analysis-run ref per decisive (command, cwd) pair.
@@ -460,7 +443,8 @@ def matching_analysis_run_refs(
     """
 
     wanted: dict[tuple[str, str], None] = {}
-    for command, cwd in dict.fromkeys(pairs or ()):
+    unique_pairs = {pair: None for pair in pairs or ()}
+    for command, cwd in unique_pairs:
         text = (command or "").strip()
         if not text:
             continue
@@ -590,15 +574,11 @@ def build_coding_completion_proof(
 
     if stop_reason != "done" or not task_changed or not files:
         return None
-    docs_only = all(is_document_path(item) for item in files)
-    if docs_only:
-        limitations: tuple[str, ...] = (LIMITATION_DOCS_ONLY_CHANGE,)
-    else:
-        limitations = coding_completion_limitations(
-            files=files,
-            provenance=provenance,
-            verification_forbidden=verification_forbidden,
-        )
+    limitations = coding_completion_limitations(
+        files=files,
+        provenance=provenance,
+        verification_forbidden=verification_forbidden,
+    )
     run_ref = safe_run_ref(run_id)
     revision_ref = workspace_revision_ref(project or "", workspace_revision)
     fingerprint_ref = workspace_fingerprint_ref(project or "", workspace_fingerprint)

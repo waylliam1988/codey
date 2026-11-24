@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from collections.abc import Iterable
 from pathlib import Path
 
 from codey.completion.contract import (
@@ -54,20 +55,29 @@ from codey.completion.verification import (
     repairable_failure_class,
     verification_provenance,
 )
+from codey.completion.verification_policy import VerificationCandidate
 from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.events import RunEvent
-from codey.runtime.observe.execution_evidence import ExecutionEvidence
+from codey.runtime.observe.execution_evidence import CheckEvidence, ExecutionEvidence
 from codey.toolchain.runtime import ToolOutcome
 
 FINGERPRINT = "sha256:" + ("1" * 64)
 OTHER_FINGERPRINT = "sha256:" + ("2" * 64)
 
 
-def _check(command: str, cwd: str = ".", **extra):
-    from codey.runtime.observe.execution_evidence import CheckEvidence
-
-    extra.setdefault("workspace_fingerprint", FINGERPRINT)
-    return CheckEvidence(command, cwd, **extra)
+def _check(
+    command: str,
+    cwd: str = ".",
+    *,
+    workspace_revision: int = 1,
+    workspace_fingerprint: str = FINGERPRINT,
+) -> CheckEvidence:
+    return CheckEvidence(
+        command,
+        cwd,
+        workspace_revision=workspace_revision,
+        workspace_fingerprint=workspace_fingerprint,
+    )
 
 
 # Commands used in these tests carry no filesystem operands, so any real
@@ -76,30 +86,25 @@ def _check(command: str, cwd: str = ".", **extra):
 _ROOT = Path(tempfile.gettempdir())
 
 
-def _selected():
-    from codey.completion.verification_policy import VerificationCandidate
-
+def _selected() -> VerificationCandidate:
     return VerificationCandidate("pytest -q", ".", "successful run")
 
 
-class _StubEvidence:
-    """Minimal stand-in exposing only the facts the proof projection reads."""
+class _FixtureEvidence(ExecutionEvidence):
+    """Execution evidence with fixed check rows for projection tests."""
 
     def __init__(
         self,
-        successful=(),
-        failed=(),
-        environment_failures=(),
+        successful: Iterable[CheckEvidence] = (),
+        failed: Iterable[CheckEvidence] = (),
         observed_tool_events: int = 0,
         workspace_revision: int = 1,
         workspace_fingerprint: str = FINGERPRINT,
     ) -> None:
-        self.successful_checks = list(successful)
-        self.failed_checks_after_edit = list(failed)
-        self.environment_failures_after_edit = list(environment_failures)
+        super().__init__(workspace_revision=workspace_revision, workspace_fingerprint=workspace_fingerprint)
+        self.checks_after_edit.extend(successful)
+        self.failed_checks_after_edit.extend(failed)
         self.observed_tool_events = observed_tool_events
-        self.workspace_revision = workspace_revision
-        self.workspace_fingerprint = workspace_fingerprint
 
 
 class TriStateTests(unittest.TestCase):
@@ -111,7 +116,7 @@ class TriStateTests(unittest.TestCase):
         self.assertEqual(
             coding_verification_state(
                 selected,
-                _StubEvidence(observed_tool_events=7),
+                _FixtureEvidence(observed_tool_events=7),
                 files,
                 root=_ROOT,
             ),
@@ -120,7 +125,7 @@ class TriStateTests(unittest.TestCase):
         self.assertEqual(
             coding_verification_state(
                 None,
-                _StubEvidence(observed_tool_events=7),
+                _FixtureEvidence(observed_tool_events=7),
                 files,
                 root=_ROOT,
             ),
@@ -130,7 +135,7 @@ class TriStateTests(unittest.TestCase):
         self.assertEqual(
             coding_verification_state(
                 selected,
-                _StubEvidence(successful=[_check("pytest -q")], observed_tool_events=3),
+                _FixtureEvidence(successful=[_check("pytest -q")], observed_tool_events=3),
                 files,
                 root=_ROOT,
             ),
@@ -140,7 +145,7 @@ class TriStateTests(unittest.TestCase):
         self.assertEqual(
             coding_verification_state(
                 selected,
-                _StubEvidence(
+                _FixtureEvidence(
                     successful=[_check("ruff check .")],
                     failed=[_check("pytest -q")],
                     observed_tool_events=4,
@@ -158,15 +163,15 @@ class TriStateTests(unittest.TestCase):
             workspace_revision=1,
             workspace_fingerprint=FINGERPRINT,
         )
-        args = {"path": ".", "command": "pytest -q"}
+        call = ToolCall("run", {"path": ".", "command": "pytest -q"})
         evidence.record(RunEvent.tool_finished(
             1,
-            ToolCall("run", args),
+            call,
             ToolOutcome("ok", True, exit_code=0),
         ))
         evidence.record(RunEvent.tool_finished(
             2,
-            ToolCall("run", args),
+            call,
             ToolOutcome.error("command timed out", error_code="timeout"),
         ))
 
@@ -186,10 +191,9 @@ class TriStateTests(unittest.TestCase):
             workspace_revision=1,
             workspace_fingerprint=FINGERPRINT,
         )
-        args = {"path": ".", "command": "pytest -q"}
         evidence.record(RunEvent.tool_finished(
             1,
-            ToolCall("run", args),
+            ToolCall("run", {"path": ".", "command": "pytest -q"}),
             ToolOutcome.error("command timed out", error_code="timeout"),
         ))
 
@@ -219,7 +223,7 @@ class TriStateTests(unittest.TestCase):
     def test_stale_workspace_revision_green_cannot_back_current_proof(self) -> None:
         selected = _selected()
         files = ("src/mod.py",)
-        evidence = _StubEvidence(
+        evidence = _FixtureEvidence(
             successful=[_check("pytest -q", workspace_revision=1)],
             workspace_revision=2,
             observed_tool_events=1,
@@ -258,7 +262,7 @@ class TriStateTests(unittest.TestCase):
     def test_stale_workspace_fingerprint_green_cannot_back_current_proof(self) -> None:
         selected = _selected()
         files = ("src/mod.py",)
-        evidence = _StubEvidence(
+        evidence = _FixtureEvidence(
             successful=[_check("pytest -q", workspace_fingerprint=FINGERPRINT)],
             workspace_revision=1,
             workspace_fingerprint=OTHER_FINGERPRINT,
@@ -299,7 +303,7 @@ class TriStateTests(unittest.TestCase):
     def test_proof_only_cites_decisive_commands_not_every_executed_one(self) -> None:
         files = ("src/mod.py",)
         selected = _selected()
-        evidence = _StubEvidence(
+        evidence = _FixtureEvidence(
             successful=[
                 _check("ruff check ."),
                 _check("pytest -q"),
@@ -316,7 +320,7 @@ class TriStateTests(unittest.TestCase):
         )
         self.assertEqual(pairs, (("pytest -q", "."),))
 
-        failing = _StubEvidence(
+        failing = _FixtureEvidence(
             successful=[_check("ruff check .")],
             failed=[_check("pytest -q")],
             observed_tool_events=5,
@@ -472,18 +476,8 @@ class ProofTests(unittest.TestCase):
     def test_fresh_fail_proof_cites_the_failed_command_analysis_run(self) -> None:
         from codey.research.identity import path_ref
 
-        class _SinkTrace:
-            def __init__(self) -> None:
-                self.proofs: list[dict] = []
-
-            def record_completion_proof(self, payload) -> None:
-                self.proofs.append(payload)
-
-            def flush(self) -> None:
-                return None
-
         project = "E:/repo"
-        evidence = _StubEvidence(
+        evidence = _FixtureEvidence(
             successful=[_check("ruff check .", "packages/a")],
             failed=[_check("pytest -q")],
             observed_tool_events=5,
@@ -524,7 +518,8 @@ class ProofTests(unittest.TestCase):
         payload = proof.to_payload()
         self.assertEqual(payload["status"], COMPLETION_FAILED)
         self.assertEqual(payload["blocked_reason"], "relevant_verification_failed")
-        self.assertEqual(payload["analysis_run_refs"], ["analysis_run:" + "b" * 16])
+        expected_refs: list[str] = ["analysis_run:" + "b" * 16]
+        self.assertEqual(payload["analysis_run_refs"], expected_refs)
 
     def test_fresh_pass_is_clean_complete(self) -> None:
         provenance = verification_provenance(
@@ -645,25 +640,24 @@ class ProofTests(unittest.TestCase):
             local_state=VERIFICATION_FRESH_PASS,
             checkpoint_green=False,
         )
-        for kwargs in (
-            {"stop_reason": "max_turns"},
-            {"stop_reason": "done", "task_changed": False},
-            {"stop_reason": "done", "task_changed": True, "files": ()},
-        ):
-            params = {
-                "run_id": "run-x",
-                "task_changed": True,
-                "files": ("src/mod.py",),
-                "selected_check_present": True,
-                "provenance": provenance,
-                **kwargs,
-            }
-            if "files" in kwargs and kwargs["files"] == ():
-                params["selected_check_present"] = False
-            self.assertIsNone(build_coding_completion_proof(**params))
+        cases: tuple[tuple[str, bool, tuple[str, ...]], ...] = (
+            ("max_turns", True, ("src/mod.py",)),
+            ("done", False, ("src/mod.py",)),
+            ("done", True, ()),
+        )
+        for stop_reason, task_changed, files in cases:
+            proof = build_coding_completion_proof(
+                run_id="run-x",
+                stop_reason=stop_reason,
+                task_changed=task_changed,
+                files=files,
+                selected_check_present=bool(files),
+                provenance=provenance,
+            )
+            self.assertIsNone(proof)
 
     def test_decisive_failure_fact_returns_first_covering_failure(self) -> None:
-        evidence = _StubEvidence(
+        evidence = _FixtureEvidence(
             failed=[_check("ruff check ."), _check("pytest -q")],
         )
         decisive = decisive_failure_fact(_selected(), evidence, ("src/mod.py",), root=_ROOT)
@@ -831,16 +825,16 @@ class FailureClassTests(unittest.TestCase):
         self.assertEqual(unmatched.signature, "")
 
     def test_environment_vocabulary_is_closed_and_case_insensitive(self) -> None:
-        self.assertEqual(
-            ENVIRONMENT_FAILURE_REASON_CODES,
-            {
+        expected_reason_codes = frozenset(
+            (
                 "missing_python_dependency",
                 "missing_executable_or_module",
                 "unresolvable_package",
                 "network_unavailable",
                 "test_infrastructure_crash",
-            },
+            )
         )
+        self.assertEqual(ENVIRONMENT_FAILURE_REASON_CODES, expected_reason_codes)
         prefixes = {
             prefix
             for group in ENVIRONMENT_FAILURE_SIGNATURES
