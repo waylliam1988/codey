@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import MappingProxyType
+
 import pytest
 
 
@@ -27,8 +29,10 @@ def test_catalog_from_frozen_specs_renders_namespaced_declarations() -> None:
     assert "// read_file.path: Workspace-relative file." in declarations
     assert "codemode" not in declarations
 
-    with pytest.raises(TypeError):
-        snapshot.entries[0].parameters["properties"]["path"]["type"] = "integer"  # type: ignore[index]
+    properties = snapshot.entries[0].parameters["properties"]
+    assert isinstance(properties, MappingProxyType)
+    path: object = properties["path"]
+    assert isinstance(path, MappingProxyType)
 
 
 def test_host_bridge_assigns_stable_child_ids_and_rejects_recursion() -> None:
@@ -51,3 +55,20 @@ def test_host_bridge_assigns_stable_child_ids_and_rejects_recursion() -> None:
     assert received[0].call_id == "cm-7:child:0"
     with pytest.raises(ValueError, match="recursive"):
         host.invoke("codemode", {})
+
+
+def test_host_rejects_two_frozen_contracts_for_the_same_name() -> None:
+    from codey.codemode.host import CodeModeHost
+    from codey.codemode.types import ToolCatalogEntry
+    from codey.runtime.core.models import ToolResult
+
+    catalog = (
+        ToolCatalogEntry("read_file", "Text result", output_schema={"type": "string"}),
+        ToolCatalogEntry("read_file", "Numeric result", output_schema={"type": "integer"}),
+    )
+    with pytest.raises(ValueError, match="duplicate catalog tool: read_file"):
+        CodeModeHost(
+            execution_id="duplicate",
+            catalog=catalog,
+            execute=lambda call: ToolResult(ok=True, call=call, model_text="read"),
+        )

@@ -3688,10 +3688,12 @@
       "id": "Q035C",
       "responsibility": "Code Mode tool admission and result handling in the host",
       "files": ["codey/codemode/host.py"],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/test_codemode_host.py", "tests/test_codemode_production_boundaries.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/codemode/host.py"],
+      "verified_files": ["codey/codemode/host.py"],
+      "tests": ["tests/test_codemode_host.py", "tests/test_codemode_production_boundaries.py", "tests/test_read_result_contract.py", "tests/test_browser_execution_defaults.py"],
+      "reviewed_support": ["tests/test_codemode_host.py"],
+      "result": "Reject ambiguous duplicate frozen tool definitions. Forty-six checks passed. Two research handoff failures also reproduce against the original host and were routed to Q084. Scoped strict Any and Ruff and all production gates passed."
     },
     {
       "id": "Q035D",
@@ -4405,6 +4407,7 @@
       "verified_files": [],
       "candidate_test_count": 33,
       "followups": [
+        "Q035C: two baseline failures in test_browser_execution_defaults.py. Check whether the declared navigation should read before snapshotting and whether the current document is gated by original fill and click receipts before suggesting the declared wait. Both failures reproduce with the original Code Mode host and do not invoke it.",
         "External concurrent addition: browser_result_evidence.py. Pending whole-file review and Any audit; Q084 expands from 8 to 9 closely related browser completion/followup files. Not edited or committed by this governance batch.",
         "Q014C dependency test_release_control.py::test_browser_session_survives_service_replacement_but_bootstrap_does_not failed at snapshot/read_runtime before authentication: published descriptor has 876 files versus actual 877; missing codey/operations/browser_result_evidence.py (existing commit 1292e668). q014c-runtime-inventory.json. Q014C changes only typed auth tests; preserve rejection and refresh generated inventory via normal publisher when validating release/runtime scope. Runtime read_runtime explicit Any remains at Q078; diagnostic-path inspection is not whole-file governance."
       ]

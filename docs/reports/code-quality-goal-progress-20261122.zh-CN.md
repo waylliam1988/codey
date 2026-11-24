@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q035，接续 Q035C。Q031D 的回调签名、Q030C 的研究调用方和 Q033 的上层实验场景仍有后续事项。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q035C，接续 Q035D。开放事项保存在治理队列。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1544,3 +1544,12 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 状态修复已提交 `2bf9a372`。四项失败把现行动态版本选择写成固定的 17，生产 `_current_input_version` 与 `snapshot_description` 的契约是保留本次冻结版本。测试现在断言序列化版本等于冻结的 `input_contract_version`，保留来源 URL、整个快照相等与工具参数的断言。第五项测试本来要验证版本 11 拒绝现代工具合同文本，但旧夹具把新版 payload 强行改标为 11，仍有 18 到 20 引入的字段，先被 `_snapshot_payload` 的字段集合检查拒绝。现在把现代 `contract_text` 放入真实的版本 11 payload，保留原错误消息断言。未改变生产导航。
 - `python -m pytest -q tests/test_task_navigation_selector.py::test_direct_selector_freezes_the_exact_source_and_preserves_other_navigation tests/test_task_navigation_selector.py::test_legacy_request_keeps_url_contract_and_new_request_cannot_change_its_presentation --tb=short` 同五个失败用例复核 5 passed，退出 0。该测试文件的 mypy 严格 Any 和 Ruff 均退出 0。Q035 最终去重 110 项通过，7 deselected，0 skip。生产 mypy 763 文件，Pyrefly 0 errors（35 suppressed、165 warnings 未展示）。
 - Q035 完成。累计完成 60/336 批，覆盖 119/1009 个生产文件。下一批 Q035C 为工具宿主的准入和结果处理。
+
+
+### Q035C Code Mode 工具宿主
+
+- Q035 的导航测试已提交 `5a2523e1`。完整检查 `host.py` 和 `tests/test_codemode_host.py`。冻结目录依赖工具名和单一结果 schema 的对应关系，生产 `build_catalog_snapshot` 已拒绝重复名字。通过直接构造宿主传入两个同名 `read_file` 条目，旧宿主静默选用了最后一个。`python -m pytest -q tests/test_codemode_host.py --tb=short` 修改前 1 failed、2 passed，退出 1。宿主构造现在明确拒绝重复，原授权检查仍生效。
+- 移除只写不读的私有 `_allow_writes`。核对仓库引用、文档、打包入口和如下调用方，未发现依赖该存储的路径。宿主测试直接验证两层参数映射是 `MappingProxyType`，覆盖原来的不可变性契约并移除未类型化索引。
+- 在 `D:\codey` 运行 `python -m pytest -q tests/test_codemode_host.py tests/test_codemode_production_boundaries.py tests/test_read_result_contract.py tests/test_browser_execution_defaults.py --tb=short`，46 passed、2 failed，0 skip，退出 1。用 `git show HEAD:codey/codemode/host.py` 在原进程中加载未修改宿主后，单独复现 `test_research_declared_navigation_precedes_read_and_controls` 与 `test_reloaded_document_does_not_inherit_old_fill_and_click_progress`，2 failed，退出 1。前者比较导航、读取和快照顺序，后者核对重载后等待指导。两条用例未调用宿主，登记到 Q084 审核浏览器交接契约。
+- 最终 `python -m pytest -q tests/test_codemode_host.py tests/test_codemode_production_boundaries.py --tb=short` 9 passed，退出 0，计入上述 46 个已过用例而不重复累计。两文件 mypy 严格 Any 和 Ruff、生产 mypy（763 文件）、Pyrefly（0 errors、35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q035C 完成。累计完成 61/336 批，覆盖 120/1009 个生产文件。下一批 Q035D 为持久化重放。

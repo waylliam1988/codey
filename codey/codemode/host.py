@@ -84,8 +84,11 @@ class CodeModeHost:
             or entry.namespace == "task_control" and entry.grant == "control"
         ) for entry in catalog):
             raise ValueError("CodeMode only permits authorized project actions and browser actions")
-        self._allow_writes = bool(allow_writes)
-        self._catalog = {entry.name: entry for entry in catalog}
+        self._catalog: dict[str, ToolCatalogEntry] = {}
+        for entry in catalog:
+            if entry.name in self._catalog:
+                raise ValueError(f"duplicate catalog tool: {entry.name}")
+            self._catalog[entry.name] = entry
         self._execute = execute
         self._replay = replay
         self._task_navigation_url = task_navigation_url
