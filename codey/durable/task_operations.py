@@ -12,6 +12,7 @@ from codey.durable.model import (
     EXECUTION_STATE_KEYS,
     CommitResult,
     DurableMutation,
+    EffectRecord,
     EntryDraft,
     SubmissionStatus,
     SubmissionUpdate,
@@ -25,6 +26,21 @@ from codey.durable.process import process_is_alive as _process_is_alive
 from codey.durable.task_state import release_attempt_state
 from codey.durable.workflow import WorkflowDefinition, workflow_digest
 from codey.types.json_value import canonical_json_object
+from codey.utils.object_fields import mapping_fields, object_fields
+
+
+def _checked_pending_effect_ids(
+    task: TaskCheckpoint, effects: tuple[EffectRecord, ...],
+) -> list[str]:
+    raw_ids = task.state.get("pending_effect_ids", ())
+    if not isinstance(raw_ids, tuple):
+        raise CommitConflict("task checkpoint and pending effects disagree")
+    values: tuple[object, ...] = raw_ids
+    pending_ids = [effect_id for effect_id in values if isinstance(effect_id, str)]
+    unsettled = {effect.effect_id for effect in effects if effect.settlement is None}
+    if len(pending_ids) != len(values) or set(pending_ids) != unsettled:
+        raise CommitConflict("task checkpoint and pending effects disagree")
+    return pending_ids
 
 
 class TaskLifecycleOperations(SessionOperations):
@@ -152,13 +168,11 @@ class TaskLifecycleOperations(SessionOperations):
     ) -> CommitResult:
         current = self._kernel.store.task(task_id)
         state = thaw_json(current.state)
-        if not isinstance(state, dict):
+        if not object_fields(state):
             raise TypeError("task checkpoint state must be a JSON object")
         existing = state.get(key)
         if existing is not None:
-            if not isinstance(existing, Mapping) or dict(existing) != dict(value):
-                from codey.durable.errors import CommitConflict
-
+            if not mapping_fields(existing) or dict(existing) != dict(value):
                 raise CommitConflict(conflict_message)
             return CommitResult(current.revision, 0)
         state[key] = dict(value)
@@ -396,10 +410,7 @@ class TaskLifecycleOperations(SessionOperations):
         self, current: TaskCheckpoint, *, state: Mapping[str, object], reason: str,
     ) -> CommitResult:
         _head, revision = self._kernel.store.head(current.conversation_id)
-        pending = tuple(effect for effect in self._kernel.store.effects_for_task(current.task_id) if effect.settlement is None)
-        pending_ids = current.state.get("pending_effect_ids", ())
-        if not isinstance(pending_ids, tuple) or {effect.effect_id for effect in pending} != set(pending_ids):
-            raise CommitConflict("task checkpoint and pending effects disagree")
+        _checked_pending_effect_ids(current, self._kernel.store.effects_for_task(current.task_id))
         next_task = replace(
             current,
             phase="cancelled",
@@ -544,29 +555,28 @@ class TaskLifecycleOperations(SessionOperations):
             )
         if join_policy not in {"failFast", "allSettled"}:
             raise ValueError("unknown task join policy")
-        dependencies = current.waiting_on if on is None else tuple(dict.fromkeys(on))
+        dependencies = current.waiting_on if on is None else tuple({dependency: None for dependency in on})
         if task_id in dependencies:
             raise CommitConflict("a task cannot wait on itself")
         known = {task.task_id: task for task in self._kernel.store.tasks()}
+        visited: set[str] = set()
         for dependency in dependencies:
             if dependency not in known:
                 raise CommitConflict(f"unknown waiting task: {dependency}")
-            cursor = known[dependency]
-            walked: set[str] = set()
-            while cursor.waiting_on:
-                if cursor.task_id in walked:
-                    break
-                walked.add(cursor.task_id)
-                if task_id in cursor.waiting_on:
+            pending = [dependency]
+            while pending:
+                dependency_id = pending.pop()
+                if dependency_id == task_id:
                     raise CommitConflict("task wait cycle")
-                next_id = cursor.waiting_on[0]
-                next_cursor = known.get(next_id)
-                if next_cursor is None:
-                    break
-                cursor = next_cursor
+                if dependency_id in visited:
+                    continue
+                visited.add(dependency_id)
+                cursor = known.get(dependency_id)
+                if cursor is not None:
+                    pending.extend(cursor.waiting_on)
         question = current.state.get("question")
         answered = (state is not None and state.get("stop_reason") == "question"
-                    and isinstance(question, Mapping) and question.get("state") == "answered")
+                    and mapping_fields(question) and question.get("state") == "answered")
         _head, revision = self._kernel.store.head(current.conversation_id)
         next_task = replace(
             current,
@@ -682,7 +692,7 @@ class TaskLifecycleOperations(SessionOperations):
         """Finish held outcomes and cancellation intents after owned work drains."""
         if task_ids is None:
             task_ids = self._kernel.store.finalization_queue()
-        unique_ids = tuple(dict.fromkeys(task_ids))
+        unique_ids = tuple({task_id: None for task_id in task_ids})
         for task_id in unique_ids:
             self.reconcile_waiting_tasks(task_id)
         selected: list[TaskCheckpoint] = []
@@ -709,7 +719,7 @@ class TaskLifecycleOperations(SessionOperations):
                     continue
                 answer = task.state.get("completion_answer")
                 completion_state = task.state.get("completion_state", {})
-                if isinstance(answer, str) and isinstance(completion_state, Mapping):
+                if isinstance(answer, str) and mapping_fields(completion_state):
                     self.finish_task(task.task_id, answer, state=completion_state)
 
     @operation_line
@@ -733,19 +743,17 @@ class TaskLifecycleOperations(SessionOperations):
                 self.request_cancel(child.task_id, reason="owner failed")
             return self._hold_completion(task_id, "", {**dict(current.state), **dict(state), "failure_pending": reason})
         _head, revision = self._kernel.store.head(current.conversation_id)
-        pending = tuple(effect for effect in self._kernel.store.effects_for_task(task_id) if effect.settlement is None)
+        effects = self._kernel.store.effects_for_task(task_id)
         for key in ("operation", "delivery_batches", "pending_effect_ids", "approvals"):
             if key in state and thaw_json(state[key]) != thaw_json(current.state.get(key)):
                 raise CommitConflict(f"task failure cannot replace authoritative {key}")
-        pending_ids = current.state.get("pending_effect_ids", ())
-        if not isinstance(pending_ids, tuple) or {effect.effect_id for effect in pending} != set(pending_ids):
-            raise CommitConflict("task checkpoint and pending effects disagree")
+        pending_ids = _checked_pending_effect_ids(current, effects)
         next_task = replace(
             current,
             phase="failed",
             revision=current.revision + 1,
             state=release_attempt_state({**dict(current.state), **dict(state), "failure_reason": reason,
-                                          "pending_effect_ids": list(pending_ids)}),
+                                          "pending_effect_ids": pending_ids}),
             status=TaskStatus.FAILED,
         )
         submission = self._kernel.store.submission(current.submission_id)

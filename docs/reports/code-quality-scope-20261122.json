@@ -4199,10 +4199,11 @@
       "responsibility": "Task checkpoints, ownership and attempt transitions",
       "files": ["codey/durable/task_state.py", "codey/durable/task_operations.py"],
       "id": "Q054D",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/durable/test_task_ownership_and_finalization.py", "tests/durable/test_execution_fencing.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/task_state.py", "codey/durable/task_operations.py"],
+      "verified_files": ["codey/durable/task_state.py", "codey/durable/task_operations.py"],
+      "tests": ["tests/durable/test_task_ownership_and_finalization.py", "tests/durable/test_execution_fencing.py", "tests/durable/test_task_authority.py", "tests/durable/test_atomic_task_failure.py", "tests/durable/test_waiting_reverse_index.py", "tests/durable/test_scheduler.py", "tests/durable/test_scheduler_wakeup_races.py", "tests/durable/test_suspension.py"],
+      "result": "Rejected cycles through all wait dependencies and consolidated terminal checkpoint effect validation. Corrected a stale SQLite fault injection in a separate commit. 85 targeted tests and all type gates passed."
     },
     {
       "responsibility": "Durable tool-task input and identity",

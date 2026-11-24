@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import DurableSession, SQLiteDurableStore, TaskStatus
+from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore, TaskStatus
+from codey.durable.errors import CommitConflict
 
 
 def _admit(
@@ -83,6 +84,29 @@ def test_fail_fast_waiting_parent_fails_when_child_fails(tmp_path: Path) -> None
         session.reconcile_waiting_tasks()
         assert session.task("parent").status == TaskStatus.FAILED
         assert session.store.submission(session.task("parent").submission_id).reason == "child failed"
+    finally:
+        session.close()
+
+
+@pytest.mark.parametrize("backend", ["memory", "sqlite"])
+def test_wait_rejects_a_cycle_through_a_later_dependency(tmp_path: Path, backend: str) -> None:
+    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    session = DurableSession(store)
+    try:
+        for task_id in ("target", "root", "leaf", "middle"):
+            _admit(session, task_id, f"request-{task_id}")
+        session.wait_task("middle", on=("target", "leaf"))
+        session.wait_task("root", on=("leaf", "middle"))
+        before = session.task("target")
+        sequence = session.commit_sequence()
+
+        with pytest.raises(CommitConflict, match="task wait cycle"):
+            session.wait_task("target", on=("root",))
+
+        assert session.task("target") == before
+        assert session.commit_sequence() == sequence
+        session.wait_task("target", on=("leaf",))
+        assert session.task("target").waiting_on == ("leaf",)
     finally:
         session.close()
 
