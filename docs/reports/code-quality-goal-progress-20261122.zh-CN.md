@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q037C，接续 Q038。开放事项保存在治理队列。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q038，接续 Q039。开放事项保存在治理队列。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1613,3 +1613,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 会话启动修复已提交 `4de14ff3`。Node 输出协议要求 UTF-8 JSONL，旧 reader 对无法解码的字节和超过解码器深度的 JSON 静默丢失读线程，调用方误报 `timeout`。`python -m pytest -q tests/test_codemode_worker_output_protocol.py --tb=short` 修改前 2 failed、2 个未处理线程异常警告，退出 1。用临时 Node 脚本发送两种隔离输出，修复后同样输入进入已有 `protocol` 错误通道，读线程正常结束。
 - 最终在 `D:\codey` 运行 `python -m pytest -q tests/test_codemode_worker_output_protocol.py tests/test_codemode_session_thread_start.py tests/test_codemode_runtime.py tests/test_codemode_discovery_session.py tests/test_codemode_replay_authority.py --tb=short`，68 passed，0 skip，退出 0。三文件严格 Any 与 Ruff、生产 mypy、Pyrefly、ty、kernel_type_precision_gate 均退出 0。现有 `test_runtime_fingerprint_ignores_location_but_binds_engine_and_worker` 已实际验证单加 `// changed contract` 会改变指纹。Q035E 保留独立的兼容性和类型治理待办。
 - Q037C 完成。累计完成 67/338 批，覆盖 129/1009 个生产文件。下一批 Q038 为结果外部化。
+
+
+### Q038 Code Mode 结果外部化
+
+- Q037C 的协议修复已提交 `3c5f1f5e`。完整检查 `output.py` 与新增回归。执行器通过 `ToolResult` 表达不能交付的结果。当输出超过内联限制、实际 managed store 的状态路径是普通文件时，旧实现从写入路径泄漏 OSError。`python -m pytest -q tests/test_codemode_output_storage_failure.py --tb=short` 修改前 1 failed，退出 1，实际为 FileExistsError。将底层写入失败映射到现有的无效结果错误通道。回归验证返回失败结果和明确的存储诊断。
+- 用只包含写入方法和引用序列化方法的结构化协议替代 Any，保留了对无效引用的运行时校验。合法小结果仍内联，已有独立测试验证成功的外部引用。
+- 在 `D:\codey` 运行 `python -m pytest -q tests/test_codemode_output_storage_failure.py tests/test_codemode_production_boundaries.py tests/test_read_result_contract.py --tb=short`，25 passed，0 skip，退出 0。两文件 mypy 严格 Any 和 Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q038 完成。累计完成 68/338 批，覆盖 130/1009 个生产文件。下一批 Q039 为完成检查包入口。

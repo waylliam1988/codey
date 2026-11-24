@@ -3791,10 +3791,12 @@
         "codey/codemode/output.py"
       ],
       "id": "Q038",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 1
+      "status": "completed_changed",
+      "reviewed_files": ["codey/codemode/output.py"],
+      "verified_files": ["codey/codemode/output.py"],
+      "tests": ["tests/test_codemode_output_storage_failure.py", "tests/test_codemode_production_boundaries.py", "tests/test_read_result_contract.py"],
+      "reviewed_support": ["tests/test_codemode_output_storage_failure.py"],
+      "result": "Unwritable managed artifact redelivers a structured failed tool result. Type the store and reference boundaries. 25 tests passed, as did scoped strict Any, Ruff and all production gates."
     },
     {
       "responsibility": "codey/completion: package entry and composition",

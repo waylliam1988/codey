@@ -1,13 +1,24 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Protocol, runtime_checkable
+
+
+class _ArtifactStore(Protocol):
+    def write_json_artifact(
+        self, *, session_id: str, run_id: str, payload: object, schema_version: int,
+    ) -> object: ...
+
+
+@runtime_checkable
+class _ArtifactReference(Protocol):
+    def to_payload(self) -> object: ...
 
 
 def externalize_value(
     value: object,
     *,
-    store: Any,
+    store: _ArtifactStore | None,
     session_id: str,
     run_id: str,
     max_inline_bytes: int,
@@ -17,13 +28,13 @@ def externalize_value(
         return value
     if store is None:
         raise ValueError("large CodeMode output requires an artifact store")
-    ref = store.write_json_artifact(
-        session_id=session_id,
-        run_id=run_id,
-        payload=value,
-        schema_version=1,
-    )
-    to_payload = getattr(ref, "to_payload", None)
+    try:
+        ref = store.write_json_artifact(session_id=session_id, run_id=run_id, payload=value, schema_version=1)
+    except OSError as exc:
+        raise ValueError(f"CodeMode output could not be stored: {exc}") from exc
+    if not isinstance(ref, _ArtifactReference):
+        raise ValueError("artifact store returned an invalid reference")
+    to_payload = ref.to_payload
     if not callable(to_payload):
         raise ValueError("artifact store returned an invalid reference")
     return {"artifact": to_payload()}
