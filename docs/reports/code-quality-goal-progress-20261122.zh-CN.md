@@ -1728,3 +1728,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 源与回归的 mypy 严格 Any 和 Ruff，以及全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty、kernel_type_precision_gate 均通过。
 - 补记 Q045 扩展运行结局。该进程在候选验证读 durable 任务历史时触发 Windows access violation，退出 1。此前已有两条失败标志，进程没有生成 pytest 汇总，完整范围仍待 Q090/Q091 复核。
 - Q047 完成。累计完成 80/345 批，完成批覆盖 143/1009 个生产文件，另有 18 批部分完成。下一批 Q047B 为 HTTP 客户端与启动协调。
+
+
+### Q047B HTTP 控制客户端与启动协调
+
+- Q047 已提交 `dbffaefe`。完整检查 `control/client.py` 和新增回归。服务端成功响应要求 `result` 对象，客户端对无法确认的响应已有 `OUTCOME_UNKNOWN` 约定。`python -m pytest -q tests/test_control_client_response_contract.py --tb=short` 修改前 2 failed，退出 1。缺失 `result` 抛 KeyError，`null` 抛 TypeError。现在两者都通过 `ControlError` 报告结果未知，同样输入回归通过。
+- 校验 HTTP 响应边界，保留合法成功结果和服务错误字段。为启动协调对象声明具体结构，沿用 launcher 现有的 Windows 进程标志条件导入方式。源与回归严格 mypy 从 87 条源诊断到 0，Ruff 及全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty、kernel_type_precision_gate 均退出 0。
+- 在 `D:\codey` 运行 `python -m pytest -q tests/test_control_service_startup.py --tb=short` 的旧描述符基线为 12 passed、3 failed，三条在读取运行时清单时失败。临时刷新描述符后执行 `python -m pytest -q tests/test_control_client_response_contract.py tests/test_control_cli_generation_input.py tests/test_control_service_startup.py tests/test_desktop_http_listener_lifecycle.py tests/test_external_control.py::test_visible_creation_and_original_receipt_are_idempotent tests/test_external_control.py::test_wait_timeout_is_observation_not_cancellation tests/test_external_control.py::test_project_scope_and_operator_capabilities --tb=short`，24 passed、0 失败或跳过、退出 0。描述符已恢复原字节。外部控制套件只执行列出的三个节点。
+- Q047B 完成。累计完成 81/345 批，完成批覆盖 144/1009 个生产文件，另有 18 批部分完成。下一批 Q047C 为 MCP stdio 适配器。

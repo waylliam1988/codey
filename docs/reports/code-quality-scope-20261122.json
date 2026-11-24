@@ -3962,10 +3962,12 @@
       "responsibility": "Local HTTP control client and launcher coordination",
       "files": ["codey/control/client.py"],
       "id": "Q047B",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/test_control_service_startup.py", "tests/test_desktop_http_listener_lifecycle.py", "tests/test_external_control.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/control/client.py"],
+      "verified_files": ["codey/control/client.py"],
+      "tests": ["tests/test_control_client_response_contract.py", "tests/test_control_cli_generation_input.py", "tests/test_control_service_startup.py", "tests/test_desktop_http_listener_lifecycle.py", "tests/test_external_control.py"],
+      "reviewed_support": ["tests/test_control_client_response_contract.py"],
+      "result": "Map missing result objects to an unknown outcome and type HTTP and launcher boundaries. 24 scoped tests passed with the temporary descriptor refresh, and strict Any, Ruff and production gates passed."
     },
     {
       "responsibility": "MCP stdio server adapter",

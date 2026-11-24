@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
 import uuid
+from dataclasses import dataclass
+from http.client import HTTPResponse
 from pathlib import Path
-from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from codey.control.protocol import MAX_FRAME_BYTES, PROTOCOL_VERSION, ControlError, fingerprint, validate_command
@@ -33,11 +32,12 @@ from codey.launcher.startup import startup_stage
 from codey.storage.file_lock import acquire_lease
 from codey.storage.local_store import DEFAULT_STATE_HOME, read_json_strict, write_json_atomic
 from codey.types.json_value import require_json_string
+from codey.utils.object_fields import object_fields
 
-if os.name == "nt" or TYPE_CHECKING:
-    # CREATE_NO_WINDOW is a Windows-only subprocess constant and is absent
-    # from Linux typeshed.
-    _windows_subprocess: Any = subprocess
+if sys.platform == "win32":
+    from subprocess import CREATE_NO_WINDOW
+else:
+    CREATE_NO_WINDOW = 0
 
 
 class ControlClient:
@@ -45,7 +45,7 @@ class ControlClient:
         self.home = home.expanduser().resolve()
         self.operator = operator
 
-    def discover(self) -> dict[str, Any]:
+    def discover(self) -> dict[str, object]:
         info = read_json_strict(self.home / "service.json", max_bytes=8192)
         if info is None:
             raise ControlError("NOT_FOUND", "Codey service is not running; start codey serve or codey ui")
@@ -56,49 +56,69 @@ class ControlClient:
             raise ControlError("PROTOCOL_MISMATCH", "Codey service protocol is incompatible")
         return info
 
-    def _request(self, operation: str, params: dict[str, Any], *, lifecycle: bool = False,
-                 timeout: float = 15) -> dict[str, Any]:
+    def _request(self, operation: str, params: dict[str, object], *, lifecycle: bool = False,
+                 timeout: float = 15) -> dict[str, object]:
         info = self.discover()
+        url = require_json_string(info.get("url"), "service URL")
+        instance_id = require_json_string(info.get("instance_id"), "service instance ID")
         secret = read_json_strict(self.home / "control-credentials.json", max_bytes=8192)
         if secret is None:
             raise ControlError("UNAUTHORIZED", "Local control credentials are unavailable")
         credential = require_json_string(secret["operator" if self.operator else "agent"], "control credential")
-        data = json.dumps({"operation": operation, "params": params}, ensure_ascii=False, allow_nan=False).encode()
-        request = urllib.request.Request(info["url"] + ("/api/lifecycle" if lifecycle else "/api/control"), data=data,
+        body: dict[str, object] = {"operation": operation, "params": params}
+        data = json.dumps(body, ensure_ascii=False, allow_nan=False).encode()
+        request = urllib.request.Request(url + ("/api/lifecycle" if lifecycle else "/api/control"), data=data,
                                          headers={"Content-Type": "application/json", "Authorization": "Bearer " + credential,
-                                                  "X-Codey-Instance": info["instance_id"]})
+                                                  "X-Codey-Instance": instance_id})
         try:
-            with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=timeout) as response:
+            proxies: dict[str, str] = {}
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler(proxies))
+            connection: HTTPResponse = opener.open(request, timeout=timeout)
+            with connection as response:
                 raw = response.read(MAX_FRAME_BYTES + 1)
         except urllib.error.HTTPError as exc:
             raw = exc.read(MAX_FRAME_BYTES + 1)
         except (OSError, TimeoutError) as exc:
             raise ControlError("OUTCOME_UNKNOWN", "Connection ended; query the original request identity before retrying",
-                               details={"request_id": params.get("request_id"), "instance_id": info["instance_id"]}) from exc
+                               details={"request_id": params.get("request_id"), "instance_id": instance_id}) from exc
         if len(raw) > MAX_FRAME_BYTES:
             raise ControlError("RESPONSE_TOO_LARGE", "Response exceeds the bounded client frame")
         try:
-            payload = json.loads(raw)
+            payload: object = json.loads(raw)
         except (ValueError, UnicodeDecodeError) as exc:
             raise ControlError("OUTCOME_UNKNOWN", "Service response was incomplete") from exc
+        if not object_fields(payload):
+            raise ControlError("OUTCOME_UNKNOWN", "Service response was incomplete")
         if payload.get("ok") is not True:
-            error = payload.get("error") or {}
-            raise ControlError(error.get("code", "INTERNAL_ERROR"), error.get("message", "Service rejected the command"), details=error.get("details"))
-        return dict(payload["result"])
+            error = payload.get("error")
+            if not object_fields(error):
+                raise ControlError("INTERNAL_ERROR", "Service rejected the command")
+            code = error.get("code")
+            message = error.get("message")
+            raise ControlError(
+                code if isinstance(code, str) else "INTERNAL_ERROR",
+                message if isinstance(message, str) else "Service rejected the command",
+                details=error.get("details"),
+            )
+        result = payload.get("result")
+        if not object_fields(result):
+            raise ControlError("OUTCOME_UNKNOWN", "Service response did not contain a result object")
+        return result
 
-    def call(self, operation: str, params: object = None) -> dict[str, Any]:
-        args = validate_command(operation, {} if params is None else params)
+    def call(self, operation: str, params: object = None) -> dict[str, object]:
+        given: object = dict[str, object]() if params is None else params
+        args: dict[str, object] = validate_command(operation, given)
         if operation == "get_upgrade":
             # Observation must survive the HTTP service being replaced.
             from codey.launcher.releases import read_upgrade
 
-            return read_upgrade(self.home, args["upgrade_id"])
+            return read_upgrade(self.home, require_json_string(args["upgrade_id"], "upgrade_id"))
         timeout = 35 if operation == "wait_run" else 300 if operation == "prepare_release" else 60 if operation == "send_message" else 15
         # Queries are cheap to retry at the caller. No automatic write retry,
         # new request ID, or service replacement is hidden in this adapter.
         return self._request(operation, args, timeout=timeout)
 
-    def lifecycle(self, operation: str) -> dict[str, Any]:
+    def lifecycle(self, operation: str) -> dict[str, object]:
         return self._request(operation, {"expected_instance_id": self.discover()["instance_id"]}, lifecycle=True)
 
 
@@ -117,7 +137,7 @@ def _publish_checkout_runtime(source: Path, publisher: Path) -> None:
         raise ControlError("RUNTIME_PUBLICATION_FAILED", "Runtime publisher could not be loaded")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    publish_runtime = getattr(module, "publish_runtime", None)
+    publish_runtime: object = getattr(module, "publish_runtime", None)
     if not callable(publish_runtime):
         raise ControlError("RUNTIME_PUBLICATION_FAILED", "Runtime publisher is incomplete")
     publish_runtime(source, source / "pyproject.toml")
@@ -153,7 +173,7 @@ def _launch_release(client: ControlClient, home: Path, release: ReleaseSnapshot,
     with log.open("ab") as stream:
         child = subprocess.Popen(args, cwd=release["source"], stdin=subprocess.DEVNULL,
                                  stdout=stream, stderr=stream,
-                                 creationflags=_windows_subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                                 creationflags=CREATE_NO_WINDOW)
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         try:
@@ -170,8 +190,20 @@ def _launch_release(client: ControlClient, home: Path, release: ReleaseSnapshot,
     raise ControlError("STARTUP_FAILED", "Codey service did not become ready within the startup deadline")
 
 
+@dataclass(frozen=True)
+class _ReleaseState:
+    state_home: Path
+
+
+@dataclass(frozen=True)
+class _ReleaseOwner:
+    ctx: _ReleaseState
+    instance_id: str
+    allowed_roots: tuple[Path, ...]
+
+
 def _activate_current_release(client: ControlClient, home: Path, current: ReleaseSnapshot,
-                              health: dict[str, Any], *, allowed_roots: tuple[Path, ...]) -> ControlClient:
+                              health: dict[str, object], *, allowed_roots: tuple[Path, ...]) -> ControlClient:
     digest = current["candidate_digest"]
     # Recovery snapshots may have a different identity for identical content.
     # A healthy service already running that content requires no migration.
@@ -189,9 +221,10 @@ def _activate_current_release(client: ControlClient, home: Path, current: Releas
     # Automatic transitions are owned by the current launcher process. The
     # service on the port may be an older release and must not be asked to
     # execute preparation code from its own snapshot.
-    coordinator = SimpleNamespace(
-        ctx=SimpleNamespace(state_home=home),
-        instance_id=health["instance_id"],
+    instance_id = require_json_string(health["instance_id"], "service instance ID")
+    coordinator = _ReleaseOwner(
+        ctx=_ReleaseState(home),
+        instance_id=instance_id,
         allowed_roots=allowed_roots,
     )
     # This is a new preparation attempt, not a replay of old database evidence.
@@ -215,7 +248,7 @@ def _activate_current_release(client: ControlClient, home: Path, current: Releas
     target: ActivationTarget = {
         "candidate_release": candidate["release_id"],
         "candidate_digest": candidate["candidate_digest"],
-        "expected_instance_id": health["instance_id"],
+        "expected_instance_id": instance_id,
     }
     # Each new preparation owns one activation attempt. Replaying that exact
     # activation request still observes its original journal; a user retry
