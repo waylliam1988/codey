@@ -22,6 +22,7 @@ from codey.durable.model import (
 )
 from codey.durable.operations import SessionOperations, operation_line
 from codey.durable.task_state import release_attempt_state
+from codey.utils.object_fields import mapping_fields, object_fields
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,41 @@ class _BoundaryPlacement:
     entry: EntryDraft | None
     task: TaskCheckpoint | None
     update: SubmissionUpdate
+
+
+def _queued_write_payload(content: Mapping[str, object] | None) -> tuple[str, dict[str, object], str | None]:
+    if not isinstance(content, Mapping):
+        raise CommitConflict("queued write has no content")
+    kind, data = content.get("kind"), content.get("data")
+    display_only, model = content.get("display_only"), content.get("model")
+    edits, head_target = content.get("edits"), content.get("head")
+    if (
+        not isinstance(kind, str) or not kind or not mapping_fields(data)
+        or type(display_only) is not bool
+        or (head_target is not None and (not isinstance(head_target, str) or not head_target))
+    ):
+        raise CommitConflict("queued write content is invalid")
+    try:
+        normalized_model, normalized_edits = admission.normalize_passive_fields(
+            model if isinstance(model, Mapping) else None,
+            edits if isinstance(edits, Sequence) and not isinstance(edits, (str, bytes)) else None,
+        )
+    except ValueError as exc:
+        raise CommitConflict("queued write content is invalid") from exc
+    if model is not None and normalized_model is None:
+        raise CommitConflict("queued write model is invalid")
+    if edits is not None and normalized_edits is None:
+        raise CommitConflict("queued write edits are invalid")
+    if display_only and (normalized_model is not None or normalized_edits is not None or head_target is not None):
+        raise CommitConflict("display-only writes cannot carry context metadata")
+    payload: dict[str, object] = {"data": dict(data), "display_only": display_only}
+    if normalized_model is not None:
+        payload["model"] = normalized_model
+    if normalized_edits is not None:
+        payload["edits"] = normalized_edits
+    if head_target is not None:
+        payload.update({"head": head_target, "head_marker": True})
+    return kind, payload, head_target
 
 
 class SubmissionOperations(SessionOperations):
@@ -236,9 +272,9 @@ class SubmissionOperations(SessionOperations):
             by_task_id=task.task_id,
         )
         thawed_state = thaw_json(task.state)
-        if not isinstance(thawed_state, Mapping):
+        if not object_fields(thawed_state):
             raise CommitConflict("task state is corrupt")
-        state = dict(thawed_state)
+        state = thawed_state
         state["input_state"] = "placed"
         state["input_entry_id"] = entry.entry_id
         next_task = replace(task, revision=task.revision + 1, state=state)
@@ -366,11 +402,11 @@ class SubmissionOperations(SessionOperations):
             base_head = rebased.entry_id
 
         active_state = thaw_json(mutation.task.state)
-        if not isinstance(active_state, Mapping):
+        if not object_fields(active_state):
             raise CommitConflict("generation boundary task state is corrupt")
         next_active = replace(
             mutation.task,
-            state={**dict(active_state), "generation_boundary": at,
+            state={**active_state, "generation_boundary": at,
                    "generation_boundary_receipt": {"at": at,
                        "provider_effect_ids": [effect.effect_id for effect in mutation.settlements
                                                if effect.category == "provider_send"],
@@ -434,7 +470,7 @@ class SubmissionOperations(SessionOperations):
         ]
         # Pi places passive writes first, then selected user inputs in inbox
         # order.  Keep that ordering even when a write was admitted later.
-        selected.sort(key=lambda item: (0 if item.mode == "write" else 1, queued.index(item)))
+        selected.sort(key=lambda item: item.mode != "write")
         head, conversation_revision = self._kernel.store.head(conversation_id)
         current_head = head
         entries: list[EntryDraft] = []
@@ -468,9 +504,9 @@ class SubmissionOperations(SessionOperations):
             if active.conversation_id != conversation_id:
                 raise CommitConflict("generation boundary task conversation mismatch")
             raw_state = thaw_json(active.state)
-            if not isinstance(raw_state, Mapping):
+            if not object_fields(raw_state):
                 raise CommitConflict("generation boundary task state is corrupt")
-            state = dict(raw_state)
+            state = raw_state
             state["generation_boundary"] = at
             task_updates.append(replace(active, revision=active.revision + 1, state=state))
         mutation = DurableMutation(
@@ -511,9 +547,9 @@ class SubmissionOperations(SessionOperations):
             payload={"text": text, **admission.message_metadata(content)}, by_task_id=task.task_id,
         )
         thawed_state = thaw_json(task.state)
-        if not isinstance(thawed_state, Mapping):
+        if not object_fields(thawed_state):
             raise CommitConflict("task state is corrupt")
-        state = dict(thawed_state)
+        state = thawed_state
         state["input_state"] = "placed"
         state["input_entry_id"] = entry.entry_id
         consumed = submission.mode == "steer" and consumer_task_id is not None
@@ -540,30 +576,7 @@ class SubmissionOperations(SessionOperations):
         current_head: str | None,
         visible_entry_ids: set[str],
     ) -> _BoundaryPlacement:
-        if not isinstance(content, Mapping):
-            raise CommitConflict("queued write has no content")
-        kind, data = content.get("kind"), content.get("data")
-        display_only, model = content.get("display_only"), content.get("model")
-        edits, head_target = content.get("edits"), content.get("head")
-        if (
-            not isinstance(kind, str) or not kind or not isinstance(data, Mapping)
-            or type(display_only) is not bool
-            or (head_target is not None and (not isinstance(head_target, str) or not head_target))
-        ):
-            raise CommitConflict("queued write content is invalid")
-        try:
-            normalized_model, normalized_edits = admission.normalize_passive_fields(
-                model if isinstance(model, Mapping) else None,
-                edits if isinstance(edits, Sequence) and not isinstance(edits, (str, bytes)) else None,
-            )
-        except ValueError as exc:
-            raise CommitConflict("queued write content is invalid") from exc
-        if model is not None and normalized_model is None:
-            raise CommitConflict("queued write model is invalid")
-        if edits is not None and normalized_edits is None:
-            raise CommitConflict("queued write edits are invalid")
-        if display_only and (normalized_model is not None or normalized_edits is not None or head_target is not None):
-            raise CommitConflict("display-only writes cannot carry context metadata")
+        kind, payload, head_target = _queued_write_payload(content)
         if head_target is not None and head_target != "self" and head_target not in visible_entry_ids:
             return _BoundaryPlacement(
                 None, None, SubmissionUpdate(
@@ -571,13 +584,6 @@ class SubmissionOperations(SessionOperations):
                     expected_status=submission.status, status=SubmissionStatus.UNANSWERED, reason="stale",
                 ),
             )
-        payload: dict[str, object] = {"data": dict(data), "display_only": display_only}
-        if normalized_model is not None:
-            payload["model"] = normalized_model
-        if normalized_edits is not None:
-            payload["edits"] = normalized_edits
-        if head_target is not None:
-            payload.update({"head": head_target, "head_marker": True})
         entry = EntryDraft(
             entry_id=f"entry-{uuid.uuid4().hex}", conversation_id=submission.conversation_id,
             parent_id=current_head, kind=kind, payload=payload,
@@ -591,48 +597,12 @@ class SubmissionOperations(SessionOperations):
         )
 
     def _place_write_submission(self, submission: SubmissionRecord) -> CommitResult:
-        content = submission.content
-        if not isinstance(content, Mapping):
-            raise CommitConflict("queued write has no content")
-        kind = content.get("kind")
-        data = content.get("data")
-        display_only = content.get("display_only")
-        model = content.get("model")
-        edits = content.get("edits")
-        head_target = content.get("head")
-        if (
-            not isinstance(kind, str)
-            or not kind
-            or not isinstance(data, Mapping)
-            or type(display_only) is not bool
-            or (head_target is not None and (not isinstance(head_target, str) or not head_target))
-        ):
-            raise CommitConflict("queued write content is invalid")
-        try:
-            normalized_model, normalized_edits = admission.normalize_passive_fields(
-                model if isinstance(model, Mapping) else None,
-                edits if isinstance(edits, Sequence) and not isinstance(edits, (str, bytes)) else None,
-            )
-        except ValueError as exc:
-            raise CommitConflict("queued write content is invalid") from exc
-        if model is not None and normalized_model is None:
-            raise CommitConflict("queued write model is invalid")
-        if edits is not None and normalized_edits is None:
-            raise CommitConflict("queued write edits are invalid")
-        if display_only and (normalized_model is not None or normalized_edits is not None or head_target is not None):
-            raise CommitConflict("display-only writes cannot carry context metadata")
+        kind, payload, head_target = _queued_write_payload(submission.content)
         if head_target is not None and head_target != "self":
             visible = {entry.entry_id for entry in conversation_ops.context(self._kernel, submission.conversation_id)}
             if head_target not in visible:
                 return self._settle_stale_write(submission)
         head, revision = self._kernel.store.head(submission.conversation_id)
-        payload: dict[str, object] = {"data": dict(data), "display_only": display_only}
-        if normalized_model is not None:
-            payload["model"] = normalized_model
-        if normalized_edits is not None:
-            payload["edits"] = normalized_edits
-        if head_target is not None:
-            payload.update({"head": head_target, "head_marker": True})
         entry = EntryDraft(
             entry_id=f"entry-{uuid.uuid4().hex}",
             conversation_id=submission.conversation_id,

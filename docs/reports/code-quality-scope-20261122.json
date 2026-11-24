@@ -4179,19 +4179,21 @@
       "responsibility": "Effect intent and settlement operations",
       "files": ["codey/durable/effect_operations.py", "codey/durable/effects.py"],
       "id": "Q054B",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/durable/test_effect_identity.py", "tests/durable/test_effect_projection.py", "tests/durable/test_recovery.py"]
+      "status": "completed_unchanged",
+      "reviewed_files": ["codey/durable/effect_operations.py", "codey/durable/effects.py"],
+      "verified_files": ["codey/durable/effect_operations.py", "codey/durable/effects.py"],
+      "tests": ["tests/durable/test_effect_identity.py", "tests/durable/test_effect_projection.py", "tests/durable/test_recovery.py", "tests/durable/test_artifact_metadata.py", "tests/durable/test_execution_fencing.py", "tests/test_agent_effect_sandwich.py"],
+      "result": "Verified effect admission, recovery receipts, settlement, artifact linkage and execution fencing. 86 scoped tests, strict Any and Ruff passed."
     },
     {
       "responsibility": "Durable submission placement and generation boundaries",
       "files": ["codey/durable/submission_operations.py"],
       "id": "Q054C",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/durable/test_inbox_placement.py", "tests/durable/test_generation_boundary_commit.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/submission_operations.py"],
+      "verified_files": ["codey/durable/submission_operations.py"],
+      "tests": ["tests/durable/test_inbox_placement.py", "tests/durable/test_generation_boundary_commit.py", "tests/durable/test_context_edit_revision_fence.py", "tests/durable/test_queued_input_revision.py", "tests/durable/test_steering_consumption.py"],
+      "result": "Unified queued passive-write payload construction, narrowed thawed checkpoint state and retained stable write-first placement. 100 scoped tests, a mixed-inbox ordering probe and all type gates passed."
     },
     {
       "responsibility": "Task checkpoints, ownership and attempt transitions",

@@ -1855,3 +1855,17 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 审批准入与 shell effect 由同一提交绑定，已有准入合同接受非约定前缀的 effect ID。用公开会话入口成功准入 `recorded-effect` 后尝试结算，旧实现只查固定 `shell-approval`。在内存加载 `b35d6f7d` 版审批模块并运行最终 `tests/durable/test_approval_effect_identity.py`，两个存储后端都因该 `KeyError` 失败，退出 1。现在核对约定 ID 的归属，并能按原任务及审批记录找回唯一关联的 effect。回归验证实际 effect 结算、一条原子提交、挂起 ID 清除及相同恢复请求的幂等性。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_approval_effect_identity.py tests/durable/test_approval_records.py tests/durable/test_approval_suspension.py tests/durable/test_approval_continuation_admission.py tests/durable/test_session_kernel.py tests/durable/test_operation_control_actions.py --tb=short`，59 passed、无失败或跳过、退出 0。三个审批测试文件基线 31 passed。两个源与回归的严格 Any、Ruff，以及全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q054 完成。累计完成 96/356 批，完成批覆盖 167/1009 个生产文件，另有 17 批部分完成。下一批 Q054B 为 effect 意图与结算操作。
+
+
+### Q054B effect 意图与结算操作
+
+- Q054 已提交 `dd2c0d8c`。完整检查 `effect_operations.py` 和 `effects.py`，覆盖 effect 准入、幂等结算、崩溃后的中断回执和产物绑定。`nested_effect_ids` 仓内没有调用证据，保留公开函数。两个源无需修改，严格 Any 和 Ruff 均退出 0。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_effect_identity.py tests/durable/test_effect_projection.py tests/durable/test_recovery.py --tb=short`，30 passed、退出 0。相关路径扩展至 `python -m pytest -q tests/durable/test_effect_identity.py tests/durable/test_effect_projection.py tests/durable/test_recovery.py tests/durable/test_artifact_metadata.py tests/durable/test_execution_fencing.py tests/test_agent_effect_sandwich.py --tb=short`，86 passed、无失败或跳过、退出 0。
+- Q054B 完成。累计完成 97/356 批，完成批覆盖 169/1009 个生产文件，另有 17 批部分完成。下一批 Q054C 为持久提交放置和生成边界。
+
+### Q054C 持久提交放置和生成边界
+
+- 完整检查 `submission_operations.py`。独立放置与生成边界共用排队被动写入的验证和载荷构造。提交内容经模型规范化为字符串键，检查点状态解冻后使用现有类型守卫收窄。边界用稳定排序先放置写入，两类输入各自保留收件箱顺序。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_inbox_placement.py tests/durable/test_generation_boundary_commit.py tests/durable/test_context_edit_revision_fence.py tests/durable/test_queued_input_revision.py tests/durable/test_steering_consumption.py --tb=short`，100 passed、无失败或跳过、退出 0。前三个文件的修改前基线为 74 passed。两种排队写入入口、陈旧头部和原子边界均有用例。另通过 `python -` 运行内存存储探针，按引导输入、被动写入交替入队两组，核对同一提交内先按原顺序放置两条写入，再按原顺序放置两条引导输入，退出 0。
+- `python -m mypy codey/durable/submission_operations.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 从 17 条诊断降至 0。同文件 `ruff check`、全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 `python -m tools.kernel_type_precision_gate` 均退出 0。
+- Q054C 完成。累计完成 98/356 批，完成批覆盖 170/1009 个生产文件，另有 17 批部分完成。下一批 Q054D 为任务检查点、所有权及尝试状态迁移。
