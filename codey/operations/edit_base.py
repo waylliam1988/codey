@@ -48,6 +48,60 @@ def bind_symbol_read(args: JsonObject, reads: Mapping[str, str]) -> JsonObject:
     return {**args, "base_result_ref": ref}
 
 
+def unchanged_definition(result: ToolResult) -> tuple[str, str, str] | None:
+    """Recognize an unchanged replacement of one complete Python definition."""
+    import ast
+
+    from codey.toolchain.syntax_query import reindent_python_source
+
+    path = result.call.args.get("path")
+    rows = result.call.args.get("replacements")
+    if (not isinstance(path, str) or Path(path).suffix.casefold() != ".py"
+            or not isinstance(rows, list) or len(rows) != 1 or not isinstance(row := rows[0], dict)
+            or not isinstance(text := row.get("old_string"), str) or row.get("new_string") != text):
+        return None
+    try:
+        body = ast.parse(reindent_python_source(text)).body
+    except (SyntaxError, ValueError):
+        return None
+    if len(body) == 1 and isinstance(definition := body[0], (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return path, definition.name, text
+    return None
+
+
+def current_definition(session: TaskSession, project: Path, path: str, name: str, old: str) -> str | None:
+    """Return the unique symbol, or None when a current complete read is needed."""
+    from codey.research.calculation import file_selector_key
+    from codey.toolchain.syntax_query import reindent_python_source
+    from codey.workspace.paths import path_hash, safe_join
+
+    ref = symbol_read_refs(session._memory_results, session.executed).get(file_selector_key(path))
+    if ref is None:
+        return None
+    try:
+        version = session._memory_results[ref].canonical.get("file_version")
+        if version != "raw:" + path_hash(safe_join(project, path), preserve_newlines=True):
+            return None
+        observed = symbol_retry_source(session, path, name, ref)
+        return name if observed and observed.strip() == reindent_python_source(old).strip() else ""
+    except (OSError, SyntaxError, ValueError):
+        return None
+
+
+def symbol_retry_source(session: TaskSession, path: str, symbol: str, ref: str) -> str:
+    import ast
+
+    from codey.toolchain.syntax_query import python_definitions, reindent_python_source
+
+    try:
+        source = edit_base_text(session, Path(session.project), path, ref)
+        matches = [node for node in python_definitions(source) if node.name == symbol]
+        original = ast.get_source_segment(source, matches[0], padded=True) if len(matches) == 1 else None
+        return reindent_python_source(original) if original else ""
+    except (OSError, SyntaxError, ValueError):
+        return ""
+
+
 def _partial_edit_target(reply: str, snapshot: TurnSnapshot, session: TaskSession | None) -> tuple[str, tuple[str, ...]]:
     import re
 

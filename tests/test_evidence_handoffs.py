@@ -7,10 +7,15 @@ from pathlib import Path
 import pytest
 
 from codey.codemode.kernel import build_execute_turn_executor
-from codey.operations.edit_base import compact_symbol_retry, is_compact_symbol_retry
+from codey.operations.edit_base import (
+    compact_symbol_retry,
+    current_definition,
+    is_compact_symbol_retry,
+    unchanged_definition,
+)
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
-from codey.operations.progress_comparison import project_failure_frames
+from codey.operations.progress_comparison import project_failure_frames, pytest_failure_ids
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
@@ -70,6 +75,55 @@ def test_project_traceback_observation_is_bounded_to_workspace(tmp_path: Path) -
     assert project_failure_frames(output, tmp_path) == ({
         "path": "test_app.py", "line": 14, "function": "test_display",
         "source": 'self.assertEqual(display_name("raw"), "expected")'},)
+
+
+def test_noop_method_suggests_symbol_on_the_observed_version_only(tmp_path: Path) -> None:
+    old = "    def f(self):\r\n        return 0"
+    project_file = tmp_path / "a.py"
+    project_file.write_bytes(("class C:\r\n" + old + "\r\n").encode("utf-8"))
+    session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "project.write"})),
+                          task_kind="project", project=str(tmp_path))
+    edit = ToolResult(ToolCall("edit", {"path": "a.py", "replacements": [{"old_string": old, "new_string": old}]}),
+                      "no changes", ok=True, audit={"changed": False})
+    target = unchanged_definition(edit)
+    assert target == ("a.py", "f", old)
+    assert current_definition(session, tmp_path, *target) is None
+    assert execute_turn(session, [ToolCall("read_file", {"path": "a.py"})], run_id="read", turn=1,
+                        project_path=tmp_path)[0].ok
+    assert current_definition(session, tmp_path, *target) == "f"
+    project_file.write_bytes(project_file.read_bytes() + b"# external edit\r\n")
+    assert current_definition(session, tmp_path, *target) is None
+
+
+def test_pytest_failure_frames_bind_crlf_blocks_to_parameterized_nodes(tmp_path: Path) -> None:
+    output = "\r\n".join((
+        "================== FAILURES ==================",
+        "________________ test_retry[True] ________________",
+        "tests/test_order.py:52: in test_retry",
+        "../app/order.py:48: in place_order",
+        ">       db.execute(statement)",
+        "E       sqlite3.IntegrityError: UNIQUE constraint failed",
+        "../app/order.py:49: IntegrityError",
+        "../../library/order.py:92: InternalError",
+        "________________ test_other ________________",
+        ">       assert a == b",
+        "E       assert 1 == 2",
+        "alt/test_order.py:30: AssertionError",
+        "================== short test summary info ==================",
+        "FAILED tests/test_order.py::test_retry[True] - IntegrityError",
+        "FAILED alt/test_order.py::test_other - AssertionError",
+        "================== 2 failed in 0.51s ==================",
+    ))
+    failures = pytest_failure_ids(output, 1)
+    assert failures is not None
+    frames = project_failure_frames(output, tmp_path, cwd="checks", pytest_failures=failures)
+    assert [(row["path"], row["line"]) for row in frames] == [
+        ("checks/alt/test_order.py", 30), ("app/order.py", 49), ("checks/tests/test_order.py", 52),
+    ]
+    assert frames[1]["failure"] == "FAILED tests/test_order.py::test_retry[True]"
+    assert frames[1]["assertions"] == ["sqlite3.IntegrityError: UNIQUE constraint failed"]
+    assert frames[1]["source"] == "db.execute(statement)"
+    assert pytest_failure_ids(output.rsplit("\r\n", 1)[0], 1) is None
 
 
 def test_symbol_edit_reuses_a_previous_round_inside_codemode_and_preserves_literal_lines(tmp_path: Path) -> None:

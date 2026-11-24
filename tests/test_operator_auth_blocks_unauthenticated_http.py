@@ -9,6 +9,7 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import quote, urlencode
 
 import pytest
 
@@ -129,6 +130,29 @@ def test_invalid_exchange_does_not_consume_bootstrap_and_replay_is_refused(httpd
     assert exchange(httpd, "wrong")[0] == 401
     assert exchange(httpd, token)[0] == 200
     assert exchange(httpd, token)[0] == 401
+
+
+def test_execution_output_route_decodes_child_reference_and_checks_its_scope(
+    httpd: server.CodeyHTTPServer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    status, headers, _ = exchange(httpd, httpd.operator_auth.issue_bootstrap())
+    assert status == 200
+    cookie = {"Cookie": headers["Set-Cookie"].split(";", 1)[0]}
+    execution_id = "tool_execution:abc"
+    endpoint = f"/api/executions/{quote(execution_id, safe='')}/output"
+    ctx = AppContext(tmp_path, start_scheduler=False, memory_enabled=False)
+    monkeypatch.setattr(httpd, "app_context", ctx)
+    try:
+        ctx.execution_outputs.create(execution_id, session_id="owner", run_id="tool_task:child")
+        ctx.execution_outputs.append_text(execution_id, "stdout", "assertion from child")
+        scope = urlencode({"session_id": "owner", "run_id": "tool_task:child"})
+        status, _, body = request(httpd, "GET", f"{endpoint}?{scope}", headers=cookie)
+        assert status == 200
+        assert parse_json_object(body.decode())["execution_id"] == execution_id
+        assert b"assertion from child" in body
+        assert request(httpd, "GET", f"{endpoint}?session_id=owner&run_id=parent", headers=cookie)[0] == 404
+    finally:
+        ctx.close()
 
 
 def test_cookie_does_not_authorize_a_new_server(httpd: server.CodeyHTTPServer) -> None:

@@ -12,6 +12,50 @@ export interface ExecutionSnapshot {
   stderr?: string;
 }
 
+export interface ExecutionOutputScope {
+  execution_id: string;
+  session_id: string;
+  run_id: string;
+}
+
+interface RetainedExecutionOutput extends ExecutionSnapshot {
+  truncated: boolean;
+  exit_code?: number | null;
+}
+
+function outputText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  return value && typeof value === 'object' && 'text' in value && typeof value.text === 'string' ? value.text : '';
+}
+
+export async function fetchExecutionOutput(
+  scope: ExecutionOutputScope,
+  afterRevision = -1,
+): Promise<RetainedExecutionOutput | undefined> {
+  const query = new URLSearchParams({ session_id: scope.session_id, run_id: scope.run_id });
+  if (afterRevision >= 0) query.set('after_revision', String(afterRevision));
+  const response = await fetch(`/api/executions/${encodeURIComponent(scope.execution_id)}/output?${query}`);
+  if (response.status === 304) return undefined;
+  if (!response.ok) throw new Error('Execution output unavailable');
+  const data: unknown = await response.json();
+  if (!data || typeof data !== 'object' || !('revision' in data) || typeof data.revision !== 'number')
+    throw new Error('Execution output invalid');
+  const stdout = 'stdout' in data ? data.stdout : undefined;
+  const stderr = 'stderr' in data ? data.stderr : undefined;
+  const state = 'execution_state' in data ? data.execution_state : undefined;
+  const exit = 'exit_code' in data ? data.exit_code : undefined;
+  return {
+    revision: data.revision,
+    execution_state: state === 'settled' || state === 'unknown' ? state : 'running',
+    stdout: outputText(stdout),
+    stderr: outputText(stderr),
+    truncated: [stdout, stderr].some(
+      (value) => !!value && typeof value === 'object' && 'truncated' in value && value.truncated === true,
+    ),
+    ...(typeof exit === 'number' || exit === null ? { exit_code: exit } : {}),
+  };
+}
+
 export class BoundedOutput {
   private readonly decoder = new TextDecoder('utf-8', { fatal: false });
   private readonly chunks: string[] = [];

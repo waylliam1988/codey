@@ -94,7 +94,8 @@ def _text_request_prompt(prompt: str, snapshot: TurnSnapshot, *, schema_constrai
 
     if (target := bound_symbol_retry(snapshot)) is not None:
         path, symbol = target
-        return f"Edit {path}, definition {symbol}. Response format: one complete Python definition as source text.\n\n{prompt}"
+        return (f"Edit {path}, definition {symbol}. Return the updated definition as Python source. "
+                "The host applies it to the observed file and preserves all surrounding code.\n\n" + prompt)
     contract = snapshot.contract_text
     if (schema_constrained and snapshot.has_project_tools
             and snapshot.input_binding is None and snapshot.browser_copy is None

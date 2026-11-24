@@ -188,6 +188,17 @@ body:has(.workspace .document-pane:not([hidden])) {
 .change-file > .diff-pre {
   grid-column: 1 / -1;
 }
+
+.change-file > .html-preview-frame {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 20rem;
+}
+
+.changes-verification {
+  padding: 0.75rem;
+  overflow-wrap: anywhere;
+}
 .workspace .research-tabs {
   margin-top: 0;
   padding-top: 0;

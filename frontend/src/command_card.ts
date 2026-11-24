@@ -1,8 +1,9 @@
 import { iconButton } from './icon_button';
 import type { Message } from './types/domain';
-import { mergeOutputSnapshot, type ExecutionSnapshot } from './execution_output';
+import { fetchExecutionOutput, mergeOutputSnapshot, type ExecutionSnapshot } from './execution_output';
 import { commandOutputView } from './command_output_view';
 import { runtime } from './runtime';
+import type { createApprovalController } from './shell_approvals';
 
 type Copy = (text: string) => Promise<boolean>;
 
@@ -142,14 +143,16 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
     notice.setAttribute('role', 'status');
     notice.textContent = 'Permission not saved.';
     notice.title = message.permissionSaveError;
-    if (message.permissionSaveError && message.permissionSaveScope) {
+    const scope = message.permissionSaveScope;
+    if (scope) {
       const retry = document.createElement('button');
       retry.type = 'button';
       retry.className = 'link-btn';
       retry.textContent = 'Retry saving';
       retry.onclick = () => {
         retry.disabled = true;
-        void runtime.ShellApprovals.remember(message.id || '', message.permissionSaveScope!);
+        const approvals: ReturnType<typeof createApprovalController> = runtime.ShellApprovals;
+        void approvals.remember(message.id || '', scope);
       };
       notice.append(' ', retry);
     }
@@ -174,40 +177,19 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
       while (card.isConnected || latest.revision < 0) {
         if (!card.isConnected && latest.revision >= 0) break;
         try {
-          const scope = new URLSearchParams({ after_revision: String(latest.revision) });
-          if (message.sessionId) scope.set('session_id', message.sessionId);
-          if (message.runId) scope.set('run_id', message.runId);
-          const response = await fetch(
-            `/api/executions/${encodeURIComponent(message.executionId!)}/output?${scope.toString()}`,
+          const data = await fetchExecutionOutput(
+            {
+              execution_id: message.executionId || '',
+              session_id: message.sessionId || '',
+              run_id: message.runId || '',
+            },
+            latest.revision,
           );
-          if (response.status !== 304 && response.ok) {
-            const data = (await response.json()) as {
-              revision?: number;
-              execution_state?: 'running' | 'settled' | 'unknown';
-              stdout?: unknown;
-              stderr?: unknown;
-              exit_code?: number | null;
-            };
-            const textValue = (value: unknown) =>
-              typeof value === 'string'
-                ? value
-                : value && typeof value === 'object' && 'text' in value
-                  ? String((value as { text?: unknown }).text || '')
-                  : '';
-            const stdout = textValue(data.stdout);
-            const stderr = textValue(data.stderr);
-            const next = mergeOutputSnapshot(latest, {
-              revision: Number(data.revision || 0),
-              execution_state: data.execution_state || 'running',
-              stdout,
-              stderr,
-            });
+          if (data) {
+            const next = mergeOutputSnapshot(latest, data);
             if (next !== latest) {
               latest = next;
-              const truncated = [data.stdout, data.stderr].some(
-                (value) => value && typeof value === 'object' && 'truncated' in value && value.truncated === true,
-              );
-              updateOutput(latest.stdout, latest.stderr || '', truncated);
+              updateOutput(latest.stdout, latest.stderr || '', data.truncated);
               if (latest.execution_state !== 'running') {
                 const exit = data.exit_code;
                 const known = latest.execution_state === 'settled' && Number.isInteger(exit);

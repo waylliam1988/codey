@@ -7,7 +7,14 @@ export type ProviderCatalog = {
 
 export type ProviderStatus = Array<{ id: string; available?: boolean; freshness?: string; state?: string }>;
 
-import type { ChangeFile, ChangeFilePreview, ChangesData, ResearchPayload, RunState } from '../types/domain';
+import type {
+  ChangeFile,
+  ChangeFilePreview,
+  ChangesData,
+  ChangeVerification,
+  ResearchPayload,
+  RunState,
+} from '../types/domain';
 export type ServerEvent = {
   task_revision?: number;
   task_status?: string;
@@ -152,7 +159,7 @@ export function decodeChangesData(value: unknown): ChangesData {
     !Array.isArray(value.files)
   )
     throw new Error('changes response is invalid');
-  const files = value.files.map((item) => {
+  const files = value.files.map((item: unknown): ChangeFile => {
     if (!isRecord(item) || typeof item.path !== 'string') throw new Error('changes file is invalid');
     const previewStatus = item.preview_status;
     const validPreviewStatus =
@@ -168,7 +175,7 @@ export function decodeChangesData(value: unknown): ChangesData {
       ...(typeof item.status === 'string' ? { status: item.status } : {}),
       ...(typeof item.additions === 'number' ? { additions: item.additions } : {}),
       ...(typeof item.deletions === 'number' ? { deletions: item.deletions } : {}),
-      ...(validPreviewStatus ? { preview_status: previewStatus as ChangeFile['preview_status'] } : {}),
+      ...(validPreviewStatus ? { preview_status: previewStatus } : {}),
     };
   });
   return {
@@ -180,10 +187,52 @@ export function decodeChangesData(value: unknown): ChangesData {
     ...(typeof value.error === 'string' ? { error: value.error } : {}),
     ...(typeof value.changed_count === 'number' ? { changed_count: value.changed_count } : {}),
     ...(typeof value.truncated === 'boolean' ? { truncated: value.truncated } : {}),
+    ...(isRecord(value.html_previews)
+      ? {
+          html_previews: Object.fromEntries(
+            Object.entries(value.html_previews).filter(
+              (entry): entry is [string, string] => typeof entry[1] === 'string',
+            ),
+          ),
+        }
+      : {}),
+    ...(isRecord(value.verification) ? { verification: decodeChangeVerification(value.verification) } : {}),
     ...(Array.isArray(value.conflicts) && value.conflicts.every((item) => typeof item === 'string')
       ? { conflicts: value.conflicts }
       : {}),
   };
+}
+
+function decodeChangeVerification(value: Record<string, unknown>): ChangeVerification {
+  const failure = value.failed_check;
+  const result: ChangeVerification = {};
+  if (typeof value.summary === 'string') result.summary = value.summary;
+  if (typeof value.tone === 'string') result.tone = value.tone;
+  if (typeof value.checks_passed === 'boolean') result.checks_passed = value.checks_passed;
+  if (typeof value.trust === 'string') result.trust = value.trust;
+  if (typeof value.integrity === 'string') result.integrity = value.integrity;
+  if (
+    isRecord(failure) &&
+    typeof failure.command === 'string' &&
+    typeof failure.cwd === 'string' &&
+    typeof failure.exit_code === 'number'
+  ) {
+    result.failed_check = { command: failure.command, cwd: failure.cwd, exit_code: failure.exit_code };
+    const output = failure.output;
+    if (
+      isRecord(output) &&
+      typeof output.session_id === 'string' &&
+      typeof output.run_id === 'string' &&
+      typeof output.execution_id === 'string'
+    ) {
+      result.failed_check.output = {
+        execution_id: output.execution_id,
+        session_id: output.session_id,
+        run_id: output.run_id,
+      };
+    }
+  }
+  return result;
 }
 
 export function decodeChangeFilePreview(value: unknown): ChangeFilePreview {

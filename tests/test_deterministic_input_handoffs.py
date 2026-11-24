@@ -207,7 +207,7 @@ def test_research_budget_does_not_serialize_sampling_schema_as_prompt_prose(
     monkeypatch.setattr(ApiProvider, "count_text", count)
     directory = tmp_path / "budget"
     install_http(monkeypatch, iter([{"tool": "browser_snapshot", "args": {}}]), native=False)
-    gate.run_case(directory, "chat", Target("http://scripted.test/v1", "fixture", 123456789, 10),
+    gate.run_case(directory, "chat", Target("http://scripted.test/v1", "fixture", 123456789, 10, 65536),
                   strict_research=True, declare_required_tools=False, max_turns=1)
     assert counted and all("unevaluatedProperties" not in text for text in counted)
     wire = requests(directory)
@@ -266,7 +266,8 @@ def test_old_request_retains_source_contract(version: int) -> None:
     restored = restore_snapshot(snapshot_description(legacy))
     spec = next(spec for spec in restored.model_specs if spec.name == "open_url")
     assert "url" in spec.required and "target" not in dict(spec.parameters)
-    assert restored == legacy
+    assert restored == replace(legacy, task_source_url=None)
+    assert restored.bound_source_url == current.bound_source_url
 
 
 @pytest.mark.parametrize("native", [False, True])

@@ -15,7 +15,7 @@ from codey.durable.model import ArtifactRecord, thaw_json
 from codey.knowledge.model import canonical_json
 from codey.operations import kernel_actions as wiring
 from codey.operations import kernel_events, kernel_prompt, kernel_protocol
-from codey.operations.edit_base import bound_symbol_retry, is_compact_symbol_retry
+from codey.operations.edit_base import bound_symbol_retry, is_compact_symbol_retry, symbol_retry_source
 from codey.operations.kernel_capabilities import KernelCapabilityView
 from codey.operations.kernel_contracts import (
     ClosingDecision,
@@ -83,10 +83,10 @@ def _host_acquisition_result(result: ToolResult) -> bool:
 
 def _symbol_retry_observation(session: TaskSession, snapshot: TurnSnapshot, options: ProviderRequestOptions,
                               observations: str) -> tuple[ProviderRequestOptions, str]:
-    if (target := bound_symbol_retry(snapshot)) is not None and (
-            basis := session._memory_results.get(dict(snapshot.symbol_read_refs).get(target[0], ""))) is not None:
-        return replace(options, tool_call_history_groups=1), task_result_context(
-            session, basis, snapshot.research_scope, tool_names=snapshot.tool_names)
+    if (target := bound_symbol_retry(snapshot)) is not None:
+        path, symbol = target
+        if source := symbol_retry_source(session, path, symbol, dict(snapshot.symbol_read_refs).get(path, "")):
+            return replace(options, tool_call_history_groups=1), f"Current definition:\n{source}"
     return options, observations
 
 
@@ -102,6 +102,7 @@ class KernelContext:
             raise ValueError("kernel execution requires an admitted durable operation and managed output storage")
         _ = admitted_sink.managed_outputs
         self.sink: KernelEffectSink = admitted_sink
+        self.project_check_comparisons: dict[str, ProjectCheckComparison | None] = {}
         self.durable: DurableSession = admitted_sink.durable
         admitted = self.load_view().state
         if admitted is None:
@@ -481,8 +482,8 @@ class KernelContext:
             task_span = None
             coding_context_prepared = True
             messages = repair_messages(messages, prompt, rejected_control=state.leaf == operation_payload.LEAF_CONTROL_READY)
-        elif handoff is None and not acknowledge:
-            snapshot, handoff = self.request_snapshot(snapshot)
+        elif not acknowledge:
+            snapshot, handoff = self._request_check_handoff(snapshot, handoff)
         delivery_handoff = handoff if self.request_scoped_observations and not acknowledge else ""
         if handoff and not delivery_handoff:
             if self.native and messages:
@@ -532,8 +533,9 @@ class KernelContext:
             # second textual tool catalog that this request never sends.
             declaration = ((scoped_tool_contract or kernel_prompt._text_request_prompt("", snapshot))
                            if not self.native else canonical_json(json_value(tools)))
+            context = "" if bound_symbol_retry(snapshot) is not None else self.transport.context_text
             fixed = "\n\n".join(part for part in (prompt, delivery_handoff,
-                self.transport.context_text if self.transport.context_text not in prompt else "",
+                context if context not in prompt else "",
                 coding if coding not in prompt else "", declaration,
                 canonical_json(json_value(messages)) if messages else "") if part)
             observations = task_working_context(
@@ -544,7 +546,6 @@ class KernelContext:
             options, observations = _symbol_retry_observation(self.session, snapshot, options, observations)
             # Canonical replay excludes optional memory candidates. Each continuation must
             # carry its frozen context without relying on a warm wire history.
-            context = self.transport.context_text
             options = replace(options, supplied=options.supplied | {"tool_call_observations"}, tool_call_observations="\n\n".join(part for part in (
                 context if context and context not in prompt else "", observations, delivery_handoff,
                 coding if coding and coding not in prompt else "") if part))
@@ -890,25 +891,41 @@ class KernelContext:
     ) -> tuple[dict[int, ProjectCheckComparison], ProjectCheckCycle | None]:
         if not self.session.project:
             return {}, None
+
+        def compare(result: ToolResult) -> ProjectCheckComparison | None:
+            fact = self._compare_project_check(result)
+            return fact if fact is not None and fact.complete else None
+
+        facts = {index: fact for index, result in enumerate(results) if (fact := compare(result)) is not None}
+        cycle = project_check_cycle(results, self.session._memory_results, compare) if facts else None
+        return facts, cycle
+
+    def _compare_project_check(self, result: ToolResult, *,
+                               include_accepted: bool = False) -> ProjectCheckComparison | None:
         from codey.operations.progress_comparison import compare_project_check
         from codey.operations.tool_tasks import settled_check_for_progress
 
-        receipts = self.session._memory_results
-        cached: dict[int, ProjectCheckComparison | None] = {}
+        execution = settled_check_for_progress(self.durable, result, owner_task_id=self.sink.run_id,
+                                                receipts=self.session._memory_results, include_accepted=include_accepted)
+        if execution is None:
+            return None
+        ref = execution.execution_ref
+        if ref not in self.project_check_comparisons:
+            self.project_check_comparisons[ref] = compare_project_check(
+                execution, session=self.session, store=self.sink.managed_outputs, session_id=self.sink.session_id)
+        return self.project_check_comparisons[ref]
 
-        def compare(result: ToolResult) -> ProjectCheckComparison | None:
-            key = id(result)
-            if key in cached:
-                return cached[key]
-            execution = settled_check_for_progress(self.durable, result, owner_task_id=self.sink.run_id, receipts=receipts)
-            fact = compare_project_check(execution, session=self.session, store=self.sink.managed_outputs,
-                                         session_id=self.sink.session_id) if execution is not None else None
-            cached[key] = fact
-            return fact
+    def _request_check_handoff(self, snapshot: TurnSnapshot, handoff: str | None) -> tuple[TurnSnapshot, str]:
+        from codey.operations.project_check_handoff import project_check_handoff
 
-        facts = {index: fact for index, result in enumerate(results) if (fact := compare(result)) is not None}
-        cycle = project_check_cycle(results, receipts, compare) if facts else None
-        return facts, cycle
+        if handoff is None:
+            snapshot, handoff = self.request_snapshot(snapshot)
+        project = self.execution.project_path
+        if project is None:
+            return snapshot, handoff
+        evidence = project_check_handoff(self.session, snapshot, project,
+                                         lambda result: self._compare_project_check(result, include_accepted=True))
+        return snapshot, "\n\n".join(part for part in (handoff, evidence) if part)
 
     def deliver_results(self, view: SessionView, action: RuntimeAction) -> None:
         state = view.state
@@ -960,14 +977,7 @@ class KernelContext:
                 self.execution.research_tools.store if self.execution.research_tools is not None else None,
                 self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research_scope,
                 tool_names=snapshot.tool_names, provider=self.provider)
-        check_facts, check_cycle = self._project_check_observations(results)
-        if progress.warning_batch_id != action.delivery_batch_id:
-            check_cycle = None
-        failures = [fact.observation() for fact in check_facts.values() if fact.failure_ids]
-        if failures:
-            handoff = "\n\n".join(part for part in (handoff, "Project check failures:\n" +
-                canonical_json(failures)) if part)
-        reminder = check_cycle.feedback if check_cycle is not None else progress.repeat_feedback()
+        reminder = progress.repeat_feedback() if progress.warning_batch_id != action.delivery_batch_id else ""
         if reminder:
             from codey.operations.browser_task_handoff import observation_recovery_handoff
             from codey.operations.progress_comparison import progress_comparison

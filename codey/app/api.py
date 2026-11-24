@@ -463,7 +463,7 @@ def run_changes_response(ctx: AppContext, query: dict[str, list[str]]) -> tuple[
     session_id, run_id = query_value(query, "session_id"), query_value(query, "run_id")
     if not session_id or not run_id:
         return 400, {"ok": False, "error": "session_id and run_id required"}
-    changes = load_task_changes(ctx.run_ledgers, ctx.managed_outputs, session_id, run_id)
+    changes = load_task_changes(ctx.run_ledgers, ctx.managed_outputs, session_id, run_id, durable=ctx.durable)
     return (200, changes) if changes is not None else (404, {"ok": False, "error": "Run changes unavailable"})
 
 

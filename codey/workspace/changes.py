@@ -10,6 +10,7 @@ import subprocess
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
@@ -103,6 +104,32 @@ class Snapshot:
     path: str
     before: str | None
     after: str | None
+
+
+class _PreviewDependencies(HTMLParser):
+    """Recognize resource references that the single-file sandbox cannot load."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.external = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self.external:
+            return
+        for attr, value in attrs:
+            loads_resource = attr in {"src", "poster"} or tag == "link" and attr == "href"
+            if attr == "srcset" or (
+                loads_resource and value and not value.strip().casefold().startswith(("data:", "#"))
+            ):
+                self.external = True
+                return
+
+
+def _standalone_preview(content: str) -> bool:
+    parser = _PreviewDependencies()
+    parser.feed(content)
+    parser.close()
+    return not parser.external
 
 
 @dataclass(frozen=True)
@@ -721,7 +748,19 @@ class ChangeTracker:
                 return self._unavailable_task_changes(f"Task output changed externally: {rel}")
             if before != after:
                 snapshots.append(Snapshot(rel, before, after))
-        return self._render_snapshots(snapshots)
+        changes = self._render_snapshots(snapshots)
+        previews: dict[str, str] = {}
+        remaining = 128 * 1024
+        for snapshot in snapshots:
+            if snapshot.after is None or Path(snapshot.path).suffix.casefold() not in {".html", ".htm"}:
+                continue
+            size = len(snapshot.after.encode("utf-8"))
+            if size and size <= remaining and _standalone_preview(snapshot.after):
+                previews[snapshot.path] = snapshot.after
+                remaining -= size
+        if previews:
+            changes["html_previews"] = previews
+        return changes
 
     def _unavailable_task_changes(self, error: str) -> dict[str, object]:
         return {**self._render_snapshots([]), "ok": False, "error": error}

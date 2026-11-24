@@ -37,7 +37,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from socket import socket
 from typing import TYPE_CHECKING
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from codey import __version__
 from codey.app import api as app_api
@@ -583,7 +583,7 @@ class Handler(BaseHTTPRequestHandler):
             parts = url.path.split("/")
             if len(parts) == 5 and parts[3]:
                 try:
-                    status, payload = _execution_output_route(self._get_state(), parts[3], parse_qs(url.query))
+                    status, payload = _execution_output_route(self._get_state(), unquote(parts[3]), parse_qs(url.query))
                 except Exception as exc:
                     self._send_json(500, {"error": f"{type(exc).__name__}: {exc}"})
                     return

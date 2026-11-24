@@ -18,6 +18,7 @@ from codey.runtime.core.execution_receipt import execution_receipt
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import spec_for_tool
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer
+from codey.workspace.paths import safe_join
 
 if TYPE_CHECKING:
     from codey.operations.task_session import TaskSession
@@ -35,15 +36,109 @@ _PYTEST_END = re.compile(r"(.+) in [0-9]+(?:\.[0-9]+)?s(?: \([0-9:]+\))?")
 _UNITTEST_END = re.compile(r"Ran ([0-9]+) tests? in [0-9]+(?:\.[0-9]+)?s")
 _UNITTEST_TALLY = re.compile(r"(failures|errors)=([0-9]+)")
 _PYTHON_FRAME = re.compile(r'^\s*File "([^"]+)", line ([1-9][0-9]{0,6}), in ([^\r\n]+)\r?\n[ \t]+([^\r\n]+)', re.MULTILINE)
+_PYTEST_BLOCK = re.compile(r"^_{5,}\s+(\S.*?)\s+_{5,}$")
+_PYTEST_FRAME = re.compile(r"^\s*((?:[A-Za-z]:)?[^:<>]+\.py):([1-9][0-9]{0,6})(?::\s*|\s+in\s+)(.*)$")
 
 
-def project_failure_frames(output: str, project: Path) -> tuple[JsonObject, ...]:
+def _project_frame_path(path: str, project: Path, cwd: Path | None = None) -> str | None:
+    candidate = Path(path.replace("\\", "/"))
+    if not candidate.is_absolute():
+        if cwd is None or candidate.drive or candidate.anchor:
+            return None
+        candidate = cwd / candidate
+    try:
+        return candidate.resolve().relative_to(project).as_posix()
+    except (OSError, ValueError):
+        return None
+
+
+def _pytest_blocks(output: str) -> dict[str, list[list[str]]]:
+    blocks: dict[str, list[list[str]]] = {}
+    block: list[str] | None = None
+    for raw in output.splitlines():
+        line = _ANSI.sub("", raw)
+        if line.startswith("=" * 5):
+            block = None
+        elif (heading := _PYTEST_BLOCK.fullmatch(line)) is not None:
+            block = []
+            blocks.setdefault(heading[1].removeprefix("ERROR at setup of ").removeprefix(
+                "ERROR at teardown of ").removeprefix("ERROR collecting "), []).append(block)
+        elif block is not None:
+            block.append(line)
+    return blocks
+
+
+def _pytest_block_frames(block: list[str], project: Path, cwd: Path, failure: str,
+                         test_path: str | None) -> tuple[JsonObject, ...]:
+    business: JsonObject | None = None
+    test: JsonObject | None = None
+    source = ""
+    assertions: list[JsonValue] = []
+    for line in block:
+        if line.startswith("> "):
+            source = line[2:].strip()[:320]
+        elif line.startswith("E ") and len(assertions) < 3:
+            assertions.append(line[2:].strip()[:240])
+        match = _PYTEST_FRAME.fullmatch(line)
+        if match is None or (path := _project_frame_path(match[1], project, cwd)) is None:
+            continue
+        frame: JsonObject = {"path": path, "line": int(match[2]), "failure": failure}
+        if source:
+            frame["source"] = source
+        if match[3].startswith("in "):
+            frame["function"] = match[3][3:][:120]
+        if path == test_path:
+            test = frame
+        else:
+            business = frame
+        source = ""
+    if assertions and (target := business or test) is not None:
+        target["assertions"] = assertions
+    return tuple(frame for frame in (business, test) if frame is not None)
+
+
+def _pytest_failure_frames(output: str, project: Path, cwd: str, failures: tuple[str, ...]) -> tuple[JsonObject, ...]:
+    working = safe_join(project, cwd)
+    blocks = _pytest_blocks(output)
+    nodes = [(failure, failure.partition(" ")[2].split("::", 1)) for failure in failures]
+    frames: list[JsonObject] = []
+    for failure, node in nodes:
+        path = _project_frame_path(node[0], project, working)
+        name, parameter, value = node[-1].partition("[")
+        qualified = name.replace("::", ".")
+        names = (qualified + parameter + value, qualified.rsplit(".", 1)[-1] + parameter + value)
+        for heading in dict.fromkeys(names):
+            candidates = [_pytest_block_frames(block, project, working, failure, path)
+                          for block in blocks.get(heading, [])]
+            by_path = [rows for rows in candidates if path and any(frame["path"] == path for frame in rows)]
+            same_name = sum(row[-1].replace("::", ".").endswith(heading) for _, row in nodes)
+            if len(by_path) == 1:
+                frames.extend(by_path[0])
+                break
+            if len(candidates) == 1 and same_name == 1 and candidates[0]:
+                frames.extend(candidates[0])
+                break
+    return tuple(frames[:4])
+
+
+def project_failure_frames(output: str, project: Path, *, cwd: str = ".",
+                           pytest_failures: tuple[str, ...] = (),
+                           unittest_failures: tuple[str, ...] = ()) -> tuple[JsonObject, ...]:
+    if pytest_failures:
+        return _pytest_failure_frames(output, project, cwd, pytest_failures)
+    if unittest_failures:
+        unittest_frames: list[JsonObject] = []
+        for block in re.split(r"(?m)^={20,}\r?$", output):
+            heading = next(iter(block.strip().splitlines()), "")
+            if heading in unittest_failures:
+                unittest_frames.extend({**frame, "failure": heading} for frame in project_failure_frames(block, project))
+        return tuple(unittest_frames[:4])
     frames: dict[tuple[str, int], JsonObject] = {}
     for match in _PYTHON_FRAME.finditer(output):
-        path = Path(match[1])
-        if not path.is_absolute() or not (path := path.resolve()).is_relative_to(project):
+        relative = _project_frame_path(match[1], project)
+        if relative is None:
             continue
-        relative, line = path.relative_to(project).as_posix(), int(match[2])
+        line = int(match[2])
         frames[relative, line] = {"path": relative, "line": line, "function": match[3][:120], "source": match[4][:320]}
     return tuple(frames.values())[-4:]
 
@@ -115,17 +210,12 @@ class ProjectCheckComparison:
     task_ref: str
     execution_ref: str
     frames: tuple[JsonObject, ...] = ()
-
-    def observation(self) -> JsonObject:
-        reads: list[JsonValue] = [{"tool": "read_file", "args": {"path": frame["path"],
-            "offset": max(1, require_json_integer(frame["line"], "failure line") - 2), "limit": 7}}
-            for frame in self.frames]
-        return {"execution_ref": self.execution_ref, "exit_code": self.exit_code,
-                "failed_tests": list(self.failure_ids), "project_frames": list(self.frames), "inspect": reads}
+    workspace_revision: int = 0
+    complete: bool = True
 
     @property
-    def key(self) -> tuple[str, str, str, str, int, tuple[str, ...]]:
-        return self.command, self.cwd, self.workspace_fingerprint, "exit", self.exit_code, self.failure_ids
+    def key(self) -> tuple[str, str, int, str, str, int, tuple[str, ...]]:
+        return self.command, self.cwd, self.workspace_revision, self.workspace_fingerprint, "exit", self.exit_code, self.failure_ids
 
 
 def compare_project_check(execution: SettledCheckExecution, *, session: TaskSession, store: ManagedOutputStore,
@@ -143,16 +233,19 @@ def compare_project_check(execution: SettledCheckExecution, *, session: TaskSess
         if receipt is None or receipt.status != "exit" or receipt.exit_code_scope != "process" or receipt.exit_code is None:
             return None
         output = resolve_result_output(ReceiptReader(session, store, session_id, execution.task_ref), result)
-        if output.source != "execution" or output.original_output_incomplete:
-            return None
         stdout, separator, stderr = output.text.partition("\n[stderr]\n")
-        failures = (pytest_failure_ids(stdout, receipt.exit_code) if family == "python:pytest" else
-                    unittest_failure_ids(stderr if separator else stdout, receipt.exit_code))
-        if failures is None:
-            return None
-        frames = project_failure_frames(output.text, Path(session.project).resolve()) if failures and session.project else ()
-        return ProjectCheckComparison(command, cwd, identity.fingerprint, receipt.exit_code, failures,
-                                      execution.task_ref, execution.execution_ref, frames)
+        failures: tuple[str, ...] | None = None
+        if output.source == "execution" and not output.original_output_incomplete:
+            failures = (pytest_failure_ids(stdout, receipt.exit_code) if family == "python:pytest" else
+                        unittest_failure_ids(stderr if separator else stdout, receipt.exit_code))
+        frames = project_failure_frames(
+            stdout if family == "python:pytest" or not separator else stderr, Path(session.project).resolve(), cwd=cwd,
+            pytest_failures=failures if family == "python:pytest" and failures else (),
+            unittest_failures=failures if family == "python:unittest" and failures else (),
+        ) if failures and session.project else ()
+        return ProjectCheckComparison(command, cwd, identity.fingerprint, receipt.exit_code, failures or (),
+                                      execution.task_ref, execution.execution_ref, frames,
+                                      identity.revision, failures is not None)
     except (KeyError, OSError, ValueError, sqlite3.Error):
         return None
 

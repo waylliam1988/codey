@@ -20,7 +20,7 @@ def test_historical_task_diff_uses_first_write_and_run_identity(tmp_path: Path) 
     state = tmp_path / "state"
     ledgers = RunLedgerStore(state)
     outputs = ManagedOutputStore(state)
-    source = project / "shared.txt"
+    source = project / "shared.html"
     source.write_text("base\n", encoding="utf-8")
     (project / "user.txt").write_text("dirty\n", encoding="utf-8")
 
@@ -39,6 +39,8 @@ def test_historical_task_diff_uses_first_write_and_run_identity(tmp_path: Path) 
     assert isinstance(first, str) and isinstance(second, str)
     assert "-base\n+first" in first and "second" not in first and "user.txt" not in first
     assert "-first\n+second" in second and "user.txt" not in second
+    assert a["html_previews"] == {"shared.html": "first\n"}
+    assert b["html_previews"] == {"shared.html": "second\n"}
     assert load_task_changes(ledgers, outputs, "other", "a") is None
     assert load_task_changes(ledgers, outputs, "owner", "a~") is None
 
@@ -63,6 +65,17 @@ def test_task_diff_reads_each_output_once(tmp_path: Path) -> None:
     assert isinstance(body, str) and "+settled" in body and "outside" not in body
     unavailable = collect_task_changes(tmp_path, tracker)
     assert unavailable["ok"] is False and unavailable["diff"] == ""
+
+
+def test_task_diff_keeps_html_with_unretained_dependencies_as_diff(tmp_path: Path) -> None:
+    tracker = ChangeTracker(tmp_path)
+    path = tmp_path / "page.html"
+    tracker.capture_before(path.name)
+    path.write_text('<link rel="stylesheet" href="./main.css"><h1>saved</h1>', encoding="utf-8")
+    tracker.capture_after(path.name)
+    result = collect_task_changes(tmp_path, tracker)
+    assert result["changed_count"] == 1
+    assert "html_previews" not in result
 
 
 def test_task_diff_counts_content_that_begins_with_diff_markers(tmp_path: Path) -> None:

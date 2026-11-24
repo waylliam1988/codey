@@ -13,20 +13,26 @@ _BINDING = "x-codey-project-check"
 
 
 def project_check_call(spec: ToolSpec) -> JsonObject | None:
-    command = canonical_json_object(dict(spec.parameters)["command"])
-    binding = command.get(_BINDING)
-    return {"tool": "run", "args": {"command": CHECK}} if isinstance(binding, dict) and "command" in binding else None
+    return next((call for args, call in project_check_choices(spec) if call["args"] == {"command": CHECK}), None)
+
+
+def project_check_choices(spec: ToolSpec) -> tuple[tuple[JsonObject, JsonObject], ...]:
+    field = dict(spec.parameters).get("command")
+    if field is None:
+        return ()
+    binding = canonical_json_object(field).get(_BINDING)
+    if not isinstance(binding, dict):
+        return ()
+    raw = binding.get("choices")
+    choices = raw.items() if isinstance(raw, dict) else (("project", binding),)
+    return tuple((candidate, {"tool": "run", "args": {"command": {"check": key}}})
+                 for key, candidate in choices if isinstance(candidate, dict))
 
 
 def matches_selected_check(spec: ToolSpec, args: JsonObject) -> bool:
     """Compare an admitted concrete run with the original frozen check choices."""
-    binding = canonical_json_object(dict(spec.parameters)["command"]).get(_BINDING)
-    if not isinstance(binding, dict):
-        return False
-    choices = binding.get("choices")
-    candidates = choices.values() if isinstance(choices, dict) else (binding,)
-    return any(isinstance(candidate, dict) and candidate.get("command") == args.get("command")
-               and candidate.get("path") == args.get("path", ".") for candidate in candidates)
+    return any(candidate.get("command") == args.get("command") and candidate.get("path") == args.get("path", ".")
+               for candidate, _ in project_check_choices(spec))
 
 
 def verification_spec(spec: ToolSpec, candidate: VerificationRequirement) -> ToolSpec:

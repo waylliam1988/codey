@@ -137,39 +137,60 @@ class SettledCheckExecution:
 
 def settled_check_for_progress(
     durable: DurableSession, caller_result: ToolResult, *, owner_task_id: str, receipts: Mapping[str, ToolResult],
+    include_accepted: bool = False,
 ) -> SettledCheckExecution | None:
     """Find the original terminal check behind a committed caller delivery."""
-    from codey.codemode.verification import matches_selected_check
-    from codey.operations.provider_receipts import restore_snapshot
-
-    if caller_result.call.name == "run" and caller_result.kind != "accepted":
+    accepted = caller_result.call.name == "run" and caller_result.kind == "accepted"
+    if caller_result.call.name == "run" and not accepted:
         reference = caller_result.canonical.get("tool_task")
-    elif caller_result.call.name == "task_output" and caller_result.ok:
+    elif (accepted and include_accepted) or (caller_result.call.name == "task_output" and caller_result.ok):
         reference = caller_result.canonical.get("value")
     else:
         return None
-    if (not isinstance(reference, dict) or not isinstance(task_ref := reference.get("task_ref"), str)
-            or reference.get("execution_ref") != (execution_ref := execution_effect_id(task_ref))):
+    if not isinstance(reference, dict) or not isinstance(task_ref := reference.get("task_ref"), str):
+        return None
+    execution_ref = execution_effect_id(task_ref)
+    if not accepted and reference.get("execution_ref") != execution_ref:
         return None
     if caller_result.call.name == "task_output" and caller_result.call.args.get("task_ref") != task_ref:
         return None
     try:
         child = owned_tool_task(durable, task_ref, owner_task_id=owner_task_id)
-        if child.status != "completed" or (original := receipts.get(execution_ref)) is None:
+        if not is_settled_project_check(child) or (original := receipts.get(execution_ref)) is None:
             return None
         request = ToolTaskInput.from_payload(child.state["tool_input"])
-        if (request.call_name != "run" or original.call.name != "run" or original.call.args != request.args
-                or request.args.get("tty") is True or request.args.get("stdin") is True):
+        if original.call.name != "run" or original.call.args != request.args:
             return None
         if caller_result.call.name == "run" and caller_result.call.args != request.args:
-            return None
-        snapshot = restore_snapshot(request.snapshot)
-        check = next((spec for spec in snapshot.frozen_specs if spec.name == "run"), None)
-        if check is None or not matches_selected_check(check, request.args):
             return None
     except (KeyError, ValueError):
         return None
     return SettledCheckExecution(task_ref, execution_ref, original)
+
+
+def is_settled_project_check(child: TaskCheckpoint) -> bool:
+    from codey.codemode.verification import matches_selected_check, project_check_choices
+    from codey.completion.verification_policy import _command_family
+    from codey.operations.provider_receipts import restore_snapshot
+
+    if child.status != "completed":
+        return False
+    request = ToolTaskInput.from_payload(child.state["tool_input"])
+    if request.call_name != "run" or request.args.get("tty") is True or request.args.get("stdin") is True:
+        return False
+    snapshot = restore_snapshot(request.snapshot)
+    check = next((spec for spec in snapshot.frozen_specs if spec.name == "run"), None)
+    if check is None:
+        return False
+    if matches_selected_check(check, request.args):
+        return True
+    command = request.args.get("command")
+    family = _command_family(command) if isinstance(command, str) else ""
+    if family not in {"python:pytest", "python:unittest"}:
+        return False
+    return any(isinstance(selected := args.get("command"), str) and _command_family(selected) == family
+               and args.get("path", ".") == request.args.get("path", ".")
+               for args, _ in project_check_choices(check))
 
 
 @dataclass(frozen=True)

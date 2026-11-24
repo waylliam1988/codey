@@ -1,7 +1,12 @@
 import { runtime } from './runtime';
 import { createIconSvg } from './icon_button';
-import { isHtmlPath, isPreviewableHtml } from './html_preview';
-import type { ChangeFilePreview, ChangesData, RestoreChangesResult } from './types/domain';
+import { htmlPreview, isHtmlPath, isPreviewableHtml } from './html_preview';
+import { commandOutputView } from './command_output_view';
+import { fetchExecutionOutput } from './execution_output';
+import type { RenderApi } from './render';
+import type { ChangeFilePreview, ChangesData, ChangeVerification, RestoreChangesResult } from './types/domain';
+import type { UiStateApi } from './ui_state';
+import type { Workspace } from './workspace';
 export interface ChangesDrawerDeps {
   $(id: string): HTMLElement;
   fetchChanges(project: string): Promise<ChangesData>;
@@ -89,7 +94,8 @@ export interface ChangesDrawerDeps {
     if (!lastData?.diff) return;
     const project = activeProject,
       data = lastData;
-    const ok = await runtime.Render.copyText(data.diff);
+    const render: RenderApi = runtime.Render;
+    const ok = await render.copyText(data.diff);
     if (activeProject !== project || lastData !== data) return;
     const copy = $<HTMLButtonElement>('changes-copy');
     copy.replaceChildren(createIconSvg('copy'));
@@ -121,11 +127,13 @@ export interface ChangesDrawerDeps {
     activeProject = project;
     activeRun = run;
     selectedPath = path;
-    if (!run) runtime.Workspace?.target('changes', { path });
+    const workspace: Workspace | undefined = runtime.Workspace;
+    const ui: UiStateApi = runtime.UiState;
+    if (!run) workspace?.target('changes', { path });
     const scope = $('changes-scope');
-    scope.textContent = runtime.UiState.pathName(project);
+    scope.textContent = ui.pathName(project);
     scope.title = project;
-    runtime.UiState.setDrawerOpen('changes-drawer', true);
+    ui.setDrawerOpen('changes-drawer', true);
     pathFocus = document.activeElement;
     await loadChangesDrawer(project);
   }
@@ -178,7 +186,8 @@ export interface ChangesDrawerDeps {
     lastData = null;
     loading = restoring = fresh = failed = false;
     updateControls();
-    runtime.UiState.setDrawerOpen('changes-drawer', false);
+    const ui: UiStateApi = runtime.UiState;
+    ui.setDrawerOpen('changes-drawer', false);
   }
   function renderChangesDrawer(data: ChangeData): void {
     lastData = data;
@@ -227,7 +236,55 @@ export interface ChangesDrawerDeps {
       empty.textContent = data.error || 'No changes';
       body.replaceChildren(empty);
     }
+    if (data.verification) body.prepend(renderVerification(data.verification));
     body.scrollTop = anchor?.isConnected ? body.scrollTop + anchor.getBoundingClientRect().top - top - offset : scroll;
+  }
+
+  function renderVerification(verification: ChangeVerification): HTMLElement {
+    const section = document.createElement('section');
+    section.className = 'changes-verification';
+    const summary = document.createElement('strong');
+    summary.textContent = verification.summary || 'Verification';
+    section.append(summary);
+    const failure = verification.failed_check;
+    if (!failure) return section;
+    const details = document.createElement('details');
+    const heading = document.createElement('summary');
+    heading.textContent = `${failure.command} (${failure.cwd}) · Exit code ${failure.exit_code}`;
+    details.append(heading);
+    section.append(details);
+    const scope = failure.output;
+    if (!scope) {
+      heading.replaceWith(document.createTextNode(heading.textContent));
+      details.replaceWith(...details.childNodes);
+      return section;
+    }
+    const output = document.createElement('div');
+    output.className = 'command-output';
+    const pre = document.createElement('pre');
+    pre.tabIndex = 0;
+    output.append(pre);
+    details.append(output);
+    const reader = commandOutputView(pre, output, details);
+    const request = generation;
+    let loaded = false;
+    details.addEventListener('toggle', async () => {
+      if (!details.open || loaded) return;
+      loaded = true;
+      reader.write('Loading output…');
+      try {
+        const result = await fetchExecutionOutput(scope);
+        if (generation !== request || !section.isConnected || !result) return;
+        reader.write(
+          [result.stdout, result.stderr, result.truncated ? 'Output truncated' : ''].filter(Boolean).join('\n'),
+        );
+      } catch {
+        if (generation !== request || !section.isConnected) return;
+        loaded = false;
+        reader.write('Output unavailable');
+      }
+    });
+    return section;
   }
   async function restore() {
     if (
@@ -344,24 +401,40 @@ export interface ChangesDrawerDeps {
     btn.setAttribute('aria-expanded', 'false');
     btn.onclick = () => toggleFileNode(wrap, file.path || '', pre, btn);
     wrap.append(btn);
-    if (!activeRun && isHtmlPath(file.path)) {
+    if (isHtmlPath(file.path)) {
       const preview = document.createElement('button');
       preview.type = 'button';
       preview.className = 'change-html-preview';
-      preview.textContent = 'Preview';
-      preview.setAttribute('aria-label', `Preview ${file.path}`);
-      preview.onclick = () => deps.previewHtml(activeProject, file.path);
+      preview.textContent = activeRun ? 'Run preview' : 'Preview current workspace';
+      preview.setAttribute('aria-label', `${preview.textContent} · ${file.path}`);
+      preview.onclick = () => {
+        if (!activeRun) {
+          deps.previewHtml(activeProject, file.path);
+          return;
+        }
+        const current = wrap.querySelector('iframe');
+        if (current) {
+          current.remove();
+          preview.setAttribute('aria-expanded', 'false');
+        } else if (lastData?.html_previews && Object.hasOwn(lastData.html_previews, file.path)) {
+          wrap.append(htmlPreview(`Run preview · ${file.path}`, lastData.html_previews[file.path]));
+          preview.setAttribute('aria-expanded', 'true');
+        }
+      };
       wrap.append(preview);
     }
     wrap.append(pre);
-    return wrap as ChangeNode;
+    return wrap;
   }
 
   function updateFileNode(node: ChangeNode, file: ChangesData['files'][number], chunks: DiffChunk[]): void {
     const status = node.querySelector<HTMLElement>('.change-status');
     if (status) status.textContent = file.status || 'M';
     const preview = node.querySelector<HTMLButtonElement>('.change-html-preview');
-    if (preview) preview.hidden = !isPreviewableHtml(file);
+    if (preview)
+      preview.hidden =
+        !isPreviewableHtml(file) ||
+        (!!activeRun && (!lastData?.html_previews || !Object.hasOwn(lastData.html_previews, file.path)));
     const stats = node.querySelectorAll<HTMLElement>('.change-stat');
     stats[0].textContent = `+${file.additions || 0}`;
     stats[1].textContent = `-${file.deletions || 0}`;

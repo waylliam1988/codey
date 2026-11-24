@@ -231,8 +231,8 @@ def _retry_prompt(context: KernelContext, snapshot: TurnSnapshot, decision: Retr
     from codey.operations.edit_base import bound_symbol_retry
 
     task = str(context.transport.user_task or context.session.task_text).strip()
-    if bound_symbol_retry(snapshot) is not None and not decision["error"]:
-        return task, None
+    if bound_symbol_retry(snapshot) is not None:
+        return "\n\n".join(part for part in (task, decision["error"]) if part), None
     # A retry can be sent over a newly connected provider with no warm chat history.
     if text_reply and task:
         span = (TaskPromptSpan.for_task(context.sink.run_id, task, retry=True)

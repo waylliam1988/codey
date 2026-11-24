@@ -15,6 +15,7 @@ from codey.operations.kernel_progress import KernelProgress, project_check_cycle
 from codey.operations.progress_comparison import ProjectCheckComparison, pytest_failure_ids, unittest_failure_ids
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
+from codey.runs.task_diff import _failed_check
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.progress import ProgressSnapshot
 from codey.types.json_value import JsonObject
@@ -150,8 +151,9 @@ def test_owned_pytest_checks_put_unchanged_edit_diagnostic_in_next_request(tmp_p
         ]}}
 
     done: JsonObject = {"tool": "done", "args": {"summary": "Changed the one limit and verified it."}}
-    replies = iter((check, read, edit(2), check, edit(3), check, done, done))
+    replies = iter((check, read, edit(2), edit(3), check, done, done))
     prompts: list[str] = []
+    check_results: list[dict[str, object] | None] = []
 
     class Provider:
         name = "scripted"
@@ -162,6 +164,8 @@ def test_owned_pytest_checks_put_unchanged_edit_diagnostic_in_next_request(tmp_p
 
         def send(self, text: str, timeout: float | None = None) -> str:
             prompts.append(text)
+            if len(prompts) in {2, 6}:
+                check_results.append(_failed_check(state.durable, state.managed_outputs, "test-session", "test-run"))
             return json.dumps(next(replies))
 
         def close(self) -> None:
@@ -176,7 +180,16 @@ def test_owned_pytest_checks_put_unchanged_edit_diagnostic_in_next_request(tmp_p
         ))
 
     assert result.stop_reason == "done", result
-    assert "left limit.py unchanged" in prompts[4]
-    assert "FAILED test_limit.py::test_limit" in prompts[4]
-    assert '"tool":"task_output"' in prompts[4]
+    assert '"failure":"FAILED test_limit.py::test_limit"' in prompts[1]
+    assert '"path":"test_limit.py"' in prompts[1]
+    assert '"unchanged_edit":"limit.py"' in prompts[3]
+    assert '"tool":"read_tool_result"' in prompts[3]
+    assert '"state":"needs_verification"' in prompts[4]
+    assert '"state":"passed"' in prompts[5]
+    assert '"unchanged_edit"' not in prompts[5]
+    first, latest = check_results
+    assert first is not None and first["exit_code"] == 1
+    assert isinstance(output_scope := first["output"], dict)
+    assert output_scope["session_id"] == "test-session" and output_scope["run_id"].startswith("tool_task:")
+    assert latest is None
     assert (project / "limit.py").read_text(encoding="utf-8") == "LIMIT = 3\n"

@@ -264,6 +264,21 @@ export interface ChangesData {
   conflicts?: string[];
   changed_count?: number;
   truncated?: boolean;
+  html_previews?: Record<string, string>;
+  verification?: ChangeVerification;
+}
+export interface ChangeVerification {
+  summary?: string;
+  tone?: string;
+  checks_passed?: boolean;
+  trust?: string;
+  integrity?: string;
+  failed_check?: {
+    command: string;
+    cwd: string;
+    exit_code: number;
+    output?: import('../execution_output').ExecutionOutputScope;
+  };
 }
 export interface RunData {
   ok: boolean;
