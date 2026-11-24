@@ -364,9 +364,13 @@ class ExecutionDelegate:
                                     base_revision=require_json_integer(args["base_revision"], "base_revision") if "base_revision" in args else None)
         if call.name == "browser_click":
             from codey.automation.browser_session import BrowserToolOutput
+            from codey.operations.browser_linked_record import linked_record_click_allowed
             from codey.operations.browser_waits import observed_link_outcome, pending_link_click
 
             document = browser.document_identity() if self.session is not None else None
+            if self.session is not None and not linked_record_click_allowed(self.session, ref, document):
+                return BrowserToolOutput("The click is outside the verified first record or was already delivered.", False,
+                    {"action": "click", "ref": ref, "delivery": "not_delivered"})
             if self.session is not None and (prior := pending_link_click(self.session, ref, document)):
                 return BrowserToolOutput("The link click was already delivered. Observe the current document.",
                     False, {"action": "click", "ref": ref, "delivery": "not_delivered", "prior_click": prior})

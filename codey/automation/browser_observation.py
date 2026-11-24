@@ -19,11 +19,16 @@ VISIBLE_TEXT = r"""(root, structured = false) => {
         if (length > 100000) return;
         if (node.nodeType === Node.TEXT_NODE) {
             const parent = node.parentElement;
-            if (!parent || !node.textContent.trim() || getComputedStyle(parent).visibility !== 'visible') return;
+            if (!parent || !node.textContent || getComputedStyle(parent).visibility !== 'visible') return;
             const closed = parent.closest('details:not([open])');
             if (closed && !closed.querySelector(':scope > summary')?.contains(parent)) return;
             const range = document.createRange(); range.selectNodeContents(node);
-            if (range.getClientRects().length) {
+            const boxes = range.getClientRects();
+            if (!node.textContent.trim()) {
+                if (structured && Array.from(boxes).some(box => box.width > 0)) {parts.push(' '); length++;}
+                return;
+            }
+            if (boxes.length) {
                 const text = node.textContent.slice(0,100001-length);
                 parts.push(text); length += text.length;
             }
@@ -72,15 +77,65 @@ _CONTEXT = """node => {
         basis: node.getAttribute('aria-label') ? 'aria-label' : named ? 'aria-labelledby' : 'heading'} : null;
 }"""
 
+_RECORD_CONTEXT = """node => {
+    const signature = el => {
+        const role = el.getAttribute('role') || '';
+        const type = el.getAttribute('itemtype') || '';
+        if (type || ['ARTICLE','LI','TR'].includes(el.tagName) || ['listitem','row'].includes(role))
+            return [el.tagName, role, type].join('|');
+        if (el.tagName === 'DIV' && el.classList.length && el.querySelector(':scope > h2,:scope > h3,:scope > blockquote'))
+            return 'DIV|' + Array.from(el.classList).sort().join(' ');
+        return '';
+    };
+    const key = signature(node);
+    if (!key || !node.parentElement || node.closest('nav,header,footer,[role=navigation]')) return null;
+    const shown = el => el.getClientRects().length && !el.closest('[hidden],[inert],[aria-hidden=true]')
+        && getComputedStyle(el).visibility === 'visible';
+    const siblings = node.parentElement.children;
+    if (siblings.length > 160) return null;
+    const peers = Array.from(siblings).filter(el => signature(el) === key && shown(el));
+    if (peers.length < 2 || !peers.includes(node)) return null;
+    const boxes = peers.map(el => el.getBoundingClientRect());
+    const rtl = getComputedStyle(node.parentElement).direction === 'rtl';
+    const ordered = boxes.every((box, i) => {
+        if (!i) return true;
+        const prev = boxes[i-1];
+        const sameRow = Math.abs(box.top - prev.top) <= 1;
+        return box.top >= prev.bottom - 1 || sameRow && (rtl ? box.right <= prev.left + 1 : box.left >= prev.right - 1);
+    });
+    const text = (""" + VISIBLE_TEXT + """);
+    const field = selector => {
+        const nodes = Array.from(node.querySelectorAll(selector)).filter(shown);
+        return nodes.length === 1 ? text(nodes[0]) : '';
+    };
+    const subject = field('[itemprop~=author]');
+    const quotation = subject && field('[itemprop~=text],blockquote');
+    const title = field('[itemprop~=name],h2,h3');
+    return {kind: quotation ? 'quotation' : 'record', basis: 'repeated',
+        label: (subject || title).slice(0, 240), ...(ordered ? {ordinal: peers.indexOf(node) + 1} : {}),
+        ...(quotation && quotation.length <= 1024 ? {quotation, subject} : {})};
+}"""
+
 ELEMENT_METADATA = """el => {
     const query = (""" + QUERY_TARGET + """)(el);
     const observeContext = (""" + _CONTEXT + """);
+    const observeRecord = (""" + _RECORD_CONTEXT + """);
     let context = null, contextNode = null;
     for (let node = el.parentElement; node; node = node.parentElement) {
-        context = observeContext(node);
+        const repeated = observeRecord(node), named = observeContext(node);
+        context = repeated && named ? {...repeated, label: named.label} : repeated || named;
         if (!context) continue;
         contextNode = node;
         break;
+    }
+    let recordLink = false;
+    if (context?.basis === 'repeated' && el.matches('a[href]:not([download])')) {
+        const url = URL.canParse(el.href, document.baseURI) ? new URL(el.href, document.baseURI) : null;
+        const authorLink = el.matches('[itemprop~=author]') || Boolean(el.parentElement?.querySelector(':scope > [itemprop~=author]'));
+        recordLink = url !== null && /^https?:$/.test(url.protocol) && url.origin === location.origin
+            && !url.username && !url.password && (url.pathname !== location.pathname || url.search !== location.search)
+            && (el.target || document.querySelector('base[target]')?.target || '_self') === '_self'
+            && (context.kind !== 'quotation' || authorLink);
     }
     return {contextNode, queryNode: query.node, metadata: {
         actionable: el.matches(""" + json.dumps(ACTIONABLE_CANDIDATES) + """),
@@ -92,7 +147,7 @@ ELEMENT_METADATA = """el => {
         value: el.type === 'password' ? null : ('value' in el ? el.value : null),
         disabled: el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true',
         checked: 'checked' in el ? el.checked : null, context,
-        query_relation: query.node ? query.relation : ''
+        query_relation: query.node ? query.relation : '', record_link: recordLink
         ,semantic_identity: {
             id: el.id || '', href: el.getAttribute('href') || '', controls: el.getAttribute('aria-controls') || '',
             records: Array.from((function*(){for(let n=el;n;n=n.parentElement)

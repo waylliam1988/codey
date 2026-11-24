@@ -48,7 +48,8 @@ _DOM_SNAPSHOT = """(root, [limit, includeText]) => {
         if (rows.length === limit) { truncated = true; break; }
         const {metadata, contextNode, queryNode} = observe(node);
         const owner = index(contextNode);
-        if (includeText && contextNode && ['article', 'tr', 'row'].includes(metadata.context.kind) && !(owner in regions))
+        if (includeText && contextNode && (metadata.context.basis === 'repeated'
+                || ['article', 'tr', 'row'].includes(metadata.context.kind)) && !(owner in regions))
             regions[owner] = visibleText(contextNode).slice(0, 240);
         rows.push({node: index(node), owner, query: index(queryNode), metadata,
             box: {x: rect.x, y: rect.y, width: rect.width, height: rect.height}});
@@ -240,6 +241,8 @@ async def _merge_controls(
         row: JsonObject = {"role": role, "name": name, "context_id": context_id,
                            "disabled": metadata.get("disabled") is True, "value": metadata.get("value"),
                            "checked": metadata.get("checked"), "query_relation": metadata.get("query_relation", "")}
+        if metadata.get("record_link") is True:
+            row["record_link"] = True
         if include_boxes:
             box_raw: object = entry["box"] if context.frame.parent_frame is None else await handle.bounding_box()
             if isinstance(box_raw, dict):

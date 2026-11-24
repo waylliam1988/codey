@@ -201,8 +201,8 @@ def render_passage_window(document: SourceDocument, rows: list[PassageDescriptor
         + "\n" + document.text[row["start"]:row["end"]] for row in rows)
 
 
-def restore_passages(ledger: ResearchLedger, observation: object, descriptors: object) -> None:
-    """Rebuild immutable bindings from the same source receipt, never a live URL."""
+def receipt_passages(observation: object, descriptors: object) -> tuple[ReadPassage, ...]:
+    """Decode immutable bindings from the source receipt without publishing them."""
     from codey.research.ledger_receipts import source_observation
 
     source, text, pages = source_observation(observation)
@@ -211,7 +211,7 @@ def restore_passages(ledger: ResearchLedger, observation: object, descriptors: o
         raise ValueError("invalid read passage descriptors")
     decoded = canonical_json_object({"passages": descriptors})["passages"]
     assert isinstance(decoded, list)
-    pending = {}
+    passages: list[ReadPassage] = []
     for row in decoded:
         if (not isinstance(row, dict) or not {"ref", "start", "end"} <= set(row)
                 or set(row) - {"ref", "start", "end", "source_version", "evidence_version"}):
@@ -239,14 +239,21 @@ def restore_passages(ledger: ResearchLedger, observation: object, descriptors: o
         ref = passage_ref(source.final_url, source.text_hash, start, end, **versions)
         if row["ref"] != ref or not text[start:end].strip():
             raise ValueError("read passage identity differs from source version")
-        value = ReadPassage(ref, source, text, tuple(sorted(pages.items())), start, end, **versions)
-        previous = ledger.read_passages.get(ref)
+        passages.append(ReadPassage(ref, source, text, tuple(sorted(pages.items())), start, end, **versions))
+    return tuple(passages)
+
+
+def restore_passages(ledger: ResearchLedger, observation: object, descriptors: object) -> None:
+    """Rebuild immutable bindings from the same source receipt, never a live URL."""
+    pending: dict[str, ReadPassage] = {}
+    for value in receipt_passages(observation, descriptors):
+        previous = ledger.read_passages.get(value.ref)
         # Reacquisition time may differ, while the referenced bytes stay identical.
         if previous is not None and (previous.source.final_url, previous.source.text_hash,
                                      previous.source_text, previous.start, previous.end) != (
-                source.final_url, source.text_hash, text, start, end):
+                value.source.final_url, value.source.text_hash, value.source_text, value.start, value.end):
             raise ValueError("conflicting read passage identity")
-        pending[ref] = previous or value
+        pending[value.ref] = previous or value
     ledger.read_passages.update(pending)
 
 

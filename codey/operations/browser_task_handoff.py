@@ -57,6 +57,8 @@ from codey.types.json_value import JsonObject, JsonValue, decode_json_object, pa
 
 def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall | None:
     """Materialize explicit navigation to one authorized task URL before interaction."""
+    from codey.operations.browser_linked_record import requested_linked_record
+
     research = session.policy.strict_research and snapshot.research_scope is not None
     # Repeated page rounds own their transitions. A single explicitly required
     # navigation can initialize Research before any control interaction.
@@ -68,6 +70,11 @@ def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall
     if any((spec := specs.get(result.call.name)) is not None and spec.executor == "browser"
            for result in session._memory_results.values()):
         return None
+    if (linked := requested_linked_record(session)) is not None and "codemode" in snapshot.tool_names and {
+            "browser_navigate", "browser_snapshot"} <= set(snapshot.nested_tool_names):
+        return ToolCall("codemode", {"code": "unwrap(await tools.browser_navigate(inputs)); "
+                    "unwrap(await tools.browser_snapshot({})); return null;", "inputs": {"url": linked.url}},
+                    call_id="required-source:navigation")
     requirements = [rule for check in session.policy.required_checks
                     if (rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_navigate"]
     if not requirements and not explicit_web_intent(session.task_text).browser_navigation_requested:
@@ -394,6 +401,7 @@ def browser_observation_handoff(session: TaskSession, snapshot: TurnSnapshot, co
                      + json.dumps(observation, ensure_ascii=False))
     if prior := _previous_page_observation(session, url):
         lines.append("Earlier page observation (historical quoted data):\n" + json.dumps(prior, ensure_ascii=False))
+    lines.extend(_record_controls(current[1]))
     if ("browser_click" in snapshot.tool_names and snapshot.browser_followups
             and "controls" in click_followup_plan(session.policy.required_checks, set(snapshot.nested_tool_names)).plans):
         buttons: list[JsonObject] = [{"tool": "browser_click", "args": {"ref": choice, "purpose": "controls"}}
@@ -404,6 +412,37 @@ def browser_observation_handoff(session: TaskSession, snapshot: TurnSnapshot, co
             lines.append("Executable current button choices (select only the one required by the task):\n"
                 + json.dumps(buttons, ensure_ascii=False))
     return "\n".join(lines)
+
+
+def _record_controls(value: JsonObject) -> list[str]:
+    raw_contexts, raw_controls = value.get("contexts"), value.get("elements")
+    if not isinstance(raw_contexts, list) or not isinstance(raw_controls, list):
+        return []
+    regions = [row for row in raw_contexts if isinstance(row, dict) and row.get("basis") == "repeated"]
+    controls = [row for row in raw_controls if isinstance(row, dict) and row.get("record_link") is True]
+    lines: list[str] = []
+    for region in regions[:6]:
+        same_record = [row for row in controls if row.get("context_id") == region.get("id")]
+        if same_record:
+            links = [{"name": row.get("name"), "ref": row.get("ref")} for row in same_record]
+            lines.append(json.dumps({"record": region, "links": links}, ensure_ascii=False))
+    return lines
+
+
+def linked_record_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext) -> tuple[TurnSnapshot, str]:
+    from codey.operations.browser_linked_record import linked_record_progress, requested_linked_record
+
+    request = requested_linked_record(session)
+    if request is None or snapshot.input_binding is not None or snapshot.browser_copy is not None:
+        return snapshot, ""
+    progress = linked_record_progress(session, request)
+    if progress.read_ref:
+        return snapshot, ""
+    if (call := progress.next_call(context.browser_document)) is not None:
+        snapshot, action, _ = handoff_call(session, snapshot, call)
+        if action is not None:
+            return snapshot, json.dumps(action, ensure_ascii=False)
+    return snapshot, ""
 
 
 def _previous_page_observation(session: TaskSession, current_url: JsonValue) -> JsonObject:
@@ -827,6 +866,15 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
 def browser_task_handoff_for_step(
     session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext, generation: int | None = None, *,
     step: BrowserNextStep | None, delivered_results: Sequence[ToolResult] = (),
+) -> tuple[TurnSnapshot, str]:
+    snapshot, linked = linked_record_handoff(session, snapshot, context)
+    return ((snapshot, linked) if linked else
+            _workflow_handoff(session, snapshot, context, generation, step=step, delivered_results=delivered_results))
+
+
+def _workflow_handoff(
+    session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext, generation: int | None, *,
+    step: BrowserNextStep | None, delivered_results: Sequence[ToolResult],
 ) -> tuple[TurnSnapshot, str]:
     if (snapshot.input_binding is not None or snapshot.browser_copy is not None
             or "browser_read" not in snapshot.inventory_names):

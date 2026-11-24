@@ -195,7 +195,13 @@ def evaluate(session: TaskSession, done_text: object, *, context: object = None,
     try:
         normalized = CompletionContext.from_value(context)
         collect_completion_workspace(session, normalized)
-        return _evaluate_inner(session, done_text, context=normalized, observations=observations, metadata=metadata)
+        from codey.operations.browser_linked_record import linked_record_completion
+
+        draft = str(done_text or "").strip()
+        text, linked_refs = linked_record_completion(session, draft)
+        if text is None:
+            return GateVerdict(False, "The requested linked record and detail fields remain unverified.", None)
+        return _evaluate_inner(session, text, context=normalized, observations=observations, metadata=metadata, linked_refs=linked_refs)
     except Exception as exc:
         return GateVerdict(
             complete=False,
@@ -531,7 +537,8 @@ def _browser_completion_block(session: TaskSession, text: str, context: Completi
 
 def _evaluate_inner(session: TaskSession, done_text: object, *, context: CompletionContext,
                     observations: Mapping[str, ToolObservation] | None,
-                    metadata: BrowserMetadata | MetadataPending | None = None) -> GateVerdict:
+                    metadata: BrowserMetadata | MetadataPending | None = None,
+                    linked_refs: tuple[str, ...] = ()) -> GateVerdict:
     text = str(done_text or "").strip()
     from codey.operations.execution_claims import validate_execution_claims
     from codey.operations.source_gaps import validate_source_gaps
@@ -606,7 +613,7 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
         return capacity_block
     domain = _domain_for_session(session)
     subject = _contract_subject(session, profile, context)
-    evidence_refs = _proof_evidence_refs(session, context, report)
+    evidence_refs = (*_proof_evidence_refs(session, context, report), *linked_refs)
     coding_evaluation = context.project_evaluation
     coding_proof = coding_evaluation.decision.proof if coding_evaluation is not None else None
     if coding_proof is not None:

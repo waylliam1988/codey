@@ -27,7 +27,8 @@ def browser_output_schema(name: str) -> dict[str, object]:
     box = record({key: number for key in ("x", "y", "width", "height")}, ("x", "y", "width", "height"))
     element = record({"ref": string, "role": string, "name": string, "disabled": boolean, "context_id": string,
                       "value": {"anyOf": [string, {"type": "null"}]}, "checked": {"anyOf": [boolean, {"type": "null"}]},
-                      "query_relation": string, "box": box}, ("ref", "role", "name", "disabled", "context_id"))
+                      "query_relation": string, "record_link": boolean, "box": box},
+                     ("ref", "role", "name", "disabled", "context_id"))
     snapshot: dict[str, object] = {
         "page_id": string, "page_url": string, "generation": integer, "revision": integer, "text": string,
         "document": document, "kind": {"type": "string", "enum": ["full", "delta"]}, "base_revision": integer,
@@ -36,7 +37,8 @@ def browser_output_schema(name: str) -> dict[str, object]:
         "text_truncated": boolean, "elements_truncated": boolean, "elements": array(element),
         "added": array(element), "changed": array(element), "removed": array(string),
         "scope_suggestions": array(record({"ref": string, "label": string}, ("ref", "label"))),
-        "contexts": array(record({key: string for key in ("id", "kind", "label", "basis", "text")})),
+        "contexts": array(record({**{key: string for key in ("id", "kind", "label", "basis", "text", "quotation", "subject")},
+                                  "ordinal": integer})),
         "file_controls": array(record({**{key: string for key in ("id", "name", "dom_id", "field_name", "group")}, "disabled": boolean})),
     }
     action: dict[str, object] = {"action": string, "delivery": string, "text": string}

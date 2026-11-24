@@ -32,6 +32,31 @@ _NEGATED = re.compile(r"(?:不要|勿|禁止|不允许|无需|不需要|不用|�
 _DEFERRED_OPEN = re.compile(r"^(?:\s*(?:if|when|once|after)\b|\s*(?:如果|若|如需|必要时)|"
                             r"\s*(?:需要|待|等).{0,80}(?:时|后)\s*$)", re.IGNORECASE)
 
+_RECORD_NOUN = r"quote|quotation|record|item|article|listing|event|result|product|entry"
+_FIRST_RECORD = re.compile(rf"\bfirst\s+({_RECORD_NOUN})\b|\b({_RECORD_NOUN})\s+at\s+the\s+(?:very\s+)?top\b", re.I)
+_FOLLOW_DETAIL = re.compile(r"\b(?:open|follow|visit|click)\b[^.!?;\n]{0,100}\blinked\b[^.!?;\n]{0,60}\b(?:page|profile|details?|link)\b", re.I)
+_VERIFY_DETAIL = re.compile(r"\b(?:verify|confirm|check)\b", re.I)
+
+
+def linked_record_entry(task: str) -> tuple[str, bool] | None:
+    """Read-only intent to open the detail linked from the first visible record."""
+    text = instruction_text(task)
+    detail = _FOLLOW_DETAIL.search(text)
+    record = _FIRST_RECORD.search(text)
+    urls = tuple(_URL.finditer(text))
+    if (detail is None or record is None or len(urls) != 1 or not _VERIFY_DETAIL.search(text)
+            or record.start() > detail.start() or urls[0].start() > detail.start()):
+        return None
+    for start in (record.start(), detail.start()):
+        boundary = max((match.end() for match in _CLAUSES.finditer(text, 0, start)), default=0)
+        clause = text[boundary:start]
+        if _NEGATED.search(clause) or _DEFERRED_OPEN.search(clause):
+            return None
+    from codey.policies.network import check_fetch_url
+
+    entry = urls[0][0].rstrip(".,;!?")
+    return (entry, (record[1] or record[2]).casefold() in {"quote", "quotation"}) if not check_fetch_url(entry, resolve=False) else None
+
 
 @dataclass(frozen=True)
 class WebIntent:
