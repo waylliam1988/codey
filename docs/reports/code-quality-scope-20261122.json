@@ -2996,7 +2996,10 @@
         "tests/test_shell_approval_http_restart.py",
         "tests/test_shell_approval_native_identity.py"
       ],
-      "candidate_test_count": 11
+      "candidate_test_count": 11,
+      "commits": [
+        "201d521e"
+      ]
     },
     {
       "id": "Q024C",
@@ -3004,9 +3007,33 @@
       "files": [
         "codey/app/shell_approval_workflow.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": []
+      "status": "in_progress",
+      "reviewed_files": [
+        "codey/app/shell_approval_workflow.py"
+      ],
+      "verified_files": [
+        "codey/app/shell_approval_workflow.py"
+      ],
+      "tests": [
+        "tests/test_shell_approval_worker_admission.py",
+        "tests/test_shell_approval_lifecycle.py",
+        "tests/test_shell_approval_http_restart.py",
+        "tests/test_shell_approval_text_result_reconstruction.py",
+        "tests/test_command_permissions.py",
+        "tests/test_shell_approval_epoch.py",
+        "tests/durable/test_approval_records.py",
+        "tests/test_shell_approval_effect_recovery.py",
+        "tests/test_shell_approval_native_identity.py"
+      ],
+      "reviewed_support": [
+        "tests/test_shell_approval_worker_admission.py",
+        "tests/support/shell_approval.py",
+        "tests/test_shell_approval_lifecycle.py"
+      ],
+      "result": "Production worker admission fix independently verified: rejected Thread.start RuntimeError retained phantom single-flight owner; accept/recovery original2fail/1validpass, same3pass after rollback and notify under original condition, exception propagates and durable approved decision remains recoverable. Whole workflow69 diagnostics->0, ParamSpec callback signatures and PendingApproval/typed AppContext boundaries, result object fields validated, no casts/ignores. New whole worker regression also strictAny0. Final workspace acceptance97distinctpass: final direct32 and prior unaffected final callers65. Lifecycle and shared fixture repairs fully verified in current workspace, to be committed separately next; do not claim all scope commits complete before then. Source normal production mypy760/Pyrefly35suppressed166warnings/ty/precision0 remain valid; all4governed files+2ignored runners strictAny0, scoped Pyrefly/ty/Ruff0 on stable hashes. User requested finish this batch then pause; Q024D not started.",
+      "followups": [
+        "Commit independently verified lifecycle fixture isolation and whole-file test typing, then pause per user."
+      ]
     },
     {
       "id": "Q024D",

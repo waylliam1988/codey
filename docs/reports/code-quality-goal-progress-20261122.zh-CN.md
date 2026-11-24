@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：用户重新启用 goal，当前 active（2026-11-24）。以下第一、二批是恢复前的历史证据；本轮从干净的 `7555d488` 继续，按文末全仓分区队列推进。历史未完成项仍保留，不将历史提交或本轮局部验收视为全仓治理完成。
+当前状态：用户要求完成 Q024C、提交后暂停（2026-11-24）；只收尾本批，不进入后续批次。以下第一、二批是恢复前的历史证据；本轮从干净的 `7555d488` 继续，按文末全仓分区队列推进。历史未完成项仍保留，不将历史提交或本轮局部验收视为全仓治理完成。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1321,3 +1321,24 @@ Q023 已提交：`dcdacde9`（fix(memory): advance recovery past deleted task hi
 - 整个durable/state/未改coordinator＋完整新回归＋忽略runner强Any **0/5file**（q024b-local-any-final.json）；源/新测试Pyrefly0、ty0、Ruff0（q024b-local-*.json）。Pyrefly显式warn检查exit1仅报告durable:50已有冗余str转换，不伪称warn命令通过或无warning，不为此做无关格式变更。生产mypy **0/760file**、Pyrefly **0/35suppressed/166warnings**、ty **0**、precision **0**串行通过（q024b-production-*.json/q024b-precision.json）；最终源hash/检查起止HEAD稳定，pytest支持脚本其余仅执行，未宣称全文件类型完成。
 - 必要依赖整文件Any基线exit1共19条：shell_approval_records.py17（18/44/49显式Any，19/46/50-53/70-71/84/100编码反射与JSON传播）属Q200；api_selection.py2（66-67的to_payload显式/返回传播）属Q189。q024b-dependency-any.json保存命令/原始位置；两依赖均未修改，消费边界已使用具体ShellApprovalFact/ApiRunSelection和object校验，依赖未宣称已治理或计入完成生产源。
 - 事实记录与execution atomic claim的状态副作用不同，未强行抽象；所有内部入口由coordinator、workflow和restart使用，未删除公开或可能外部入口。Q024B三源声明范围完成，准备与无改动Q024记录一并提交。累计 **45/324完整批次、85/1006完整批次生产源**；coordinator从部分源迁入完整批，部分源独立验证由10降为9，累计94，不重复计数。Q024C/Q024D及其他范围未完成，总goal active；下一主批审批worker/结果续接。用户审查报告未暂存，无源码树/worktree复制、远端或发布操作。
+
+Q024B 已提交：`201d521e`（fix(approvals): reject facts with conflicting immutable identity）。
+
+### Q024C Approval worker / result recovery（进行中）
+
+- workflow完整617行已读，范围HTTP决定、唯一worker接纳、结果持久化/投影与恢复；ShellService仅必要执行接口定位，实际进程/票据留Q024D。先运行三脚本基线与整文件Any，检查Thread.start失败是否留下虚假worker所有权。显式回调参数当前未调用但为公开兼容入口保留，不能因无仓内调用直接删；会用ParamSpec约束其任意调用签名而不引入Any。
+
+- 原三脚本基线 **0，29passed，31.20秒**（q024c-baseline.json）；workflow整文件强Any **1，69 diagnostics**（q024c-any-before.json），包括Submit省略签名、6处显式Any、动态getattr/task调用与pending传播。
+- **Thread.start失败留下虚假worker：** _schedule先注册_workers再start；标准RuntimeError启动拒绝后无回滚，同approval后续恢复被当作已有worker，quiescent/close永久错误，已提交approved决定却无人执行。独立依据为线程start失败不得拥有执行名额、批准工作必须可由原durable恢复入口重新接纳且不得重复执行的single-flight不变量；Python线程公开启动失败契约及shell lifecycle恢复所有权有效。新真实AppContext/真实审批工件、仅executor替身与一次Thread.start失败注入，从accept与start恢复两个入口实际 **1，2failed/1passed，24.38秒**（q024c-worker-before.json），失败均quiescent=False，正常活跃worker防重复对照通过，非导入/夹具失败。
+
+- 相同worker回归修复后 **0，3passed，4.37秒**（q024c-worker-after.json），已提交approved决定保留、失败名额释放、wait立即空闲、start可恢复且最终只执行一次；同一活跃worker的并发恢复仍不重复。
+- workflow69条Any已清零：复用PendingApproval、公开响应具体object字段、ParamSpec保留任意兼容回调参数及str/None返回约束、直接使用AppContext声明的durable/control接口；原cast改为字符串键字典运行时守卫或具体TaskCheckpoint返回。scope/结果/receipt缺失与继续阻断语义保留，原三脚本及新worker脚本直接32passed，权限/epoch/worker34passed，receipt/native34passed（q024c-direct/callers-*.json）。后续完整查看必要共享fixture，发现5条registry动态lookup Any，需在同批治理并使相关setup验证重新有效，前述结果不提前当最终helper结果。
+- 完整tests/support/shell_approval.py已读，基线强Any **1，5条（24-27/34）**（q024c-support-any.json）。上下文合同为AppContext，改用其已声明run_registry.api_selection_for并为UI事件作object键Mapping视图，保持字段提取/缺省与请求/工件生成。初稿视图局部名fields与下方命令fields冲突，被三checker拒绝，已改名event_fields；这是自己的未提交类型初稿问题，不称原生产bug。一次checker调用返回session后误启动其他checker，最终重验改用串行等待全部结束再启动下一项，披露该过程偏差，不将先前失败/重叠说成已通过。
+
+- helper后最终direct原发生 **1，31passed/1failed**（q024c-final-direct.json），关闭用例等待全局stop_flag超时；其余5个调用方文件 **0，65passed，42.10秒**（q024c-final-callers.json）。未凭重跑覆盖失败。单节点无活跃run采样1passed/global_set=true；受控地在Stop前用公开RunRegistry.reserve接纳一个有效run，在201d521e旧workflow＋旧helper的内存Git blob对照与当前实现均 **1，1failed**，同一580行，global_set=false但该run.stop_event=true（q024c-shutdown-original/current-controlled.json）。这是事件身份/夹具同步问题，不把受控接纳冒充自然失败当时的精确时序；自然失败没有保存run快照。首次trace的相对-m命令无效，未执行测试，不作故障证据。无磁盘源码副本或worktree。
+- 独立依据：RunRegistry.stop_flag是没有run时的admission fallback，每个已接纳run有独立stop_event；UI全局busy也覆盖实际run和后台approval。原测试开启scheduler却依赖“没有其他run”的全局事件/空闲前提，不满足自身声明的receipt与resume间隙。用户明确要求本段修完再提交暂停，因此继续处理此测试隔离与整文件类型义务，不进入Q024D。
+- 完整lifecycle脚本强Any基线 **1，204类型诊断**，另最初trace脚本3条，合计207（q024c-lifecycle-any-baseline.json）。测试参数/返回、执行器、response/observation容器、native callback完整签名、Optional状态/事实和动态JSON字段均补类型与运行时守卫；同一成功ShellResult字典由一个有类型fixture工厂生成，原Mock调用断言与字段值保留。旧24个测试函数顺序与集合相同，静态assert计数99→106，仅说明未删测试、不是执行证据。
+- 关闭用例首进程用受支持start_scheduler=False，显式断言无active run且原任务PENDING，把已结算receipt之后的durable wakeup留到真实重启进程执行；原全局stop_flag、close完成、已结算receipt、恢复started、只执行一次等断言全保留。该节点实际 **0，1passed，2.72秒**（q024c-shutdown-isolated.json）。期间完整类型脚本复验出现busy用例 **1，27passed/1failed，30.28秒**（q024c-closure-direct.json）：worker.wait已确认worker为空，而全局busy仍被允许自动接纳的Core run占用；同样将仅验证后台approval busy的用例设为start_scheduler=False，并在前后断言无其他active run，busy true/false断言不改。两隔离节点＋worker回归 **0，5passed，6.91秒**（q024c-isolation-after.json）。没有修改正确生产Stop/busy逻辑、加超时、skip或放宽断言。
+- 最终完整直接组`python -m pytest -q tests/test_shell_approval_worker_admission.py tests/test_shell_approval_lifecycle.py tests/test_shell_approval_http_restart.py tests/test_shell_approval_text_result_reconstruction.py --tb=short` → **0，32passed，33.97秒**（q024c-accepted-direct-final.json）。既有未再受影响的调用方组`python -m pytest -q tests/test_command_permissions.py tests/test_shell_approval_epoch.py tests/durable/test_approval_records.py tests/test_shell_approval_effect_recovery.py tests/test_shell_approval_native_identity.py --tb=short`为 **0，65passed，42.10秒**；helper当时已是最终版本，后续只改lifecycle脚本，该组结果未失效。当前9文件不重复 **97passed、0失败/0skip**，不是累计所有前后重跑。原两个失败保留记录，已通过有独立前提依据的隔离修正处置，不以偶然单跑通过结项。
+- 最终串行强Any覆盖完整workflow/worker回归/lifecycle/helper及两个忽略runner **0/6file**；四个仓库源/测试Pyrefly0（仅1条原有冗余str warning）、ty0、六文件Ruff0（q024c-pause-local-*.json）。workflow69、helper5、lifecycle204诊断均已清零；中间变量重名、callback可空选项签名和import排序均为本轮初稿问题，已工具检出并修正，不冒充生产bug。最后一次验证哈希与当前四文件一致，无生产修改发生在原生产门之后，因此保留实际mypy760/Pyrefly35suppressed166warnings/ty/precision exit0证据，不机械重跑未失效的生产门。
+- 先提交生产worker修复及其独立回归，随后将已验证的共享fixture/lifecycle治理独立提交并结项暂停；第一次提交记录不声称后一个测试提交已发生。没有可证明可删的公开兼容Submit入口；start的started分支虽然最终continue，但含durable读取/异常效果，未按表面冗余强删。用户审查报告始终不暂存；总目标尚未完成。

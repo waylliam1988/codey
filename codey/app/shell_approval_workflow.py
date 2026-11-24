@@ -12,13 +12,14 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
+from typing import TYPE_CHECKING, Literal, ParamSpec, TypedDict
 
 if TYPE_CHECKING:
     from codey.app.context import AppContext
 
 from codey.agents.shell_approval import shell_command_event_fields
 from codey.app.shell_approval_state import (
+    PendingApproval,
     _claim_decision_fact,
     _durable_approval_histories,
     _rebuild_pending_from_fact,
@@ -26,9 +27,11 @@ from codey.app.shell_approval_state import (
 )
 from codey.durable.model import TASK_TERMINAL_STATUSES, TaskCheckpoint, TaskStatus
 from codey.runtime.effects.shell_approval_records import ShellApprovalFact
+from codey.utils.object_fields import object_fields
 
 logger = logging.getLogger(__name__)
-Submit = Callable[..., str | None]
+SubmitParams = ParamSpec("SubmitParams")
+Submit = Callable[SubmitParams, str | None]
 
 ApprovalDecision = Literal['pending', 'allow', 'deny', 'cancelled']
 ApprovalExecution = Literal['not_started', 'not_required', 'queued', 'running', 'settled', 'uncertain']
@@ -76,9 +79,8 @@ class ShellApprovalWorkflow:
         self._execution_ids: dict[str, str] = {}
         self._closing = False
 
-    def _pending(self, fact: ShellApprovalFact) -> dict[str, Any] | None:
-        pending = _rebuild_pending_from_fact(self.ctx, fact)
-        return pending if pending is None or isinstance(pending, dict) else None
+    def _pending(self, fact: ShellApprovalFact) -> PendingApproval | None:
+        return _rebuild_pending_from_fact(self.ctx, fact)
 
     def _facts(self, approval_id: str) -> tuple[ShellApprovalFact, ...]:
         """Read the canonical durable approval state.
@@ -87,12 +89,8 @@ class ShellApprovalWorkflow:
         consulted here, so a missing, delayed, or corrupt audit file cannot
         change permission or recovery behavior.
         """
-        durable = getattr(self.ctx, "durable", None)
-        lookup = getattr(durable, "approval", None)
-        if not callable(lookup):
-            return ()
         try:
-            record = lookup(approval_id)
+            record = self.ctx.durable.approval(approval_id)
         except (AttributeError, KeyError, OSError, TypeError, ValueError):
             return ()
         return approval_record_facts(record)
@@ -113,9 +111,9 @@ class ShellApprovalWorkflow:
                 "schema_version": 1,
             }
         )
-        if not isinstance(result, dict):
+        if not object_fields(result):
             raise ValueError("Invalid persisted shell result")
-        return cast(dict[str, object], result)
+        return result
 
     def _status(self, facts: tuple[ShellApprovalFact, ...]) -> ApprovalStatus:
         first, last = facts[0], facts[-1]
@@ -202,17 +200,15 @@ class ShellApprovalWorkflow:
         is already running.  A missing durable task is an explicit unknown;
         callers must not infer that the task should be executed again.
         """
-        durable = getattr(self.ctx, "durable", None)
-        task = getattr(durable, "task", None)
-        if durable is None or not callable(task) or not session_id or not run_id:
+        if not session_id or not run_id:
             return None
         try:
-            checkpoint = task(run_id)
-        except (KeyError, ValueError, TypeError):
+            checkpoint = self.ctx.durable.task(run_id)
+        except (AttributeError, KeyError, ValueError, TypeError):
             return None
-        if str(getattr(checkpoint, "conversation_id", "")) != session_id:
+        if checkpoint.conversation_id != session_id:
             return None
-        return cast(TaskCheckpoint, checkpoint)
+        return checkpoint
 
     def _continuation_is_settled(self, session_id: str, run_id: str) -> bool:
         checkpoint = self._durable_continuation(session_id, run_id)
@@ -223,7 +219,7 @@ class ShellApprovalWorkflow:
         except (TypeError, ValueError):
             return False
 
-    def start(self, _submit: Submit) -> None:
+    def start(self, _submit: Submit[SubmitParams]) -> None:
         """Recover committed jobs when the application service starts."""
         histories = list(_durable_approval_histories(self.ctx).values())
         for facts in histories:
@@ -270,7 +266,7 @@ class ShellApprovalWorkflow:
                 # just like an HTTP decision, rather than using a stale token.
                 self._schedule(state["id"])
 
-    def _accept_remembered(self, approval_id: str, pending: dict[str, Any]) -> bool:
+    def _accept_remembered(self, approval_id: str, pending: PendingApproval) -> bool:
         try:
             rule = self.ctx.command_permissions.matching(pending)
             if rule is None:
@@ -281,8 +277,8 @@ class ShellApprovalWorkflow:
             logger.warning("Saved permissions unavailable; requesting explicit approval")
             return False
 
-    def accept(self, approval_id: str, approved: bool, _submit: Submit | None, *, scope: str = "once",
-               remembered_rule_id: str = "") -> tuple[int, dict[str, Any]]:
+    def accept(self, approval_id: str, approved: bool, _submit: Submit[SubmitParams] | None, *, scope: str = "once",
+               remembered_rule_id: str = "") -> tuple[int, dict[str, object]]:
         if not isinstance(scope, str) or scope not in {"once", "session", "project"} or (not approved and scope != "once"):
             return 400, {"error": "Invalid approval scope"}
         remember_error = ""
@@ -338,7 +334,7 @@ class ShellApprovalWorkflow:
         return 202, {**accepted_state, **({"remember_error": remember_error, "remember_scope": scope}
                      if remember_error else {"permission_scope": scope} if scope != "once" else {})}
 
-    def remember(self, approval_id: str, scope: str) -> tuple[int, dict[str, Any]]:
+    def remember(self, approval_id: str, scope: str) -> tuple[int, dict[str, object]]:
         """Retry grant persistence only; never schedule another execution."""
         if scope not in {"session", "project"}:
             return 400, {"error": "Invalid approval scope"}
@@ -358,7 +354,7 @@ class ShellApprovalWorkflow:
                 return 200, {**state, "remember_error": "Permission could not be saved.", "remember_scope": scope}
             return 200, {**state, "permission_scope": scope}
 
-    def retry(self, approval_id: str, _submit: Submit) -> tuple[int, dict[str, Any]]:
+    def retry(self, approval_id: str, _submit: Submit[SubmitParams]) -> tuple[int, dict[str, object]]:
         state = self.status(approval_id)
         if state is None:
             return 404, {"error": "approval not found"}
@@ -375,13 +371,19 @@ class ShellApprovalWorkflow:
 
     def _schedule(self, approval_id: str) -> None:
         with self._condition:
-            if self._closing or getattr(getattr(self.ctx, "control_service", None), "draining", False) or approval_id in self._workers:
+            control = self.ctx.control_service
+            if self._closing or (control is not None and control.draining) or approval_id in self._workers:
                 return
             worker = threading.Thread(
                 target=self._work, args=(approval_id,), name=f"approval-{approval_id}", daemon=True
             )
             self._workers[approval_id] = worker
-            worker.start()
+            try:
+                worker.start()
+            except RuntimeError:
+                self._workers.pop(approval_id)
+                self._condition.notify_all()
+                raise
 
     def wait(self, timeout: float) -> bool:
         deadline = time.monotonic() + timeout
@@ -424,7 +426,7 @@ class ShellApprovalWorkflow:
         fact: ShellApprovalFact,
         result: Mapping[str, object],
         kind: str,
-        pending: dict[str, Any],
+        pending: PendingApproval,
     ) -> None:
         # Artifact persistence is mandatory: never publish an unrecoverable result.
         assert self.ctx.managed_outputs is not None
@@ -512,7 +514,8 @@ class ShellApprovalWorkflow:
             first, last = facts[0], facts[-1]
         result: Mapping[str, object]
         if last.kind == "approved":
-            if self._closing or self.ctx.shutdown_requested() or getattr(getattr(self.ctx, "control_service", None), "draining", False):
+            control = self.ctx.control_service
+            if self._closing or self.ctx.shutdown_requested() or (control is not None and control.draining):
                 return
             with self._condition:
                 self._executing.add(approval_id)
