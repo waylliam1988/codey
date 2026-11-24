@@ -9,7 +9,9 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from playwright.async_api import Page
 
+from codey.automation.browser_binding import PageBinding
 from codey.automation.browser_contracts import BrowserAction, BrowserCommand, BrowserConfig, BrowserToolOutput
 from codey.automation.browser_runtime import BrowserRuntime
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
@@ -106,4 +108,39 @@ def test_wait_can_be_cancelled_without_blocking_same_page_input() -> None:
             assert result.observation["delivery"] == "not_delivered"
         finally:
             await runtime.close()
+    asyncio.run(exercise())
+
+
+def test_tab_list_handles_popup_arriving_from_another_tab_during_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def open_popup(page: Page) -> Page:
+        await page.set_content('<button onclick="window.open(\'about:blank\')">Open popup</button>')
+        async with page.expect_popup() as popup:
+            await page.get_by_role("button", name="Open popup").click()
+        return await popup.value
+
+    async def exercise() -> None:
+        runtime = BrowserRuntime(BrowserConfig(browser_path=chromium_executable()))
+        try:
+            for _ in range(2):
+                opened = BrowserToolOutput.read(await invoke(runtime, BrowserAction.TAB_NEW))
+                assert opened.ok, opened.model_text
+            first, second = (state.page for state in runtime._pages.values())
+            first_popup = await open_popup(first)
+            bind = runtime._page_binding
+
+            async def bind_with_other_popup(page: Page, *, owned: bool) -> PageBinding:
+                if page is first_popup:
+                    await open_popup(second)
+                return await bind(page, owned=owned)
+
+            monkeypatch.setattr(runtime, "_page_binding", bind_with_other_popup)
+            listing = BrowserToolOutput.read(await invoke(runtime, BrowserAction.TAB_LIST))
+            assert listing.ok, listing.model_text
+            tabs = listing.observation["tabs"]
+            assert isinstance(tabs, list) and len(tabs) == 4
+            again = BrowserToolOutput.read(await invoke(runtime, BrowserAction.TAB_LIST))
+            assert again.ok and again.observation["tabs"] == tabs
+        finally:
+            await runtime.close()
+
     asyncio.run(exercise())

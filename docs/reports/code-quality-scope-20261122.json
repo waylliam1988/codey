@@ -3614,10 +3614,19 @@
         "codey/automation/browser_runtime.py"
       ],
       "id": "Q032",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 2
+      "status": "completed_changed",
+      "reviewed_files": ["codey/automation/browser_runtime.py"],
+      "verified_files": ["codey/automation/browser_runtime.py"],
+      "tests": [
+        "tests/test_browser_async_runtime.py",
+        "tests/test_deterministic_input_handoffs.py",
+        "tests/test_browser_query_region_identity.py",
+        "tests/test_browser_query_binding.py",
+        "tests/test_browser_process.py",
+        "tests/test_browser_process_reconnect.py"
+      ],
+      "reviewed_support": ["tests/test_browser_async_runtime.py"],
+      "result": "Register pending popups without iterating live collections across CDP awaits and remove the unreachable query-region fallback. Final 51 passed. Scoped strict Any and Ruff, whole-production mypy, Pyrefly, ty and the kernel precision gate passed."
     },
     {
       "responsibility": "codey/codemode: package entry and composition",

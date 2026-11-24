@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，Q031D 部分完成，接续 Q032。Q030C 的查询身份修复已验证，研究调用方待跟进。保留历史验收，复核后续提交实际影响的范围。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q032，接续 Q033。Q031D 的回调签名和 Q030C 的研究调用方仍有后续事项。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1508,3 +1508,12 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 返回值修复已提交 `d2ec84db`。关闭的另一个可复现路径是运行中回调收到 worker 的取消事件，立即返回，而调用方仍在等完成信号。`BrowserWorker.close` 对已接受工作约定明确结束，`call` 等待分支已将 worker 关闭映射为 `RuntimeError("browser worker is closed")`。`python -m pytest -q tests/test_browser_worker_close_outcome.py --tb=short` 修改前 1 failed，退出 1，实际收到 `browser job completed without returning a result or exception`。在关闭时为运行中任务记录同一个关闭错误，完成信号先到的调用方也能读取它。用例同时验证丢弃晚到的值及清理回调在 worker 线程上运行。
 - 最终在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_worker_close_outcome.py tests/test_browser_worker_result.py tests/test_browser_worker.py tests/stress/test_browser_worker_generations.py tests/test_server_lazy_state.py --tb=short`，28 passed、6 subtests passed，0 skip，退出 0。四个深入检查或修改的测试文件严格 Any 通过，五个改动 Python 文件 Ruff 通过。再次执行全生产 mypy、Pyrefly、ty 及 kernel_type_precision_gate，退出 0。Pyrefly 仍有 35 suppressed、165 warnings 未展示。运行中发布与关闭的交接窗口由静态阅读发现，尚无强制排序的回归证据，登记后续调查。
 - Q031D 已交付两个独立修复，生产可变回调入口的严格 Any 治理待续，批次记为部分完成。累计完成 56/333 批，覆盖 112/1009 个生产文件。下一批 Q032 为 `browser_runtime.py` 的浏览器上下文协调。
+
+
+### Q032 异步浏览器运行时
+
+- Q031D 的关闭修复已提交 `14084d17`。深入检查 `browser_runtime.py` 及直接运行时测试。已确认 `TAB_LIST` 应登记受监管标签页打开的可用弹窗，点击回执明确将调用方引导到此入口。真实 Chromium 复现从两个标签页打开弹窗，第二个弹窗在第一个弹窗等待 CDP 身份时到达。`python -m pytest -q tests/test_browser_async_runtime.py::test_tab_list_handles_popup_arriving_from_another_tab_during_binding --tb=short` 修改前 1 failed，退出 1，报 `dictionary changed size during iteration`。现在每次绑定前收集当前待处理弹窗，在绑定后重新读取新到达的弹窗。修改后回归通过，同一次列表列出四个页面，重复查询的结果一致。
+- `_query_regions` 是私有方法，生产三处调用均先保证目标存在。查询基线无目标时保留空列表，查询结果无目标时返回既有 `query_target_unbound`。仓库中无动态、测试或对外入口将空目标传给该方法，删除不可达的 `document.body` 回退。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_async_runtime.py tests/test_deterministic_input_handoffs.py -k 'browser or native_controls or document_identity' --tb=short`，基线 13 passed、59 deselected，最终 14 passed、59 deselected。`python -m pytest -q tests/test_browser_query_region_identity.py tests/test_browser_query_binding.py tests/test_browser_process.py tests/test_browser_process_reconnect.py --tb=short` 37 passed。最终去重 51 项通过，无 skip 或 error，两个命令退出 0。未选中的非浏览器交接用例保留在对应模块队列。
+- 源和改动的测试通过 `python -m mypy codey/automation/browser_runtime.py tests/test_browser_async_runtime.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 和 `ruff check codey/automation/browser_runtime.py tests/test_browser_async_runtime.py`。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 及 kernel_type_precision_gate 均退出 0。
+- Q032 完成。累计完成 57/333 批，覆盖 113/1009 个生产文件。下一批 Q033 是 Code Mode 包入口。

@@ -313,9 +313,14 @@ class BrowserRuntime:
         return state
 
     async def _register_popups(self) -> None:
-        for pages in self._popups.values():
-            for page in pages:
-                if not page.is_closed() and not any(state.page is page for state in self._pages.values()):
+        while True:
+            registered = {state.page for state in self._pages.values()}
+            pending = [page for pages in self._popups.values() for page in pages
+                       if page not in registered and not page.is_closed()]
+            if not pending:
+                return
+            for page in pending:
+                if not page.is_closed():
                     self._register(page, await self._page_binding(page, owned=True))
 
     async def _current(self, invocation: Invocation, *, create: bool = False) -> PageState:
@@ -951,9 +956,9 @@ class BrowserRuntime:
             baseline["target"] = target
         return baseline
 
-    async def _query_regions(self, context: FrameContext, target: JsonObject | None) -> list[JsonValue]:
-        node = (await resolve_backend(context, require_json_integer(target["backend_node_id"], "backend node"))
-                if target is not None else await context.frame.query_selector("body"))
+    async def _query_regions(self, context: FrameContext, target: JsonObject) -> list[JsonValue]:
+        backend_node_id = require_json_integer(target["backend_node_id"], "backend node")
+        node = await resolve_backend(context, backend_node_id)
         if node is None:
             raise RuntimeError("query_target_unavailable")
         try:
@@ -966,7 +971,7 @@ class BrowserRuntime:
                 raise ValueError("query_target_detached")
             if len(require_json_string(row["text"], "query text")) > 100000:
                 raise ValueError("query_region_exceeds_observation_budget")
-            return [{"key": str(target["backend_node_id"]) if target is not None else "document-body", **row}]
+            return [{"key": str(backend_node_id), **row}]
         finally:
             await node.dispose()
 
