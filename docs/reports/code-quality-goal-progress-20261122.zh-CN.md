@@ -1822,3 +1822,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey`，`python -m pytest -q tests/test_control_service_contract.py tests/durable/test_control_message_metadata.py --tb=short` 基线为 18 passed，退出 0。最终加入 `tests/durable/test_contracts.py tests/durable/test_runtime_checkpoint_port.py`，21 passed，退出 0。临时刷新描述符后运行 `python -m pytest -q tests/test_external_control.py::test_visible_creation_and_original_receipt_are_idempotent tests/test_external_control.py::test_lost_receipt_does_not_readmit_input tests/test_external_control.py::test_content_conflict_and_revocation_survive_retries --tb=short`，3 passed，退出 0，描述符已恢复原字节。最终两组 24 passed、无失败或跳过。
 - 两源严格 Any，`control.py` 的 33 条诊断降为 0。Ruff、全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 与 kernel_type_precision_gate 均退出 0。
 - Q051B 完成。累计完成 92/352 批，完成批覆盖 160/1009 个生产文件，另有 18 批部分完成。下一批 Q051C 为 inbox 读取模型与查询边界。
+
+
+### Q051C inbox 读取模型与查询边界
+
+- Q051B 已提交 `3d06e3db`。完整检查 `inbox.py`、`query_line.py` 和新增回归。历史投影只识别 `submission_admitted` 与 `submission_progressed`。输入 `{"type": ["submission_admitted"]}` 时，旧代码在筛选无关投影前抛出 TypeError。`python -m pytest -q tests/durable/test_inbox_history_projection.py --tb=short` 修改前 1 failed、退出 1。现在先检查事件名是否为字符串，合法事件对照仍保留提交状态和位置。
+- inbox 条目使用现有 `SubmissionRecord`，消除 9 条严格 Any 诊断。查询端口无需调整。两源与回归严格 Any、Ruff、生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty、kernel_type_precision_gate 均退出 0。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_inbox_history_projection.py tests/durable/test_inbox_placement.py tests/durable/test_database_cursor.py tests/durable/test_commit_events.py --tb=short`，58 passed、无失败或跳过，退出 0。前两个相关旧测试文件的基线为 43 passed。
+- Q051C 完成。累计完成 93/352 批，完成批覆盖 162/1009 个生产文件，另有 18 批部分完成。下一批 Q051D 为 SQLite 行与展示投影。

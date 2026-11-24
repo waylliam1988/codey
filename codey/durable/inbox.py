@@ -6,9 +6,8 @@ import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
 
-from codey.durable.model import SubmissionPlacement, SubmissionStatus, thaw_json
+from codey.durable.model import SubmissionPlacement, SubmissionRecord, SubmissionStatus, thaw_json
 
 
 @dataclass(frozen=True)
@@ -69,7 +68,7 @@ class InboxHistoryEvent:
     placement: SubmissionPlacement | None = None
 
 
-def item_from_record(record: Any, *, task_id: str | None = None) -> InboxItem:
+def item_from_record(record: SubmissionRecord, *, task_id: str | None = None) -> InboxItem:
     return InboxItem(
         submission_id=record.submission_id,
         conversation_id=record.conversation_id,
@@ -89,7 +88,7 @@ def history_event_from_projection(
     projection: Mapping[str, object],
 ) -> InboxHistoryEvent | None:
     kind = projection.get("type")
-    if kind not in {"submission_admitted", "submission_progressed"}:
+    if not isinstance(kind, str) or kind not in {"submission_admitted", "submission_progressed"}:
         return None
     submission_id = projection.get("submission_id")
     request_id = projection.get("request_id")
@@ -103,7 +102,7 @@ def history_event_from_projection(
     placement = SubmissionPlacement(raw_placement) if isinstance(raw_placement, str) else None
     return InboxHistoryEvent(
         sequence=sequence,
-        kind=str(kind),
+        kind=kind,
         conversation_id=conversation_id,
         submission_id=submission_id,
         request_id=request_id,
