@@ -7,9 +7,13 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING
 
 from codey.storage.local_store import read_json_strict, write_json_atomic
+from codey.utils.object_fields import require_object_fields
+
+if TYPE_CHECKING:
+    from codey.app.context import AppContext
 
 
 class GitCommandError(ValueError):
@@ -24,9 +28,12 @@ def git(root: Path, *args: str, env: dict[str, str] | None = None, data: bytes |
                 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_PREFIX', 'GIT_NAMESPACE'):
         environment.pop(key, None)
     environment.update(env or {})
+    flags: object = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+    if not isinstance(flags, int):
+        raise TypeError('Git process flags must be an integer.')
     result = subprocess.run(
         ['git', '-C', str(root), *args], input=data, capture_output=True,
-        env=environment, timeout=timeout, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+        env=environment, timeout=timeout, creationflags=flags,
     )
     if result.returncode:
         raise GitCommandError(
@@ -38,6 +45,13 @@ def git(root: Path, *args: str, env: dict[str, str] | None = None, data: bytes |
 def _unavailable(reason: str, message: str, *, error: bool = False) -> dict[str, object]:
     return {'worktree': False, 'is_worktree': False, 'worktree_status': 'error' if error else 'unavailable',
             'worktree_reason': reason, 'worktree_message': message}
+
+
+def _job_text(data: dict[str, object], field: str) -> str:
+    value = data[field]
+    if not isinstance(value, str):
+        raise TypeError(f'Fork workspace {field} must be text.')
+    return value
 
 
 def capabilities(path: str) -> dict[str, object]:
@@ -69,37 +83,40 @@ def capabilities(path: str) -> dict[str, object]:
 
 
 class ForkWorkspaces:
-    def __init__(self, ctx: Any, home: Path) -> None:
+    def __init__(self, ctx: AppContext, home: Path) -> None:
         self.ctx = ctx
         self.home = home / 'chat-forks'
         self.lock = threading.Lock()
         self.workers: dict[str, threading.Thread] = {}
+        self.closing = False
 
     def _file(self, child: str) -> Path:
         if not child.startswith('fork_') or len(child) != 37 or any(c not in '0123456789abcdef' for c in child[5:]):
             raise ValueError('Invalid fork identity.')
         return self.home / f'{child}.json'
 
-    def status(self, child: str) -> dict[str, Any] | None:
+    def status(self, child: str) -> dict[str, object] | None:
         path = self._file(child)
         if not path.exists():
             return None
         with self.lock:
-            data = cast(dict[str, Any], read_json_strict(path))
+            data = require_object_fields(read_json_strict(path))
             worker = self.workers.get(child)
             if data['status'] == 'pending' and (worker is None or not worker.is_alive()):
-                data = cast(dict[str, Any], read_json_strict(path))
+                data = require_object_fields(read_json_strict(path))
                 if data['status'] == 'pending':
                     data.update(status='error', error='Worktree setup was interrupted. Retry to continue.')
                     write_json_atomic(path, data)
         return data
 
-    def start(self, source: str, child: str, entry: str, workspace: str) -> dict[str, Any]:
+    def start(self, source: str, child: str, entry: str, workspace: str) -> dict[str, object]:
         if self.ctx.shutdown_requested():
             raise ValueError('The server is shutting down. Retry after restart.')
         with self.lock:
+            if self.closing or self.ctx.shutdown_requested():
+                raise ValueError('The server is shutting down. Retry after restart.')
             path = self._file(child)
-            data: dict[str, Any] = cast(dict[str, Any], read_json_strict(path)) if path.exists() else {
+            data: dict[str, object] = require_object_fields(read_json_strict(path)) if path.exists() else {
                 'session_id': child, 'source': source, 'entry': entry, 'workspace': workspace,
                 'root': str((self.home / child).resolve()),
             }
@@ -111,22 +128,22 @@ class ForkWorkspaces:
             if not data.get('project_path'):
                 source_path = Path(workspace).resolve()
                 repository = Path(git(source_path, 'rev-parse', '--show-toplevel', timeout=5)).resolve()
-                data['project_path'] = str(Path(data['root']) / source_path.relative_to(repository))
+                data['project_path'] = str(Path(_job_text(data, 'root')) / source_path.relative_to(repository))
             data.update(status='pending', error='')
             write_json_atomic(path, data)
             from codey.app.conversation_routes import register_fork
 
-            register_fork(self.ctx, source, child, workspace=data['project_path'], preserve_title=True)
+            register_fork(self.ctx, source, child, workspace=_job_text(data, 'project_path'), preserve_title=True)
             worker = threading.Thread(target=self._run, args=(child, data), daemon=True, name=f'worktree-{child}')
             self.workers[child] = worker
             worker.start()
             return dict(data)
 
-    def _run(self, child: str, data: dict[str, Any]) -> None:
+    def _run(self, child: str, data: dict[str, object]) -> None:
         try:
-            source = Path(data['workspace']).resolve()
+            source = Path(_job_text(data, 'workspace')).resolve()
             repository = Path(git(source, 'rev-parse', '--show-toplevel')).resolve()
-            target = Path(data['root'])
+            target = Path(_job_text(data, 'root'))
             if target.parent.resolve() != self.home.resolve():
                 raise ValueError('Worktree target is outside its owned directory.')
             relative = source.relative_to(repository)
@@ -161,7 +178,7 @@ class ForkWorkspaces:
                 raise ValueError('The project directory is missing from the new worktree.')
             from codey.app.conversation_routes import register_fork
 
-            register_fork(self.ctx, data['source'], child, workspace=str(workspace), preserve_title=True)
+            register_fork(self.ctx, _job_text(data, 'source'), child, workspace=str(workspace), preserve_title=True)
             data.update(status='ready', project_path=str(workspace), error='')
         except Exception as error:
             data.update(status='error', error=str(error)[:1000])
@@ -169,23 +186,28 @@ class ForkWorkspaces:
             write_json_atomic(self._file(child), data)
 
     def close(self) -> bool:
+        with self.lock:
+            self.closing = True
+            workers = tuple(self.workers.values())
         deadline = time.monotonic() + 2
-        for worker in list(self.workers.values()):
+        for worker in workers:
             worker.join(max(0, deadline - time.monotonic()))
-        return not any(worker.is_alive() for worker in self.workers.values())
+        return not any(worker.is_alive() for worker in workers)
 
 
-def service(ctx: Any) -> ForkWorkspaces:
+def service(ctx: AppContext) -> ForkWorkspaces:
     with ctx.lock:
-        if getattr(ctx, 'fork_workspaces', None) is None:
+        current = ctx.fork_workspaces
+        if current is None:
             home = ctx.state_home
             if home is None:
                 raise ValueError('A persistent state directory is required for Git worktrees.')
-            ctx.fork_workspaces = ForkWorkspaces(ctx, Path(home))
-        return cast(ForkWorkspaces, ctx.fork_workspaces)
+            current = ForkWorkspaces(ctx, Path(home))
+            ctx.fork_workspaces = current
+        return current
 
 
-def ensure_workspace_ready(ctx: Any, identity: str) -> None:
+def ensure_workspace_ready(ctx: AppContext, identity: str) -> None:
     if (ctx.state_home is not None and identity.startswith('fork_') and len(identity) == 37
             and all(c in '0123456789abcdef' for c in identity[5:])):
         status = service(ctx).status(identity)

@@ -1101,3 +1101,19 @@ Q019C 测试隔离支持已提交：`3e7d9c69`（test(conversations): isolate el
 - 最终八文件强Any/Pyrefly/ty/Ruff均exit0，最后elapsed改动也单独重跑四工具。中间两个类型工具未能跨request.get保留字符串收窄，改为命名run_id变量后通过，未用断言伪造类型。Pyrefly曾由新具体类型暴露冗余str/int转换，已移除，定向0warnings。最终生产`python -m mypy codey --python-version 3.11` **0/756文件**、`pyrefly check codey --python-version 3.11` **0/35suppressed/165warnings**、`ty check codey --python-version 3.11` **0**，precision gate亦通过；Windows/Python3.12实际执行，类型目标3.11，其他平台未实测。
 - 恢复期间外部提交新增6个生产源，仅读模块头/import作归属清单：browser_linked_record→Q084、model_handoff→Q101、project_delivery→Q090、project_instructions→Q088、python_edit_assistance→Q091、primary_sources→Q165，均仍未开始。生产总范围996→1002、批数仍316，路径检查无漏列Python或失踪源，未收窄范围制造完成率。
 - Q019C声明范围验收完成，待创建主提交。当前 **34/316批完整完成，67/1002生产文件属于完整完成批次**；另6个部分批次源独立验证，累计73。其余依赖原Any和全仓范围未完成，用户报告未跟踪文件保留。下一批Q019D仅检查fork作业所有权及可模拟的进程边界，严格不复制或创建worktree；总goal保持active。
+
+Q019C 主提交已完成：`a79cbd7d`（fix(inputs): reject structured modes and type durable queue boundaries）。
+
+### Q019D Fork workspace jobs（进行中）
+
+- 完整阅读单一生产源fork_workspaces.py及test_fork_capabilities.py，文档依据uiux_message_fork_2026-10-23.md；实际创建worktree的原测试不执行，只使用纯状态/模拟Git边界和只读Git诊断。完整两文件强Any基线118条诊断，尚未修改生产源。
+- 待复现候选：start在锁外读取shutdown_requested，阻塞后AppContext可完成close并报告True，随后旧start仍可能发布worker。关闭成功后不得接纳新资源是生命周期不变量；使用事件控制真实AppContext关闭和真实start，只替换Git/注册副作用/_run为无操作探针，先实际运行失败再决定修复。
+
+- **关闭发布竞态已确认：** `python -m pytest -q tests/test_fork_workspace_jobs.py::test_start_cannot_publish_a_worker_after_context_close --tb=short`（首轮运行该文件时仅此节点）→ **1，1 failed，1.31秒**，AppContext.close真实返回True后，旧start仍返回pending并启动已替身化的worker，没有应有的shutting-down拒绝，q019d-shutdown-before.json。预期来自现行start已拒绝shutdown及关闭成功不得再接纳后台资源的不变量，而不是测试偏好。锁内增加closing门禁，close同锁设置closing并获取固定worker快照，释放锁后沿原2秒总预算等待；防止发布交叉且不阻塞worker的最终持久化。原输入与关键断言修改后通过，另验证活跃worker时close=False、释放后True、迟到start拒绝和重复请求仅一worker。
+- 行为基线：修改前完整capabilities **0，11 passed，1.80秒**；中断收据与模拟快照两个节点 **0，2 passed，1.25秒**。模拟Git验证独立临时index、快照命令、相对子项目、受管目标；目标越界和已有无关文件两边界均保持原文件不变。未实际创建或复制Git worktree，真实worktree恢复/checkout等原用例未运行，不声称该场景实测。
+- 两原完整文件强Any配置诊断 **fork74/capability tests44，共118→0**；新增完整jobs测试及必要AppContext整文件均强Any0。具体AppContext和JSON字段运行时验证替代Any/cast，保留未知额外元数据、收据状态与Git命令顺序。只在AppContext补TYPE_CHECKING导入及惰性服务的None类型槽位两行，避免动态赋值/无依据断言；实际服务仍按实例绑定，独立两context测试验证不共享owner。原Q018仅因该实际类型所有权变动执行定向构造/关闭复验，没有重新扫描其余已完成文件。没有删除未证明无用的公开API或改动Git快照算法。
+- 直接组`python -m pytest -q tests/test_fork_capabilities.py tests/test_fork_workspace_jobs.py --tb=short` → **0，18 passed，4.81秒**，q019d-direct-complete.json。既有capability测试保留断言，只补注解和响应字段校验；7个新参数用例涵盖关闭竞态/retention、状态恢复、模拟快照、实例所有权及目标保护。
+- 调用方组`python -m pytest -q tests/test_conversation_tree_routes.py tests/test_conversation_input_routes.py tests/test_context_resource_publication.py tests/test_service_lifecycle.py tests/test_app_lifecycle_coordinator.py tests/test_control_runtime_ownership.py --tb=short` → **0，47 passed，10.99秒**，q019d-callers.json。与直接组互不重复，累计 **65 passed，0失败/0skip**；基线、复跑不另计唯一覆盖，不与Q019C重叠节点相加伪称全仓唯一用例总数。
+- 四完整源/测试强Any/Pyrefly/ty/Ruff全exit0，ignored证据runner也强Any0；生产mypy **0/756源**、Pyrefly **0/35suppressed/165warnings**、ty **0**、precision **0**，q019d-production-*.json及q019d-precision.json。实际Windows/Python3.12、类型目标3.11，未验证其他平台。中途Ruff指出动态setattr与constructor语句预算，已通过明确惰性字段槽位解决，未加ignore或放宽阈值。
+- capability基线及直接组退出时均有同类RAM清理WinError5，指向其小型Git空提交创建的只读object；所有断言及退出码0。该根因已由Q019B独立只读文件探针证实，当前文件只有类型/字段收窄改动，不新增此清理路径。保留为未修复的共享测试清理待办与原目录证据，不声称清理成功或扩展本批修复。
+- Q019D声明范围验收完成，待创建本地提交。当前 **35/316批完整完成，68/1002生产文件属于完整完成批次**；另6个部分批次源独立验证，累计74。工作区用户审查报告保留未跟踪，不暂存。下一批Q020（history_routes.py/tool_history.py）沿未完成队列推进；总goal保持active，全仓尚未完成。

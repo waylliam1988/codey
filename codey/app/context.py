@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from codey.app.control_service import ControlService
+    from codey.app.fork_workspaces import ForkWorkspaces
     from codey.app.shell_service import ShellExecutionTicket
     from codey.providers.base import ChatProvider
     from codey.repairs.self_repair import SelfRepairSupervisor
@@ -93,6 +94,7 @@ MAX_CHANGE_TRACKERS = 32
 logger = logging.getLogger(__name__)
 
 class AppContext:
+    fork_workspaces: ForkWorkspaces | None = None
 
     def __init__(
         self,

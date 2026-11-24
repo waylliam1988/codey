@@ -2368,6 +2368,11 @@
           "evidence": "q019-validation-final.json",
           "reason": "owned snapshot callback binding changed",
           "result": "strict Any whole context0; relevant4resource+19attachment tests, canonical store and lifetime/deletion callers pass; production gates0"
+        },
+        {
+          "reason": "Q019D declares existing lazy fork service ownership slot (TYPE_CHECKING import plus None class default), no other Context code re-review",
+          "evidence": "q019d-any-final.json / q019d-callers.json / q019d-production-mypy.json",
+          "result": "whole-file strictAny/Pyrefly/ty/Ruff0; per-instance owner and scoped resource/lifecycle/caller tests pass; complete"
         }
       ]
     },
@@ -2503,7 +2508,8 @@
         "tests/durable/test_steering_consumption.py"
       ],
       "commits": [
-        "3e7d9c69"
+        "3e7d9c69",
+        "a79cbd7d"
       ],
       "result": "Complete3-source input/runtime governance; strict Any configuration599 original diagnostics across8 complete files ->0. JSON array/object delivery modes failed2 before target change with TypeError; type guard now returns existing409 rejection and no durable admission, complete route8pass. Independently diagnosed shared global clock fixture race with observed scheduler consumers; same elapsed assertion passes after module-local typed clock isolation, independent support commit. Remove two private closures only fed to unconditional no-op bind, preserve public compatibility. Concrete task/session/context and InputItem contracts, shared selection/draining boundary. Final distinct pytest scopes39+82+35+6=162passed plus6subtests, no skips/failures; public3API native Chromium paths pass. Full8files strictAny/Pyrefly/ty/Ruff0; production mypy756/Pyrefly35suppressed165warnings/ty/precision0, no whole pytest/worktree. Evidence q019c-*.json and progress commands.",
       "tests": [
@@ -2535,13 +2541,33 @@
       "files": [
         "codey/app/fork_workspaces.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "followups": [
-        "No repository worktree copying/creation authorized. Review and validate pure boundaries or mocked subprocess fixtures without invoking actual worktree creation. Header-only mapping is not governance completion."
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/app/fork_workspaces.py"
       ],
-      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+      "verified_files": [
+        "codey/app/fork_workspaces.py"
+      ],
+      "followups": [
+        "No actual Git worktree creation/copy/recovery/checkout tests executed at user prohibition; process boundaries covered by simulated Git and capability diagnostics. No claim of real worktree validation.",
+        "Existing Windows readonly temporary Git object cleanup warning persists with pytest exit0. Independent Q019B probe established WinError5 root cause; shared cleanup support remains a separate pending item."
+      ],
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
+      "reviewed_support": [
+        "tests/test_fork_capabilities.py",
+        "tests/test_fork_workspace_jobs.py"
+      ],
+      "result": "Whole-file review and strict Any governance: fork74/capability44 original diagnostics ->0, new jobs tests0 and AppContext2-line lazy owner declaration revalidated0. Controlled pre-fix1fail: real AppContext.close returnsTrue then stale start admits/publishes worker. Shared closing/publication lock and fixed snapshot prevent admission after close; join remains outside lock with existing2s budget. Before pure2/capabilities11pass; after distinct direct18+callers47=65pass no skips/failures, whole4files strongAny/Pyrefly/ty/Ruff0 and production mypy756/Pyrefly35suppressed165warnings/ty/precision0. No public deletions, casts, ignores, dependencies or real worktree commands. Source Git snapshot semantics unchanged and simulated command/index/destination checks retained.",
+      "tests": [
+        "tests/test_fork_capabilities.py",
+        "tests/test_fork_workspace_jobs.py",
+        "tests/test_conversation_tree_routes.py",
+        "tests/test_conversation_input_routes.py",
+        "tests/test_context_resource_publication.py",
+        "tests/test_service_lifecycle.py",
+        "tests/test_app_lifecycle_coordinator.py",
+        "tests/test_control_runtime_ownership.py"
+      ]
     },
     {
       "responsibility": "codey/app: conversation and input lifecycle",

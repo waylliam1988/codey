@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import subprocess
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 
 from codey.app import fork_workspaces
 from codey.app.fork_workspaces import GitCommandError, capabilities, git
+from codey.utils.object_fields import require_object_rows
 
 
-def test_projectless_and_plain_directory_are_unavailable_without_creating_anything(tmp_path):
+def test_projectless_and_plain_directory_are_unavailable_without_creating_anything(tmp_path: Path) -> None:
     assert capabilities('')['worktree_reason'] == 'no_project'
     info = capabilities(str(tmp_path))
     assert info['worktree'] is False
@@ -18,7 +20,7 @@ def test_projectless_and_plain_directory_are_unavailable_without_creating_anythi
     assert list(tmp_path.iterdir()) == []
 
 
-def test_empty_repository_is_unavailable_until_it_has_a_commit(tmp_path):
+def test_empty_repository_is_unavailable_until_it_has_a_commit(tmp_path: Path) -> None:
     git(tmp_path, 'init')
     info = capabilities(str(tmp_path))
     assert info['worktree_status'] == 'unavailable' and info['worktree_reason'] == 'no_commits'
@@ -32,7 +34,7 @@ def test_empty_repository_is_unavailable_until_it_has_a_commit(tmp_path):
 
 
 @pytest.mark.parametrize('kind', ['missing', 'file'])
-def test_invalid_project_directory_is_an_error(tmp_path, kind):
+def test_invalid_project_directory_is_an_error(tmp_path: Path, kind: str) -> None:
     path = tmp_path / 'project'
     if kind == 'file':
         path.write_text('not a directory')
@@ -48,8 +50,10 @@ def test_invalid_project_directory_is_an_error(tmp_path, kind):
     (GitCommandError('fatal: detected dubious ownership in repository', 128), 'git_error'),
     (ValueError('Unexpected Git failure'), 'git_error'),
 ])
-def test_check_errors_are_distinct_from_unsupported_directories(tmp_path, monkeypatch, error, reason):
-    def fail(*_args, **_kwargs):
+def test_check_errors_are_distinct_from_unsupported_directories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: Exception, reason: str,
+) -> None:
+    def fail(*_args: object, **_kwargs: object) -> str:
         raise error
 
     monkeypatch.setattr(fork_workspaces, 'git', fail)
@@ -60,8 +64,8 @@ def test_check_errors_are_distinct_from_unsupported_directories(tmp_path, monkey
     assert info['worktree_message']
 
 
-def test_head_check_failure_is_not_silently_treated_as_an_empty_repository(tmp_path, monkeypatch):
-    def fail_head(_root, *_args, **_kwargs):
+def test_head_check_failure_is_not_silently_treated_as_an_empty_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_head(_root: Path, *_args: str, **_kwargs: object) -> str:
         if '--verify' in _args:
             raise GitCommandError('Cannot read repository objects', 128)
         return str(tmp_path)
@@ -71,7 +75,7 @@ def test_head_check_failure_is_not_silently_treated_as_an_empty_repository(tmp_p
     assert info['worktree_status'] == 'error' and info['worktree_reason'] == 'git_error'
 
 
-def test_capability_route_reports_projectless_and_failed_checks_without_mutating_state(tmp_path, monkeypatch):
+def test_capability_route_reports_projectless_and_failed_checks_without_mutating_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.app.context import AppContext
     from codey.app.conversation_routes import fork_response
 
@@ -87,11 +91,13 @@ def test_capability_route_reports_projectless_and_failed_checks_without_mutating
 
     state = deepcopy(before)
     state['projects'] = [{'id': 'p', 'name': 'Project', 'path': str(tmp_path)}]
-    state['sessions'][0]['projectId'] = 'p'
-    ctx.save_ui_state(state, base_revision=state['revision'])
+    require_object_rows(state['sessions'])[0]['projectId'] = 'p'
+    revision = state['revision']
+    assert type(revision) is int
+    ctx.save_ui_state(state, base_revision=revision)
     before = deepcopy(ctx.load_ui_state())
 
-    def timeout(*_args, **_kwargs):
+    def timeout(*_args: object, **_kwargs: object) -> str:
         raise subprocess.TimeoutExpired('git', 5)
 
     monkeypatch.setattr(fork_workspaces, 'git', timeout)
