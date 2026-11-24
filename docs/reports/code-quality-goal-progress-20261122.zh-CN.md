@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q037B，接续 Q037C。开放事项保存在治理队列。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，Q037C 进行中。开放事项保存在治理队列。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1604,3 +1604,9 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 运行时探测的进程、I/O 和数据错误现在映射为正常的 `ToolResult` 拒绝。两个用例同输入验证 `runtime_unavailable`、0 个子调用和无新执行记录。已存在的修复回执标识仍随生产入口返回。将两处只用于保序去重的 `dict.fromkeys` 改为具体 `None` 值的字典推导，避免类型工具从标准库签名引入 Any。
 - 在 `D:\codey` 运行 `python -m pytest -q tests/test_codemode_kernel_runtime_start.py tests/test_codemode_kernel_integration.py tests/test_codemode_protocol_closure.py tests/test_read_result_contract.py --tb=short`，最终 34 passed，无 skip，退出 0。源和新增用例严格 Any 由 3 条诊断降至 0，Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q037B 完成。累计完成 66/338 批，覆盖 128/1009 个生产文件。下一批 Q037C 为 Node 进程与会话运行时。
+
+
+### Q037C Node 进程与会话运行时
+
+- Q037B 已提交 `8c25bdc5`。完整检查 `runtime.py`。`CodeModeSession.start` 为已启动的请求保留唯一执行 ID。在线程启动边界注入一次失败时，旧实现先发布状态，第二次提交同一请求误报 `CodeMode execution already started`。`python -m pytest -q tests/test_codemode_session_thread_start.py --tb=short` 修改前 1 failed，退出 1。现在在原锁内完成线程启动后才发布状态，重试经实际 Node transport 返回 42。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_codemode_session_thread_start.py tests/test_codemode_runtime.py tests/test_codemode_discovery_session.py --tb=short`，47 passed，0 skip，退出 0。源和新增测试严格 Any 与 Ruff、全生产 mypy（763 文件）、Pyrefly（0 errors、35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。

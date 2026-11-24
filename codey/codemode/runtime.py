@@ -115,11 +115,6 @@ class CodeModeSession:
         handle = CodeModeHandle(request.execution_id)
         state = _SessionState(handle, request)
         parent_stop, parent_deadline = cancellation.current_event(), cancellation.current_deadline()
-        with self._lock:
-            if handle.execution_id in self._states:
-                raise ValueError("CodeMode execution already started")
-            self._states[handle.execution_id] = state
-        state.emit("started", {"execution_id": handle.execution_id})
 
         def run() -> None:
             try:
@@ -140,7 +135,13 @@ class CodeModeSession:
                     state.finished.set()
                     state.condition.notify_all()
 
-        threading.Thread(target=run, name=f"codemode-{handle.execution_id}", daemon=True).start()
+        thread = threading.Thread(target=run, name=f"codemode-{handle.execution_id}", daemon=True)
+        with self._lock:
+            if handle.execution_id in self._states:
+                raise ValueError("CodeMode execution already started")
+            state.emit("started", {"execution_id": handle.execution_id})
+            thread.start()
+            self._states[handle.execution_id] = state
         return handle
 
     def _state(self, handle: CodeModeHandle) -> _SessionState:

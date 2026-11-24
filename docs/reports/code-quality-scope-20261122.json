@@ -3778,10 +3778,10 @@
       "responsibility": "Code Mode Node transport and session runtime",
       "files": ["codey/codemode/runtime.py"],
       "id": "Q037C",
-      "status": "not_started",
-      "reviewed_files": [],
+      "status": "in_progress",
+      "reviewed_files": ["codey/codemode/runtime.py"],
       "verified_files": [],
-      "tests": ["tests/test_codemode_runtime.py", "tests/test_codemode_discovery_session.py", "tests/test_codemode_replay_authority.py"],
+      "tests": ["tests/test_codemode_session_thread_start.py", "tests/test_codemode_runtime.py", "tests/test_codemode_discovery_session.py", "tests/test_codemode_replay_authority.py"],
       "follow_up": ["Q035E: check the impact of comment-only guest and runner changes on persisted runtime identity before typing those scripts."]
     },
     {
