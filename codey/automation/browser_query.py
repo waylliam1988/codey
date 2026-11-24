@@ -41,8 +41,12 @@ def changed_query_region(before: JsonObject, after: JsonObject) -> str:
     if not isinstance(old, list) or len(old) != 1 or not isinstance(new, list) or len(new) != 1:
         return ""
     previous, current = old[0], new[0]
-    if (isinstance(previous, dict) and isinstance(current, dict) and previous.get("key") == current.get("key")
-            and current.get("busy") is False and isinstance(body := current.get("text"), str)
+    if not isinstance(previous, dict) or not isinstance(current, dict):
+        return ""
+    key = previous.get("key")
+    if not isinstance(key, str) or not key or key != current.get("key"):
+        return ""
+    if (current.get("busy") is False and isinstance(body := current.get("text"), str)
             and current.get("visible") is True
             and (body != previous.get("text") or previous.get("visible") is False)):
         return body

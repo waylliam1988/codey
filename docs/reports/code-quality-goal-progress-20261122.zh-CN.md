@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q030B。Q026 的生产修复已验证，项目生命周期用例待跟进。下一批为 Q030C。保留历史验收，复核后续提交实际影响的范围。
+当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q030B。Q030C 的查询身份修复已验证，研究调用方待跟进。下一批为 Q030D。保留历史验收，复核后续提交实际影响的范围。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1452,3 +1452,13 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_observation_regressions.py tests/test_browser_async_runtime.py tests/test_browser_native_actions.py tests/test_browser_readable_references.py --tb=short`，基线 57 passed。最终加 `tests/test_browser_snapshot_availability.py`，58 passed。补查 `tests/test_browser_navigation_continuation.py::test_observed_disabled_state_matches_native_fieldset_and_legend_semantics`，4 个参数均通过。最终 62 passed，无跳过，退出 0。
 - 为快照 JS 参数声明现有 JsonValue 容器，清除唯一强 Any 诊断。两文件定向 mypy、Pyrefly、ty、Ruff 均退出 0。Pyrefly 定向有 1 条未展示警告。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 和 precision 均通过。日志 `.e2e-artifacts/code-quality-20261122/q030b-*.log`。
 - Q030B 完成。累计 52/330 批，完成批覆盖 104/1009 个生产文件。下一批 Q030C 为控件观察、记录区域和查询绑定。
+
+
+### Q030C 控件观察、记录和查询绑定
+
+- Q030B 已提交 `44b91b66`。完整检查 browser_observation、browser_query、browser_query_async，核对同步和异步调用、历史方案、导出和工具脚本。render_controls 由 A/B 工具调用。同步观察和绑定虽无新的仓内业务调用，历史方案仍引用，保留这些入口。
+- 同一个已绑定的真实区域才可确认查询更新。用缺失、空和整数三个区域身份输入 `changed_query_region`，其余字段均满足可见、已结束、内容变化。 `python -m pytest -q tests/test_browser_query_region_identity.py --tb=short` 修改前 3 failed、1 passed（合法同身份对照）。三个无效键都返回了新正文。要求非空字符串且前后相同后，原测试 4 passed。用明确的 Awaitable 接收 Playwright 的区域关系值并校验字符串，清除唯一强 Any 诊断。
+- 在 `D:\codey` 运行 `python -m pytest -q tests/test_browser_query_binding.py tests/test_browser_shadow_query_regressions.py tests/test_research_dynamic_queries.py --tb=short`，基线 25 passed、3 failed、退出 1。修改后加 `tests/test_browser_query_region_identity.py`，29 passed、同 3 failed、退出 1。真实节点、查询和 shadow 组通过。三失败都是研究 provider 替身的断言，修改前后同一位置与原因。
+- 两项普通查询测例（文本、native）在正文已到达后拒绝出现任何 Execute this next step 提示。提示属于 `operations/browser_task_handoff.py` 的调用方选择合同。慢查询用例拒绝首个未确认读取的审计里有 query_click。现有失败结果用该字段连接原动作，且只有成功、完整的 query_region 才构成确认。完成门禁也读取失败动作的关联。记录至 Q084，结合实际提示内容和操作结果复核意图与测试合同。未调整原断言。
+- 三源和新回归的定向 mypy 强 Any、Pyrefly、ty、Ruff 全部退出 0。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 与 kernel_type_precision_gate 均退出 0。日志 `.e2e-artifacts/code-quality-20261122/q030c-*.log`。
+- Q030C 部分完成，提交独立通过的修复。完成 52/330 批，覆盖 104/1009 个生产文件。部分批次 15，其中 11 个文件独立验证。Q030D 接续页面展开与读取。

@@ -3415,7 +3415,10 @@
       "reviewed_support": [
         "tests/test_browser_snapshot_availability.py"
       ],
-      "result": "Snapshot state now uses Chromium accessibility disabled state along with DOM state. Real button in disabled ARIA group formerly reported enabled, then passed unchanged regression. Direct 58 passed and native fieldset/legend controls 4 passed. Scoped strict Any, Pyrefly, ty and Ruff and full production type and precision gates passed."
+      "result": "Snapshot state now uses Chromium accessibility disabled state along with DOM state. Real button in disabled ARIA group formerly reported enabled, then passed unchanged regression. Direct 58 passed and native fieldset/legend controls 4 passed. Scoped strict Any, Pyrefly, ty and Ruff and full production type and precision gates passed.",
+      "commits": [
+        "44b91b66"
+      ]
     },
     {
       "id": "Q030C",
@@ -3425,13 +3428,29 @@
         "codey/automation/browser_query.py",
         "codey/automation/browser_query_async.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "partial_follow_up",
+      "reviewed_files": [
+        "codey/automation/browser_observation.py",
+        "codey/automation/browser_query.py",
+        "codey/automation/browser_query_async.py"
+      ],
+      "verified_files": [
+        "codey/automation/browser_observation.py",
+        "codey/automation/browser_query.py",
+        "codey/automation/browser_query_async.py"
+      ],
       "tests": [
         "tests/test_browser_query_binding.py",
         "tests/test_browser_shadow_query_regressions.py",
-        "tests/test_research_dynamic_queries.py"
+        "tests/test_research_dynamic_queries.py",
+        "tests/test_browser_query_region_identity.py"
+      ],
+      "reviewed_support": [
+        "tests/test_browser_query_region_identity.py"
+      ],
+      "result": "Matching missing, empty or integer region keys formerly confirmed changed text (3 failed, 1 positive control passed). Same four passed when requiring the original nonempty string key. Strong Any and all type and precision gates passed. Three research workflow assertions failed identically in the explicit pre-edit baseline and final run. Direct query/shadow integration passed; keep cross-module follow-ups open.",
+      "followups": [
+        "Q084 to validate two dynamic query prompt assertions and a slow-query audit assertion. Prompt contract at browser_task_handoff._declared_plan and failure lineage in operations/browser_detail and completion_gate require joint review. Failure can carry query_click without marking query_region as confirmed."
       ]
     },
     {
@@ -7738,6 +7757,7 @@
     "tests/test_browser_project_handoff.py",
     "tests/test_browser_query_binding.py",
     "tests/test_browser_query_handoff.py",
+    "tests/test_browser_query_region_identity.py",
     "tests/test_browser_readable_references.py",
     "tests/test_browser_receipt_edit_ab.py",
     "tests/test_browser_reference_choices.py",
