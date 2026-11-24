@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q031。Q030C 的查询身份修复已验证，研究调用方待跟进。下一批为 Q031B。保留历史验收，复核后续提交实际影响的范围。
+当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q031B。Q030C 的查询身份修复已验证，研究调用方待跟进。下一批为 Q031C。保留历史验收，复核后续提交实际影响的范围。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1489,3 +1489,4 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_web_clipboard.py tests/test_browser_image_coordinates.py --tb=short`，修改前实际 3 failed、2 passed，修改后同断言 5 passed。最终加滚动坐标和像素检查节点 `tests/test_browser_native_actions.py::test_scrolled_image_mapping_and_pixel_validation`，6 passed。调用方 `python -m pytest -q tests/test_deepseek.py tests/test_mimo.py tests/test_qwen.py -k "copy or clipboard" --tb=short`，12 passed、116 deselected。最终两组 18 项通过，退出 0，0 skip。
 - PIL 11.3.0 的 Image.__enter__ 类型返回 Any。保持同样的 with 关闭语义，使用进入前已有具体类型的对象，避免后续传播。两源、两测试严格 Any 由 45 条诊断降至 0。Pyrefly、ty、Ruff 及全生产 mypy、Pyrefly、ty、kernel_type_precision_gate 均退出 0。生产 mypy 763 文件，Pyrefly 35 suppressed、165 warnings 未展示。日志 `.e2e-artifacts/code-quality-20261122/q031b-*.log`。
 - 两类修复职责独立，先交付剪贴板，再提交坐标校验。
+- 剪贴板修复已提交 `83232c41`。截图坐标修复单独提交后，完成 55/333 批，覆盖 111/1009 个生产文件。Q031C 接续浏览器父侧路由决策传输。

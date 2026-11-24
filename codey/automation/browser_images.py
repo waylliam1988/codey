@@ -13,7 +13,8 @@ MAX_IMAGE_PIXELS = 4_000_000
 
 
 def pixel_digest(png: bytes) -> str:
-    with Image.open(io.BytesIO(png)) as image:
+    image = Image.open(io.BytesIO(png))
+    with image:
         if image.format != "PNG" or image.width * image.height > MAX_IMAGE_PIXELS:
             raise ValueError("invalid captured PNG")
         pixels = image.convert("RGBA")
@@ -21,14 +22,21 @@ def pixel_digest(png: bytes) -> str:
 
 
 def image_number(value: JsonValue) -> float:
-    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
+    if isinstance(value, bool) or not isinstance(value, int | float):
         raise ValueError("invalid image coordinate")
-    return float(value)
+    try:
+        coordinate = float(value)
+    except OverflowError as exc:
+        raise ValueError("invalid image coordinate") from exc
+    if not math.isfinite(coordinate):
+        raise ValueError("invalid image coordinate")
+    return coordinate
 
 
 def annotate_capture(png: bytes, observation: JsonObject, clip: JsonObject, *, annotate: bool,
                      scroll_x: float = 0, scroll_y: float = 0) -> tuple[bytes, list[JsonValue], int, int]:
-    with Image.open(io.BytesIO(png)) as source:
+    source = Image.open(io.BytesIO(png))
+    with source:
         if source.format != "PNG" or source.width * source.height > MAX_IMAGE_PIXELS:
             raise ValueError("screenshot exceeds pixel budget; choose a smaller observed region")
         pixels = source.convert("RGB")
