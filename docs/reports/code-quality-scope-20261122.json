@@ -3586,13 +3586,22 @@
       "files": [
         "codey/automation/browser_worker.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "partial_follow_up",
+      "reviewed_files": ["codey/automation/browser_worker.py"],
+      "verified_files": ["codey/automation/browser_worker.py"],
       "tests": [
         "tests/test_browser_worker.py",
         "tests/stress/test_browser_worker_generations.py",
-        "tests/test_server_lazy_state.py"
+        "tests/test_server_lazy_state.py",
+        "tests/test_browser_worker_result.py"
+      ],
+      "reviewed_support": [
+        "tests/test_browser_worker.py",
+        "tests/stress/test_browser_worker_generations.py",
+        "tests/test_browser_worker_result.py"
+      ],
+      "follow_up": [
+        "Preserve variadic callback compatibility while separating worker control parameters from callback binding. Eight strict Any diagnostics remain at Callable ellipsis entry and forwarding sites."
       ]
     },
     {

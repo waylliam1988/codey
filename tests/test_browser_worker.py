@@ -19,7 +19,7 @@ class BrowserWorkerTests(unittest.TestCase):
         result = browser_worker.default_worker().call(job)
 
         self.assertEqual(result, 42)
-        self.assertEqual(seen, [worker_id])
+        assert seen == [worker_id]
 
     def test_submit_does_not_block_caller(self) -> None:
         done = threading.Event()
@@ -144,10 +144,10 @@ class BrowserWorkerTests(unittest.TestCase):
         running_release.set()
         closer.join(timeout=10.0)
         self.assertFalse(closer.is_alive())
-        self.assertEqual(close_out, [True])
+        assert close_out == [True]
         self.assertFalse(worker._thread.is_alive())
-        self.assertEqual(executed, [])
-        self.assertEqual(cleaned, [])
+        self.assertFalse(executed)
+        self.assertFalse(cleaned)
         self.assertGreaterEqual(worker.health_snapshot().cancelled_jobs, 1)
 
     def test_running_job_abandon_cleanup_stays_on_browser_thread(self) -> None:
@@ -167,8 +167,8 @@ class BrowserWorkerTests(unittest.TestCase):
         finally:
             release.set()
         self.assertTrue(worker.close(timeout=5.0))
-        self.assertEqual(cleaned_on, [worker._thread_id])
-        self.assertNotEqual(cleaned_on, [threading.get_ident()])
+        assert cleaned_on == [worker._thread_id]
+        assert cleaned_on != [threading.get_ident()]
 
     def test_close_timeout_reports_incomplete_with_hung_job(self) -> None:
         worker = browser_worker.BrowserWorker(name="test-close-hung", max_queue_size=8)
@@ -277,7 +277,8 @@ class BrowserWorkerTests(unittest.TestCase):
         def cancellable_job() -> None:
             job_started.set()
             for _ in range(50):
-                if cancellation.current_event() and cancellation.current_event().is_set():
+                event = cancellation.current_event()
+                if event is not None and event.is_set():
                     saw_cancellation.set()
                     break
                 import time

@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q031C。Q030C 的查询身份修复已验证，研究调用方待跟进。下一批为 Q031D。保留历史验收，复核后续提交实际影响的范围。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，Q031D 进行中，Q032 在队列中。Q030C 的查询身份修复已验证，研究调用方待跟进。保留历史验收，复核后续提交实际影响的范围。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1498,3 +1498,10 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 给 `route_policy` 传入 `Content-Type: text/plain` 和显式 `text/html`，原 wire DTO 同时有两个冲突字段。 `python -m pytest -q tests/test_browser_route_content_type.py --tb=short` 修改前 1 failed、1 passed，退出 1。真实 Chromium 对照原已采用 text/html。过滤与显式值同名的大小写变体后，两项均通过，同时保留其他响应头。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_file_upload.py tests/test_browser_file_download.py tests/test_browser_failed_source_retention.py --tb=short`，基线 11 passed。最终加入新回归文件共 13 passed，无跳过，退出 0。源和新回归的严格 Any、Pyrefly、ty、Ruff 均过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。日志 `.e2e-artifacts/code-quality-20261122/q031c-*.log`。
 - Q031C 完成。累计 56/333 批，完成批覆盖 112/1009 个生产文件。接续 Q031D 的同步浏览器 worker。
+
+
+### Q031D 同步浏览器 worker
+
+- Q031C 已提交 `aebd6a28`。完整检查 `browser_worker.py`、直接单元测试和 worker generation 压力测试。`BrowserWorker.call` 的泛型返回值及同线程直接调用分支约定传回回调的实际返回值。跨线程回调返回 `RuntimeError` 实例时，旧实现把它当作回调抛出的异常。
+- 在 `D:\codey` 运行 `python -m pytest -q tests/test_browser_worker_result.py`，修改前 1 failed、1 passed，退出 1。修改后将正常返回包入独立结果类型，捕获的异常仍原样抛给调用方。`python -m pytest -q tests/test_browser_worker_result.py tests/test_browser_worker.py tests/stress/test_browser_worker_generations.py tests/test_server_lazy_state.py --tb=short` 最终 27 passed、6 subtests passed，退出 0。旧测试三文件基线 25 passed、6 subtests passed，退出 0。
+- 队列内部使用已绑定参数的无参回调，收窄取消事件和结果类型。提交的三个测试文件通过严格 Any。源文件剩余 8 条严格 Any 诊断均来自 `Callable[..., T]` 或 `Callable[..., object]` 的非固定签名。现有入口把任意回调参数与 `timeout`、`on_abandoned` 及 `worker_key` 控制参数混用，直接使用 ParamSpec 无法表达这些额外关键字。常规全生产 mypy（763 文件）、Pyrefly（0 errors、35 suppressed、165 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0，四个修改文件 Ruff 通过。严格命令为 `python -m mypy codey/automation/browser_worker.py tests/test_browser_worker_result.py tests/test_browser_worker.py tests/stress/test_browser_worker_generations.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated`，退出 1。

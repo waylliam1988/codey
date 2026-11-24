@@ -25,7 +25,7 @@ class WorkerGenerationTests(unittest.TestCase):
         worker = self._track_worker(BrowserWorker(name="stress-worker-abandon", max_queue_size=8))
         gate = threading.Event()
 
-        def _hang_forever():
+        def _hang_forever() -> str:
             gate.wait(timeout=30)
             return "A-stale"
 
@@ -41,7 +41,7 @@ class WorkerGenerationTests(unittest.TestCase):
         release = threading.Event()
         slow_started = threading.Event()
 
-        def _slow():
+        def _slow() -> str:
             slow_started.set()
             release.wait(timeout=30)
             return "stale-A"
@@ -50,9 +50,12 @@ class WorkerGenerationTests(unittest.TestCase):
             worker.call(_slow, timeout=0.3)
         self.assertTrue(slow_started.is_set())
         release.set()
+        def fresh(index: int) -> str:
+            return f"fresh-{index}"
+
         for index in range(5):
             self.assertEqual(
-                worker.call(lambda index=index: f"fresh-{index}", timeout=5),
+                worker.call(fresh, index, timeout=5),
                 f"fresh-{index}",
             )
 

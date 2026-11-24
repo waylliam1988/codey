@@ -14,7 +14,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, TypeVar, cast
+from typing import TypeVar, cast
 
 from codey.runtime.core import cancellation
 
@@ -37,7 +37,7 @@ class _JobState(Enum):
     ABANDONED = "abandoned"
 
 
-def _call_deadlines(timeout: float | None) -> tuple[Any, float | None]:
+def _call_deadlines(timeout: float | None) -> tuple[threading.Event | None, float | None]:
     caller_event = cancellation.current_event()
     caller_deadline = cancellation.current_deadline()
     timeout_deadline = None if timeout is None else time.monotonic() + max(0.0, float(timeout))
@@ -49,13 +49,16 @@ def _call_deadlines(timeout: float | None) -> tuple[Any, float | None]:
     return caller_event, active_deadline
 
 
+@dataclass(frozen=True)
+class _Returned:
+    value: object
+
+
 @dataclass
 class _Job:
-    fn: Callable[..., Any]
-    args: tuple[Any, ...]
-    kwargs: dict[str, Any]
+    run: Callable[[], object]
     done: threading.Event = field(default_factory=threading.Event)
-    slot: list[Any] = field(default_factory=list)
+    outcome: _Returned | Exception | None = None
     state: _JobState = _JobState.QUEUED
     cancel_event: threading.Event = field(default_factory=threading.Event)
     deadline: float | None = None
@@ -144,8 +147,7 @@ class BrowserWorker:
                     job.cancel_event.set()
                     job.abandoned = True
                     job.state = _JobState.CANCELLED
-                    job.slot.clear()
-                    job.slot.append(self._close_error)
+                    job.outcome = self._close_error
                     job.on_abandoned = None
                     job.done.set()
                 with self._state_lock:
@@ -187,35 +189,29 @@ class BrowserWorker:
                     self._cancelled_jobs += 1
                 with job.lock:
                     if not job.done.is_set():
-                        if self._closed.is_set() and not job.slot:
-                            job.slot.append(self._close_error)
+                        if self._closed.is_set() and job.outcome is None:
+                            job.outcome = self._close_error
                         job.done.set()
                 continue
             with self._state_lock:
                 self._current_job = job
                 self._current_started_at = time.monotonic()
-            failed = False
+            outcome: _Returned | Exception | None = None
             try:
                 with cancellation.scope(job.cancel_event), cancellation.deadline_scope(job.deadline):
-                    result = job.fn(*job.args, **job.kwargs)
-                    with job.lock:
-                        if not job.abandoned and job.state != _JobState.ABANDONED:
-                            job.slot.append(result)
+                    outcome = _Returned(job.run())
             except Exception as exc:
-                failed = True
-                with job.lock:
-                    if not job.abandoned and job.state != _JobState.ABANDONED:
-                        job.slot.append(exc)
+                outcome = exc
             finally:
                 cleanup = None
                 with job.lock:
                     if job.abandoned or job.state in (_JobState.CANCELLED, _JobState.ABANDONED):
                         job.state = _JobState.ABANDONED
                         final_state = _JobState.ABANDONED
-                        job.slot.clear()
                         cleanup = job.on_abandoned
                         job.on_abandoned = None
                     else:
+                        job.outcome = outcome
                         job.state = _JobState.COMPLETED
                         final_state = _JobState.COMPLETED
                 with self._state_lock:
@@ -224,7 +220,7 @@ class BrowserWorker:
                         self._current_started_at = 0.0
                     if final_state in (_JobState.CANCELLED, _JobState.ABANDONED):
                         self._cancelled_jobs += 1
-                    elif failed:
+                    elif isinstance(outcome, Exception):
                         self._failed_jobs += 1
                     else:
                         self._completed_jobs += 1
@@ -273,10 +269,10 @@ class BrowserWorker:
 
     def submit(
         self,
-        fn: Callable[..., Any],
-        *args: Any,
+        fn: Callable[..., object],
+        *args: object,
         on_abandoned: Callable[[], None] | None = None,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> bool:
         """Schedule work on the browser thread without blocking the caller.
 
@@ -286,7 +282,7 @@ class BrowserWorker:
         with self._lifecycle_lock:
             if self._closed.is_set():
                 raise RuntimeError("browser worker is closed")
-            job = _Job(fn=fn, args=args, kwargs=kwargs, on_abandoned=on_abandoned)
+            job = _Job(run=lambda: fn(*args, **kwargs), on_abandoned=on_abandoned)
             try:
                 self._queue.put_nowait(job)
             except queue.Full:
@@ -301,11 +297,12 @@ class BrowserWorker:
     def call(
         self,
         fn: Callable[..., T],
-        *args: Any,
+        *args: object,
         timeout: float | None = None,
         on_abandoned: Callable[[], None] | None = None,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> T:
+        """Return the callback's value or propagate an exception it raises."""
         with self._lifecycle_lock:
             if self._closed.is_set():
                 raise RuntimeError("browser worker is closed")
@@ -318,9 +315,7 @@ class BrowserWorker:
         caller_event, active_deadline = _call_deadlines(timeout)
 
         job = _Job(
-            fn=fn,
-            args=args,
-            kwargs=kwargs,
+            run=lambda: fn(*args, **kwargs),
             deadline=active_deadline,
             on_abandoned=on_abandoned,
         )
@@ -359,12 +354,13 @@ class BrowserWorker:
             _abandon_browser_job(job)
             raise
 
-        if not job.slot:
+        outcome = job.outcome
+        if outcome is None:
             raise RuntimeError("browser job completed without returning a result or exception")
-        result = job.slot[0]
-        if isinstance(result, Exception):
-            raise result
-        return cast(T, result)
+        if isinstance(outcome, Exception):
+            raise outcome
+        # This job's success value comes from the Callable[..., T] above.
+        return cast(T, outcome.value)
 
 
 _WORKER: BrowserWorker | None = None
@@ -380,13 +376,14 @@ def default_worker() -> BrowserWorker:
     import probes) that never touches a browser. Double-checked locking
     keeps the fast path lock-free after the first call.
     """
+    global _WORKER
     worker = _WORKER
     if worker is None:
         with _WORKER_LOCK:
             worker = _WORKER
             if worker is None:
                 worker = BrowserWorker()
-                globals()["_WORKER"] = worker
+                _WORKER = worker
     return worker
 
 
@@ -407,10 +404,10 @@ def session_worker(session_id: str) -> BrowserWorker:
 
 
 def submit(
-    fn: Callable[..., Any],
-    *args: Any,
+    fn: Callable[..., object],
+    *args: object,
     on_abandoned: Callable[[], None] | None = None,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> bool:
     worker_key = str(kwargs.pop("worker_key", "") or "")
     if not worker_key and args and isinstance(args[0], str) and len(args) >= 8:
@@ -421,21 +418,22 @@ def submit(
 
 def submit_for(
     session_id: str,
-    fn: Callable[..., Any],
-    *args: Any,
+    fn: Callable[..., object],
+    *args: object,
     on_abandoned: Callable[[], None] | None = None,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> bool:
     return session_worker(session_id).submit(fn, *args, on_abandoned=on_abandoned, **kwargs)
 
 
 def call(
     fn: Callable[..., T],
-    *args: Any,
+    *args: object,
+    timeout: float | None = None,
     on_abandoned: Callable[[], None] | None = None,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> T:
-    return default_worker().call(fn, *args, on_abandoned=on_abandoned, **kwargs)
+    return default_worker().call(fn, *args, timeout=timeout, on_abandoned=on_abandoned, **kwargs)
 
 
 def health_snapshot() -> BrowserWorkerHealth:
