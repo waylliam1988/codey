@@ -29,6 +29,7 @@ class DisplayStream:
             value = event.get("delta")
             if isinstance(value, str):
                 fragments.append(value)
+        fragments.extend(self._messages_fragment(event))
         choices = event.get("choices", [])
         items: list[object] = []
         if isinstance(choices, list):
@@ -70,6 +71,23 @@ class DisplayStream:
             self.text = (self.text + "".join(fragments))[:64_000]
         if not self.sequence or time.monotonic() - self.last_emit >= 0.05:
             self._publish("partial")
+
+    def _messages_fragment(self, event: dict[str, object]) -> tuple[str, ...]:
+        slot = event.get("index")
+        if type(slot) is not int:
+            return ()
+        if event.get("type") == "content_block_start":
+            block = event.get("content_block")
+            if mapping_fields(block) and block.get("type") == "tool_use":
+                self._arguments(slot, block.get("name"), None)
+        if event.get("type") == "content_block_delta":
+            delta = event.get("delta")
+            if mapping_fields(delta):
+                if delta.get("type") == "text_delta" and isinstance(value := delta.get("text"), str):
+                    return (value,)
+                if delta.get("type") == "input_json_delta":
+                    self._arguments(slot, None, delta.get("partial_json"))
+        return ()
 
     def finish(self, text: str | None = None) -> None:
         if not self.text:

@@ -94,6 +94,10 @@ class ToolSpec:
         return (self.replay_class == "safe" or self.executor == "source" and self.grant == "web.read"
                 or self.executor == "browser" and self.effect == "read")
 
+    @property
+    def parallel_project_read(self) -> bool:
+        return self.executor == "project" and self.grant == "project.read" and self.parallel_safe and self.replay_class == "safe"
+
 
 def _freeze_schema_value(value: object) -> object:
     """Freeze every nested schema mapping and sequence."""

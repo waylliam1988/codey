@@ -110,6 +110,37 @@ def test_delta_displays_reordered_controls_in_current_order(browser: BrowserSess
     assert [decode_json_object(row)["name"] for row in after] == ["Second", "First"]
 
 
+def test_snapshot_discovers_hit_testable_css_pointer_without_guessing_a_selector(browser: BrowserSession) -> None:
+    install(browser, '<div id="statement" style="cursor:pointer">March statement</div>'
+                     '<div style="cursor:pointer"><button>Nested semantic control</button></div>'
+                     '<div style="position:absolute;top:350px;left:10px;cursor:pointer">Occluded candidate</div>'
+                     '<div style="position:absolute;top:350px;left:10px;background:white;width:200px;height:40px">Cover</div>')
+    assert browser.evaluate("document.querySelector('#statement').addEventListener('click', "
+                            "event => event.currentTarget.textContent = 'Opened March')").ok
+    snapshot = browser.snapshot()
+    assert snapshot.ok
+    elements = snapshot.observation["elements"]
+    assert isinstance(elements, list)
+    rendered = [decode_json_object(row) for row in elements]
+    matches = [row for row in rendered if row.get("pointer_candidate") is True]
+    candidate, = matches
+    assert candidate["name"] == "March statement"
+    assert browser.click(require_json_string(candidate["ref"], "ref")).ok
+    assert "Opened March" in str(browser.capture()["text"])
+
+
+def test_snapshot_finds_offscreen_and_shadow_pointer_controls(browser: BrowserSession) -> None:
+    install(browser, '<div id="host"></div><div style="height:2000px"></div>'
+                     '<div style="cursor:pointer">Offscreen report</div>')
+    assert browser.evaluate("""document.querySelector('#host').attachShadow({mode: 'open'}).innerHTML =
+        '<div style="cursor:pointer">Shadow report</div>'""").ok
+    snapshot = browser.snapshot()
+    rows = snapshot.observation["elements"]
+    assert snapshot.ok and isinstance(rows, list)
+    pointers = {row["name"] for raw in rows if (row := decode_json_object(raw)).get("pointer_candidate") is True}
+    assert pointers == {"Shadow report", "Offscreen report"}
+
+
 def test_div_query_uses_an_explicit_observed_scope_and_never_confirms_an_unchanged_result(browser: BrowserSession) -> None:
     install(browser, '<button onclick="document.querySelector(\'#result\').textContent=\'173 QUARTZ_851\'">Query</button>'
                      '<div id=result>Waiting</div>')

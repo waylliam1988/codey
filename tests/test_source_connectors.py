@@ -46,7 +46,7 @@ def _imports(path: Path) -> set[str]:
 def test_builtin_connector_registry_is_stable_and_marks_minimum_shipped_fixtures() -> None:
     registry = built_in_connector_registry()
 
-    assert registry.ids() == ("arxiv", "pubmed")
+    assert registry.ids() == ("arxiv", "crossref", "openalex", "pubmed")
     assert registry.shipped_fixture_ids() == ("arxiv", "pubmed")
     assert registry.get("arxiv").status == "available"
     assert registry.get("pubmed").status == "available"
@@ -354,8 +354,8 @@ def test_arxiv_recorded_fixture_rejects_non_arxiv_hosts_and_bad_limit_is_bounded
     fixture = (FIXTURES / "arxiv_atom.xml").read_text(encoding="utf-8")
     wrong_host = fixture.replace("https://arxiv.org/abs/2401.01234v1", "https://example.com/abs/2401.01234v1")
 
-    result = parse_arxiv_atom_fixture(wrong_host, query="retrieval augmented generation", limit="bad")  # type: ignore[arg-type]
-    bounded = parse_arxiv_atom_fixture(fixture, limit="bad")  # type: ignore[arg-type]
+    result = parse_arxiv_atom_fixture(wrong_host, query="retrieval augmented generation", limit="bad")
+    bounded = parse_arxiv_atom_fixture(fixture, limit="bad")
 
     assert result.hits == ()
     assert len(bounded.hits) == 1
@@ -391,7 +391,7 @@ def test_arxiv_and_pubmed_recorded_fixtures_reject_malformed_ids_and_use_safe_qu
 def test_pubmed_recorded_fixture_fetches_openable_document_but_hit_is_not_evidence() -> None:
     fixture = (FIXTURES / "pubmed.xml").read_text(encoding="utf-8")
 
-    result = parse_pubmed_fixture(fixture, query="immune checkpoint inhibitor hepatotoxicity", limit="bad")  # type: ignore[arg-type]
+    result = parse_pubmed_fixture(fixture, query="immune checkpoint inhibitor hepatotoxicity", limit="bad")
     hit = result.hits[0]
     fetched = fetch_recorded_hit(hit)
     hit_payload = hit.to_payload()

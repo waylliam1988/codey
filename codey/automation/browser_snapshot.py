@@ -39,8 +39,40 @@ _DOM_SNAPSHOT = """(root, [limit, includeText]) => {
         if (root.matches(selector)) yield root;
         yield* descendants(root);
     }
+    function* pointerCandidates() {
+        function* walk(scope) {
+            const walker = scope.ownerDocument.createTreeWalker(scope, NodeFilter.SHOW_ELEMENT);
+            if (scope.shadowRoot) yield* walk(scope.shadowRoot);
+            for (let child = walker.nextNode(); child; child = walker.nextNode()) {
+                yield child;
+                if (child.shadowRoot) yield* walk(child.shadowRoot);
+            }
+        }
+        let visited = 0;
+        for (const node of (function* () { yield root; yield* walk(root); })()) {
+            if (visited++ === 1000) break;
+            if (node.closest(selector) || getComputedStyle(node).cursor !== 'pointer'
+                    || (node.parentElement && getComputedStyle(node.parentElement).cursor === 'pointer')
+                    || node.querySelector(selector)) continue;
+            const rect = node.getBoundingClientRect();
+            if (rect.width < 4 || rect.height < 4 || getComputedStyle(node).visibility !== 'visible') continue;
+            const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+            const {innerWidth, innerHeight} = node.ownerDocument.defaultView;
+            if (x >= 0 && x < innerWidth && y >= 0 && y < innerHeight
+                    && !node.contains(node.getRootNode().elementFromPoint(x, y))) continue;
+            yield node;
+        }
+    }
     let truncated = false;
-    for (const node of candidates()) {
+    function* controls() {
+        for (const node of candidates()) yield [node, false];
+        let sampled = 0;
+        for (const node of pointerCandidates()) {
+            if (sampled++ === 12) break;
+            yield [node, true];
+        }
+    }
+    for (const [node, pointer] of controls()) {
         const rect = node.getBoundingClientRect();
         if (!rect.width || !rect.height || getComputedStyle(node).visibility !== 'visible') continue;
         const closed = node.closest('details:not([open])');
@@ -51,7 +83,7 @@ _DOM_SNAPSHOT = """(root, [limit, includeText]) => {
         if (includeText && contextNode && (metadata.context.basis === 'repeated'
                 || ['article', 'tr', 'row'].includes(metadata.context.kind)) && !(owner in regions))
             regions[owner] = visibleText(contextNode).slice(0, 240);
-        rows.push({node: index(node), owner, query: index(queryNode), metadata,
+        rows.push({node: index(node), owner, query: index(queryNode), metadata, pointer,
             box: {x: rect.x, y: rect.y, width: rect.width, height: rect.height}});
     }
     return {nodes, view: {rows, regions, text: includeText ? visibleText(root) : '', truncated}};
@@ -241,6 +273,8 @@ async def _merge_controls(
         row: JsonObject = {"role": role, "name": name, "context_id": context_id,
                            "disabled": metadata.get("disabled") is True, "value": metadata.get("value"),
                            "checked": metadata.get("checked"), "query_relation": metadata.get("query_relation", "")}
+        if entry.get("pointer") is True:
+            row["pointer_candidate"] = True
         if metadata.get("record_link") is True:
             row["record_link"] = True
         if include_boxes:
@@ -372,10 +406,10 @@ def diff_snapshot(base: Mapping[str, JsonValue] | None, current: JsonObject) -> 
     changed: list[JsonValue] = [row for key, row in after.items() if key in before and before[key] != row]
     removed: list[JsonValue] = [key for key in before if key not in after]
     result: JsonObject = {key: value for key, value in current.items()
-                          if key not in {"elements", "text", "contexts"}}
-    for key in ("text", "contexts"):
+                          if key not in {"elements", "text", "contexts", "frames"}}
+    for key in ("text", "contexts", "frames"):
         if base.get(key) != current.get(key):
-            result[key] = current[key]
+            result[key] = current.get(key, [])
     return {**result, "kind": "delta", "base_revision": base.get("revision"),
             "added": added, "changed": changed, "removed": removed}
 
@@ -389,4 +423,6 @@ def snapshot_display(snapshot: JsonObject) -> JsonObject:
             display[key] = [{field: value for field, value in row.items()
                              if field != "box" and value is not None and (value != "" or field == "value")}
                             if isinstance(row, dict) else row for row in rows]
+    if isinstance(frames := display.get("frames"), list):
+        display["frames"] = [snapshot_display(frame) for frame in frames if isinstance(frame, dict)]
     return display

@@ -113,7 +113,7 @@ def test_production_handoff_requires_citable_read_on_current_document(
             if scenario == "legacy_claim_receipt" and outcome[1]:
                 result, _, exit_code = outcome
                 evidence = decode_json_object(result.canonical["research_evidence_check"])
-                assert evidence.pop("claim_check_version") == 1
+                assert evidence.pop("claim_check_version") == CLAIM_CHECK_VERSION
                 assert isinstance(evidence.pop("claim_checks"), list)
                 return replace(result, canonical={**result.canonical, "research_evidence_check": evidence}), True, exit_code
             if outcome[1] and not reloaded:
@@ -220,6 +220,8 @@ def test_new_claim_checks_only_cover_the_matching_part_and_cited_version() -> No
 
 @pytest.mark.parametrize(("original", "claim", "problem"), [
     ("A 组响应率 24%。", "B 组响应率 24%", "group_conflict"),
+    ("Group A response rate was 24%.", "B组响应率为24%", "group_conflict"),
+    ("Group A response rate was 24%.", "A组响应率为24%", ""),
     ("A 组响应率 24%。", "A 组响应率 42%", "quantity_conflict"),
     ("Group A shipped 24 g.", "Group A shipped 24 kg", "quantity_conflict"),
     ("Group A shipped 24 g.", "Group A shipped 24.0 g", ""),
@@ -266,3 +268,21 @@ def test_quantitative_citation_conflict_returns_to_current_writer(tmp_path: Path
     assert [row.ok for row in submissions] == [False, True]
     assert decode_json_object(submissions[0].canonical["research_submission_issue"])["kind"] == "group_conflict"
     assert sum(row.result.call.name == "open_url" for row in receipts) == 1
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
+def test_repeated_citation_conflict_publishes_one_unresolved_answer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    directory = tmp_path / "run"
+    url = "https://example.com/atlas/shipping-results"
+    proposal: JsonObject = {"tool": "submit_research_answer",
+        "args": {"markdown": "Group B shipped 24 g [e1].", "state": "answered"}}
+    install_http(monkeypatch, iter((proposal, proposal, proposal)), native=False)
+    result = gate.run_case(directory, "research", Target("http://scripted.test/v1", "fixture", 123, 20),
+        strict_research=True, declare_required_tools=False, source_pages={url: "<article>Group A shipped 24 g.</article>"},
+        task_transform=lambda _: f"Read the official shipping report at {url}. Report which group shipped 24 g and cite the report.")
+    assert result["stop_reason"] == "done"
+    receipts = tool_receipts(directory / "state")
+    submissions = [row.result for row in receipts if row.result.call.name == "submit_research_answer"]
+    assert [row.ok for row in submissions] == [False, False, True]
+    delivered = decode_json_object(submissions[-1].canonical["research_submission"])
+    assert delivered["state"] == "unresolved" and "Group B shipped" not in str(delivered["markdown"])

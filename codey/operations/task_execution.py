@@ -1026,24 +1026,40 @@ class ExecutionDelegate:
                 and last[0] not in self._research_scope.attempt_refs and call.args.get("state") == "answered"):
             raise ValueError("first_party_followup_available: review the just-acquired source results before submitting.")
         declared = submit_answer(self._research_scope, call.args)
-        from codey.research.report_evidence import CLAIM_CHECK_VERSION, check_report_evidence, review_submission_issues
+        from codey.research.report_evidence import (
+            CLAIM_CHECK_VERSION,
+            check_report_evidence,
+            exhausted_review_answer,
+            research_review_key,
+            review_submission_issues,
+        )
 
         evidence_check = check_report_evidence(declared, tools.ledger.read_passages, claim_check_version=CLAIM_CHECK_VERSION)
         issues = review_submission_issues(declared, evidence_check, tools.ledger.read_passages)
+        resolution: dict[str, object] = {}
         if issues:
             issue = issues[0]
-            feedback = (f"Research submission needs review. The draft says {issue['claim']!r}. "
-                        f"Its cited [{issue['label']}] says {issue['original']!r}. "
-                        "Reconcile the claim with the cited original, cite other evidence that supports it, "
-                        "or describe the unresolved point and submit the supported parts.")
-            return ToolResult(call, feedback, ok=False, canonical={"research_submission_issue": issue}), False, None
+            prior_reviews = self.session._memory_results.values() if self.session is not None else ()
+            fallback = exhausted_review_answer(self._research_scope, issue,
+                tuple(result.canonical.get("research_review_key") for result in prior_reviews))
+            if fallback is None:
+                feedback = (f"Research submission needs review. The draft says {issue['claim']!r}. "
+                            f"Its cited [{issue['label']}] says {issue['original']!r}. "
+                            "Reconcile the claim with the cited original, cite other evidence that supports it, "
+                            "or describe the unresolved point and submit the supported parts.")
+                return ToolResult(call, feedback, ok=False, canonical={"research_submission_issue": issue,
+                    "research_review_key": research_review_key(issue)}), False, None
+            declared = fallback
+            resolution["research_review_exhausted"] = issue
+            evidence_check = check_report_evidence(declared, tools.ledger.read_passages, claim_check_version=CLAIM_CHECK_VERSION)
         if self.session is not None:
             from codey.operations.browser_result_evidence import validate_current_result
 
             validate_current_result(self.session.executed, self.session._memory_results,
                 declared["markdown"], declared["state"], self._research_scope.aliases)
         return ToolResult(call, "Whole answer recorded. The application will validate and publish this submission.",
-                          ok=True, canonical={"research_submission": declared, "research_evidence_check": evidence_check}), True, None
+                          ok=True, canonical={**resolution, "research_submission": declared,
+                                              "research_evidence_check": evidence_check}), True, None
 
     def _execute_research_write(self, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
         name, args = call.name, dict(call.args or {})

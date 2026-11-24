@@ -81,6 +81,18 @@ def _host_acquisition_result(result: ToolResult) -> bool:
             or result.call.call_id in PRIMARY_ACQUISITION_IDS)
 
 
+def _research_effect_ids(effects: Sequence[RuntimeEffectProjection], run_id: str, scope: str) -> set[str]:
+    scoped_run = f"{run_id}:{scope}" if scope else run_id
+    own = tuple(effect.intent for effect in effects
+                if effect.intent.run_id == run_id and effect.intent.effect_category == "tool_call")
+    ids = {item.effect_id for item in own if item.effect_id == turn_effect_id(scoped_run, item.turn, item.tool_index)}
+    while True:
+        children = {item.effect_id for item in own if item.parent_effect_id in ids}
+        if children <= ids:
+            return ids
+        ids.update(children)
+
+
 class KernelContext:
     def __init__(self, session: TaskSession, request: KernelRunRequest) -> None:
         self.session, self.request = session, request
@@ -308,6 +320,8 @@ class KernelContext:
         from codey.operations.verification_history import rebuild_verifications, settled_projections
 
         effects = settled_projections(self.durable, self.sink.run_id)
+        research_ids = (_research_effect_ids(effects, self.transport.run_id, self.effect_scope)
+                        if self.session.task_kind in {"research", "evidence_followup"} else None)
         for effect in effects:
             identity = effect.intent.effect_id
             if effect.intent.tool_name == "_publish_research_answer":
@@ -315,11 +329,8 @@ class KernelContext:
             if effect.intent.effect_category == "provider_send":
                 self.restore_completion_proposal(effect)
                 continue
-            if self.session.task_kind in {"research", "evidence_followup"} and effect.intent.run_id == self.sink.run_id:
-                from codey.operations.task_session import turn_effect_id
-                scoped_run = f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id
-                if identity != turn_effect_id(scoped_run, effect.intent.turn, effect.intent.tool_index):
-                    continue
+            if research_ids is not None and effect.intent.run_id == self.sink.run_id and identity not in research_ids:
+                continue
             if (effect.intent.effect_category != "tool_call" or effect.settlement is None
                     or identity in self.session.executed or identity in self.session.restored_effect_ids):
                 continue

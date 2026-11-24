@@ -221,20 +221,38 @@ def compile_answer_report(session: TaskSession, ledger: ResearchLedger, store: K
             submission["markdown"], submission["state"], original_scope.aliases)
     from codey.research.answer_contract import submit_answer
 
-    if submit_answer(AnswerScope.from_payload(submission["scope"]), result.call.args) != submission:
-        raise ValueError("settled submission differs from the original tool arguments")
+    proposed = submit_answer(original_scope, result.call.args)
     if "research_evidence_check" in result.canonical:
-        from codey.research.report_evidence import CLAIM_CHECK_VERSION, check_report_evidence
+        from codey.research.report_evidence import (
+            CLAIM_CHECK_VERSIONS,
+            check_report_evidence,
+            exhausted_review_answer,
+            review_submission_issues,
+        )
 
         checked = decode_json_object(result.canonical["research_evidence_check"])
         version = checked.get("claim_check_version")
-        if "claim_check_version" in checked and (type(version) is not int or version != CLAIM_CHECK_VERSION):
+        if "claim_check_version" in checked and (type(version) is not int or version not in CLAIM_CHECK_VERSIONS):
             raise ValueError("unsupported research claim check version")
+        if "research_review_exhausted" in result.canonical:
+            original_check = check_report_evidence(proposed, ledger.read_passages,
+                claim_check_version=version if isinstance(version, int) else None)
+            issues = review_submission_issues(proposed, original_check, ledger.read_passages)
+            if not issues or issues[0] != result.canonical["research_review_exhausted"]:
+                raise ValueError("research review resolution differs from the original submission")
+            before = tuple(session._memory_results)[:tuple(session._memory_results).index(receipt)]
+            prior_keys = tuple(session._memory_results[ref].canonical.get("research_review_key") for ref in before)
+            fallback = exhausted_review_answer(original_scope, issues[0], prior_keys)
+            if fallback is None:
+                raise ValueError("research review resolution has no prior review receipts")
+            proposed = fallback
         actual = check_report_evidence(submission, ledger.read_passages,
                                        verify_calculations="verified_calculations" in checked,
                                        claim_check_version=version if isinstance(version, int) else None)
         if {key: actual[key] for key in checked if key in actual} != checked:
             raise ValueError("citation validation differs from the original submission receipt")
+    if proposed != submission:
+        raise ValueError("settled submission differs from the original tool arguments")
     scope = submission["scope"]
     # A receipt may never invent investigations just by carrying a matching digest.
     from codey.research.questions import is_investigation_tool

@@ -25,7 +25,7 @@ from codey.durable.model import (
     thaw_json,
 )
 from codey.durable.session_kernel import SessionKernel
-from codey.runtime.core.protocol_window import REPLAY_BINDING, RESPONSES_REASONING, ProtocolWindowRef
+from codey.runtime.core.protocol_window import ANTHROPIC_BLOCKS, REPLAY_BINDING, RESPONSES_REASONING, ProtocolWindowRef
 from codey.types.json_value import decode_json_object
 from codey.utils.object_fields import object_fields
 
@@ -58,7 +58,7 @@ def _resolve_response_entries(
                 or envelope.get("effect_id") != record.owner_effect_id):
             raise ValueError("invalid provider history response")
         payload = tool_call_message(envelope.get("payload"))
-        if "reasoning_content" in payload or RESPONSES_REASONING in payload:
+        if {"reasoning_content", RESPONSES_REASONING, ANTHROPIC_BLOCKS} & payload.keys():
             window = _original_provider_window(session, record, artifact or session.store.artifact)
             if window is not None:
                 payload[REPLAY_BINDING] = window.binding.to_payload()
@@ -433,7 +433,7 @@ def _history_item(entry: EntryDraft, ordinal: int) -> dict[str, object]:
     raw = thaw_json(entry.payload)
     if not object_fields(raw):
         raise ValueError("invalid durable history item")
-    item = {key: value for key, value in raw.items() if key not in {REPLAY_BINDING, RESPONSES_REASONING}}
+    item = {key: value for key, value in raw.items() if key not in {REPLAY_BINDING, RESPONSES_REASONING, ANTHROPIC_BLOCKS}}
     if item.get("attachments"):
         from codey.task.attachments import public_attachment
 

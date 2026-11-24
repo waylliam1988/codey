@@ -337,7 +337,7 @@ def project_write_basis(session: TaskSession) -> tuple[tuple[str, ToolResult] | 
 
 def project_citation_labels(session: TaskSession) -> tuple[str, ...]:
     """Select the actual record and documented format used for the requested edit."""
-    if SOURCE_BEFORE_EDIT not in session.policy.required_checks or not _CITE_SOURCES.search(instruction_text(session.task_text)):
+    if SOURCE_BEFORE_EDIT not in session.policy.required_checks or not user_requests_citations(session.task_text):
         return ()
     refs = dict.fromkeys(ref for _, edit in committed_results(session.executed, session._memory_results, frozenset({"edit"}))
                          if isinstance(basis := edit.canonical.get("project_source_basis"), dict)
@@ -357,10 +357,14 @@ def project_citation_labels(session: TaskSession) -> tuple[str, ...]:
 
 
 def original_handoff_citation(session: TaskSession) -> tuple[str, str] | None:
-    if len(session.handoff_source_urls) != 1 or not _CITE_SOURCES.search(instruction_text(session.task_text)):
+    if len(session.handoff_source_urls) != 1 or not user_requests_citations(session.task_text):
         return None
     url, = session.handoff_source_urls
     return session.source_id_for(url), url
+
+
+def user_requests_citations(task: str) -> bool:
+    return _CITE_SOURCES.search(instruction_text(task)) is not None
 
 
 def _action_page(result: ToolResult) -> str:

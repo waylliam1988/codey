@@ -70,3 +70,20 @@ def test_click_blocked_in_ancestor_frame_reports_the_actual_hit_layer(
     assert isinstance(point["x"], (int, float)) and isinstance(point["y"], (int, float))
     assert same_document(attempt.observation["document"], document)
     assert browser.evaluate("Boolean(window.clicked)").observation["value"] is False
+
+
+def test_parent_snapshot_previews_child_controls_with_their_own_document(
+    production_browser: tuple[TaskSession, ResearchTools, BrowserSession],
+) -> None:
+    _, _, browser = production_browser
+    assert browser.navigate(URL).ok
+    install(browser, "<button>Top control</button><iframe srcdoc=\"<button>Child control</button>\"></iframe>")
+    parent = browser.snapshot(max_elements=2)
+    frames = parent.observation["frames"]
+    assert parent.ok and isinstance(frames, list)
+    frame, = [decode_json_object(raw) for raw in frames]
+    child, = elements(frame)
+    assert child["name"] == "Child control"
+    child_ref = require_json_string(child["ref"], "child ref")
+    assert browser.click(child_ref).ok
+    assert browser.document_identity() == frame["document"]

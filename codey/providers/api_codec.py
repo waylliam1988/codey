@@ -7,6 +7,13 @@ from codey.providers.base import AssistantTurn, ProviderToolDefinition, Provider
 from codey.providers.token_accounting import RequestContextCount
 
 
+def allows_native_parallel_reads(tools: list[ProviderToolDefinition]) -> bool:
+    from codey.toolchain.tool_spec import spec_for_tool
+
+    return bool(tools) and all((spec := spec_for_tool(tool.name)) is not None and spec.parallel_project_read
+                               for tool in tools)
+
+
 @dataclass(frozen=True)
 class GenerationSettings:
     model: str

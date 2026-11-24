@@ -69,6 +69,11 @@ ARXIV_CONNECTOR_TERMS = frozenset({
     "算法",
     "物理",
 })
+ACADEMIC_CONNECTOR_TERMS = frozenset({
+    "doi", "journal", "literature", "meta-analysis", "paper", "preprint", "scholarly", "学术", "文献", "期刊", "论文", "预印本",
+})
+
+
 def preferred_connector_ids(
     terms: object,
     *,
@@ -81,6 +86,10 @@ def preferred_connector_ids(
         preferred.append("pubmed")
     if "arxiv" in available and term_set & ARXIV_CONNECTOR_TERMS:
         preferred.append("arxiv")
+    metadata = [identity for identity in ("crossref", "openalex") if identity in available]
+    preferred[:0] = [identity for identity in metadata if identity in term_set]
+    if term_set & ACADEMIC_CONNECTOR_TERMS:
+        preferred.extend(identity for identity in metadata if identity not in preferred)
     return tuple(preferred)
 
 

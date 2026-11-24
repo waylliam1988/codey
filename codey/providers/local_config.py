@@ -12,7 +12,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from codey.env_names import (
     LOCAL_OPENAI_API_KEY_ENV,
@@ -255,7 +255,9 @@ def config_from_dict(raw: object) -> LocalProviderConfig:
         raise ValueError(f"unsupported local config schema_version: {schema_version!r}")
     mode = parse_native_tools_mode(raw.get("native_tools_mode")) or NATIVE_TOOLS_AUTO
     protocol = raw.get("api_protocol", "openai-completions")
-    if protocol not in {"openai-completions", "openai-responses"}:
+    from codey.runtime.core.protocol_window import API_PROTOCOLS
+
+    if protocol not in API_PROTOCOLS:
         raise ValueError("unsupported API protocol")
     thinking = raw.get("thinking_enabled") if type(raw.get("thinking_enabled")) is bool else None
     if mode == NATIVE_TOOLS_JSON:
@@ -360,7 +362,9 @@ def parse_local_config_update(
     if not isinstance(body, Mapping):
         return None, "request body must be an object"
     protocol = body.get("api_protocol", previous.api_protocol)
-    if not isinstance(protocol, str) or protocol not in {"openai-completions", "openai-responses"}:
+    from codey.runtime.core.protocol_window import API_PROTOCOLS
+
+    if not isinstance(protocol, str) or protocol not in API_PROTOCOLS:
         return None, "unsupported API protocol"
     for field in ("base_url", "model", "api_key"):
         value = body.get(field)
@@ -528,7 +532,7 @@ def assemble_bootstrap_payload(
     selection: LocalTargetSelection,
     endpoint: LocalEndpoint | None,
     discovered: list[str],
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Assemble the UI status payload from already-resolved inputs.
 
     Pure over its arguments: no probing, no disk reads. Save paths reuse
@@ -617,7 +621,7 @@ def local_endpoint_available() -> bool:
     return bool(effective.model)
 
 
-def local_bootstrap_payload(*, probe: bool = True) -> dict[str, Any]:
+def local_bootstrap_payload(*, probe: bool = True) -> dict[str, object]:
     """UI status: connection, models, native mode, context, presets."""
     config = load_local_config()
     selection = select_local_target(config)

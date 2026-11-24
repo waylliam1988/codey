@@ -51,6 +51,8 @@ from codey.research.source_connectors import (
     parse_arxiv_atom_fixture,
     parse_pubmed_fixture,
     safe_connector_query,
+    scholarly_metadata_hit,
+    source_result_from_hits,
 )
 from codey.research.source_gateway import _SearchProvider
 from codey.research.urls import canonical_key, full_key, host_key, parsed_url
@@ -58,7 +60,7 @@ from codey.runtime.core import cancellation
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 from codey.utils.refs import clip, coerce_float
 
-CONNECTOR_SEARCH_IDS = ("pubmed", "arxiv")
+CONNECTOR_SEARCH_IDS = ("pubmed", "arxiv", "crossref", "openalex")
 CONNECTOR_RESULT_LIMIT = 2
 CONNECTOR_MIN_RESULTS = 2
 CONNECTOR_TIMEOUT_SECONDS = 4
@@ -67,6 +69,8 @@ CONNECTOR_SEARCH_BUDGET_SECONDS = 6.0
 _PUBMED_SEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
 _PUBMED_FETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 _ARXIV_SEARCH_URL = "https://export.arxiv.org/api/query"
+_CROSSREF_SEARCH_URL = "https://api.crossref.org/works"
+_OPENALEX_SEARCH_URL = "https://api.openalex.org/works"
 _PUBMED_TOOL_NAME = "research_connector"
 _CONNECTOR_USER_AGENT = "Research Connector"
 
@@ -211,7 +215,7 @@ class ConnectorAwareSearchProvider:
                     extraction_scope="connector_metadata", accepted_urls=tuple(str(row["url"]) for row in connector_rows),
                     rejected_urls=rejected, failure_kind="; ".join(connector_result.errors)),)
                 for hit in connector_result.hits:
-                    if hit.canonical_url:
+                    if hit.canonical_url and self._connector_available(connector_id, capability="fetch_supported"):
                         self._hits_by_url[canonical_key(hit.canonical_url)] = hit
                     row = next((row for row in connector_rows if row["url"] == hit.canonical_url), None)
                     if row is not None:
@@ -235,6 +239,8 @@ class ConnectorAwareSearchProvider:
                 return self._search_pubmed(safe_query, limit)
             if connector_id == "arxiv":
                 return self._search_arxiv(safe_query, limit)
+            if connector_id in {"crossref", "openalex"}:
+                return self._search_scholarly_metadata(connector_id, safe_query, limit)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
@@ -317,6 +323,33 @@ class ConnectorAwareSearchProvider:
             result = self._arxiv_fetch_id(arxiv_id) if arxiv_id else SourceConnectorResult("arxiv")
             return result.hits[0] if result.hits else None
         return None
+
+    def _search_scholarly_metadata(self, connector_id: str, safe_query: SafeConnectorQuery, limit: int) -> SourceConnectorResult:
+        query = _connector_query(safe_query.terms, connector_id)
+        if not query:
+            return SourceConnectorResult(connector_id=connector_id)
+        crossref = connector_id == "crossref"
+        endpoint = _CROSSREF_SEARCH_URL if crossref else _OPENALEX_SEARCH_URL
+        params = (dict(query=query, rows=str(limit), select="DOI,title") if crossref else
+                  {"search": query, "per-page": str(limit), "select": "doi,display_name"})
+        response: object = json.loads(self._read_connector_url(connector_id, f"{endpoint}?{urlencode(params)}"))
+        payload = decode_json_object(response)
+        rows = decode_json_object(payload.get("message")).get("items") if crossref else payload.get("results")
+        if not isinstance(rows, list):
+            raise ValueError("invalid scholarly metadata results")
+        hits: dict[str, SourceHit] = {}
+        for raw in rows:
+            if not isinstance(raw, dict):
+                continue
+            title = raw.get("title") if crossref else raw.get("display_name")
+            if crossref:
+                title = title[0] if isinstance(title, list) and title else ""
+            hit = scholarly_metadata_hit(connector_id, raw.get("DOI" if crossref else "doi"), title)
+            if hit is not None:
+                hits.setdefault(hit.canonical_url, hit)
+                if len(hits) >= limit:
+                    break
+        return source_result_from_hits(connector_id, query=query, hits=hits.values())
 
     def _arxiv_fetch_id(self, arxiv_id: str) -> SourceConnectorResult:
         if not is_valid_arxiv_id(arxiv_id):
@@ -420,6 +453,7 @@ def _connector_query(safe_terms: tuple[str, ...], connector_id: str) -> str:
         "source",
         "sources",
         "use",
+        connector_id,
     }
     if connector_id == "pubmed":
         blocked.update({"pubmed", "biomedical", "literature"})
@@ -434,7 +468,8 @@ def _connector_query(safe_terms: tuple[str, ...], connector_id: str) -> str:
 def _result_from_hit(hit: SourceHit) -> JsonObject:
     if not hit.canonical_url:
         return {}
-    label = "PubMed" if hit.connector_id == "pubmed" else "arXiv"
+    labels = {"pubmed": "PubMed", "arxiv": "arXiv", "crossref": "Crossref", "openalex": "OpenAlex"}
+    label = labels[hit.connector_id]
     return {
         "title": f"{label}: {clip(hit.title, 140)}" if hit.title else label,
         "url": hit.canonical_url,

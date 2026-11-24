@@ -15,7 +15,7 @@ from functools import partial
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from codey.providers import api_context, api_generation
+from codey.providers import api_chat, api_context, api_generation, api_messages, api_responses
 from codey.providers.api_codec import ApiCodec, AuxiliaryConnection, GenerationSettings
 from codey.providers.api_metering import (
     RequestCounter,
@@ -49,6 +49,8 @@ if TYPE_CHECKING:
 
 DEFAULT_TIMEOUT = 600.0
 DEFAULT_TEMPERATURE = 0.3
+_API_CODECS: dict[str, ApiCodec] = {"openai-completions": api_chat, "openai-responses": api_responses,
+                                   "anthropic-messages": api_messages}
 # Socket-timeout rationale (stream=False: the timeout IS the full-generation
 # budget, since Kobold replies only after the whole completion). Kobold's
 # 1024-token window at the slowest observed local speed (~2 tok/s) needs
@@ -155,13 +157,11 @@ class ApiProvider:
                                              context_keep_recent_tokens, budget_source, input_limit_tokens)
         self.thinking_enabled = thinking_enabled
         self.reasoning_effort = reasoning_effort
-        if api_protocol not in {"openai-completions", "openai-responses"}:
+        if api_protocol not in _API_CODECS:
             raise ValueError("unsupported API protocol")
-        from codey.providers import api_chat, api_responses
-
         if codec is not None and not codec_revision:
             raise ValueError("custom API codec requires a revision")
-        self._codec: ApiCodec = codec or (api_chat if api_protocol == "openai-completions" else api_responses)
+        self._codec = codec or _API_CODECS[api_protocol]
         self.codec_revision = codec_revision
         self.api_protocol = api_protocol
         self.stream = stream
@@ -817,7 +817,7 @@ class ApiProvider:
             # durable receipts remain intact; only this request is projected.
             view = bounded_history(self._codec, messages, settings.tool_history_groups, tools)
         payload = self._codec.build_payload(view, tools, settings)
-        key = "messages" if self.api_protocol == "openai-completions" else "input"
+        key = "input" if self.api_protocol == "openai-responses" else "messages"
         from codey.providers.text_result_views import TEXT_RESULTS_KEY
 
         # View provenance is local metadata, never an API message property.
@@ -842,7 +842,11 @@ class ApiProvider:
             # separate from history and before the current result or repair.
             index = len(items) - 1 if items and items[-1].get("role") == "user" else len(items)
             items.insert(index, {"role": "user", "content": settings.text_tool_observations})
-        payload[key] = [*items, {"role": "user", "content": clock if clock is not None else clock_context()}]
+        items.append({"role": "user", "content": clock if clock is not None else clock_context()})
+        if self.api_protocol == "anthropic-messages":
+            api_messages.finalize_messages(payload, items)
+        else:
+            payload[key] = items
         if settings.text_tool_json:
             payload["response_format"] = {"type": "json_schema", "json_schema": {
                 "name": "text_tool_call", "strict": True, "schema": settings.text_tool_schema or {"type": "object", "properties": {
@@ -975,8 +979,13 @@ class ApiProvider:
 
     def _headers(self, context: RequestContext | None = None) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
+        if self.api_protocol == "anthropic-messages":
+            headers["anthropic-version"] = "2023-06-01"
         if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+            if self.api_protocol == "anthropic-messages":
+                headers["x-api-key"] = self.api_key
+            else:
+                headers["Authorization"] = f"Bearer {self.api_key}"
         if self.request_headers is not None:
             headers.update(self.request_headers(self.base_url))
         if context is not None and self.request_context_headers is not None:

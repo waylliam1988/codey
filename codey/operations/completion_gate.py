@@ -539,7 +539,11 @@ def _render_task_citations(session: TaskSession, text: str) -> str:
     if session.policy.strict_research or not session.policy.allows("web.read"):
         return text
     from codey.operations.chat_citations import render_source_citations
-    from codey.operations.project_delivery import original_handoff_citation, project_citation_labels
+    from codey.operations.project_delivery import (
+        original_handoff_citation,
+        project_citation_labels,
+        user_requests_citations,
+    )
     from codey.policies.output_requirement import is_output_check
 
     required = project_citation_labels(session)
@@ -548,6 +552,8 @@ def _render_task_citations(session: TaskSession, text: str) -> str:
         label, url = original
         sources = {**sources, label: url}
         required = tuple(dict.fromkeys((*required, label)))
+    elif session.task_kind == "chat" and len(sources) == 1 and user_requests_citations(session.task_text):
+        required = tuple(sources)
     if session.task_kind == "chat" or required:
         return render_source_citations(text, sources=sources, searches=session.search_results,
             literal=any(is_output_check(check) for check in session.policy.required_checks), required_sources=required)

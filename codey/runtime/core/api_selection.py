@@ -1,10 +1,16 @@
 """Bounded non-secret API selection admitted for one durable run."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from typing import Any
+from dataclasses import asdict, dataclass, fields
 
+from codey.runtime.core.protocol_window import API_PROTOCOLS
 from codey.runtime.core.reasoning import REASONING_EFFORTS
+from codey.types.json_value import (
+    decode_json_object,
+    require_json_boolean,
+    require_json_integer,
+    require_json_string,
+)
 
 
 @dataclass(frozen=True)
@@ -32,7 +38,7 @@ class ApiRunSelection:
         for value in (self.connection_id, self.connection_revision, self.model_id):
             if not isinstance(value, str) or not value.strip() or len(value) > 1000:
                 raise ValueError("invalid API connection or model identity")
-        if self.protocol not in {"openai-completions", "openai-responses"}:
+        if self.protocol not in API_PROTOCOLS:
             raise ValueError("unsupported API protocol")
         if self.text_tool_format not in {"plain", "json_schema"}:
             raise ValueError("unsupported text tool format")
@@ -63,14 +69,45 @@ class ApiRunSelection:
                                                or self.output_tokens > self.context_reserve_tokens):
             raise ValueError("invalid API output budget")
 
-    def to_payload(self) -> dict[str, Any]:
-        return asdict(self)
+    def to_payload(self) -> dict[str, object]:
+        raw: object = asdict(self)
+        return dict(decode_json_object(raw))
 
     @classmethod
     def from_payload(cls, payload: object) -> ApiRunSelection:
         if not isinstance(payload, dict) or len(str(payload)) > 8000:
             raise ValueError("invalid persisted API selection")
-        try:
-            return cls(**payload)
-        except TypeError as exc:
-            raise ValueError("invalid persisted API selection fields") from exc
+        row = decode_json_object(payload)
+        required = {"connection_id", "connection_revision", "model_id", "protocol", "native_tools"}
+        if not required <= row.keys() or row.keys() - {field.name for field in fields(cls)}:
+            raise ValueError("invalid persisted API selection fields")
+
+        def optional_int(name: str) -> int | None:
+            value = row.get(name)
+            return require_json_integer(value, name) if value is not None else None
+
+        def optional_bool(name: str) -> bool | None:
+            value = row.get(name)
+            return require_json_boolean(value, name) if value is not None else None
+
+        effort = row.get("reasoning_effort")
+        return cls(
+            connection_id=require_json_string(row["connection_id"], "connection_id"),
+            connection_revision=require_json_string(row["connection_revision"], "connection_revision"),
+            model_id=require_json_string(row["model_id"], "model_id"),
+            protocol=require_json_string(row["protocol"], "protocol"),
+            native_tools=require_json_boolean(row["native_tools"], "native_tools"),
+            context_window_tokens=require_json_integer(row.get("context_window_tokens", cls.context_window_tokens), "context_window_tokens"),
+            context_reserve_tokens=require_json_integer(row.get("context_reserve_tokens", cls.context_reserve_tokens), "context_reserve_tokens"),
+            context_keep_recent_tokens=require_json_integer(row.get("context_keep_recent_tokens", cls.context_keep_recent_tokens), "context_keep_recent_tokens"),
+            thinking_enabled=optional_bool("thinking_enabled"),
+            reasoning_effort=require_json_string(effort, "reasoning_effort") if effort is not None else None,
+            stream=require_json_boolean(row.get("stream", cls.stream), "stream"),
+            tool_choice=require_json_string(row.get("tool_choice", cls.tool_choice), "tool_choice"),
+            output_tokens=optional_int("output_tokens"),
+            token_counter=require_json_string(row.get("token_counter", cls.token_counter), "token_counter"),
+            budget_source=require_json_string(row.get("budget_source", cls.budget_source), "budget_source"),
+            input_limit_tokens=optional_int("input_limit_tokens"),
+            text_tool_format=require_json_string(row.get("text_tool_format", cls.text_tool_format), "text_tool_format"),
+            supports_images=optional_bool("supports_images"),
+        )

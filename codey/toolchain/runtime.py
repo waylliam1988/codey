@@ -11,6 +11,8 @@ import re
 import shutil
 import subprocess
 import time
+import unicodedata
+from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -534,12 +536,39 @@ def _edit_anchor(content: str, search: str) -> tuple[str, str, int] | None:
     return None
 
 
+def _line_vote_positions(lines: list[str], search_lines: list[str]) -> tuple[int, ...]:
+    offsets: dict[str, list[int]] = {}
+    for index, line in enumerate(search_lines):
+        key = unicodedata.normalize("NFC", line.strip())
+        if any(char.isalnum() for char in key):
+            offsets.setdefault(key, []).append(index)
+    votes: Counter[int] = Counter()
+    for index, line in enumerate(lines):
+        key = unicodedata.normalize("NFC", line.strip())
+        for offset in offsets.get(key, ()):
+            if index >= offset:
+                votes[index - offset] += 1
+    best = max(votes.values(), default=0)
+    if best < 2:
+        return ()
+    return tuple(sorted(position for position, count in votes.items() if count == best)[:EDIT_FAILURE_MAX_MATCHES])
+
+
 def _render_edit_failure_context(content: str, search: str) -> str:
     anchor = _edit_anchor(content, search)
-    if anchor is None:
-        return ""
-    value, kind, position = anchor
     lines = content.splitlines()
+    search_lines = search.splitlines()
+    if anchor is None:
+        positions = _line_vote_positions(lines, search_lines)
+        if not positions:
+            return ""
+        rendered = ["Candidate replacement starts at lines: " + ", ".join(str(index + 1) for index in positions) + ".",
+                    EXACT_REPLACEMENT_CONTEXT_HINT]
+        for start in positions:
+            rendered.append(f"Context for candidate at line {start + 1}:")
+            rendered.extend(_render_edit_context_lines(lines, start, min(start + EDIT_FAILURE_MAX_LINES, len(lines))))
+        return _bounded_failure_output(rendered)
+    value, kind, position = anchor
     center = content.count("\n", 0, position)
     radius = EDIT_FAILURE_MAX_LINES // 2
     start = max(0, center - radius)
@@ -549,7 +578,6 @@ def _render_edit_failure_context(content: str, search: str) -> str:
         f'Current bounded context near {kind} "{value}"',
         '(navigation only; copy exact complete code after "|"):',
     ]
-    search_lines = search.splitlines()
     search_position = _unique_anchor_position(search, value, kind)
     if search_position is not None:
         search_center = search.count("\n", 0, search_position)
@@ -565,6 +593,12 @@ def _render_edit_failure_context(content: str, search: str) -> str:
                     "Current file near anchor: " + repr("\n".join(candidate[new_start:new_end]))[:240],
                 ])
                 break
+    rendered.extend(_render_edit_context_lines(lines, start, end))
+    return _bounded_failure_output(rendered)
+
+
+def _render_edit_context_lines(lines: list[str], start: int, end: int) -> list[str]:
+    rendered: list[str] = []
     for index in range(start, end):
         line = lines[index]
         if len(line) > EDIT_FAILURE_MAX_LINE_CHARS:
@@ -575,7 +609,7 @@ def _render_edit_failure_context(content: str, search: str) -> str:
             )
             continue
         rendered.append(f"{index + 1:>4} | {line}")
-    return _bounded_failure_output(rendered)
+    return rendered
 
 
 def _first_match_start_lines(

@@ -44,6 +44,15 @@ def resume_assistance_observation(browser: BrowserSession | None, continuation: 
     # The live resource or its exact durable binding is already restored by
     # the common resource owner. Reset only transient node/image references.
     browser.discard_references()
+    from codey.operations.source_gaps import evaluate_source_coverage
+
+    coverage = evaluate_source_coverage(required_urls=(), results=results)
+    pending = [failure.url for failure in coverage.acquisition_failures
+               if decode_json_object(results[failure.result_ref].canonical["source_failure"]).get("code") == "login_required"]
+    if len(pending) == 1:
+        return (f"The user answered the browser assistance question. If they confirmed sign-in, call open_url on {pending[0]} "
+                "to acquire a formal passage from the original blocked source. A snapshot or navigation alone does not create a citation. "
+                "Reuse previously read evidence. If the user chose to skip this source or it remains blocked, report the actual gap.")
     return ("The user answered the assistance question. Observe the original page again with browser_snapshot "
             "before continuing. The answer does not prove that login or access restrictions are resolved; "
             "check the current page. Earlier control and screenshot references have expired.")

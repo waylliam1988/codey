@@ -433,7 +433,7 @@ class BrowserRuntime:
             if isinstance(expected, dict) and isinstance(expected.get("frame_id"), str):
                 state = PageState(state.page, state.binding, str(expected["frame_id"]))
             return (await self._wait(invocation, state)).payload(), b""
-        async with self._frame(state) as context:
+        async with self._observed_frame(state, invocation) as context:
             invocation.document = context.document
             if action == BrowserAction.PEEK:
                 evaluated = await context.send("Runtime.evaluate", {"contextId": context.context_id,
@@ -465,6 +465,33 @@ class BrowserRuntime:
             if action in {BrowserAction.RECORDS, BrowserAction.QUERY_RESULT, BrowserAction.MATCH_QUERY}:
                 return await self._query(invocation, context), b""
             return await self._visual_or_file(invocation, state, context)
+
+    @asynccontextmanager
+    async def _observed_frame(self, state: PageState, invocation: Invocation) -> AsyncGenerator[FrameContext, None]:
+        ref = invocation.command.arguments.get("ref")
+        async with self._frame(state) as context:
+            parent = next(reversed(self._observations.values()), None)
+            record = self._registry.records.get(ref) if isinstance(ref, str) else None
+            if (record is None or parent is None or parent.get("document") != context.document
+                    or same_document(context.document, record.document)):
+                yield context
+                return
+            frames = parent.get("frames")
+            if isinstance(frames, list):
+                for raw in frames:
+                    row = decode_json_object(raw)
+                    if row.get("document") != record.document or not isinstance(elements := row.get("elements"), list):
+                        continue
+                    if any(isinstance(element, dict) and element.get("ref") == ref for element in elements):
+                        frame_id = require_json_string(row["frame_id"], "frame id")
+                        selected = PageState(state.page, state.binding, frame_id)
+                        async with self._frame(selected) as child:
+                            self._registry.resolve(require_json_string(ref, "ref"), child.document)
+                            yield child
+                            if invocation.dispatch_state == "confirmed":
+                                state.selected_frame = frame_id
+                            return
+            yield context
 
     async def _navigation_action(self, invocation: Invocation) -> BrowserToolOutput:
         action, args = invocation.command.action, invocation.command.arguments
@@ -599,11 +626,13 @@ class BrowserRuntime:
         if scope_ref:
             scope_ref = await self._snapshot_scope_ref(context, scope_ref)
             await self._resolve(context, scope_ref, purpose="scope")
+        selector = require_json_string(args.get("selector", ""), "selector")
         current = await collect_snapshot(context, self._registry, revision=self._revision,
             max_elements=require_json_integer(args.get("max_elements", 80), "max_elements"),
             max_text=require_json_integer(args.get("max_text", 12000), "max_text"),
-            scope_ref=scope_ref,
-            selector=require_json_string(args.get("selector", ""), "selector"))
+            scope_ref=scope_ref, selector=selector)
+        if not (scope_ref or selector) and context.frame.child_frames:
+            current["frames"] = await self._snapshot_child_frames(context, current)
         base = args.get("base_revision")
         value = diff_snapshot(self._observations.get(base) if type(base) is int and isinstance(base, int) else None, current)
         self._observations[self._revision] = current
@@ -615,6 +644,36 @@ class BrowserRuntime:
                 "or use a unique selector to narrow the scope." if current["elements_truncated"] is True else "")
         display = json.dumps(snapshot_display(value), ensure_ascii=False, separators=(",", ":"))
         return BrowserToolOutput(display + hint, True, receipt)
+
+    async def _snapshot_child_frames(self, context: FrameContext, parent: JsonObject) -> list[JsonValue]:
+        scope = decode_json_object(parent["scope"])
+        remaining_elements = require_json_integer(scope["max_elements"], "snapshot control limit")
+        remaining_text = require_json_integer(scope["max_text"], "snapshot text limit")
+        rows = parent["elements"]
+        assert isinstance(rows, list)
+        remaining_elements -= len(rows)
+        remaining_text -= len(require_json_string(parent["text"], "snapshot text"))
+        frames: list[JsonValue] = []
+        page = context.frame.page
+        target = require_json_string(context.document["target_id"], "snapshot target")
+        for child in context.frame.child_frames[:4]:
+            try:
+                async with frame_context(page, child, target) as frame:
+                    row: JsonObject = {"frame_id": frame.document["frame_id"], "name": child.name,
+                                       "document": frame.document}
+                    if remaining_elements > 0 and remaining_text > 0:
+                        preview = await collect_snapshot(frame, self._registry, revision=self._revision,
+                            max_elements=min(remaining_elements, 8), max_text=min(remaining_text, 1200))
+                        elements, body = preview["elements"], require_json_string(preview["text"], "frame text")
+                        assert isinstance(elements, list)
+                        remaining_elements -= len(elements)
+                        remaining_text -= len(body)
+                        row.update(elements=elements, text=body, complete=preview["complete"])
+                    frames.append(row)
+            except (Error, RuntimeError, ValueError):
+                if not child.is_detached():
+                    raise
+        return frames
 
     async def _snapshot_scope_ref(self, context: FrameContext, ref: str) -> str:
         observed = self._registry.observed_context(ref, context.document) if ref.startswith("region-") else None
@@ -714,6 +773,7 @@ class BrowserRuntime:
         if action == BrowserAction.CLICK and args.get("query") is True:
             baseline = await self._query_baseline(context, record, require_json_string(args.get("result_ref", ""), "result_ref"))
             invocation.query_baseline = baseline
+        previous_popups = len(self._popups.get(state.binding.target_id, ()))
         await self._mark(invocation, "input_dispatch", dispatch="unknown")
         observed: JsonObject = {"action": action.value, "ref": ref, "page_url": context.document["url"]}
         if action == BrowserAction.CLICK:
@@ -744,6 +804,10 @@ class BrowserRuntime:
         observed["effect_verified"] = False
         observed["input_state"] = input_state.payload()
         observed["text"] = ""
+        if action in {BrowserAction.CLICK, BrowserAction.PRESS}:
+            popups = self._popups.get(state.binding.target_id, [])[previous_popups:previous_popups + 8]
+            if popups:
+                observed["opened_surfaces"] = [{"kind": "popup"} for popup in popups if not popup.is_closed()]
         if action == BrowserAction.FILL:
             actual: object = await _evaluate(record.handle, "el => 'value' in el ? el.value : el.textContent || ''")
             verified = actual == args["value"]
@@ -754,7 +818,8 @@ class BrowserRuntime:
             verified = observed["checked"] == args["checked"]
             observed.update(delivery="verified" if verified else "unverified", effect_verified=verified)
             return BrowserToolOutput("Checked state verified " + ref if verified else "Check readback differed.", verified, observed)
-        return BrowserToolOutput("Delivered " + action.value + " to " + ref, True, observed)
+        surface_hint = " A popup opened. Use browser_tab_list to find it." if observed.get("opened_surfaces") else ""
+        return BrowserToolOutput("Delivered " + action.value + " to " + ref + surface_hint, True, observed)
 
     async def _click_control(self, record: ElementRecord[ElementHandle], ready: JsonObject,
                              baseline: JsonObject | None) -> JsonObject:

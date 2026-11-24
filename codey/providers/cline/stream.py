@@ -1,18 +1,17 @@
 """Structured reasoning delta assembly within the shared SSE framing loop."""
 from __future__ import annotations
 
-from typing import Any
-
 from codey.providers.api_stream import DefaultChatAccumulator
 from codey.providers.cline.codec import DETAIL_KEYS, validate_details
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_string
 
 
 class ClineAccumulator(DefaultChatAccumulator):
     def __init__(self) -> None:
         super().__init__()
-        self.details: dict[int, dict[str, Any]] = {}
+        self.details: dict[int, JsonObject] = {}
 
-    def add_delta(self, delta: dict[str, Any]) -> None:
+    def add_delta(self, delta: JsonObject) -> None:
         super().add_delta(delta)
         fragments = delta.get("reasoning_details", [])
         if not isinstance(fragments, list):
@@ -23,7 +22,8 @@ class ClineAccumulator(DefaultChatAccumulator):
             raise ValueError("reasoning delta exceeded its limit")
 
     def _merge(self, fragment: object) -> None:
-        if not isinstance(fragment, dict) or set(fragment) - DETAIL_KEYS:
+        fragment = decode_json_object(fragment)
+        if set(fragment) - DETAIL_KEYS:
             raise ValueError("unknown reasoning delta fields")
         index = fragment.get("index")
         identity = fragment.get("id")
@@ -47,10 +47,11 @@ class ClineAccumulator(DefaultChatAccumulator):
                     raise ValueError("reasoning id reused at another index")
                 slot[key] = value
             else:
-                slot[key] = slot.get(key, "") + value
+                slot[key] = require_json_string(slot.get(key, ""), key) + value
 
-    def finish_message(self) -> dict[str, Any]:
+    def finish_message(self) -> JsonObject:
         result = super().finish_message()
         if self.details:
-            result["reasoning_details"] = validate_details([self.details[key] for key in sorted(self.details)])
+            details = validate_details([self.details[key] for key in sorted(self.details)])
+            result["reasoning_details"] = list[JsonValue](decode_json_object(detail) for detail in details)
         return result

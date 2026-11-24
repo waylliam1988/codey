@@ -5,7 +5,7 @@ import copy
 import json
 from collections.abc import Callable
 
-from codey.providers.api_codec import GenerationSettings
+from codey.providers.api_codec import GenerationSettings, allows_native_parallel_reads
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult, TurnFinish
 from codey.toolchain.tool_spec import thaw_schema_value
 from codey.types.json_value import decode_json_object, parse_json_object
@@ -129,7 +129,7 @@ def build_payload(messages: list[dict[str, object]], tools: list[ProviderToolDef
     if settings.output_tokens is not None:
         body["max_tokens"] = settings.output_tokens
     if tools:
-        body.update(tools=encode_tools(tools), tool_choice=settings.choice, parallel_tool_calls=False)
+        body.update(tools=encode_tools(tools), tool_choice=settings.choice, parallel_tool_calls=allows_native_parallel_reads(tools))
     return body
 
 def _parse_tool_calls(message: dict[str, object]) -> tuple[list[dict[str, object]], int]:

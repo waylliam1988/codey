@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from codey.providers.api_codec import GenerationSettings
+from codey.providers.api_codec import GenerationSettings, allows_native_parallel_reads
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult, TurnFinish
 from codey.providers.error_classification import OutputLengthError, RequestPrepError
 from codey.runtime.core.protocol_window import RESPONSES_REASONING
@@ -149,7 +149,7 @@ def build_payload(items: list[dict[str, object]], tools: list[ProviderToolDefini
     if settings.output_tokens is not None:
         body["max_output_tokens"] = settings.output_tokens
     if tools:
-        body.update(tools=encode_tools(tools), tool_choice=settings.choice, parallel_tool_calls=False)
+        body.update(tools=encode_tools(tools), tool_choice=settings.choice, parallel_tool_calls=allows_native_parallel_reads(tools))
     return body
 
 

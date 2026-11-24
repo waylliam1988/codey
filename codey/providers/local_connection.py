@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from functools import partial
 
 from codey.providers import local_config as _local_config
 from codey.providers import local_discovery as _local_discovery
@@ -126,7 +127,7 @@ def connect_local( *, config: _local_config.LocalProviderConfig | None = None,
         stream=effective.native_tools,
         text_tool_format=text_format,
         text_decoder=normalize_local_reply,
-        usage_parser=parser_for(config.api_protocol), configure_request=configure_usage,
+        usage_parser=parser_for(config.api_protocol), configure_request=partial(configure_usage, protocol=config.api_protocol),
         request_counter=counter_for(counter, effective.base_url, effective.model, effective.api_key, window),
         connection_revision=config.connection_revision or "local-runtime",
         budget_source="server" if budget.source == "server" else "server_and_configuration" if counter == "koboldcpp" else "configuration",
@@ -232,7 +233,7 @@ def open_selection(selection: ApiRunSelection) -> ApiProvider:
                            context_reserve_tokens=selection.context_reserve_tokens, context_keep_recent_tokens=selection.context_keep_recent_tokens,
                            thinking_enabled=selection.thinking_enabled, reasoning_effort=selection.reasoning_effort,
                            text_decoder=normalize_local_reply,
-                           usage_parser=parser_for(selection.protocol), configure_request=configure_usage,
+                           usage_parser=parser_for(selection.protocol), configure_request=partial(configure_usage, protocol=selection.protocol),
                            budget_source=selection.budget_source, input_limit_tokens=selection.input_limit_tokens,
                            request_counter=counter_for(selection.token_counter, config.base_url, selection.model_id,
                                                        config.api_key, selection.context_window_tokens),

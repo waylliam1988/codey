@@ -129,6 +129,21 @@ def test_connector_search_counts_connector_hits_toward_result_limit() -> None:
     assert [row["url"] for row in results] == ["https://pubmed.ncbi.nlm.nih.gov/12345678/"]
 
 
+@pytest.mark.parametrize("connector", ["crossref", "openalex"])
+def test_scholarly_metadata_discovery_opens_actual_source(connector: str) -> None:
+    base = FakeBaseSearchProvider()
+    provider = ConnectorAwareSearchProvider(base, rate_limit=False)
+    payload = ({"message": {"items": [{"DOI": "10.1234/Atlas", "title": ["Atlas publication"]}]}}
+               if connector == "crossref" else
+               {"results": [{"doi": "https://doi.org/10.1234/ATLAS", "display_name": "Atlas publication"}]})
+    with mock.patch("codey.research.connector_search._read_url_text", return_value=json.dumps(payload)) as read:
+        results = provider.search(f"{connector} Atlas", limit=1)
+    assert len(results) == 1 and results[0]["url"] == "https://doi.org/10.1234/atlas"
+    assert f"api.{connector}.org/works?" in str(read.call_args.args[0])
+    assert provider.fetch("https://doi.org/10.1234/atlas")["text"] == "generic page body"
+    assert base.fetches == ["https://doi.org/10.1234/atlas"]
+
+
 def test_connector_live_search_uses_shared_medical_routing_terms() -> None:
     base = FakeBaseSearchProvider()
     provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)

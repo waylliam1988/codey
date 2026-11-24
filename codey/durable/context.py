@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
 from codey.durable.model import EntryDraft, thaw_json
-from codey.runtime.core.protocol_window import REPLAY_BINDING, RESPONSES_REASONING
+from codey.runtime.core.protocol_window import ANTHROPIC_BLOCKS, REPLAY_BINDING, RESPONSES_REASONING
 from codey.types.tool_image import TOOL_IMAGES_KEY
 from codey.utils.object_fields import mapping_fields, object_fields
 from codey.utils.text_budget import estimate_tokens
@@ -123,10 +123,8 @@ def _message_for(entry: EntryDraft) -> Mapping[str, object]:
         for key in ("content", "reasoning_content"):
             if isinstance(payload.get(key), str):
                 assistant_message[key] = payload[key]
-        if REPLAY_BINDING in payload:
-            assistant_message[REPLAY_BINDING] = payload[REPLAY_BINDING]
-        if RESPONSES_REASONING in payload:
-            assistant_message[RESPONSES_REASONING] = payload[RESPONSES_REASONING]
+        assistant_message.update((key, payload[key]) for key in (REPLAY_BINDING, RESPONSES_REASONING, ANTHROPIC_BLOCKS)
+                                 if key in payload)
         return assistant_message
     if entry.kind == "tool_result":
         message: dict[str, object] = {

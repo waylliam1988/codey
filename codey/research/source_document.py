@@ -9,7 +9,10 @@ from codey.types.json_value import JsonObject, decode_json_object
 
 
 def normalized_doi(value: object) -> str:
-    return value.casefold() if isinstance(value, str) and re.fullmatch(r"10\.\d{4,9}/[!-~]{1,200}", value) else ""
+    if not isinstance(value, str):
+        return ""
+    value = re.sub(r"^https?://(?:dx\.)?doi\.org/", "", value, flags=re.I)
+    return value.casefold() if re.fullmatch(r"10\.\d{4,9}/[!-~]{1,200}", value) else ""
 
 
 def normalized_pmcid(value: object) -> str:

@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Collection, Iterator, Mapping
 from decimal import Decimal
 
+from codey.research.answer_contract import AnswerScope, digest, submit_answer
 from codey.research.answer_values import AnswerSubmission, evidence_status_suffix
 from codey.research.evidence_gaps import same_source_groups
 from codey.research.passages import ReadPassage
@@ -21,10 +22,12 @@ _LEGACY_QUANTITY = re.compile(rf"(?<![\w.])({_NUMBER})\s*({_UNITS})(?![A-Za-z])"
 _SUM_OR_DIFFERENCE = re.compile(r"\(\s*(?P<left>[^()\n]{1,32}?)\s*(?P<operator>[+−-])\s*(?P<right>[^()\n]{1,32})\s*\)")
 _WORD = re.compile(r"[^\W\d_]{4,}")
 _COMMON_WORDS = frozenset({"about", "average", "according", "approximately", "between", "reported", "showed", "observed", "results", "study", "source", "that", "this", "with", "from", "were"})
-CLAIM_CHECK_VERSION = 1
+CLAIM_CHECK_VERSION = 2
+CLAIM_CHECK_VERSIONS = frozenset({1, CLAIM_CHECK_VERSION})
 _CLAIM_BREAK = re.compile(r"(?<=[.!?])\s+|[;；。！？\n]+|(?:,\s*)?\b(?:but|whereas|however)\b|，(?:但|然而)", re.I)
 _CLAIM_LEADING = re.compile(r"\s*(?:[-*+] |\d+[.)] )?[*_]*")
-_GROUP_LABEL = re.compile(r"\b(group|arm|cohort)\s+([a-z0-9]+)\b|(?<![a-z0-9])([a-z0-9]+)\s*(?=组)", re.I)
+_GROUP_LABEL = re.compile(r"\b(group|arm|cohort)\s+([a-z0-9]+)\b|(?<![a-z0-9])([a-z0-9]+)\s*[组組]", re.I)
+_RESPONSE_RATE = re.compile(r"(?:\bresponse\s+rate\b\s*(?:(?:was|is|of)\s+)?|(?:响应|響應|应答|應答)率\s*(?:为|為)?\s*)", re.I)
 _EQUIVALENT_UNITS = {"克": "g", "公斤": "kg", "小时": "h", "μg": "µg"}
 
 
@@ -116,10 +119,12 @@ def _claim_parts(markdown: str, start: int, stop: int) -> Iterator[tuple[int, st
         start = resume
 
 
-def _claim_segments(markdown: str, start: int, stop: int, cited: Mapping[str, ReadPassage]) -> list[JsonValue]:
+def _claim_segments(markdown: str, start: int, stop: int, cited: Mapping[str, ReadPassage],
+                    version: int) -> list[JsonValue]:
     segments: list[JsonValue] = []
     for offset, text in _claim_parts(markdown, start, stop):
-        if _QUANTITY.search(text) or len(_terms(text)) >= 3 or len(text) >= 30:
+        if (_QUANTITY.search(text) or len(_terms(text)) >= 3 or len(text) >= 30
+                or version >= 2 and _RESPONSE_RATE.search(text)):
             segments.append(_claim_segment(text, offset, cited))
     return segments
 
@@ -142,8 +147,9 @@ def _claim_segment(body: str, start: int, cited: Mapping[str, ReadPassage]) -> J
 
 def check_report_evidence(submission: AnswerSubmission, passages: Mapping[str, ReadPassage], *,
                           verify_calculations: bool = True, claim_check_version: int | None = None) -> JsonObject:
-    if claim_check_version is not None and (type(claim_check_version) is not int or claim_check_version != CLAIM_CHECK_VERSION):
+    if claim_check_version is not None and (type(claim_check_version) is not int or claim_check_version not in CLAIM_CHECK_VERSIONS):
         raise ValueError("unsupported research claim check version")
+    version = claim_check_version or 0
     status = evidence_status_suffix(submission["scope"]["schema_version"], submission["state"])
     markdown = mask_markdown_code(submission["markdown"].removesuffix(status))
     browser = bool(submission["scope"].get("execution_refs"))
@@ -163,7 +169,7 @@ def check_report_evidence(submission: AnswerSubmission, passages: Mapping[str, R
         line_start = markdown.rfind("\n", 0, start) + 1
         clause_start = max(clause_stop, line_start)
         if claim_checks is not None:
-            claim_checks.extend(_claim_segments(markdown, clause_stop, clause_start, {}))
+            claim_checks.extend(_claim_segments(markdown, clause_stop, clause_start, {}, version))
         clause = markdown[clause_start:start]
         clause_stop = stop
         quotes = [quote for quote in _DIRECT_QUOTE.finditer(clause) if _CITATION_TAIL.fullmatch(clause[quote.end():])]
@@ -193,9 +199,9 @@ def check_report_evidence(submission: AnswerSubmission, passages: Mapping[str, R
                     if verify_calculations else set())
         unverified.extend(_quantities(clause, cited, verified, legacy=not verify_calculations))
         if claim_checks is not None:
-            claim_checks.extend(_claim_segments(markdown, clause_start, start, cited))
+            claim_checks.extend(_claim_segments(markdown, clause_start, start, cited, version))
     if claim_checks is not None:
-        claim_checks.extend(_claim_segments(markdown, clause_stop, len(markdown), {}))
+        claim_checks.extend(_claim_segments(markdown, clause_stop, len(markdown), {}, version))
     selected = tuple(dict.fromkeys((row["label"], row["passage_ref"]) for row in submission["citations"]))
     for label, ref in selected:
         passage = passages.get(ref)
@@ -236,7 +242,7 @@ def review_submission_issues(submission: AnswerSubmission, evidence_check: JsonO
             continue
         claim = markdown[start:stop]
         normalized = " ".join(claim.split())
-        if len(normalized) > 500 or not _QUANTITY.search(normalized):
+        if len(normalized) > 500 or not _QUANTITY.search(_RESPONSE_RATE.sub(" response rate ", normalized)):
             continue
         originals = [(ref, body, " ".join(body.split()))
                      for ref in refs if isinstance(ref, str) and (passage := passages.get(ref)) is not None
@@ -247,14 +253,14 @@ def review_submission_issues(submission: AnswerSubmission, evidence_check: JsonO
             kind = _quantity_conflict(normalized, original)
             if kind:
                 issues.append({"kind": kind, "report_start": start, "report_end": stop, "claim": claim,
-                               "passage_ref": ref, "label": labels[ref], "original": body})
+                               "passage_ref": ref, "label": labels.get(ref, ref), "original": body})
                 break
     return issues
 
 
 def _quantity_conflict(claim: str, original: str) -> str:
-    reported = tuple(_QUANTITY.finditer(claim))
-    sourced = tuple(_QUANTITY.finditer(original))
+    reported = tuple(_QUANTITY.finditer(_RESPONSE_RATE.sub(" response rate ", claim)))
+    sourced = tuple(_QUANTITY.finditer(_RESPONSE_RATE.sub(" response rate ", original)))
     if len(reported) != 1 or len(sourced) != 1:
         return ""
     left, right = reported[0], sourced[0]
@@ -270,6 +276,32 @@ def _quantity_conflict(claim: str, original: str) -> str:
         subject, source_subject = _GROUP_LABEL.search(claim), _GROUP_LABEL.search(original)
         if (subject is not None and source_subject is not None
                 and (subject[2] or subject[3]).casefold() != (source_subject[2] or source_subject[3]).casefold()
-                and _GROUP_LABEL.sub(r"\1<group>", claim).casefold() == _GROUP_LABEL.sub(r"\1<group>", original).casefold()):
+                and _group_claim_template(claim) == _group_claim_template(original)):
             return "group_conflict"
     return ""
+
+
+def _group_claim_template(text: str) -> str:
+    def placeholder(match: re.Match[str]) -> str:
+        return "<" + (match[1] or "group").casefold() + ">"
+
+    masked = _GROUP_LABEL.sub(placeholder, text)
+    # Align an explicitly recognized metric while keeping all other wording.
+    return re.sub(r"\s+", "", _RESPONSE_RATE.sub("<response_rate>", masked)).casefold()
+
+
+def research_review_key(issue: JsonObject) -> str:
+    return digest([" ".join(str(issue["claim"]).split()).casefold(), issue["passage_ref"]])
+
+
+def exhausted_review_answer(scope: AnswerScope, issue: JsonObject,
+                            prior_keys: Collection[object]) -> AnswerSubmission | None:
+    key = research_review_key(issue)
+    if sum(item == key for item in prior_keys) < 2:
+        return None
+    label = issue["label"]
+    citation = f" [{label}]" if any(alias == label for alias, _ in scope.aliases) else ""
+    fields = ["{{field:" + field.pointer + "}}" for field in scope.fields]
+    gap = "The requested conclusion could not be established. The repeated draft conflicts with the cited source" + citation + "."
+    return submit_answer(scope, {"markdown": "\n\n".join((*fields, gap)),
+        "state": "partial" if any(field.value is not None for field in scope.fields) else "unresolved"})

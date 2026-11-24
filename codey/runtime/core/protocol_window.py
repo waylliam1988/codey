@@ -14,6 +14,8 @@ from uuid import uuid4
 
 REPLAY_BINDING = "_codey_replay_binding"
 RESPONSES_REASONING = "_codey_responses_reasoning"
+ANTHROPIC_BLOCKS = "_codey_anthropic_blocks"
+API_PROTOCOLS = frozenset({"openai-completions", "openai-responses", "anthropic-messages"})
 
 
 class WindowMismatch(ValueError):

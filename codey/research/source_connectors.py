@@ -485,6 +485,11 @@ def built_in_connector_registry() -> SourceConnectorRegistry:
             source_quality_hint={"level": "primary", "kind": "medical_literature", "freshness": "dated"},
             failure_modes=("rate_limited", "fixture_parse_failed", "url_denied"),
         ),
+        *(SourceConnectorSpec(id=identity, kind="scholarly_metadata", status=CONNECTOR_STATUS_AVAILABLE,
+            search_supported=True, shipped=True, rate_limit_seconds=1.0,
+            source_quality_hint={"level": "discovery", "kind": "bibliographic_metadata"},
+            failure_modes=("rate_limited", "request_failed", "fixture_parse_failed"))
+          for identity in ("crossref", "openalex")),
     ))
 
 
@@ -503,6 +508,22 @@ def source_result_from_hits(
         warnings=_safe_payload_refs(warnings, limit=8),
         errors=_safe_payload_refs(errors, limit=8),
     )
+
+
+def scholarly_metadata_hit(connector_id: str, doi: object, title: object) -> SourceHit | None:
+    if not isinstance(doi, str) or not isinstance(title, str) or not title.strip():
+        return None
+    normalized = normalized_doi(doi)
+    if not normalized:
+        return None
+    from urllib.parse import quote
+
+    url = "https://doi.org/" + quote(normalized, safe="/")
+    ref = _source_ref_for_url(connector_id, url)
+    return SourceHit(connector_id, stable_ref("source_hit", connector_id, ref), ref,
+        stable_ref("connector_source", connector_id, ref), title=clip(title.strip(), 180),
+        snippet="Bibliographic discovery. Open the publication to read source material.", content_kind="text",
+        source_kind="paper", canonical_url=url, publication=PublicationMetadata(doi=normalized))
 
 
 def safe_connector_query_terms(text: object, *, limit: int = 16) -> tuple[str, ...]:
@@ -828,7 +849,7 @@ def _safe_scientific_slash_term(text: str) -> bool:
     return all(_SAFE_SCIENTIFIC_SLASH_PART_RE.fullmatch(part) for part in parts)
 
 
-def parse_arxiv_atom_fixture(xml_text: str, *, query: str = "", limit: int = MAX_CONNECTOR_HITS) -> SourceConnectorResult:
+def parse_arxiv_atom_fixture(xml_text: str, *, query: str = "", limit: object = MAX_CONNECTOR_HITS) -> SourceConnectorResult:
     hits: list[SourceHit] = []
     hit_limit = _bounded_limit(limit, default=MAX_CONNECTOR_HITS, upper=MAX_CONNECTOR_HITS)
     try:
@@ -873,7 +894,7 @@ def parse_arxiv_atom_fixture(xml_text: str, *, query: str = "", limit: int = MAX
     return source_result_from_hits("arxiv", query=query, hits=hits)
 
 
-def parse_pubmed_fixture(xml_text: str, *, query: str = "", limit: int = MAX_CONNECTOR_HITS) -> SourceConnectorResult:
+def parse_pubmed_fixture(xml_text: str, *, query: str = "", limit: object = MAX_CONNECTOR_HITS) -> SourceConnectorResult:
     hits: list[SourceHit] = []
     hit_limit = _bounded_limit(limit, default=MAX_CONNECTOR_HITS, upper=MAX_CONNECTOR_HITS)
     try:

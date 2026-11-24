@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import time
 from collections.abc import Collection, Mapping, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import ExitStack
+from contextvars import Context, copy_context
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
@@ -559,7 +561,8 @@ def execute_turn(
         permission_profile=permission_profile,
     )
     with cancellation.linked_scope(stop_flag):
-        return _execute_slots(execution_context, calls)
+        parallel = _parallel_project_reads(execution_context, calls)
+        return parallel if parallel is not None else _execute_slots(execution_context, calls)
 
 
 def _turn_setup(
@@ -691,6 +694,61 @@ def _reconcile_guarded_slot(
             orig_ok = False
         assert slot.result is not None
         reconcile_intent_only(identity, ok=orig_ok, result=slot.result)
+
+
+def _parallel_project_reads(context: ToolExecutionContext, calls: Sequence[ToolCall]) -> list[ToolResult] | None:
+    if (len(calls) < 2 or context.frozen_specs is None or context.snapshot is None or context.delegate is None
+            or context.project_path is None or context.runnable):
+        return None
+    custom = dict(context.snapshot.custom_executors)
+    identities = [turn_effect_id(context.identity_ref or "adhoc", context.active_turn, context.base_index + index)
+                  for index in range(len(calls))]
+    for identity, call in zip(identities, calls, strict=True):
+        spec = context.frozen_specs.get(call.name)
+        if (custom.get(call.name) is not None or spec is None or not spec.parallel_project_read
+                or identity in context.delivered or identity in context.session.executed
+                or identity in context.session._memory_results or call.args.get("run_in_background") is True):
+            return None
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(context.session.tool_dispatch.admit(parallel=True))
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            return None
+
+        def read(call: ToolCall, index: int) -> tuple[ToolResult, bool, int | None]:
+            if context.stop_flag is not None and context.stop_flag.is_set():
+                return policy_denial_result(call, "task stopped; tool call was not executed"), False, None
+            return execute_tool_operation(context.session, call, delegate=context.delegate, runnable=context.runnable,
+                turn=context.active_turn, tool_index=context.base_index + index, project_path=context.project_path,
+                snapshot=context.snapshot)
+
+        def read_in_context(call: ToolCall, index: int, scope: Context) -> tuple[ToolResult, bool, int | None]:
+            return scope.run(read, call, index)
+
+        pool = stack.enter_context(ThreadPoolExecutor(max_workers=min(4, len(calls))))
+        slots: list[ToolResult | Future[tuple[ToolResult, bool, int | None]]] = []
+        for index, (identity, call) in enumerate(zip(identities, calls, strict=True)):
+            guarded = _guarded_slot_result(context.session, identity, call, call.name, context.active_turn,
+                context.intent_sink, context.controller_allowed, project_path=context.project_path,
+                revision_store=context.revision_store, ignored_paths=context.ignored_paths,
+                recovery_ctx=context.recovery, frozen_specs=context.frozen_specs)
+            slots.append(guarded if guarded is not None else pool.submit(read_in_context, call, index, copy_context()))
+        results: list[ToolResult] = []
+        for identity, call, slot in zip(identities, calls, slots, strict=True):
+            if isinstance(slot, ToolResult):
+                if identity not in context.session.executed:
+                    slot = replace(slot, audit={**slot.audit, "execution_disposition": "denied_before_execution"})
+                _reconcile_guarded_slot(context.session, identity, call, call.name, context.project_path,
+                    context.revision_store, context.ignored_paths, context.recovery, context.reconcile_intent_only,
+                    context.settle, slot)
+                results.append(slot)
+                continue
+            try:
+                outcome, ok, code = slot.result()
+            except Exception as exc:
+                outcome, ok, code = _error_result(call, f"{call.name} failed: {exc}"), False, None
+            results.append(context.settle(identity, call, outcome, ok, exit_code=code))
+        return results
 
 
 def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state machine
