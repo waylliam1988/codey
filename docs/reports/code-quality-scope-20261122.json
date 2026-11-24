@@ -4125,8 +4125,8 @@
       "status": "partial_follow_up",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 0,
-      "result": "User-prioritized settlement fix adds single-scan batch read from original workflow log; empty workflows skipped. Scoped storage/caller tests and normal full-production typing passed. Whole-file strict Any has 169 existing diagnostics from sqlite3.Row/cursor/JSON boundaries; new method has no diagnostics. Full transaction-engine review and boundary migration remain pending.",
+      "tests": ["tests/durable/test_sqlite_conversation_creation.py", "tests/durable/test_store_contract.py", "tests/durable/test_database_cursor.py", "tests/stress/test_durable_sqlite_concurrency.py"],
+      "result": "Single-scan settlement projection retained. Serialize direct conversation identity checks and creation, with 56 scoped tests and production gates passing. Whole-file strict Any decreased from 169 to 165; SQLite row and JSON boundaries remain in progress.",
       "inspected_functions": [
         "task_history",
         "task_settlement_history"

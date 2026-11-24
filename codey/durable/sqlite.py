@@ -49,6 +49,7 @@ from codey.durable.model import (
 from codey.durable.sqlite_display import write_display_index
 from codey.durable.sqlite_history import SQLiteHistoryReader
 from codey.durable.sqlite_records import (
+    _optional_text,
     artifact_from_row,
     effect_from_row,
     entry_from_row,
@@ -96,15 +97,16 @@ class SQLiteDurableStore:
     def create_conversation(self, conversation_id: str, *, parent_conversation_id: str | None = None, parent_entry_id: str | None = None) -> None:
         if not conversation_id:
             raise ValueError("conversation_id is required")
-        with closing(self._connect()) as database:
-            existing = database.execute(
+        with closing(self._connect()) as database, database:
+            database.execute("BEGIN IMMEDIATE")
+            existing: sqlite3.Row | None = database.execute(
                 "SELECT parent_conversation_id, parent_entry_id FROM conversations WHERE id=?",
                 (conversation_id,),
             ).fetchone()
             if existing is not None:
                 if (
-                    existing["parent_conversation_id"] != parent_conversation_id
-                    or existing["parent_entry_id"] != parent_entry_id
+                    _optional_text(existing, "parent_conversation_id") != parent_conversation_id
+                    or _optional_text(existing, "parent_entry_id") != parent_entry_id
                 ):
                     raise CommitConflict("conversation identity already exists with different ancestry")
                 return

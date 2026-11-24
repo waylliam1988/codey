@@ -1837,3 +1837,10 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - Q051C 已提交 `06e56f72`。完整检查 `sqlite_records.py` 和 `sqlite_display.py`。共享 SQLite 文本、整数和可空文本字段读取，并在域对象构造前核对 JSON 对象形状。可选字段继续读取 SQLite NULL 和历史 JSON null。展示写入保持事务与分配顺序，明确报告缺失的序号或会话行。两个源的严格 Any 诊断从 61 条降为 0。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_display_index.py tests/durable/test_database_cursor.py tests/durable/test_commit_events.py --tb=short`，基线 40 passed。最终加入 `tests/durable/test_sqlite_record_mapping.py tests/durable/test_history_storage_paging.py tests/durable/test_artifact_metadata.py`，69 passed。两次均无失败或跳过，退出 0。两源 Ruff 及生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 都退出 0。
 - Q051D 完成。累计完成 94/352 批，完成批覆盖 164/1009 个生产文件，另有 18 批部分完成。下一批 Q052 将接续已部分核验的 SQLite 事务存储。
+
+
+### Q052 SQLite 事务与行边界
+
+- Q051D 已提交 `ca04b07b`。保留前期结算历史的独立验收，开始核对剩余的事务与行读取边界。直接创建同一会话且祖先相同是幂等操作，`create_conversation` 对已有一致身份返回成功，对不同祖先返回 `CommitConflict`。用共用一个 SQLite 文件的两个真实连接同步到插入边界，`python -m pytest -q tests/durable/test_sqlite_conversation_creation.py --tb=short` 修改前 1 failed、退出 1，泄漏唯一键 `sqlite3.IntegrityError`。
+- 将直接创建的身份读取和插入纳入同一写事务。相同并发回归通过，单个空会话保留，祖先不同仍返回 `CommitConflict`。在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_sqlite_conversation_creation.py tests/durable/test_store_contract.py tests/durable/test_database_cursor.py tests/stress/test_durable_sqlite_concurrency.py --tb=short`，56 passed、无失败或跳过、退出 0。完善测试替身注解后回归单独复跑 1 passed、退出 0。
+- 新测试严格 Any 与两文件 Ruff 通过。生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。整份 SQLite 源的强 Any 由 169 条降为 165，当前提交只验收可独立成立的并发修复，继续处理行与 JSON 边界。
