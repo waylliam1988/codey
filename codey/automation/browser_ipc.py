@@ -15,11 +15,11 @@ _HEADER = struct.Struct("!III")
 
 
 class ReadStream(Protocol):
-    def read(self, size: int = -1, /) -> bytes: ...
+    def read(self, size: int = -1, /) -> bytes | None: ...
 
 
 class WriteStream(Protocol):
-    def write(self, data: bytes | memoryview, /) -> int: ...
+    def write(self, data: bytes | memoryview, /) -> int | None: ...
     def flush(self) -> None: ...
 
 
@@ -55,7 +55,7 @@ def _write_all(stream: WriteStream, data: bytes) -> None:
     remaining = memoryview(data)
     while remaining:
         written = stream.write(remaining)
-        if written <= 0:
+        if written is None or written <= 0:
             raise OSError("browser worker pipe stopped accepting frame bytes")
         remaining = remaining[written:]
 

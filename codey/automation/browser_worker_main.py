@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from io import BufferedIOBase, RawIOBase
 from uuid import uuid4
 
 from playwright.async_api import Error
@@ -31,7 +32,18 @@ def initialize(first: BrowserPacket, policy: NetworkPolicy, progress: Progress) 
         binding=BrowserBinding.read(raw_binding) if raw_binding is not None else None), owner, resource
 
 
+def _ipc_streams() -> tuple[BufferedIOBase | RawIOBase, BufferedIOBase | RawIOBase]:
+    stdin: object = sys.stdin
+    stdout: object = sys.stdout
+    source: object = getattr(stdin, "buffer", None)
+    destination: object = getattr(stdout, "buffer", None)
+    if not isinstance(source, (BufferedIOBase, RawIOBase)) or not isinstance(destination, (BufferedIOBase, RawIOBase)):
+        raise RuntimeError("browser worker requires binary standard streams")
+    return source, destination
+
+
 async def serve() -> None:
+    stdin, stdout = _ipc_streams()
     write_lock = asyncio.Lock()
     routes: dict[str, asyncio.Future[JsonObject]] = {}
     tasks: dict[str, asyncio.Task[None]] = {}
@@ -39,7 +51,7 @@ async def serve() -> None:
 
     async def send(packet: BrowserPacket) -> None:
         async with write_lock:
-            await asyncio.to_thread(write_packet, sys.stdout.buffer, packet)
+            await asyncio.to_thread(write_packet, stdout, packet)
 
     async def policy(request: JsonObject) -> JsonObject:
         identity = uuid4().hex
@@ -63,7 +75,7 @@ async def serve() -> None:
         finally:
             acknowledgements.pop(identity, None)
 
-    first = await asyncio.to_thread(read_packet, sys.stdin.buffer)
+    first = await asyncio.to_thread(read_packet, stdin)
     runtime, owner, resource = initialize(first, policy, progress)
 
     async def execute(command: BrowserCommand, blob: bytes) -> None:
@@ -76,7 +88,7 @@ async def serve() -> None:
     try:
         await send(BrowserPacket({"type": "ready"}))
         while True:
-            packet = await asyncio.to_thread(read_packet, sys.stdin.buffer)
+            packet = await asyncio.to_thread(read_packet, stdin)
             message = packet.message
             kind = message.get("type")
             if kind == "dispatch":

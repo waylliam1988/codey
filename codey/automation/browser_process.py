@@ -72,16 +72,31 @@ class BrowserProcess:
             self._error = ""
             self._closed = None
             self._ready = Future()
-            self._routes = ThreadPoolExecutor(max_workers=4, thread_name_prefix="task-browser-network")
-            self._process = subprocess.Popen([sys.executable, "-m", "codey.automation.browser_worker_main"],
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-            self._send(BrowserPacket({"type": "init", "config": self.config.payload(),
-                "owner_task_id": self.owner_task_id, "resource_id": self.resource_id,
-                "inputs": self.recovery_inputs,
-                "binding": self.binding.payload() if self.binding is not None else None}))
-            self._reader = threading.Thread(target=self._read, args=(self._process, self._routes), name="task-browser-control", daemon=True)
-            self._reader.start()
+            routes = ThreadPoolExecutor(max_workers=4, thread_name_prefix="task-browser-network")
+            try:
+                process = subprocess.Popen([sys.executable, "-m", "codey.automation.browser_worker_main"],
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+            except BaseException:
+                routes.shutdown(wait=False, cancel_futures=True)
+                raise
+            self._routes = routes
+            self._process = process
+            try:
+                self._send(BrowserPacket({"type": "init", "config": self.config.payload(),
+                    "owner_task_id": self.owner_task_id, "resource_id": self.resource_id,
+                    "inputs": self.recovery_inputs,
+                    "binding": self.binding.payload() if self.binding is not None else None}))
+                reader = threading.Thread(target=self._read, args=(process, routes), name="task-browser-control", daemon=True)
+                reader.start()
+            except BaseException:
+                # The child may still be waiting for init, so it cannot honor
+                # a graceful close message yet.
+                with contextlib.suppress(OSError):
+                    process.terminate()
+                self._close(release=False)
+                raise
+            self._reader = reader
         try:
             self._ready.result(timeout=10)
         except (TimeoutError, RuntimeError) as exc:
@@ -254,4 +269,3 @@ class BrowserProcess:
         self._routes = None
         if release and (self._closed is None or not require_json_boolean(self._closed.get("ok"), "cleanup ok")):
             raise RuntimeError("browser_cleanup_failed: " + str((self._closed or {}).get("reason", "worker closed without cleanup receipt")))
-        self._process = None

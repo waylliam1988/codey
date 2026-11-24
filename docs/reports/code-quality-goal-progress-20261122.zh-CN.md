@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q029B。Q026 的生产修复已验证，项目生命周期用例待跟进。下一批为 Q029C。保留历史验收，复核后续提交实际影响的范围。
+当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q029C。Q026 的生产修复已验证，项目生命周期用例待跟进。下一批为 Q030。保留历史验收，复核后续提交实际影响的范围。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1423,3 +1423,13 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 运行 `python -m pytest -q tests/test_browser.py tests/test_browser_process_reconnect.py tests/test_research_browser_cdp_lifecycle.py --tb=short`，前后各 70 passed，退出 0。最终 `python -m pytest -q tests/test_browser_attach_cleanup.py --tb=short` 2 passed，退出 0，定向去重 72 项。无跳过。工作进程其他生命周期用例留 Q029C。
 - 源初始强 Any 11 条诊断。最终两源和新测试的严格 mypy、Pyrefly、ty、Ruff 均退出 0。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 与 kernel_type_precision_gate 已通过，之后只更新新测试。日志 `.e2e-artifacts/code-quality-20261122/q029b-*.log`。
 - Q029B 结项。累计 49/327 批，完成批覆盖 97/1009 个生产文件。接续 Q029C 的 worker 和 BrowserSession。
+
+
+### Q029C worker 进程与会话
+
+- Q029B 已提交 `fc021bbd`。完整检查 `browser_process.py`、`browser_session.py`、`browser_worker_main.py` 的恢复、初始化、控制帧、结果和终止所有权。
+- 子进程创建成功但 init 写失败时，调用尚未派发，客户端须能安全重试且必须收回半启动子进程。用真实 Popen 和一次测试注入的 init 写 OSError 执行 `python -m pytest -q tests/test_browser_worker_startup_rollback.py --tb=short`。修改前返回 not_delivered，但子进程 `poll()` 仍为 None，1 failed、退出 1。修改后相同输入 1 passed，并核实后续有效调用由另一进程完成。提前回收启动异常中的子进程和路由线程池，已完成握手的正常关闭仍由现有路径负责。删去关闭路径的重复赋值。
+- 子进程入口验证标准流有二进制缓冲层或原始二进制流，清除三处 stdio Any。首次 TextIOWrapper 直接注解违反存根签名并超过 Ruff 语句上限，已改成独立的实际类型守卫。IPC 端口允许 Python raw I/O 的 None 返回，读端已有 EOF 处理，写端沿用无进展错误。Q029 仅重验这一受影响的帧边界。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_process.py tests/test_task_browser_resources.py --tb=short` 得基线 8 passed。最终在同命令加入 `tests/test_browser_ipc_contract.py tests/test_browser_worker_startup_rollback.py` 得 13 passed，`python -m pytest -q tests/test_browser_process_reconnect.py --tb=short` 得 15 passed，两组去重 28 项（含 Q029 的 4 项变更后重验）。以 `PYTHONUNBUFFERED=1` 单独重验启动回滚与真实 worker 取消、截图共 2 项，属于重复节点和不同启动模式。各组无跳过，均退出 0。
+- 最终强 Any、Pyrefly、ty、Ruff 覆盖三源、新测试和受影响的 IPC 源及原测试共 6 个文件，退出 0。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty、kernel_type_precision_gate 均通过。日志 `.e2e-artifacts/code-quality-20261122/q029c-*.log`。
+- Q029C 完成。累计 50/327 批，完成批覆盖 100/1009 个生产文件。Q030 接续 DOM、框架、查询和页面观察。

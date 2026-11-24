@@ -3284,7 +3284,7 @@
         "tests/test_browser_ipc_contract.py",
         "tests/test_browser_command_contract.py"
       ],
-      "result": "Partial stream writes formerly dropped frame bytes, and oversized integer deadlines leaked OverflowError. Four failed before and the full-write control passed. Seven direct and one real worker test passed after, plus scoped strong typing and full production gates. Commit framing and deadline validation independently.",
+      "result": "Partial stream writes formerly dropped frame bytes, and oversized integer deadlines leaked OverflowError. Four failed before and the full-write control passed. Seven direct and one real worker test passed after, plus scoped strong typing and full production gates. Commit framing and deadline validation independently. Q029C refined stream contracts for raw stdio. Its final IPC round trips and no-progress tests, real worker/reconnect checks, and strict typing renew the affected framing evidence.",
       "commits": [
         "20c4b519",
         "4d6414d1"
@@ -3315,7 +3315,10 @@
       "reviewed_support": [
         "tests/test_browser_attach_cleanup.py"
       ],
-      "result": "Failed provider attachment left a newly owned tab on a borrowed CDP browser. Both invalid navigation and cancellation after page creation reproduced on the original module (two failures), and passed after closing the new tab before disconnect. Original user's page and active browser remain available. Baseline and final existing 70 tests passed. Scoped strict Any 11 source diagnostics to zero and all production gates passed."
+      "result": "Failed provider attachment left a newly owned tab on a borrowed CDP browser. Both invalid navigation and cancellation after page creation reproduced on the original module (two failures), and passed after closing the new tab before disconnect. Original user's page and active browser remain available. Baseline and final existing 70 tests passed. Scoped strict Any 11 source diagnostics to zero and all production gates passed.",
+      "commits": [
+        "fc021bbd"
+      ]
     },
     {
       "id": "Q029C",
@@ -3325,14 +3328,28 @@
         "codey/automation/browser_worker_main.py",
         "codey/automation/browser_session.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/automation/browser_process.py",
+        "codey/automation/browser_worker_main.py",
+        "codey/automation/browser_session.py"
+      ],
+      "verified_files": [
+        "codey/automation/browser_process.py",
+        "codey/automation/browser_worker_main.py",
+        "codey/automation/browser_session.py"
+      ],
       "tests": [
         "tests/test_browser_process.py",
         "tests/test_browser_process_reconnect.py",
-        "tests/test_task_browser_resources.py"
-      ]
+        "tests/test_task_browser_resources.py",
+        "tests/test_browser_worker_startup_rollback.py",
+        "tests/test_browser_ipc_contract.py"
+      ],
+      "reviewed_support": [
+        "tests/test_browser_worker_startup_rollback.py"
+      ],
+      "result": "Init write failure returned not_delivered while leaving a live child. Same real subprocess regression passed after cleanup and retry. Worker binary streams narrowed at entry, with raw/unbuffered stdio supported. Scoped strong Any and static checks passed. Final direct and reconnect groups 28 passed including 4 IPC dependency tests. Two previously covered cases also passed with unbuffered child stdio. Full production type and precision gates passed."
     },
     {
       "responsibility": "codey/automation: browser contracts and interaction",
@@ -7668,6 +7685,7 @@
     "tests/test_browser_tool_images.py",
     "tests/test_browser_typed_copy.py",
     "tests/test_browser_worker.py",
+    "tests/test_browser_worker_startup_rollback.py",
     "tests/test_calculation_receipts.py",
     "tests/test_cancellation.py",
     "tests/test_candidate_recovery_live_replay_isolation_and_prefixes.py",
