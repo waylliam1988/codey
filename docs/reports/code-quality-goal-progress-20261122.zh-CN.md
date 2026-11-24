@@ -1847,3 +1847,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 并发修复已提交 `cefa9b42`。复用 SQLite 行解码器，为游标、标识、JSON 与迁移后的工作流数据收窄类型，保留结算历史单扫描。删除 `_same_entry`，其声明之外无引用、未导出、无注册或文档入口。批量 effect 插入复用单条入口，同样的 SQL、参数与事务边界由效果和审批用例复验。移除内部提交更新中从未读取的参数。
 - 最终在 `D:\codey` 复跑前述存储四文件命令，56 passed。`python -m pytest -q tests/durable/test_settlement_history_projection.py tests/durable/test_settlement_projection_cost.py tests/durable/test_workflow_timeline.py tests/durable/test_history_storage_paging.py --tb=short`，22 passed。`python -m pytest -q tests/durable/test_atomic_admission.py tests/durable/test_conversation_delete_commit.py tests/durable/test_effect_identity.py tests/durable/test_effect_projection.py tests/durable/test_execution_fencing.py tests/durable/test_approval_records.py tests/durable/test_artifact_metadata.py tests/durable/test_inbox_placement.py tests/durable/test_owner_reverse_index.py --tb=short`，120 passed。三组共 198 项通过、无失败或跳过，均退出 0。
 - 完整源与并发回归的严格 Any、Ruff 均退出 0，原 169 条源诊断已清除。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。Q052 完成。累计完成 95/352 批，完成批覆盖 165/1009 个生产文件，另有 17 批部分完成。Q053 既有结算验收已完成，下一未完成批为 Q054。
+
+
+### Q054 审批操作和持久变更线
+
+- Q052 类型修复已提交 `b35d6f7d`。按审批、effect、提交、任务转换、工具任务输入拆分原 Q054。总数 356 批，生产文件仍为 1009。完整检查 `approval_operations.py`、`operations.py` 和新增回归。
+- 审批准入与 shell effect 由同一提交绑定，已有准入合同接受非约定前缀的 effect ID。用公开会话入口成功准入 `recorded-effect` 后尝试结算，旧实现只查固定 `shell-approval`。在内存加载 `b35d6f7d` 版审批模块并运行最终 `tests/durable/test_approval_effect_identity.py`，两个存储后端都因该 `KeyError` 失败，退出 1。现在核对约定 ID 的归属，并能按原任务及审批记录找回唯一关联的 effect。回归验证实际 effect 结算、一条原子提交、挂起 ID 清除及相同恢复请求的幂等性。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_approval_effect_identity.py tests/durable/test_approval_records.py tests/durable/test_approval_suspension.py tests/durable/test_approval_continuation_admission.py tests/durable/test_session_kernel.py tests/durable/test_operation_control_actions.py --tb=short`，59 passed、无失败或跳过、退出 0。三个审批测试文件基线 31 passed。两个源与回归的严格 Any、Ruff，以及全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q054 完成。累计完成 96/356 批，完成批覆盖 167/1009 个生产文件，另有 17 批部分完成。下一批 Q054B 为 effect 意图与结算操作。

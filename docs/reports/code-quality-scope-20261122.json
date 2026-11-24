@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 1009,
   "region_count": 40,
-  "batch_count": 352,
+  "batch_count": 356,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -318,6 +318,10 @@
         "Q052",
         "Q053",
         "Q054",
+        "Q054B",
+        "Q054C",
+        "Q054D",
+        "Q054E",
         "Q055",
         "Q056",
         "Q057",
@@ -4161,22 +4165,51 @@
       ]
     },
     {
-      "responsibility": "codey/durable: task kernel and execution",
-      "files": [
-        "codey/durable/approval_operations.py",
-        "codey/durable/operations.py",
-        "codey/durable/effect_operations.py",
-        "codey/durable/effects.py",
-        "codey/durable/submission_operations.py",
-        "codey/durable/task_state.py",
-        "codey/durable/task_operations.py",
-        "codey/durable/tool_task.py"
-      ],
+      "responsibility": "Durable approval operations and the mutation line",
+      "files": ["codey/durable/approval_operations.py", "codey/durable/operations.py"],
       "id": "Q054",
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/approval_operations.py", "codey/durable/operations.py"],
+      "verified_files": ["codey/durable/approval_operations.py", "codey/durable/operations.py"],
+      "tests": ["tests/durable/test_approval_effect_identity.py", "tests/durable/test_approval_records.py", "tests/durable/test_approval_suspension.py", "tests/durable/test_approval_continuation_admission.py", "tests/durable/test_session_kernel.py", "tests/durable/test_operation_control_actions.py"],
+      "reviewed_support": ["tests/durable/test_approval_effect_identity.py"],
+      "result": "Settle the task-owned effect recorded for the approval, including alternate persisted effect IDs. 59 scoped tests, strict Any, Ruff and production gates passed."
+    },
+    {
+      "responsibility": "Effect intent and settlement operations",
+      "files": ["codey/durable/effect_operations.py", "codey/durable/effects.py"],
+      "id": "Q054B",
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 4
+      "tests": ["tests/durable/test_effect_identity.py", "tests/durable/test_effect_projection.py", "tests/durable/test_recovery.py"]
+    },
+    {
+      "responsibility": "Durable submission placement and generation boundaries",
+      "files": ["codey/durable/submission_operations.py"],
+      "id": "Q054C",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/durable/test_inbox_placement.py", "tests/durable/test_generation_boundary_commit.py"]
+    },
+    {
+      "responsibility": "Task checkpoints, ownership and attempt transitions",
+      "files": ["codey/durable/task_state.py", "codey/durable/task_operations.py"],
+      "id": "Q054D",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/durable/test_task_ownership_and_finalization.py", "tests/durable/test_execution_fencing.py"]
+    },
+    {
+      "responsibility": "Durable tool-task input and identity",
+      "files": ["codey/durable/tool_task.py"],
+      "id": "Q054E",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/test_tool_task_next_stage.py"]
     },
     {
       "responsibility": "codey/durable: task kernel and execution",
@@ -9897,6 +9930,11 @@
       "batch": "Q051",
       "replacement": ["Q051", "Q051B", "Q051C", "Q051D"],
       "reason": "Conversation history and ownership, typed durable ports, inbox and read boundaries, and SQLite projections have different callers. All eight files retain one owner."
+    },
+    {
+      "batch": "Q054",
+      "replacement": ["Q054", "Q054B", "Q054C", "Q054D", "Q054E"],
+      "reason": "Approval, external effect, submission, task transition and tool-task input contracts have independently verifiable boundaries. All eight files retain one owner."
     }
   ]
 }

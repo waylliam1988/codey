@@ -20,6 +20,7 @@ from codey.durable.model import (
 from codey.durable.operations import SessionOperations, operation_line
 from codey.durable.reducer import with_effect_intents, with_effect_settlement
 from codey.durable.task_state import release_attempt_state
+from codey.utils.object_fields import object_fields
 
 
 class ApprovalOperations(SessionOperations):
@@ -132,7 +133,7 @@ class ApprovalOperations(SessionOperations):
         effect_settlement: EffectRecord | None = None
         next_task = current_task
         if current_approval.status == ApprovalStatus.EXECUTION_CLAIMED:
-            effect = self._kernel.store.effect(f"shell-{approval_id}")
+            effect = self._claimed_shell_effect(current_approval)
             if effect.settlement is not None:
                 return None
             if effect.status == "pending" and not settlement:
@@ -154,7 +155,7 @@ class ApprovalOperations(SessionOperations):
             by_task_id=current_task.task_id,
         )) if tool_results else []
         state = thaw_json(next_task.state)
-        if not isinstance(state, dict):
+        if not object_fields(state):
             raise CommitConflict("task state is corrupt")
         if resume:
             state["resume_input"] = {"kind": "resolve_shell_approval", "approval_id": approval_id}
@@ -182,3 +183,25 @@ class ApprovalOperations(SessionOperations):
             expected_approval_status=current_approval.status,
             expected_attempt_token=current_task.attempt_token,
         ))
+
+    def _claimed_shell_effect(self, approval: ApprovalRecord) -> EffectRecord:
+        store = self._kernel.store
+        canonical_id = f"shell-{approval.approval_id}"
+        try:
+            canonical = store.effect(canonical_id)
+        except KeyError:
+            canonical = None
+        if (
+            canonical is not None
+            and canonical.task_id == approval.task_id
+            and canonical.category == "shell"
+            and canonical.intent.get("approval_id") in (None, approval.approval_id)
+        ):
+            return canonical
+        candidates = tuple(
+            item for item in store.effects_for_task(approval.task_id)
+            if item.category == "shell" and item.intent.get("approval_id") == approval.approval_id
+        )
+        if len(candidates) != 1:
+            raise CommitConflict("approval does not identify a single shell effect")
+        return candidates[0]
