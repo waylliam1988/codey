@@ -2654,7 +2654,10 @@
         "Contract question, not a confirmed production bug: malformed truthy receipt reference scalars or structured final_delivery may raise TypeError; string reference fields iterate characters. Current valid receipt callers provide arrays; omission vs rejection policy is not independently specified. Preserve existing behavior, no guessed normalization or suppressed exceptions; reopen only with contract evidence.",
         "PublicEventFeed producer Any remains in Q021C. Consumer/helper governance here does not imply upstream source completion."
       ],
-      "result": "Full551-line codec review. No independently confirmed production bug. Runtime dict views and scalar narrowing eliminate21 original source strongAny diagnostics; four identical receipt clip/filter loops share one helper while field-specific counts/order stay local. Original edf0c69e module executed in memory via read-only git show, lists/tuples/index-only sequence baselines3pass and current3pass; no worktree/file replacement or bug-before-failure claim. Original support126 plus necessary SSE helper27 ->0, total174 original diagnostics across8 full governed files including timing/new sequence0. Typed headless callbacks/provider and real Handler/AppContext owner fixture, validated bytes/JSON output, original assertions retained. Distinct final scopes28+27+9=64pass no skips/failures; no redundant baseline counts. Four checkers8files0, ignored runners also strongAny0; production mypy756/Pyrefly35suppressed165warnings/ty/precision0. No public deletions, baselines, casts, ignores, dependencies or external model/worktree/asset publishing."
+      "result": "Full551-line codec review. No independently confirmed production bug. Runtime dict views and scalar narrowing eliminate21 original source strongAny diagnostics; four identical receipt clip/filter loops share one helper while field-specific counts/order stay local. Original edf0c69e module executed in memory via read-only git show, lists/tuples/index-only sequence baselines3pass and current3pass; no worktree/file replacement or bug-before-failure claim. Original support126 plus necessary SSE helper27 ->0, total174 original diagnostics across8 full governed files including timing/new sequence0. Typed headless callbacks/provider and real Handler/AppContext owner fixture, validated bytes/JSON output, original assertions retained. Distinct final scopes28+27+9=64pass no skips/failures; no redundant baseline counts. Four checkers8files0, ignored runners also strongAny0; production mypy756/Pyrefly35suppressed165warnings/ty/precision0. No public deletions, baselines, casts, ignores, dependencies or external model/worktree/asset publishing.",
+      "commits": [
+        "c0e2b48e"
+      ]
     },
     {
       "id": "Q021B",
@@ -2662,10 +2665,33 @@
       "files": [
         "codey/app/event_bus.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/app/event_bus.py"
+      ],
+      "verified_files": [
+        "codey/app/event_bus.py"
+      ],
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
+      "reviewed_support": [
+        "tests/test_event_bus_observers.py",
+        "tests/test_sse_cursor_reconnect_boundaries.py",
+        "tests/test_task_state.py"
+      ],
+      "tests": [
+        "tests/test_event_bus_observers.py",
+        "tests/test_sse_cursor_reconnect_boundaries.py",
+        "tests/test_task_state.py",
+        "tests/test_coldstart_hardening.py::EventBusOverflowTests",
+        "tests/stress/test_sse_reconnect_duplicates.py",
+        "tests/test_durable_event_bridge.py",
+        "tests/test_task_lifecycle_projection.py",
+        "tests/test_conversation_live_browser.py::test_real_stream_and_queued_input_keep_one_answer_and_survive_reload"
+      ],
+      "followups": [
+        "Extra3 external_control service nodes attempted but setup errored before assertions or source snapshot copy: generated runtime descriptor missing52 current paths (6 existingPython+46newassets), references46missingoldassets. Independent package_files process has no event_bus import; this batch adds no production paths and leaves descriptor unchanged. Keep errors/unexecuted assertions disclosed; no retry through copying fixture. Generated inventory/no-copy release validation belongs Q078."
+      ],
+      "result": "Full event bus governance with confirmed observer reentry deadlock. Pre-fix4fail/1pass isolated daemon-thread probes: finite callback enters then sequence/unsubscribe/subscribe/emit all block on same Lock. RLock plus per-publication observer/subscriber snapshots and FIFO deferred reentry notifications preserve monotonic callbacks/queue cursors, cutoff and cross-thread synchronous order. Same4 inputs pass, exception-after-reentry boundary and original cross-thread control pass. No observer exception swallowing added; logger preserved, no background worker. Source69 and2old support31 strongAny diagnostics ->0, new regression0, whole4files strongAny/Pyrefly/ty/Ruff0, typed runner0. Distinct23+7+9+2=41passed no skips/failures in completed scopes; additional3 setup errors separately retained/unrelated descriptor limitations, not passing claims. Production mypy756/Pyrefly35suppressed165warnings/ty/precision0. No public deletions, ignores, casts, dependencies, external models, asset publication or actual worktree/source copying."
     },
     {
       "id": "Q021C",
@@ -3531,7 +3557,8 @@
       "candidate_test_count": 3,
       "followups": [
         "Q014C dependency test_release_control.py::test_browser_session_survives_service_replacement_but_bootstrap_does_not failed at snapshot/read_runtime before authentication: published descriptor has 876 files versus actual 877; missing codey/operations/browser_result_evidence.py (existing commit 1292e668). q014c-runtime-inventory.json. Q014C changes only typed auth tests; preserve rejection and refresh generated inventory via normal publisher when validating release/runtime scope. Runtime read_runtime explicit Any remains at Q078; diagnostic-path inspection is not whole-file governance.",
-        "2026-11-23 external 303e7724 refreshed runtime descriptor; old missing browser_result_evidence/http_response names now present. Current file-name Python inventory checked at Q018 entry: listed 750, tracked 750, missing []. Old 876/877 observation is historical, not a current blocker proof. Runtime activation/copying tests remain unexecuted; validate current descriptor fully in Q078 without copying a worktree."
+        "2026-11-23 external 303e7724 refreshed runtime descriptor; old missing browser_result_evidence/http_response names now present. Current file-name Python inventory checked at Q018 entry: listed 750, tracked 750, missing []. Old 876/877 observation is historical, not a current blocker proof. Runtime activation/copying tests remain unexecuted; validate current descriptor fully in Q078 without copying a worktree.",
+        "Q021B extra3 external_control nodes now fail before snapshot copy at read_runtime: current generated descriptor missing52 paths (6 prior external Python additions and46newassets), references46oldmissingassets. New readonly inventory q021b-runtime-inventory.json supersedes old876/877 counts; event_bus not imported, no new production paths/descriptor changes in batch. Do not enable copying fixture; inspect/update published inventory through its own governed scope and choose no-copy validation. These nodes remain unexecuted assertions, not passed or skipped."
       ]
     },
     {

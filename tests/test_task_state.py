@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 from unittest import mock
 
 from codey.app import provider_services, shell_service
@@ -11,12 +12,34 @@ from codey.app.context import AppContext
 from codey.app.event_bus import RUN_EVENT_TYPES, stamp_run_scope
 from codey.app.provider_registry import ProviderRegistry
 from codey.operations.task_state import TaskState
-from codey.providers.model_preferences import ModelPreferences
+from codey.providers.base import ChatProvider
+from codey.repairs.adapter_repair import AdapterRepairResult
 from codey.repairs.self_repair import SelfRepairSupervisor
+from codey.repairs.self_repair_job import SelfRepairJob
 
 
 def _protocol_members() -> list[str]:
     return sorted(name for name in dir(TaskState) if not name.startswith("_"))
+
+
+@dataclass(frozen=True)
+class _RunScope:
+    run_id: str
+    session_id: str
+
+
+class _Provider:
+    name = "Fixture"
+    location = "fixture://task-state"
+
+    def new_chat(self, timeout: float | None = None) -> None:
+        raise AssertionError("this fixture only connects")
+
+    def send(self, text: str, timeout: float | None = None) -> str:
+        raise AssertionError("this fixture only connects")
+
+    def close(self) -> None:
+        return None
 
 
 class TaskStateProtocolTests(unittest.TestCase):
@@ -27,7 +50,8 @@ class TaskStateProtocolTests(unittest.TestCase):
                 missing = [name for name in _protocol_members() if not hasattr(ctx, name)]
             finally:
                 ctx.close()
-        self.assertEqual(missing, [])
+        expected: list[str] = []
+        self.assertEqual(missing, expected)
 
     def test_protocol_hides_moved_domain_methods(self) -> None:
         # Domain handlers live in their owners. Ticket claims retain a typed
@@ -53,20 +77,20 @@ class TaskStateProtocolTests(unittest.TestCase):
             self.assertNotIn(": Any", line, f"task_state.py:{lineno}")
 
     def test_stamp_run_scope_fills_active_run(self) -> None:
-        active = SimpleNamespace(run_id="run-1", session_id="sess-1")
+        active = _RunScope(run_id="run-1", session_id="sess-1")
         payload = stamp_run_scope({"type": "tool", "text": "x"}, active)
         self.assertEqual(payload["run_id"], "run-1")
         self.assertEqual(payload["session_id"], "sess-1")
 
     def test_stamp_run_scope_keeps_explicit_ids(self) -> None:
-        active = SimpleNamespace(run_id="run-1", session_id="sess-1")
+        active = _RunScope(run_id="run-1", session_id="sess-1")
         payload = stamp_run_scope(
             {"type": "tool", "run_id": "run-9", "session_id": "sess-9"}, active
         )
         self.assertEqual((payload["run_id"], payload["session_id"]), ("run-9", "sess-9"))
 
     def test_stamp_run_scope_ignores_non_run_types(self) -> None:
-        active = SimpleNamespace(run_id="run-1", session_id="sess-1")
+        active = _RunScope(run_id="run-1", session_id="sess-1")
         payload = stamp_run_scope({"type": "unrelated"}, active)
         self.assertNotIn("run_id", payload)
         self.assertIn("turn", RUN_EVENT_TYPES)
@@ -74,23 +98,24 @@ class TaskStateProtocolTests(unittest.TestCase):
 
 class MovedGlueTests(unittest.TestCase):
     def test_open_provider_session_announces(self) -> None:
-        events: list[dict] = []
-        provider = object()
-        ctx = SimpleNamespace(
-            set_run_status=mock.Mock(),
-            emit=events.append,
-            current_run=lambda: None,
-            providers=ProviderRegistry(),
-        )
-        with mock.patch.object(
-            provider_services, "connect_provider", return_value=provider
-        ):
-            self.assertIs(provider_services.open_provider_session(ctx, "qwen"), provider)
-        self.assertEqual(
-            [call.args[0] for call in ctx.set_run_status.call_args_list],
-            ["connecting", "running"],
-        )
-        self.assertEqual([event["status"] for event in events[:2]], ["connecting", "running"])
+        events: list[dict[str, object]] = []
+        statuses: list[str] = []
+        provider: ChatProvider = _Provider()
+        with tempfile.TemporaryDirectory() as td:
+            ctx = AppContext(Path(td), start_scheduler=False)
+            try:
+                with (
+                    mock.patch.object(provider_services, "connect_provider", return_value=provider),
+                    mock.patch.object(ctx, "set_run_status", side_effect=statuses.append),
+                    mock.patch.object(ctx, "emit", side_effect=events.append),
+                ):
+                    self.assertIs(provider_services.open_provider_session(ctx, "qwen"), provider)
+            finally:
+                ctx.close()
+        expected_statuses: list[str] = ["connecting", "running"]
+        event_statuses: list[object] = [event["status"] for event in events[:2]]
+        self.assertEqual(statuses, expected_statuses)
+        self.assertEqual(event_statuses, expected_statuses)
         self.assertTrue(events[2]["providers"])
 
     def test_claim_shell_ticket_mints_under_gate(self) -> None:
@@ -114,6 +139,7 @@ class MovedGlueTests(unittest.TestCase):
             finally:
                 ctx.close()
         self.assertIsNotNone(ticket)
+        assert ticket is not None
         self.assertIs(pending, expected)
         self.assertEqual(ticket.command, "echo hi")
         self.assertEqual(ticket.generation, 0)
@@ -121,8 +147,9 @@ class MovedGlueTests(unittest.TestCase):
     def test_claim_shell_ticket_stale_generation_mints_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             ctx = AppContext(Path(td), start_scheduler=False)
+            expired: dict[str, object] = {"_approval_generation": -1}
             try:
-                with mock.patch.object(ctx.shell_approval_coordinator, "claim", return_value={"_approval_generation": -1}):
+                with mock.patch.object(ctx.shell_approval_coordinator, "claim", return_value=expired):
                     pending, ticket = shell_service.claim_shell_ticket(ctx, "a1", timeout=30, output_limit=100)
             finally:
                 ctx.close()
@@ -130,12 +157,15 @@ class MovedGlueTests(unittest.TestCase):
         self.assertIsNone(ticket)
 
     def test_provider_failover_order_prefers_open_tabs(self) -> None:
-        providers = SimpleNamespace(
-            model_preferences=ModelPreferences(),
-            failover_order=lambda probe: ("qwen", "deepseek") if probe() else ("deepseek",),
-        )
-        with mock.patch.object(
-            provider_services, "provider_tab_availability", return_value={"qwen": True}
+        providers = ProviderRegistry()
+
+        def order(probe: Callable[[], Mapping[str, bool]]) -> tuple[str, ...]:
+            return ("qwen", "deepseek") if probe() else ("deepseek",)
+
+        availability: dict[str, bool] = {"qwen": True}
+        with (
+            mock.patch.object(provider_services, "provider_tab_availability", return_value=availability),
+            mock.patch.object(providers, "failover_order", side_effect=order),
         ):
             self.assertEqual(
                 provider_services.provider_failover_order(providers), ("qwen", "deepseek")
@@ -144,9 +174,9 @@ class MovedGlueTests(unittest.TestCase):
     def test_kick_if_idle_runs_once_and_guards_reentry(self) -> None:
         ran: list[str] = []
 
-        def _runner(job):
+        def _runner(job: SelfRepairJob) -> AdapterRepairResult:
             ran.append(job.provider_id)
-            return mock.Mock(ok=True)
+            return AdapterRepairResult(ok=True, provider_id=job.provider_id)
 
         supervisor = SelfRepairSupervisor(
             Path(tempfile.gettempdir()),
@@ -165,8 +195,11 @@ class MovedGlueTests(unittest.TestCase):
         self.assertFalse(supervisor.kick_if_idle(lambda: False))
 
     def test_kick_if_idle_respects_busy(self) -> None:
+        def unexpected(job: SelfRepairJob) -> AdapterRepairResult:
+            raise AssertionError("no queued work may reach the runner")
+
         supervisor = SelfRepairSupervisor(
-            Path(tempfile.gettempdir()), runner=mock.Mock(), clock=lambda: 100.0
+            Path(tempfile.gettempdir()), runner=unexpected, clock=lambda: 100.0
         )
         # No queued work: never runs.
         self.assertFalse(supervisor.kick_if_idle(lambda: False))

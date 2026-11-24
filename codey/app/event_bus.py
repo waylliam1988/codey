@@ -6,8 +6,9 @@ import logging
 import queue
 import threading
 from collections import deque
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from typing import Protocol
 
 from codey.utils.refs import parse_int
 
@@ -31,7 +32,15 @@ RUN_EVENT_TYPES = {
 }
 
 
-def stamp_run_scope(payload: dict[str, Any], active: Any) -> dict[str, Any]:
+class RunScope(Protocol):
+    @property
+    def run_id(self) -> str: ...
+
+    @property
+    def session_id(self) -> str: ...
+
+
+def stamp_run_scope(payload: dict[str, object], active: RunScope | None) -> dict[str, object]:
     """Fill the active run/session onto a run-scoped event payload.
 
     Pure helper (no bus state): run-scoped types without an explicit run_id
@@ -50,10 +59,10 @@ def stamp_run_scope(payload: dict[str, Any], active: Any) -> dict[str, Any]:
     return payload
 
 
-class SsePayload(dict[str, Any]):
+class SsePayload(dict[str, object]):
     """Queue payload with an SSE cursor that stays out of the JSON body."""
 
-    def __init__(self, payload: dict[str, Any], *, event_id: int = 0) -> None:
+    def __init__(self, payload: Mapping[str, object], *, event_id: int = 0) -> None:
         super().__init__(payload)
         self.event_id = event_id
 
@@ -67,15 +76,28 @@ class EventSubscriber(queue.Queue[SsePayload]):
         self.replay_cutoff = 0
 
 
+_Observer = Callable[[int, dict[str, object]], None]
+
+
+@dataclass(frozen=True)
+class _Publication:
+    sequence: int
+    payload: dict[str, object]
+    observers: tuple[_Observer, ...]
+    subscribers: tuple[EventSubscriber, ...]
+
+
 class EventBus:
     def __init__(self, *, replay_limit: int) -> None:
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._subscribers: list[EventSubscriber] = []
         self._sequence = 0
-        self._replay: deque[tuple[int, dict[str, Any]]] = deque(maxlen=replay_limit)
-        self._observers: list[Callable[[int, dict[str, Any]], None]] = []
+        self._replay: deque[tuple[int, dict[str, object]]] = deque(maxlen=replay_limit)
+        self._observers: list[_Observer] = []
+        self._pending: deque[_Publication] = deque()
+        self._notifying = False
 
-    def observe(self, callback: Callable[[int, dict[str, Any]], None]) -> Callable[[], None]:
+    def observe(self, callback: _Observer) -> Callable[[], None]:
         with self._lock:
             self._observers.append(callback)
 
@@ -90,23 +112,34 @@ class EventBus:
         with self._lock:
             return self._sequence
 
-    def emit(self, event: dict[str, Any]) -> None:
+    def emit(self, event: Mapping[str, object]) -> None:
         with self._lock:
             payload = dict(event)
             self._sequence += 1
             event_id = self._sequence
             self._replay.append((event_id, dict(payload)))
-            for observer in self._observers:
-                try:
-                    observer(event_id, payload)
-                except Exception:
-                    logger.exception("event observer failed")
-            for sub in list(self._subscribers):
-                self._put_for_subscriber(
-                    sub,
-                    SsePayload(dict(payload), event_id=event_id),
-                    payload,
-                )
+            self._pending.append(_Publication(event_id, payload, tuple(self._observers), tuple(self._subscribers)))
+            if self._notifying:
+                return
+            # A reentrant emit queues its notifications behind this event.
+            # Other threads still wait until ordered synchronous delivery ends.
+            self._notifying = True
+            try:
+                while self._pending:
+                    publication = self._pending.popleft()
+                    for observer in publication.observers:
+                        try:
+                            observer(publication.sequence, publication.payload)
+                        except Exception:
+                            logger.exception("event observer failed")
+                    for sub in publication.subscribers:
+                        self._put_for_subscriber(
+                            sub,
+                            SsePayload(publication.payload, event_id=publication.sequence),
+                            publication.payload,
+                        )
+            finally:
+                self._notifying = False
 
     def subscribe(self, *, maxsize: int = 1000) -> EventSubscriber:
         sub = EventSubscriber(maxsize=maxsize)
@@ -125,7 +158,7 @@ class EventBus:
         last_event_id: int,
         *,
         max_event_id: int | None = None,
-    ) -> list[tuple[int, dict[str, Any]]]:
+    ) -> list[tuple[int, dict[str, object]]]:
         if isinstance(last_event_id, bool):
             start = 0
         else:
@@ -167,7 +200,7 @@ class EventBus:
     def _put_for_subscriber(
         sub: EventSubscriber,
         queued_payload: SsePayload,
-        payload: dict[str, Any],
+        payload: Mapping[str, object],
     ) -> None:
         try:
             sub.put_nowait(queued_payload)

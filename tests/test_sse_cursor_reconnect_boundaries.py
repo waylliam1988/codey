@@ -2,22 +2,24 @@
 from codey.app.event_bus import EventBus
 
 
-def test_cursor_immediately_before_retained_window_replays_without_resync():
+def test_cursor_immediately_before_retained_window_replays_without_resync() -> None:
     bus = EventBus(replay_limit=2)
     for n in range(3):
         bus.emit({"type": "info", "n": n})
     assert bus.replay_events_after(1) == [(2, {"type": "info", "n": 1}), (3, {"type": "info", "n": 2})]
 
 
-def test_future_cursor_after_restart_resets_to_current_cutoff():
+def test_future_cursor_after_restart_resets_to_current_cutoff() -> None:
     bus = EventBus(replay_limit=2)
     rows = bus.replay_events_after(500)
     assert rows == [(0, {"type": "resync_required", "reason": "sse_cursor_ahead", "cursor": 0})]
     bus.emit({"type": "info"})
-    assert bus.replay_events_after(rows[0][1]["cursor"]) == [(1, {"type": "info"})]
+    cursor = rows[0][1]["cursor"]
+    assert type(cursor) is int
+    assert bus.replay_events_after(cursor) == [(1, {"type": "info"})]
 
 
-def test_gap_marker_never_skips_live_event_after_subscription():
+def test_gap_marker_never_skips_live_event_after_subscription() -> None:
     bus = EventBus(replay_limit=1)
     for _ in range(5):
         bus.emit({"type": "info"})
@@ -29,7 +31,7 @@ def test_gap_marker_never_skips_live_event_after_subscription():
     bus.unsubscribe(sub)
 
 
-def test_expired_cursor_counts_only_unavailable_events():
+def test_expired_cursor_counts_only_unavailable_events() -> None:
     bus = EventBus(replay_limit=2)
     for _ in range(5):
         bus.emit({"type": "info"})
