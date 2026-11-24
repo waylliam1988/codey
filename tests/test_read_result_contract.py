@@ -9,7 +9,7 @@ import pytest
 
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.runtime import read_file
-from codey.types.json_value import JsonValue, decode_json_object, require_json_string
+from codey.types.json_value import JsonValue, canonical_json_object, decode_json_object, require_json_string
 
 
 def test_read_value_contains_exact_page_text_and_explicit_coordinates(tmp_path: Path) -> None:
@@ -64,8 +64,9 @@ def test_frozen_read_result_schema_is_advertised_to_the_actual_model() -> None:
     from collections.abc import Mapping
 
     assert isinstance(properties, Mapping)
-    text = properties["text"]
-    assert isinstance(text, MappingProxyType) and text["type"] == "string"
+    text: object = properties["text"]
+    assert isinstance(text, MappingProxyType)
+    assert canonical_json_object(text)["type"] == "string"
     codemode = next(spec for spec in prepared.snapshot.frozen_specs if spec.name == "codemode")
     description = catalog_describe(build_codemode_catalog(prepared.snapshot.frozen_specs), "tools.read_file")
     assert description is not None and '"text": string' in description.signature
@@ -146,7 +147,8 @@ def test_host_rejects_undeclared_executor_shape_and_keeps_failures_separate() ->
 
     entry = ToolCatalogEntry("probe", "read")
     host = CodeModeHost(execution_id="cm", catalog=(entry,), execute=lambda call: ToolResult(call, "original", ok=True))
-    with patch.object(host, "_execute", return_value={"ok": True, "value": "data"}), pytest.raises(TypeError, match="ToolResult"):
+    invalid_result: dict[str, object] = {"ok": True, "value": "data"}
+    with patch.object(host, "_execute", return_value=invalid_result), pytest.raises(TypeError, match="ToolResult"):
         host.invoke("probe", {})
     host = CodeModeHost(execution_id="cm", catalog=(entry,),
                         execute=lambda call: ToolResult(call, "failed observation", ok=False))

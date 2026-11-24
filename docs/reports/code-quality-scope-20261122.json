@@ -3634,24 +3634,29 @@
         "codey/codemode/__init__.py"
       ],
       "id": "Q033",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_unchanged",
+      "reviewed_files": ["codey/codemode/__init__.py"],
+      "verified_files": ["codey/codemode/__init__.py"],
+      "tests": ["tests/test_mechanical_surface.py", "tests/test_protocol_surface.py"],
+      "result": "All 15 public re-exports are identical to their definitions and cold import leaves threads and subprocesses unchanged. Scoped strict Any and Ruff passed. Downstream experimental integration: 160 passed, 13 failed, routed to Q262/Q274/Q275."
     },
     {
-      "responsibility": "codey/codemode: provider connection and selection",
+      "responsibility": "Code Mode frozen capability catalog, model declarations and discovery",
       "files": [
         "codey/codemode/catalog.py"
       ],
       "id": "Q034",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 26,
-      "follow_up": [
-        "Machine gate small batch: tests/test_read_result_contract.py has 3 failures: read-only host/kernel reject task_control write entries; inline declaration assertion conflicts with compact output. Classify fixture vs production contract independently; catalog.py has external dirty work, preserve it. Not caused by durable settlement execution; no assertions changed."
-      ]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/codemode/catalog.py"],
+      "verified_files": ["codey/codemode/catalog.py"],
+      "tests": [
+        "tests/test_read_result_contract.py",
+        "tests/test_codemode_catalog_result_guidance.py",
+        "tests/test_codemode_discovery_session.py",
+        "tests/test_codemode_host.py"
+      ],
+      "reviewed_support": ["tests/test_read_result_contract.py"],
+      "result": "All previously recorded read-result failures pass on the baseline. Remove redundant storage and repeated schema conversion, preserving ordering, digest, declarations, and duplicate rejection in a HEAD comparison probe. 34 passed before and after. Scoped strict Any and Ruff, whole-production mypy, Pyrefly, ty and the kernel precision gate passed."
     },
     {
       "responsibility": "codey/codemode: shared contracts and module services",
@@ -6855,7 +6860,8 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 11
+      "candidate_test_count": 11,
+      "follow_up": ["Q033: two test_mechanical_surface failures call an experimental renderer wrapper that does not accept the production outer_descriptions keyword. Reproduce at prototype admission and preserve the current catalog options."]
     },
     {
       "responsibility": "tools: shared contracts and module services",
@@ -7053,7 +7059,8 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 8
+      "candidate_test_count": 8,
+      "follow_up": ["Q033: five test_protocol_surface failures call an experimental renderer wrapper that does not accept the production outer_descriptions keyword. Reproduce at prototype admission and preserve the current catalog options."]
     },
     {
       "responsibility": "tools: task kernel and execution",
@@ -7068,7 +7075,8 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 6
+      "candidate_test_count": 6,
+      "follow_up": ["Q033: test_protocol_surface has six other failures. One references removed BrowserSession._navigate_on_browser_thread, three compare wait text/condition enum, one consumes its scripted replies with StopIteration in B3 property repair, and one asserts the failed download-result feedback. Validate fixture versus current contract before changing assertions."]
     },
     {
       "id": "Q275B",

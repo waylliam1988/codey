@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q032，接续 Q033。Q031D 的回调签名和 Q030C 的研究调用方仍有后续事项。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q034，接续 Q035。Q031D 的回调签名、Q030C 的研究调用方和 Q033 的上层实验场景仍有后续事项。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1517,3 +1517,19 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_async_runtime.py tests/test_deterministic_input_handoffs.py -k 'browser or native_controls or document_identity' --tb=short`，基线 13 passed、59 deselected，最终 14 passed、59 deselected。`python -m pytest -q tests/test_browser_query_region_identity.py tests/test_browser_query_binding.py tests/test_browser_process.py tests/test_browser_process_reconnect.py --tb=short` 37 passed。最终去重 51 项通过，无 skip 或 error，两个命令退出 0。未选中的非浏览器交接用例保留在对应模块队列。
 - 源和改动的测试通过 `python -m mypy codey/automation/browser_runtime.py tests/test_browser_async_runtime.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 和 `ruff check codey/automation/browser_runtime.py tests/test_browser_async_runtime.py`。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 及 kernel_type_precision_gate 均退出 0。
 - Q032 完成。累计完成 57/333 批，覆盖 113/1009 个生产文件。下一批 Q033 是 Code Mode 包入口。
+
+
+### Q033 Code Mode 包入口
+
+- Q032 已提交 `e79494f6`。完整检查 `codey/codemode/__init__.py`。15 个公开符号分别重导出协议、运行时和数据类型。保留已公开的导入路径，现有重导出没有独立实现可合并。
+- 在 `D:\codey` 的新 Python 进程通过 `python -` 执行导入探针。断言 `__all__` 恰好含这 15 个名字，各对象与定义模块同一身份，导入前后线程列表一致，`sys.addaudithook` 没有观察到 `subprocess.Popen`。退出 0。`python -m mypy codey/codemode/__init__.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 和 `ruff check codey/codemode/__init__.py` 均退出 0。
+- 上层验证 `python -m pytest -q tests/test_mechanical_surface.py tests/test_protocol_surface.py --tb=short` 退出 1，160 passed、13 failed，0 skip 或 error，879.83 秒。7 个错误来自 `tools/mechanical_surface.py`、`tools/protocol_surface.py` 的实验 wrapper 没有接收生产 `refresh_snapshot_contract` 传入的 `outer_descriptions` 等关键字，登记 Q262/Q274。1 个导航用例仍访问已删除的 `BrowserSession._navigate_on_browser_thread`，登记 Q274/Q275 替身迁移。3 个等待失败表现为旧超时文本或三项条件枚举与现行 schema 不一致。属性场景的 `StopIteration` 和下载回执场景的断言失败尚需复现并定位，五个用例一并登记 Q274/Q275。失败发生在包导入之后，没有包入口变更。
+- 包入口检查完成，无需修改生产代码。累计完成 58/333 批，覆盖 114/1009 个生产文件。下一批 Q034 为 Code Mode 冻结目录与发现协议。
+
+
+### Q034 Code Mode 冻结目录与发现协议
+
+- 完整检查 `codey/codemode/catalog.py` 和 `tests/test_read_result_contract.py`。上次记录的 3 个 read-result 失败在当前 HEAD 的修改前基线全部通过，当前测试通过显式目录选择和 `describe` 验证实际合同。此次未改动它们的业务预期。
+- `build_catalog_snapshot` 遇到重复名称直接失败，移除只复制已排序条目的列表。重载生成共用一次参数 schema 转换。用 `git show HEAD:codey/codemode/catalog.py` 在同一 Python 进程加载原实现，对比冻结目录、排序、摘要、完整声明和重复名 ValueError，断言通过，退出 0。积累的实验渲染 wrapper 仍归 Q262/Q274。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_read_result_contract.py tests/test_codemode_catalog_result_guidance.py tests/test_codemode_discovery_session.py tests/test_codemode_host.py --tb=short`，修改前后各 34 passed，0 skip，退出 0。最终定向 `python -m mypy codey/codemode/catalog.py tests/test_read_result_contract.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 从测试文件 3 条诊断降到 0。保留 schema 类型、不可变性和 host 非法返回断言。两文件 Ruff、全生产 mypy（763 文件）、Pyrefly（0 errors、35 suppressed、165 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q034 完成。累计完成 59/333 批，覆盖 115/1009 个生产文件。下一批 Q035 为 Code Mode 参数/源码协议。

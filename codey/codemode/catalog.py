@@ -69,13 +69,11 @@ def build_catalog_snapshot(rows: Iterable[Mapping[str, object] | ToolCatalogEntr
             continue
         entries.append(entry)
     entries.sort(key=lambda item: item.name)
-    unique: list[ToolCatalogEntry] = []
     seen: set[str] = set()
     for entry in entries:
         if entry.name in seen:
             raise ValueError(f"duplicate catalog tool: {entry.name}")
         seen.add(entry.name)
-        unique.append(entry)
     payload = [
         {
             "name": entry.name,
@@ -87,11 +85,11 @@ def build_catalog_snapshot(rows: Iterable[Mapping[str, object] | ToolCatalogEntr
             "read_only": entry.read_only,
             "parallel_safe": entry.parallel_safe,
         }
-        for entry in unique
+        for entry in entries
     ]
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     digest = "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-    return ToolCatalogSnapshot(tuple(unique), digest)
+    return ToolCatalogSnapshot(tuple(entries), digest)
 
 
 def build_catalog_from_specs(specs: Mapping[str, ToolSpec] | Iterable[ToolSpec]) -> ToolCatalogSnapshot:
@@ -262,14 +260,15 @@ def _entry_signatures(entry: ToolCatalogEntry, *, json_edit: bool, include_ordin
                   if include_ordinary else [])
     if entry.name == "edit" and json_edit:
         signatures.append(f"edit(args: {{base_result_ref: string; changes: Record<string, JsonEditValue>}}): Result<{value}>;")
-    patch = canonical_json_object(entry.parameters).get("x-codey-patch")
+    parameters = canonical_json_object(entry.parameters)
+    patch = parameters.get("x-codey-patch")
     if isinstance(patch, dict):
         result = (f"Promise<ToolResult<{value}> & {{patch?: PatchFileResult[]}}>" if compact else f"Result<{value}>")
         signatures.append(f"edit(args: {schema_typescript(patch)}): {result};")
-    semantic = canonical_json_object(entry.parameters).get("x-codey-semantic-edit")
+    semantic = parameters.get("x-codey-semantic-edit")
     if isinstance(semantic, dict):
         signatures.append(f"edit(args: {schema_typescript(semantic)}): Result<{value}>;")
-    flow = canonical_json_object(entry.parameters).get("x-codey-browser-flow")
+    flow = parameters.get("x-codey-browser-flow")
     if isinstance(flow, dict):
         signatures.append(f"browser_snapshot(args: {schema_typescript(flow)}): Result<{{steps: Array<{{tool: string; result_ref: string; value: unknown}}>}}>;")
     return tuple(signatures)
