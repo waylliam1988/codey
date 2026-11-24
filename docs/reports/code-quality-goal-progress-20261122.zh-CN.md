@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q037，接续 Q037B。开放事项保存在治理队列。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q037B，接续 Q037C。开放事项保存在治理队列。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1596,3 +1596,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 参数入口的 `code` 在语法分析前必须可以编码成 UTF-8。传入含孤立代理码点的代码时，旧的统一异常路径将问题归到有效的 `inputs`。同一测试命令新增用例后 1 failed、1 passed，退出 1。现在明确指出 `code` 的 Unicode 无效，普通非 BMP 字符仍可解析。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_codemode_input_encoding.py tests/test_codemode_contract.py tests/test_codemode_source_preflight.py tests/test_codemode_runtime.py --tb=short`，121 passed，0 skip，退出 0。两文件 mypy 严格 Any 和 Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q037 完成。累计完成 65/338 批，覆盖 127/1009 个生产文件。下一批 Q037B 为核心执行和 effect 结算。
+
+
+### Q037B 核心执行和 effect 结算
+
+- Q037 已提交 `e9157b66`。完整检查 `kernel.py` 和启动回归。底层 `NodeWorkerRuntime.execute` 对进程启动错误使用 `runtime_unavailable`，但两个 kernel 入口会先探测运行时身份。用指向缺失本地可执行文件的 `NodeWorkerRuntime` 调用独立执行器及生产 builder，`python -m pytest -q tests/test_codemode_kernel_runtime_start.py --tb=short` 修改前 2 failed，退出 1，两条分支都泄漏 FileNotFoundError。
+- 运行时探测的进程、I/O 和数据错误现在映射为正常的 `ToolResult` 拒绝。两个用例同输入验证 `runtime_unavailable`、0 个子调用和无新执行记录。已存在的修复回执标识仍随生产入口返回。将两处只用于保序去重的 `dict.fromkeys` 改为具体 `None` 值的字典推导，避免类型工具从标准库签名引入 Any。
+- 在 `D:\codey` 运行 `python -m pytest -q tests/test_codemode_kernel_runtime_start.py tests/test_codemode_kernel_integration.py tests/test_codemode_protocol_closure.py tests/test_read_result_contract.py --tb=short`，最终 34 passed，无 skip，退出 0。源和新增用例严格 Any 由 3 条诊断降至 0，Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q037B 完成。累计完成 66/338 批，覆盖 128/1009 个生产文件。下一批 Q037C 为 Node 进程与会话运行时。

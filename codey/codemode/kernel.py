@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import subprocess
 import time
 from collections.abc import Callable, Collection, Mapping, Sequence
 from contextlib import AbstractContextManager
@@ -55,10 +56,10 @@ def _failure_detail(result: ToolResult, refs: Sequence[str], receipts: Mapping[s
     if result.audit.get("error_code") == "argument_encoding":
         # A failed read_data has no result_ref. Keep the upstream receipt
         # visible when downstream argument encoding fails.
-        upstream = dict.fromkeys(
-            receipt.model_text for ref in refs if (receipt := receipts[ref]).call.name == "read_data"
+        upstream = {
+            receipt.model_text: None for ref in refs if (receipt := receipts[ref]).call.name == "read_data"
             and not receipt.ok and receipt.model_text not in detail
-        )
+        }
         detail = "\n".join((*upstream, detail))
     if refs:
         detail += "\nSettled child receipts (the parent failure does not undo them): " + ", ".join(
@@ -148,8 +149,16 @@ class CodeModeReplay(CodeModeStateStore, Protocol):
     def child(self, call: ToolCall, effect_id: str) -> None: ...
 
 
+class _RuntimeUnavailable(RuntimeError):
+    pass
+
+
 def _runtime_contract(runtime: CodeModeRuntime, limits: CodeModeLimits) -> str:
-    return digest({"runtime": runtime.contract_digest(), "limits": limits.as_dict()})
+    try:
+        runtime_digest = runtime.contract_digest()
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        raise _RuntimeUnavailable(f"Cannot identify the CodeMode runtime: {exc}") from exc
+    return digest({"runtime": runtime_digest, "limits": limits.as_dict()})
 
 
 class CodeModeKernelExecutor:
@@ -272,8 +281,13 @@ class CodeModeKernelExecutor:
         elif repair is not None:
             context, delivery, on_delivery = repair.context, repair.delivery, repair.record_delivery
         else:
+            try:
+                runtime_contract = self.runtime_contract or _runtime_contract(self.runtime, self.limits)
+            except _RuntimeUnavailable as exc:
+                return ToolResult(ok=False, call=call, model_text=str(exc),
+                                  audit={**audit, "error_code": "runtime_unavailable", "child_calls": 0})
             trace = {"epoch_ms": int(time.time() * 1000), "seed": secrets.randbits(32),
-                     "runtime_contract": self.runtime_contract or _runtime_contract(self.runtime, self.limits),
+                     "runtime_contract": runtime_contract,
                      "delivery": []}
             context = {"epochMs": trace["epoch_ms"], "seed": trace["seed"], "executionId": self.execution_id}
             delivery, on_delivery = (), record_delivery
@@ -425,7 +439,12 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             )
         child_sink = intent_sink.for_child(call, turn=turn) if isinstance(intent_sink, KernelEffectSink) else intent_sink
         runtime = (runtime_factory or NodeWorkerRuntime)()
-        runtime_contract = _runtime_contract(runtime, limits or CodeModeLimits())
+        try:
+            runtime_contract = _runtime_contract(runtime, limits or CodeModeLimits())
+        except _RuntimeUnavailable as exc:
+            return ToolResult(ok=False, call=call, model_text=str(exc),
+                              canonical={"child_effect_ids": child_effect_ids()},
+                              audit={"error_code": "runtime_unavailable", "child_calls": 0})
         try:
             replay = prepare_replay(call, parent_id, child_sink, repair_context, runtime_contract)
         except ValueError as exc:
@@ -713,8 +732,8 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
         # References only: child facts stay in their original committed receipts.
         ordered_child_effect_ids = child_effect_ids()
         result = _project_patch_results(result, patch_plans, child_effect_ids_by_index, session._memory_results)
-        images = tuple(dict.fromkeys(image for identity in ordered_child_effect_ids
-            for image in session._memory_results[identity].images))
+        images = tuple({image: None for identity in ordered_child_effect_ids
+                        for image in session._memory_results[identity].images})
         result = replace(result, canonical={**result.canonical, "child_effect_ids": ordered_child_effect_ids}, images=images)
         if not result.ok and result.audit.get("error_code") in {"missing_return", "result_encoding", "execution_error", "result_contract"}:
             source = call.args.get("code")

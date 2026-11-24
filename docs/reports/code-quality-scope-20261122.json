@@ -3767,10 +3767,12 @@
       "responsibility": "Code Mode execution orchestration and effect settlement",
       "files": ["codey/codemode/kernel.py"],
       "id": "Q037B",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/test_codemode_kernel_integration.py", "tests/test_codemode_protocol_closure.py", "tests/test_read_result_contract.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/codemode/kernel.py"],
+      "verified_files": ["codey/codemode/kernel.py"],
+      "tests": ["tests/test_codemode_kernel_runtime_start.py", "tests/test_codemode_kernel_integration.py", "tests/test_codemode_protocol_closure.py", "tests/test_read_result_contract.py"],
+      "reviewed_support": ["tests/test_codemode_kernel_runtime_start.py"],
+      "result": "Classify runtime identity probe failures as unavailable before any child dispatch. 34 scoped tests passed. Scoped strict Any and Ruff and all production gates passed."
     },
     {
       "responsibility": "Code Mode Node transport and session runtime",
