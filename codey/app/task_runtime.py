@@ -51,7 +51,7 @@ class TaskRuntimeCoordinator:
         """Interrupt only volatile transports after the durable abort barrier."""
         self._registry.request_stop(run_id)
         provider = self._active_providers.get(run_id)
-        abandon = getattr(provider, "abandon_inflight", None)
+        abandon: object = getattr(provider, "abandon_inflight", None)
         if callable(abandon):
             try:
                 abandon()

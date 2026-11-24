@@ -3155,6 +3155,9 @@
       "result": "A malformed first reply requested one unnecessary repair after the real on-disk snapshot changed. Same final regression fixture on the original module returned stale with two sends; fixed module returns stale with one send. Stable snapshot completes using two sends in both. Direct 49 passed. Callers 18 passed, four independently reproduced failures and six subtests passed. Strict Any 151 source diagnostics to zero, scoped Pyrefly/ty/Ruff and full production type and precision gates passed.",
       "followups": [
         "Revalidate four tests/test_project_auto_local_review_lifecycle.py parametrizations. They fail identically against the original review module. Writer activation can use activate_durable_window, which the fixture's chat counter omits (Q088). Desktop case shows four Writer sends, no Reviewer sends or review events. Trace review dispatch/model selection under Q027/Q090 and update the affected fixture once the contract is proved."
+      ],
+      "commits": [
+        "c78d63ca"
       ]
     },
     {
@@ -3182,7 +3185,7 @@
       ]
     },
     {
-      "responsibility": "codey/app: task kernel and execution",
+      "responsibility": "Task lifecycle, run coordination, durable adapters and service composition",
       "files": [
         "codey/app/runtime_adapters.py",
         "codey/app/submission_types.py",
@@ -3193,13 +3196,45 @@
         "codey/app/task_services.py"
       ],
       "id": "Q027",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/app/runtime_adapters.py",
+        "codey/app/submission_types.py",
+        "codey/app/task_abort.py",
+        "codey/app/task_lifecycle.py",
+        "codey/app/task_lifecycle_projection.py",
+        "codey/app/task_runtime.py",
+        "codey/app/task_services.py"
+      ],
+      "verified_files": [
+        "codey/app/runtime_adapters.py",
+        "codey/app/submission_types.py",
+        "codey/app/task_abort.py",
+        "codey/app/task_lifecycle.py",
+        "codey/app/task_lifecycle_projection.py",
+        "codey/app/task_runtime.py",
+        "codey/app/task_services.py"
+      ],
       "candidate_test_count": 35,
       "followups": [
-        "Historical lazy import entry followup resolved by dedicated Q027A task_submit batch, preserving global agent injection and init cleanup tests. Remaining seven runtime/assembly source files not yet governed."
-      ]
+        "Q027A already accepted task_submit and the lazy import seam. Q026 caller lifecycle routing and fixture validation remains recorded under Q026 with its later owners. Q027 checks did not establish a new contract for automatic desktop review in all routing modes."
+      ],
+      "reviewed_support": [
+        "tests/test_task_lifecycle_projection.py"
+      ],
+      "tests": [
+        "tests/test_task_runtime_coordinator.py",
+        "tests/test_task_lifecycle_projection.py",
+        "tests/test_task_admission_races.py",
+        "tests/test_task_submission_stores.py",
+        "tests/test_task_input_contract.py",
+        "tests/test_task_guidance_reaches_production_entries.py",
+        "tests/test_task_entry_verification.py",
+        "tests/test_shell_approval_lifecycle.py",
+        "tests/durable/test_suspension.py",
+        "tests/test_server.py::RunSnapshotTests::test_finish_non_approval_expires_same_run_shell_approval"
+      ],
+      "result": "Finish now binds checkpoint revision and status to the runtime run ID before storing and emitting the terminal projection. Missing/foreign/foreign preversioned IDs failed all three cases before. The same cases passed after. Prior replay behavior for an already-versioned matching run remains covered. Direct 26 passed, callers 62 passed. All seven sources and the reviewed test cleared scoped strict Any and static gates. Whole production typing and kernel precision passed."
     },
     {
       "responsibility": "codey/automation: package entry and composition",

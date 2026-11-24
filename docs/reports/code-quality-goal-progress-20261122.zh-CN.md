@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q025。Q026 的生产修复已验证，项目生命周期用例待跟进。下一批为 Q027。保留历史验收，复核后续提交实际影响的范围。
+当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q027。Q026 的生产修复已验证，项目生命周期用例待跟进。下一批为 Q028。保留历史验收，复核后续提交实际影响的范围。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1386,3 +1386,13 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 调用方 `python -m pytest -q tests/test_headless_review_uses_selected_provider.py tests/test_project_auto_local_review_lifecycle.py tests/test_standalone_api_review_keeps_explicit_model.py tests/test_server_lazy_state.py --tb=short` 得 18 passed、4 failed、6 subtests passed，退出 1。用 `git show be12856b:codey/app/review_service.py` 在内存替换模块并复跑原四个节点，同样 4 failed，断言和计数相同。额外观测一个桌面路由节点，Writer 4 次发送、计数 0，Reviewer 0 次、无审查事件。生产 Writer 可走 `activate_durable_window`，现有 fixture 只计 `new_chat/reset_window`。桌面 Reviewer 未接纳的具体原因待在 Q027/Q090 跟进，Writer 窗口入口归 Q088。保留四个现有断言，并把其未完成验证和测试脚本类型审计纳入后续。
 - 源文件强 Any 基线 151 条，最终源与新回归的 mypy 强 Any、Pyrefly、ty 和 Ruff 均退出 0。首次 Ruff 识别新增局部导入排序，修正后通过。生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty、`python -m tools.kernel_type_precision_gate` 均退出 0。原始记录在忽略的 `.e2e-artifacts/code-quality-20261122/q026-*.log`。本批 67 个通过的定向测试、4 个未解决的原调用方失败，另 6 个通过子例。
 - 本批部分完成，提交已独立验证的修复。累计 45/325 批完成，完成批覆盖 85/1009 个生产文件。另有 14 个部分批次、其中 8 个文件已有独立验证。Q027A 已完成并沿用验收，接续 Q027 的任务生命周期与运行适配。
+
+
+### Q027 任务协调、终态事件和服务装配
+
+- Q026 已提交 `c78d63ca`。本批查阅了 runtime_adapters、submission_types、task_abort、task_lifecycle、task_lifecycle_projection、task_runtime 和 task_services 的全部文件，按公开入场、停止、终态发布和依赖装配分配验证。此前通过验收的 Q027A 保持历史覆盖。
+- 终态快照的版本应对应实际完成的 run。独立依据是 RunRegistry.finish 用入场 run ID 作为结束事件身份，前端及持久化回放要求同一身份关联一次提交版本。真实 SQLite 中完成 task 至 revision 3，保留另一待办 other-task 的 revision 0。向 `finish_run("task", event)` 提供缺失 run_id、另一任务 ID、另一任务已写入版本三种事件。相同的 `python -m pytest -q tests/test_task_lifecycle_projection.py::test_terminal_version_uses_the_finished_run_id --tb=short` 在修改前实际 3 failed、退出 1，结束事件分别得到缺失版本或 `0/pending`。
+- 在版本读取前绑定 run ID，移除其他身份带来的版本和状态字段，保留同身份预先写入的历史版本。相同三个输入均通过，已有确定版本的回放与当前状态变化也继续通过。其余变更将动态 abort 能力经 callable 检查后调用，故障采集入口按既有 CaptureProviderFailure 端口传递。
+- 工作目录 `D:\codey`。基线 `python -m pytest -q tests/test_task_runtime_coordinator.py tests/test_task_lifecycle_projection.py tests/test_task_admission_races.py tests/test_task_submission_stores.py --tb=short` 为 23 passed，修改后同命令 26 passed。调用方 `python -m pytest -q tests/test_task_input_contract.py tests/test_task_guidance_reaches_production_entries.py tests/test_task_entry_verification.py tests/test_shell_approval_lifecycle.py tests/durable/test_suspension.py tests/test_server.py::RunSnapshotTests::test_finish_non_approval_expires_same_run_shell_approval --tb=short` 为 62 passed。最终两组 88 项通过，0 失败、0 跳过，退出 0。未重新执行 Q026 的待回补项目生命周期用例。
+- 七源强 Any 基线 4 条诊断，修复后七源和深入检查的投影测试共 8 文件，强 Any、Pyrefly、ty、Ruff 均退出 0。配套调用方测试按执行范围记录。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 和 kernel_type_precision_gate 实际退出 0。详细运行记录位于忽略的 `.e2e-artifacts/code-quality-20261122/q027-*.log`。
+- Q027 完成。累计 46/325 批，完成批覆盖 92/1009 个生产文件。部分批次 14 个，其中 8 个文件独立通过。下一批 Q028 为 automation 包入口。

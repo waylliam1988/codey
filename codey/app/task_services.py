@@ -37,6 +37,7 @@ def build_task_deps(
 
     policy = load_review_policy() if review_policy is None else review_policy
     project_review = not allow_self_review(policy) or connect_reviewer is not None
+    default_failure_capture: CaptureProviderFailure = diagnostics.capture_provider_failure
     return TaskRunDeps.from_submission_stores(
         state=state,
         stores=state.task_submission_stores,
@@ -44,7 +45,7 @@ def build_task_deps(
         collect_changes=task_changes.collect_task_changes if collect_changes is None else collect_changes,
         collect_review_changes=(changes.collect_changes if collect_review_changes is None
                                 else collect_review_changes),
-        capture_provider_failure=diagnostics.capture_provider_failure if capture_provider_failure is None else capture_provider_failure,
+        capture_provider_failure=default_failure_capture if capture_provider_failure is None else capture_provider_failure,
         run_review=partial(review_service.run_review, state, review_policy=policy, connect_reviewer=connect_reviewer),
         run_consensus=partial(consensus_service.run_consensus, state),
         project_review=project_review,

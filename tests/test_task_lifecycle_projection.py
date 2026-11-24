@@ -55,6 +55,36 @@ def test_checkpoint_revision_is_carried_by_events_and_current_snapshots(tmp_path
         unsubscribe()
 
 
+@pytest.mark.parametrize(("event_run_id", "preversioned"), [(None, False), ("other-task", False), ("other-task", True)])
+def test_terminal_version_uses_the_finished_run_id(
+    tmp_path: Path, event_run_id: str | None, preversioned: bool,
+) -> None:
+    with closing(AppContext(tmp_path, start_scheduler=False)) as ctx:
+        for run_id in ("task", "other-task"):
+            ctx.durable.admit_input(
+                conversation_id=run_id, request_id=run_id, task_id=run_id,
+                text="Inspect the project", provider_snapshot={},
+            )
+        ctx.durable.complete_task("task", "Finished", state={})
+        checkpoint = ctx.durable.task("task")
+        assert checkpoint.revision != ctx.durable.task("other-task").revision
+        assert ctx.reserve_run(
+            session_id="task", run_id="task", project=None, task="Inspect the project", provider_id="local",
+        ) is not None
+        terminal: JsonObject = {"type": "task_done", "stop_reason": "done"}
+        if event_run_id is not None:
+            terminal["run_id"] = event_run_id
+        if preversioned:
+            terminal = version_task_event(ctx.durable, terminal)
+
+        assert ctx.finish_run("task", dict(terminal))
+        snapshot = decode_json_object(ctx.run_state_payload())
+        event = decode_json_object(snapshot["last_terminal_event"])
+        assert (event["run_id"], event.get("task_revision"), event.get("task_status")) == (
+            "task", checkpoint.revision, "completed",
+        )
+
+
 def test_edit_does_not_restore_old_pause_or_shell_result_from_registry_snapshot(tmp_path: Path) -> None:
     with closing(AppContext(tmp_path, start_scheduler=False)) as ctx:
         ctx.durable.admit_input(conversation_id='chat', request_id='old', task_id='old', text='old', provider_snapshot={})

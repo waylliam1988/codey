@@ -85,7 +85,12 @@ class TaskLifecycleCoordinator:
         """
         from codey.app.task_lifecycle_projection import version_task_event
 
-        versioned = version_task_event(self._durable, event)
+        terminal = dict(event)
+        if terminal.get("run_id") != run_id:
+            terminal["run_id"] = run_id
+            terminal.pop("task_revision", None)
+            terminal.pop("task_status", None)
+        versioned = version_task_event(self._durable, terminal)
         payload_value = self._run_registry.finish(run_id, versioned)
         if payload_value is None:
             return False
