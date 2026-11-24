@@ -568,10 +568,10 @@ def _diff_and_counts(
     )
     additions = 0
     deletions = 0
-    for line in diff_lines:
-        if line.startswith("+") and not line.startswith("+++"):
+    for line in diff_lines[2:]:
+        if line.startswith("+"):
             additions += 1
-        elif line.startswith("-") and not line.startswith("---"):
+        elif line.startswith("-"):
             deletions += 1
     body = "\n".join(diff_lines)
     diff_text = f"diff --git a/{path} b/{path}\n{body}" if body else ""
@@ -704,6 +704,30 @@ class ChangeTracker:
         """Render the current change set; read-only unless pruning."""
 
         snapshots = self.snapshots(paths)
+        if prune_clean:
+            self.prune_clean(skip={snapshot.path for snapshot in snapshots})
+        return self._render_snapshots(snapshots)
+
+    def collect_produced(self) -> dict[str, object]:
+        """Compare and render the same bounded read of each task output."""
+        with self._lock:
+            outputs = [(path, self._before[path], digest) for path, digest in sorted(self._after_hashes.items())]
+        snapshots: list[Snapshot] = []
+        for rel, before, expected in outputs:
+            try:
+                after = _read_text_or_none(_safe_join(self.root, rel), max_bytes=MAX_SNAPSHOT_FILE_BYTES)
+            except (OSError, ValueError):
+                return self._unavailable_task_changes(f"Task output could not be read: {rel}")
+            if _content_hash(after) != expected:
+                return self._unavailable_task_changes(f"Task output changed externally: {rel}")
+            if before != after:
+                snapshots.append(Snapshot(rel, before, after))
+        return self._render_snapshots(snapshots)
+
+    def _unavailable_task_changes(self, error: str) -> dict[str, object]:
+        return {**self._render_snapshots([]), "ok": False, "error": error}
+
+    def _render_snapshots(self, snapshots: list[Snapshot]) -> dict[str, object]:
         files = []
         diff_parts = []
         for snapshot in snapshots:
@@ -727,9 +751,6 @@ class ChangeTracker:
         truncated = len(diff_text) > MAX_SNAPSHOT_DIFF_CHARS
         if truncated:
             diff_text = diff_text[:MAX_SNAPSHOT_DIFF_CHARS].rstrip() + "\n\n... diff truncated ..."
-        changed_paths = {snapshot.path for snapshot in snapshots}
-        if prune_clean:
-            self.prune_clean(skip=changed_paths)
         return {
             "ok": True,
             "mode": "snapshot",

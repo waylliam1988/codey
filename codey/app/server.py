@@ -348,6 +348,7 @@ _GET_ROUTES: dict[str, _GetRoute] = {
     "/api/api_models": lambda ctx, _query: app_api.api_models_response(ctx),
     "/api/research/graph": app_api.research_graph_response,
     "/api/run_details": app_api.run_details_response,
+    "/api/run_changes": app_api.run_changes_response,
     "/api/run_review": app_api.run_review_response,
     "/api/ghost/summary": app_api.ghost_summary_response,
     "/api/ghost/export": lambda ctx, _query: app_api.ghost_export_response(ctx),

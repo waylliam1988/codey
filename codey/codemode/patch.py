@@ -12,6 +12,7 @@ from codey.agents.tool_execution import evaluate_tool_call_policy_for, policy_de
 from codey.operations.file_field_binding import file_rules
 from codey.operations.task_session import TaskSession
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.toolchain.constants import STALE_READ_REFERENCE_CODE
 from codey.toolchain.runtime import ToolOutcome, prepare_edit, replacement_blocks
 from codey.types.json_value import JsonObject, JsonValue, require_json_string
 
@@ -100,11 +101,12 @@ def _check_prepared_edit(root: Path, path: str, args: JsonObject, receipt: ToolR
         if receipt.call.name != "edit" or receipt.call.args != args:
             raise ValueError("patch recovery changed a settled edit")
         return
-    prepared = prepare_edit(root, path, replacement_blocks(args["replacements"]))
+    version = require_json_string(args["expected_version"], "expected_version")
+    prepared = prepare_edit(root, path, replacement_blocks(args["replacements"]), expected_version=version)
     if isinstance(prepared, ToolOutcome):
+        if prepared.error_code == STALE_READ_REFERENCE_CODE:
+            raise ValueError(f"patch file version changed: {path}; reread before retrying")
         raise ValueError(prepared.model_text)
-    if prepared.version != args["expected_version"]:
-        raise ValueError(f"patch file version changed: {path}; reread before retrying")
     if prepared.syntax_regression:
         raise ValueError(f"patch would introduce invalid Python in {path}; check the replacement text")
 

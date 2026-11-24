@@ -1,4 +1,4 @@
-"""Recover unique Python edits with a uniform margin or safe fragment boundary."""
+"""Match uniform indentation and recover safe Python fragment boundaries."""
 from __future__ import annotations
 
 import ast
@@ -55,21 +55,17 @@ def _offset(window: list[str], search: list[str]) -> int | None:
     return delta
 
 
-def align_replacement(content: str, search: str, replacement: str) -> TextEdit | None:
-    """Prepare edit coordinates; the caller owns version checks and writing.
-
-    Exact edits never enter here. Every physical line must match, including its
-    relative indentation, and the replacement must retain the old block margin.
-    """
+def uniform_replacement(content: str, search: str, replacement: str) -> tuple[TextEdit | None, tuple[int, ...]]:
+    """Return the edit or up to five ambiguous match lines in the current draft."""
     search = search.replace("\r\n", "\n")
     replacement = replacement.replace("\r\n", "\n")
     wanted, new = _lines(search), _lines(replacement)
     if (sum(bool(line.strip()) for line in wanted) < 2 or not wanted[0].strip()
             or not _spaces_only(wanted + new)):
-        return None
+        return None, ()
     margin = min(_indent(line) for line in wanted if line.strip())
     if new and min((_indent(line) for line in new if line.strip()), default=margin) != margin:
-        return None
+        return None, ()
     lines = _lines(content)
     matches: list[tuple[int, int]] = []
     for index in range(len(lines) - len(wanted) + 1):
@@ -78,23 +74,31 @@ def align_replacement(content: str, search: str, replacement: str) -> TextEdit |
         delta = _offset(lines[index:index + len(wanted)], wanted)
         if delta is not None:
             matches.append((index, delta))
-            if len(matches) > 1:
-                return None
-    if not matches or not valid_python(content):
-        return None
+            if len(matches) == 5:
+                break
+    if len(matches) != 1:
+        return None, tuple(index + 1 for index, _ in matches)
     index, delta = matches[0]
-    protected = _literal_lines(content)
-    if (protected is None or protected.intersection(range(index + 1, index + len(wanted) + 1))
-            or _literal_lines(replacement) != set()):
-        return None
     shifted = "".join((" " * delta + line if delta > 0 else line[-delta:]) if line.strip() else line
                       for line in new)
     start = sum(map(len, lines[:index]))
     end = start + sum(map(len, lines[index:index + len(wanted)]))
     if not search.endswith("\n") and content[start:end].endswith("\n"):
         end -= 1
-    updated = content[:start] + shifted + content[end:]
-    return TextEdit(start, end, shifted) if valid_python(updated) else None
+    return TextEdit(start, end, shifted), ()
+
+
+def align_replacement(content: str, search: str, replacement: str) -> TextEdit | None:
+    edit, _ = uniform_replacement(content, search, replacement)
+    if edit is None or not valid_python(content):
+        return None
+    protected = _literal_lines(content)
+    first_line = content.count("\n", 0, edit.start) + 1
+    last_line = content.count("\n", 0, max(edit.start, edit.end - 1)) + 1
+    if (protected is None or protected.intersection(range(first_line, last_line + 1))
+            or _literal_lines(replacement) != set()):
+        return None
+    return edit if valid_python(content[:edit.start] + edit.replacement + content[edit.end:]) else None
 
 
 def boundary_replacement(content: str, search: str, replacement: str) -> TextEdit | None:

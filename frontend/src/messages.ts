@@ -14,7 +14,6 @@ interface MessagesDeps extends UiDeps {
   openDocument(sessionId: string, ref: DocumentRef): void;
   statusRow(prefix: string, text: string, options?: Record<string, unknown>): HTMLElement;
   currentProjectPath(): string;
-  openChangesDrawer(project: string, path?: string): unknown;
   attachCurrentChatToPickedProject(): unknown;
   approveCommand(id: string, approved: boolean, scope?: string): unknown;
   continueTask(sessionId: string, sourceRunId: string): unknown;
@@ -165,7 +164,6 @@ export interface MessagesApi {
     const {
       statusRow,
       currentProjectPath,
-      openChangesDrawer,
       attachCurrentChatToPickedProject,
       approveCommand,
       continueTask,
@@ -299,11 +297,13 @@ export interface MessagesApi {
         }),
       );
     } else if (m.type === 'done') {
+      const sessionId = m.sessionId || activeId;
+      const runId = m.runId;
       const action =
-        m.project && m.changed
+        m.project && m.changed && sessionId && runId
           ? {
               label: 'View diff',
-              onclick: () => openChangesDrawer(String(m.project || '')),
+              onclick: () => runtime.ChangesDrawer.openRun(String(m.project), sessionId, runId),
             }
           : null;
       const text = m.text || 'Task complete';
@@ -335,12 +335,17 @@ export interface MessagesApi {
       count.className = 'changes-count';
       const n = m.count || 0;
       count.textContent = `${n} file${n === 1 ? '' : 's'}`;
-      const view = document.createElement('button');
-      view.type = 'button';
-      view.className = 'link-btn';
-      view.textContent = 'View diff';
-      view.onclick = () => openChangesDrawer(typeof m.project === 'string' ? m.project : currentProjectPath());
-      head.append(label, count, view);
+      head.append(label, count);
+      const sessionId = m.sessionId || activeId;
+      const runId = m.runId;
+      if (sessionId && runId) {
+        const view = document.createElement('button');
+        view.type = 'button';
+        view.className = 'link-btn';
+        view.textContent = 'View diff';
+        view.onclick = () => runtime.ChangesDrawer.openRun(div.dataset.project || '', sessionId, runId);
+        head.append(view);
+      }
       div.appendChild(head);
       const files = Array.isArray(m.files) ? m.files : [];
       if (files.length) {
@@ -350,6 +355,13 @@ export interface MessagesApi {
           const row = document.createElement('div');
           row.className = 'changes-file';
           row.innerHTML = `<span class="cf-status">${escapeHtml(f.status || 'M')}</span><button class="cf-path link-btn">${escapeHtml(f.path || '')}</button><span class="cf-stat">+${f.additions || 0} -${f.deletions || 0}</span>`;
+          const pathButton = row.querySelector<HTMLButtonElement>('.cf-path');
+          if (pathButton && sessionId && runId) {
+            pathButton.onclick = (event) => {
+              event.stopPropagation();
+              return runtime.ChangesDrawer.openRun(div.dataset.project || '', sessionId, runId, f.path);
+            };
+          }
           list.appendChild(row);
         }
         div.appendChild(list);

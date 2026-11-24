@@ -108,11 +108,13 @@ def test_owned_command_uses_current_store_identity_and_rejects_later_file_change
     with closing(AppContext(tmp_path / "state", start_scheduler=False, memory_enabled=False)) as state:
         admit(state.durable, run_id="r", session_id="s", task=task, provider_id="local", max_turns=4,
               task_kind="hybrid")
+        result = run_entry_kernel(frame, RunWork([], ExecutionEvidence()), hooks, build_task_deps(state), task_kind="hybrid")
         if external_change:
-            with pytest.raises(RuntimeError, match="project change collection failed"):
-                run_entry_kernel(frame, RunWork([], ExecutionEvidence()), hooks, build_task_deps(state), task_kind="hybrid")
+            assert result.event["stop_reason"] != "done", result.event
+            assert result.event["changed"] is True
+            changes = result.event["changes"]
+            assert isinstance(changes, dict) and changes["changed_count"] == 1
         else:
-            result = run_entry_kernel(frame, RunWork([], ExecutionEvidence()), hooks, build_task_deps(state), task_kind="hybrid")
             assert result.event["stop_reason"] == "done", result.event
         session = frame.entry_session
         assert session is not None and session.verifications

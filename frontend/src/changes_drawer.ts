@@ -5,6 +5,7 @@ import type { ChangeFilePreview, ChangesData, RestoreChangesResult } from './typ
 export interface ChangesDrawerDeps {
   $(id: string): HTMLElement;
   fetchChanges(project: string): Promise<ChangesData>;
+  fetchRunChanges(sessionId: string, runId: string): Promise<ChangesData>;
   fetchChangeFile(project: string, path: string): Promise<ChangeFilePreview>;
   restoreChanges(project: string): Promise<RestoreChangesResult>;
   escapeHtml(text: string): string;
@@ -37,6 +38,7 @@ export interface ChangesDrawerDeps {
   let deps: ChangesDeps;
   let generation = 0;
   let activeProject = '';
+  let activeRun: { sessionId: string; runId: string } | null = null;
   let selectedPath = '';
   let lastData: ChangeData | null = null;
   let loading = false,
@@ -78,8 +80,8 @@ export interface ChangesDrawerDeps {
       copy = $<HTMLButtonElement>('changes-copy');
     refresh.disabled = !activeProject || loading || restoring;
     $('changes-refresh').textContent = failed ? 'Retry' : 'Refresh';
-    $('changes-restore').hidden = lastData?.mode === 'git';
-    restoreButton.disabled = !fresh || loading || restoring || !lastData?.files?.length || lastData.mode === 'git';
+    restoreButton.hidden = activeRun !== null || lastData?.mode === 'git';
+    restoreButton.disabled = restoreButton.hidden || !fresh || loading || restoring || !lastData?.files?.length;
     $('changes-restore').textContent = restoring ? 'Restoring' : 'Restore';
     copy.disabled = !lastData?.diff;
   }
@@ -100,9 +102,13 @@ export interface ChangesDrawerDeps {
       }
     }, 1200);
   }
-  async function openChangesDrawer(project: string, path = ''): Promise<void> {
+  function openRunChanges(project: string, sessionId: string, runId: string, path = ''): Promise<void> {
+    return openChangesDrawer(project, path, { sessionId, runId });
+  }
+
+  async function openChangesDrawer(project: string, path = '', run: typeof activeRun = null): Promise<void> {
     if (!project) return;
-    if (project !== activeProject) {
+    if (project !== activeProject || run?.sessionId !== activeRun?.sessionId || run?.runId !== activeRun?.runId) {
       lastData = null;
       fresh = false;
       restoring = false;
@@ -113,8 +119,9 @@ export interface ChangesDrawerDeps {
       copy.setAttribute('aria-label', 'Copy diff');
     }
     activeProject = project;
+    activeRun = run;
     selectedPath = path;
-    runtime.Workspace?.target('changes', { path });
+    if (!run) runtime.Workspace?.target('changes', { path });
     const scope = $('changes-scope');
     scope.textContent = runtime.UiState.pathName(project);
     scope.title = project;
@@ -133,7 +140,9 @@ export interface ChangesDrawerDeps {
       $('changes-body').innerHTML =
         '<div class="changes-empty"><span class="drawer-loading"><span class="spinner"></span><span>Reading changes...</span></span></div>';
     try {
-      const data = await fetchChanges(project);
+      const data = await (activeRun
+        ? deps.fetchRunChanges(activeRun.sessionId, activeRun.runId)
+        : fetchChanges(project));
       if (request !== generation || project !== activeProject) return false;
       if (!data?.ok || !Array.isArray(data.files) || typeof data.diff !== 'string')
         throw new Error(data?.error || 'Invalid changes result');
@@ -163,6 +172,7 @@ export interface ChangesDrawerDeps {
   function closeChangesDrawer() {
     generation++;
     activeProject = '';
+    activeRun = null;
     selectedPath = '';
     pathFocus = null;
     lastData = null;
@@ -181,9 +191,13 @@ export interface ChangesDrawerDeps {
     const offset = anchor ? anchor.getBoundingClientRect().top - top : 0;
     const files = data.files,
       chunks = parseDiffChunks(data.diff);
-    const mode = data.mode === 'git' ? 'Working tree' : 'Snapshot';
-    $('changes-subtitle').textContent =
-      `${files.length} file${files.length === 1 ? '' : 's'} changed · ${mode}${data.truncated ? ' · Diff list truncated; open a file to load its file diff' : ''}`;
+    const mode = activeRun ? 'Task changes' : data.mode === 'git' ? 'Working tree' : 'Snapshot';
+    const count = data.changed_count ?? files.length;
+    const note =
+      data.error || (data.truncated ? (activeRun ? 'Historical diff truncated' : 'Diff list truncated') : '');
+    $('changes-subtitle').textContent = [mode, `${count} file${count === 1 ? '' : 's'} changed`, note]
+      .filter(Boolean)
+      .join(' · ');
     const previous = new Map(
       Array.from(body.querySelectorAll<ChangeNode>('.change-file')).map((node) => [node.dataset.path, node]),
     );
@@ -207,11 +221,25 @@ export interface ChangesDrawerDeps {
         if (pre && !pre.hidden) void loadFilePreview(node, node.dataset.path || '');
       }
     }
-    if (!files.length) body.innerHTML = '<div class="changes-empty">No changes</div>';
+    if (!files.length) {
+      const empty = document.createElement('div');
+      empty.className = 'changes-empty';
+      empty.textContent = data.error || 'No changes';
+      body.replaceChildren(empty);
+    }
     body.scrollTop = anchor?.isConnected ? body.scrollTop + anchor.getBoundingClientRect().top - top - offset : scroll;
   }
   async function restore() {
-    if (!activeProject || !fresh || loading || restoring || !lastData?.files.length || lastData.mode === 'git') return;
+    if (
+      activeRun ||
+      !activeProject ||
+      !fresh ||
+      loading ||
+      restoring ||
+      !lastData?.files.length ||
+      lastData.mode === 'git'
+    )
+      return;
     const project = activeProject;
     let request = generation;
     const current = () => request === generation && project === activeProject;
@@ -257,14 +285,17 @@ export interface ChangesDrawerDeps {
     }
     function start(path: string): void {
       push();
-      current = { path: (path || '').replace(/^b\//, ''), lines: [] };
+      current = { path, lines: [] };
     }
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const next = lines[i + 1] || '';
       if (line.startsWith('diff --git ')) {
         const m = line.match(/\sb\/(.+)$/);
-        start(m ? m[1] : '');
+        const oldHeader = next.startsWith('--- a/') ? next.slice(6) : '';
+        const newHeader = lines[i + 2] || '';
+        const path = newHeader.startsWith('+++ b/') ? newHeader.slice(6) : oldHeader;
+        start(path || m?.[1] || '');
       } else if (
         line.startsWith('--- /dev/null') &&
         next.startsWith('+++ ') &&
@@ -310,7 +341,7 @@ export interface ChangesDrawerDeps {
     btn.setAttribute('aria-expanded', 'false');
     btn.onclick = () => toggleFileNode(wrap, file.path || '', pre, btn);
     wrap.append(btn);
-    if (isHtmlPath(file.path)) {
+    if (!activeRun && isHtmlPath(file.path)) {
       const preview = document.createElement('button');
       preview.type = 'button';
       preview.className = 'change-html-preview';
@@ -343,7 +374,7 @@ export interface ChangesDrawerDeps {
         ? `<span class="diff-line meta">${escapeHtml(statusMessage[file.preview_status] || 'File preview unavailable')}</span>`
         : matching.length
           ? matching.map((chunk) => renderDiffLines(chunk.lines)).join('')
-          : '<span class="diff-line meta">Open to load file diff</span>';
+          : `<span class="diff-line meta">${activeRun ? 'No retained text diff for this file' : 'Open to load file diff'}</span>`;
     const pre = node.querySelector<HTMLPreElement>('pre');
     if (!pre) return;
     const keepDisplayedContent = lastData?.mode === 'git' && !pre.hidden && pre.childNodes.length > 0;
@@ -357,7 +388,7 @@ export interface ChangesDrawerDeps {
   }
 
   async function loadFilePreview(node: ChangeNode, path: string): Promise<void> {
-    if (lastData?.mode !== 'git' || !activeProject) return;
+    if (activeRun || lastData?.mode !== 'git' || !activeProject) return;
     if (node.dataset.previewLoading === 'true') return;
     const project = activeProject;
     const requestGeneration = generation;
@@ -445,6 +476,7 @@ export interface ChangesDrawerDeps {
   function renderDiffLines(lines: string[]): string {
     let oldLine = 0;
     let newLine = 0;
+    let inHunk = false;
     const out: string[] = [];
     for (const line of lines || []) {
       if (line.startsWith('@@')) {
@@ -452,14 +484,14 @@ export interface ChangesDrawerDeps {
         if (m) {
           oldLine = Number(m[1]);
           newLine = Number(m[2]);
+          inHunk = true;
         }
         continue;
       }
       if (
         line.startsWith('diff --git') ||
         line.startsWith('index ') ||
-        line.startsWith('---') ||
-        line.startsWith('+++')
+        (!inHunk && (line.startsWith('--- ') || line.startsWith('+++ ')))
       ) {
         continue;
       }
@@ -488,6 +520,7 @@ export interface ChangesDrawerDeps {
   runtime.ChangesDrawer = {
     init,
     open: openChangesDrawer,
+    openRun: openRunChanges,
     close: closeChangesDrawer,
   };
 })();

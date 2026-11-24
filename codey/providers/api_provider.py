@@ -6,6 +6,7 @@ import contextlib
 import copy
 import inspect
 import json
+import logging
 import threading
 import time
 from collections.abc import Callable, Mapping
@@ -37,6 +38,7 @@ from codey.providers.compat_transport import optional_callable
 from codey.providers.context_checkpoint import output_reduction_ready
 from codey.providers.context_ledger import ContextLedger
 from codey.providers.display_stream import DisplayStream
+from codey.providers.request_metrics import RequestSection, first_changed_section, request_shape
 from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget, RequestContextCount
 from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
 from codey.types.json_value import JsonObject, decode_json_object
@@ -66,6 +68,7 @@ class ApiProvider:
     # Single in-flight (fail-fast) + generation: sequential worker-thread
     # sends are safe and Stop-abandoned late replies skip history.
     thread_safe_send = True
+    _last_request_shape: tuple[RequestSection, ...] = ()
 
     def __init__(
         self,
@@ -779,6 +782,11 @@ class ApiProvider:
         finally:
             record = ApiExchangeUsage(exchange_id, connection_id, self.model, self.api_protocol, count, context_budget,
                                       collector.usage, collector.status, outcome, self.purpose)
+            logging.getLogger(__name__).debug(
+                "provider usage protocol=%s outcome=%s input=%s cached_input=%s output=%s",
+                self.api_protocol, outcome, record.usage.input_tokens, record.usage.cached_input_tokens,
+                record.usage.output_tokens,
+            )
             # Observation failure must never replay or invalidate a generated answer.
             with contextlib.suppress(OSError, ValueError):
                 sink(record)
@@ -812,6 +820,9 @@ class ApiProvider:
         items: list[dict[str, object]] = [
             {name: value for name, value in decode_json_object(item).items()
              if name not in {TEXT_RESULTS_KEY, "_codey_attachment_entries"}} for item in raw_items]
+        from codey.providers.task_prompt import project_retry_tasks
+
+        project_retry_tasks(items)
         if settings.text_tool_contract:
             # Frozen request declarations, like native tools, belong to this
             # payload only. Never append obsolete tool catalogs to history.
@@ -1029,6 +1040,13 @@ class ApiProvider:
         with contextlib.suppress(Exception):
             self._observe_http_attempt(attempt=attempt, data=data, phase=phase,
                                        response_bytes=response_bytes, seconds=seconds)
+            log = logging.getLogger(__name__)
+            if phase == "request" and log.isEnabledFor(logging.DEBUG):
+                sections, settings = request_shape(data)
+                difference = first_changed_section(self._last_request_shape, sections) if self._last_request_shape else None
+                self._last_request_shape = sections
+                log.debug("provider request protocol=%s attempt=%s bytes=%s first_changed=%s settings=%s sections=%s",
+                          self.api_protocol, attempt, len(data), difference, settings, sections)
 
     def _observe_http_attempt(self, *, attempt: int, data: bytes, phase: str,
                               response_bytes: int, seconds: float) -> None:

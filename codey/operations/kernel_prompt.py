@@ -120,12 +120,14 @@ def kernel_prompt_for_session(
     done_spec: ToolSpec | None = None,
     whole_submission: bool = False,
 ) -> str:
+    from codey.providers.task_prompt import TASK_HEADING
+
     task_text = str(user_task or session.task_text or "").strip()
     handoff = str(session.handoff or "").strip()
     project = str(session.project or "").strip() or "-"
     visible_names = tool_names
     parts = [
-        f"User task (verbatim):\n{task_text or '(no task text)'}\n",
+        f"{TASK_HEADING}{task_text or '(no task text)'}\n",
         f"Workspace: {project}\nTask kind: {session.task_kind}",
     ]
     if handoff:
@@ -460,26 +462,37 @@ def _execution_result_context(result: ToolResult) -> str:
     return text + ("\nExecution facts: " + json.dumps(receipt.facts(), ensure_ascii=False) if receipt is not None else "")
 
 
-def _result_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool = True,
-                    tool_names: tuple[str, ...] | None = None) -> str:
-    text = (result.model_text or "")
-    if result.kind == "accepted":
-        value = decode_json_object(result.canonical["value"])
-        task_ref = require_json_string(value["task_ref"], "task_ref")
-        task_args: dict[str, object] = {"task_ref": task_ref, "wait_ms": 30000}
-        text += ('\n\nBackground admission only. The command result is not in this receipt. '
-                 'Final status and bounded output will be delivered automatically; do not poll or repeat the command.')
-        if tool_names is None or "task_output" in tool_names:
-            text += ' If intermediate output is useful now, inspect task_output(' + json.dumps(task_args) + ').'
-        if tool_names is None or "task_cancel" in tool_names:
-            text += ' Use task_cancel to stop it.'
-        return text + ' Wait for the final result before reporting its outcome.'
-    if result.call.name == "codemode":
-        if result.ok:
-            text = f"Result data (JSON):\n{text}"
-        text += _child_failure_context(result, session, receipt_recovery=receipt_recovery)
-        text += _browser_followup_context(result, session)
-    text += _source_failure_context(result, session)
+def _edit_result_context(result: ToolResult, session: TaskSession) -> str:
+    from codey.operations.kernel_provenance import _kernel_workspace_identity_of
+    from codey.toolchain.constants import STALE_READ_REFERENCE_CODE
+    from codey.utils.object_fields import object_fields
+
+    if result.call.name not in {"edit", "write_file"}:
+        return ""
+    if result.audit.get("error_code") == STALE_READ_REFERENCE_CODE:
+        if "symbol" in result.call.args or "content" in result.call.args:
+            return "\nRefresh the file's complete read reference before preparing the replacement."
+        return "\nRefresh the affected lines and their file version before resubmitting this replacement."
+    if not result.ok:
+        return ""
+    if result.audit.get("changed") is False:
+        return "\nThis edit produced no file change. If the requested change is still outstanding, prepare a different replacement."
+    identity = _kernel_workspace_identity_of(result)
+    if (result.audit.get("changed") is not True or identity is None
+            or (identity.revision, identity.fingerprint) != (session.workspace_revision, session.workspace_fingerprint)):
+        return ""
+    if any(result.audit.get(field) for field in (
+        "indentation_adjusted", "boundary_adjusted", "line_end_space_adjusted", "python_import_binding",
+    )):
+        preview = result.presentation.get("preview")
+        diff = preview.get("diff") if object_fields(preview) else None
+        hunk = next((line for line in diff.splitlines() if line.startswith("@@ ")), "") if isinstance(diff, str) else ""
+        return "\nThe applied changes include the adjustment above." + (f" Changed hunk {hunk[:160]}" if hunk else "")
+    return "\nThis write is settled at the current workspace version. Use the offered project check when the edits are ready."
+
+
+def _receipt_result_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool) -> str:
+    text = ""
     result_ref = next((key for key, value in session._memory_results.items() if value is result), "")
     if result_ref:
         source_result = result.call.name in SOURCE_TOOL_NAMES
@@ -504,6 +517,13 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
                          "Do not read this read_tool_result receipt to recover the original content. ")
                 text += ("The original receipt has no further retained pages." if page["next_offset"] is None else
                          "To continue the original receipt, use read_tool_result(" + json.dumps(continuation) + ").")
+        elif result.call.name in {"run", "shell"} and not result.ok:
+            receipt = execution_receipt(result)
+            if receipt is not None and receipt.exit_code not in {None, 0}:
+                text += ("\nUse the failure output already delivered to identify the next repair. "
+                         "After an edit, rerun the selected check.")
+            if result.truncated and receipt_recovery:
+                text += f'\nRecover omitted output with read_tool_result({{"result_ref":"{receipt_handle or result_ref}"}}).'
         elif receipt_recovery:
             text += (f'Read omitted detail with read_tool_result({{"result_ref":"{receipt_handle or result_ref}"}}); '
                      "query accepts a literal keyword. do not repeat execution to recover output."
@@ -511,6 +531,37 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
         text += _execution_result_context(result)
         if not result.ok and "source_failure" in result.canonical:
             text += "\nSource acquisition failure: " + json.dumps(result.canonical["source_failure"], ensure_ascii=False)
+    return text
+
+
+def _result_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool = True,
+                    tool_names: tuple[str, ...] | None = None) -> str:
+    text = (result.model_text or "")
+    if result.kind == "accepted":
+        value = decode_json_object(result.canonical["value"])
+        task_ref = require_json_string(value["task_ref"], "task_ref")
+        task_args: dict[str, object] = {"task_ref": task_ref, "wait_ms": 30000}
+        text += ('\n\nBackground admission only. The command result is not in this receipt. '
+                 'Final status and bounded output will be delivered automatically; do not poll or repeat the command.')
+        if tool_names is None or "task_output" in tool_names:
+            text += ' If intermediate output is useful now, inspect task_output(' + json.dumps(task_args) + ').'
+        if tool_names is None or "task_cancel" in tool_names:
+            text += ' Use task_cancel to stop it.'
+        return text + ' Wait for the final result before reporting its outcome.'
+    if result.call.name == "codemode":
+        if result.ok:
+            text = f"Result data (JSON):\n{text}"
+        text += _child_failure_context(result, session, receipt_recovery=receipt_recovery)
+        text += _browser_followup_context(result, session)
+        children = result.canonical.get("child_effect_ids")
+        if isinstance(children, list):
+            for ref in children:
+                child = session._memory_results.get(ref) if isinstance(ref, str) else None
+                if child is not None:
+                    text += _edit_result_context(child, session)
+    text += _edit_result_context(result, session)
+    text += _source_failure_context(result, session)
+    text += _receipt_result_context(result, session, receipt_recovery=receipt_recovery)
     if result.ok and result.call.name == "web_search" and session.search_results:
         mapping = session.search_results
         observation = result.canonical.get("research_observation")

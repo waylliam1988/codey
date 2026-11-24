@@ -260,6 +260,8 @@ def _build_project_done_event(ctx: ProjectRun) -> dict[str, object]:
 
 
 def _finalize_project(ctx: ProjectRun) -> ModeOutcome:
+    from codey.runs.task_diff import record_task_changes
+
     assert ctx.result is not None
     result = ctx.result
     ctx.receipt = build_task_receipt(
@@ -270,8 +272,8 @@ def _finalize_project(ctx: ProjectRun) -> ModeOutcome:
         checks_passed=result.checks_passed,
     )
     ctx.hooks.append_ledger(
-        lambda ledger: ledger.append_changes_collected(
-            ctx.task_changes,
+        lambda ledger: record_task_changes(
+            ledger, ctx.deps.persistence.managed_outputs, ctx.task_changes,
             checks_passed=result.checks_passed,
             receipt=ctx.receipt.to_dict(),
         )

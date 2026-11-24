@@ -8,10 +8,9 @@ from io import StringIO
 from pathlib import Path
 from typing import TypeAlias
 
-import tree_sitter_javascript
-import tree_sitter_typescript
-from tree_sitter import Language, Parser
+from tree_sitter import Parser
 
+from codey.toolchain.ecmascript import ecmascript_language
 from codey.toolchain.runtime import ToolOutcome, safe_join
 from codey.types.json_value import JsonObject, JsonValue
 from codey.workspace.paths import content_hash, ensure_not_symlink
@@ -63,12 +62,8 @@ def syntax_query(root: Path, rel: str, node_type: str, *, limit: int = 40) -> To
             if len(matches) >= limit or visited >= 20000:
                 break
     else:
-        suffix = path.suffix.lower()
-        if suffix in {".js", ".jsx", ".mjs", ".cjs"}:
-            language = Language(tree_sitter_javascript.language())
-        elif suffix in {".ts", ".tsx"}:
-            language = Language(tree_sitter_typescript.language_tsx() if suffix == ".tsx" else tree_sitter_typescript.language_typescript())
-        else:
+        language = ecmascript_language(path.suffix.lower())
+        if language is None:
             return ToolOutcome.error("syntax_query supports Python and JS/TS; use language server documentSymbol for other languages")
         tree = Parser(language).parse(data)
         pending = [tree.root_node]

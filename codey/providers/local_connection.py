@@ -1,6 +1,8 @@
 """Resolve a Local connection once before entering the shared API runtime."""
 from __future__ import annotations
 
+import logging
+
 from codey.providers import local_config as _local_config
 from codey.providers import local_discovery as _local_discovery
 from codey.providers.api_provider import ApiProvider
@@ -166,7 +168,7 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
                                     requested=requested_native, api_key=config.api_key)
     text_format = ("json_schema" if config.native_tools_mode == "json"
                    or requested_native and not native_tools and config.thinking_enabled is not True else "plain")
-    return ApiRunSelection("local", _target_revision(config), config.model, config.api_protocol,
+    resolved = ApiRunSelection("local", _target_revision(config), config.model, config.api_protocol,
                            native_tools, window,
                            budget.context_reserve_tokens, min(budget.context_keep_recent_tokens, window - budget.context_reserve_tokens),
                            False if text_format == "json_schema" else config.thinking_enabled, config.reasoning_effort,
@@ -175,6 +177,16 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
                            budget_source="server" if budget.source == "server" else "server_and_configuration" if counter == "koboldcpp" else "configuration",
                            text_tool_format=text_format,
                            supports_images=model_metadata(config.base_url, config.model, api_key=config.api_key).get("supports_images") is True)
+    logging.getLogger(__name__).debug(
+        "local selection model=%s protocol=%s window=%s window_source=%s output=%s output_source=context_reserve "
+        "native_requested=%s native=%s tool_source=%s format=%s thinking=%s effort=%s reasoning_source=%s",
+        resolved.model_id, resolved.protocol, resolved.context_window_tokens, resolved.budget_source,
+        resolved.output_tokens, requested_native, resolved.native_tools,
+        "endpoint_compatibility" if requested_native and not native_tools else "configuration", resolved.text_tool_format,
+        resolved.thinking_enabled, resolved.reasoning_effort,
+        "json_schema" if text_format == "json_schema" else "selection" if config.thinking_enabled is not None else "endpoint_default",
+    )
+    return resolved
 
 
 def _target_revision(config: _local_config.LocalProviderConfig) -> str:

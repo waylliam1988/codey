@@ -23,6 +23,7 @@ declare global {
     ChangesDrawer: {
       init(deps: import('../changes_drawer').ChangesDrawerDeps): void;
       open(project: string, path?: string): Promise<void>;
+      openRun(project: string, sessionId: string, runId: string, path?: string): Promise<void>;
       close(): void;
     };
     LocalContextDrawer: {

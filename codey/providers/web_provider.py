@@ -9,14 +9,26 @@ readable.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, cast
+from typing import ClassVar, Protocol
+
+from playwright.sync_api import Page
 
 from codey.automation import browser
 from codey.automation.browser import DEFAULT_PORT, DEFAULT_PROFILE, Session
+from codey.durable.session import DurableSession
 from codey.providers.diagnostics import ProviderFailure
+from codey.providers.request_metrics import text_section
+from codey.providers.task_prompt import TASK_HEADING
 from codey.providers.web_driver import run_web_new_chat, run_web_send
+
+
+class WebDriver(Protocol):
+    def new_chat(self, page: Page, timeout: float | None = None) -> None: ...
+
+    def chat(self, page: Page, text: str, response_timeout: float = 300.0) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -25,7 +37,7 @@ class WebProviderSpec:
 
     provider_id: str
     name: str
-    driver: Any                      # site-specific driver module
+    driver: WebDriver
     grace_attr: str = "TIMEOUT_GRACE"
     blank_message: str = ""          # non-empty: reject blank sends
 
@@ -40,8 +52,9 @@ class WebChatProvider:
         self.session = session
         self.last_failure: ProviderFailure | None = None
         self.name: str = type(self).spec.name
-        self._attachment_binding: tuple[Any, str, str] | None = None
+        self._attachment_binding: tuple[DurableSession, str, str] | None = None
         self._attachment_entries: set[str] = set()
+        self._first_send = True
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.session!r})"
@@ -80,8 +93,9 @@ class WebChatProvider:
             func=lambda: self.spec.driver.new_chat(self.session.page, **kwargs),
             timeout=timeout,
         )
+        self._first_send = True
 
-    def bind_input_attachments(self, durable: Any, session_id: str, task_id: str) -> None:
+    def bind_input_attachments(self, durable: DurableSession, session_id: str, task_id: str) -> None:
         self._attachment_binding = (durable, session_id, task_id)
 
     def send(self, text: str, timeout: float | None = None) -> str:
@@ -104,16 +118,22 @@ class WebChatProvider:
             items, entries = pending_attachments(*self._attachment_binding, self._attachment_entries)
             text = browser_attachment_text(self.spec.provider_id, text, items)
         text = clock_context() + "\n\n" + text
-        kwargs = {}
-        if timeout is not None:
-            kwargs["response_timeout"] = timeout
-        reply = cast(str, run_web_send(
+        kwargs = {} if timeout is None else {"response_timeout": timeout}
+        log = logging.getLogger(__name__)
+        if log.isEnabledFor(logging.DEBUG):
+            log.debug("web send provider=%s first_send=%s task_sections=%s section=%s",
+                      self.spec.provider_id, self._first_send, text.count(TASK_HEADING), text_section("message", text))
+        grace: object = getattr(self.spec.driver, self.spec.grace_attr)
+        if not isinstance(grace, (int, float)):
+            raise ValueError("invalid web driver timeout grace")
+        reply = run_web_send(
             self,
             page=self.session.page,
             func=lambda: self.spec.driver.chat(self.session.page, text, **kwargs),
             response_timeout=timeout,
-            grace=getattr(self.spec.driver, self.spec.grace_attr),
-        ))
+            grace=grace,
+        )
+        self._first_send = False
         self._attachment_entries.update(entries)
         return reply
 

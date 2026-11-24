@@ -457,6 +457,16 @@ def run_details_response(ctx: AppContext, query: dict[str, list[str]]) -> tuple[
     }
 
 
+def run_changes_response(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, dict[str, object]]:
+    from codey.runs.task_diff import load_task_changes
+
+    session_id, run_id = query_value(query, "session_id"), query_value(query, "run_id")
+    if not session_id or not run_id:
+        return 400, {"ok": False, "error": "session_id and run_id required"}
+    changes = load_task_changes(ctx.run_ledgers, ctx.managed_outputs, session_id, run_id)
+    return (200, changes) if changes is not None else (404, {"ok": False, "error": "Run changes unavailable"})
+
+
 def run_review_response(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, dict[str, object]]:
     """Structured cold read using the same authenticated run lookup as Details."""
     from codey.reviews.core import review_result_payload
@@ -902,6 +912,7 @@ __all__ = [
     "research_restore_response",
     "restore_changes_response",
     "run_details_response",
+    "run_changes_response",
     "run_review_response",
     "run_submit_response",
     "save_local_provider_response",

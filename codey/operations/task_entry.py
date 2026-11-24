@@ -29,7 +29,7 @@ from codey.providers.compat_transport import provider_window_ref, require_callab
 from codey.providers.transport import ProviderTransport
 from codey.research.tools import ResearchTools
 from codey.runtime.core.outcome import OperationOutcome
-from codey.utils.object_fields import object_fields
+from codey.utils.object_fields import object_fields, sequence_items
 from codey.utils.refs import coerce_int
 from codey.workspace.changes import ChangeTracker
 from codey.workspace.config import ProjectConfigLoadResult
@@ -275,23 +275,23 @@ def _entry_project_receipt(frame: RunFrame, work: RunWork, hooks: RunHooks, deps
                            session: TaskSession, result: KernelResult, tracker: ChangeTracker | None) -> tuple[dict[str, object], dict[str, object] | None]:
     from codey.operations.task_session import session_checks_passed
     from codey.runs.receipt import build_task_receipt
+    from codey.runs.task_diff import record_task_changes
 
     if tracker is None or not session.edited_files:
         return {"display": {"summary": str(result.summary or "")[:2000]}}, None
     changes = deps.collect_changes(frame.project_text, tracker)
-    if not isinstance(changes, dict) or changes.get("ok") is not True:
-        raise RuntimeError("project change collection failed; cannot publish its receipt")
     checks_passed = session_checks_passed(session, result.proof)
+    if changes.get("ok") is not True:
+        changes = {**changes, "files": [{"path": path} for path in sorted(session.edited_files)],
+                   "changed_count": len(session.edited_files), "mode": ""}
     receipt: dict[str, object] = build_task_receipt(changes, proof=result.proof, checks_passed=checks_passed).to_dict()
     if work.ledger is not None:
-        hooks.append_ledger(lambda ledger: ledger.append_changes_collected(
-            changes, checks_passed=checks_passed, receipt=receipt))
-    value = changes.get("files", [])
-    files: list[object] = []
-    if isinstance(value, list):
-        files = value
+        hooks.append_ledger(lambda ledger: record_task_changes(
+            ledger, deps.managed_outputs, changes, checks_passed=checks_passed, receipt=receipt))
+    value = changes.get("files")
+    files = list(value[:3]) if sequence_items(value) else []
     payload: dict[str, object] = {"changed_count": changes.get("changed_count", 0),
-               "files": files[:3], "mode": changes.get("mode"),
+               "files": files, "mode": changes.get("mode"),
                "project": frame.project_text}
     return receipt, payload
 

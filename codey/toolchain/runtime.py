@@ -48,7 +48,7 @@ from codey.toolchain.constants import (
     STALE_READ_REFERENCE_ERROR,
 )
 from codey.toolchain.edit_text import TextEdit, count_matches, exact_raw_edit, normalized_text, trailing_space_matches
-from codey.toolchain.indentation import align_replacement, boundary_replacement, valid_python
+from codey.toolchain.indentation import align_replacement, boundary_replacement, uniform_replacement, valid_python
 from codey.toolchain.line_prefix import strip_line_number_prefixes as _strip_line_number_prefixes
 from codey.toolchain.presentation import edit_preview
 from codey.types.json_value import JsonObject, JsonValue
@@ -757,12 +757,39 @@ class PreparedEdit:
     syntax_regression: bool = False
 
 
-def prepare_edit(root: Path, rel: str, blocks: list[EditBlock], *,
-                 expected_version: str = "",
-                 transform_content: Callable[[str, str], tuple[str, JsonObject]] | None = None) -> PreparedEdit | ToolOutcome:
-    if problem := _edit_block_error(blocks):
-        return ToolOutcome.error(problem)
+def _recover_indentation(rel: str, view: str, old: str, new: str, index: int, count: int) -> TextEdit | ToolOutcome | None:
+    from codey.toolchain.ecmascript import ASSISTED_SUFFIXES, ecmascript_language, safe_alignment
 
+    suffix = Path(rel).suffix.lower()
+    if suffix == ".py":
+        return align_replacement(view, old, new)
+    if suffix not in ASSISTED_SUFFIXES or len(view.encode("utf-8")) > WRITE_MAX_FILE_BYTES:
+        return None
+    language = ecmascript_language(suffix)
+    if language is None:
+        return None
+    candidate, ambiguous = uniform_replacement(view, old, new)
+    if ambiguous:
+        locations = ", ".join(map(str, ambiguous))
+        return ToolOutcome.error(_bounded_failure_output([
+            f"SEARCH text matches multiple indentation-aligned locations in {rel}.",
+            f"Candidate start lines in the current draft include {locations}.",
+            EXACT_REPLACEMENT_CONTEXT_HINT,
+            _replacement_failure_note(index, count),
+        ]))
+    return candidate if candidate is not None and safe_alignment(language, view, candidate) else None
+
+
+def _valid_assisted_syntax(suffix: str, text: str) -> bool:
+    from codey.toolchain.ecmascript import ecmascript_language, valid_ecmascript
+
+    if suffix == ".py":
+        return valid_python(normalized_text(text))
+    language = ecmascript_language(suffix)
+    return language is not None and valid_ecmascript(language, normalized_text(text))
+
+
+def _read_edit_target(root: Path, rel: str) -> str | ToolOutcome:
     path, error = _checked_tool_path(root, rel, tool="edit")
     if error is not None or path is None:
         return error or ToolOutcome.error("path could not be resolved")
@@ -771,11 +798,21 @@ def prepare_edit(root: Path, rel: str, blocks: list[EditBlock], *,
         return verify_error
     try:
         with path.open("r", encoding="utf-8", newline="") as handle:
-            content = handle.read()
+            return handle.read()
     except UnicodeDecodeError:
         return ToolOutcome.error(f"not utf-8 text: {rel}")
     except (OSError, ValueError):
         return ToolOutcome.error(f"cannot read file: {rel}")
+
+
+def prepare_edit(root: Path, rel: str, blocks: list[EditBlock], *,
+                 expected_version: str = "",
+                 transform_content: Callable[[str, str], tuple[str, JsonObject]] | None = None) -> PreparedEdit | ToolOutcome:
+    if problem := _edit_block_error(blocks):
+        return ToolOutcome.error(problem)
+    content = _read_edit_target(root, rel)
+    if isinstance(content, ToolOutcome):
+        return content
     from codey.workspace.paths import content_hash
 
     version = content_hash(content)
@@ -783,6 +820,7 @@ def prepare_edit(root: Path, rel: str, blocks: list[EditBlock], *,
         return ToolOutcome.error(STALE_READ_REFERENCE_ERROR, error_code=STALE_READ_REFERENCE_CODE)
 
     updated = content
+    suffix = Path(rel).suffix.lower()
     aligned = 0
     boundary_adjusted = 0
     whitespace_adjusted = 0
@@ -807,13 +845,14 @@ def prepare_edit(root: Path, rel: str, blocks: list[EditBlock], *,
                 start = view.find(retried.old_string)
                 updated = TextEdit(start, start + len(retried.old_string), retried.new_string).apply(updated)
                 continue
-            recovered = (align_replacement(view, old, new)
-                         if Path(rel).suffix.lower() == ".py" else None)
+            recovered = _recover_indentation(rel, view, old, new, index, len(blocks))
+            if isinstance(recovered, ToolOutcome):
+                return recovered
             if recovered is not None:
                 updated = recovered.apply(updated)
                 aligned += 1
                 continue
-            boundary = boundary_replacement(view, old, new) if Path(rel).suffix.lower() == ".py" else None
+            boundary = boundary_replacement(view, old, new) if suffix == ".py" else None
             if boundary is not None:
                 updated = boundary.apply(updated)
                 boundary_adjusted += 1
@@ -845,8 +884,9 @@ def prepare_edit(root: Path, rel: str, blocks: list[EditBlock], *,
         updated, assistance = transform_content(content, updated)
     if len(updated.encode("utf-8")) > WRITE_MAX_FILE_BYTES:
         return ToolOutcome.error(f"file too large to write: {rel}")
-    if (aligned or boundary_adjusted or (whitespace_adjusted and Path(rel).suffix.lower() == ".py")) and not valid_python(normalized_text(updated)):
-        return ToolOutcome.error("automatic edit assistance cannot safely apply this batch: resulting Python is invalid; no replacements written")
+    if (aligned or boundary_adjusted or (whitespace_adjusted and suffix == ".py")) and not _valid_assisted_syntax(suffix, updated):
+        language_name = "Python" if suffix == ".py" else "JS/TS"
+        return ToolOutcome.error(f"automatic edit assistance cannot safely apply this batch: resulting {language_name} is invalid; no replacements written")
     syntax_hint = _python_syntax_regression_hint(rel, content, updated)
     count = len(blocks)
     label = "replacement" if count == 1 else "replacements"

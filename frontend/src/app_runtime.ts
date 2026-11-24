@@ -904,6 +904,13 @@ async function fetchChangeFile(project: string, path: string) {
   return data;
 }
 
+async function fetchRunChanges(sessionId: string, runId: string) {
+  const query = new URLSearchParams({ session_id: sessionId, run_id: runId });
+  const response = await fetch(`/api/run_changes?${query}`);
+  if (!response.ok) throw new Error('Run changes unavailable');
+  return decodeChangesData(await response.json());
+}
+
 async function restoreChanges(project: string) {
   const r = await fetch('/api/changes/restore', {
     method: 'POST',
@@ -920,12 +927,12 @@ async function restoreChanges(project: string) {
 
 async function maybeAddChangesSummary(sid: string, eventKey = '', runId = '') {
   const project = sessionProjectPath(sid);
-  if (!project) return;
+  if (!project || !runId) return;
   try {
-    const data = await fetchChanges(project);
+    const data = await fetchRunChanges(sid, runId);
     if (!data.ok || !data.changed_count) return;
     const files = Array.isArray(data.files) ? data.files.slice(0, 3) : [];
-    addToSession(sid, { type: 'changes', count: data.changed_count, files, project, eventKey, runId });
+    addToSession(sid, { type: 'changes', count: data.changed_count, files, project, eventKey, runId, sessionId: sid });
   } catch {}
 }
 
@@ -1095,6 +1102,7 @@ async function boot() {
   runtime.ChangesDrawer.init({
     $,
     fetchChanges,
+    fetchRunChanges,
     fetchChangeFile,
     restoreChanges,
     escapeHtml,
@@ -1181,7 +1189,6 @@ async function boot() {
     openDocument,
     statusRow,
     currentProjectPath,
-    openChangesDrawer,
     attachCurrentChatToPickedProject,
     approveCommand,
     continueTask,

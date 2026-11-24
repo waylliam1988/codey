@@ -14,7 +14,6 @@ function editDeps(): Parameters<typeof window.Messages.init>[0] {
     openDocument: vi.fn(),
     statusRow: () => document.createElement('div'),
     currentProjectPath: () => '',
-    openChangesDrawer: vi.fn(),
     attachCurrentChatToPickedProject: vi.fn(),
     approveCommand: vi.fn(),
     continueTask: vi.fn(),

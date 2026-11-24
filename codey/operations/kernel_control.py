@@ -233,7 +233,9 @@ def _retry_prompt(context: KernelContext, snapshot: TurnSnapshot, decision: Retr
         return task
     # A retry can be sent over a newly connected provider with no warm chat history.
     if text_reply and task:
-        return "User task (verbatim):\n" + task + "\n\n" + decision["prompt"]
+        from codey.providers.task_prompt import retry_task_prompt
+
+        return retry_task_prompt(task, decision["prompt"], scoped=context.request_scoped_context)
     return decision["prompt"]
 
 

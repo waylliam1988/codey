@@ -12,7 +12,6 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 from codey.providers.diagnostics import ProviderFailure
 from codey.runs.receipt import task_receipt_from_payload
@@ -270,15 +269,17 @@ class RunLedgerWriter:
 
     def append_changes_collected(
         self,
-        changes: dict[str, Any] | None,
+        changes: dict[str, object] | None,
         *,
         checks_passed: bool | None = None,
-        receipt: dict[str, Any] | None = None,
+        receipt: dict[str, object] | None = None,
+        diff_artifact: dict[str, object] | None = None,
+        diff_unavailable: str = "",
     ) -> None:
         if not isinstance(changes, dict):
             changes = {}
         source_files_value = changes.get("files")
-        source_files = source_files_value if isinstance(source_files_value, list) else []
+        source_files: list[object] = source_files_value if isinstance(source_files_value, list) else []
         files: list[dict[str, object]] = []
         for item in source_files:
             if not isinstance(item, dict):
@@ -302,6 +303,8 @@ class RunLedgerWriter:
             changed_count=_int_or_none(changes.get("changed_count")) or 0,
             files=files,
             files_truncated=len(source_files) > MAX_CHANGE_FILES,
+            diff_artifact=diff_artifact,
+            diff_unavailable=_clip(diff_unavailable, MAX_TEXT_CHARS) or None,
             checks_passed=(checks_passed if type(checks_passed) is bool else False)
             if checks_passed is not None else None,
             # The receipt enters the durable stream only in full schema-v1
