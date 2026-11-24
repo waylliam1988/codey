@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q024D，下一批为 Q025。保留历史验收，复核后续提交实际影响的范围。
+当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q025，下一批为 Q026。保留历史验收，复核后续提交实际影响的范围。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1365,3 +1365,13 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 输出生命周期修复已提交 `5a116e71`。续接的独立依据是 `_execute_shell_ticket` 将尚未创建进程的错误标为 spawn_error，且 shell 生命周期要求透传真实执行结果。公开构造器输入 `status=spawn_error, exit_code=None, error=interpreter missing` 原先声称 “approved and ran”。原样运行续接测试文件，实际 1 failed、2 passed，退出 1。新增明确的启动失败文案后，相同回归连同拒绝、停止、ApprovedShellTests 和两条续接计划调用方共 14 passed，退出 0；命令为 `python -m pytest -q tests/test_shell_continuation_reports_denial_and_reconciles_ui.py tests/test_server.py::ApprovedShellTests tests/test_server.py::RunSnapshotTests::test_shell_approval_continuation_plan_uses_active_run_and_pending_fallbacks tests/test_server.py::RunSnapshotTests::test_shell_approval_continuation_plan_falls_back_to_pending_provider --tb=short`。
 - 续接脚本补齐两个原测试签名与 JSON 对象校验，保留对脚本化答复原摘要的断言。源和续接测试严格 mypy/Pyrefly/ty/Ruff 退出 0，Pyrefly 有 2 条未展示警告。前一提交的全生产门与独立执行、输出及 native 验证已执行通过，最终文案变化的直接调用方已重验。全批定向去重 135 项通过、2 项跳过，另有 6 个通过的子例。
 - Q024D 结项。累计 44/325 批完成，完成批覆盖 84/1009 个生产文件，另有 7 个部分批次文件独立验证。部分批次 13，阻塞批次 0。 旧入口仍为公开导出，保留。下一主批 Q025 负责问题查询、答复和取消 HTTP 路由。
+
+
+### Q025 问题查询、回答和取消的 HTTP 路由
+
+- Q024D 续接修复已提交 `1653d49f`。本批完整检查 `codey/app/question_routes.py`。独立契约见问题卡调用方 `frontend/src/user_questions.ts` 的答复与取消请求，以及任务控制中只有明确答复或取消才能改变问题和原任务的状态。正常发送的答复请求省略 action。API 维持历史显式 answer 兼容。
+- 在真实认证 HTTP 路由和 SQLite 中，用同一有效答案分别提交未知字符串、数组、显式 null 三种动作。原先都返回 202，GET 随后读到 answered、revision 2。 `python -m pytest -q tests/test_question_route_actions.py --tb=short` 实际退出 1，3 failed、3 passed。后者为省略 action、显式 answer 和 cancel 的成功对照。
+- 在调用 durable 决策前拒绝未知动作。相同三种输入均返回 400，问题保持 pending、revision 1。补齐 HTTP 边界的 AppContext、字典和行校验。保留原本的无效回答 409 及当前问题返回，并增加无效答案和 GET 列表的回归对照。底层问题存储的历史动态类型仍归 Q064，本批仅通过有类型的 HTTP 边界消费。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_question_route_actions.py tests/test_conversation_questions.py tests/durable/test_question_authority.py --tb=short`，15 passed。 `python -m pytest -q tests/test_conversation_question_http.py --tb=short` 修改前后均 10 passed，后者覆盖双协议、两任务模式及重启恢复。两组去重 25 passed，0 skip，均退出 0。在 `D:\codey\frontend` 执行 `npm run test -- src/user_questions.test.ts`，3 passed，退出 0。调用方测试只记执行范围。
+- 源和新回归定向 mypy（强 Any 三标志）从初稿 39 条诊断到 0，Pyrefly、ty 和 Ruff 均退出 0。全生产 mypy、Pyrefly、ty 分别用 `--python-version 3.11` 检查 `codey`，以及 `python -m tools.kernel_type_precision_gate`，均退出 0。mypy 763 文件，Pyrefly 35 suppressed、165 warnings 未展示。命令结果位于忽略的 `.e2e-artifacts/code-quality-20261122/q025-*.log`。
+- Q025 结项。累计 45/325 批完成，完成批覆盖 85/1009 个生产文件。Q026 接续审查服务的输入、模型调用与结果交付。

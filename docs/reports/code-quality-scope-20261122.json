@@ -3087,21 +3087,37 @@
         "tests/support/shell_execution.py",
         "tests/test_shell_continuation_reports_denial_and_reconciles_ui.py"
       ],
-      "result": "Verified shell output lifecycle, ticket execution and continuation. Output store failure and stale-generation snapshot regressions failed 2 before, passed 2 after. Final execution coverage: direct 53 passed and six subtests, callers 79 passed and two skipped. Spawn failure continuation claimed execution (1 failed, 2 passed), corrected and checked with direct and continuation-plan callers (14 passed, containing 11 previously run test nodes). The scoped checks leave 135 distinct passing pytest items, two skips, six subtests. Source and all three deeply reviewed support files passed strict Any, Pyrefly, ty and Ruff. Full production types and precision passed on the execution changes, followed by scoped checks for the text-only continuation change. Final commit hash will be recorded with Q025.",
+      "result": "Verified shell output lifecycle, ticket execution and continuation. Output store failure and stale-generation snapshot regressions failed 2 before, passed 2 after. Final execution coverage: direct 53 passed and six subtests, callers 79 passed and two skipped. Spawn failure continuation claimed execution (1 failed, 2 passed), corrected and checked with direct and continuation-plan callers (14 passed, containing 11 previously run test nodes). The scoped checks leave 135 distinct passing pytest items, two skips, six subtests. Source and all three deeply reviewed support files passed strict Any, Pyrefly, ty and Ruff. Full production types and precision passed on the execution changes, followed by scoped checks for the text-only continuation change.",
       "commits": [
-        "5a116e71"
+        "5a116e71",
+        "1653d49f"
       ]
     },
     {
-      "responsibility": "codey/app: answer and report projection",
+      "responsibility": "Durable question lookup, answer and cancellation over operator HTTP",
       "files": [
         "codey/app/question_routes.py"
       ],
       "id": "Q025",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/app/question_routes.py"
+      ],
+      "verified_files": [
+        "codey/app/question_routes.py"
+      ],
+      "candidate_test_count": 0,
+      "reviewed_support": [
+        "tests/test_question_route_actions.py"
+      ],
+      "tests": [
+        "tests/test_question_route_actions.py",
+        "tests/test_conversation_questions.py",
+        "tests/durable/test_question_authority.py",
+        "tests/test_conversation_question_http.py",
+        "frontend/src/user_questions.test.ts"
+      ],
+      "result": "Unknown, list and null action values formerly committed an answer (three failures, three valid controls passed). Malformed actions now return 400 before dispatch and leave the question pending. Omitted action and explicit answer/cancel still succeed. Existing malformed-answer 409 and GET list are covered. Final 25 Python and 3 Vitest items passed. Strict Any, Pyrefly, ty and Ruff passed on the route and regression. Full production type gates and precision passed. Durable store typing remains under Q064."
     },
     {
       "responsibility": "codey/app: completion review and edit validation",
@@ -8102,6 +8118,7 @@
     "tests/test_pytest_temp_long_paths.py",
     "tests/test_query_guidance_ablation.py",
     "tests/test_query_planner.py",
+    "tests/test_question_route_actions.py",
     "tests/test_qwen.py",
     "tests/test_read_before_edit_ab.py",
     "tests/test_read_file_page_split.py",
