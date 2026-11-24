@@ -4055,19 +4055,22 @@
       "responsibility": "Workflow definition and replay digest",
       "files": ["codey/durable/workflow.py"],
       "id": "Q050D",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/durable/test_workflow_contract.py", "tests/durable/test_workflow_fork.py", "tests/durable/test_workflow_timeline.py"]
+      "status": "completed_unchanged",
+      "reviewed_files": ["codey/durable/workflow.py"],
+      "verified_files": ["codey/durable/workflow.py"],
+      "tests": ["tests/durable/test_workflow_contract.py", "tests/durable/test_workflow_fork.py", "tests/durable/test_workflow_timeline.py", "tests/durable/test_scheduler_blocked.py", "tests/durable/test_scheduler.py"],
+      "result": "Verified canonical digest, migration, historical fork and incompatible-workflow scheduling. 13 scoped tests, strict Any and Ruff passed."
     },
     {
       "responsibility": "Durable SQLite schema and migration contracts",
       "files": ["codey/durable/schema.py", "codey/durable/sqlite_schema.py"],
       "id": "Q050E",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/durable/test_schema_contract.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/schema.py", "codey/durable/sqlite_schema.py"],
+      "verified_files": ["codey/durable/schema.py", "codey/durable/sqlite_schema.py"],
+      "tests": ["tests/durable/test_schema_contract.py", "tests/durable/test_recovery.py", "tests/durable/test_atomic_admission.py", "tests/durable/test_workflow_timeline.py", "tests/durable/test_database_cursor.py", "tests/stress/test_durable_sqlite_concurrency.py"],
+      "reviewed_support": ["tests/durable/test_schema_contract.py"],
+      "result": "Validate the original migration marker declaration before reading it and type SQLite row boundaries. 26 scoped tests, strict Any, Ruff and production gates passed."
     },
     {
       "responsibility": "codey/durable: shared contracts and module services",

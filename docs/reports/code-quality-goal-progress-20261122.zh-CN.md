@@ -1790,3 +1790,19 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_scheduler_abort_thread_start.py tests/durable/test_scheduler_abort_handler.py tests/durable/test_scheduler_abort_signal.py tests/durable/test_scheduler_wakeup_races.py tests/durable/test_scheduler_claim_release.py tests/durable/test_scheduler_local_reconcile.py tests/durable/test_scheduler_ownership.py tests/durable/test_scheduler.py -rs --tb=short`，49 passed、4 skipped、退出 0。原四文件基线 32 passed、4 skipped，退出 0。三个既有 skip 记录 Windows SQLite 清理限制，另一个说明直接所有权夹具与生产路径分离。
 - 使用 `python -m pytest -q tests/durable/test_scheduler_abort_thread_start.py tests/test_control_service_contract.py::test_health_and_scheduler_resume_preserve_the_scheduler_payload tests/test_control_service_contract.py::test_operator_and_conversation_identity_fences_are_independent --tb=short` 复核回归、服务恢复和授权边界，3 passed、退出 0。两组去重 51 项通过。源和新回归严格 Any 与 Ruff 通过，源基线已通过强 Any。生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q050C 完成。累计完成 88/349 批，完成批覆盖 153/1009 个生产文件，另有 18 批部分完成。下一批 Q050D 为工作流定义与重放摘要。
+
+
+### Q050D 工作流定义与重放摘要
+
+- Q050C 已提交 `ddddbc9f`。完整检查 `workflow.py` 的持久摘要输入、版本迁移与返回值校验。未发现需修改的行为，源严格 Any 和 Ruff 均退出 0。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_workflow_contract.py tests/durable/test_workflow_fork.py tests/durable/test_workflow_timeline.py --tb=short`，10 passed，退出 0。`python -m pytest -q tests/durable/test_scheduler_blocked.py tests/durable/test_scheduler.py -k workflow --tb=short`，3 passed、23 deselected，退出 0，两组均无失败或跳过。覆盖摘要规范化、迁移、历史分支和工作流注册后的重新调度。
+- Q050D 完成，无需源码提交。累计完成 89/349 批，完成批覆盖 154/1009 个生产文件，另有 18 批部分完成。下一批 Q050E 为 SQLite 结构与迁移。
+
+
+### Q050E SQLite 结构与迁移
+
+- 完整检查 `schema.py`、`sqlite_schema.py` 和 `test_schema_contract.py`。冷启动要求打开符合当前确切结构的库，但迁移标记表原先只检查版本数据。实际修改临时库的标记表，加列后旧实现仍接受，`python -m pytest -q tests/durable/test_schema_contract.py -k schema_migrations --tb=short` 出现 1 failed、4 deselected，退出 1。另将版本列改名时泄漏 `sqlite3.OperationalError`，`-k obsolete` 的同文件命令 1 failed、5 deselected，退出 1。
+- 创建和校验共用标记表 SQL，在读取标记前检查结构。两个输入现在按 `SchemaVersionError` 拒绝。类型治理限定在 SQLite 返回行与元数据读取，测试连接显式关闭。现有创建、重新打开、版本拒绝和无降级断言通过。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_schema_contract.py tests/durable/test_recovery.py tests/durable/test_atomic_admission.py tests/durable/test_workflow_timeline.py --tb=short`，24 passed，退出 0。`python -m pytest -q tests/durable/test_database_cursor.py::test_concurrent_cold_start_serializes_schema_initialization tests/stress/test_durable_sqlite_concurrency.py --tb=short`，2 passed，退出 0，两组 0 失败或跳过。
+- 两个源的严格 Any 基线 14 条诊断，最终源及修改测试均为 0，Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q050E 完成。累计完成 90/349 批，完成批覆盖 156/1009 个生产文件，另有 18 批部分完成。下一批 Q051 为 durable 读取和控制合同。

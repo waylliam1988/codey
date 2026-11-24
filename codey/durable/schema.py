@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterable
 
 from codey.durable.errors import SchemaVersionError
 
 SCHEMA_VERSION = 1
+MIGRATION_MARKER_SQL = (
+    "CREATE TABLE schema_migrations "
+    "(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL) STRICT"
+)
 
 # The current durable schema is installed atomically on a fresh database. A
 # future schema may add migration 2, but this cold-start build deliberately
@@ -158,12 +163,15 @@ MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
 
 def validate_schema(database: sqlite3.Connection) -> None:
     """Reject incomplete schemas even when their version markers look valid."""
-    definitions = {
-        str(row["name"]): " ".join(str(row["sql"]).split())
-        for row in database.execute("SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL")
-    }
-    for _version, statements in MIGRATIONS:
-        for statement in statements:
-            name = statement.split()[2]
-            if definitions.get(name) != " ".join(statement.split()):
-                raise SchemaVersionError(f"durable schema definition differs for {name}")
+    rows: Iterable[sqlite3.Row] = database.execute("SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL")
+    definitions: dict[str, str] = {}
+    for row in rows:
+        name: object = row["name"]
+        sql: object = row["sql"]
+        if isinstance(name, str) and isinstance(sql, str):
+            definitions[name] = " ".join(sql.split())
+    statements = (MIGRATION_MARKER_SQL, *(sql for _, migration in MIGRATIONS for sql in migration))
+    for statement in statements:
+        table_or_index = statement.split()[2]
+        if definitions.get(table_or_index) != " ".join(statement.split()):
+            raise SchemaVersionError(f"durable schema definition differs for {table_or_index}")
