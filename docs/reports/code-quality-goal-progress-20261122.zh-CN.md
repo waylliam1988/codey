@@ -1659,3 +1659,14 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 移除保序去重、正则捕获和动态回执属性中的 Any 传播。读取分析引用时验证可迭代的字符串元素。合法分析引用、变化范围和诊断标识保持原有投影。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_edit_integrity_monitor_boundary.py tests/test_completion_edit_integrity.py tests/test_project_completion_flow_edit_integrity.py --tb=short`，最终 52 passed、8 subtests passed，0 skip，退出 0。源和新用例严苛 Any 由 46 条诊断降至 0，Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q041 完成。累计完成 73/340 批，覆盖 136/1009 个生产文件。下一批 Q042 为编辑范围与项目验证。
+
+
+### Q042 变更路径分类和测试编辑授权
+
+- Q041 已提交 `ba53edd9`。原 Q042 按路径分类、验证证据、候选映射拆为 Q042、Q042B、Q042C。队列为 342 批，仍覆盖 1009 个生产文件。完整检查 `edit_scope.py` 和新增回归。
+- pytest 生效的 `python_files` 默认包含 `test_*.py` 和 `*_test.py`，编辑分类承诺识别测试命名惯例。在 `D:\codey` 用 `git show ba53edd9:codey/completion/edit_scope.py` 将旧实现加载进内存，通过 `pytest.main(['-q', 'tests/test_completion_scope_python_names.py', '--tb=short'])` 执行同一回归。退出 1，`src/parser_test.py` 返回 `production`，另两个用例通过。扩展分类规则后，前缀名、后缀名和普通源文件对照均通过。
+- 用明确的键值类型读取变更行，把转发函数收敛到共享路径函数。扩大验证发现 `test_changes.py::ChangeTrackerTests::test_absolute_paths_rejected_on_raw_value` 仍导入 `_safe_change_path`，中间版曾退出 1。保留该名称和规范化后的再次校验，最终整文件通过。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_completion_scope_python_names.py tests/test_completion_edit_scope.py tests/test_completion_edit_integrity.py tests/test_project_completion_flow_edit_integrity.py tests/test_changes.py --tb=short`，124 passed、44 subtests passed，退出 0。`python -m pytest -q tests/test_review_contract_integration.py tests/test_desktop_cli_project_review_parity.py tests/test_project_completion_flow_enforcement.py --tb=short`，32 passed、2 failed，退出 1，两组均为 0 skip 或收集错误。
+- 两个桌面与 CLI 审查对等用例在桌面入口的 reviewer 调用数均为 0。仅在内存加载 `ba53edd9` 版 `edit_scope.py` 后单独运行 `pytest.main(['-q', 'tests/test_desktop_cli_project_review_parity.py', '--tb=short'])`，同两条断言失败，退出 1。另用单用例 pytest 钩子观察到读取、写入、验证工具都成功，随后任务结束，未发生 reviewer 调用。生产调用或夹具选择的根因尚未确定，交由 Q090 项目审查流程批次，关联 Q026 服务边界。CLI 分支受桌面断言阻断，未执行。
+- 使用 `python -m mypy codey/completion/edit_scope.py tests/test_completion_scope_python_names.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 和 `ruff check` 检查同两文件。全生产 `python -m mypy codey --python-version 3.11`（763 文件）、`pyrefly check codey --python-version 3.11`（0 errors、35 suppressed、164 warnings 未展示）、`ty check codey --python-version 3.11` 与 `python -m tools.kernel_type_precision_gate` 均退出 0。
+- Q042 完成。累计完成 74/342 批，完成批覆盖 137/1009 个生产文件，另有 17 批部分完成。下一批 Q042B 为验证证据和完成证明。

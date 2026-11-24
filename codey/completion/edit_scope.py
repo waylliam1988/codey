@@ -6,7 +6,7 @@ vocabulary -- production, test, fixture, verification config, docs, and
 generated/vendor paths -- so the completion layer classifies each changed
 path once instead of every consumer re-guessing "is this a test".
 
-It is a pure stdlib leaf: no I/O, no models, and no internal imports. The
+Classification and authorization use only local path and text data. The
 closed vocabularies below are auditable on purpose; a path that matches none
 of them is production, because treating an unknown path as production is the
 conservative direction for every downstream integrity rule.
@@ -17,6 +17,9 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from pathlib import PurePosixPath
+
+from codey.utils.change_paths import change_file_paths
+from codey.utils.change_paths import safe_change_path as _safe_change_path
 
 EDIT_SCOPE_PRODUCTION = "production"
 EDIT_SCOPE_TEST = "test"
@@ -121,7 +124,7 @@ _FIXTURE_BASENAME_RE = re.compile(r"_fixture", re.IGNORECASE)
 _TEST_DIR_SEGMENTS = frozenset({"__tests__", "spec", "specs", "test", "tests"})
 _TEST_BASENAME_RES = (
     re.compile(r"^test_.+", re.IGNORECASE),
-    re.compile(r".+_test$", re.IGNORECASE),
+    re.compile(r".+_test(?:\.py)?$", re.IGNORECASE),
     re.compile(r".+\.(test|spec)\.(js|jsx|mjs|cjs|ts|tsx|mts|cts)$", re.IGNORECASE),
 )
 
@@ -188,22 +191,6 @@ _TEST_EDIT_DENIAL_PHRASES_ZH = (
 
 def _posix(path: object) -> PurePosixPath:
     return PurePosixPath(str(path or "").replace("\\", "/").strip())
-
-
-def _safe_change_path(value: object) -> str:
-    from codey.utils.change_paths import safe_change_path
-
-    return safe_change_path(value)
-
-
-def _change_file_paths(
-    raw_path: object,
-    raw_previous_path: object = "",
-    raw_status: object = "",
-) -> tuple[str, str]:
-    from codey.utils.change_paths import change_file_paths
-
-    return change_file_paths(raw_path, raw_previous_path, raw_status)
 
 
 def is_generated_or_vendor_path(path: object) -> bool:
@@ -296,11 +283,13 @@ def changed_paths_from_changes(changes: object) -> tuple[str, ...]:
     for item in files:
         if not isinstance(item, dict):
             continue
-        path, _previous_path = _change_file_paths(
-            item.get("path"),
-            item.get("previous_path"),
-            item.get("status"),
+        fields: dict[object, object] = item
+        path, _previous_path = change_file_paths(
+            fields.get("path"),
+            fields.get("previous_path"),
+            fields.get("status"),
         )
+        # Validate again after normalization, which can expose a drive prefix.
         path = _safe_change_path(path)[:MAX_PATH_CHARS]
         if not path or path in seen:
             continue
