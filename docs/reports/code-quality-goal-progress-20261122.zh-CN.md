@@ -1751,3 +1751,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 合并错误响应构造，为 JSON 帧、命令清单和标准流边界补齐类型，取消通知只读取受支持的请求标识。源严格 Any 从 58 条诊断到 0，源及回归 Ruff、生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 都通过。
 - 在 `D:\codey` 临时刷新描述符后执行 `python -m pytest -q tests/test_control_rpc_initialize_params.py tests/test_external_control.py::test_rpc_is_a_shared_service_client_with_unicode_framing --tb=short`，2 passed、0 失败或跳过，退出 0。描述符已恢复原字节。
 - Q047D 完成。累计完成 83/345 批，完成批覆盖 146/1009 个生产文件，另有 18 批部分完成。下一批 Q048 为控制协议契约。
+
+
+### Q048 控制协议契约
+
+- Q047D 已提交 `5bb6916c`。完整检查 `control/protocol.py`，为命令目录、错误、参数和 JSON Schema 出口消除 Any。复用已有字符串键对象校验，避免重复构造完整参数键集合。未发现需要单独修复的行为。
+- 在 `D:\codey` 修改前后分别执行 `python -m pytest -q tests/test_control_service_contract.py tests/test_control_cli_generation_input.py tests/test_control_rpc_initialize_params.py tests/test_control_client_response_contract.py --tb=short`，均为 22 passed、0 失败或跳过，退出 0。使用 `python -` 验证合法命令复制参数，缺失和未知字段、布尔或无穷等待值、空运行 ID 均产生 `INVALID_ARGUMENT`，退出 0。RPC 与 MCP 真实传输各已在前批验收，本批以命令和适配器的合同测试验证。
+- 源严格 Any 由 10 条诊断降至 0。Ruff、生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q048 完成。累计完成 84/345 批，完成批覆盖 147/1009 个生产文件，另有 18 批部分完成。下一批 Q049 为 durable 包入口。

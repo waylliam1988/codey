@@ -5,7 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Any
+
+from codey.utils.object_fields import object_fields
 
 PROTOCOL_VERSION = 1
 MAX_FRAME_BYTES = 1024 * 1024
@@ -18,7 +19,7 @@ class ControlError(ValueError):
         self.code = code
         self.details = details
 
-    def payload(self) -> dict[str, Any]:
+    def payload(self) -> dict[str, object]:
         return {"code": self.code, "message": str(self), "details": self.details}
 
 
@@ -37,7 +38,7 @@ class Command:
     readonly: bool = True
     operator: bool = False
 
-    def schema(self) -> dict[str, Any]:
+    def schema(self) -> dict[str, object]:
         return {
             "type": "object", "additionalProperties": False,
             "properties": {key: {"type": kind} for key, kind in self.fields.items()},
@@ -105,15 +106,15 @@ def fingerprint(value: object) -> str:
     return hashlib.sha256(encoded.encode()).hexdigest()
 
 
-def validate_command(name: str, params: object) -> dict[str, Any]:
+def validate_command(name: str, params: object) -> dict[str, object]:
     command = COMMANDS.get(name)
     if command is None:
         raise ControlError("INVALID_ARGUMENT", f"Unknown control operation: {name}")
-    if not isinstance(params, dict) or set(params) - set(command.fields):
+    if not object_fields(params) or params.keys() - command.fields.keys():
         raise ControlError("INVALID_ARGUMENT", "Expected an object containing only declared fields")
-    if set(command.required) - set(params):
+    if any(key not in params for key in command.required):
         raise ControlError("INVALID_ARGUMENT", "Missing required command fields")
-    types = {"string": str, "object": dict, "array": list, "boolean": bool, "integer": int}
+    types: dict[str, type[object]] = {"string": str, "object": dict, "array": list, "boolean": bool, "integer": int}
     for key, value in params.items():
         kind = command.fields[key]
         valid = type(value) in (int, float) if kind == "number" else type(value) is types[kind]

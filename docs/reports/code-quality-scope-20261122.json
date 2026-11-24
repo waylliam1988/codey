@@ -3996,10 +3996,11 @@
         "codey/control/protocol.py"
       ],
       "id": "Q048",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 7
+      "status": "completed_changed",
+      "reviewed_files": ["codey/control/protocol.py"],
+      "verified_files": ["codey/control/protocol.py"],
+      "tests": ["tests/test_control_service_contract.py", "tests/test_control_cli_generation_input.py", "tests/test_control_rpc_initialize_params.py", "tests/test_control_client_response_contract.py"],
+      "result": "Type the shared catalogue, error payloads and command validation while preserving accepted values and error codes. 22 scoped tests and a direct validation matrix passed. Strict Any, Ruff and production gates passed."
     },
     {
       "responsibility": "codey/durable: package entry and composition",
