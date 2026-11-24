@@ -1743,3 +1743,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - Q047B 已提交 `eb7bcc3b`。完整检查 `control/mcp.py`。按当前锁定的 MCP 2.3.0 签名标注请求和结果，声明工具 schema 和 stdio 流类型，保留可选导入。源文件严格 Any 由 17 条诊断降至 0。Ruff、全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - 在 `D:\codey` 临时刷新描述符后执行 `python -m pytest -q tests/test_external_control.py::test_mcp_advertises_the_common_schema_and_calls_the_same_service tests/test_external_control.py::test_mcp_stdio_process_attaches_to_the_running_service --tb=short`，2 passed、0 失败或跳过，退出 0，描述符已恢复原字节。以 `python -` 建立缺失 MCP SDK 的独立导入环境，验证适配器仍可导入，启动返回 2 并输出依赖提示，退出 0。外部控制的其他节点由对应批次覆盖。
 - Q047C 完成。累计完成 82/345 批，完成批覆盖 145/1009 个生产文件，另有 18 批部分完成。下一批 Q047D 为 JSON-RPC stdio 适配器。
+
+
+### Q047D JSON-RPC stdio 适配器
+
+- Q047C 已提交 `709b488e`。完整检查 `control/rpc.py` 和新增用例。JSON-RPC 初始化用具名字段协商协议版本，参数形状有误应返回 `-32602`。把 `params: []` 和有效的 `params: {}` 依次送入实际适配器，`python -m pytest -q tests/test_control_rpc_initialize_params.py --tb=short` 修改前 1 failed、退出 1，错误码为 `-32603`。现在返回 `-32602`，随后合法初始化成功并返回命令表。
+- 合并错误响应构造，为 JSON 帧、命令清单和标准流边界补齐类型，取消通知只读取受支持的请求标识。源严格 Any 从 58 条诊断到 0，源及回归 Ruff、生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 都通过。
+- 在 `D:\codey` 临时刷新描述符后执行 `python -m pytest -q tests/test_control_rpc_initialize_params.py tests/test_external_control.py::test_rpc_is_a_shared_service_client_with_unicode_framing --tb=short`，2 passed、0 失败或跳过，退出 0。描述符已恢复原字节。
+- Q047D 完成。累计完成 83/345 批，完成批覆盖 146/1009 个生产文件，另有 18 批部分完成。下一批 Q048 为控制协议契约。

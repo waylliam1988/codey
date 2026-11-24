@@ -3983,10 +3983,12 @@
       "responsibility": "JSON-RPC stdio adapter",
       "files": ["codey/control/rpc.py"],
       "id": "Q047D",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/test_external_control.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/control/rpc.py"],
+      "verified_files": ["codey/control/rpc.py"],
+      "tests": ["tests/test_control_rpc_initialize_params.py", "tests/test_external_control.py"],
+      "reviewed_support": ["tests/test_control_rpc_initialize_params.py"],
+      "result": "Report wrongly shaped initialization parameters as invalid input. Consolidate error envelopes and type frame, command and stream boundaries. Two scoped tests, strict Any, Ruff and production gates passed."
     },
     {
       "responsibility": "codey/control: task kernel and execution",

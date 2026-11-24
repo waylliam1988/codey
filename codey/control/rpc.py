@@ -8,10 +8,11 @@ import queue
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, BinaryIO
+from typing import BinaryIO
 
 from codey.control.client import ControlClient
 from codey.control.protocol import COMMANDS, MAX_FRAME_BYTES, PROTOCOL_VERSION, ControlError
+from codey.utils.object_fields import object_fields
 
 
 class RpcAdapter:
@@ -51,28 +52,45 @@ class RpcAdapter:
         except queue.Full:
             self.closed.set()
 
-    def dispatch(self, request: dict[str, Any]) -> None:
+    def _emit_error(
+        self, identity: object, code: int, message: str, data: dict[str, object] | None = None,
+    ) -> None:
+        error: dict[str, object] = {"code": code, "message": message}
+        if data is not None:
+            error["data"] = data
+        frame: dict[str, object] = {"jsonrpc": "2.0", "id": identity, "error": error}
+        self.emit(frame)
+
+    def dispatch(self, request: dict[str, object]) -> None:
         identity = request.get("id")
         try:
-            if request.get("jsonrpc") != "2.0" or not isinstance(request.get("method"), str):
+            method = request.get("method")
+            if request.get("jsonrpc") != "2.0" or not isinstance(method, str):
                 raise ControlError("INVALID_ARGUMENT", "Expected a JSON-RPC 2.0 request")
             if not (identity is None or type(identity) in (str, int)):
                 raise ControlError("INVALID_ARGUMENT", "Request id must be a string or integer")
-            method = request["method"]
+            no_params: dict[str, object] = {}
+            params = request.get("params", no_params)
+            result: dict[str, object]
             if method == "initialize":
                 if identity is None:
                     raise ControlError("INVALID_ARGUMENT", "Initialization requires a response id")
-                params = request.get("params", {})
+                if not object_fields(params):
+                    raise ControlError("INVALID_ARGUMENT", "Initialization parameters must be an object")
                 if params.get("protocol_version", PROTOCOL_VERSION) != PROTOCOL_VERSION:
                     raise ControlError("PROTOCOL_MISMATCH", "Incompatible control protocol")
                 self.initialized = True
-                result = {"protocol_version": PROTOCOL_VERSION, "commands": {
-                    name: {"description": command.description, "input_schema": command.schema(), "readonly": command.readonly}
-                    for name, command in COMMANDS.items()}}
+                commands: dict[str, dict[str, object]] = {}
+                for name, command in COMMANDS.items():
+                    schema: dict[str, object] = command.schema()
+                    commands[name] = {"description": command.description, "input_schema": schema, "readonly": command.readonly}
+                result = {"protocol_version": PROTOCOL_VERSION, "commands": commands}
             elif method in {"notifications/initialized", "notifications/cancelled"}:
-                if method.endswith("cancelled"):
-                    with self.lock:
-                        self.cancelled.add(request.get("params", {}).get("requestId"))
+                if method.endswith("cancelled") and object_fields(params):
+                    cancelled_id = params.get("requestId")
+                    if type(cancelled_id) in (str, int):
+                        with self.lock:
+                            self.cancelled.add(cancelled_id)
                 return
             else:
                 if not self.initialized:
@@ -80,20 +98,20 @@ class RpcAdapter:
                 if identity is None:
                     raise ControlError("INVALID_ARGUMENT", "Control commands require an id")
                 name = method.removeprefix("control.")
-                result = self.client.call(name, request.get("params", {}))
+                result = self.client.call(name, params)
             with self.lock:
                 if identity in self.cancelled:
                     self.cancelled.discard(identity)
                     return
-            self.emit({"jsonrpc": "2.0", "id": identity, "result": result})
+            frame: dict[str, object] = {"jsonrpc": "2.0", "id": identity, "result": result}
+            self.emit(frame)
         except ControlError as exc:
             if identity is not None:
-                self.emit({"jsonrpc": "2.0", "id": identity,
-                           "error": {"code": -32602 if exc.code == "INVALID_ARGUMENT" else -32000,
-                                     "message": str(exc), "data": exc.payload()}})
+                data: dict[str, object] = exc.payload()
+                self._emit_error(identity, -32602 if exc.code == "INVALID_ARGUMENT" else -32000, str(exc), data)
         except Exception:
             if identity is not None:
-                self.emit({"jsonrpc": "2.0", "id": identity, "error": {"code": -32603, "message": "Control adapter failed"}})
+                self._emit_error(identity, -32603, "Control adapter failed")
         finally:
             self.slots.release()
 
@@ -109,14 +127,14 @@ class RpcAdapter:
                 if not raw.endswith(b"\n"):
                     return 65  # An incomplete modification frame never executes.
                 try:
-                    request = json.loads(raw.removesuffix(b"\n").removesuffix(b"\r").decode("utf-8"))
-                    if not isinstance(request, dict):
+                    request: object = json.loads(raw.removesuffix(b"\n").removesuffix(b"\r").decode("utf-8"))
+                    if not object_fields(request):
                         raise ValueError("Expected an object")
-                except (ValueError, UnicodeDecodeError):
-                    self.emit({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Invalid UTF-8 JSON frame"}})
+                except ValueError:
+                    self._emit_error(None, -32700, "Invalid UTF-8 JSON frame")
                     continue
                 if not self.slots.acquire(blocking=False):
-                    self.emit({"jsonrpc": "2.0", "id": request.get("id"), "error": {"code": -32000, "message": "Too many outstanding requests", "data": {"code": "RATE_LIMITED"}}})
+                    self._emit_error(request.get("id"), -32000, "Too many outstanding requests", {"code": "RATE_LIMITED"})
                     continue
                 if request.get("method") == "initialize":
                     self.dispatch(request)
@@ -131,4 +149,6 @@ class RpcAdapter:
 
 
 def run(client: ControlClient) -> int:
-    return RpcAdapter(client, sys.stdout.buffer).serve(sys.stdin.buffer)
+    output: BinaryIO = sys.stdout.buffer
+    stream: BinaryIO = sys.stdin.buffer
+    return RpcAdapter(client, output).serve(stream)
