@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 1009,
   "region_count": 40,
-  "batch_count": 345,
+  "batch_count": 349,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -307,6 +307,10 @@
       "batches": [
         "Q049",
         "Q050",
+        "Q050B",
+        "Q050C",
+        "Q050D",
+        "Q050E",
         "Q051",
         "Q052",
         "Q053",
@@ -4008,28 +4012,58 @@
         "codey/durable/__init__.py"
       ],
       "id": "Q049",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_unchanged",
+      "reviewed_files": ["codey/durable/__init__.py"],
+      "verified_files": ["codey/durable/__init__.py"],
+      "tests": ["tests/durable/test_atomic_admission.py", "tests/durable/test_context.py", "tests/durable/test_commit_events.py"],
+      "result": "Verified the package exports, implementation identity, setuptools discovery and import-time thread behavior. 32 scoped tests, strict Any and Ruff passed."
     },
     {
-      "responsibility": "codey/durable: shared contracts and module services",
-      "files": [
-        "codey/durable/admission.py",
-        "codey/durable/errors.py",
-        "codey/durable/approval_transition.py",
-        "codey/durable/reducer.py",
-        "codey/durable/scheduler.py",
-        "codey/durable/workflow.py",
-        "codey/durable/schema.py",
-        "codey/durable/sqlite_schema.py"
-      ],
+      "responsibility": "Atomic input and passive write admission, history forks, and durable errors",
+      "files": ["codey/durable/admission.py", "codey/durable/errors.py"],
       "id": "Q050",
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/admission.py", "codey/durable/errors.py"],
+      "verified_files": ["codey/durable/admission.py", "codey/durable/errors.py"],
+      "tests": ["tests/durable/test_admission_passive_edit_action.py", "tests/durable/test_atomic_admission.py", "tests/durable/test_edit_admission.py", "tests/durable/test_control_message_metadata.py", "tests/durable/test_inbox_placement.py", "tests/durable/test_workflow_fork.py"],
+      "reviewed_support": ["tests/durable/test_admission_passive_edit_action.py"],
+      "result": "Reject non-string passive edit actions before admission and type dynamic metadata. 61 scoped tests, strict Any, Ruff and production gates passed."
+    },
+    {
+      "responsibility": "Approval materialization and durable mutation reduction",
+      "files": ["codey/durable/approval_transition.py", "codey/durable/reducer.py"],
+      "id": "Q050B",
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 5
+      "tests": ["tests/durable/test_approval_records.py", "tests/durable/test_approval_suspension.py", "tests/durable/test_approval_continuation_admission.py"]
+    },
+    {
+      "responsibility": "Durable task scheduler, ownership and local reconciliation",
+      "files": ["codey/durable/scheduler.py"],
+      "id": "Q050C",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/durable/test_scheduler.py", "tests/durable/test_scheduler_ownership.py", "tests/durable/test_scheduler_wakeup_races.py", "tests/durable/test_scheduler_local_reconcile.py"]
+    },
+    {
+      "responsibility": "Workflow definition and replay digest",
+      "files": ["codey/durable/workflow.py"],
+      "id": "Q050D",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/durable/test_workflow_contract.py", "tests/durable/test_workflow_fork.py", "tests/durable/test_workflow_timeline.py"]
+    },
+    {
+      "responsibility": "Durable SQLite schema and migration contracts",
+      "files": ["codey/durable/schema.py", "codey/durable/sqlite_schema.py"],
+      "id": "Q050E",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/durable/test_schema_contract.py"]
     },
     {
       "responsibility": "codey/durable: shared contracts and module services",
@@ -9825,6 +9859,11 @@
       "batch": "Q047",
       "replacement": ["Q047", "Q047B", "Q047C", "Q047D"],
       "reason": "Argparse dispatch, the HTTP client and launcher, the MCP SDK adapter, and JSON-RPC framing have separate boundaries and verification. All four files retain one owner."
+    },
+    {
+      "batch": "Q050",
+      "replacement": ["Q050", "Q050B", "Q050C", "Q050D", "Q050E"],
+      "reason": "Admission, approval and mutation reduction, the scheduler, workflow definition, and SQLite migrations have different contracts and tests. All eight files retain one owner."
     }
   ]
 }

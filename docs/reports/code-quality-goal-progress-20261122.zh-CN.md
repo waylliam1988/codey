@@ -1759,3 +1759,18 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 修改前后分别执行 `python -m pytest -q tests/test_control_service_contract.py tests/test_control_cli_generation_input.py tests/test_control_rpc_initialize_params.py tests/test_control_client_response_contract.py --tb=short`，均为 22 passed、0 失败或跳过，退出 0。使用 `python -` 验证合法命令复制参数，缺失和未知字段、布尔或无穷等待值、空运行 ID 均产生 `INVALID_ARGUMENT`，退出 0。RPC 与 MCP 真实传输各已在前批验收，本批以命令和适配器的合同测试验证。
 - 源严格 Any 由 10 条诊断降至 0。Ruff、生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q048 完成。累计完成 84/345 批，完成批覆盖 147/1009 个生产文件，另有 18 批部分完成。下一批 Q049 为 durable 包入口。
+
+
+### Q049 durable 包入口
+
+- Q048 已提交 `0f7d93f9`。完整检查 `codey/durable/__init__.py`。在 `D:\codey` 使用 `python -` 在新进程校验 setuptools 包发现、`__all__` 无重复且每项可导入、核心会话与 SQLite 导出指向既有实现，导入前后线程清单相同，退出 0。
+- `python -m pytest -q tests/durable/test_atomic_admission.py tests/durable/test_context.py tests/durable/test_commit_events.py --tb=short`，32 passed、0 失败或跳过，退出 0。入口文件严格 Any 与 Ruff 均通过。Q049 完成，无需修改源码。累计完成 85/345 批，完成批覆盖 148/1009 个生产文件，另有 18 批部分完成。下一批 Q050 为 durable 状态转换和调度。
+
+
+### Q050 原子准入、历史分支和错误类型
+
+- 原 Q050 按准入、批准与归约、调度、工作流、数据库迁移拆为 Q050 至 Q050E。总数 349 批，生产文件仍为 1009。完整检查 `durable/admission.py`、`durable/errors.py` 和新增回归。
+- 被动消息编辑只接受 `omit` 或 `replace` 动作，无效元数据通过 `ValueError` 拒绝。通过公开 `DurableSession.admit_write` 提交 `action=["omit"]`，`python -m pytest -q tests/durable/test_admission_passive_edit_action.py --tb=short` 修改前 1 failed、退出 1，实际泄漏集合成员检查的 TypeError。按字符串类型校验后回归通过，原提交序号与不存在的目标会话保持原状。已有 `omit` 和 `replace` 的回归继续通过。
+- 复用字符串键映射守卫收窄消息和编辑元数据。源基线 8 条 Any 诊断降至 0，两个生产文件和新增回归严格 Any 与 Ruff 均通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_admission_passive_edit_action.py tests/durable/test_atomic_admission.py tests/durable/test_edit_admission.py tests/durable/test_control_message_metadata.py tests/durable/test_inbox_placement.py tests/durable/test_workflow_fork.py --tb=short`，61 passed、0 失败或跳过、退出 0。早期三文件基线 22 passed，退出 0。调度和数据库迁移由后续批次验证。
+- Q050 完成。累计完成 86/349 批，完成批覆盖 150/1009 个生产文件，另有 18 批部分完成。下一批 Q050B 为批准物化和状态归约。

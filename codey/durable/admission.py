@@ -23,11 +23,12 @@ from codey.durable.model import (
 from codey.durable.session_kernel import SessionKernel
 from codey.durable.task_queries import read_task_snapshot
 from codey.durable.workflow import workflow_digest
+from codey.utils.object_fields import mapping_fields
 
 
 def message_metadata(state: Mapping[str, object] | None) -> dict[str, object]:
     raw = (state or {}).get("message_metadata", {})
-    if not isinstance(raw, Mapping) or set(raw) - {"source", "in_reply_to_run_id", "attachments"}:
+    if not mapping_fields(raw) or set(raw) - {"source", "in_reply_to_run_id", "attachments"}:
         raise ValueError("invalid message metadata")
     result: dict[str, object] = {}
     if "attachments" in raw:
@@ -36,7 +37,7 @@ def message_metadata(state: Mapping[str, object] | None) -> dict[str, object]:
         result["attachments"] = validate_attachments(raw["attachments"])
     if "source" in raw:
         source = raw["source"]
-        if (not isinstance(source, Mapping) or set(source) != {"actor_id", "name", "kind"}
+        if (not mapping_fields(source) or set(source) != {"actor_id", "name", "kind"}
                 or any(not isinstance(value, str) or not value or len(value) > 512 for value in source.values())):
             raise ValueError("invalid message source metadata")
         result["source"] = dict(source)
@@ -46,6 +47,18 @@ def message_metadata(state: Mapping[str, object] | None) -> dict[str, object]:
             raise ValueError("invalid reply metadata")
         result["in_reply_to_run_id"] = reply
     return result
+
+
+def _message_edit(state: Mapping[str, object] | None) -> Mapping[str, object] | None:
+    value = (state or {}).get("input")
+    if not isinstance(value, Mapping):
+        return None
+    fields: Mapping[object, object] = value
+    if fields.get("kind") != "edit_user_message":
+        return None
+    if not mapping_fields(value):
+        raise ValueError("edit input must have string keys")
+    return value
 
 
 def admit_input(
@@ -66,8 +79,7 @@ def admit_input(
     if not text.strip():
         raise ValueError("input text is required")
     metadata = message_metadata(task_state)
-    input_value = (task_state or {}).get("input")
-    edit = input_value if isinstance(input_value, Mapping) and input_value.get("kind") == "edit_user_message" else None
+    edit = _message_edit(task_state)
     placement = SubmissionPlacement(placement)
     if mode not in {"steer", "follow_up", "write"}:
         raise ValueError("unknown submission mode")
@@ -365,7 +377,7 @@ def normalize_passive_fields(
             action = raw_edit.get("action")
             if not isinstance(target, str) or not target:
                 raise ValueError("passive entry edit target is required")
-            if action not in {"omit", "replace"}:
+            if not isinstance(action, str) or action not in {"omit", "replace"}:
                 raise ValueError(f"unknown passive entry edit action: {action!r}")
             if action == "replace":
                 messages = raw_edit.get("messages")
