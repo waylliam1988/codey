@@ -1736,3 +1736,10 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 校验 HTTP 响应边界，保留合法成功结果和服务错误字段。为启动协调对象声明具体结构，沿用 launcher 现有的 Windows 进程标志条件导入方式。源与回归严格 mypy 从 87 条源诊断到 0，Ruff 及全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty、kernel_type_precision_gate 均退出 0。
 - 在 `D:\codey` 运行 `python -m pytest -q tests/test_control_service_startup.py --tb=short` 的旧描述符基线为 12 passed、3 failed，三条在读取运行时清单时失败。临时刷新描述符后执行 `python -m pytest -q tests/test_control_client_response_contract.py tests/test_control_cli_generation_input.py tests/test_control_service_startup.py tests/test_desktop_http_listener_lifecycle.py tests/test_external_control.py::test_visible_creation_and_original_receipt_are_idempotent tests/test_external_control.py::test_wait_timeout_is_observation_not_cancellation tests/test_external_control.py::test_project_scope_and_operator_capabilities --tb=short`，24 passed、0 失败或跳过、退出 0。描述符已恢复原字节。外部控制套件只执行列出的三个节点。
 - Q047B 完成。累计完成 81/345 批，完成批覆盖 144/1009 个生产文件，另有 18 批部分完成。下一批 Q047C 为 MCP stdio 适配器。
+
+
+### Q047C MCP stdio 适配器
+
+- Q047B 已提交 `eb7bcc3b`。完整检查 `control/mcp.py`。按当前锁定的 MCP 2.3.0 签名标注请求和结果，声明工具 schema 和 stdio 流类型，保留可选导入。源文件严格 Any 由 17 条诊断降至 0。Ruff、全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- 在 `D:\codey` 临时刷新描述符后执行 `python -m pytest -q tests/test_external_control.py::test_mcp_advertises_the_common_schema_and_calls_the_same_service tests/test_external_control.py::test_mcp_stdio_process_attaches_to_the_running_service --tb=short`，2 passed、0 失败或跳过，退出 0，描述符已恢复原字节。以 `python -` 建立缺失 MCP SDK 的独立导入环境，验证适配器仍可导入，启动返回 2 并输出依赖提示，退出 0。外部控制的其他节点由对应批次覆盖。
+- Q047C 完成。累计完成 82/345 批，完成批覆盖 145/1009 个生产文件，另有 18 批部分完成。下一批 Q047D 为 JSON-RPC stdio 适配器。

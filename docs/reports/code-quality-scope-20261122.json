@@ -3973,10 +3973,11 @@
       "responsibility": "MCP stdio server adapter",
       "files": ["codey/control/mcp.py"],
       "id": "Q047C",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/test_external_control.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/control/mcp.py"],
+      "verified_files": ["codey/control/mcp.py"],
+      "tests": ["tests/test_external_control.py"],
+      "result": "Use concrete pinned SDK callback, schema, result and stdio stream types while preserving optional imports. Both live-service MCP tests and the absent-SDK check passed. Strict Any, Ruff and production gates passed."
     },
     {
       "responsibility": "JSON-RPC stdio adapter",
