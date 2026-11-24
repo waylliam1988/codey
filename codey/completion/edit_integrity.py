@@ -18,7 +18,7 @@ EvidenceLedger, authorizes a tool, or changes a PermissionProfile.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 
 from codey.completion.edit_scope import (
@@ -229,9 +229,11 @@ def observe_edit_integrity(
     can never be mistaken for a passed audit.
     """
 
-    run_ref = identifier(run_id, 120)
-    authorized = task_authorizes_test_edit(task)
+    run_ref = ""
+    authorized = False
     try:
+        run_ref = identifier(run_id, 120)
+        authorized = task_authorizes_test_edit(task)
         return _observe(
             task_authorized=authorized,
             changes=changes,
@@ -277,9 +279,7 @@ def _observe(
     run_id: str,
 ) -> EditIntegrityObservation:
     paths = tuple(
-        dict.fromkeys(
-            str(path or "").strip()[:240] for path in files if str(path or "").strip()
-        )
+        {str(path or "").strip()[:240]: None for path in files if str(path or "").strip()}
     ) or changed_paths_from_changes(changes)
     authorized = task_authorized
     diff_text = str(diff or "")
@@ -302,9 +302,7 @@ def _observe(
         for section in sections
         if section.saturated
     }
-    saturated_diff_paths = tuple(
-        dict.fromkeys(section.path for section in sections if section.saturated)
-    )
+    saturated_diff_paths = tuple({section.path: None for section in sections if section.saturated})
     missing_diff_paths = tuple(
         path
         for path in paths
@@ -315,9 +313,7 @@ def _observe(
         for path in paths
         if _normalize_diff_path(path) in saturated_section_paths
     ) or saturated_diff_paths
-    truncated_paths = paths or tuple(
-        dict.fromkeys(section.path for section in sections)
-    )
+    truncated_paths = paths or tuple({section.path: None for section in sections})
     diff_truncated = _changes_diff_truncated(changes)
     diff_unavailable = (
         bool(paths) and (not diff_observed or bool(missing_diff_paths))
@@ -340,26 +336,24 @@ def _observe(
         status = STATUS_CLEAN
     else:
         status = STATUS_UNOBSERVED
-    reason_codes = tuple(dict.fromkeys(finding.reason_code for finding in findings))
+    reason_codes = tuple({finding.reason_code: None for finding in findings})
     if diff_unavailable:
         reason_codes = (*reason_codes, REASON_DIFF_UNAVAILABLE)
-    affected = tuple(
-        dict.fromkeys(path for finding in findings for path in finding.paths)
-    )[:MAX_AFFECTED_PATHS]
+    affected = tuple({path: None for finding in findings for path in finding.paths})[:MAX_AFFECTED_PATHS]
     if diff_unavailable:
-        affected = tuple(
-            dict.fromkeys(
-                (
-                    *affected,
-                    *missing_diff_paths,
-                    *saturated_paths,
-                    *(truncated_paths if diff_truncated else ()),
-                )
-            )
-        )[:MAX_AFFECTED_PATHS]
-    verification_refs = tuple(
-        getattr(decision, "analysis_run_refs", ()) or ()
-    ) if decision is not None else ()
+        affected = tuple({path: None for path in (
+            *affected, *missing_diff_paths, *saturated_paths, *(truncated_paths if diff_truncated else ()),
+        )})[:MAX_AFFECTED_PATHS]
+    raw_refs: object = getattr(decision, "analysis_run_refs", ())
+    verification_refs: list[str] = []
+    if raw_refs:
+        if not isinstance(raw_refs, Iterable):
+            raise ValueError("verification refs must be iterable")
+        refs: Iterable[object] = raw_refs
+        for ref in refs:
+            if not isinstance(ref, str):
+                raise ValueError("verification refs must be strings")
+            verification_refs.append(ref)
     observation_ref = stable_ref(
         "edit_integrity",
         run_id,
@@ -380,7 +374,7 @@ def _observe(
         findings=tuple(findings),
         user_authorized_test_edit=authorized,
         affected_paths=affected,
-        verification_refs=verification_refs,
+        verification_refs=tuple(verification_refs),
         change_refs=change_refs,
         observation_ref=observation_ref,
     )
@@ -575,11 +569,11 @@ def _scope_findings(
     # The green-without-production rule keys on the verification stance the
     # decision layer already computed (a clean local fresh pass), never on
     # its own check execution.
-    verified_green = (
-        decision is not None
-        and selected_check is not None
-        and bool(getattr(getattr(decision, "provenance", None), "clean_verification", False))
-    )
+    provenance: object = None
+    if selected_check is not None:
+        provenance = getattr(decision, "provenance", None)
+    clean_verification: object = getattr(provenance, "clean_verification", False)
+    verified_green = bool(clean_verification)
     if verified_green:
         findings.append(EditIntegrityFinding(
             finding_ref=stable_ref(
@@ -654,11 +648,12 @@ def _empty_added_paths(changes: object) -> tuple[str, ...]:
         return ()
     paths: list[str] = []
     for row in rows:
-        if not isinstance(row, dict) or row.get("status") != "A":
+        if not isinstance(row, dict):
             continue
-        if row.get("additions") != 0 or row.get("deletions") != 0:
+        fields: dict[object, object] = row
+        if fields.get("status") != "A" or fields.get("additions") != 0 or fields.get("deletions") != 0:
             continue
-        path = _normalize_diff_path(row.get("path"))
+        path = _normalize_diff_path(fields.get("path"))
         if path and path not in paths:
             paths.append(path)
     return tuple(paths)
@@ -732,6 +727,12 @@ def _added_skips(added: Sequence[str]) -> list[str]:
     return skips
 
 
+def _matched_values(pattern: re.Pattern[str], line: str) -> Iterator[str]:
+    for match in pattern.finditer(line):
+        text: str = match.group(1)
+        yield text
+
+
 def _widened_raises(removed: Sequence[str], added: Sequence[str]) -> list[str]:
     """Summaries for specific expected exceptions widened to Exception.
 
@@ -744,7 +745,7 @@ def _widened_raises(removed: Sequence[str], added: Sequence[str]) -> list[str]:
     removed_targets = {
         target
         for line in removed
-        for target in _RAISES_TARGET_RE.findall(line)
+        for target in _matched_values(_RAISES_TARGET_RE, line)
     }
     specific = {
         target
@@ -756,7 +757,7 @@ def _widened_raises(removed: Sequence[str], added: Sequence[str]) -> list[str]:
     added_wide = any(
         target.split(".")[-1] in _BENIGN_WIDE_TARGETS
         for line in added
-        for target in _RAISES_TARGET_RE.findall(line)
+        for target in _matched_values(_RAISES_TARGET_RE, line)
     )
     if not added_wide:
         return []
@@ -794,13 +795,13 @@ def _restricted_testpaths(removed: Sequence[str], added: Sequence[str]) -> list[
         value
         for line in removed
         if _TESTPATHS_KEY_RE.match(line.strip())
-        for value in _TESTPATHS_VALUE_RE.findall(line)
+        for value in _matched_values(_TESTPATHS_VALUE_RE, line)
     ]
     new_values = [
         value
         for line in added
         if _TESTPATHS_KEY_RE.match(line.strip())
-        for value in _TESTPATHS_VALUE_RE.findall(line)
+        for value in _matched_values(_TESTPATHS_VALUE_RE, line)
     ]
     if not old_values or not new_values:
         return []

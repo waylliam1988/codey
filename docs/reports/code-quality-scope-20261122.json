@@ -3851,10 +3851,12 @@
         "codey/completion/edit_integrity.py"
       ],
       "id": "Q041",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 6
+      "status": "completed_changed",
+      "reviewed_files": ["codey/completion/edit_integrity.py"],
+      "verified_files": ["codey/completion/edit_integrity.py"],
+      "tests": ["tests/test_edit_integrity_monitor_boundary.py", "tests/test_completion_edit_integrity.py", "tests/test_project_completion_flow_edit_integrity.py"],
+      "reviewed_support": ["tests/test_edit_integrity_monitor_boundary.py"],
+      "result": "Treat task authorization extraction failures as monitor errors and type diff, reference and regex capture processing. 52 cases and 8 subtests passed. Scoped strict Any, Ruff and all production gates passed."
     },
     {
       "responsibility": "codey/completion: completion review and edit validation",

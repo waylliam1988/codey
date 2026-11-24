@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q040C，接续 Q041。开放事项保存在治理队列。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q041，接续 Q042。开放事项保存在治理队列。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1651,3 +1651,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - Q040B 已提交 `f251961d`。完整检查 `decision.py`、`engine.py` 和引擎测试。判定读取已精确标注的 `CheckEvidence` 字段，保留缺少失败回执时的默认值。诊断补充用 dataclass replace 更新已有决定的 proof，避免手动复制决策字段。计数夹具改为实例方法替身，移除过时的类型忽略。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_completion_engine.py tests/test_completion_provider_illegal_row_blocks.py tests/test_completion_verification.py --tb=short`，基线 32 passed、18 subtests passed。加入 `tests/test_coldstart_contract_cleanup.py::CompletionEvidenceDirectTests` 的最终复核 35 passed、18 subtests passed，无 skip，两个命令退出 0。最终三文件 mypy 严格 Any 由 4 条诊断降至 0，Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 与 kernel_type_precision_gate 均退出 0。
 - Q040C 完成。累计完成 72/340 批，覆盖 135/1009 个生产文件。下一批 Q041 为编辑完整性监测。
+
+
+### Q041 编辑完整性监测
+
+- Q040C 已提交 `426bc807`。完整检查 `edit_integrity.py` 和新增回归。监测入口约定内部错误投影为 `monitor_error`。任务对象无法转换为文本时，任务授权解释原在保护区外，`python -m pytest -q tests/test_edit_integrity_monitor_boundary.py --tb=short` 修改前 1 failed，退出 1，实际泄漏 ValueError。把标识和授权提取放入既有保护区。回归确认监测错误、未获授权状态及证明可引用的诊断。
+- 移除保序去重、正则捕获和动态回执属性中的 Any 传播。读取分析引用时验证可迭代的字符串元素。合法分析引用、变化范围和诊断标识保持原有投影。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_edit_integrity_monitor_boundary.py tests/test_completion_edit_integrity.py tests/test_project_completion_flow_edit_integrity.py --tb=short`，最终 52 passed、8 subtests passed，0 skip，退出 0。源和新用例严苛 Any 由 46 条诊断降至 0，Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q041 完成。累计完成 73/340 批，覆盖 136/1009 个生产文件。下一批 Q042 为编辑范围与项目验证。
