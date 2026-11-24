@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q028。Q026 的生产修复已验证，项目生命周期用例待跟进。下一批为 Q029。保留历史验收，复核后续提交实际影响的范围。
+当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q029。Q026 的生产修复已验证，项目生命周期用例待跟进。下一批为 Q029B。保留历史验收，复核后续提交实际影响的范围。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1412,3 +1412,4 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 命令期限的契约为可表示成有限正浮点数，解码器用 ValueError 报无效期限。输入一个超出浮点范围的整数时，原 `math.isfinite` 泄漏 OverflowError。显式转换期限并将该边界映射为现有 ValueError。类型合法的数值仍走原有限性和正数校验。
 - 在 `D:\codey` 先定向验证饱和队列和输出 schema 两个节点，2 passed。回归最初合放 `tests/test_browser_ipc_contract.py`，`python -m pytest -q tests/test_browser_ipc_contract.py --tb=short` 实际 4 failed、1 passed。修复后按提交职责拆为 `tests/test_browser_ipc_contract.py` 和 `tests/test_browser_command_contract.py`，相同断言及两个基线节点合计 7 passed，退出 0。另运行 `python -m pytest -q tests/test_browser_process.py::test_worker_real_browser_wait_cancel_and_binary_capture --tb=short`，真实 worker 定向集成 1 passed、退出 0。CDP 重连和 worker 其他生命周期测试分别归 Q029B/Q029C。
 - IPC 固定结构头的七条强 Any 诊断降至 0。两个源、两个回归的定向强 Any、Pyrefly、ty、Ruff 均退出 0。生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 及 kernel_type_precision_gate 均退出 0。日志在忽略的 `.e2e-artifacts/code-quality-20261122/q029-*.log`。两处修复可独立交付，将按帧写入和期限校验分开提交。
+- 帧短写修复已提交 `20c4b519`。期限校验作为独立修复提交。累计 48/327 批完成，完成批覆盖 95/1009 个生产文件。下一批 Q029B 为 CDP 启动、端点和重连绑定。

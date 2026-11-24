@@ -3264,12 +3264,15 @@
         "codey/automation/browser_ipc.py"
       ],
       "id": "Q029",
-      "status": "in_progress",
+      "status": "completed_changed",
       "reviewed_files": [
         "codey/automation/browser_contracts.py",
         "codey/automation/browser_ipc.py"
       ],
-      "verified_files": [],
+      "verified_files": [
+        "codey/automation/browser_contracts.py",
+        "codey/automation/browser_ipc.py"
+      ],
       "candidate_test_count": 55,
       "tests": [
         "tests/test_browser_process.py",
@@ -3281,7 +3284,10 @@
         "tests/test_browser_ipc_contract.py",
         "tests/test_browser_command_contract.py"
       ],
-      "result": "Partial stream writes formerly dropped frame bytes, and oversized integer deadlines leaked OverflowError. Four failed before and the full-write control passed. Seven direct and one real worker test passed after, plus scoped strong typing and full production gates. Commit framing and deadline validation independently."
+      "result": "Partial stream writes formerly dropped frame bytes, and oversized integer deadlines leaked OverflowError. Four failed before and the full-write control passed. Seven direct and one real worker test passed after, plus scoped strong typing and full production gates. Commit framing and deadline validation independently.",
+      "commits": [
+        "20c4b519"
+      ]
     },
     {
       "id": "Q029B",

@@ -107,8 +107,13 @@ class BrowserCommand:
                         "target_id", "frame_id"}:
             raise ValueError("invalid browser command shape")
         deadline = row["deadline"]
-        if (type(deadline) not in {int, float} or not isinstance(deadline, int | float)
-                or not math.isfinite(deadline) or deadline <= 0):
+        if isinstance(deadline, bool) or not isinstance(deadline, int | float):
+            raise ValueError("invalid browser command deadline")
+        try:
+            deadline = float(deadline)
+        except OverflowError as exc:
+            raise ValueError("invalid browser command deadline") from exc
+        if not math.isfinite(deadline) or deadline <= 0:
             raise ValueError("invalid browser command deadline")
         values = {key: require_json_string(row[key], key)
                   for key in ("operation_id", "owner_task_id", "resource_id", "effect_ref")}
@@ -116,7 +121,7 @@ class BrowserCommand:
             raise ValueError("missing browser invocation identity")
         return cls(values["operation_id"], BrowserAction(require_json_string(row["action"], "action")),
                    decode_json_object(row["arguments"]), values["owner_task_id"], values["resource_id"],
-                   values["effect_ref"], float(deadline), require_json_string(row["target_id"], "target_id"),
+                   values["effect_ref"], deadline, require_json_string(row["target_id"], "target_id"),
                    require_json_string(row["frame_id"], "frame_id"))
 
 
