@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from codey.operations.task_session import TaskSession
+from codey.policies.redaction import looks_prompt_visible_secret
 from codey.runtime.core.execution_receipt import ExecutionOutputReference, execution_receipt
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.storage.execution_output_store import ExecutionOutputStore
@@ -121,6 +122,38 @@ def _execution_origin(context: ReceiptReaderContext, result: ToolResult,
     return ReceiptReader(context.session, context.managed_outputs, child.conversation_id, child.task_id), original[1]
 
 
+def _receipt_origin(context: ReceiptReaderContext, identity: str,
+                    durable: DurableSession | None) -> tuple[ReceiptReaderContext, ToolResult]:
+    result = context.session._memory_results.get(identity)
+    if result is not None:
+        return context, result
+    if durable is not None:
+        from codey.operations.model_handoff import read_handoff_receipt
+
+        original = read_handoff_receipt(durable, session_id=context.session_id, run_id=context.run_id,
+                                        identity=identity, outputs=context.managed_outputs)
+        if original is not None:
+            owner, result = original
+            return ReceiptReader(context.session, context.managed_outputs, context.session_id, owner), result
+    raise ValueError("stored result unavailable in this task; use a receipt handle or complete result_ref, "
+                     "not an out_ artifact handle, search result id or source id")
+
+
+def _handoff_details(result: ToolResult, text: str, *, view: str) -> JsonObject:
+    from codey.research.passages import receipt_passages
+
+    if looks_prompt_visible_secret(text):
+        raise ValueError("original output contains material excluded from model handoff")
+    if view != "output" or not result.ok or not result.canonical.get("read_passages"):
+        return {}
+    passages: list[JsonValue] = [
+        {"passage_ref": passage.ref, "url": passage.source.final_url, "source_hash": passage.source.text_hash,
+         "start": passage.start, "end": passage.end}
+        for passage in receipt_passages(result.canonical["research_observation"], result.canonical["read_passages"])
+        if not looks_prompt_visible_secret(passage.source.final_url)]
+    return {"original_passages": passages} if passages else {}
+
+
 def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall, *, durable: DurableSession | None = None) -> ToolResult:
     known: JsonObject = {}
     try:
@@ -143,13 +176,11 @@ def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall, *, durable:
         if "query" in call.args and (not isinstance(query, str) or not 1 <= len(query) <= 512):
             raise ValueError("query must be a nonempty literal string of at most 512 characters")
         view = call.args.get("view", "output")
-        if view not in ("output", "value"):
+        if not isinstance(view, str) or view not in ("output", "value"):
             raise ValueError("view must be output or value")
-        result = delegate.session._memory_results.get(identity)
-        if result is None:
-            raise ValueError("stored result unavailable in this task; use a receipt handle or complete result_ref, "
-                             "not an out_ artifact handle, search result id or source id")
-        output_reader, output_receipt = _execution_origin(delegate, result, durable) if view == "output" else (delegate, result)
+        origin, result = _receipt_origin(delegate, identity, durable)
+        handed_off = origin is not delegate
+        output_reader, output_receipt = _execution_origin(origin, result, durable) if view == "output" else (origin, result)
         execution = execution_receipt(output_receipt)
         if execution is not None:
             known["execution"] = execution.facts()
@@ -167,6 +198,7 @@ def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall, *, durable:
         else:
             resolved = resolve_result_output(output_reader, output_receipt)
             text = resolved.text
+        handoff = _handoff_details(result, text, view=view) if handed_off else {}
         match_offset = None
         if isinstance(query, str):
             found = text.find(query, offset)
@@ -185,7 +217,8 @@ def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall, *, durable:
                 "display_truncated": resolved.display_truncated or view == "output" and result.truncated,
                 "page_truncated": offset > 0 or len(excerpt) < len(text),
                 "storage_complete": resolved.storage_complete, "output_source": resolved.source,
-                "output_reference": resolved.reference, "full_output_recoverable": resolved.full_output_recoverable}
+                "output_reference": resolved.reference, "full_output_recoverable": resolved.full_output_recoverable,
+                **handoff}
         if execution is not None:
             data["execution"] = execution.facts()
         data.update(_admission_navigation(result))
@@ -195,7 +228,8 @@ def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall, *, durable:
                 data["next_offset"] = None
         return ToolResult(call, json.dumps(data, ensure_ascii=False), ok=True,
                           canonical={"receipt_page": {"result_ref": identity, "view": view,
-                                                      "next_offset": data["next_offset"]}}, images=result.images)
+                                                      "next_offset": data["next_offset"]}},
+                          images=() if handed_off else result.images)
     except (OSError, sqlite3.Error, ValueError, KeyError) as exc:
         text = f"ERROR: {exc}. Read failure does not authorize re-execution."
         if "execution" in known:

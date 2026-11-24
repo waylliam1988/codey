@@ -1,6 +1,7 @@
 """Read original tool receipts when a user hands work to a new model run."""
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 from codey.durable.model import TASK_TERMINAL_STATUSES, TaskCheckpoint, thaw_json
@@ -10,11 +11,19 @@ from codey.operations.kernel_receipts import restore_result_receipt
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.research.passages import receipt_passages
 from codey.runtime.core.api_selection import ApiRunSelection
+from codey.runtime.core.models import ToolResult
 from codey.runtime.effects.effect_records import RuntimeEffectProjection, RuntimeEffectStore
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.task.model import HandoffRun, ModelHandoffRejected
 from codey.toolchain.tool_spec import canonical_tool_name
-from codey.types.json_value import JsonObject, JsonValue, decode_json_value
+from codey.types.json_value import (
+    JsonObject,
+    JsonValue,
+    decode_json_object,
+    decode_json_value,
+    require_json_boolean,
+    require_json_string,
+)
 
 OBSERVATION_DENIALS = frozenset({
     "project.write", "project.verify", "browser.effect", "browser.interact", "shell.approval",
@@ -69,6 +78,42 @@ def _unknown_action(effect: RuntimeEffectProjection) -> bool:
             and (effect.settlement is None or effect.settlement.status == "interrupted"))
 
 
+def _handoff_receipts(source: TaskCheckpoint, effects: tuple[RuntimeEffectProjection, ...],
+                      outputs: ManagedOutputStore | None) -> Iterator[tuple[RuntimeEffectProjection, ToolResult]]:
+    count = 0
+    for effect in reversed(effects):
+        intent = effect.intent
+        if (intent.effect_category != "tool_call" or _unknown_action(effect) or effect.settlement is None
+                or canonical_tool_name(intent.tool_name) not in _HANDOFF_TOOLS):
+            continue
+        result = restore_result_receipt(effect, store=outputs, session_id=source.conversation_id, run_id=intent.run_id)
+        if result.kind != "accepted":
+            yield effect, result
+            count += 1
+            if count == 12:
+                return
+
+
+def read_handoff_receipt(durable: DurableSession, *, session_id: str, run_id: str, identity: str,
+                         outputs: ManagedOutputStore | None) -> tuple[str, ToolResult] | None:
+    target = durable.task(run_id)
+    raw = thaw_json(target.state.get("input"))
+    if target.conversation_id != session_id or target.execution_kind != "model" or not isinstance(raw, dict):
+        return None
+    input_row = decode_json_object(raw)
+    if input_row.get("kind") != "handoff_run" or target.provider_snapshot.get("model_selection") is None:
+        return None
+    request = HandoffRun(require_json_string(input_row.get("source_run_id"), "source run"),
+                         require_json_string(input_row.get("instruction"), "handoff instruction"),
+                         require_json_boolean(input_row.get("observe_only"), "observe only"))
+    selection = ApiRunSelection.from_payload(thaw_json(target.provider_snapshot["model_selection"]))
+    project = target.state.get("project")
+    source, effects = authorize_model_handoff(durable, request=request, target=selection, session_id=session_id,
+        run_id=run_id, project=project if isinstance(project, str) else None)
+    return next(((effect.intent.run_id, result) for effect, result in _handoff_receipts(source, effects, outputs)
+                 if effect.intent.effect_id == identity), None)
+
+
 def render_model_handoff(source: TaskCheckpoint, effects: tuple[RuntimeEffectProjection, ...],
                          outputs: ManagedOutputStore | None) -> str:
     return model_handoff_context(source, effects, outputs)[0]
@@ -77,18 +122,12 @@ def render_model_handoff(source: TaskCheckpoint, effects: tuple[RuntimeEffectPro
 def model_handoff_context(source: TaskCheckpoint, effects: tuple[RuntimeEffectProjection, ...],
                           outputs: ManagedOutputStore | None) -> tuple[str, tuple[str, ...]]:
     rows: list[JsonObject] = []
-    unknown: list[JsonObject] = []
+    unknown: list[JsonObject] = [{"tool": effect.intent.tool_name, "effect_ref": effect.intent.effect_id}
+                                for effect in reversed(effects) if _unknown_action(effect)]
     source_urls: dict[str, None] = {}
-    for effect in reversed(effects):
+    for effect, result in _handoff_receipts(source, effects, outputs):
         intent, settlement = effect.intent, effect.settlement
-        if _unknown_action(effect):
-            unknown.append({"tool": intent.tool_name, "effect_ref": intent.effect_id})
-            continue
-        if canonical_tool_name(intent.tool_name) not in _HANDOFF_TOOLS or settlement is None or len(rows) >= 12:
-            continue
-        result = restore_result_receipt(effect, store=outputs, session_id=source.conversation_id, run_id=intent.run_id)
-        if result.kind == "accepted":
-            continue
+        assert settlement is not None
         row: JsonObject = {"result_ref": intent.effect_id, "tool": result.call.name, "ok": result.ok}
         for key in ("path", "url"):
             if isinstance(value := result.call.args.get(key), str):
@@ -117,6 +156,7 @@ def model_handoff_context(source: TaskCheckpoint, effects: tuple[RuntimeEffectPr
         rows.append(row)
     text = ("User-authorized model handoff. Follow the current user task. The source run's receipts are evidence "
             "of completed work. Reuse their observed contents and verify the current version of any file or page you change. "
+            "Use read_tool_result with an original result_ref to recover details beyond this excerpt. "
             "An unknown action requires a read-only observation before any new action is authorized.\n"
             + canonical_json({"source_run": source.task_id, "receipts": rows, "unknown_actions": unknown}))
     return text, tuple(source_urls)

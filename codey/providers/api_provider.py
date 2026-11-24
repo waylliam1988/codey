@@ -847,7 +847,7 @@ class ApiProvider:
             api_messages.finalize_messages(payload, items)
         else:
             payload[key] = items
-        if settings.text_tool_json:
+        if settings.text_tool_json and self.api_protocol != "anthropic-messages":
             payload["response_format"] = {"type": "json_schema", "json_schema": {
                 "name": "text_tool_call", "strict": True, "schema": settings.text_tool_schema or {"type": "object", "properties": {
                     "tool": {"type": "string"}, "args": {"type": "object"}},

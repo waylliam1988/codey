@@ -93,12 +93,15 @@ class MessagesStream:
         self.blocks: list[JsonObject] = []
         self.current: JsonObject | None = None
         self.arguments: list[str] = []
+        self.tool_inputs: dict[int, str] = {}
         self.start = self.message.copy()
 
     def is_repeated_start(self, event: JsonObject) -> bool:
-        # Some compatible servers emit the same start twice before a tool block.
-        return (not self.blocks and self.current is None and self.message == self.start
-                and event.get("message") == self.start)
+        # Compatible servers can repeat the envelope when switching to tool output.
+        repeated = decode_json_object(event.get("message"))
+        identity = self.start.get("id")
+        return (isinstance(identity, str) and bool(identity)
+                and all(repeated.get(key) == self.start.get(key) for key in ("id", "type", "role", "model")))
 
     def update(self, event: JsonObject) -> JsonObject | None:
         kind = event.get("type")
@@ -112,8 +115,8 @@ class MessagesStream:
             if kind == "content_block_delta":
                 self._append_delta(decode_json_object(event.get("delta")), self.current)
             else:
-                if self.arguments:
-                    self.current["input"] = parse_json_object("".join(self.arguments))
+                if arguments := "".join(self.arguments).strip():
+                    self.tool_inputs[len(self.blocks)] = arguments
                 self.blocks.append(self.current)
                 self.current = None
                 self.arguments.clear()
@@ -122,8 +125,15 @@ class MessagesStream:
             self.message["usage"] = {**decode_json_object(self.message.get("usage", {})),
                                      **decode_json_object(event.get("usage", {}))}
         elif kind == "message_stop":
-            if self.current is not None or not self.message.get("stop_reason"):
+            reason = self.message.get("stop_reason")
+            if not reason or (self.current is not None and reason != "max_tokens"):
                 raise ValueError("Messages stream ended with unfinished content")
+            if reason == "max_tokens":
+                if self.current is not None:
+                    self.blocks.append(self.current)
+            else:
+                for index, arguments in self.tool_inputs.items():
+                    self.blocks[index]["input"] = parse_json_object(arguments)
             self.message["content"] = list[JsonValue](self.blocks)
             return self.message
         return None
@@ -131,6 +141,8 @@ class MessagesStream:
     def _append_delta(self, delta: JsonObject, block: JsonObject) -> None:
         kind = require_json_string(delta.get("type"), "content delta type")
         if kind == "input_json_delta":
+            if block.get("type") != "tool_use":
+                raise ValueError("Messages argument delta belongs to a non-tool block")
             self.arguments.append(require_json_string(delta.get("partial_json"), "tool input fragment"))
             return
         key = {"text_delta": "text", "thinking_delta": "thinking", "signature_delta": "signature"}.get(kind)
@@ -175,6 +187,17 @@ def _chat_finish(event: JsonObject, accumulator: ChatStreamAccumulator) -> str:
     return finish
 
 
+def _message_start(current: MessagesStream | None, event: JsonObject,
+                   on_event: Callable[[JsonObject], None]) -> MessagesStream:
+    if current is None:
+        started = MessagesStream(event)
+        on_event(event)
+        return started
+    if not current.is_repeated_start(event):
+        raise ValueError("Messages stream has duplicate starts")
+    return current
+
+
 def read_sse(response: object, *, deadline: float, cancelled: Callable[[], bool],
              on_event: Callable[[JsonObject], None] = lambda event: None,
              control: AttemptControl | None = None,
@@ -217,18 +240,17 @@ def read_sse(response: object, *, deadline: float, cancelled: Callable[[], bool]
             chat_done = True
             break
         event = parse_json_object(frame.decode("utf-8"))
-        on_event(event)
+        if event.get("type") != "message_start":
+            on_event(event)
         terminal = _responses_terminal(event, error_detail_filter)
         if terminal is not None:
             return terminal
-        if event.get("type") == "message_start":
-            if messages is None:
-                messages = MessagesStream(event)
-            elif not messages.is_repeated_start(event):
-                raise GenerationUnknownError("Messages stream has duplicate starts; not resent")
-            continue
-        if messages is not None:
+        if event.get("type") == "message_start" or messages is not None:
             try:
+                if event.get("type") == "message_start":
+                    messages = _message_start(messages, event, on_event)
+                    continue
+                assert messages is not None
                 completed = messages.update(event)
             except ValueError as exc:
                 raise GenerationUnknownError(f"malformed Messages stream: {exc}; not resent") from exc

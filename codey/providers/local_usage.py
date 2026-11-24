@@ -63,6 +63,8 @@ def parse_responses_usage(event: dict[str, object]) -> ReportedUsage | None:
 
 
 def parse_messages_usage(event: dict[str, object]) -> ReportedUsage | None:
+    if event.get("type") == "message_start":
+        event = dict(decode_json_object(event.get("message")))
     if event.get("type") != "message" or event.get("usage") is None:
         return None
     data = decode_json_object(event["usage"])

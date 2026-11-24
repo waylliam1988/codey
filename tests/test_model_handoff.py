@@ -13,6 +13,7 @@ from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.model_handoff import authorize_model_handoff, render_model_handoff
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
+from codey.operations.tool_result_reader import ReceiptReader, read_tool_result
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.snapshot import provider_snapshot
 from codey.runtime.core.api_selection import ApiRunSelection
@@ -30,16 +31,21 @@ def test_new_handoff_sends_to_the_explicit_model_with_original_read_ref(
 ) -> None:
     project = tmp_path / "project"
     project.mkdir()
-    (project / "old.py").write_bytes(b"VALUE = 23\n")
+    contents = b"# Original source context\n" * 44 + b"VALUE = 23\n"
+    (project / "old.py").write_bytes(contents)
     state_home = tmp_path / "state"
     (tmp_path / "old").mkdir()
     (tmp_path / "new").mkdir()
     session_id = "handoff-session"
     url = "http://scripted.test/v1"
 
+    old_read = ""
+
     def replies() -> Iterator[JsonObject]:
         yield {"tool": "read_file", "args": {"path": "old.py"}}
         yield {"tool": "done", "args": {"summary": "Read the source value."}}
+        yield {"tool": "read_tool_result", "args": {"result_ref": old_read, "query": "VALUE = 23"}}
+        assert "VALUE = 23" in str(requests(tmp_path / "new")[-1]["messages"])
         yield {"tool": "done", "args": {"summary": "The existing result is available."}}
 
     install_http(monkeypatch, replies(), native=False)
@@ -67,7 +73,7 @@ def test_new_handoff_sends_to_the_explicit_model_with_original_read_ref(
     payload = requests(tmp_path / "new")[0]
     assert payload["model"] == "new-model"
     assert "User-authorized model handoff" in str(payload["messages"]) and old_read in str(payload["messages"])
-    assert "VALUE = 23" in str(payload["messages"])
+    assert "VALUE = 23" not in str(payload["messages"])
     with closing(AppContext(state_home, start_scheduler=False)) as state:
         first = state.durable.task(old.run_id)
         second = state.durable.task(new.run_id)
@@ -75,7 +81,16 @@ def test_new_handoff_sends_to_the_explicit_model_with_original_read_ref(
         assert second.provider_snapshot["model_id"] == "new-model"
         assert second.state.get("previous_run_id") in ("", None)
         assert second.state["input"]["source_run_id"] == old.run_id
-        assert (project / "old.py").read_bytes() == b"VALUE = 23\n"
+        authorized = ReceiptReader(TaskSession(TaskPolicy(frozenset({"control"}))),
+            state.task_submission_stores.managed_outputs, session_id, new.run_id)
+        lookup = ToolCall("read_tool_result", {"result_ref": old_read, "query": "VALUE = 23"})
+        assert read_tool_result(authorized, lookup, durable=state.durable).ok
+        assert not authorized.session._memory_results
+        unauthorized = ReceiptReader(authorized.session, authorized.managed_outputs, "other-conversation", new.run_id)
+        assert not read_tool_result(unauthorized, lookup, durable=state.durable).ok
+        unrelated = ReceiptReader(authorized.session, authorized.managed_outputs, session_id, old.run_id)
+        assert not read_tool_result(unrelated, lookup, durable=state.durable).ok
+        assert (project / "old.py").read_bytes() == contents
         assert len([row for row in tool_receipts(state_home) if row.result.call.name == "read_file"]) == 1
 
 

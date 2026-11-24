@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 
 from codey.providers.api_chat import (
     checkpoint_item as checkpoint_item,
@@ -75,11 +76,11 @@ def _assistant_blocks(message: dict[str, object]) -> list[JsonObject]:
 def build_payload(items: list[dict[str, object]], tools: list[ProviderToolDefinition] | None,
                   settings: GenerationSettings) -> dict[str, object]:
     max_tokens = settings.output_tokens or 4096
-    thinking = settings.thinking is True and max_tokens > 1024
+    thinking = settings.thinking is True and max_tokens >= 2048
     payload: dict[str, object] = {"model": settings.model, "stream": settings.stream, "max_tokens": max_tokens,
         "messages": materialize_messages(items, protocol="anthropic-messages", pending_calls=pending_calls)}
     if thinking:
-        payload["thinking"] = {"type": "enabled", "budget_tokens": min(4096, max_tokens - 1)}
+        payload["thinking"] = {"type": "enabled", "budget_tokens": min(4096, max_tokens // 2)}
     else:
         payload["temperature"] = settings.temperature
     if tools:
@@ -127,13 +128,17 @@ def decode_exchange(body: dict[str, object], *, text_only: bool,
     if body.get("type") != "message" or not isinstance(body.get("content"), list):
         raise ValueError("invalid Messages response")
     blocks = _blocks(body["content"])
+    limited = body.get("stop_reason") == "max_tokens"
     calls: list[ProviderToolCall] = []
     visible: list[str] = []
     reasoning: list[str] = []
+    has_tool_blocks = False
     for block in blocks:
         if block.get("type") == "tool_use":
-            calls.append(ProviderToolCall(require_json_string(block.get("id"), "tool id"),
-                require_json_string(block.get("name"), "tool name"), decode_json_object(block.get("input"))))
+            has_tool_blocks = True
+            if not limited:
+                calls.append(ProviderToolCall(require_json_string(block.get("id"), "tool id"),
+                    require_json_string(block.get("name"), "tool name"), decode_json_object(block.get("input"))))
         elif block.get("type") == "text":
             visible.append(require_json_string(block.get("text"), "message text"))
         elif block.get("type") == "thinking":
@@ -142,8 +147,6 @@ def decode_exchange(body: dict[str, object], *, text_only: bool,
             raise ValueError("unsupported Messages content block")
     if body.get("stop_reason") in {"refusal", "pause_turn"}:
         raise ValueError("Messages cannot continue this response")
-    if body.get("stop_reason") == "max_tokens" and (text_only or calls):
-        raise OutputLengthError("Messages output truncated")
     if text_only and calls:
         raise ValueError("unexpected native tool call in a text-only response")
     if len({call.id for call in calls}) != len(calls):
@@ -151,9 +154,24 @@ def decode_exchange(body: dict[str, object], *, text_only: bool,
     text = "\n".join(visible)
     turn = AssistantTurn(text=text, reasoning="\n".join(reasoning), tool_calls=tuple(calls),
         raw={ANTHROPIC_BLOCKS: blocks} if calls else {},
-        finish=TurnFinish.OUTPUT_LIMIT if body.get("stop_reason") == "max_tokens" else TurnFinish.COMPLETE)
+        finish=TurnFinish.OUTPUT_LIMIT if limited else TurnFinish.COMPLETE)
+    if limited:
+        if text_only:
+            raise OutputLengthError("Messages output truncated", turn=turn)
+        return turn, None
     stored: dict[str, object] = {"role": "assistant", "content": text, ANTHROPIC_BLOCKS: blocks}
-    if calls:
+    if not text_only and not has_tool_blocks and text_decoder is not None:
+        normalized = text_decoder(text)
+        if isinstance(normalized, AssistantTurn):
+            if normalized.finish is TurnFinish.PROTOCOL_ERROR:
+                return normalized, None
+            turn = replace(normalized, reasoning=turn.reasoning or normalized.reasoning)
+        else:
+            turn = replace(turn, text=normalized)
+        stored["content"] = turn.text
+        if turn.tool_calls:
+            stored.pop(ANTHROPIC_BLOCKS)
+    if turn.tool_calls:
         stored["tool_calls"] = [{"id": call.id, "type": "function", "function": {
-            "name": call.name, "arguments": json.dumps(call.arguments, ensure_ascii=False)}} for call in calls]
+            "name": call.name, "arguments": json.dumps(call.arguments, ensure_ascii=False)}} for call in turn.tool_calls]
     return turn, [stored]
