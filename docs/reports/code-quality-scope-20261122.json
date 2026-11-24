@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 1009,
   "region_count": 40,
-  "batch_count": 342,
+  "batch_count": 345,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -282,6 +282,9 @@
       "batches": [
         "Q046",
         "Q047",
+        "Q047B",
+        "Q047C",
+        "Q047D",
         "Q048"
       ],
       "direct_dependencies": [
@@ -3931,7 +3934,7 @@
       "tests": ["tests/test_completion_repair_prompt_budget.py", "tests/test_completion_repair_context.py", "tests/test_run_trace_completion_repair_context.py", "tests/test_agent_completion_repair_context.py", "tests/test_completion_repair_pause_preserves_intents.py", "tests/test_stagnant_completion_repair_requires_current_validation.py"],
       "reviewed_support": ["tests/test_completion_repair_prompt_budget.py"],
       "result": "Fit repair context to the full prompt budget and require visible observed facts. Type the complete projection and keep the payload digest stable for unaffected output. 40 direct and caller tests, 2 subtests, scoped strict Any, Ruff and production gates passed.",
-      "followups": ["A full-flow stagnant repair scenario reaches candidate validation but fails on the baseline renderer with repeated tool results and incomplete evidence. Track the candidate closure and durable verification replay at Q090/Q091. The expanded run has not reached a final summary."]
+      "followups": ["A full-flow stagnant repair scenario reaches candidate validation but fails on the baseline renderer with repeated tool results and incomplete evidence. The expanded run ended with exit 1 after a Windows access violation during durable verification replay and has no pytest summary. Track candidate closure and replay at Q090/Q091."]
     },
     {
       "responsibility": "codey/control: package entry and composition",
@@ -3939,24 +3942,48 @@
         "codey/control/__init__.py"
       ],
       "id": "Q046",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_unchanged",
+      "reviewed_files": ["codey/control/__init__.py"],
+      "verified_files": ["codey/control/__init__.py"],
+      "result": "Verified clean-package import, setuptools discovery and downstream client discoverability. Scoped strict Any and Ruff passed."
     },
     {
-      "responsibility": "codey/control: shared contracts and module services",
-      "files": [
-        "codey/control/cli.py",
-        "codey/control/client.py",
-        "codey/control/mcp.py",
-        "codey/control/rpc.py"
-      ],
+      "responsibility": "Control CLI registration, input and dispatch",
+      "files": ["codey/control/cli.py"],
       "id": "Q047",
+      "status": "completed_changed",
+      "reviewed_files": ["codey/control/cli.py"],
+      "verified_files": ["codey/control/cli.py"],
+      "tests": ["tests/test_control_cli_generation_input.py", "tests/test_control_service_contract.py", "tests/test_external_control.py"],
+      "reviewed_support": ["tests/test_control_cli_generation_input.py"],
+      "result": "Return a structured invalid input error when generation lookup lacks a session. Type argparse and transport boundaries. 21 scoped tests passed with a refreshed test runtime descriptor, and strict Any, Ruff and production gates passed."
+    },
+    {
+      "responsibility": "Local HTTP control client and launcher coordination",
+      "files": ["codey/control/client.py"],
+      "id": "Q047B",
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 4
+      "tests": ["tests/test_control_service_startup.py", "tests/test_desktop_http_listener_lifecycle.py", "tests/test_external_control.py"]
+    },
+    {
+      "responsibility": "MCP stdio server adapter",
+      "files": ["codey/control/mcp.py"],
+      "id": "Q047C",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/test_external_control.py"]
+    },
+    {
+      "responsibility": "JSON-RPC stdio adapter",
+      "files": ["codey/control/rpc.py"],
+      "id": "Q047D",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/test_external_control.py"]
     },
     {
       "responsibility": "codey/control: task kernel and execution",
@@ -9787,6 +9814,11 @@
       "batch": "Q042",
       "replacement": ["Q042", "Q042B", "Q042C"],
       "reason": "Edit classification, proof evidence and the model-visible candidate map are separate responsibilities. Each original file retains one owner."
+    },
+    {
+      "batch": "Q047",
+      "replacement": ["Q047", "Q047B", "Q047C", "Q047D"],
+      "reason": "Argparse dispatch, the HTTP client and launcher, the MCP SDK adapter, and JSON-RPC framing have separate boundaries and verification. All four files retain one owner."
     }
   ]
 }

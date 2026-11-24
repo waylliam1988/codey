@@ -1712,3 +1712,19 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_completion_repair_prompt_budget.py tests/test_completion_repair_context.py tests/test_run_trace_completion_repair_context.py tests/test_agent_completion_repair_context.py tests/test_completion_repair_pause_preserves_intents.py --tb=short`，40 passed、2 subtests passed，无失败、错误或跳过，退出 0。改前去掉新增与暂停用例的基线为 36 passed、2 subtests passed，退出 0。再加入 `tests/test_stagnant_completion_repair_requires_current_validation.py` 的扩展命令已有两个失败标记，仍在执行，未取得最终计数。
 - 用 `git show ffec6c46:codey/completion/repair_context.py` 在内存恢复旧渲染，再用 `pytest.main` 单独执行 `tests/test_stagnant_completion_repair_requires_current_validation.py::test_correct_repair_after_stale_searches_gets_current_tests_review_and_proof`，1 failed、退出 1，耗时 143.50 秒。旧版已进入候选验证，最终以重复工具结果和完成证据缺失停止。新旧进程 120 秒栈采样均在候选验证后段的 `verification_history` 和 durable 任务记录读取。完整流程的其他用例及具体根因继续由 Q090/Q091 跟进。
 - Q045 部分完成，保留可独立验收的提示修复与类型治理。累计完成 78/342 批，完成批覆盖 141/1009 个生产文件，另有 18 批部分完成。下一批 Q046 为 control 包入口。
+
+
+### Q046 control 包入口
+
+- Q045 提示修复已提交 `bfb2378e`。完整检查 `codey/control/__init__.py`。在 `D:\codey` 使用 `python -` 在新进程验证导入、setuptools `find_packages(include=['codey*'])` 的包发现、客户端模块的 `find_spec` 及导入时的模块清单。包入口没有加载 control 子模块或 operations 模块，断言全部通过，退出 0。
+- `python -m mypy codey/control/__init__.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 和 `ruff check codey/control/__init__.py` 均退出 0。传输行为归后续模块批次。Q046 完成，无需修改源码。累计完成 79/342 批，完成批覆盖 142/1009 个生产文件，另有 18 批部分完成。下一批 Q047 为控制客户端、CLI、MCP 和 RPC。
+
+
+### Q047 控制 CLI
+
+- 原批次按 CLI、HTTP 客户端与启动协调、MCP、RPC 四个边界拆为 Q047、Q047B、Q047C、Q047D，生产源码仍是 1009 个，批次总数更新为 345。完整核对 CLI 和新增回归。
+- `send_message` 要求会话身份。`python -m codey control send --json` 缺少会话时原先抛出 `KeyError: 'conversation_id'`，`python -m pytest -q tests/test_control_cli_generation_input.py --tb=short` 修改前 1 failed、退出 1。现在返回结构化 `INVALID_ARGUMENT`，退出 1，不访问服务。合法会话对照仍查询当前代次、生成请求 ID 并发送请求。CLI 的 argparse 与 JSON 边界完成类型收窄。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_control_cli_generation_input.py tests/test_control_service_contract.py tests/test_external_control.py::test_rpc_is_a_shared_service_client_with_unicode_framing tests/test_external_control.py::test_mcp_stdio_process_attaches_to_the_running_service --tb=short`，初次 19 passed、2 errors、退出 1，两个服务 fixture 因已发布描述符与源码清单不一致无法启动。调用 `tools.publish_runtime.publish_runtime` 临时刷新描述符并复跑同范围，21 passed、0 失败或跳过、退出 0，描述符随后恢复原字节。
+- 源与回归的 mypy 严格 Any 和 Ruff，以及全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty、kernel_type_precision_gate 均通过。
+- 补记 Q045 扩展运行结局。该进程在候选验证读 durable 任务历史时触发 Windows access violation，退出 1。此前已有两条失败标志，进程没有生成 pytest 汇总，完整范围仍待 Q090/Q091 复核。
+- Q047 完成。累计完成 80/345 批，完成批覆盖 143/1009 个生产文件，另有 18 批部分完成。下一批 Q047B 为 HTTP 客户端与启动协调。
