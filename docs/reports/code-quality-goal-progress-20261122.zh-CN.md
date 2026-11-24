@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q034，接续 Q035。Q031D 的回调签名、Q030C 的研究调用方和 Q033 的上层实验场景仍有后续事项。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，Q035 的状态修复已验证，导航测试修复单独提交。Q031D 的回调签名、Q030C 的研究调用方和 Q033 的上层实验场景仍有后续事项。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1532,4 +1532,12 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 完整检查 `codey/codemode/catalog.py` 和 `tests/test_read_result_contract.py`。上次记录的 3 个 read-result 失败在当前 HEAD 的修改前基线全部通过，当前测试通过显式目录选择和 `describe` 验证实际合同。此次未改动它们的业务预期。
 - `build_catalog_snapshot` 遇到重复名称直接失败，移除只复制已排序条目的列表。重载生成共用一次参数 schema 转换。用 `git show HEAD:codey/codemode/catalog.py` 在同一 Python 进程加载原实现，对比冻结目录、排序、摘要、完整声明和重复名 ValueError，断言通过，退出 0。积累的实验渲染 wrapper 仍归 Q262/Q274。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_read_result_contract.py tests/test_codemode_catalog_result_guidance.py tests/test_codemode_discovery_session.py tests/test_codemode_host.py --tb=short`，修改前后各 34 passed，0 skip，退出 0。最终定向 `python -m mypy codey/codemode/catalog.py tests/test_read_result_contract.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 从测试文件 3 条诊断降到 0。保留 schema 类型、不可变性和 host 非法返回断言。两文件 Ruff、全生产 mypy（763 文件）、Pyrefly（0 errors、35 suppressed、165 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
-- Q034 完成。累计完成 59/333 批，覆盖 115/1009 个生产文件。下一批 Q035 为 Code Mode 参数/源码协议。
+- Q034 完成。累计完成 59/333 批，覆盖 115/1009 个生产文件。下一批 Q035 为 Code Mode 共享类型、标识、选择器和状态。
+
+
+### Q035 Code Mode 共享类型、标识、选择器和状态
+
+- Q034 已提交 `d53039fc`。原 Q035 拆为共享数据与状态 Q035、工具宿主 Q035C、持久化重放 Q035D、JavaScript 客体和 Node 传输 Q035E。总数为 336 批，全部 1009 个生产文件继续留在队列中。完整检查 `state.py`、`identity.py`、`types.py`、`navigation.py` 及两个修改的测试文件。
+- 状态入口承诺持久化有界 JSON，写入失败不应替换原值。Python 把嵌套字典的整数键 `1` 和字符串键 `"1"` 编为同一个对象字段，旧 `json.loads` 静默丢掉第一项。`python -m pytest -q tests/test_codemode_writes_and_state.py::test_durable_codemode_state_rejects_duplicate_encoded_fields --tb=short` 修改前 1 failed，退出 1，原因是没有抛 ValueError。现在沿用项目的 `unique_json_fields`，拒绝编码后重名字段。回归验证合法嵌套值能读回，拒绝写入后原值仍在。公开状态接口和 JSON 字节预算保留原契约。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_codemode_writes_and_state.py tests/test_codemode_contract.py tests/test_task_navigation_selector.py tests/test_task_navigation_binding.py --tb=short`，状态修复后 84 passed、5 failed，退出 1。五个失败均发生在导航快照夹具，下面记录单独处理。回放调用方 `python -m pytest -q tests/test_codemode_replay_authority.py tests/test_codemode_protocol_closure.py -k 'state or replay' --tb=short`，21 passed、7 deselected，退出 0。
+- 审核生产状态依赖及 JSON 边界，改用已有 `DurableSession` 类型，并保留冻结状态到可写字典的转换。`python -m mypy codey/codemode/state.py codey/codemode/identity.py codey/codemode/types.py codey/codemode/navigation.py tests/test_codemode_writes_and_state.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated`、相同五文件 Ruff、全生产 mypy、Pyrefly、ty 及 kernel_type_precision_gate 均退出 0。

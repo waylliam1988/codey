@@ -74,6 +74,26 @@ def test_durable_codemode_state_rejects_oversized_values() -> None:
         DurableCodeModeState(durable, "task", value_bytes=32).store("big", "x" * 100)
 
 
+def test_durable_codemode_state_rejects_duplicate_encoded_fields() -> None:
+    from codey.codemode.state import DurableCodeModeState
+    from codey.durable import DurableSession, MemoryDurableStore
+
+    durable = DurableSession(MemoryDurableStore())
+    try:
+        durable.admit_input(
+            conversation_id="chat", request_id="request", task_id="task", text="run",
+            provider_snapshot={"provider_id": "test"},
+        )
+        state = DurableCodeModeState(durable, "task")
+        prior = {"nested": [{"1": "saved", "2": "also saved"}]}
+        state.store("answer", prior)
+        with pytest.raises(ValueError, match="duplicate JSON key"):
+            state.store("answer", {"nested": [{1: "first", "1": "second"}]})
+        assert state.load("answer") == prior
+    finally:
+        durable.close()
+
+
 def test_node_worker_state_rpc_round_trip() -> None:
     from codey.codemode.runtime import NodeWorkerRuntime
     from codey.codemode.types import ToolCatalogEntry

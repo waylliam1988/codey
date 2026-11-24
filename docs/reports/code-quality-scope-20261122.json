@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 1009,
   "region_count": 40,
-  "batch_count": 333,
+  "batch_count": 336,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -204,6 +204,9 @@
         "Q033",
         "Q034",
         "Q035",
+        "Q035C",
+        "Q035D",
+        "Q035E",
         "Q036",
         "Q037",
         "Q038",
@@ -3659,25 +3662,50 @@
       "result": "All previously recorded read-result failures pass on the baseline. Remove redundant storage and repeated schema conversion, preserving ordering, digest, declarations, and duplicate rejection in a HEAD comparison probe. 34 passed before and after. Scoped strict Any and Ruff, whole-production mypy, Pyrefly, ty and the kernel precision gate passed."
     },
     {
-      "responsibility": "codey/codemode: shared contracts and module services",
+      "responsibility": "Code Mode execution identity, task selectors, frozen DTOs and checkpoint state",
       "files": [
-        "codey/codemode/guest_runner.js",
-        "codey/codemode/host.py",
         "codey/codemode/identity.py",
-        "codey/codemode/replay.py",
         "codey/codemode/types.py",
         "codey/codemode/navigation.py",
-        "codey/codemode/state.py",
-        "codey/codemode/node_runner.mjs"
+        "codey/codemode/state.py"
       ],
       "id": "Q035",
+      "status": "in_progress",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": [
+        "tests/test_codemode_writes_and_state.py",
+        "tests/test_codemode_contract.py",
+        "tests/test_task_navigation_selector.py",
+        "tests/test_task_navigation_binding.py"
+      ]
+    },
+    {
+      "id": "Q035C",
+      "responsibility": "Code Mode tool admission and result handling in the host",
+      "files": ["codey/codemode/host.py"],
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 33,
-      "follow_up": [
-        "Machine gate small batch: tests/test_read_result_contract.py has 3 failures: read-only host/kernel reject task_control write entries; inline declaration assertion conflicts with compact output. Classify fixture vs production contract independently; catalog.py has external dirty work, preserve it. Not caused by durable settlement execution; no assertions changed."
-      ]
+      "tests": ["tests/test_codemode_host.py", "tests/test_codemode_production_boundaries.py"]
+    },
+    {
+      "id": "Q035D",
+      "responsibility": "Code Mode durable replay and repair authority",
+      "files": ["codey/codemode/replay.py"],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/test_codemode_replay_authority.py", "tests/test_codemode_repair_replay.py"]
+    },
+    {
+      "id": "Q035E",
+      "responsibility": "Code Mode JavaScript guest and Node process transport",
+      "files": ["codey/codemode/guest_runner.js", "codey/codemode/node_runner.mjs"],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/test_codemode_runtime.py", "tests/test_codemode_source_preflight.py"]
     },
     {
       "id": "Q035B",
@@ -9651,6 +9679,11 @@
         "Q031D"
       ],
       "reason": "Input/actionability, output capture, parent route transport and the legacy worker lifetime have independent contracts and verification. All seven files retain an owner."
+    },
+    {
+      "batch": "Q035",
+      "replacement": ["Q035", "Q035C", "Q035D", "Q035E"],
+      "reason": "Shared data, selectors and checkpoint mutation can be verified separately from host admission, durable replay and the JavaScript runtime. All eight original files retain one owner."
     }
   ]
 }

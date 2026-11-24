@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from codey.durable.model import TaskCheckpoint, thaw_json
+from codey.types.json_value import unique_json_fields
+
+if TYPE_CHECKING:
+    from codey.durable.session import DurableSession
 
 
 class CodeModeStateStore(Protocol):
@@ -22,7 +26,7 @@ class DurableCodeModeState:
 
     def __init__(
         self,
-        durable: Any,
+        durable: DurableSession,
         task_id: str,
         *,
         max_keys: int = 64,
@@ -55,7 +59,8 @@ class DurableCodeModeState:
         state = self.values_at(current)
         if key not in state and len(state) >= self.max_keys:
             raise ValueError("CodeMode state key limit exceeded")
-        state[key] = json.loads(encoded)
+        decoded: object = json.loads(encoded, object_pairs_hook=unique_json_fields)
+        state[key] = decoded
         return state
 
     def load(self, key: str) -> object:
@@ -63,13 +68,12 @@ class DurableCodeModeState:
 
     @staticmethod
     def values_at(current: TaskCheckpoint) -> dict[str, object]:
-        raw = current.state.get("codemode_state", {})
+        empty: dict[str, object] = {}
+        raw = current.state.get("codemode_state", empty)
         if not isinstance(raw, Mapping):
             raise ValueError("invalid CodeMode program state")
-        value = thaw_json(raw)
-        if not isinstance(value, dict):
-            raise ValueError("invalid CodeMode program state")
-        return value
+        fields: Mapping[object, object] = raw
+        return {str(key): thaw_json(item) for key, item in fields.items()}
 
     def _key(self, key: str) -> str:
         if not isinstance(key, str) or not key:
