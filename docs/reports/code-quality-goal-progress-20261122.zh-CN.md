@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q035B，接续 Q036。开放事项保存在治理队列。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q036，接续 Q037。开放事项保存在治理队列。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1578,3 +1578,12 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 候选回执的路径已经失效时，它不能为当前目标提供任何版本。跳过该候选后可以使用同批次的有效目标回执。回归同时验证真正请求预检该外部链接时仍被拒绝，预检没有修改项目或外部文件。浏览器流程的逐步校验和工具集合无需修改。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_codemode_patch_read_versions.py tests/test_project_patch.py tests/test_followup_mechanisms.py -k 'patch or flow' --tb=short`，16 passed、13 deselected，0 skip，退出 0。对两个生产文件和新增测试执行 mypy 严格 Any 与 Ruff，退出 0。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q035B 完成。累计完成 63/336 批，覆盖 123/1009 个生产文件。Q035E 的只读检查记录随本提交保存。下一批 Q036 为 JSON 编辑、结果修复和验证合同。
+
+
+### Q036 JSON 编辑、结果修复和验证参数
+
+- Q035B 已提交 `086e9e3f`。完整检查 `json_edit.py`、`shape_repair.py`、`verification.py` 和新增回归。文件字段验证通过 `ValueError` 报告无效源文档。5000 层数组的 JSON 在 `json_source_value` 和 `replace_json_fields` 中都泄漏了 `RecursionError`。`python -m pytest -q tests/test_codemode_json_nesting.py --tb=short` 修改前 2 failed，退出 1。两条入口现共用完整文档解码并将该边界映射为 `ValueError`。同断言通过，32 层正向对照仍接受，并逐字保留未编辑部分。
+- 为 shape 源码编辑排序键补充具体参数和返回类型，保留原来的起点与终点顺序。验证参数模块无需修改。
+- 在 `D:\codey` 运行 `python -m pytest -q tests/test_codemode_json_nesting.py tests/test_codemode_json_edit.py tests/test_codemode_source_preflight.py --tb=short`，89 passed，退出 0。调整 shape 排序类型后仅复测受影响范围，`python -m pytest -q tests/test_codemode_source_preflight.py tests/test_p0_mixed_workflow.py::test_verification_choice_supplies_frozen_command_and_working_directory --tb=short`，75 passed，退出 0。最终去重 90 项，0 skip。
+- `python -m mypy codey/codemode/json_edit.py codey/codemode/shape_repair.py codey/codemode/verification.py tests/test_codemode_json_nesting.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 从 3 条诊断降至 0，同四文件 Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q036 完成。累计完成 64/336 批，覆盖 126/1009 个生产文件。下一批 Q037 为 Code Mode 核心执行和源码协议。

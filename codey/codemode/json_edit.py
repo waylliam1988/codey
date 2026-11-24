@@ -98,6 +98,14 @@ _DECODER = json.JSONDecoder(object_pairs_hook=_unique, parse_int=JsonNumber, par
                             parse_constant=_invalid_constant)
 
 
+def _decode_document(text: str) -> object:
+    try:
+        decoded: object = _DECODER.decode(text)
+    except RecursionError as exc:
+        raise ValueError("JSON nesting exceeds the decoder limit") from exc
+    return decoded
+
+
 def last_json_object(text: str) -> str | None:
     """Locate complete outer objects in document order without rounding numbers."""
     content = None
@@ -117,7 +125,7 @@ def last_json_object(text: str) -> str | None:
 
 def json_source_value(text: str, pointer: str) -> object:
     """Select from source JSON while retaining numeric lexemes and string types."""
-    value: object = _DECODER.decode(text)
+    value = _decode_document(text)
     if not pointer.startswith("/"):
         raise ValueError("source selector must be a JSON pointer")
     for encoded in pointer[1:].split("/"):
@@ -149,7 +157,7 @@ def _field_names(fields: Iterable[str]) -> str:
 def replace_json_fields(text: str, changes: Mapping[str, JsonValue | JsonNumber]) -> str:
     if not changes:
         raise ValueError("changes must name at least one existing top-level JSON field")
-    original: object = _DECODER.decode(text)
+    original = _decode_document(text)
     if not isinstance(original, dict):
         raise ValueError("the file must contain a JSON object")
     document: dict[str, object] = original

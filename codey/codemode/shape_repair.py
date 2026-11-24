@@ -385,9 +385,12 @@ class _ShapeCheck:
         return True
 
     def rewritten_source(self) -> str:
+        def source_order(edit: _SourceEdit) -> tuple[int, int]:
+            return edit.start, edit.end
+
         parts: list[bytes] = []
         previous = 0
-        for edit in sorted(self.edits, key=lambda edit: (edit.start, edit.end)):
+        for edit in sorted(self.edits, key=source_order):
             if edit.start < previous:
                 return ""
             parts.extend((self.source[previous:edit.start], edit.replacement))

@@ -3743,10 +3743,12 @@
         "codey/codemode/verification.py"
       ],
       "id": "Q036",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 4
+      "status": "completed_changed",
+      "reviewed_files": ["codey/codemode/json_edit.py", "codey/codemode/shape_repair.py", "codey/codemode/verification.py"],
+      "verified_files": ["codey/codemode/json_edit.py", "codey/codemode/shape_repair.py", "codey/codemode/verification.py"],
+      "tests": ["tests/test_codemode_json_nesting.py", "tests/test_codemode_json_edit.py", "tests/test_codemode_source_preflight.py", "tests/test_p0_mixed_workflow.py"],
+      "reviewed_support": ["tests/test_codemode_json_nesting.py"],
+      "result": "Whole-document JSON reading and editing normalize decoder recursion failure as ValueError. Type the shape edit ordering key. Ninety scoped tests passed after deduplication. Scoped strict Any, Ruff and all production gates passed."
     },
     {
       "responsibility": "codey/codemode: task kernel and execution",
