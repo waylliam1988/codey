@@ -18,6 +18,7 @@ class DurableEventBridge:
     ) -> None:
         self._coordination_lock = coordination_lock
         self._publish = publish
+        self._deferred_lock = threading.Lock()
         self._deferred: list[dict[str, object]] = []
 
     def publish_commit(self, result: CommitResult, mutation: DurableMutation) -> None:
@@ -25,14 +26,17 @@ class DurableEventBridge:
         if result.record is None:
             return
         payload = result.record.to_payload()
-        if self._coordination_lock.locked():
-            self._deferred.append(payload)
-            return
+        with self._deferred_lock:
+            if self._coordination_lock.locked():
+                self._deferred.append(payload)
+                return
         self._publish(payload)
 
     def flush(self) -> None:
         while True:
-            with self._coordination_lock:
+            # Pair the decision to defer and append with this empty check;
+            # a publisher must not enqueue just after the final drain.
+            with self._coordination_lock, self._deferred_lock:
                 if not self._deferred:
                     return
                 events = tuple(self._deferred)

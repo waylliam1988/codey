@@ -1,6 +1,6 @@
 {
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
-  "source_count": 1002,
+  "source_count": 1006,
   "region_count": 40,
   "batch_count": 318,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
@@ -547,7 +547,7 @@
     },
     {
       "path": "codey/providers",
-      "source_count": 67,
+      "source_count": 69,
       "batches": [
         "Q121",
         "Q122",
@@ -776,7 +776,7 @@
     },
     {
       "path": "codey/runs",
-      "source_count": 13,
+      "source_count": 14,
       "batches": [
         "Q180",
         "Q181",
@@ -1066,7 +1066,7 @@
     },
     {
       "path": "codey/toolchain",
-      "source_count": 25,
+      "source_count": 26,
       "batches": [
         "Q223",
         "Q224",
@@ -1964,13 +1964,11 @@
       "files": [
         "codey/app/api.py"
       ],
-      "status": "completed_changed",
+      "status": "partial_follow_up",
       "reviewed_files": [
         "codey/app/api.py"
       ],
-      "verified_files": [
-        "codey/app/api.py"
-      ],
+      "verified_files": [],
       "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93",
       "result": "Two ResumeRun API violations reproduced: omitted instruction becomes literal None (pre-fix 1 failed/7 passed); non-string source IDs coerced and submitted (4 failed/4 passed). Public DTO optional default/string constraints and absent-vs-explicit-default invariant justify fixes. Final whole contract script 17 passed; input/output/question group 33 passed; initial direct 41, API dependencies 39, lease 2 passed. Two whole files strict Any 33 -> 0; scoped tools passed (5 pre-existing warnings), final production/precision gates passed (35 suppressed/165 warnings), stable hashes. Legacy response objects and dataclass/result shapes validated at API boundary, no casting/budget relaxation. New question guard baseline on original HEAD 1 passed; old typed callback fixture baseline 4 passed; sources exactly restored. Shared test scripts only dependency verification, full typing ownership remains elsewhere.",
       "tests": [
@@ -1995,9 +1993,14 @@
       "commits": [
         "cb43afb5"
       ],
-      "revalidation_required": [],
+      "revalidation_required": [
+        "codey/app/api.py"
+      ],
       "reopen_reason": "Q015F moves unchanged response helpers to a shared module; API directly affected, scoped validation scheduled in current batch.",
-      "revalidation_result": "External change limited to transferring captured inferred_intent for a new auto task; explicit modes and resume remain unchanged. Added six boundary cases proving omitted/auto inference, blank inference fallback, explicit project/research preservation, and resume behavior without changing denied capabilities/source/research flags. Current scoped entry/input/edit/output/question group 32 passed; two whole files strict Any/Pyrefly/ty/Ruff pass (5 existing Pyrefly warnings). No production edits. q015c-revalidation-baseline.json and q015c-revalidation-final.json. Shared response helper move in Q015F: API/service/lease group 45 passed, local/research/HTTP helper classes 31 passed, whole API strict Any/scoped checks and production gates pass. Helper input/error/identity semantics unchanged."
+      "revalidation_result": "External change limited to transferring captured inferred_intent for a new auto task; explicit modes and resume remain unchanged. Added six boundary cases proving omitted/auto inference, blank inference fallback, explicit project/research preservation, and resume behavior without changing denied capabilities/source/research flags. Current scoped entry/input/edit/output/question group 32 passed; two whole files strict Any/Pyrefly/ty/Ruff pass (5 existing Pyrefly warnings). No production edits. q015c-revalidation-baseline.json and q015c-revalidation-final.json. Shared response helper move in Q015F: API/service/lease group 45 passed, local/research/HTTP helper classes 31 passed, whole API strict Any/scoped checks and production gates pass. Helper input/error/identity semantics unchanged.",
+      "followups": [
+        "External commits 13b05d6c/4eef1a78 changed this previously verified source during Q021C (task-diff HTTP contracts). Prior exact-source acceptance is stale. Preserve changes, require targeted behavior and whole-file Any revalidation at owner; production error gates passing is not full governance."
+      ]
     },
     {
       "id": "Q015D",
@@ -2083,13 +2086,13 @@
         "codey/app/http_response.py"
       ],
       "verified_files": [
-        "codey/app/server.py",
         "codey/app/http_response.py"
       ],
       "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93",
       "followups": [
         "Q008D repaired only ConsensusConnectionTests timeout fixture, preserving sibling-tab/new_chat/close expectations and asserting numeric 60/90s fallback. tests/test_server.py whole-file extra Any has 1709 diagnostics (q008d-server-any.log); shared script migration remains open. Q008D stays partial until coordinated verification.",
-        "Current strict shared test audit: tests/test_server.py 6727 lines / 1673 diagnostics, q015f-shared-support-validation.json. Includes untyped provider, agent and mock callbacks, unconstrained dicts and dynamic server exports. Route subsets execute successfully but do not prove whole-file typing. Keep Q008D and Q015F partially complete until this test-support debt is resolved by production responsibility. Do not reopen verified production server solely for optional cleanup."
+        "Current strict shared test audit: tests/test_server.py 6727 lines / 1673 diagnostics, q015f-shared-support-validation.json. Includes untyped provider, agent and mock callbacks, unconstrained dicts and dynamic server exports. Route subsets execute successfully but do not prove whole-file typing. Keep Q008D and Q015F partially complete until this test-support debt is resolved by production responsibility. Do not reopen verified production server solely for optional cleanup.",
+        "External commits 13b05d6c/4eef1a78 changed this previously verified source during Q021C (task-diff HTTP contracts). Prior exact-source acceptance is stale. Preserve changes, require targeted behavior and whole-file Any revalidation at owner; production error gates passing is not full governance."
       ],
       "tests": [
         "tests/test_server_boundaries.py",
@@ -2113,6 +2116,9 @@
         "q015f-shared-support-validation.json",
         "q015f-construction-before.json",
         "q015f-construction-final.json"
+      ],
+      "revalidation_required": [
+        "codey/app/server.py"
       ]
     },
     {
@@ -2691,7 +2697,10 @@
       "followups": [
         "Extra3 external_control service nodes attempted but setup errored before assertions or source snapshot copy: generated runtime descriptor missing52 current paths (6 existingPython+46newassets), references46missingoldassets. Independent package_files process has no event_bus import; this batch adds no production paths and leaves descriptor unchanged. Keep errors/unexecuted assertions disclosed; no retry through copying fixture. Generated inventory/no-copy release validation belongs Q078."
       ],
-      "result": "Full event bus governance with confirmed observer reentry deadlock. Pre-fix4fail/1pass isolated daemon-thread probes: finite callback enters then sequence/unsubscribe/subscribe/emit all block on same Lock. RLock plus per-publication observer/subscriber snapshots and FIFO deferred reentry notifications preserve monotonic callbacks/queue cursors, cutoff and cross-thread synchronous order. Same4 inputs pass, exception-after-reentry boundary and original cross-thread control pass. No observer exception swallowing added; logger preserved, no background worker. Source69 and2old support31 strongAny diagnostics ->0, new regression0, whole4files strongAny/Pyrefly/ty/Ruff0, typed runner0. Distinct23+7+9+2=41passed no skips/failures in completed scopes; additional3 setup errors separately retained/unrelated descriptor limitations, not passing claims. Production mypy756/Pyrefly35suppressed165warnings/ty/precision0. No public deletions, ignores, casts, dependencies, external models, asset publication or actual worktree/source copying."
+      "result": "Full event bus governance with confirmed observer reentry deadlock. Pre-fix4fail/1pass isolated daemon-thread probes: finite callback enters then sequence/unsubscribe/subscribe/emit all block on same Lock. RLock plus per-publication observer/subscriber snapshots and FIFO deferred reentry notifications preserve monotonic callbacks/queue cursors, cutoff and cross-thread synchronous order. Same4 inputs pass, exception-after-reentry boundary and original cross-thread control pass. No observer exception swallowing added; logger preserved, no background worker. Source69 and2old support31 strongAny diagnostics ->0, new regression0, whole4files strongAny/Pyrefly/ty/Ruff0, typed runner0. Distinct23+7+9+2=41passed no skips/failures in completed scopes; additional3 setup errors separately retained/unrelated descriptor limitations, not passing claims. Production mypy756/Pyrefly35suppressed165warnings/ty/precision0. No public deletions, ignores, casts, dependencies, external models, asset publication or actual worktree/source copying.",
+      "commits": [
+        "50a9b50b"
+      ]
     },
     {
       "id": "Q021C",
@@ -2701,16 +2710,42 @@
         "codey/app/durable_events.py",
         "codey/app/public_event_feed.py"
       ],
-      "status": "not_started",
+      "status": "in_progress",
       "reviewed_files": [
         "codey/app/durable_event_bridge.py",
-        "codey/app/durable_events.py"
+        "codey/app/durable_events.py",
+        "codey/app/public_event_feed.py"
       ],
-      "verified_files": [],
+      "verified_files": [
+        "codey/app/durable_event_bridge.py"
+      ],
       "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
       "followups": [
-        "Q021 SSE fixture typing required reading public_event_feed subscription/stream seams. Legacy explicit Any remains in _encode, encode, publish, stream and _write; source unchanged and not claimed governed. Full Any audit and owned delivery validation belong to this future batch."
-      ]
+        "Finish public feed/replay behavior and whole-file type validation. Browser startup/model-availability discrepancy under investigation; do not count browser or full batch as clean."
+      ],
+      "tests": [
+        "tests/test_durable_event_bridge.py",
+        "tests/test_public_event_feed.py",
+        "tests/durable/test_commit_events.py",
+        "tests/durable/test_database_cursor.py",
+        "tests/test_external_control.py::test_feed_encodes_once_and_isolates_slow_consumers",
+        "tests/test_external_control.py::test_feed_filters_before_queueing_and_limits_bytes",
+        "tests/test_external_control.py::test_internal_events_never_escape_the_public_feed",
+        "tests/test_external_control.py::test_reply_stream_state_is_preserved_by_public_encoding",
+        "tests/test_external_control.py::test_public_terminal_preserves_elapsed_time_and_research_navigation",
+        "tests/test_external_control.py::test_large_research_details_are_an_explicit_bounded_preview",
+        "tests/test_conversation_tool_details.py",
+        "tests/test_history_routes.py",
+        "tests/test_task_lifecycle_projection.py",
+        "tests/test_task_lifecycle_coordinator.py",
+        "tests/test_task_submit_durable.py",
+        "tests/test_shell_approval_lifecycle.py",
+        "tests/test_conversation_lifecycle.py"
+      ],
+      "reviewed_support": [
+        "tests/test_durable_event_bridge.py"
+      ],
+      "result": "Independent bridge race fix ready: original controlled append-versus-last-flush interleaving fails1 with zero delivered after both futures finish; queue mutex serializes lock check/append and drain, fixed same input passes. Whole bridge test5 and explicit lifecycle/admission/approval/conversation callers49pass. Both whole bridge files strictAny/Pyrefly/ty/Ruff0. Public feed and replay work remains in progress; no whole-batch completion claim."
     },
     {
       "responsibility": "codey/app: knowledge and memory",
@@ -3558,7 +3593,8 @@
       "followups": [
         "Q014C dependency test_release_control.py::test_browser_session_survives_service_replacement_but_bootstrap_does_not failed at snapshot/read_runtime before authentication: published descriptor has 876 files versus actual 877; missing codey/operations/browser_result_evidence.py (existing commit 1292e668). q014c-runtime-inventory.json. Q014C changes only typed auth tests; preserve rejection and refresh generated inventory via normal publisher when validating release/runtime scope. Runtime read_runtime explicit Any remains at Q078; diagnostic-path inspection is not whole-file governance.",
         "2026-11-23 external 303e7724 refreshed runtime descriptor; old missing browser_result_evidence/http_response names now present. Current file-name Python inventory checked at Q018 entry: listed 750, tracked 750, missing []. Old 876/877 observation is historical, not a current blocker proof. Runtime activation/copying tests remain unexecuted; validate current descriptor fully in Q078 without copying a worktree.",
-        "Q021B extra3 external_control nodes now fail before snapshot copy at read_runtime: current generated descriptor missing52 paths (6 prior external Python additions and46newassets), references46oldmissingassets. New readonly inventory q021b-runtime-inventory.json supersedes old876/877 counts; event_bus not imported, no new production paths/descriptor changes in batch. Do not enable copying fixture; inspect/update published inventory through its own governed scope and choose no-copy validation. These nodes remain unexecuted assertions, not passed or skipped."
+        "Q021B extra3 external_control nodes now fail before snapshot copy at read_runtime: current generated descriptor missing52 paths (6 prior external Python additions and46newassets), references46oldmissingassets. New readonly inventory q021b-runtime-inventory.json supersedes old876/877 counts; event_bus not imported, no new production paths/descriptor changes in batch. Do not enable copying fixture; inspect/update published inventory through its own governed scope and choose no-copy validation. These nodes remain unexecuted assertions, not passed or skipped.",
+        "External commits 13b05d6c/4eef1a78 replaced runtime.json and built assets during Q021C. Q021B descriptor mismatch is historical evidence, not a fresh assertion about the new descriptor. No snapshot/service fixture retry; no-copy release inventory verification remains required at this owner."
       ]
     },
     {
@@ -4235,7 +4271,8 @@
         "codey/providers/transport.py",
         "codey/providers/response_record.py",
         "codey/providers/supervisor.py",
-        "codey/providers/ids.py"
+        "codey/providers/ids.py",
+        "codey/providers/request_metrics.py"
       ],
       "id": "Q124",
       "status": "not_started",
@@ -4349,7 +4386,8 @@
         "codey/providers/token_accounting.py",
         "codey/providers/api_metering.py",
         "codey/providers/local_tokens.py",
-        "codey/providers/request_context.py"
+        "codey/providers/request_context.py",
+        "codey/providers/task_prompt.py"
       ],
       "id": "Q132",
       "status": "not_started",
@@ -5040,7 +5078,8 @@
         "codey/runs/details.py",
         "codey/runs/ledger_projection.py",
         "codey/runs/ledger.py",
-        "codey/runs/text_clip.py"
+        "codey/runs/text_clip.py",
+        "codey/runs/task_diff.py"
       ],
       "id": "Q181",
       "status": "not_started",
@@ -5585,7 +5624,8 @@
         "codey/toolchain/execution_options.py",
         "codey/toolchain/indentation.py",
         "codey/toolchain/json_reply.py",
-        "codey/toolchain/line_prefix.py"
+        "codey/toolchain/line_prefix.py",
+        "codey/toolchain/ecmascript.py"
       ],
       "id": "Q226",
       "status": "not_started",
@@ -7727,6 +7767,7 @@
     "tests/test_provider_timeouts.py",
     "tests/test_provider_wrapper_contracts.py",
     "tests/test_providers.py",
+    "tests/test_public_event_feed.py",
     "tests/test_published_run_modes_are_released_at_terminal.py",
     "tests/test_pyrefly_type_boundary_regressions.py",
     "tests/test_pytest_cleanup_guard.py",
@@ -8794,6 +8835,26 @@
         "Q021C"
       ],
       "reason": "551-line pure event codec is an independent large-file batch; event bus has separate in-process ownership/replay, while public feed and commit bridge own external delivery. Preserve all5 source paths once; only module heads inventoried except complete44/22line bridge/replay sources already read, neither governed or verified yet."
+    },
+    {
+      "path": "codey/providers/request_metrics.py",
+      "batch": "Q124",
+      "reason": "External commits 13b05d6c/4eef1a78 during Q021C added owned source. Header/import inventory only; preserve not-started owner, no review or verification claim."
+    },
+    {
+      "path": "codey/providers/task_prompt.py",
+      "batch": "Q132",
+      "reason": "External commits 13b05d6c/4eef1a78 during Q021C added owned source. Header/import inventory only; preserve not-started owner, no review or verification claim."
+    },
+    {
+      "path": "codey/runs/task_diff.py",
+      "batch": "Q181",
+      "reason": "External commits 13b05d6c/4eef1a78 during Q021C added owned source. Header/import inventory only; preserve not-started owner, no review or verification claim."
+    },
+    {
+      "path": "codey/toolchain/ecmascript.py",
+      "batch": "Q226",
+      "reason": "External commits 13b05d6c/4eef1a78 during Q021C added owned source. Header/import inventory only; preserve not-started owner, no review or verification claim."
     }
   ]
 }
