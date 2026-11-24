@@ -9,6 +9,7 @@ research, or concepts at import time.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import threading
 import uuid
@@ -16,7 +17,7 @@ from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, TypedDict, cast
+from typing import TYPE_CHECKING, Protocol, TypedDict
 
 from codey.agents.shell_approval import render_deferred_tool_calls
 from codey.app.approval_registry import ApprovalRegistry
@@ -32,12 +33,18 @@ from codey.policies.shell_analysis import ShellAnalysis, analyze_shell, bound_an
 from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.runtime.core import cancellation
-from codey.types.json_value import JsonObject
+from codey.types.json_value import canonical_json_object
+from codey.utils.object_fields import object_fields, sequence_items
 from codey.utils.text_budget import clip_middle
 from codey.workspace.setup_context import safe_setup_context
 
 if TYPE_CHECKING:
     from codey.agents.request import RecoveredToolOutcome
+    from codey.storage.execution_output_store import ExecutionOutputObserver, ExecutionOutputStore
+    from codey.types.json_value import JsonObject
+
+
+_LOG = logging.getLogger(__name__)
 
 
 class ShellResult(TypedDict, total=False):
@@ -104,38 +111,29 @@ def shell_result_row(
         return None
     command = str(pending.get("command") or "")
     cwd = str(pending.get("cwd") or ".")
-    text = shell_result_content(command=command, result=result, approved=approved)
+    raw_tool_args = pending.get("tool_args")
+    tool_args: JsonObject = canonical_json_object(raw_tool_args) if isinstance(raw_tool_args, dict) else {
+        "command": command, "path": cwd,
+    }
+    model_result = result
     if pending.get("tool_name") == "run" and approved:
         from codey.toolchain.command_output import output_tail, tail_lines
 
-        args = pending.get("tool_args")
-        count = tail_lines(args.get("output_tail_lines")) if isinstance(args, dict) else None
-        text = shell_result_content(
-            command=command, result={**result, "output": output_tail(str(result.get("output") or ""), count)},
-            approved=approved,
-        )
+        count = tail_lines(tool_args.get("output_tail_lines"))
+        model_result = {**result, "output": output_tail(str(result.get("output") or ""), count)}
     receipt = ExecutionReceipt.from_payload(result).bounded()
-    exit_code = receipt.exit_code
     ok = approved and result.get("ok") is True and result.get("status") != "denied"
-    if not approved:
-        ok = False
-    raw_tool_args = pending.get("tool_args")
-    tool_args: JsonObject = (
-        dict(cast(JsonObject, raw_tool_args))
-        if isinstance(raw_tool_args, dict)
-        else {"command": command, "path": cwd}
-    )
     call = ToolCall(
         name=str(pending.get("tool_name") or "shell"),
         args=tool_args,
         call_id=call_id,
     )
     outcome = ToolOutcome(
-        text, ok,
+        shell_result_content(command=command, result=model_result, approved=approved), ok,
         canonical={"execution": receipt.facts()},
         audit=receipt.audit_facts(),
         error_code="" if ok else str(result.get("status") or "denied" if not approved else "shell_error"),
-        exit_code=exit_code,
+        exit_code=receipt.exit_code,
         truncated=receipt.truncated,
     )
     return RecoveredToolOutcome(
@@ -155,21 +153,20 @@ def shell_result_payload(row: RecoveredToolOutcome | None) -> dict[str, object] 
     if row is None:
         return None
     try:
-        call = getattr(row, "call", None)
-        outcome = getattr(row, "outcome", None)
-        window_ref = getattr(row, "window_ref", None)
+        call = row.call
+        outcome = row.outcome
         return {
-            "call_id": str(getattr(call, "call_id", "") or ""),
-            "tool_name": str(getattr(call, "name", "") or "shell"),
-            "tool_args": dict(getattr(call, "args", {}) or {}),
-            "command": str((getattr(call, "args", {}) or {}).get("command") or ""),
-            "cwd": str((getattr(call, "args", {}) or {}).get("path") or "."),
-            "model_text": str(getattr(outcome, "model_text", "") or ""),
-            "ok": bool(getattr(outcome, "ok", False)),
-            "exit_code": getattr(outcome, "exit_code", None),
-            "error_code": str(getattr(outcome, "error_code", "") or ""),
-            "truncated": bool(getattr(outcome, "truncated", False)),
-            "window_ref": window_ref.to_payload() if window_ref is not None else None,
+            "call_id": call.call_id,
+            "tool_name": call.name or "shell",
+            "tool_args": dict(call.args),
+            "command": str(call.args.get("command") or ""),
+            "cwd": str(call.args.get("path") or "."),
+            "model_text": outcome.model_text,
+            "ok": outcome.ok,
+            "exit_code": outcome.exit_code,
+            "error_code": outcome.error_code,
+            "truncated": outcome.truncated,
+            "window_ref": row.window_ref.to_payload() if row.window_ref is not None else None,
         }
     except Exception:
         return None
@@ -321,7 +318,9 @@ def claim_shell_ticket(
     always gate->lock.
     """
     with ctx.task_runtime.spawn_line():
-        if getattr(getattr(ctx, "control_service", None), "draining", False):
+        control_service: object = getattr(ctx, "control_service", None)
+        draining: object = getattr(control_service, "draining", False)
+        if draining:
             return None, None
         return ctx.claim_shell_ticket(approval_id, timeout=timeout, output_limit=output_limit)
 
@@ -360,42 +359,34 @@ def _execute_shell_ticket(
     command: str,
 ) -> ShellResult:
     """Execute ticket internals; caller owns the execution lifetime."""
+    from codey.storage.execution_output_store import ExecutionOutputStore
+
     proc = None
-    completed = None
-    job = None
-    capture_truncated = False
-    observer = None
+    store_candidate: object = getattr(ctx, "execution_outputs", None)
+    output_store = store_candidate if isinstance(store_candidate, ExecutionOutputStore) else None
+    observer: ExecutionOutputObserver | None = None
+
     def mark_unavailable() -> None:
         if output_store is not None and ticket.execution_id:
             with suppress(Exception):
                 output_store.unavailable(ticket.execution_id)
+
     try:
-        output_store = getattr(ctx, "execution_outputs", None)
         if output_store is not None and ticket.execution_id:
-            from codey.storage.execution_output_store import ExecutionOutputObserver
-
-            def publish_output_snapshot(snapshot: Mapping[str, object]) -> None:
-                ctx.emit({
-                    "type": "execution_output_available",
-                    "execution_id": ticket.execution_id,
-                    "session_id": snapshot.get("session_id", ""),
-                    "run_id": snapshot.get("run_id", ""),
-                    "revision": snapshot.get("revision", 0),
-                })
-
-            output_store.create(ticket.execution_id, session_id=str(getattr(ticket, "session_id", "") or "shell"), run_id=str(getattr(ticket, "run_id", "") or "shell"))
-            observer = ExecutionOutputObserver(
-                output_store,
-                ticket.execution_id,
-                on_update=publish_output_snapshot,
-            )
+            try:
+                observer = _start_shell_output_observer(ctx, ticket, output_store)
+            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+                raise
+            except Exception as exc:
+                mark_unavailable()
+                _LOG.warning("Shell output observation unavailable (%s)", type(exc).__name__)
         # The runtime owns the same spawn gate used by Stop.
         with ctx.task_runtime.spawn_line():
             if not _approval_generation_current(ctx, ticket.generation):
-                return _stopped_shell_result()
+                raise cancellation.TaskCancelled()
             stop_flag = ctx.task_runtime.stop_flag_for(ticket.run_id)
             if stop_flag.is_set():
-                return _stopped_shell_result()
+                raise cancellation.TaskCancelled()
             # Commit point: Popen while still holding the gate so a Stop that
             # needs the same gate to bump the generation cannot interleave.
             with cancellation.scope(stop_flag):
@@ -471,9 +462,9 @@ def _execute_shell_ticket(
                 observer.close()
 
     output_parts: list[str] = []
-    if completed is not None and completed.stdout:
+    if completed.stdout:
         output_parts.append(completed.stdout.rstrip())
-    if completed is not None and completed.stderr:
+    if completed.stderr:
         output_parts.append("[stderr]\n" + completed.stderr.rstrip())
     output = "\n\n".join(output_parts) or "(no output)"
     output, display_truncated = clip_middle(output, ticket.output_limit)
@@ -482,15 +473,14 @@ def _execute_shell_ticket(
         "ok": True,
         "status": "exit",
         "error": None,
-        "exit_code": completed.returncode if completed is not None else None,
+        "exit_code": completed.returncode,
         "output": output,
         "truncated": truncated,
         "execution_id": ticket.execution_id,
     }
-    output_store = getattr(ctx, "execution_outputs", None)
-    if output_store is not None and ticket.execution_id:
+    if output_store is not None and observer is not None:
         with suppress(Exception):
-            snapshot = output_store.settled(ticket.execution_id, completed.returncode if completed is not None else None)
+            snapshot = output_store.settled(ticket.execution_id, completed.returncode)
             from codey.runtime.core.execution_receipt import ExecutionOutputReference
 
             result["output_ref"] = ExecutionOutputReference.from_snapshot(snapshot).facts()
@@ -499,6 +489,24 @@ def _execute_shell_ticket(
     if capture_truncated:
         result["capture_truncated"] = True
     return result
+
+
+def _start_shell_output_observer(
+    ctx: ShellExecutionContext, ticket: ShellExecutionTicket, store: ExecutionOutputStore,
+) -> ExecutionOutputObserver:
+    from codey.storage.execution_output_store import ExecutionOutputObserver
+
+    def publish_output_snapshot(snapshot: Mapping[str, object]) -> None:
+        ctx.emit({
+            "type": "execution_output_available",
+            "execution_id": ticket.execution_id,
+            "session_id": snapshot.get("session_id", ""),
+            "run_id": snapshot.get("run_id", ""),
+            "revision": snapshot.get("revision", 0),
+        })
+
+    store.create(ticket.execution_id, session_id=ticket.session_id or "shell", run_id=ticket.run_id or "shell")
+    return ExecutionOutputObserver(store, ticket.execution_id, on_update=publish_output_snapshot)
 
 
 def execute_approved_shell(
@@ -555,10 +563,12 @@ def execute_approved_shell(
     # unreadable or stale approval must prevent even that side effect.
     if not _approval_generation_current(ctx, generation):
         return _stopped_shell_result()
-    stop_flag = ctx.task_runtime.stop_flag_for(str(getattr(ctx, "run_id", "") or "shell"))
+    run_id: object = getattr(ctx, "run_id", "")
+    stop_flag = ctx.task_runtime.stop_flag_for(str(run_id or "shell"))
     if stop_flag.is_set():
         return _stopped_shell_result()
     shell = resolve_shell()
+    session_id: object = getattr(ctx, "session_id", "")
     ticket = ShellExecutionTicket(
         command=command,
         cwd=cwd,
@@ -568,8 +578,8 @@ def execute_approved_shell(
         shell=shell,
         analysis=analyze_shell(command, shell),
         execution_id="execution_" + uuid.uuid4().hex,
-        session_id=str(getattr(ctx, "session_id", "") or "shell"),
-        run_id=str(getattr(ctx, "run_id", "") or "shell"),
+        session_id=str(session_id or "shell"),
+        run_id=str(run_id or "shell"),
     )
     return execute_shell_ticket(ctx, ticket)
 
@@ -636,6 +646,8 @@ def build_shell_approval_continuation_plan(
         pending=pending,
         result=result,
     )
+    deferred = pending.get("deferred_tool_calls", ())
+    deferred_calls = tuple(item for item in deferred if object_fields(item)) if sequence_items(deferred) else ()
     continuation = build_shell_approval_continuation(
         command=str(pending.get("command") or ""),
         result=result,
@@ -644,11 +656,7 @@ def build_shell_approval_continuation_plan(
         ),
         setup_context=setup_context,
         followup_hints=followup_hints,
-        deferred_tool_calls=tuple(
-            item
-            for item in cast(tuple[object, ...], pending.get("deferred_tool_calls", ()))
-            if isinstance(item, dict)
-        ),
+        deferred_tool_calls=deferred_calls,
     )
     active_provider = (
         active_run.provider_id

@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：Q024C 已完成，按用户要求提交后暂停（2026-11-24），不进入后续批次。以下第一、二批是恢复前的历史证据；本轮从干净的 `7555d488` 继续，按文末全仓分区队列推进。历史未完成项仍保留，不将历史提交或本轮局部验收视为全仓治理完成。
+当前状态：在 master 的 `3e330232` 恢复总 goal，继续 Q024D。保留历史验收，复核后续提交实际影响的范围。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1349,3 +1349,15 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 暂停前最后直接32passed与未失效调用方65passed去重 **97passed、0失败/0skip**，所有应执行的局部验证已完成。最后串行六文件强Any、Pyrefly、ty、Ruff均exit0，源hash和本次入库测试/helper hash与证据一致；原生产三类型门/precision实际通过且自后仅测试脚本修改，因此保持有效。不运行全量pytest、不扩大到未检查shell进程实现、不重复已完成无变化生产批次。
 - Q024C声明范围结项；累计 **46/324完整批次、86/1006完整批次生产文件**，另9部分批次源独立验证，累计95，不把这9个算完整批次。两个正确性bug（此前Q024B事实身份与本批worker接纳）各有有效原失败→相同输入通过；本次两隔离问题是测试fixture问题，另列处理，不伪称为生产竞态修复。其余全仓范围与原Q021C浏览器/Any、Q189/Q200依赖Any等历史事项尚未完成，未标总goal完成。
 - 用户已要求“修完，提交后，暂停一下”；第二提交后goal设为paused并停止，不进入Q024D。第二提交hash避免自引用，在最终聊天报告和Git历史提供，下一次进度更新再补入commits数组。用户未跟踪审查报告未编辑/暂存/提交；不push、不改远端、不复制worktree或源码树。
+
+
+### Q024D 审批执行票据、输出与续接
+
+- 恢复基准为 master `3e330232`，工作区及暂存区干净。Q024C 两笔提交为 `82cfb5e6` 与 `be6cb67d`。对比当前 Git 清单，纳入后置记忆抽取 Q023B、项目检查交接 Q090 与 Messages codec Q122，共 1009 个生产文件、40 个区域、325 批。新增 changes drawer 测试归验证支持。Q015C、Q015F、Q018B、Q023、Q181 仅因已有验证文件实际改变而登记重验，保留历史证据。新增 Q023B 与这些重验排在当前断点后的回补队列，Q024D 后先继续 Q025。
+- 完整检查 `codey/app/shell_service.py` 的票据入场、进程生命周期、结构化结果和续接。直接三脚本基线 `python -m pytest -q tests/test_shell_contract.py tests/test_shell_approval_epoch.py tests/test_shell_continuation_reports_denial_and_reconciles_ui.py --tb=short` 得 32 passed，退出 0。运行目录为 `D:\codey`，Windows Python 3.12.8，测试使用现有 RAM 盘。
+- 输出观测的独立契约见 `docs/conversation_ui_next_implementation_spec_2026-10-16.md` D2/D3。快照是可选展示通道，进程执行及最终结果独立。真实已授权票据、无害 echo 和被注入的存储初始化 OSError 执行后原先返回 `spawn_error`。真实 SQLite 和过期 generation 输入原先返回 stopped，实际记录却长期为 running。仅执行 `python -m pytest -q tests/test_shell_execution_output_lifecycle.py --tb=short`，退出 1、2 failed，失败分别命中上述状态断言。
+- 隔离观察初始化失败，保持真实进程执行。过期和 Stop 共用既有取消清理路径，将已建立的快照置为 unknown。相同回归实际退出 0、2 passed。最终加入健康存储对照，验证同一执行身份、输出内容和 settled 状态。保持初始化在 spawn gate 外，避免慢输出存储占用 Stop 的启动锁。
+- 补齐结果序列化和可选上下文字段类型，以现有 JSON 解码和对象键检查替换无校验断言。合并重复的续接结果文本构造，保留尾行投影及原始执行收据。移除只在必经 wait 成功后检查不可达 None 的分支。保留导出的旧执行和结果入口。定向严格 mypy 由源文件 49 条诊断降至 0，源、新回归和共享执行夹具共 3 文件。初稿 Pyrefly 发现分支字典泛型推断问题，明确 JsonObject 后通过。定向 Pyrefly 0 errors、2 warnings 未展示，ty 和 Ruff 均退出 0。
+- 最终直接范围 `python -m pytest -q tests/test_shell_execution_output_lifecycle.py tests/test_shell_contract.py tests/test_shell_approval_epoch.py tests/test_shell_continuation_reports_denial_and_reconciles_ui.py tests/test_server.py::ApprovedShellTests tests/test_server_lazy_state.py --tb=short` 得 53 passed、6 subtests passed，退出 0。调用方 `python -m pytest -q tests/test_execution_output.py tests/test_shell_approval_native_identity.py tests/test_shell_analysis_authorization.py tests/test_shell_approval_lifecycle.py tests/test_command_permissions.py --tb=short` 得 79 passed、2 skipped，退出 0。本次两个最终范围共有 132 项通过、2 项跳过，另有 6 个通过的子例。跳过理由未在此次命令输出。
+- 生产 mypy、Pyrefly、ty 均以 `--python-version 3.11` 在 `codey` 执行，退出 0。mypy 763 文件，Pyrefly 35 suppressed、166 warnings 未展示，ty 无诊断。 `python -m tools.kernel_type_precision_gate` 退出 0。原始日志位于忽略的 `.e2e-artifacts/code-quality-20261122/q024d-*.log`。
+- 本次先提交可独立验收的输出生命周期和文件类型修复。Q024D 继续核对旧公开续接文本的启动失败描述，并完成已深入读取的续接测试类型检查。上述两组测试的其他脚本用于执行验证或入口定位。尚未执行其余全仓队列。
