@@ -1,7 +1,6 @@
 """Read original tool receipts when a user hands work to a new model run."""
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
 
 from codey.durable.model import TASK_TERMINAL_STATUSES, TaskCheckpoint, thaw_json
@@ -33,6 +32,7 @@ _HANDOFF_TOOLS = frozenset({
     "read_file", "edit", "run", "open_url", "open_result", "source_search", "browser_read",
     "browser_snapshot", "browser_click", "browser_wait", "browser_fill", "browser_navigate",
 })
+_HANDOFF_RECEIPT_LIMIT = 12
 
 
 def authorize_model_handoff(durable: DurableSession, *, request: HandoffRun, target: ApiRunSelection | None,
@@ -78,27 +78,35 @@ def _unknown_action(effect: RuntimeEffectProjection) -> bool:
             and (effect.settlement is None or effect.settlement.status == "interrupted"))
 
 
-def _handoff_receipts(source: TaskCheckpoint, effects: tuple[RuntimeEffectProjection, ...],
-                      outputs: ManagedOutputStore | None) -> Iterator[tuple[RuntimeEffectProjection, ToolResult]]:
-    count = 0
+def _project_receipts(source: TaskCheckpoint, effects: tuple[RuntimeEffectProjection, ...],
+                      outputs: ManagedOutputStore | None,
+                      inherited: dict[str, tuple[RuntimeEffectProjection, ToolResult]],
+                      ) -> dict[str, tuple[RuntimeEffectProjection, ToolResult]]:
+    receipts: dict[str, tuple[RuntimeEffectProjection, ToolResult]] = {}
     for effect in reversed(effects):
         intent = effect.intent
-        if (intent.effect_category != "tool_call" or _unknown_action(effect) or effect.settlement is None
-                or canonical_tool_name(intent.tool_name) not in _HANDOFF_TOOLS):
+        if intent.effect_category != "tool_call" or effect.settlement is None or _unknown_action(effect):
+            continue
+        tool = canonical_tool_name(intent.tool_name)
+        inherited_read = tool == "read_tool_result" and effect.settlement.status == "ok" and bool(inherited)
+        if tool not in _HANDOFF_TOOLS and not inherited_read:
             continue
         result = restore_result_receipt(effect, store=outputs, session_id=source.conversation_id, run_id=intent.run_id)
-        if result.kind != "accepted":
-            yield effect, result
-            count += 1
-            if count == 12:
-                return
+        if inherited_read:
+            page = result.canonical.get("receipt_page")
+            if isinstance(page, dict) and isinstance(ref := page.get("result_ref"), str) and ref in inherited:
+                receipts.setdefault(ref, inherited[ref])
+        elif result.kind != "accepted":
+            receipts[intent.effect_id] = (effect, result)
+        if len(receipts) == _HANDOFF_RECEIPT_LIMIT:
+            break
+    return receipts
 
 
-def read_handoff_receipt(durable: DurableSession, *, session_id: str, run_id: str, identity: str,
-                         outputs: ManagedOutputStore | None) -> tuple[str, ToolResult] | None:
-    target = durable.task(run_id)
+def _prior_handoff(durable: DurableSession, target: TaskCheckpoint,
+                   ) -> tuple[TaskCheckpoint, tuple[RuntimeEffectProjection, ...]] | None:
     raw = thaw_json(target.state.get("input"))
-    if target.conversation_id != session_id or target.execution_kind != "model" or not isinstance(raw, dict):
+    if not isinstance(raw, dict):
         return None
     input_row = decode_json_object(raw)
     if input_row.get("kind") != "handoff_run" or target.provider_snapshot.get("model_selection") is None:
@@ -108,24 +116,56 @@ def read_handoff_receipt(durable: DurableSession, *, session_id: str, run_id: st
                          require_json_boolean(input_row.get("observe_only"), "observe only"))
     selection = ApiRunSelection.from_payload(thaw_json(target.provider_snapshot["model_selection"]))
     project = target.state.get("project")
-    source, effects = authorize_model_handoff(durable, request=request, target=selection, session_id=session_id,
-        run_id=run_id, project=project if isinstance(project, str) else None)
-    return next(((effect.intent.run_id, result) for effect, result in _handoff_receipts(source, effects, outputs)
-                 if effect.intent.effect_id == identity), None)
+    return authorize_model_handoff(durable, request=request, target=selection, session_id=target.conversation_id,
+        run_id=target.task_id, project=project if isinstance(project, str) else None)
+
+
+def _handoff_receipts(durable: DurableSession, source: TaskCheckpoint, effects: tuple[RuntimeEffectProjection, ...],
+                      outputs: ManagedOutputStore | None) -> dict[str, tuple[RuntimeEffectProjection, ToolResult]]:
+    # Rebuild each hop from its original receipts. An intermediate run can
+    # forward an inherited receipt only through its own successful read.
+    chain = [(source, effects)]
+    seen = {source.task_id}
+    while any(effect.intent.effect_category == "tool_call" and effect.intent.tool_name == "read_tool_result"
+              and effect.settlement is not None and effect.settlement.status == "ok" for effect in effects):
+        prior = _prior_handoff(durable, source)
+        if prior is None:
+            break
+        source, effects = prior
+        if source.task_id in seen:
+            raise ModelHandoffRejected("Model handoff cannot contain a cycle.")
+        seen.add(source.task_id)
+        chain.append(prior)
+    receipts: dict[str, tuple[RuntimeEffectProjection, ToolResult]] = {}
+    for source, effects in reversed(chain):
+        receipts = _project_receipts(source, effects, outputs, receipts)
+    return receipts
+
+
+def read_handoff_receipt(durable: DurableSession, *, session_id: str, run_id: str, identity: str,
+                         outputs: ManagedOutputStore | None) -> tuple[str, ToolResult] | None:
+    target = durable.task(run_id)
+    if target.conversation_id != session_id or target.execution_kind != "model":
+        return None
+    prior = _prior_handoff(durable, target)
+    if prior is not None and (receipt := _handoff_receipts(durable, *prior, outputs).get(identity)) is not None:
+        effect, result = receipt
+        return effect.intent.run_id, result
+    return None
 
 
 def render_model_handoff(source: TaskCheckpoint, effects: tuple[RuntimeEffectProjection, ...],
-                         outputs: ManagedOutputStore | None) -> str:
-    return model_handoff_context(source, effects, outputs)[0]
+                         outputs: ManagedOutputStore | None, *, durable: DurableSession) -> str:
+    return model_handoff_context(source, effects, outputs, durable=durable)[0]
 
 
 def model_handoff_context(source: TaskCheckpoint, effects: tuple[RuntimeEffectProjection, ...],
-                          outputs: ManagedOutputStore | None) -> tuple[str, tuple[str, ...]]:
+                          outputs: ManagedOutputStore | None, *, durable: DurableSession) -> tuple[str, tuple[str, ...]]:
     rows: list[JsonObject] = []
     unknown: list[JsonObject] = [{"tool": effect.intent.tool_name, "effect_ref": effect.intent.effect_id}
                                 for effect in reversed(effects) if _unknown_action(effect)]
     source_urls: dict[str, None] = {}
-    for effect, result in _handoff_receipts(source, effects, outputs):
+    for effect, result in _handoff_receipts(durable, source, effects, outputs).values():
         intent, settlement = effect.intent, effect.settlement
         assert settlement is not None
         row: JsonObject = {"result_ref": intent.effect_id, "tool": result.call.name, "ok": result.ok}

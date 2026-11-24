@@ -22,13 +22,14 @@ _LEGACY_QUANTITY = re.compile(rf"(?<![\w.])({_NUMBER})\s*({_UNITS})(?![A-Za-z])"
 _SUM_OR_DIFFERENCE = re.compile(r"\(\s*(?P<left>[^()\n]{1,32}?)\s*(?P<operator>[+−-])\s*(?P<right>[^()\n]{1,32})\s*\)")
 _WORD = re.compile(r"[^\W\d_]{4,}")
 _COMMON_WORDS = frozenset({"about", "average", "according", "approximately", "between", "reported", "showed", "observed", "results", "study", "source", "that", "this", "with", "from", "were"})
-CLAIM_CHECK_VERSION = 3
-CLAIM_CHECK_VERSIONS = frozenset({1, 2, CLAIM_CHECK_VERSION})
+CLAIM_CHECK_VERSION = 4
+CLAIM_CHECK_VERSIONS = frozenset({1, 2, 3, CLAIM_CHECK_VERSION})
 _CLAIM_BREAK = re.compile(r"(?<=[.!?])\s+|[;；。！？\n]+|(?:,\s*)?\b(?:but|whereas|however)\b|，(?:但|然而)", re.I)
 _CLAIM_LEADING = re.compile(r"\s*(?:[-*+] |\d+[.)] )?[*_]*")
 _GROUP_LABEL = re.compile(r"\b(group|arm|cohort)\s+([a-z0-9]+)\b|(?<![a-z0-9])([a-z0-9]+)\s*[组組]", re.I)
 _RESPONSE_RATE = re.compile(r"(?:\bresponse\s+rate\b\s*(?:(?:was|is|of)\s+)?|(?:响应|響應|应答|應答)率\s*(?:为|為)?\s*)", re.I)
 _EQUIVALENT_UNITS = {"克": "g", "公斤": "kg", "小时": "h", "μg": "µg"}
+_REVIEW_UNITS = {**_EQUIVALENT_UNITS, "ml": "mL"}
 
 
 def _passage_span(passage: ReadPassage, quote: str) -> tuple[int, int] | None:
@@ -234,6 +235,7 @@ def review_submission_issues(submission: AnswerSubmission, evidence_check: JsonO
     markdown = submission["markdown"]
     version = evidence_check.get("claim_check_version")
     normalized_support = isinstance(version, int) and version >= 3
+    units = _REVIEW_UNITS if isinstance(version, int) and version >= 4 else _EQUIVALENT_UNITS
     labels = {row["passage_ref"]: row["label"] for row in submission["citations"]}
     issues: list[JsonObject] = []
     for raw in checks:
@@ -250,10 +252,10 @@ def review_submission_issues(submission: AnswerSubmission, evidence_check: JsonO
                      for ref in refs if isinstance(ref, str) and (passage := passages.get(ref)) is not None
                      for _, body in _claim_parts(passage.excerpt, 0, len(passage.excerpt))]
         if any(original.casefold() == normalized.casefold() or
-               normalized_support and _quantity_supports(normalized, original) for _, _, original in originals):
+               normalized_support and _quantity_supports(normalized, original, units) for _, _, original in originals):
             continue
         for ref, body, original in originals:
-            kind = _quantity_conflict(normalized, original)
+            kind = _quantity_conflict(normalized, original, units)
             if kind:
                 issues.append({"kind": kind, "report_start": start, "report_end": stop, "claim": claim,
                                "passage_ref": ref, "label": labels.get(ref, ref), "original": body})
@@ -261,14 +263,14 @@ def review_submission_issues(submission: AnswerSubmission, evidence_check: JsonO
     return issues
 
 
-def _quantity_conflict(claim: str, original: str) -> str:
+def _quantity_conflict(claim: str, original: str, units: Mapping[str, str]) -> str:
     reported = tuple(_QUANTITY.finditer(_RESPONSE_RATE.sub(" response rate ", claim)))
     sourced = tuple(_QUANTITY.finditer(_RESPONSE_RATE.sub(" response rate ", original)))
     if len(reported) != 1 or len(sourced) != 1:
         return ""
     left, right = reported[0], sourced[0]
-    left_unit = _EQUIVALENT_UNITS.get(left[2], left[2])
-    right_unit = _EQUIVALENT_UNITS.get(right[2], right[2])
+    left_unit = units.get(left[2], left[2])
+    right_unit = units.get(right[2], right[2])
     # Commas are ambiguous across locales. Leave their interpretation to the writer.
     if "," in left[1] or "," in right[1]:
         return ""
@@ -284,12 +286,12 @@ def _quantity_conflict(claim: str, original: str) -> str:
     return ""
 
 
-def _quantity_supports(claim: str, original: str) -> bool:
-    basis = _normalized_quantity_claim(claim)
-    return basis is not None and basis == _normalized_quantity_claim(original)
+def _quantity_supports(claim: str, original: str, units: Mapping[str, str]) -> bool:
+    basis = _normalized_quantity_claim(claim, units)
+    return basis is not None and basis == _normalized_quantity_claim(original, units)
 
 
-def _normalized_quantity_claim(text: str) -> tuple[str, Decimal, str] | None:
+def _normalized_quantity_claim(text: str, units: Mapping[str, str]) -> tuple[str, Decimal, str] | None:
     normalized = _RESPONSE_RATE.sub(" <response_rate> ", text)
     matches = tuple(_QUANTITY.finditer(normalized))
     if len(matches) != 1 or "," in matches[0][1]:
@@ -301,7 +303,7 @@ def _normalized_quantity_claim(text: str) -> tuple[str, Decimal, str] | None:
 
     template = _GROUP_LABEL.sub(group, _QUANTITY.sub("<quantity>", normalized))
     return (" ".join(template.split()).replace("> <", "><").casefold(),
-            Decimal(quantity[1]), _EQUIVALENT_UNITS.get(quantity[2], quantity[2]))
+            Decimal(quantity[1]), units.get(quantity[2], quantity[2]))
 
 
 def _group_claim_template(text: str) -> str:

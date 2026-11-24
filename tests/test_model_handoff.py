@@ -26,27 +26,37 @@ from tools.completion_explanation_ab import ExperimentProvider, Target
 
 
 @pytest.mark.usefixtures("scripted_local_api_connection", "no_external_advisor_models")
-def test_new_handoff_sends_to_the_explicit_model_with_original_read_ref(
+def test_model_handoffs_forward_original_receipts_read_by_the_intermediate_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project = tmp_path / "project"
     project.mkdir()
     contents = b"# Original source context\n" * 44 + b"VALUE = 23\n"
     (project / "old.py").write_bytes(contents)
+    (project / "unused.py").write_bytes(b"UNUSED = 9\n")
     state_home = tmp_path / "state"
     (tmp_path / "old").mkdir()
     (tmp_path / "new").mkdir()
+    (tmp_path / "third").mkdir()
     session_id = "handoff-session"
     url = "http://scripted.test/v1"
 
     old_read = ""
+    unused_read = ""
 
     def replies() -> Iterator[JsonObject]:
         yield {"tool": "read_file", "args": {"path": "old.py"}}
+        yield {"tool": "read_file", "args": {"path": "unused.py"}}
         yield {"tool": "done", "args": {"summary": "Read the source value."}}
         yield {"tool": "read_tool_result", "args": {"result_ref": old_read, "query": "VALUE = 23"}}
         assert "VALUE = 23" in str(requests(tmp_path / "new")[-1]["messages"])
         yield {"tool": "done", "args": {"summary": "The existing result is available."}}
+        assert old_read in str(requests(tmp_path / "third")[0]["messages"])
+        yield {"tool": "read_tool_result", "args": {"result_ref": unused_read}}
+        assert "stored result unavailable in this task" in str(requests(tmp_path / "third")[-1]["messages"])
+        yield {"tool": "read_tool_result", "args": {"result_ref": old_read, "query": "VALUE = 23"}}
+        assert "VALUE = 23" in str(requests(tmp_path / "third")[-1]["messages"])
+        yield {"tool": "done", "args": {"summary": "The original value is 23."}}
 
     install_http(monkeypatch, replies(), native=False)
     monkeypatch.setattr("codey.app.provider_services.provider_availability", lambda: {"local": True})
@@ -60,7 +70,9 @@ def test_new_handoff_sends_to_the_explicit_model_with_original_read_ref(
     finally:
         old_provider.close()
     assert old.stop_reason == "done"
-    old_read = next(row.identity for row in tool_receipts(state_home) if row.result.call.name == "read_file")
+    reads = {row.result.call.args["path"]: row.identity
+             for row in tool_receipts(state_home) if row.result.call.name == "read_file"}
+    old_read, unused_read = reads["old.py"], reads["unused.py"]
     new_provider = ExperimentProvider(Target(url, "new-model", 456, 10), tmp_path / "new", fixed_acquisition=False)
     try:
         new = run_headless(HeadlessRequest(project, task, provider_id="local", session_id=session_id,
@@ -74,6 +86,16 @@ def test_new_handoff_sends_to_the_explicit_model_with_original_read_ref(
     assert payload["model"] == "new-model"
     assert "User-authorized model handoff" in str(payload["messages"]) and old_read in str(payload["messages"])
     assert "VALUE = 23" not in str(payload["messages"])
+    provider = ExperimentProvider(Target(url, "third-model", 789, 10), tmp_path / "third", fixed_acquisition=False)
+    try:
+        third = run_headless(HeadlessRequest(project, task, provider_id="local", session_id=session_id,
+            state_home=state_home, model_selection={"model": "third-model", "base_url": url},
+            project_changes_required=False, input=HandoffRun(new.run_id, task)),
+            emit_jsonl=lambda _row: None, connect_provider=lambda _name, *, port: provider)
+    finally:
+        provider.close()
+    assert third.stop_reason == "done"
+    assert unused_read not in str(requests(tmp_path / "third")[0]["messages"])
     with closing(AppContext(state_home, start_scheduler=False)) as state:
         first = state.durable.task(old.run_id)
         second = state.durable.task(new.run_id)
@@ -91,7 +113,7 @@ def test_new_handoff_sends_to_the_explicit_model_with_original_read_ref(
         unrelated = ReceiptReader(authorized.session, authorized.managed_outputs, session_id, old.run_id)
         assert not read_tool_result(unrelated, lookup, durable=state.durable).ok
         assert (project / "old.py").read_bytes() == contents
-        assert len([row for row in tool_receipts(state_home) if row.result.call.name == "read_file"]) == 1
+        assert len([row for row in tool_receipts(state_home) if row.result.call.name == "read_file"]) == 2
 
 
 @pytest.mark.usefixtures("scripted_local_api_connection", "no_external_advisor_models")
@@ -183,7 +205,7 @@ def test_model_handoff_rejects_active_work_and_only_exposes_uncertain_actions_fo
         assert task_submit._task_input_from_payload(task_submit._task_input_payload(observed)) == observed
         task, effects = authorize_model_handoff(durable, request=observed, target=target,
                                                 session_id="session", run_id="new", project=str(tmp_path))
-        text = render_model_handoff(task, effects, state.task_submission_stores.managed_outputs)
+        text = render_model_handoff(task, effects, state.task_submission_stores.managed_outputs, durable=durable)
         assert "unknown-op" in text and '"unknown_actions":[{' in text
         assert len(durable.effects("old")) == 1
         with pytest.raises(ModelHandoffRejected, match="another|unavailable"):

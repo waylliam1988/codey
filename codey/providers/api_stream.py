@@ -103,12 +103,14 @@ class MessagesStream:
         return (isinstance(identity, str) and bool(identity)
                 and all(repeated.get(key) == self.start.get(key) for key in ("id", "type", "role", "model")))
 
-    def update(self, event: JsonObject) -> JsonObject | None:
+    def update(self, event: JsonObject, on_event: Callable[[JsonObject], None]) -> JsonObject | None:
         kind = event.get("type")
         if kind == "content_block_start":
             if self.current is not None or require_json_integer(event.get("index"), "content block index") != len(self.blocks):
                 raise ValueError("invalid Messages content block order")
             self.current = decode_json_object(event.get("content_block"))
+            if self.current.get("type") == "tool_use":
+                self.current.setdefault("input", {})
         elif kind in {"content_block_delta", "content_block_stop"}:
             if self.current is None or require_json_integer(event.get("index"), "content block index") != len(self.blocks):
                 raise ValueError("Messages content block has no matching start")
@@ -122,8 +124,11 @@ class MessagesStream:
                 self.arguments.clear()
         elif kind == "message_delta":
             self.message.update(decode_json_object(event.get("delta")))
-            self.message["usage"] = {**decode_json_object(self.message.get("usage", {})),
-                                     **decode_json_object(event.get("usage", {}))}
+            if (usage := event.get("usage")) is not None:
+                previous = self.message.get("usage")
+                self.message["usage"] = {**(decode_json_object(previous) if previous is not None else {}),
+                                         **decode_json_object(usage)}
+            on_event({**event, "usage": self.message.get("usage")})
         elif kind == "message_stop":
             reason = self.message.get("stop_reason")
             if not reason or (self.current is not None and reason != "max_tokens"):
@@ -240,7 +245,7 @@ def read_sse(response: object, *, deadline: float, cancelled: Callable[[], bool]
             chat_done = True
             break
         event = parse_json_object(frame.decode("utf-8"))
-        if event.get("type") != "message_start":
+        if event.get("type") not in ("message_start", "message_delta"):
             on_event(event)
         terminal = _responses_terminal(event, error_detail_filter)
         if terminal is not None:
@@ -251,7 +256,7 @@ def read_sse(response: object, *, deadline: float, cancelled: Callable[[], bool]
                     messages = _message_start(messages, event, on_event)
                     continue
                 assert messages is not None
-                completed = messages.update(event)
+                completed = messages.update(event, on_event)
             except ValueError as exc:
                 raise GenerationUnknownError(f"malformed Messages stream: {exc}; not resent") from exc
             if completed is not None:

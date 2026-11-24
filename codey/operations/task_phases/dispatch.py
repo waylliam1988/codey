@@ -132,7 +132,7 @@ def connect_and_build_frame(
         source, effects = authorize_model_handoff(state.durable, request=request.input,
             target=ApiRunSelection.from_payload(request.model_selection), session_id=request.session_id,
             run_id=run_id, project=project)
-        handoff, handoff_source_urls = model_handoff_context(source, effects, deps.managed_outputs)
+        handoff, handoff_source_urls = model_handoff_context(source, effects, deps.managed_outputs, durable=state.durable)
         research_handoff = handoff
         if not state.durable.effects(run_id):
             conversation_plan = replace(conversation_plan, fresh_chat=True, recovered_owner_prompt="",

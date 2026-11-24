@@ -231,6 +231,9 @@ def test_new_claim_checks_only_cover_the_matching_part_and_cited_version() -> No
     ("Group A shipped 24 g.", "A 组发货 24 克", ""),
     ("Group A shipped 24 g.", "Group A's shipment weighed 24 g", ""),
     ("Group A shipped 24 g.", "Group A shipped 24 g", ""),
+    ("Group A received 24 ml.", "Group A received 24 mL", ""),
+    ("Group A received 24 ml.", "Group A received 42 mL", "quantity_conflict"),
+    ("Group A received 24 ml.", "Group B received 24 mL", "group_conflict"),
 ])
 def test_review_flags_only_aligned_quantitative_conflicts(original: str, claim: str, problem: str) -> None:
     url = "https://example.com/official"

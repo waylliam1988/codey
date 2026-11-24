@@ -74,6 +74,30 @@ def test_messages_sse_recognizes_duplicate_start_and_requires_terminal_tool_fram
         _stream([start, {"type": "message_start", "message": incompatible}, *frames[2:]])
 
 
+def test_messages_accepts_omitted_tool_input_and_keeps_cumulative_usage_after_disconnect() -> None:
+    frames: list[JsonObject] = [
+        {"type": "message_start", "message": {"type": "message", "id": "msg_one",
+            "usage": {"input_tokens": 10, "cache_read_input_tokens": 3, "cache_creation_input_tokens": 2}}},
+        {"type": "content_block_start", "index": 0, "content_block": {
+            "type": "tool_use", "id": "call_1", "name": "browser_snapshot"}},
+        {"type": "content_block_stop", "index": 0},
+        {"type": "message_delta", "delta": {}, "usage": {"output_tokens": 2}},
+        {"type": "message_delta", "delta": {}, "usage": {"output_tokens": 5}},
+        {"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": None},
+    ]
+    collector = UsageCollector(parse_messages_usage)
+    with pytest.raises(GenerationUnknownError, match="valid terminal event"):
+        _stream(frames, collector)
+    assert collector.usage.input_tokens == 15
+    assert collector.usage.cached_input_tokens == 3 and collector.usage.cache_write_input_tokens == 2
+    assert collector.usage.output_tokens == 5
+    received = dict(_stream([*frames, {"type": "message_stop"}]))
+    assert parse_messages_usage(received) == collector.usage
+    turn, _ = api_messages.decode_exchange(received, text_only=False, text_decoder=None)
+    call, = turn.tool_calls
+    assert call.arguments == {}
+
+
 @pytest.mark.parametrize(("arguments", "reason", "block_closed"), [
     ("", "tool_use", True),
     ('{"path":', "max_tokens", True),
