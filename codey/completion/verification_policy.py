@@ -8,6 +8,7 @@ import shutil
 import tomllib
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 
 from codey.completion.discovery import (
@@ -398,11 +399,7 @@ def _python_candidates(root: Path, directory: Path, cwd: str) -> list[Verificati
             pyproject: object = tomllib.loads(pyproject_text)
         except tomllib.TOMLDecodeError:
             pyproject = dict[str, object]()
-        if _pyproject_tool(pyproject, "pytest") or _pyproject_tool(
-            pyproject,
-            "pytest",
-            "ini_options",
-        ):
+        if _pyproject_tool(pyproject, "pytest"):
             candidate = _candidate(
                 root,
                 "python -m pytest",
@@ -433,11 +430,7 @@ def _python_candidates(root: Path, directory: Path, cwd: str) -> list[Verificati
             has_unittest_files = any(
                 child.is_file()
                 and not child.is_symlink()
-                and child.suffix.lower() == ".py"
-                and (
-                    child.name.startswith("test")
-                    or child.name.endswith("_test.py")
-                )
+                and fnmatch(child.name, "test*.py")
                 for child in directory.iterdir()
             )
         except OSError:
