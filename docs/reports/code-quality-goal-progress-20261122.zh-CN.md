@@ -1696,3 +1696,19 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 枚举修复已提交 `e9dc4011`。通过 `inspect.signature(unittest.TestLoader.discover)` 独立核对默认模式 `test*.py`。仅有 `calculator_test.py` 的目录原先会生成默认 unittest 候选，`python -m pytest -q tests/test_verification_policy_unittest_discovery.py --tb=short` 修改前 1 failed、退出 1。候选发现改用相同文件名模式，回归同时验证 `test_calculator.py` 仍会生成候选。精简 pytest 工具表的重复探测，保留 `[tool.pytest.ini_options]` 发现。
 - 在 `D:\codey` 运行 `python -m pytest -q tests/test_verification_policy_unittest_discovery.py tests/test_verification_policy.py tests/test_verification_policy_unreadable_directory.py tests/test_p0_mixed_workflow.py::test_mixed_verification_requires_current_success_for_each_path tests/test_p0_mixed_workflow.py::test_verification_choice_supplies_frozen_command_and_working_directory --tb=short`，最终 56 passed、20 subtests passed，无失败、错误或跳过，退出 0。源和两个回归严格 Any 及 Ruff，生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 与 kernel_type_precision_gate 都通过。混合流程只执行两个命名用例。
 - Q043 完成。累计完成 77/342 批，覆盖 140/1009 个生产文件，另有 17 批部分完成。下一批 Q044 为完成输入。
+
+
+### Q044 完成输入的证据模型
+
+- Q043 已提交 `ffec6c46`。完整检查 `inputs.py`、变更行与分析运行的编解码入口。无需修改源码。使用 `python -` 实际验证旧 tuple 输入、重命名行、零增量、源数据脱离、两种模型来回转换，以及布尔增量、非列表文件集合和非对象目录引用均被拒绝，退出 0。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_completion_input_contracts.py --tb=short`，9 passed，退出 0。加入 `tests/test_completion_tool_groups.py` 的范围共 10 passed、5 failed，无 skip 或收集错误，退出 1。三个直接用例的脚本发送 `open_url` 的 `url` 字段，实际工具表要求 `target`，在五次非法请求后提前终止。两条重启用例的保留记录各只有五次请求，子进程未触发预期的结算或发布断点。研究工具声明仍要求 `url`，生产工具选择与研究契约的差异交由 Q090 和 Q155 核对。完成输入本身没有修改。
+- `python -m mypy codey/completion/inputs.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 和 `ruff check codey/completion/inputs.py` 退出 0。Q044 完成，无需源码提交，记录与下一次相关提交一同保存。累计完成 78/342 批，覆盖 141/1009 个生产文件，另有 17 批部分完成。下一批 Q045 为修复上下文。
+
+
+### Q045 修复上下文
+
+- 完整检查 `repair_context.py` 和新增回归。模块约定输出受预算限制，只有可呈现已观测失败事实时才提供修复提示。`python -m pytest -q tests/test_completion_repair_prompt_budget.py --tb=short` 修改前 2 failed、退出 1。40 字符预算产生了 216 字符且没有观测检查，400 字符预算下完整输出尾使整个检查区被省略。现在把页脚和观测事实计入预算，可在省略输出尾后保留命令和退出码，最小提示放不下时返回空提示及预算拒绝原因。相同两条回归通过。
+- 为证明映射、观察行和引用列表收窄类型，合并投影与摘要的共同字段。用 `python -` 在内存加载 `ffec6c46` 的旧模块，与相同输入比较。常规已准入和环境失败拒绝的提示全文、payload 及摘要均逐值相同。源和新测试 mypy 严格 Any 从 111 条源诊断到 0，Ruff 通过。生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。首次全树 Pyrefly 发现一个映射分支的键类型推断问题，显式声明后重验通过。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_completion_repair_prompt_budget.py tests/test_completion_repair_context.py tests/test_run_trace_completion_repair_context.py tests/test_agent_completion_repair_context.py tests/test_completion_repair_pause_preserves_intents.py --tb=short`，40 passed、2 subtests passed，无失败、错误或跳过，退出 0。改前去掉新增与暂停用例的基线为 36 passed、2 subtests passed，退出 0。再加入 `tests/test_stagnant_completion_repair_requires_current_validation.py` 的扩展命令已有两个失败标记，仍在执行，未取得最终计数。
+- 用 `git show ffec6c46:codey/completion/repair_context.py` 在内存恢复旧渲染，再用 `pytest.main` 单独执行 `tests/test_stagnant_completion_repair_requires_current_validation.py::test_correct_repair_after_stale_searches_gets_current_tests_review_and_proof`，1 failed、退出 1，耗时 143.50 秒。旧版已进入候选验证，最终以重复工具结果和完成证据缺失停止。新旧进程 120 秒栈采样均在候选验证后段的 `verification_history` 和 durable 任务记录读取。完整流程的其他用例及具体根因继续由 Q090/Q091 跟进。
+- Q045 部分完成，保留可独立验收的提示修复与类型治理。累计完成 78/342 批，完成批覆盖 141/1009 个生产文件，另有 18 批部分完成。下一批 Q046 为 control 包入口。

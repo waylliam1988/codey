@@ -3913,10 +3913,11 @@
         "codey/completion/inputs.py"
       ],
       "id": "Q044",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_unchanged",
+      "reviewed_files": ["codey/completion/inputs.py"],
+      "verified_files": ["codey/completion/inputs.py"],
+      "tests": ["tests/test_completion_input_contracts.py", "tests/test_completion_tool_groups.py"],
+      "result": "Changes and analysis evidence round-trip with detached rows and precise validation. Nine caller contract tests and one adjacent tool group test passed. Five tool group baseline failures are routed to Q090/Q155. Scoped strict Any and Ruff passed."
     },
     {
       "responsibility": "codey/completion: context and checkpoint boundaries",
@@ -3924,10 +3925,13 @@
         "codey/completion/repair_context.py"
       ],
       "id": "Q045",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 7
+      "status": "partial_follow_up",
+      "reviewed_files": ["codey/completion/repair_context.py"],
+      "verified_files": ["codey/completion/repair_context.py"],
+      "tests": ["tests/test_completion_repair_prompt_budget.py", "tests/test_completion_repair_context.py", "tests/test_run_trace_completion_repair_context.py", "tests/test_agent_completion_repair_context.py", "tests/test_completion_repair_pause_preserves_intents.py", "tests/test_stagnant_completion_repair_requires_current_validation.py"],
+      "reviewed_support": ["tests/test_completion_repair_prompt_budget.py"],
+      "result": "Fit repair context to the full prompt budget and require visible observed facts. Type the complete projection and keep the payload digest stable for unaffected output. 40 direct and caller tests, 2 subtests, scoped strict Any, Ruff and production gates passed.",
+      "followups": ["A full-flow stagnant repair scenario reaches candidate validation but fails on the baseline renderer with repeated tool results and incomplete evidence. Track the candidate closure and durable verification replay at Q090/Q091. The expanded run has not reached a final summary."]
     },
     {
       "responsibility": "codey/control: package entry and composition",

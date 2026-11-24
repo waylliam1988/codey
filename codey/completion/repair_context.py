@@ -23,7 +23,7 @@ import hashlib
 import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import SupportsIndex, SupportsInt
 
 from codey.policies.redaction import looks_prompt_visible_secret
 
@@ -47,6 +47,8 @@ REFUSED_NOT_FAILED = "refused_proof_not_failed"
 REFUSED_NOT_PRODUCT = "refused_not_product_failure"
 REFUSED_NO_FAILED_CHECK = "refused_no_failed_check"
 REFUSED_NO_SAFE_CHECK_FACTS = "refused_no_safe_check_facts"
+_REFUSED_BUDGET = "refused_repair_context_budget"
+_BUDGET_TRUNCATED = "repair_context_budget_truncated"
 
 _HEADER = (
     "Completion repair context. Facts only.\n"
@@ -98,32 +100,8 @@ class RepairContextProjection:
             if self.prompt_text
             else ""
         )
-        digest_source = json.dumps(
-            {
-                "kind": _PROJECTION_KIND,
-                "admitted": self.admitted,
-                "failure_class": self.failure_class,
-                "proof_id": self.proof_id,
-                "contract_id": self.contract_id,
-                "check_count": _nonnegative_int(self.check_count),
-                "changed_file_count": _nonnegative_int(self.changed_file_count),
-                "analysis_run_ref_count": _nonnegative_int(self.analysis_run_ref_count),
-                "finding_ref_count": _nonnegative_int(self.finding_ref_count),
-                "summary_chars": _nonnegative_int(self.summary_chars),
-                "truncated": self.truncated,
-                "reason_codes": list(self.reason_codes),
-                "warnings": list(self.warnings),
-                "refused_reason": self.refused_reason,
-                "prompt_text_digest": prompt_text_digest,
-            },
-            ensure_ascii=True,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        payload: dict[str, object] = {
-            "schema_version": COMPLETION_REPAIR_SCHEMA_VERSION,
+        fields: dict[str, object] = {
             "kind": _PROJECTION_KIND,
-            "context_source": CONTEXT_SOURCE_KEY,
             "admitted": self.admitted,
             "failure_class": self.failure_class,
             "check_count": _nonnegative_int(self.check_count),
@@ -134,9 +112,20 @@ class RepairContextProjection:
             "truncated": self.truncated,
             "reason_codes": list(self.reason_codes),
             "warnings": list(self.warnings),
-            "digest": "sha256:" + hashlib.sha256(
-                digest_source.encode("utf-8")
-            ).hexdigest(),
+        }
+        digest_fields: dict[str, object] = {
+            **fields,
+            "proof_id": self.proof_id,
+            "contract_id": self.contract_id,
+            "refused_reason": self.refused_reason,
+            "prompt_text_digest": prompt_text_digest,
+        }
+        digest_source = json.dumps(digest_fields, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+        payload: dict[str, object] = {
+            "schema_version": COMPLETION_REPAIR_SCHEMA_VERSION,
+            **fields,
+            "context_source": CONTEXT_SOURCE_KEY,
+            "digest": "sha256:" + hashlib.sha256(digest_source.encode("utf-8")).hexdigest(),
         }
         if self.proof_id:
             payload["proof_id"] = self.proof_id
@@ -157,7 +146,7 @@ def repair_candidate(
     """Only an observed product failure within round budget may be repaired."""
 
     rounds = _nonnegative_int(repair_rounds)
-    ceiling = max(0, _nonnegative_int(max_repair_rounds))
+    ceiling = _nonnegative_int(max_repair_rounds)
     return (
         str(proof_status or "") == PROOF_STATUS_FAILED
         and str(failure_class or "") == FAILURE_PRODUCT
@@ -167,12 +156,12 @@ def repair_candidate(
 
 def project_repair_context(
     *,
-    proof: Any,
+    proof: object,
     failure_class: str,
-    decisive_checks: Iterable[Any] = (),
-    changed_files: Iterable[Any] = (),
-    analysis_run_refs: Iterable[Any] = (),
-    finding_refs: Iterable[Any] = (),
+    decisive_checks: Iterable[object] = (),
+    changed_files: Iterable[object] = (),
+    analysis_run_refs: Iterable[object] = (),
+    finding_refs: Iterable[object] = (),
     budget_chars: int = DEFAULT_REPAIR_CONTEXT_BUDGET_CHARS,
 ) -> RepairContextProjection:
     """Project one failed completion proof into its bounded facts brief."""
@@ -204,7 +193,7 @@ def project_repair_context(
         # without observed check facts would describe an unobserved check.
         return _refused(base, REFUSED_NO_SAFE_CHECK_FACTS, warnings)
 
-    files = _files(changed_files)
+    files = _refs(changed_files, MAX_REPAIR_CHANGED_FILES)
     analysis = _refs(analysis_run_refs, MAX_REPAIR_ANALYSIS_REFS)
     findings = _refs(finding_refs, MAX_REPAIR_FINDING_REFS)
     reasons = _codes(fields.get("reason_codes"))
@@ -220,22 +209,21 @@ def project_repair_context(
         budget_chars=budget_chars,
         warnings=warnings,
     )
+    if not text:
+        return _refused(base, _REFUSED_BUDGET, warnings, truncated=True)
     return RepairContextProjection(
         prompt_text=text,
         failure_class=FAILURE_PRODUCT,
         reason_codes=reasons,
         warnings=_bounded_warnings(warnings),
-        truncated=(
-            "repair_context_budget_truncated" in warnings
-            or _over_budget(text, budget_chars)
-        ),
+        truncated=_BUDGET_TRUNCATED in warnings,
         proof_id=base.proof_id,
         contract_id=base.contract_id,
-        check_count=min(len(checks), MAX_REPAIR_CHECKS) or len(failed_rows),
+        check_count=len(checks),
         changed_file_count=len(files),
         analysis_run_ref_count=len(analysis),
         finding_ref_count=len(findings),
-        summary_chars=sum(len(check.result_summary) for check in checks[:MAX_REPAIR_CHECKS]),
+        summary_chars=sum(len(check.result_summary) for check in checks),
     )
 
 
@@ -243,11 +231,14 @@ def _refused(
     base: RepairContextProjection,
     reason: str,
     warnings: list[str],
+    *,
+    truncated: bool = False,
 ) -> RepairContextProjection:
     return RepairContextProjection(
         prompt_text="",
         failure_class=base.failure_class,
         warnings=_bounded_warnings([*warnings, reason]),
+        truncated=truncated,
         proof_id=base.proof_id,
         contract_id=base.contract_id,
         refused_reason=reason,
@@ -267,26 +258,29 @@ def _render(
     warnings: list[str],
 ) -> str:
     budget = _nonnegative_int(budget_chars)
+    # Reserve the observed facts and closing instruction before optional context.
+    used = len(_HEADER) + len(_FOOTER) + 4
+    observed = _observed_checks_text(checks, budget - used, warnings)
+    if not observed:
+        return ""
+    used += len(observed)
     parts: list[str] = [_HEADER]
-    used = len(_HEADER)
 
     def emit(block: str) -> None:
         nonlocal used
         cost = len(block) + 2
         if used + cost > budget:
-            warnings.append("repair_context_budget_truncated")
+            warnings.append(_BUDGET_TRUNCATED)
             return
         parts.append(block)
         used += cost
 
-    requirement = ", ".join(
-        dict.fromkeys(
-            code
-            for row in failed_rows
-            for code in (_token(row.get("reason_code") or row.get("check_id"), 120),)
-            if code
-        )
-    ) or "relevant_verification"
+    requirement_codes: dict[str, None] = {}
+    for row in failed_rows:
+        code = _token(row.get("reason_code") or row.get("check_id"), 120)
+        if code:
+            requirement_codes[code] = None
+    requirement = ", ".join(requirement_codes) or "relevant_verification"
     emit(f"Failed requirement: {requirement}")
     emit("Failure class: product_failure")
     if reasons:
@@ -294,18 +288,7 @@ def _render(
 
     if files:
         emit("Changed files: " + ", ".join(files))
-    blocks: list[str] = ["Observed failing checks:"]
-    for check in checks[:MAX_REPAIR_CHECKS]:
-        lines = [f"- Command: {check.command} (cwd {check.cwd})"]
-        if check.exit_code is not None:
-            lines.append(f"  Exit: {check.exit_code}")
-        if check.error_code:
-            lines.append(f"  Error code: {check.error_code}")
-        if check.result_summary:
-            lines.append("  Output tail:")
-            lines.extend(f"    {line}" for line in check.result_summary.splitlines())
-        blocks.extend(lines)
-    emit("\n".join(blocks))
+    parts.append(observed)
 
     refs: list[str] = []
     if proof_id:
@@ -318,68 +301,81 @@ def _render(
     return "\n\n".join(parts)
 
 
-def _over_budget(text: str, budget_chars: int) -> bool:
-    budget = _nonnegative_int(budget_chars)
-    return budget > 0 and len(text) > budget
+def _observed_checks_text(
+    checks: tuple[DecisiveCheckFact, ...], budget: int, warnings: list[str],
+) -> str:
+    heading = "Observed failing checks:"
+    blocks = [heading]
+    remaining = budget - len(heading)
+    for check in checks:
+        lines = [f"- Command: {check.command} (cwd {check.cwd})"]
+        if check.exit_code is not None:
+            lines.append(f"  Exit: {check.exit_code}")
+        if check.error_code:
+            lines.append(f"  Error code: {check.error_code}")
+        facts = "\n".join(lines)
+        if len(facts) + 1 > remaining:
+            warnings.append(_BUDGET_TRUNCATED)
+            continue
+        blocks.append(facts)
+        remaining -= len(facts) + 1
+        if check.result_summary:
+            tail_lines = ["  Output tail:"]
+            tail_lines.extend(f"    {line}" for line in check.result_summary.splitlines())
+            tail = "\n".join(tail_lines)
+            if len(tail) + 1 > remaining:
+                warnings.append(_BUDGET_TRUNCATED)
+            else:
+                blocks.append(tail)
+                remaining -= len(tail) + 1
+    return "\n".join(blocks) if len(blocks) > 1 else ""
 
 
-def _proof_fields(proof: Any) -> dict[str, Any]:
-    raw = proof
-    if raw is not None and not isinstance(raw, Mapping):
-        to_payload = getattr(raw, "to_payload", None)
-        raw = to_payload() if callable(to_payload) else None
-    if not isinstance(raw, Mapping):
-        raw = dict[str, object]()
-        return {
-            "status": str(getattr(proof, "status", "") or ""),
-            "proof_id": getattr(proof, "proof_id", ""),
-            "contract_id": getattr(proof, "contract_id", ""),
-            "reason_codes": tuple(getattr(proof, "reason_codes", ()) or ()),
-            "checks": [
-                item
-                for item in (
-                    _row_from_object(row) for row in getattr(proof, "checks", ()) or ()
-                )
-                if item
-            ],
+def _proof_fields(proof: object) -> dict[object, object]:
+    fields: dict[object, object] | None = _row_from_object(proof)
+    if fields is None:
+        fields = {
+            "status": _field(proof, "status"),
+            "proof_id": _field(proof, "proof_id"),
+            "contract_id": _field(proof, "contract_id"),
+            "reason_codes": _field(proof, "reason_codes"),
         }
-    fields: dict[str, Any] = dict(raw)
-    if not fields.get("checks") and hasattr(proof, "checks"):
-        fields["checks"] = [
-            item
-            for item in (
-                _row_from_object(row) for row in getattr(proof, "checks", ()) or ()
-            )
-            if item
-        ]
+    if not fields.get("checks"):
+        checks: object = getattr(proof, "checks", None)
+        if isinstance(checks, Iterable):
+            fields["checks"] = [item for row in checks if (item := _row_from_object(row))]
     return fields
 
 
-def _row_from_object(row: Any) -> dict[str, Any] | None:
-    if isinstance(row, Mapping):
-        return dict(row)
-    to_payload = getattr(row, "to_payload", None)
-    if callable(to_payload):
-        payload = to_payload()
-        if isinstance(payload, Mapping):
-            return dict(payload)
-    return None
+def _row_from_object(row: object) -> dict[object, object] | None:
+    if not isinstance(row, Mapping):
+        to_payload: object = getattr(row, "to_payload", None)
+        if not callable(to_payload):
+            return None
+        row = to_payload()
+    if not isinstance(row, Mapping):
+        return None
+    fields: Mapping[object, object] = row
+    return dict(fields)
 
 
-def _rows(value: Any) -> list[dict[str, str]]:
+def _rows(value: object) -> list[dict[str, str]]:
+    if not isinstance(value, Iterable):
+        return []
     rows: list[dict[str, str]] = []
-    for item in value or ():
+    for item in value:
         if isinstance(item, Mapping):
+            fields: Mapping[object, object] = item
             rows.append({
-                "status": str(item.get("status") or ""),
-                "check_id": str(item.get("check_id") or ""),
-                "reason_code": str(item.get("reason_code") or ""),
+                "status": str(fields.get("status") or ""),
+                "check_id": str(fields.get("check_id") or ""),
+                "reason_code": str(fields.get("reason_code") or ""),
             })
     return rows
 
 
 def _check_facts(
-    values: Iterable[Any],
+    values: Iterable[object],
     warnings: list[str],
 ) -> tuple[DecisiveCheckFact, ...]:
     facts: list[DecisiveCheckFact] = []
@@ -406,7 +402,7 @@ def _check_facts(
     return tuple(facts)
 
 
-def _bounded_summary(value: Any, warnings: list[str]) -> str:
+def _bounded_summary(value: object, warnings: list[str]) -> str:
     kept: list[str] = []
     for line in str(value or "").splitlines():
         text = line.strip()
@@ -427,18 +423,7 @@ def _bounded_summary(value: Any, warnings: list[str]) -> str:
     return summary
 
 
-def _files(values: Iterable[Any]) -> tuple[str, ...]:
-    files: list[str] = []
-    for value in values or ():
-        text = _token(value, 160)
-        if text and text not in files:
-            files.append(text)
-        if len(files) >= MAX_REPAIR_CHANGED_FILES:
-            break
-    return tuple(files)
-
-
-def _refs(values: Iterable[Any], limit: int) -> tuple[str, ...]:
+def _refs(values: Iterable[object], limit: int) -> tuple[str, ...]:
     refs: list[str] = []
     for value in values or ():
         text = _token(value, 160)
@@ -449,19 +434,23 @@ def _refs(values: Iterable[Any], limit: int) -> tuple[str, ...]:
     return tuple(refs)
 
 
-def _codes(value: Any) -> tuple[str, ...]:
+def _codes(value: object) -> tuple[str, ...]:
+    if not isinstance(value, Iterable):
+        return ()
     codes: list[str] = []
-    for item in value or ():
+    for item in value:
         text = _token(item, 120)
         if text and text not in codes:
             codes.append(text)
     return tuple(codes)
 
 
-def _field(value: Any, key: str) -> Any:
+def _field(value: object, key: str) -> object:
     if isinstance(value, Mapping):
-        return value.get(key)
-    return getattr(value, key, "")
+        fields: Mapping[object, object] = value
+        return fields.get(key)
+    field: object = getattr(value, key, "")
+    return field
 
 
 def _text(value: object, limit: int) -> str:
@@ -487,10 +476,10 @@ def _bounded_warnings(warnings: Iterable[str]) -> tuple[str, ...]:
 
 
 def _nonnegative_int(value: object) -> int:
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, (str, bytes, bytearray, SupportsInt, SupportsIndex)):
         return 0
     try:
-        return max(0, int(cast(Any, value)))
+        return max(0, int(value))
     except (TypeError, ValueError, OverflowError):
         return 0
 
