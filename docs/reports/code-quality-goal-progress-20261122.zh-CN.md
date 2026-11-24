@@ -1078,3 +1078,13 @@ Q019 已提交：`415f84d3`（fix(conversations): fence cache publication and st
 - 最后20项断言通过且pytest exit0，进程退出清理出现一次RAM目录WinError5 warning，指向本地Git fixture的只读object文件；实际文件只读属性已核对，在工作区忽略证据目录中自建只读小文件，独立复现shutil.rmtree→PermissionError WinError5，q019b-git-cleanup-warning.json。自己的小探针已按验证后的绝对路径清理；保留原失败清理目录作为证据。根因属于未修改的共享测试清理对Windows只读Git文件的处理，不是本批生产行为/断言失败；记录到测试基础设施待办，本次不扩展修复，不把目录清理宣称成功。
 - Q019B声明范围验收完成：类型与同语义校验职责收敛，没有猜测性bug修复、公开接口删除或真实worktree操作。当前 **33 / 316批完整完成，64 / 996生产文件属于完整完成批次**；另6个部分批次源独立验证，累计70个当前已验证生产文件。durable/control.py及UI存储生产者原Any保留在其所属未完成批次，当前消费者已验证未知数据边界，不借本批完成宣称生产者已治理。
 - 用户要求只做完Q019B并commit后停。完成diff/暂存检查后创建本批本地提交，随后保持goal paused，不进入Q019C或其他模块。两张外部PNG及用户审查报告保留未暂存；全仓目标尚未完成。
+
+Q019B 已提交：`bd2c1980`（refactor(conversations): type configuration and branch route boundaries）。
+
+### Q019C Durable input admission / runtime lifecycle（进行中，2026-11-24恢复）
+
+- 用户重新激活总goal，并更新目标为不重复检查此前已检查文件。沿现有未完成队列继续，不重开已验收区域；本批三个生产文件原未完成类型/行为治理。当前HEAD `86d727bc`，已有外部提交保留，仅用户审查报告未跟踪，不暂存；不创建或复制worktree。
+- 本批入口为输入HTTP命令、AppContext运行事件准备和durable队列投影，依赖DurableSession任务/收据以及用户问题存储。三个生产文件已全读；直接路由、elapsed、authority及queued revision/steering测试用于行为基线，先执行再修改。DurableUserQuestionStore只作为必要动态边界依赖，原Any保留所属批次，未据阅读宣称完成。
+
+- 原生产源基线：`python -m pytest -q tests/test_conversation_input_routes.py tests/test_conversation_elapsed_time.py tests/durable/test_input_queue_authority.py tests/durable/test_queued_input_revision.py tests/durable/test_steering_consumption.py --tb=short` → **1，1 failed/36 passed，8.14秒**。elapsed脚本全进程替换time.monotonic为两个ticks，真实scheduler并发读走时钟，导致StopIteration；不是生产elapsed计算错误。独立观测探针实际记录scheduler.py:472/_run与:122/_idle_tick穿插两个runtime调用（q019c-clock-probe.json，0/1pass）。只替换runtime模块time引用，保持真实scheduler时钟和原42_750ms断言；未修改生产源时完整elapsed文件 **0，2 passed，1.27秒**，q019c-clock-isolated-baseline.json。
+- elapsed完整测试补参数/回调/容器注解，并用具体_Clock替身隔离两个时间值，不使用无类型SimpleNamespace或放宽断言。最终该文件 **0，2 passed，1.29秒**，强Any/Pyrefly/ty/Ruff均0；证据脚本也执行强Any检查。将该独立测试隔离修复先作为支持提交，Q019C生产治理尚待后续提交验收，暂不标完整完成。
