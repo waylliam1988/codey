@@ -3670,15 +3670,19 @@
         "codey/codemode/state.py"
       ],
       "id": "Q035",
-      "status": "in_progress",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "completed_changed",
+      "reviewed_files": ["codey/codemode/identity.py", "codey/codemode/types.py", "codey/codemode/navigation.py", "codey/codemode/state.py"],
+      "verified_files": ["codey/codemode/identity.py", "codey/codemode/types.py", "codey/codemode/navigation.py", "codey/codemode/state.py"],
       "tests": [
         "tests/test_codemode_writes_and_state.py",
         "tests/test_codemode_contract.py",
         "tests/test_task_navigation_selector.py",
-        "tests/test_task_navigation_binding.py"
-      ]
+        "tests/test_task_navigation_binding.py",
+        "tests/test_codemode_replay_authority.py",
+        "tests/test_codemode_protocol_closure.py"
+      ],
+      "reviewed_support": ["tests/test_codemode_writes_and_state.py", "tests/test_task_navigation_selector.py"],
+      "result": "Reject duplicate encoded state keys without replacing checkpoint data. Correct five navigation tests to validate the frozen version and to test a text mismatch with a valid legacy payload shape. Final 110 passed and 7 deselected. Scoped strict Any and Ruff and all production gates pass."
     },
     {
       "id": "Q035C",

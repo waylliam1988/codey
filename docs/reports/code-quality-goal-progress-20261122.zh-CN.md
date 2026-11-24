@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，Q035 的状态修复已验证，导航测试修复单独提交。Q031D 的回调签名、Q030C 的研究调用方和 Q033 的上层实验场景仍有后续事项。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q035，接续 Q035C。Q031D 的回调签名、Q030C 的研究调用方和 Q033 的上层实验场景仍有后续事项。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1541,3 +1541,6 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 状态入口承诺持久化有界 JSON，写入失败不应替换原值。Python 把嵌套字典的整数键 `1` 和字符串键 `"1"` 编为同一个对象字段，旧 `json.loads` 静默丢掉第一项。`python -m pytest -q tests/test_codemode_writes_and_state.py::test_durable_codemode_state_rejects_duplicate_encoded_fields --tb=short` 修改前 1 failed，退出 1，原因是没有抛 ValueError。现在沿用项目的 `unique_json_fields`，拒绝编码后重名字段。回归验证合法嵌套值能读回，拒绝写入后原值仍在。公开状态接口和 JSON 字节预算保留原契约。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_codemode_writes_and_state.py tests/test_codemode_contract.py tests/test_task_navigation_selector.py tests/test_task_navigation_binding.py --tb=short`，状态修复后 84 passed、5 failed，退出 1。五个失败均发生在导航快照夹具，下面记录单独处理。回放调用方 `python -m pytest -q tests/test_codemode_replay_authority.py tests/test_codemode_protocol_closure.py -k 'state or replay' --tb=short`，21 passed、7 deselected，退出 0。
 - 审核生产状态依赖及 JSON 边界，改用已有 `DurableSession` 类型，并保留冻结状态到可写字典的转换。`python -m mypy codey/codemode/state.py codey/codemode/identity.py codey/codemode/types.py codey/codemode/navigation.py tests/test_codemode_writes_and_state.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated`、相同五文件 Ruff、全生产 mypy、Pyrefly、ty 及 kernel_type_precision_gate 均退出 0。
+- 状态修复已提交 `2bf9a372`。四项失败把现行动态版本选择写成固定的 17，生产 `_current_input_version` 与 `snapshot_description` 的契约是保留本次冻结版本。测试现在断言序列化版本等于冻结的 `input_contract_version`，保留来源 URL、整个快照相等与工具参数的断言。第五项测试本来要验证版本 11 拒绝现代工具合同文本，但旧夹具把新版 payload 强行改标为 11，仍有 18 到 20 引入的字段，先被 `_snapshot_payload` 的字段集合检查拒绝。现在把现代 `contract_text` 放入真实的版本 11 payload，保留原错误消息断言。未改变生产导航。
+- `python -m pytest -q tests/test_task_navigation_selector.py::test_direct_selector_freezes_the_exact_source_and_preserves_other_navigation tests/test_task_navigation_selector.py::test_legacy_request_keeps_url_contract_and_new_request_cannot_change_its_presentation --tb=short` 同五个失败用例复核 5 passed，退出 0。该测试文件的 mypy 严格 Any 和 Ruff 均退出 0。Q035 最终去重 110 项通过，7 deselected，0 skip。生产 mypy 763 文件，Pyrefly 0 errors（35 suppressed、165 warnings 未展示）。
+- Q035 完成。累计完成 60/336 批，覆盖 119/1009 个生产文件。下一批 Q035C 为工具宿主的准入和结果处理。
