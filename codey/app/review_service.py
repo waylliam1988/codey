@@ -9,9 +9,10 @@ research, or concepts at import time.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable
 from dataclasses import replace
-from typing import Any, cast
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codey.app import provider_services as providers
 from codey.operations.task_state import TaskState
@@ -23,6 +24,13 @@ from codey.reviews.impact_map import safe_review_impact_map
 from codey.reviews.review_policy import WEB_IF_AVAILABLE, allow_self_review
 from codey.runtime.core import cancellation
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
+from codey.utils.object_fields import mapping_fields, require_object_fields, sequence_items
+
+if TYPE_CHECKING:
+    from codey.durable.model import TaskCheckpoint
+    from codey.providers.base import ChatProvider
+    from codey.reviews.identity import ReviewSnapshot
+    from codey.reviews.input import ReviewInput
 
 
 def emit_review(ctx: TaskState, session_id: str, text: str) -> None:
@@ -37,12 +45,17 @@ def emit_review_with_payload(
 ) -> None:
     from codey.reviews.core import review_result_payload
 
+    payload: object = review_result_payload(review)
     ctx.emit({"type": "review", "session_id": session_id, "text": text,
-              "review": review_result_payload(review)})
+              "review": require_object_fields(payload)})
 
 
 class ReviewSendUnknown(RuntimeError):
     """Provider request was sent but the result is unknown: never auto-resend."""
+
+
+class _ReviewSnapshotChanged(RuntimeError):
+    """The input snapshot became outdated before a format retry."""
 
 
 def run_review_attempt(
@@ -52,7 +65,7 @@ def run_review_attempt(
     project: str,
     task: str,
     writer_summary: str,
-    changes: dict[str, Any],
+    changes: dict[str, object],
     recent_log: str,
     change_brief: str,
     project_map: str,
@@ -60,14 +73,20 @@ def run_review_attempt(
     review_impact_map: str,
     execution_evidence: str,
     reviewer_id: str,
-    reviewer: Any,
+    reviewer: ChatProvider,
     self_review: bool,
     trace_recorder: object | None = None,
     run_id: str = "",
     review_policy: str = WEB_IF_AVAILABLE,
     review_source_run_id: str = "",
 ) -> tuple[str, ReviewResult]:
-    from codey.reviews.identity import build_identity, capture_snapshot, review_model_identity, verify_snapshot
+    from codey.reviews.identity import (
+        ReviewIdentity,
+        build_identity,
+        capture_snapshot,
+        review_model_identity,
+        verify_snapshot,
+    )
     from codey.reviews.input import prepare_review_input
 
     try:
@@ -97,19 +116,21 @@ def run_review_attempt(
 
             identity = build_identity(prepared, reviewer_id=reviewer_id, policy=review_policy,
                                       model_id=model_id, self_review=self_review, project=project, snapshot=snapshot)
-            state_home = getattr(ctx, "state_home", None)
+            state_home: object = getattr(ctx, "state_home", None)
             reused = try_reuse_review(
                 state_home=state_home, session_id=session_id, current_run_id=run_id,
                 current_project=project, source_run_id=review_source_run_id,
                 current_scope=prepared.scope, current_identity=identity, current_snapshot_ok=True,
-            ) if state_home is not None else None
-            if reused is not None and reused.identity is not None and verify_snapshot(snapshot):
-                # Historical artifact reference, current applicability guard.
-                identity = replace(identity, attempt_id=reused.identity.attempt_id,
-                                   artifact_sha256=reused.identity.artifact_sha256)
-                reused = replace(reused, identity=identity)
-                emit_review_with_payload(ctx, session_id, "Previous review reused", reused)
-                return reviewer_id, reused
+            ) if isinstance(state_home, (str, Path)) else None
+            if reused is not None:
+                reused_identity: object = reused.identity
+                if isinstance(reused_identity, ReviewIdentity) and verify_snapshot(snapshot):
+                    # Historical artifact reference, current applicability guard.
+                    identity = replace(identity, attempt_id=reused_identity.attempt_id,
+                                       artifact_sha256=reused_identity.artifact_sha256)
+                    reused = replace(reused, identity=identity)
+                    emit_review_with_payload(ctx, session_id, "Previous review reused", reused)
+                    return reviewer_id, reused
         cancellation.check()
         from codey.operations.provider_session import bind_api_usage
 
@@ -125,7 +146,9 @@ def run_review_attempt(
             reviewer.close()
 
 
-def _early_snapshot_result(ctx: Any, session_id: Any, reviewer_id: Any, prepared: Any, snapshot: Any) -> Any:
+def _early_snapshot_result(
+    ctx: TaskState, session_id: str, reviewer_id: str, prepared: ReviewInput, snapshot: ReviewSnapshot,
+) -> ReviewResult | None:
     if snapshot.ok:
         return None
     review = ReviewResult(
@@ -141,7 +164,7 @@ def _early_snapshot_result(ctx: Any, session_id: Any, reviewer_id: Any, prepared
     return review
 
 
-def _stale_before_send(ctx: Any, session_id: Any, reviewer_id: Any, prepared: Any) -> Any:
+def _stale_before_send(ctx: TaskState, session_id: str, reviewer_id: str, prepared: ReviewInput) -> ReviewResult:
     review = ReviewResult(
         verdict="unknown",
         summary="Review outdated · files changed",
@@ -155,7 +178,7 @@ def _stale_before_send(ctx: Any, session_id: Any, reviewer_id: Any, prepared: An
     return review
 
 
-def _send_review_prompt(reviewer: Any, trace_recorder: Any, prompt: Any) -> Any:
+def _send_review_prompt(reviewer: ChatProvider, trace_recorder: object | None, prompt: str) -> str:
     from codey.providers.api_transport import GenerationRejectedError
 
     trace = FailOpenPromptTrace(trace_recorder)
@@ -177,7 +200,17 @@ def _send_review_prompt(reviewer: Any, trace_recorder: Any, prompt: Any) -> Any:
         raise ReviewSendUnknown(str(exc)) from exc
 
 
-def _request_review_result(reviewer: Any, trace_recorder: object | None, prepared: Any, snapshot: Any) -> ReviewResult:
+def _check_format_repair_snapshot(snapshot: ReviewSnapshot) -> None:
+    from codey.reviews.identity import verify_snapshot
+
+    cancellation.check()
+    if not verify_snapshot(snapshot):
+        raise _ReviewSnapshotChanged
+
+
+def _request_review_result(
+    reviewer: ChatProvider, trace_recorder: object | None, prepared: ReviewInput, snapshot: ReviewSnapshot,
+) -> ReviewResult:
     """Known output truncation and malformed JSON share one format attempt.
 
     A completed generation cut short is distinct from an unknown send. Only
@@ -185,28 +218,34 @@ def _request_review_result(reviewer: Any, trace_recorder: object | None, prepare
     guards both the retry and the final result.
     """
     from codey.providers.error_classification import OutputLengthError
-    from codey.reviews.identity import verify_snapshot
 
+    reviewer_view: object = prepared.reviewer_view
+    changes = require_object_fields(reviewer_view)
     try:
-        reply = _send_review_prompt(reviewer, trace_recorder, prepared.prompt)
-    except ReviewSendUnknown as exc:
-        if not isinstance(exc.__cause__, OutputLengthError):
-            raise
-        cancellation.check()
-        if not verify_snapshot(snapshot):
-            return ReviewResult('unknown', 'Review outdated · files changed', [], status='stale',
-                                diagnostics=('snapshot_stale_before_format_repair',))
-        reply = _send_review_prompt(reviewer, trace_recorder, REVIEW_REPAIR_PROMPT
-            + '\nKeep summary under 160 characters; each finding must identify a concrete defect. '
-              'Do not put step-by-step analysis in JSON fields.')
-        return parse_review_response(reply, changes=prepared.reviewer_view)
-    return cast(ReviewResult, _parse_with_single_repair(reviewer, trace_recorder, reply, prepared))
+        try:
+            reply = _send_review_prompt(reviewer, trace_recorder, prepared.prompt)
+        except ReviewSendUnknown as exc:
+            if not isinstance(exc.__cause__, OutputLengthError):
+                raise
+            _check_format_repair_snapshot(snapshot)
+            reply = _send_review_prompt(reviewer, trace_recorder, REVIEW_REPAIR_PROMPT
+                + '\nKeep summary under 160 characters; each finding must identify a concrete defect. '
+                  'Do not put step-by-step analysis in JSON fields.')
+            return parse_review_response(reply, changes=changes)
+        return _parse_with_single_repair(reviewer, trace_recorder, reply, changes, snapshot)
+    except _ReviewSnapshotChanged:
+        return ReviewResult('unknown', 'Review outdated · files changed', [], status='stale',
+                            diagnostics=('snapshot_stale_before_format_repair',))
 
 
-def _parse_with_single_repair(reviewer: Any, trace_recorder: Any, reply: Any, prepared: Any) -> Any:
+def _parse_with_single_repair(
+    reviewer: ChatProvider, trace_recorder: object | None, reply: str, changes: dict[str, object],
+    snapshot: ReviewSnapshot,
+) -> ReviewResult:
     from codey.providers.api_transport import GenerationRejectedError
 
     def send_repair_prompt(repair: str) -> str:
+        _check_format_repair_snapshot(snapshot)
         record_provider_send_prompt(
             trace_recorder,
             name="review_repair_prompt",
@@ -216,19 +255,20 @@ def _parse_with_single_repair(reviewer: Any, trace_recorder: Any, reply: Any, pr
             capability_id="review_runner",
         )
         try:
-            return cast(str, reviewer.send(repair, timeout=REVIEW_TIMEOUT))
+            return reviewer.send(repair, timeout=REVIEW_TIMEOUT)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded, GenerationRejectedError):
             raise
         except Exception as exc:
             raise ReviewSendUnknown(str(exc)) from exc
 
-    return parse_review_with_repair(reply, send_repair_prompt, changes=prepared.reviewer_view)
+    return parse_review_with_repair(reply, send_repair_prompt, changes=changes)
 
 
 def _finalize_review(
-    ctx: Any, session_id: Any, project: Any, reviewer_id: Any, self_review: Any,
-    prepared: Any, snapshot: Any, review: Any, trace_recorder: Any, run_id: Any, review_policy: Any = WEB_IF_AVAILABLE, model_id: Any = "",
-) -> Any:
+    ctx: TaskState, session_id: str, project: str, reviewer_id: str, self_review: bool,
+    prepared: ReviewInput, snapshot: ReviewSnapshot, review: ReviewResult, trace_recorder: object | None,
+    run_id: str, review_policy: str = WEB_IF_AVAILABLE, model_id: str = "",
+) -> ReviewResult:
     import uuid as _uuid
 
     from codey.reviews.identity import (
@@ -286,17 +326,17 @@ def _finalize_review(
 
 
 def _persist_attempt_artifact(
-    ctx: Any, session_id: Any, run_id: Any, attempt_id: Any, review: Any,
-    scope_digest: Any, prompt_digest: Any, snapshot_digest: Any, reviewer_id: Any, self_review: Any,
-    model_id: Any, review_policy: Any,
+    ctx: TaskState, session_id: str, run_id: str, attempt_id: str, review: ReviewResult,
+    scope_digest: str, prompt_digest: str, snapshot_digest: str, reviewer_id: str, self_review: bool,
+    model_id: str, review_policy: str,
 ) -> str:
     if not run_id:
         return ""
     try:
         from codey.reviews.persistence import ReviewArtifactStore, save_review_artifact
 
-        state_home = getattr(ctx, "state_home", None)
-        if state_home is None:
+        state_home: object = getattr(ctx, "state_home", None)
+        if not isinstance(state_home, (str, Path)):
             return ""
         ref = save_review_artifact(
             ReviewArtifactStore(state_home),
@@ -324,7 +364,7 @@ def run_review(
     project: str,
     task: str,
     writer_summary: str,
-    changes: dict[str, Any],
+    changes: dict[str, object],
     recent_log: str,
     writer_id: str,
     change_brief: str = "",
@@ -336,7 +376,7 @@ def run_review(
     review_policy: str = WEB_IF_AVAILABLE,
     run_id: str = "",
     review_source_run_id: str = "",
-    connect_reviewer: Callable[..., Any] | None = None,
+    connect_reviewer: Callable[[str], ChatProvider] | None = None,
     standalone: bool = False,
 ) -> tuple[str, ReviewResult] | None:
     from codey.reviews.reuse import validate_source_run_id
@@ -367,9 +407,9 @@ def run_review(
 def _connect_review_model(
     ctx: TaskState, *, session_id: str, run_id: str, writer_id: str,
     self_review_allowed: bool, standalone: bool,
-    connect_reviewer: Callable[..., Any] | None,
+    connect_reviewer: Callable[[str], ChatProvider] | None,
     leases: contextlib.ExitStack,
-) -> tuple[str, Any, bool] | None:
+) -> tuple[str, ChatProvider, bool] | None:
     from codey.providers.catalog import API_CONNECTIONS
     from codey.providers.ids import normalize_provider_id
 
@@ -420,7 +460,7 @@ def _selected_cross_connection_reviewer(
     writer_id: str,
     *,
     leases: contextlib.ExitStack | None = None,
-) -> tuple[str, Any] | None:
+) -> tuple[str, ChatProvider] | None:
     """Use an enabled API model as an independent reviewer for any Writer.
 
     Website reviewers retain priority. This path is reached when none is
@@ -433,16 +473,9 @@ def _selected_cross_connection_reviewer(
     from codey.providers.catalog import API_CONNECTIONS
     from codey.runtime.core.api_selection import ApiRunSelection
 
-    durable = getattr(ctx, "durable", None)
-    checkpoint = None
-    if durable is not None:
-        try:
-            checkpoint = durable.task(run_id)
-        except (KeyError, ValueError, TypeError):
-            checkpoint = None
-    state: Mapping[str, object] = getattr(checkpoint, "state", {}) if checkpoint is not None else {}
-    stored = state.get("reviewer_selection") if isinstance(state, Mapping) else None
-    if isinstance(stored, Mapping) and stored:
+    checkpoint = _review_checkpoint(ctx, run_id)
+    stored = checkpoint.state.get("reviewer_selection") if checkpoint is not None else None
+    if mapping_fields(stored) and stored:
         try:
             selection = ApiRunSelection.from_payload(dict(stored))
             if selection.connection_id == writer_id or selection.connection_id not in API_CONNECTIONS:
@@ -455,18 +488,7 @@ def _selected_cross_connection_reviewer(
         except (ValueError, RuntimeError):
             return None
 
-    snapshot = ctx.providers.model_preferences.snapshot()
-    sources = snapshot.get("sources", {})
-    allowed: dict[str, set[str]] = {}
-    for connection_id in API_CONNECTIONS:
-        if not isinstance(sources, Mapping):
-            break
-        source = sources.get(connection_id)
-        if not isinstance(source, Mapping) or source.get("enabled") is not True:
-            continue
-        models = source.get("models", [])
-        if isinstance(models, list):
-            allowed[connection_id] = {model for model in models if isinstance(model, str)}
+    allowed = _enabled_review_models(ctx, API_CONNECTIONS)
     if not allowed:
         return None
     try:
@@ -476,8 +498,8 @@ def _selected_cross_connection_reviewer(
         )
     except (ValueError, RuntimeError, OSError):
         return None
-    if checkpoint is not None and durable is not None:
-        durable.record_reviewer_selection(run_id, selection.to_payload())
+    if checkpoint is not None:
+        ctx.durable.record_reviewer_selection(run_id, selection.to_payload())
     if leases is not None:
         leases.enter_context(providers.use_model(ctx, connection_id, selection.model_id))
     return connection_id, open_selection(selection)
@@ -486,40 +508,53 @@ def _selected_cross_connection_reviewer(
 def _selected_api_reviewer(
     ctx: TaskState, session_id: str, run_id: str, writer_id: str, *, standalone: bool = False,
     leases: contextlib.ExitStack | None = None,
-) -> tuple[str, Any] | None:
+) -> tuple[str, ChatProvider] | None:
     from codey.providers.api_connections import capture_reviewer_selection, open_selection
     from codey.runtime.core.api_selection import ApiRunSelection
 
     writer = ctx.run_registry.api_selection_for(run_id)
     if not isinstance(writer, ApiRunSelection) or writer.connection_id != writer_id:
         return None
-    durable = getattr(ctx, "durable", None)
-    checkpoint = None
-    if durable is not None:
-        try:
-            checkpoint = durable.task(run_id)
-        except (KeyError, ValueError, TypeError):
-            checkpoint = None
-    state: Mapping[str, object] = (
-        getattr(checkpoint, "state", {}) if checkpoint is not None else {}
-    )
-    stored = state.get("reviewer_selection") if isinstance(state, Mapping) else None
-    if isinstance(stored, Mapping) and stored:
+    checkpoint = _review_checkpoint(ctx, run_id)
+    stored = checkpoint.state.get("reviewer_selection") if checkpoint is not None else None
+    if mapping_fields(stored) and stored:
         selection = ApiRunSelection.from_payload(dict(stored))
     else:
         try:
-            preferences = ctx.providers.model_preferences.snapshot()["sources"].get(writer_id, {})
-            selected_models = set(preferences.get("models", [])) if preferences.get("enabled") else set()
+            selected_models = _enabled_review_models(ctx, (writer_id,)).get(writer_id, set())
             selection = writer if standalone else capture_reviewer_selection(writer, allowed_models=selected_models)
         except ValueError:
             return None
-        if checkpoint is not None and durable is not None:
-            durable.record_reviewer_selection(run_id, selection.to_payload())
+        if checkpoint is not None:
+            ctx.durable.record_reviewer_selection(run_id, selection.to_payload())
     if not ctx.providers.model_preferences.allows(selection.connection_id, selection.model_id):
         return None
     if leases is not None:
         leases.enter_context(providers.use_model(ctx, selection.connection_id, selection.model_id))
     return selection.connection_id, open_selection(selection)
+
+
+def _review_checkpoint(ctx: TaskState, run_id: str) -> TaskCheckpoint | None:
+    try:
+        return ctx.durable.task(run_id)
+    except (AttributeError, KeyError, ValueError, TypeError):
+        return None
+
+
+def _enabled_review_models(ctx: TaskState, connection_ids: Iterable[str]) -> dict[str, set[str]]:
+    snapshot: object = ctx.providers.model_preferences.snapshot()
+    sources = require_object_fields(snapshot).get("sources")
+    if not mapping_fields(sources):
+        return {}
+    allowed: dict[str, set[str]] = {}
+    for connection_id in connection_ids:
+        source = sources.get(connection_id)
+        if not mapping_fields(source) or source.get("enabled") is not True:
+            continue
+        models = source.get("models", [])
+        if sequence_items(models):
+            allowed[connection_id] = {model for model in models if isinstance(model, str)}
+    return allowed
 
 
 __all__ = [

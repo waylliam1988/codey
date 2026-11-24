@@ -3117,18 +3117,45 @@
         "tests/test_conversation_question_http.py",
         "frontend/src/user_questions.test.ts"
       ],
-      "result": "Unknown, list and null action values formerly committed an answer (three failures, three valid controls passed). Malformed actions now return 400 before dispatch and leave the question pending. Omitted action and explicit answer/cancel still succeed. Existing malformed-answer 409 and GET list are covered. Final 25 Python and 3 Vitest items passed. Strict Any, Pyrefly, ty and Ruff passed on the route and regression. Full production type gates and precision passed. Durable store typing remains under Q064."
+      "result": "Unknown, list and null action values formerly committed an answer (three failures, three valid controls passed). Malformed actions now return 400 before dispatch and leave the question pending. Omitted action and explicit answer/cancel still succeed. Existing malformed-answer 409 and GET list are covered. Final 25 Python and 3 Vitest items passed. Strict Any, Pyrefly, ty and Ruff passed on the route and regression. Full production type gates and precision passed. Durable store typing remains under Q064.",
+      "commits": [
+        "be12856b"
+      ]
     },
     {
-      "responsibility": "codey/app: completion review and edit validation",
+      "responsibility": "Formal review selection, snapshot-bound format repair and result delivery",
       "files": [
         "codey/app/review_service.py"
       ],
       "id": "Q026",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 13
+      "status": "partial_follow_up",
+      "reviewed_files": [
+        "codey/app/review_service.py"
+      ],
+      "verified_files": [
+        "codey/app/review_service.py"
+      ],
+      "candidate_test_count": 13,
+      "reviewed_support": [
+        "tests/test_review_format_repair_snapshot.py"
+      ],
+      "tests": [
+        "tests/test_review_format_repair_snapshot.py",
+        "tests/test_api_reviewer_uses_distinct_model_and_identity.py",
+        "tests/test_review_actual_model_and_policy_identity.py",
+        "tests/test_review_consumer_and_provider_failure_boundaries.py",
+        "tests/test_review_http_rejections_preserve_known_failure_without_replay.py",
+        "tests/test_review_contract_owner_and_empty_rejection.py",
+        "tests/test_review_contract_integration.py",
+        "tests/test_headless_review_uses_selected_provider.py",
+        "tests/test_project_auto_local_review_lifecycle.py",
+        "tests/test_standalone_api_review_keeps_explicit_model.py",
+        "tests/test_server_lazy_state.py"
+      ],
+      "result": "A malformed first reply requested one unnecessary repair after the real on-disk snapshot changed. Same final regression fixture on the original module returned stale with two sends; fixed module returns stale with one send. Stable snapshot completes using two sends in both. Direct 49 passed. Callers 18 passed, four independently reproduced failures and six subtests passed. Strict Any 151 source diagnostics to zero, scoped Pyrefly/ty/Ruff and full production type and precision gates passed.",
+      "followups": [
+        "Revalidate four tests/test_project_auto_local_review_lifecycle.py parametrizations. They fail identically against the original review module. Writer activation can use activate_durable_window, which the fixture's chat counter omits (Q088). Desktop case shows four Writer sends, no Reviewer sends or review events. Trace review dispatch/model selection under Q027/Q090 and update the affected fixture once the contract is proved."
+      ]
     },
     {
       "id": "Q027A",
@@ -8347,6 +8374,7 @@
     "tests/test_review_coordinator_consumption.py",
     "tests/test_review_design_copy.py",
     "tests/test_review_explicit_reuse.py",
+    "tests/test_review_format_repair_snapshot.py",
     "tests/test_review_git_paths_findings.py",
     "tests/test_review_history_http_and_reuse_lineage.py",
     "tests/test_review_http_rejections_preserve_known_failure_without_replay.py",

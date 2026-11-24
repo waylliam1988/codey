@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q025，下一批为 Q026。保留历史验收，复核后续提交实际影响的范围。
+当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q025。Q026 的生产修复已验证，项目生命周期用例待跟进。下一批为 Q027。保留历史验收，复核后续提交实际影响的范围。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1375,3 +1375,14 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_question_route_actions.py tests/test_conversation_questions.py tests/durable/test_question_authority.py --tb=short`，15 passed。 `python -m pytest -q tests/test_conversation_question_http.py --tb=short` 修改前后均 10 passed，后者覆盖双协议、两任务模式及重启恢复。两组去重 25 passed，0 skip，均退出 0。在 `D:\codey\frontend` 执行 `npm run test -- src/user_questions.test.ts`，3 passed，退出 0。调用方测试只记执行范围。
 - 源和新回归定向 mypy（强 Any 三标志）从初稿 39 条诊断到 0，Pyrefly、ty 和 Ruff 均退出 0。全生产 mypy、Pyrefly、ty 分别用 `--python-version 3.11` 检查 `codey`，以及 `python -m tools.kernel_type_precision_gate`，均退出 0。mypy 763 文件，Pyrefly 35 suppressed、165 warnings 未展示。命令结果位于忽略的 `.e2e-artifacts/code-quality-20261122/q025-*.log`。
 - Q025 结项。累计 45/325 批完成，完成批覆盖 85/1009 个生产文件。Q026 接续审查服务的输入、模型调用与结果交付。
+
+
+### Q026 审查执行和快照保护
+
+- Q025 已提交 `be12856b`。完整检查 `codey/app/review_service.py`，范围包括模型选择、原回复和格式修复、持久快照及事件。独立依据为审查快照只对实际文件内容有效，格式修复复用同一次审查输入。已有服务契约要求格式重试与最终审查结论均由快照保护。
+- 新回归在首个回复中把实际受审文件从 `updated = False` 改为 `updated = True`，返回无效 JSON。旧实现发送两次，最后才标 stale。相同测试在工作目录执行原模块的 Git blob，实际 1 failed、1 passed，失败为 `('stale', 2)` 与预期 `('stale', 1)` 不同。未变化的对照正常发送两次且获批准。让普通解析失败和输出截断共用发送前的取消、快照检查，保留原诊断。相同回归修改后 2 passed。严格类型初稿发现测试假提供器的 send 签名与 ApiProvider 不兼容，替换为满足 ChatProvider 端口的窄 fixture；前述原模块对照也使用最终 fixture。
+- 用 ChatProvider、ReviewInput、ReviewSnapshot、TaskCheckpoint 等既有类型替换动态字段。两条 API 路径共用检查点读取和允许模型提取，原选择、租约、检查点写入和打开顺序分别保留。复用、结果持久化和调用方依赖通过现有对象守卫。保留公开入口与带不同语义的发送路径。
+- 在 `D:\codey` 运行 `python -m pytest -q tests/test_api_reviewer_uses_distinct_model_and_identity.py tests/test_review_actual_model_and_policy_identity.py tests/test_review_consumer_and_provider_failure_boundaries.py tests/test_review_http_rejections_preserve_known_failure_without_replay.py tests/test_review_contract_owner_and_empty_rejection.py tests/test_review_contract_integration.py --tb=short`，基线 47 passed。修改后同命令加入 `tests/test_review_format_repair_snapshot.py` 得 49 passed。两个范围退出 0。
+- 调用方 `python -m pytest -q tests/test_headless_review_uses_selected_provider.py tests/test_project_auto_local_review_lifecycle.py tests/test_standalone_api_review_keeps_explicit_model.py tests/test_server_lazy_state.py --tb=short` 得 18 passed、4 failed、6 subtests passed，退出 1。用 `git show be12856b:codey/app/review_service.py` 在内存替换模块并复跑原四个节点，同样 4 failed，断言和计数相同。额外观测一个桌面路由节点，Writer 4 次发送、计数 0，Reviewer 0 次、无审查事件。生产 Writer 可走 `activate_durable_window`，现有 fixture 只计 `new_chat/reset_window`。桌面 Reviewer 未接纳的具体原因待在 Q027/Q090 跟进，Writer 窗口入口归 Q088。保留四个现有断言，并把其未完成验证和测试脚本类型审计纳入后续。
+- 源文件强 Any 基线 151 条，最终源与新回归的 mypy 强 Any、Pyrefly、ty 和 Ruff 均退出 0。首次 Ruff 识别新增局部导入排序，修正后通过。生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty、`python -m tools.kernel_type_precision_gate` 均退出 0。原始记录在忽略的 `.e2e-artifacts/code-quality-20261122/q026-*.log`。本批 67 个通过的定向测试、4 个未解决的原调用方失败，另 6 个通过子例。
+- 本批部分完成，提交已独立验证的修复。累计 45/325 批完成，完成批覆盖 85/1009 个生产文件。另有 14 个部分批次、其中 8 个文件已有独立验证。Q027A 已完成并沿用验收，接续 Q027 的任务生命周期与运行适配。
