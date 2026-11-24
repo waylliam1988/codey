@@ -18,6 +18,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import BinaryIO
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
@@ -27,6 +28,7 @@ from codey.env_names import BROWSER_PATH_ENV
 from codey.runtime.core import cancellation
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, decode_json_value
+from codey.utils.object_fields import object_fields
 
 DEEPSEEK_URL = "https://chat.deepseek.com/"
 QWEN_URL = "https://chat.qwen.ai/"
@@ -194,8 +196,11 @@ def _wait_port(port: int, timeout: float = 20.0) -> None:
 
 def _load_saved_cdp_port() -> int | None:
     try:
-        data = json.loads(CDP_STATE_FILE.read_text(encoding="utf-8"))
-        port = int(data.get("port"))
+        data: object = json.loads(CDP_STATE_FILE.read_text(encoding="utf-8"))
+        value = data.get("port") if object_fields(data) else None
+        if not isinstance(value, (str, int, float)):
+            return None
+        port = int(value)
     except Exception:
         return None
     if 1 <= port <= 65535:
@@ -206,20 +211,19 @@ def _load_saved_cdp_port() -> int | None:
 def _save_cdp_port(port: int) -> None:
     try:
         CDP_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        CDP_STATE_FILE.write_text(json.dumps({"port": port}), encoding="utf-8")
+        state: dict[str, int] = {"port": port}
+        CDP_STATE_FILE.write_text(json.dumps(state), encoding="utf-8")
     except OSError:
         pass
 
 
 def _cdp_port_family(preferred: int = DEFAULT_PORT) -> tuple[int, ...]:
-    preferred = preferred
     if preferred == DEFAULT_PORT:
         return CDP_PORT_CANDIDATES
     return tuple(range(preferred, min(preferred + 9, 65536)))
 
 
 def _candidate_ports(preferred: int = DEFAULT_PORT) -> tuple[int, ...]:
-    preferred = preferred
     ports: list[int] = []
     port_family = _cdp_port_family(preferred)
     with _CDP_PORT_LOCK:
@@ -239,11 +243,15 @@ def _read_cdp_json(port: int, path: str, timeout: float = 1.0) -> JsonValue | No
     if not _port_open(port):
         return None
     try:
-        with urlopen(f"http://127.0.0.1:{port}{path}", timeout=timeout) as response:
+        opened: contextlib.AbstractContextManager[BinaryIO] = urlopen(
+            f"http://127.0.0.1:{port}{path}", timeout=timeout,
+        )
+        with opened as response:
             raw = response.read(CDP_JSON_MAX_BYTES + 1)
         if len(raw) > CDP_JSON_MAX_BYTES:
             return None
-        return decode_json_value(json.loads(raw.decode("utf-8", errors="replace")))
+        data: object = json.loads(raw.decode("utf-8", errors="replace"))
+        return decode_json_value(data)
     except Exception:
         return None
 
@@ -333,7 +341,7 @@ def _find_free_cdp_port(preferred: int = DEFAULT_PORT) -> int:
 
 def _find_free_isolated_cdp_port(preferred: int = DEFAULT_PORT, *, exclude: set[int] | None = None) -> int:
     excluded = set(exclude or ())
-    ports = tuple(dict.fromkeys((preferred, *_cdp_port_family(preferred))))
+    ports = dict.fromkeys((preferred, *_cdp_port_family(preferred)), 0)
     for cdp_port in ports:
         if cdp_port not in excluded and not _port_open(cdp_port):
             return cdp_port
@@ -674,16 +682,16 @@ def open_chat_page(
     )
 
     pw: Playwright | None = None
+    page: Page | None = None
+    owns_page = False
     try:
         pw = _start_playwright_with_retry()
         browser = pw.chromium.connect_over_cdp(
             f"http://127.0.0.1:{endpoint.port}",
             timeout=CDP_CONNECT_TIMEOUT_MS,
         )
-        _check_cancelled_connection(pw)
+        cancellation.check()
 
-        page: Page | None = None
-        owns_page = False
         if not fresh_tab:
             for ctx in browser.contexts:
                 for p in ctx.pages:
@@ -705,13 +713,13 @@ def open_chat_page(
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             page = ctx.new_page()
             owns_page = True
-            _check_cancelled_connection(pw)
+            cancellation.check()
             page.goto(start_url, wait_until="domcontentloaded", timeout=60000)
 
         if bring_to_front:
-            _check_cancelled_connection(pw)
+            cancellation.check()
             page.bring_to_front()
-        _check_cancelled_connection(pw)
+        cancellation.check()
         return Session(
             pw=pw,
             browser=browser,
@@ -722,6 +730,9 @@ def open_chat_page(
             owns_page=owns_page or fresh_tab,
         )
     except Exception:
+        if owns_page and page is not None:
+            with contextlib.suppress(Exception):
+                page.close()
         if pw is not None:
             with contextlib.suppress(Exception):
                 pw.stop()

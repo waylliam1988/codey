@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q029。Q026 的生产修复已验证，项目生命周期用例待跟进。下一批为 Q029B。保留历史验收，复核后续提交实际影响的范围。
+当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q029B。Q026 的生产修复已验证，项目生命周期用例待跟进。下一批为 Q029C。保留历史验收，复核后续提交实际影响的范围。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1413,3 +1413,13 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 先定向验证饱和队列和输出 schema 两个节点，2 passed。回归最初合放 `tests/test_browser_ipc_contract.py`，`python -m pytest -q tests/test_browser_ipc_contract.py --tb=short` 实际 4 failed、1 passed。修复后按提交职责拆为 `tests/test_browser_ipc_contract.py` 和 `tests/test_browser_command_contract.py`，相同断言及两个基线节点合计 7 passed，退出 0。另运行 `python -m pytest -q tests/test_browser_process.py::test_worker_real_browser_wait_cancel_and_binary_capture --tb=short`，真实 worker 定向集成 1 passed、退出 0。CDP 重连和 worker 其他生命周期测试分别归 Q029B/Q029C。
 - IPC 固定结构头的七条强 Any 诊断降至 0。两个源、两个回归的定向强 Any、Pyrefly、ty、Ruff 均退出 0。生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 及 kernel_type_precision_gate 均退出 0。日志在忽略的 `.e2e-artifacts/code-quality-20261122/q029-*.log`。两处修复可独立交付，将按帧写入和期限校验分开提交。
 - 帧短写修复已提交 `20c4b519`。期限校验作为独立修复提交。累计 48/327 批完成，完成批覆盖 95/1009 个生产文件。下一批 Q029B 为 CDP 启动、端点和重连绑定。
+
+
+### Q029B CDP 启动与资源绑定
+
+- Q029 的期限校验已提交 `4d6414d1`。完整检查 `browser.py` 和 `browser_binding.py`，包括发现、启动、连接、本地标签与进程所有权，以及记录身份的恢复。独立依据见 `docs/browser-process-reconnect.zh-CN.md` 的资源清理和借用页合同。新建页在 Session 成功返回前仍由连接操作所有，异常时由该操作清理。
+- 用专用真实本地 CDP，预置一个用户页。令新页导航无效 URL，或在实际出现第二个 target 后触发取消。对同一最终 fixture 使用 `git show 4d6414d1:codey/automation/browser.py` 的内存版本运行 `tests/test_browser_attach_cleanup.py`，实际 2 failed、退出 1，均额外残留一个 target，原用户页面内容仍在。修复先关新建页再断开 Playwright，并由同一错误清理所有权处理取消。相同两案通过。初稿诊断区分 Playwright 不支持同线程嵌套 sync 与目标泄漏。后续改为顺序连接，并按真实目标出现触发取消，消除 Playwright 类反射带来的类型诊断。
+- 两源的显式和隐式 Any 清零。将标准库响应标为二进制流，在 JSON 和 CDP 响应处做对象收窄。删去两个无副作用的自赋值。保持现有读取和恢复路径的错误策略。
+- 在 `D:\codey` 运行 `python -m pytest -q tests/test_browser.py tests/test_browser_process_reconnect.py tests/test_research_browser_cdp_lifecycle.py --tb=short`，前后各 70 passed，退出 0。最终 `python -m pytest -q tests/test_browser_attach_cleanup.py --tb=short` 2 passed，退出 0，定向去重 72 项。无跳过。工作进程其他生命周期用例留 Q029C。
+- 源初始强 Any 11 条诊断。最终两源和新测试的严格 mypy、Pyrefly、ty、Ruff 均退出 0。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 与 kernel_type_precision_gate 已通过，之后只更新新测试。日志 `.e2e-artifacts/code-quality-20261122/q029b-*.log`。
+- Q029B 结项。累计 49/327 批，完成批覆盖 97/1009 个生产文件。接续 Q029C 的 worker 和 BrowserSession。

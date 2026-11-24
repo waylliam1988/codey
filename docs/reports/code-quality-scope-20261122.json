@@ -3286,7 +3286,8 @@
       ],
       "result": "Partial stream writes formerly dropped frame bytes, and oversized integer deadlines leaked OverflowError. Four failed before and the full-write control passed. Seven direct and one real worker test passed after, plus scoped strong typing and full production gates. Commit framing and deadline validation independently.",
       "commits": [
-        "20c4b519"
+        "20c4b519",
+        "4d6414d1"
       ]
     },
     {
@@ -3296,14 +3297,25 @@
         "codey/automation/browser.py",
         "codey/automation/browser_binding.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/automation/browser.py",
+        "codey/automation/browser_binding.py"
+      ],
+      "verified_files": [
+        "codey/automation/browser.py",
+        "codey/automation/browser_binding.py"
+      ],
       "tests": [
         "tests/test_browser.py",
         "tests/test_browser_process_reconnect.py",
-        "tests/test_research_browser_cdp_lifecycle.py"
-      ]
+        "tests/test_research_browser_cdp_lifecycle.py",
+        "tests/test_browser_attach_cleanup.py"
+      ],
+      "reviewed_support": [
+        "tests/test_browser_attach_cleanup.py"
+      ],
+      "result": "Failed provider attachment left a newly owned tab on a borrowed CDP browser. Both invalid navigation and cancellation after page creation reproduced on the original module (two failures), and passed after closing the new tab before disconnect. Original user's page and active browser remain available. Baseline and final existing 70 tests passed. Scoped strict Any 11 source diagnostics to zero and all production gates passed."
     },
     {
       "id": "Q029C",
@@ -7575,6 +7587,7 @@
     "tests/test_browser_assistance_resume.py",
     "tests/test_browser_async_frames.py",
     "tests/test_browser_async_runtime.py",
+    "tests/test_browser_attach_cleanup.py",
     "tests/test_browser_background.py",
     "tests/test_browser_baseline_capability.py",
     "tests/test_browser_baseline_ui.py",

@@ -4,8 +4,10 @@ from __future__ import annotations
 import json
 import tempfile
 from collections.abc import Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import BinaryIO
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
@@ -94,8 +96,10 @@ class BrowserBinding:
 
 def browser_endpoint(port: int) -> str:
     """Discover only the recorded loopback port; its browser UUID must also match."""
-    with urlopen(f"http://127.0.0.1:{port}/json/version", timeout=5) as response:
-        version = decode_json_object(json.loads(response.read()))
+    opened: AbstractContextManager[BinaryIO] = urlopen(f"http://127.0.0.1:{port}/json/version", timeout=5)
+    with opened as response:
+        data: object = json.loads(response.read())
+    version = decode_json_object(data)
     endpoint = require_json_string(version.get("webSocketDebuggerUrl"), "browser endpoint")
     parsed = urlparse(endpoint)
     if (parsed.scheme != "ws" or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
@@ -111,7 +115,8 @@ def browser_identity(endpoint: str) -> str:
 def page_binding(page: Page, *, owned: bool) -> PageBinding:
     cdp = page.context.new_cdp_session(page)
     try:
-        result = decode_json_object(cdp.send("Target.getTargetInfo"))
+        data: object = cdp.send("Target.getTargetInfo")
+        result = decode_json_object(data)
         info = decode_json_object(result["targetInfo"])
         return PageBinding(require_json_string(info.get("targetId"), "targetId"),
                            require_json_string(info.get("browserContextId", ""), "browserContextId"), owned)
