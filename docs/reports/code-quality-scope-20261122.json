@@ -2796,7 +2796,10 @@
         "tests/test_server.py::RunSnapshotTests::test_restore_research_changes_rebuild_error_does_not_change_restore_result",
         "tests/test_server.py::ResearchServerHelperTests::test_research_restore_response_preserves_status_mapping"
       ],
-      "result": "Single-flight launch admission bug confirmed: controlled Thread.start RuntimeError leaves running=True without worker and racing schedule returns normally with zero rebuilds. Original new script2behaviorfail; failed launch must release ownership, normal-returned schedule cannot be coalesced against nonexistent worker. State registration and start now share admission lock; RuntimeError rolls running back and rethrows original exception. No added retry, queue, background worker or exception swallowing. Same2 inputs pass, disabled store boundary, original reentrant pending/rebuild-error tests and restore callers pass. Final direct6+2subtests, callers4: distinct10passes+2subtests, no skips/failures. Whole source/old direct test already strongAny0, new script Thread constructor Any4 ->0 through precise start protocol; whole3 source/test files strongAny/Pyrefly/ty/Ruff0, proof runner also0. Production mypy760/Pyrefly35suppressed166warnings/ty/precision0, source hash stable. No dead public API deletion or forced abstraction. Knowledge backend, memory composition/projections/routes and original shared-server support debt remain outside complete scope."
+      "result": "Single-flight launch admission bug confirmed: controlled Thread.start RuntimeError leaves running=True without worker and racing schedule returns normally with zero rebuilds. Original new script2behaviorfail; failed launch must release ownership, normal-returned schedule cannot be coalesced against nonexistent worker. State registration and start now share admission lock; RuntimeError rolls running back and rethrows original exception. No added retry, queue, background worker or exception swallowing. Same2 inputs pass, disabled store boundary, original reentrant pending/rebuild-error tests and restore callers pass. Final direct6+2subtests, callers4: distinct10passes+2subtests, no skips/failures. Whole source/old direct test already strongAny0, new script Thread constructor Any4 ->0 through precise start protocol; whole3 source/test files strongAny/Pyrefly/ty/Ruff0, proof runner also0. Production mypy760/Pyrefly35suppressed166warnings/ty/precision0, source hash stable. No dead public API deletion or forced abstraction. Knowledge backend, memory composition/projections/routes and original shared-server support debt remain outside complete scope.",
+      "commits": [
+        "2d23e891"
+      ]
     },
     {
       "id": "Q022B",
@@ -2804,10 +2807,20 @@
       "files": [
         "codey/app/memory_setup.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+      "status": "completed_unchanged",
+      "reviewed_files": [
+        "codey/app/memory_setup.py"
+      ],
+      "verified_files": [
+        "codey/app/memory_setup.py"
+      ],
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
+      "tests": [
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_integrity.py",
+        "tests/test_memory_maintenance_runtime.py"
+      ],
+      "result": "Full143-line memory composition/source-lifetime/terminal publication review against current memory-boundary/completion contracts. Direct boundary+integrity43pass, idle-maintenance2pass, no skips/failures; proof-runner commands/hash/HEAD recorded. Whole source and runner strictAny0, source Pyrefly/ty/Ruff0. Fresh-process import asserts concrete Ghost backend remains unloaded, exit0, not counted as pytest. No production change, speculative fix, public API deletion or forced abstraction; disabled/absent versus broken internal dependency handling retained, source identity/hash/current branch and optional terminal projection semantics preserved. Test files only target-name routing/execution, no whole-file review/type claim. Existing full production gate from immediately preceding Q022 remains valid without production changes. No empty commit; records persist and join next substantive commit."
     },
     {
       "id": "Q022C",
@@ -2818,12 +2831,34 @@
         "codey/app/memory_verification.py",
         "codey/app/memory_observation.py"
       ],
-      "status": "not_started",
+      "status": "completed_changed",
       "reviewed_files": [
-        "codey/app/memory_verification.py"
+        "codey/app/memory_behaviors.py",
+        "codey/app/memory_candidates.py",
+        "codey/app/memory_verification.py",
+        "codey/app/memory_observation.py"
       ],
-      "verified_files": [],
-      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+      "verified_files": [
+        "codey/app/memory_behaviors.py",
+        "codey/app/memory_candidates.py",
+        "codey/app/memory_verification.py",
+        "codey/app/memory_observation.py"
+      ],
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
+      "tests": [
+        "tests/test_memory_decision_ownership.py",
+        "tests/test_memory_completion.py",
+        "tests/test_memory_feedback.py",
+        "tests/test_memory_learning_targets.py",
+        "tests/test_memory_adaptation_flow.py",
+        "tests/test_memory_maintenance_runtime.py",
+        "tests/test_memory_boundary.py::test_terminal_projection_cancellation_cannot_change_committed_result"
+      ],
+      "result": "Four sources fully reviewed. Confirmed full artifact ownership defect: canonical task-decision channel is (run_id,None); same-task effect-owned kernel_decision accepted through accepted_done_decision/accepted_completion. Real memory+SQLite checkpoints/artifacts with valid schema: original4behaviorfail/2validpass; one missing owner_effect_id check added, same6pass. First fixture lacked required driver and failed before target: explicitly not bug evidence. Original exception family/messages and valid result/digest/version checks retained. Direct43+callers9=52distinctpasses/no skips, including normal adaptation/terminal cancellation/maintenance retry. Whole4sources+new test strongAny/Pyrefly/ty/Ruff0, runner also strongAny0. Production mypy760/Pyrefly35suppressed166warnings/ty/precision0 with stable source hashes/HEAD. No forced merge of semantically different decision-versus-response readers, no public deletion/casts/ignores/dependency or source-tree copies. Necessary dependency Any baseline is separate: checkpoint13 and operation_payload8 routed Q056/Q192; two operations interface sources0, no whole dependency governance claim. Q022B consumers specifically rerun on actual dependency change; unchanged composition acceptance retained.",
+      "followups": [],
+      "reviewed_support": [
+        "tests/test_memory_decision_ownership.py"
+      ]
     },
     {
       "id": "Q022D",
@@ -3373,7 +3408,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 14
+      "candidate_test_count": 14,
+      "followups": [
+        "Q022C necessary real-checkpoint contract inspection: full-file strict Any13 at checkpoint.py69/91-172, dict narrowing and **payload/record propagation, q022c-dependency-any-baseline.json. Current file unchanged; public operation_from_checkpoint boundary tested via real memory/SQLite regression, not full module review. Own remaining type migration and full related behavior at Q056; no completion claim."
+      ]
     },
     {
       "responsibility": "codey/durable: conversation and input lifecycle",
@@ -5315,7 +5353,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 34
+      "candidate_test_count": 34,
+      "followups": [
+        "Q022C necessary RuntimeOperationState schema/fixture inspection: full-file strict Any8 at operation_payload.py47/60/82/280/393/396, set/zip/list/dict and boolean flow after generic narrowing, q022c-dependency-any-baseline.json. Current file unchanged; parser APIs used for faithful fixtures, not whole module governance. Own migration with schema compatibility baselines and precision gates at Q192; no completion claim."
+      ]
     },
     {
       "responsibility": "codey/runtime/core: context and checkpoint boundaries",
@@ -7724,6 +7765,7 @@
     "tests/test_memory_boundary.py",
     "tests/test_memory_completion.py",
     "tests/test_memory_continuity_probe.py",
+    "tests/test_memory_decision_ownership.py",
     "tests/test_memory_feedback.py",
     "tests/test_memory_integrity.py",
     "tests/test_memory_learning_targets.py",

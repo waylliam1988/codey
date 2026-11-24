@@ -30,7 +30,7 @@ def accepted_done_decision(durable: DurableSession, outputs: ManagedOutputStore,
         if state is None or not state.work_ref:
             continue
         artifact = durable.artifact(state.work_ref)
-        if artifact.owner_task_id != run_id or artifact.metadata.get("kind") != "kernel_decision":
+        if artifact.owner_task_id != run_id or artifact.owner_effect_id is not None or artifact.metadata.get("kind") != "kernel_decision":
             raise ValueError("completion observation has an invalid decision owner")
         reference = decode_json_object(thaw_json(artifact.metadata.get("ref")))
         if reference.get("sha256") != artifact.sha256 or reference.get("handle") != artifact.handle:
