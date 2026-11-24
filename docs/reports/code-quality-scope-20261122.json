@@ -3778,11 +3778,12 @@
       "responsibility": "Code Mode Node transport and session runtime",
       "files": ["codey/codemode/runtime.py"],
       "id": "Q037C",
-      "status": "in_progress",
+      "status": "completed_changed",
       "reviewed_files": ["codey/codemode/runtime.py"],
-      "verified_files": [],
-      "tests": ["tests/test_codemode_session_thread_start.py", "tests/test_codemode_runtime.py", "tests/test_codemode_discovery_session.py", "tests/test_codemode_replay_authority.py"],
-      "follow_up": ["Q035E: check the impact of comment-only guest and runner changes on persisted runtime identity before typing those scripts."]
+      "verified_files": ["codey/codemode/runtime.py"],
+      "tests": ["tests/test_codemode_session_thread_start.py", "tests/test_codemode_worker_output_protocol.py", "tests/test_codemode_runtime.py", "tests/test_codemode_discovery_session.py", "tests/test_codemode_replay_authority.py"],
+      "reviewed_support": ["tests/test_codemode_session_thread_start.py", "tests/test_codemode_worker_output_protocol.py"],
+      "result": "Failed thread startup releases the execution ID. Invalid UTF-8 and decoder recursion return protocol errors rather than being observed as a timeout. Final 68 passed and all scoped and production gates passed. The existing worker-fingerprint test confirmed comment-only changes invalidate the fingerprint, tracked under Q035E."
     },
     {
       "responsibility": "codey/codemode: execution evidence and event projection",

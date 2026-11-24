@@ -333,7 +333,11 @@ class NodeWorkerRuntime:
 
         def read_messages() -> None:
             while not stop.is_set():
-                line = stdout.readline(limits.max_rpc_bytes + 1)
+                try:
+                    line = stdout.readline(limits.max_rpc_bytes + 1)
+                except UnicodeDecodeError:
+                    publish({"type": "error", "code": "protocol", "message": "worker emitted invalid UTF-8"})
+                    return
                 if not line:
                     break
                 if len(line.encode("utf-8")) > limits.max_rpc_bytes:
@@ -341,9 +345,9 @@ class NodeWorkerRuntime:
                     return
                 try:
                     message = parse_json_object(line)
-                except (ValueError, json.JSONDecodeError):
+                except (ValueError, RecursionError):
                     publish({"type": "error", "code": "protocol", "message": "worker emitted invalid JSON"})
-                    continue
+                    return
                 publish({key: value for key, value in message.items()})
             publish({"type": "error", "code": "worker_exit", "message": "codemode worker exited without a result"})
 
