@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Generator, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterator, Mapping
 from contextlib import closing, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -49,7 +49,12 @@ from codey.durable.model import (
 from codey.durable.sqlite_display import write_display_index
 from codey.durable.sqlite_history import SQLiteHistoryReader
 from codey.durable.sqlite_records import (
+    _column,
+    _integer,
+    _object,
+    _optional_object,
     _optional_text,
+    _text,
     artifact_from_row,
     effect_from_row,
     entry_from_row,
@@ -66,6 +71,14 @@ from codey.durable.timeline import (
     transition_from_payload,
 )
 from codey.storage.file_lock import acquire_lease
+from codey.utils.object_fields import object_fields
+
+_ROW_FACTORY: Callable[[sqlite3.Cursor, tuple[object, ...]], sqlite3.Row] = sqlite3.Row
+
+
+def _exists(database: sqlite3.Connection, sql: str, parameters: tuple[str, ...]) -> bool:
+    row: sqlite3.Row | None = database.execute(sql, parameters).fetchone()
+    return row is not None
 
 
 class SQLiteDurableStore:
@@ -85,7 +98,7 @@ class SQLiteDurableStore:
 
     def _connect(self) -> sqlite3.Connection:
         database = sqlite3.connect(self.path, isolation_level=None, timeout=30)
-        database.row_factory = sqlite3.Row
+        database.row_factory = _ROW_FACTORY
         database.execute(f"PRAGMA synchronous={self._synchronous}")
         database.execute("PRAGMA foreign_keys=ON")
         return database
@@ -138,7 +151,7 @@ class SQLiteDurableStore:
                     return existing_submission
                 creation = mutation.create_conversation
                 if creation is not None:
-                    if database.execute("SELECT 1 FROM conversations WHERE id=?", (mutation.conversation_id,)).fetchone():
+                    if _exists(database, "SELECT 1 FROM conversations WHERE id=?", (mutation.conversation_id,)):
                         raise CommitConflict("conversation already exists")
                     if creation.parent_conversation_id is not None:
                         context_path(
@@ -153,7 +166,7 @@ class SQLiteDurableStore:
                     )
                 current_revision, head = _read_conversation(database, mutation.conversation_id)
                 if mutation.delete_conversation is not None:
-                    child = database.execute(
+                    child: sqlite3.Row | None = database.execute(
                         "SELECT 1 FROM conversations WHERE parent_conversation_id=? LIMIT 1",
                         (mutation.conversation_id,),
                     ).fetchone()
@@ -171,12 +184,10 @@ class SQLiteDurableStore:
                         "WHERE json_extract(payload, '$.session_id')=?",
                         (mutation.conversation_id,),
                     )
-                    task_ids = [
-                        str(row[0]) for row in database.execute(
-                            "SELECT id FROM tasks WHERE conversation_id=?",
-                            (mutation.conversation_id,),
-                        ).fetchall()
-                    ]
+                    task_rows: list[sqlite3.Row] = database.execute(
+                        "SELECT id FROM tasks WHERE conversation_id=?", (mutation.conversation_id,),
+                    ).fetchall()
+                    task_ids = [_text(row, "id") for row in task_rows]
                     if task_ids:
                         placeholders = ",".join("?" for _ in task_ids)
                         database.execute(f"DELETE FROM effects WHERE task_id IN ({placeholders})", task_ids)
@@ -187,15 +198,20 @@ class SQLiteDurableStore:
                     database.execute("COMMIT")
                     return CommitResult(current_revision + 1, record.sequence, record=record)
                 _validate_mutation(database, mutation, current_revision, head)
-                if mutation.submission is not None and database.execute(
+                if mutation.submission is not None and _exists(
+                    database,
                     "SELECT 1 FROM submissions WHERE id=?",
                     (mutation.submission.submission_id,),
-                ).fetchone() is not None:
+                ):
                     raise IdempotencyConflict("submission ID was already used")
                 new_head = mutation.branch_entry_id or (mutation.entries[-1].entry_id if mutation.entries else head)
                 new_revision = current_revision + (1 if mutation.branch_entry_id is not None else len(mutation.entries))
-                generation = int(database.execute("SELECT path_generation FROM conversations WHERE id=?",
-                                                  (mutation.conversation_id,)).fetchone()[0]) + int(rewrites_path(mutation))
+                generation_row: sqlite3.Row | None = database.execute(
+                    "SELECT path_generation FROM conversations WHERE id=?", (mutation.conversation_id,),
+                ).fetchone()
+                if generation_row is None:
+                    raise KeyError(f"unknown conversation: {mutation.conversation_id}")
+                generation = _integer(generation_row, "path_generation") + int(rewrites_path(mutation))
                 record = _new_commit(database, "durable", {
                     **mutation_projection(mutation), "_workflow": execution_payload(mutation, new_head),
                     "path_generation": generation, "revision": new_revision,
@@ -244,8 +260,8 @@ class SQLiteDurableStore:
                 for settlement in mutation.settlements:
                     _write_effect(database, settlement, "pending")
                 _write_artifacts(database, mutation.artifacts)
-                _write_submission_update(database, mutation.submission_update, mutation.entries)
-                _write_submission_updates(database, mutation.submission_updates, mutation.entries)
+                _write_submission_update(database, mutation.submission_update)
+                _write_submission_updates(database, mutation.submission_updates)
                 database.execute("COMMIT")
                 return CommitResult(
                     revision=new_revision,
@@ -270,7 +286,8 @@ class SQLiteDurableStore:
 
     def conversation_ids(self) -> tuple[str, ...]:
         with closing(self._connect()) as database:
-            return tuple(str(row[0]) for row in database.execute("SELECT id FROM conversations ORDER BY id"))
+            rows: Iterator[sqlite3.Row] = iter(database.execute("SELECT id FROM conversations ORDER BY id"))
+            return tuple(_text(row, "id") for row in rows)
 
     def entries(self, conversation_id: str) -> tuple[EntryDraft, ...]:
         with closing(self._connect()) as database:
@@ -287,10 +304,8 @@ class SQLiteDurableStore:
 
     def head(self, conversation_id: str) -> tuple[str | None, int]:
         with closing(self._connect()) as database:
-            row = database.execute("SELECT head_entry_id, revision FROM conversations WHERE id=?", (conversation_id,)).fetchone()
-            if row is None:
-                raise KeyError(f"unknown conversation: {conversation_id}")
-            return row["head_entry_id"], int(row["revision"])
+            revision, head = _read_conversation(database, conversation_id)
+            return head, revision
 
     def branch(
         self, conversation_id: str, entry_id: str, *, expected_revision: int | None = None,
@@ -335,39 +350,37 @@ class SQLiteDurableStore:
 
     def has_conversation(self, conversation_id: str) -> bool:
         with closing(self._connect()) as database:
-            row = database.execute("SELECT 1 FROM conversations WHERE id=?", (conversation_id,)).fetchone()
+            row: sqlite3.Row | None = database.execute("SELECT 1 FROM conversations WHERE id=?", (conversation_id,)).fetchone()
             return bool(row)
 
     def task(self, task_id: str) -> TaskCheckpoint:
         with closing(self._connect()) as database:
-            row = database.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+            row: sqlite3.Row | None = database.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
             if row is None:
                 raise KeyError(f"unknown task: {task_id}")
             return task_from_row(row)
 
     def effect(self, effect_id: str) -> EffectRecord:
         with closing(self._connect()) as database:
-            row = database.execute("SELECT * FROM effects WHERE id=?", (effect_id,)).fetchone()
+            row: sqlite3.Row | None = database.execute("SELECT * FROM effects WHERE id=?", (effect_id,)).fetchone()
             if row is None:
                 raise KeyError(f"unknown effect: {effect_id}")
             return effect_from_row(row)
 
     def approval(self, approval_id: str) -> ApprovalRecord:
         with closing(self._connect()) as database:
-            rows = database.execute("SELECT state FROM tasks").fetchall()
+            rows: list[sqlite3.Row] = database.execute("SELECT state FROM tasks").fetchall()
             for row in rows:
-                state = json.loads(row["state"])
-                approvals: dict[str, object] = (
-                    state.get("approvals", {}) if isinstance(state, dict) else {}
-                )
-                payload = approvals.get(approval_id) if isinstance(approvals, dict) else None
-                if isinstance(payload, dict):
+                state: object = json.loads(_text(row, "state"))
+                approvals = state.get("approvals") if object_fields(state) else None
+                payload = approvals.get(approval_id) if object_fields(approvals) else None
+                if object_fields(payload):
                     return ApprovalRecord.from_payload(payload)
             raise KeyError(f"unknown approval: {approval_id}")
 
     def effects_for_task(self, task_id: str) -> tuple[EffectRecord, ...]:
         with closing(self._connect()) as database:
-            rows = database.execute(
+            rows: list[sqlite3.Row] = database.execute(
                 "SELECT id, task_id, category, replay_class, args_digest, status, intent, settlement "
                 "FROM effects WHERE task_id=? ORDER BY rowid",
                 (task_id,),
@@ -376,24 +389,24 @@ class SQLiteDurableStore:
 
     def artifact(self, handle: str) -> ArtifactRecord:
         with closing(self._connect()) as database:
-            row = database.execute("SELECT * FROM artifacts WHERE handle=?", (handle,)).fetchone()
+            row: sqlite3.Row | None = database.execute("SELECT * FROM artifacts WHERE handle=?", (handle,)).fetchone()
             if row is None:
                 raise KeyError(f"unknown artifact: {handle}")
             return artifact_from_row(row)
 
     def artifacts_for_task(self, task_id: str) -> tuple[ArtifactRecord, ...]:
         with closing(self._connect()) as database:
-            rows = database.execute("SELECT * FROM artifacts WHERE owner_task_id=? ORDER BY handle", (task_id,)).fetchall()
+            rows: list[sqlite3.Row] = database.execute("SELECT * FROM artifacts WHERE owner_task_id=? ORDER BY handle", (task_id,)).fetchall()
             return tuple(artifact_from_row(row) for row in rows)
 
     def artifacts_for_effect(self, effect_id: str) -> tuple[ArtifactRecord, ...]:
         with closing(self._connect()) as database:
-            rows = database.execute("SELECT * FROM artifacts WHERE owner_effect_id=? ORDER BY handle", (effect_id,)).fetchall()
+            rows: list[sqlite3.Row] = database.execute("SELECT * FROM artifacts WHERE owner_effect_id=? ORDER BY handle", (effect_id,)).fetchall()
             return tuple(artifact_from_row(row) for row in rows)
 
     def submission(self, submission_id: str) -> SubmissionRecord:
         with closing(self._connect()) as database:
-            row = database.execute("SELECT * FROM submissions WHERE id=?", (submission_id,)).fetchone()
+            row: sqlite3.Row | None = database.execute("SELECT * FROM submissions WHERE id=?", (submission_id,)).fetchone()
             if row is None:
                 raise KeyError(f"unknown submission: {submission_id}")
             return submission_from_row(row)
@@ -401,7 +414,7 @@ class SQLiteDurableStore:
     def queued_submissions(self, conversation_id: str | None = None) -> tuple[SubmissionRecord, ...]:
         with closing(self._connect()) as database:
             if conversation_id is None:
-                rows = database.execute(
+                rows: list[sqlite3.Row] = database.execute(
                     "SELECT * FROM submissions WHERE status=? AND placement=? ORDER BY commit_seq, id",
                     (SubmissionStatus.QUEUED.value, SubmissionPlacement.QUEUED.value),
                 ).fetchall()
@@ -417,38 +430,38 @@ class SQLiteDurableStore:
         self, conversation_id: str, request_id: str, fingerprint: str,
     ) -> CommitResult | None:
         with closing(self._connect()) as database:
-            row = database.execute(
+            row: sqlite3.Row | None = database.execute(
                 "SELECT id, fingerprint, revision, commit_seq FROM submissions WHERE conversation_id=? AND request_id=?",
                 (conversation_id, request_id),
             ).fetchone()
             if row is None:
                 return None
-            if str(row["fingerprint"]) != fingerprint:
+            if _text(row, "fingerprint") != fingerprint:
                 raise IdempotencyConflict("request_id was already admitted with different durable result content")
-            return CommitResult(int(row["revision"]), int(row["commit_seq"]), str(row["id"]))
+            return CommitResult(_integer(row, "revision"), _integer(row, "commit_seq"), _text(row, "id"))
 
     def pending_tasks(self) -> tuple[TaskCheckpoint, ...]:
         with closing(self._connect()) as database:
-            rows = database.execute(
+            rows: list[sqlite3.Row] = database.execute(
                 "SELECT * FROM tasks WHERE status NOT IN ('completed','failed','cancelled') ORDER BY rowid"
             ).fetchall()
             return tuple(task_from_row(row) for row in rows)
 
     def finalization_queue(self) -> tuple[str, ...]:
         with closing(self._connect()) as database:
-            rows = database.execute(
+            rows: list[sqlite3.Row] = database.execute(
                 "SELECT task_id FROM finalization_queue ORDER BY task_id"
             ).fetchall()
-            return tuple(str(row["task_id"]) for row in rows)
+            return tuple(_text(row, "task_id") for row in rows)
 
     def tasks(self) -> tuple[TaskCheckpoint, ...]:
         with closing(self._connect()) as database:
-            rows = database.execute("SELECT * FROM tasks ORDER BY rowid").fetchall()
+            rows: list[sqlite3.Row] = database.execute("SELECT * FROM tasks ORDER BY rowid").fetchall()
             return tuple(task_from_row(row) for row in rows)
 
     def waiting_dependents(self, task_id: str) -> tuple[TaskCheckpoint, ...]:
         with closing(self._connect()) as database:
-            rows = database.execute(
+            rows: list[sqlite3.Row] = database.execute(
                 "SELECT tasks.* FROM task_waiters "
                 "JOIN tasks ON tasks.id=task_waiters.waiter_task_id "
                 "WHERE task_waiters.waited_task_id=? ORDER BY tasks.rowid",
@@ -458,7 +471,7 @@ class SQLiteDurableStore:
 
     def owned_dependents(self, task_id: str) -> tuple[TaskCheckpoint, ...]:
         with closing(self._connect()) as database:
-            rows = database.execute(
+            rows: list[sqlite3.Row] = database.execute(
                 "SELECT tasks.* FROM task_owners "
                 "JOIN tasks ON tasks.id=task_owners.child_task_id "
                 "WHERE task_owners.owner_task_id=? ORDER BY tasks.rowid",
@@ -472,7 +485,7 @@ class SQLiteDurableStore:
         with closing(self._connect()) as database:
             database.execute("BEGIN IMMEDIATE")
             try:
-                row = database.execute(
+                row: sqlite3.Row | None = database.execute(
                     "SELECT owner_id, process_id FROM scheduler_owners WHERE id=1"
                 ).fetchone()
                 now = datetime.now(UTC).isoformat()
@@ -481,13 +494,13 @@ class SQLiteDurableStore:
                         "INSERT INTO scheduler_owners(id, owner_id, process_id, claimed_at) VALUES(1, ?, ?, ?)",
                         (owner_id, process_id, now),
                     )
-                elif str(row["owner_id"]) == owner_id:
+                elif _text(row, "owner_id") == owner_id:
                     database.execute(
                         "UPDATE scheduler_owners SET process_id=?, claimed_at=? WHERE id=1",
                         (process_id, now),
                     )
                 else:
-                    old_pid = int(row["process_id"])
+                    old_pid = _integer(row, "process_id")
                     from codey.durable.process import process_is_alive
 
                     alive = process_is_alive(old_pid)
@@ -517,40 +530,43 @@ class SQLiteDurableStore:
 
     def commit_sequence(self) -> int:
         with closing(self._connect()) as database:
-            return int(database.execute("SELECT COALESCE(MAX(seq), 0) FROM commits").fetchone()[0])
+            row: sqlite3.Row | None = database.execute("SELECT COALESCE(MAX(seq), 0) AS seq FROM commits").fetchone()
+            if row is None:
+                raise RuntimeError("SQLite did not return a commit sequence")
+            return _integer(row, "seq")
 
     def commits_after(self, sequence: int, *, limit: int = 512) -> tuple[CommitRecord, ...]:
         bounded = max(1, min(2048, int(limit)))
         with closing(self._connect()) as database:
-            rows = database.execute(
+            rows: list[sqlite3.Row] = database.execute(
                 "SELECT seq, kind, committed_at, payload FROM commits WHERE seq>? ORDER BY seq LIMIT ?",
                 (int(sequence), bounded),
             ).fetchall()
             return tuple(
-                CommitRecord(int(row["seq"]), str(row["kind"]), str(row["committed_at"]),
-                             public_commit_payload(json.loads(row["payload"])))
+                CommitRecord(_integer(row, "seq"), _text(row, "kind"), _text(row, "committed_at"),
+                             public_commit_payload(_object(row, "payload")))
                 for row in rows
             )
 
     def task_history(self, task_id: str, *, through: int | None = None) -> tuple[TaskTransition, ...]:
         with closing(self._connect()) as database:
-            rows = database.execute(
+            rows: list[sqlite3.Row] = database.execute(
                 "SELECT seq, json_extract(payload, '$._workflow') AS workflow FROM commits "
                 "WHERE json_extract(payload, '$._workflow') IS NOT NULL "
                 "AND (? IS NULL OR seq<=?) ORDER BY seq", (through, through),
             ).fetchall()
             history: list[TaskTransition] = []
             for row in rows:
-                raw = json.loads(row["workflow"])
+                raw = _object(row, "workflow")
                 task_rows = raw.get("tasks")
                 matches = (
                     isinstance(task_rows, list)
-                    and any(isinstance(item, dict) and item.get("task_id") == task_id for item in task_rows)
+                    and any(object_fields(item) and item.get("task_id") == task_id for item in task_rows)
                 )
                 legacy_task = raw.get("task")
-                legacy_match = isinstance(legacy_task, dict) and legacy_task.get("task_id") == task_id
+                legacy_match = object_fields(legacy_task) and legacy_task.get("task_id") == task_id
                 if matches or legacy_match:
-                    history.append(transition_from_payload(int(row["seq"]), raw, task_id))
+                    history.append(transition_from_payload(_integer(row, "seq"), raw, task_id))
             return tuple(history)
 
     def task_settlement_history(
@@ -576,40 +592,32 @@ class SQLiteDurableStore:
 
 
 def _entries(database: sqlite3.Connection, conversation_id: str) -> tuple[EntryDraft, ...]:
-    rows = database.execute(
+    rows: list[sqlite3.Row] = database.execute(
         "SELECT id, conversation_id, parent_id, kind, payload, commit_seq, by_task_id "
         "FROM entries WHERE conversation_id=? ORDER BY ordinal", (conversation_id,),
     ).fetchall()
-    if not rows and database.execute("SELECT 1 FROM conversations WHERE id=?", (conversation_id,)).fetchone() is None:
+    if not rows and not _exists(database, "SELECT 1 FROM conversations WHERE id=?", (conversation_id,)):
         raise KeyError(f"unknown conversation: {conversation_id}")
     return tuple(entry_from_row(row) for row in rows)
 
 
 def _conversation_parent(database: sqlite3.Connection, conversation_id: str) -> tuple[str | None, str | None]:
-    row = database.execute(
+    row: sqlite3.Row | None = database.execute(
         "SELECT parent_conversation_id, parent_entry_id FROM conversations WHERE id=?", (conversation_id,),
     ).fetchone()
     if row is None:
         raise KeyError(f"unknown conversation: {conversation_id}")
-    return row["parent_conversation_id"], row["parent_entry_id"]
+    return _optional_text(row, "parent_conversation_id"), _optional_text(row, "parent_entry_id")
 
 
 def _encode(payload: object) -> str:
     return json.dumps(thaw_json(payload), ensure_ascii=False, separators=(",", ":"), sort_keys=True, allow_nan=False)
 
 
-def _same_entry(row: sqlite3.Row, entry: EntryDraft) -> bool:
-    return (
-        row["parent_id"] == entry.parent_id
-        and str(row["kind"]) == entry.kind
-        and str(row["payload"]) == _encode(entry.payload)
-    )
-
-
 def _find_submission(database: sqlite3.Connection, draft: SubmissionDraft | None) -> CommitResult | None:
     if draft is None:
         return None
-    row = database.execute(
+    row: sqlite3.Row | None = database.execute(
         "SELECT s.id, s.fingerprint, s.revision, s.commit_seq, s.placement, s.mode, s.content, "
         "e.id AS entry_id, e.parent_id, e.kind, e.payload "
         "FROM submissions s LEFT JOIN entries e ON e.id=s.entry_id "
@@ -619,24 +627,27 @@ def _find_submission(database: sqlite3.Connection, draft: SubmissionDraft | None
     if row is None:
         return None
     stored_entry = None
-    if row["entry_id"] is not None:
-        stored_entry = EntryDraft(str(row["entry_id"]), draft.conversation_id, row["parent_id"], str(row["kind"]), json.loads(row["payload"]))
+    entry_id = _optional_text(row, "entry_id")
+    if entry_id is not None:
+        stored_entry = EntryDraft(
+            entry_id, draft.conversation_id, _optional_text(row, "parent_id"), _text(row, "kind"), _object(row, "payload"),
+        )
     stored = SubmissionDraft(
-        str(row["id"]), draft.request_id, draft.conversation_id, stored_entry,
-        str(row["fingerprint"]), placement=str(row["placement"]), mode=str(row["mode"]),
-        content=json.loads(str(row["content"])),
+        _text(row, "id"), draft.request_id, draft.conversation_id, stored_entry,
+        _text(row, "fingerprint"), placement=_text(row, "placement"), mode=_text(row, "mode"),
+        content=_optional_object(row, "content"),
     )
     if not same_submission(stored, draft):
         raise IdempotencyConflict("request_id was already admitted with different input")
-    return CommitResult(int(row["revision"]), int(row["commit_seq"]), str(row["id"]))
+    return CommitResult(_integer(row, "revision"), _integer(row, "commit_seq"), _text(row, "id"))
 
 
 def _new_commit(database: sqlite3.Connection, kind: str, payload: Mapping[str, object]) -> CommitRecord:
     committed_at = datetime.now(UTC).isoformat()
-    identity = database.execute("SELECT value FROM schema_metadata WHERE key='database_id'").fetchone()
+    identity: sqlite3.Row | None = database.execute("SELECT value FROM schema_metadata WHERE key='database_id'").fetchone()
     if identity is None:
         raise SchemaVersionError("durable database identity is missing")
-    payload = {**payload, "database_id": str(identity["value"])}
+    payload = {**payload, "database_id": _text(identity, "value")}
     cursor = database.execute(
         "INSERT INTO commits(kind, committed_at, payload) VALUES(?, ?, ?)",
         (kind, committed_at, _encode(payload)),
@@ -647,10 +658,10 @@ def _new_commit(database: sqlite3.Connection, kind: str, payload: Mapping[str, o
 
 
 def _read_conversation(database: sqlite3.Connection, conversation_id: str) -> tuple[int, str | None]:
-    row = database.execute("SELECT head_entry_id, revision FROM conversations WHERE id=?", (conversation_id,)).fetchone()
+    row: sqlite3.Row | None = database.execute("SELECT head_entry_id, revision FROM conversations WHERE id=?", (conversation_id,)).fetchone()
     if row is None:
         raise KeyError(f"unknown conversation: {conversation_id}")
-    return int(row["revision"]), row["head_entry_id"]
+    return _integer(row, "revision"), _optional_text(row, "head_entry_id")
 
 
 def _validate_mutation(
@@ -663,23 +674,27 @@ def _validate_mutation(
         raise CommitConflict("conversation revision changed")
     if (
         mutation.branch_entry_id is not None
-        and database.execute(
+        and not _exists(
+            database,
             "SELECT 1 FROM entries WHERE conversation_id=? AND id=?",
             (mutation.conversation_id, mutation.branch_entry_id),
-        ).fetchone() is None
+        )
     ):
         raise CommitConflict("branch entry does not belong to conversation")
     parent = head
     if mutation.entries and mutation.edited_entry_id is None and mutation.create_conversation is None:
         from codey.durable.edit import validate_entry_owners
         owner_ids = {entry.by_task_id for entry in mutation.entries if entry.by_task_id}
-        owners = tuple(task_from_row(row) for task_id in owner_ids
-                       for row in database.execute("SELECT * FROM tasks WHERE id=?", (task_id,)))
+        owners: list[TaskCheckpoint] = []
+        for task_id in owner_ids:
+            row: sqlite3.Row | None = database.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if row is not None:
+                owners.append(task_from_row(row))
         if owners:
             validate_entry_owners(mutation.entries,
                                   context_path(mutation.conversation_id, head,
                                                entries=lambda scope: _entries(database, scope),
-                                               parent=lambda scope: _conversation_parent(database, scope)), owners)
+                                               parent=lambda scope: _conversation_parent(database, scope)), tuple(owners))
     if mutation.edited_entry_id is not None:
         from codey.durable.edit import validate_edit
         parent = validate_edit(
@@ -687,15 +702,16 @@ def _validate_mutation(
             context_path(mutation.conversation_id, head,
                          entries=lambda scope: _entries(database, scope),
                          parent=lambda scope: _conversation_parent(database, scope)),
-            busy=database.execute(
+            busy=_exists(
+                database,
                 "SELECT 1 FROM tasks WHERE conversation_id=? AND status NOT IN ('completed','failed','cancelled') LIMIT 1",
                 (mutation.conversation_id,),
-            ).fetchone() is not None,
+            ),
         )
     for entry in mutation.entries:
         if entry.parent_id != parent:
             raise CommitConflict("mutation entries do not extend the active branch")
-        if database.execute("SELECT 1 FROM entries WHERE id=?", (entry.entry_id,)).fetchone() is not None:
+        if _exists(database, "SELECT 1 FROM entries WHERE id=?", (entry.entry_id,)):
             raise CommitConflict("entry ID already exists")
         parent = entry.entry_id
     _validate_task(database, mutation.task, mutation.submission, mutation.expected_attempt_token)
@@ -716,7 +732,7 @@ def _validate_task(
 ) -> None:
     if task is None:
         return
-    submission = database.execute(
+    submission: sqlite3.Row | None = database.execute(
         "SELECT conversation_id FROM submissions WHERE id=?",
         (task.submission_id,),
     ).fetchone()
@@ -726,10 +742,10 @@ def _validate_task(
         and proposed_submission.conversation_id == task.conversation_id
     )
     if (submission is None and not proposed_matches) or (
-        submission is not None and str(submission["conversation_id"]) != task.conversation_id
+        submission is not None and _text(submission, "conversation_id") != task.conversation_id
     ):
         raise CommitConflict("task must belong to a committed submission")
-    row = database.execute(
+    row: sqlite3.Row | None = database.execute(
         "SELECT conversation_id, submission_id, revision, provider_snapshot, phase, status, state, schema_version FROM tasks WHERE id=?",
         (task.task_id,),
     ).fetchone()
@@ -754,18 +770,18 @@ def _validate_task_owner(
         return
     if owner_task_id == task.task_id:
         raise CommitConflict("a task cannot own itself")
-    owner = database.execute("SELECT id FROM tasks WHERE id=?", (owner_task_id,)).fetchone()
+    owner: sqlite3.Row | None = database.execute("SELECT id FROM tasks WHERE id=?", (owner_task_id,)).fetchone()
     if owner is None:
         raise CommitConflict("owner task does not exist")
     seen: set[str] = {task.task_id}
     cursor = owner_task_id
     while cursor not in seen:
         seen.add(cursor)
-        parent = database.execute("SELECT state FROM tasks WHERE id=?", (cursor,)).fetchone()
+        parent: sqlite3.Row | None = database.execute("SELECT state FROM tasks WHERE id=?", (cursor,)).fetchone()
         if parent is None:
             break
-        raw = json.loads(parent["state"])
-        next_owner = raw.get("owner_task_id") if isinstance(raw, dict) else None
+        raw: object = json.loads(_text(parent, "state"))
+        next_owner = raw.get("owner_task_id") if object_fields(raw) else None
         if not isinstance(next_owner, str) or not next_owner:
             break
         cursor = next_owner
@@ -778,27 +794,27 @@ def _validate_existing_task(
     task: TaskCheckpoint,
     expected_attempt_token: str | None,
 ) -> None:
-    previous_state = json.loads(row["state"])
+    previous_state = _object(row, "state")
     if (previous_state.get("cancel_requested") and task.phase not in {"cancelled", "failed"}
             and not valid_cancellation_cleanup(previous_state, task)):
         raise CommitConflict("task cancellation barrier is active")
-    if not valid_execution_attempt(previous_state, TaskStatus(str(row["status"])), task, expected_attempt_token):
+    if not valid_execution_attempt(previous_state, TaskStatus(_text(row, "status")), task, expected_attempt_token):
         raise CommitConflict("task execution attempt changed")
-    if task.revision != int(row["revision"]) + 1:
+    if task.revision != _integer(row, "revision") + 1:
         raise CommitConflict("task revision changed")
     if (
-        str(row["conversation_id"]) != task.conversation_id
-        or str(row["submission_id"]) != task.submission_id
-        or str(row["provider_snapshot"]) != _encode(task.provider_snapshot)
+        _text(row, "conversation_id") != task.conversation_id
+        or _text(row, "submission_id") != task.submission_id
+        or _text(row, "provider_snapshot") != _encode(task.provider_snapshot)
     ):
         raise CommitConflict("task identity is immutable")
-    if not valid_frozen_task_state(json.loads(row["state"]), task.state):
+    if not valid_frozen_task_state(previous_state, task.state):
         raise CommitConflict("admitted task state is immutable")
-    previous_phase, _version = migrate_checkpoint_phase(str(row["phase"]), int(row["schema_version"]))
-    consumed = valid_input_consumption(previous_phase, str(row["status"]), previous_state, task)
+    previous_phase, _version = migrate_checkpoint_phase(_text(row, "phase"), _integer(row, "schema_version"))
+    consumed = valid_input_consumption(previous_phase, _text(row, "status"), previous_state, task)
     if not consumed and not valid_task_transition(previous_phase, task.phase):
         raise CommitConflict(f"invalid task phase transition: {previous_phase} -> {task.phase}")
-    previous_status = TaskStatus(str(row["status"]))
+    previous_status = TaskStatus(_text(row, "status"))
     if not consumed and not valid_task_status_transition(previous_status, TaskStatus(str(task.status))):
         raise CommitConflict(f"invalid task status transition: {previous_status} -> {task.status}")
 
@@ -810,11 +826,11 @@ def _validate_effect(database: sqlite3.Connection, mutation: DurableMutation) ->
     if mutation.task is None:
         raise CommitConflict("effect mutation requires its task checkpoint")
     for effect in effects:
-        task_exists = database.execute("SELECT 1 FROM tasks WHERE id=?", (effect.task_id,)).fetchone() is not None
+        task_exists = _exists(database, "SELECT 1 FROM tasks WHERE id=?", (effect.task_id,))
         task_is_new = mutation.task is not None and mutation.task.task_id == effect.task_id
         if not task_exists and not task_is_new:
             raise CommitConflict("effect task does not exist")
-        row = database.execute(
+        row: sqlite3.Row | None = database.execute(
             "SELECT task_id, category, replay_class, args_digest, status, intent, settlement FROM effects WHERE id=?",
             (effect.effect_id,),
         ).fetchone()
@@ -823,11 +839,11 @@ def _validate_effect(database: sqlite3.Connection, mutation: DurableMutation) ->
                 raise CommitConflict("effect status changed")
             continue
         expected = "pending" if effect in mutation.settlements else mutation.expected_effect_status
-        if row["settlement"] is not None:
+        if _column(row, "settlement") is not None:
             raise CommitConflict("effect is already settled")
-        if (effect is not mutation.effect and effect not in mutation.settlements) or row["status"] != expected:
+        if (effect is not mutation.effect and effect not in mutation.settlements) or _text(row, "status") != expected:
             raise CommitConflict("effect status changed")
-        original = (str(row["task_id"]), str(row["category"]), str(row["replay_class"]), str(row["args_digest"]), str(row["intent"]))
+        original = (_text(row, "task_id"), _text(row, "category"), _text(row, "replay_class"), _text(row, "args_digest"), _text(row, "intent"))
         candidate = (effect.task_id, effect.category, effect.replay_class, effect.args_digest, _encode(effect.intent))
         if original != candidate:
             raise CommitConflict("effect identity is immutable")
@@ -843,14 +859,14 @@ def _validate_artifacts(database: sqlite3.Connection, mutation: DurableMutation)
         task.task_id for task in ((mutation.task,) if mutation.task is not None else ()) + mutation.task_updates
     }
     for artifact in mutation.artifacts:
-        if database.execute("SELECT 1 FROM artifacts WHERE handle=?", (artifact.handle,)).fetchone() is not None:
+        if _exists(database, "SELECT 1 FROM artifacts WHERE handle=?", (artifact.handle,)):
             raise CommitConflict("artifact handle already exists")
         if artifact.owner_task_id is not None:
-            task_exists = database.execute("SELECT 1 FROM tasks WHERE id=?", (artifact.owner_task_id,)).fetchone() is not None
+            task_exists = _exists(database, "SELECT 1 FROM tasks WHERE id=?", (artifact.owner_task_id,))
             if not task_exists and artifact.owner_task_id not in proposed_tasks:
                 raise CommitConflict("artifact owner task does not exist")
         if artifact.owner_effect_id is not None:
-            effect_exists = database.execute("SELECT 1 FROM effects WHERE id=?", (artifact.owner_effect_id,)).fetchone() is not None
+            effect_exists = _exists(database, "SELECT 1 FROM effects WHERE id=?", (artifact.owner_effect_id,))
             if not effect_exists and artifact.owner_effect_id not in proposed_effects:
                 raise CommitConflict("artifact owner effect does not exist")
 
@@ -862,20 +878,20 @@ def _validate_submission_update(
 ) -> None:
     if update is None:
         return
-    row = database.execute(
+    row: sqlite3.Row | None = database.execute(
         "SELECT conversation_id, status, placement, mode, entry_id AS input_entry_id FROM submissions WHERE id=?",
         (update.submission_id,),
     ).fetchone()
-    if row is None or str(row["conversation_id"]) != update.conversation_id:
+    if row is None or _text(row, "conversation_id") != update.conversation_id:
         raise CommitConflict("unknown submission")
-    current = SubmissionStatus(str(row["status"]))
+    current = SubmissionStatus(_text(row, "status"))
     if current != update.expected_status or (
         current != update.status and not valid_submission_transition(current, update.status)
     ):
         raise CommitConflict("submission status changed")
     if (update.content is not None or update.mode is not None) and (
-                current is not SubmissionStatus.QUEUED or row["placement"] != "queued"
-                or row["input_entry_id"] is not None or row["mode"] == "write"
+                current is not SubmissionStatus.QUEUED or _text(row, "placement") != "queued"
+                or _column(row, "input_entry_id") is not None or _text(row, "mode") == "write"
                 or update.status is not SubmissionStatus.QUEUED
                 or update.input_entry_id is not None or update.placement is not None):
         raise CommitConflict("only queued user inputs can be revised")
@@ -885,10 +901,10 @@ def _validate_submission_update(
         raise CommitConflict("placed input entry must be part of the same commit")
     if update.placement is not None:
         placement = SubmissionPlacement(update.placement)
-        current_placement = SubmissionPlacement(str(row["placement"]))
+        current_placement = SubmissionPlacement(_text(row, "placement"))
         if current_placement is SubmissionPlacement.PLACED and placement is not SubmissionPlacement.PLACED:
             raise CommitConflict("placed submission cannot return to queued")
-        if placement is SubmissionPlacement.PLACED and update.input_entry_id is None and row["input_entry_id"] is None:
+        if placement is SubmissionPlacement.PLACED and update.input_entry_id is None and _column(row, "input_entry_id") is None:
             raise CommitConflict("placing a submission requires an input entry")
 
 
@@ -960,11 +976,7 @@ def _write_effect(database: sqlite3.Connection, effect: EffectRecord | None, exp
 
 def _write_effects(database: sqlite3.Connection, effects: tuple[EffectRecord, ...]) -> None:
     for effect in effects:
-        database.execute(
-            "INSERT INTO effects(id, task_id, category, replay_class, args_digest, status, intent, settlement) VALUES(?,?,?,?,?,?,?,?)",
-            (effect.effect_id, effect.task_id, effect.category, effect.replay_class, effect.args_digest, effect.status, _encode(effect.intent),
-             None if effect.settlement is None else _encode(effect.settlement)),
-        )
+        _write_effect(database, effect, None)
 
 
 def _write_artifacts(database: sqlite3.Connection, artifacts: tuple[ArtifactRecord, ...]) -> None:
@@ -980,7 +992,6 @@ def _write_artifacts(database: sqlite3.Connection, artifacts: tuple[ArtifactReco
 def _write_submission_update(
     database: sqlite3.Connection,
     update: SubmissionUpdate | None,
-    entries: tuple[EntryDraft, ...] = (),
 ) -> None:
     if update is None:
         return
@@ -1008,7 +1019,6 @@ def _write_submission_update(
 def _write_submission_updates(
     database: sqlite3.Connection,
     updates: tuple[SubmissionUpdate, ...],
-    entries: tuple[EntryDraft, ...] = (),
 ) -> None:
     for update in updates:
-        _write_submission_update(database, update, entries)
+        _write_submission_update(database, update)
