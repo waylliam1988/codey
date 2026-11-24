@@ -88,6 +88,10 @@ def commit_fact(ctx: ApprovalFactContext, fact: ShellApprovalFact) -> bool:
             revision=0,
         ))
         return True
+    if (current.task_id != fact.source_run_id or current.conversation_id != fact.session_id
+            or current.command_ref != fact.command_ref or current.command_digest != fact.command_digest
+            or current.cwd != (fact.cwd or ".")):
+        raise CommitConflict("shell approval fact identity mismatch")
     if status is None:
         continuation = continuation_by_kind.get(fact.kind)
         if continuation is None:

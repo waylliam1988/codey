@@ -1297,3 +1297,27 @@ Q022D 过滤收敛已提交：`39a5535c`（refactor(memory): share summary scope
 - 完整源/完整maintenance脚本/忽略runner强Any **0/3file**（q023-local-any-complete.json）；源/测试Pyrefly0、ty0、Ruff0（q023-local-{pyrefly,ty,ruff}.json）。生产门按要求串行执行：`python -m mypy codey --python-version 3.11` **0/760file**、`pyrefly check codey --python-version 3.11` **0/35suppressed/166warnings**、`ty check codey --python-version 3.11` **0**、`python -m tools.kernel_type_precision_gate` **0**（q023-production-*.json/q023-precision.json）。所有成功证据核对源码前后hash、最终工作区hash和起止HEAD一致；Windows/Python3.12实跑、类型目标3.11，不宣称其他平台实测。
 - MemoryMaintenance是AppContext唯一注册的原scheduler idle callback，_recover_knowledge由本类调用；两观察器分别维护持久memory游标与实例knowledge游标、消费不同事实且失败语义不同，不强行合并，不删除有契约入口。无需新依赖/配置/公开API变更，既有两个原测试断言全部保留。旧checkpoint/operation_payload Any、Q021C浏览器/463Any及其他未完成事项继续保留原队列。
 - Q023单源声明范围验收完成，准备独立本地提交。累计 **43/321完整批次、81/1006完整批次生产源**，另10部分源独立验证，累计91；全仓未完成、总goal active。下一主批Q024先按真实shell/审批职责核对是否需分区，不重开已完成源。用户未跟踪审查报告始终不暂存，无worktree/源码树复制或远端修改。
+
+Q023 已提交：`dcdacde9`（fix(memory): advance recovery past deleted task history）。
+
+### Q024 Canonical memory commands（进行中）
+
+- 原Q024的memory_commands不属于shell审批，按真实职责拆为Q024命令持久化1源、Q024B审批事实/重建3源、Q024C审批worker1源、Q024D执行票据/进程1源；完整1006源仍唯一归属，总324批，未缩小范围。原Q016已验收coordinator记录迁到Q024B，不重新全读；state此前输出部分已读但未完成，durable/workflow/service只接口头定位，不能记已治理。
+- memory_commands完整57行已读，检查锁内request_id幂等/内容不可改写、先验证再提交、canonical occurred_at复用及scope选择，类型入口为AppContext/JsonObject/EntryDraft，先执行实际调用方及源整文件Any。暂未发现符合准入的独立bug或可证明可删公开接口。
+
+- Q024调用方`python -m pytest -q tests/test_memory_lifecycle.py tests/test_memory_summary_input.py tests/test_memory_feedback.py tests/test_memory_adaptation_flow.py --tb=short` → **0，47 passed，17.85秒**（q024-baseline.json）。完整源＋忽略runner严格Any **0/2file**；源Pyrefly/ty/Ruff全exit0（q024-local-*.json），命令/最终源hash/起止HEAD均记录。原始脚本只执行未全读，不宣称其Any治理。
+- Q024完成且无需源码修改，不为生成commit而改动；5个公开函数都有实际路由/feedback调用，scope去重与JSON标量验证职责已由现有工具唯一承担，未证明可删或可合并的新实现。自Q023后生产源码未变，沿用未失效的三生产门/precision证据，不机械重跑。累计 **44/324完整批次、82/1006完整批次生产源**，另10部分源独立验证，累计92。记录随下一实质修改提交，总goal active。
+
+### Q024B Durable shell approval facts / reconstruction（进行中）
+
+- 范围为durable/state两未完成源，coordinator此前Q016已治理，保留其验收；只在实际共享接口改变时扩大复验。先完整读取事实提交和重建、执行审批基线及Any审计，再对独立合同允许的问题建立有效复现。
+
+- 两未完成源durable127行/state414行已全读；40个durable审批/权限基线 **0/40passed/16.31秒**（q024b-baseline.json）。整文件强Any源5条，均在state:141 model_selection映射泛型、178-180 deferred_tool_calls的Any迭代；durable/runner0（q024b-any-before.json）。
+- **事实可套用另一审批身份：** 独立合同为ApprovalRecord文档的command artifact/digest不可变、shell_approval_lifecycle第39-41行的approval绑定session/source run/已验证工件。commit_fact只检fact自己的task属于session，却把相同approval_id原记录的身份复用后推进状态；另一真实task/另一session或变更command_ref/digest/cwd均不被拒绝，请求重试还被误当幂等成功。新真实memory/SQLite脚本`python -m pytest -q tests/test_shell_approval_fact_identity.py --tb=short`修改前 **1，20failed/2passed，2.59秒**（q024b-identity-before.json），所有失败均DID NOT RAISE CommitConflict，合法同身份幂等及approved转换对照通过。原生产未修改；下一步在查到existing后先核对完整不可变身份，再执行状态/重试逻辑。
+
+- 修复existing record的task/session/command_ref/command_digest/规范化cwd身份核对，位于幂等及状态转换之前，差异立即CommitConflict；不改Core状态机或反向改变正确测试。相同完整22节点 **0，22 passed，2.38秒**（q024b-identity-after.json），两个合法幂等/approved控制通过，所有拒绝路径Core commit/audit原样保留。
+- state类型收敛先入object、Iterable[object]、dict[object,object]及Mapping[object,object]再按使用字段判断；保留字典行对象/顺序/只取前8、falsey缺省为空及非可迭代输入TypeError。API选择仍由ApiRunSelection.from_payload校验。expiry原无依据JsonObject cast删除，使用现有decode_json_object在公开JSON事件返回边界校验，不改有效DTO值；unused cast import随之删除，无新抽象。coordinator未编辑，因直接调用state/durable发生真实依赖变化，整文件类型与相关claim/expiry测试重新验证，未随意重新治理已完成源。
+- 首次直接72通过后，空deferred缺省从[]换成()以消除唯一空容器Any，原测试源码hash已不等于当前，未把它作最终结果；最终`python -m pytest -q tests/test_shell_approval_fact_identity.py tests/durable/test_approval_records.py tests/test_command_permissions.py tests/test_approval_registry.py --tb=short`重新执行 → **0，72 passed，17.86秒**（q024b-direct-final.json）。claim/Stop/recovery `python -m pytest -q tests/test_shell_approval_coordinator.py tests/test_approval_authorization_recovery.py tests/test_shell_approval_effect_recovery.py tests/test_shell_approval_epoch.py --tb=short` → **0，21 passed，20.34秒**；workflow/HTTP restart/native identity `python -m pytest -q tests/test_shell_approval_lifecycle.py tests/test_shell_approval_http_restart.py tests/test_shell_approval_native_identity.py --tb=short` → **0，36 passed，39.44秒**。三组去重 **72+21+36=129 passed、0失败/0skip**；原基线与复现不额外累计。
+- 整个durable/state/未改coordinator＋完整新回归＋忽略runner强Any **0/5file**（q024b-local-any-final.json）；源/新测试Pyrefly0、ty0、Ruff0（q024b-local-*.json）。Pyrefly显式warn检查exit1仅报告durable:50已有冗余str转换，不伪称warn命令通过或无warning，不为此做无关格式变更。生产mypy **0/760file**、Pyrefly **0/35suppressed/166warnings**、ty **0**、precision **0**串行通过（q024b-production-*.json/q024b-precision.json）；最终源hash/检查起止HEAD稳定，pytest支持脚本其余仅执行，未宣称全文件类型完成。
+- 必要依赖整文件Any基线exit1共19条：shell_approval_records.py17（18/44/49显式Any，19/46/50-53/70-71/84/100编码反射与JSON传播）属Q200；api_selection.py2（66-67的to_payload显式/返回传播）属Q189。q024b-dependency-any.json保存命令/原始位置；两依赖均未修改，消费边界已使用具体ShellApprovalFact/ApiRunSelection和object校验，依赖未宣称已治理或计入完成生产源。
+- 事实记录与execution atomic claim的状态副作用不同，未强行抽象；所有内部入口由coordinator、workflow和restart使用，未删除公开或可能外部入口。Q024B三源声明范围完成，准备与无改动Q024记录一并提交。累计 **45/324完整批次、85/1006完整批次生产源**；coordinator从部分源迁入完整批，部分源独立验证由10降为9，累计94，不重复计数。Q024C/Q024D及其他范围未完成，总goal active；下一主批审批worker/结果续接。用户审查报告未暂存，无源码树/worktree复制、远端或发布操作。

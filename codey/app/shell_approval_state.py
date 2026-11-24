@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from contextlib import suppress
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Protocol
 
 from codey.app.approval_registry import ApprovalRegistry
 from codey.app.shell_approval_durable import ApprovalFactContext, ApprovalFactDurable, record_fact
@@ -12,7 +12,7 @@ from codey.durable.model import ApprovalRecord, TaskCheckpoint
 from codey.runtime.core.api_selection import ApiRunSelection
 from codey.runtime.effects.shell_approval_records import ShellApprovalFact
 from codey.storage.managed_outputs import ManagedOutputStore
-from codey.types.json_value import JsonObject
+from codey.types.json_value import JsonObject, decode_json_object
 
 if TYPE_CHECKING:
     from codey.app.shell_approval_coordinator import ShellApprovalContext
@@ -138,7 +138,8 @@ def _source_api_selection(
         selection = checkpoint.provider_snapshot.get("model_selection")
         if not isinstance(selection, Mapping) or not selection:
             return None
-        return ApiRunSelection.from_payload(dict(selection))
+        fields: Mapping[object, object] = selection
+        return ApiRunSelection.from_payload(dict(fields))
     except (KeyError, OSError, TypeError, ValueError):
         return None
 
@@ -175,10 +176,16 @@ def _rebuild_pending_from_fact(
     command_fields = shell_command_payload(payload["command"])
     command = payload["command"]
     assert isinstance(command, str)
-    deferred_tool_calls = [
-        item for item in (payload.get("deferred_tool_calls") or [])
-        if isinstance(item, dict)
-    ][:8]
+    deferred: object = payload.get("deferred_tool_calls") or ()
+    if not isinstance(deferred, Iterable):
+        raise TypeError("deferred_tool_calls must be iterable")
+    candidates: Iterable[object] = deferred
+    deferred_tool_calls: list[dict[object, object]] = []
+    for item in candidates:
+        if isinstance(item, dict):
+            row: dict[object, object] = item
+            deferred_tool_calls.append(row)
+    deferred_tool_calls = deferred_tool_calls[:8]
     pending: PendingApproval = {
         "shell": shell.to_payload(),
         "analysis": analysis.to_payload(),
@@ -409,6 +416,6 @@ def expire_shell_results_locked(
         # Keep the card on durable failure, but invalidate in-flight tickets.
         ctx.approvals.invalidate_generation()
         raise
-    return cast(tuple[JsonObject, ...], ctx.approvals.expire_shell_results(
+    return tuple(decode_json_object(event) for event in ctx.approvals.expire_shell_results(
         run_id=run_id or "", exclude_run_id=exclude_run_id or "", session_id=session_id or "", output=output,
     ))

@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 1006,
   "region_count": 40,
-  "batch_count": 321,
+  "batch_count": 324,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -108,6 +108,9 @@
         "Q022D",
         "Q023",
         "Q024",
+        "Q024B",
+        "Q024C",
+        "Q024D",
         "Q025",
         "Q026",
         "Q027A",
@@ -2928,31 +2931,92 @@
         "tests/test_forget_session_cleanup.py"
       ],
       "result": "Complete scheduler maintenance adapter review. Append-only commits retain deleted task IDs, direct task precheck blocked all subsequent live recovery: real memory+SQLite original2KeyError failures, same inputs2pass after missing-task-only handling; historical records consumed without resurrection, surviving task projects once. Non-KeyError storage errors propagate, failed projections retain retry position, knowledge completion cursor retries then consumes once with Ghost enabled/disabled. Whole source implicitAny2->0 via typed tuple/object Mapping views; whole maintenance tests/runner strictAny0, Pyrefly/ty/Ruff0. Final direct8+memory/deletion62+runtime/knowledge31 with2overlap=99distinctpassed/no skips. Initial fixture teardown used nonexistent MemoryService.close (not accepted evidence), corrected before valid original failure. Optional knowledge fixture initially absent by documented temporary-state setup, explicitly provisioned actual KnowledgeStore rather than production change. Final production mypy760/Pyrefly35suppressed166warnings/ty/precision0, final source hashes and HEAD stable. No public/dead-code deletions or forced merger of distinct cursors, no dependency/config/ignores/casts or worktree copies. Necessary previously governed dependencies only contract-located, not reopened.",
+      "followups": [],
+      "commits": [
+        "dcdacde9"
+      ]
+    },
+    {
+      "id": "Q024",
+      "responsibility": "Canonical memory command persistence, scope selection and request-id retries",
+      "files": [
+        "codey/app/memory_commands.py"
+      ],
+      "status": "completed_unchanged",
+      "reviewed_files": [
+        "codey/app/memory_commands.py"
+      ],
+      "verified_files": [
+        "codey/app/memory_commands.py"
+      ],
+      "candidate_test_count": "recompute at batch entry",
+      "tests": [
+        "tests/test_memory_lifecycle.py",
+        "tests/test_memory_summary_input.py",
+        "tests/test_memory_feedback.py",
+        "tests/test_memory_adaptation_flow.py"
+      ],
+      "result": "Complete 57-line canonical command review. Caller scopes47passed/no skips, whole source and ignored runner strongAny0, source Pyrefly/ty/Ruff0. Lock-owned request identity, canonical time, validation-before-append and scope selection preserved. Existing unique_scopes and require_json_string own distinct shared validation; no safe dead public exports or equal-responsibility duplication proved. No code change or empty commit; source unchanged since Q023 production gates, no mechanical full recheck. Records persist with next substantive batch commit.",
       "followups": []
     },
     {
-      "responsibility": "codey/app: shell execution and authorization",
+      "id": "Q024B",
+      "responsibility": "Durable shell approval fact ownership, atomic claims and restart reconstruction",
       "files": [
-        "codey/app/memory_commands.py",
         "codey/app/shell_approval_coordinator.py",
         "codey/app/shell_approval_durable.py",
-        "codey/app/shell_approval_state.py",
-        "codey/app/shell_approval_workflow.py",
-        "codey/app/shell_service.py"
+        "codey/app/shell_approval_state.py"
       ],
-      "id": "Q024",
-      "status": "partial_follow_up",
+      "status": "completed_changed",
       "reviewed_files": [
-        "codey/app/shell_approval_coordinator.py"
+        "codey/app/shell_approval_coordinator.py",
+        "codey/app/shell_approval_durable.py",
+        "codey/app/shell_approval_state.py"
       ],
       "verified_files": [
-        "codey/app/shell_approval_coordinator.py"
+        "codey/app/shell_approval_coordinator.py",
+        "codey/app/shell_approval_durable.py",
+        "codey/app/shell_approval_state.py"
       ],
-      "candidate_test_count": 23,
-      "result": "Q016 required caller type update: ApprovalRegistry precise returns make two coordinator casts redundant; remove only those, whole file read and strict Any/scoped tools passed. Relevant Q016 approval claim/stop/restart tests 7 passed and production gates pass. Other five Q024 production files not yet governed; keep batch partial.",
-      "followups": [
-        "Complete original Q024 remaining five production files; coordinator was reviewed/typed with Q016 and does not need optional re-review absent real changes."
-      ]
+      "result": "Complete remaining durable127/state414-line review; preserve prior Q016 coordinator review and revalidate unchanged coordinator only on its actual dependency change. Fact admission accepted an existing approval ID with foreign task/session or drifted command_ref/digest/cwd: immutable ApprovalRecord and lifecycle identity contract. Real memory+SQLite original20conflict failures/2validpass, same22pass after existing identity check before idempotence/transition; no failed request changes Core commits or audit. State implicitAny5->0 using object-key Mapping and iterable/dict views retaining row identity/order/8limit and noniterable TypeError; remove expiry JsonObject cast in favor of existing boundary runtime decoder, valid JSON event output retained. Whole3sources+new test+runner strictAny0; scoped Pyrefly0 with1existing redundant str warning, ty/Ruff0. Direct72+claim21+workflow36=129distinctpassed/no skips. First direct72 source predates final empty iterable []->() typing change; final direct72rerun on stable final hashes. Production mypy760/Pyrefly35suppressed166warnings/ty/precision0. Dependencies audit records17 and API selection2 Any diagnostics routed Q200/Q189 without full governance claims. No new casts/ignores/dependencies/config/worktree or public deletion; semantically different execution atomic-claim vs decision facts remain distinct.",
+      "followups": [],
+      "reviewed_support": [
+        "tests/test_shell_approval_fact_identity.py"
+      ],
+      "tests": [
+        "tests/test_shell_approval_fact_identity.py",
+        "tests/durable/test_approval_records.py",
+        "tests/test_command_permissions.py",
+        "tests/test_approval_registry.py",
+        "tests/test_shell_approval_coordinator.py",
+        "tests/test_approval_authorization_recovery.py",
+        "tests/test_shell_approval_effect_recovery.py",
+        "tests/test_shell_approval_epoch.py",
+        "tests/test_shell_approval_lifecycle.py",
+        "tests/test_shell_approval_http_restart.py",
+        "tests/test_shell_approval_native_identity.py"
+      ],
+      "candidate_test_count": 11
+    },
+    {
+      "id": "Q024C",
+      "responsibility": "Shell approval decisions, worker lifecycle and result/continuation retry",
+      "files": [
+        "codey/app/shell_approval_workflow.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": []
+    },
+    {
+      "id": "Q024D",
+      "responsibility": "Approved shell execution ticket, process output and continuation rendering",
+      "files": [
+        "codey/app/shell_service.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": []
     },
     {
       "responsibility": "codey/app: answer and report projection",
@@ -5355,7 +5419,8 @@
       "verified_files": [],
       "candidate_test_count": 84,
       "followups": [
-        "Q002 caller batch found two pre-existing failures in tests/test_bounded_capture_and_context.py: SimpleNamespace process doubles omit args (one also omits pid). Reproduced with pre-Q002 text_budget from 055abab8. Inspect Process contract and fix typed fixtures without weakening assertions; whole-file test Any audit remains pending."
+        "Q002 caller batch found two pre-existing failures in tests/test_bounded_capture_and_context.py: SimpleNamespace process doubles omit args (one also omits pid). Reproduced with pre-Q002 text_budget from 055abab8. Inspect Process contract and fix typed fixtures without weakening assertions; whole-file test Any audit remains pending.",
+        "Q024B necessary API selection boundary: api_selection.py66-67 has2 explicit/propagatedAny diagnostics in to_payload; from_payload returns concrete validated DTO. Source unchanged, retain whole-file typing work here."
       ]
     },
     {
@@ -5496,7 +5561,10 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 7
+      "candidate_test_count": 7,
+      "followups": [
+        "Q024B necessary audit DTO boundary: shell_approval_records.py17 strictAny diagnostics at18-100 (JSON codec/DTO/dataclass reflection/audit read); source unchanged, retain whole-file typing work here."
+      ]
     },
     {
       "responsibility": "codey/runtime/effects: execution evidence and event projection",
