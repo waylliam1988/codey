@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q027。Q026 的生产修复已验证，项目生命周期用例待跟进。下一批为 Q028。保留历史验收，复核后续提交实际影响的范围。
+当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q028。Q026 的生产修复已验证，项目生命周期用例待跟进。下一批为 Q029。保留历史验收，复核后续提交实际影响的范围。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1396,3 +1396,19 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 工作目录 `D:\codey`。基线 `python -m pytest -q tests/test_task_runtime_coordinator.py tests/test_task_lifecycle_projection.py tests/test_task_admission_races.py tests/test_task_submission_stores.py --tb=short` 为 23 passed，修改后同命令 26 passed。调用方 `python -m pytest -q tests/test_task_input_contract.py tests/test_task_guidance_reaches_production_entries.py tests/test_task_entry_verification.py tests/test_shell_approval_lifecycle.py tests/durable/test_suspension.py tests/test_server.py::RunSnapshotTests::test_finish_non_approval_expires_same_run_shell_approval --tb=short` 为 62 passed。最终两组 88 项通过，0 失败、0 跳过，退出 0。未重新执行 Q026 的待回补项目生命周期用例。
 - 七源强 Any 基线 4 条诊断，修复后七源和深入检查的投影测试共 8 文件，强 Any、Pyrefly、ty、Ruff 均退出 0。配套调用方测试按执行范围记录。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 和 kernel_type_precision_gate 实际退出 0。详细运行记录位于忽略的 `.e2e-artifacts/code-quality-20261122/q027-*.log`。
 - Q027 完成。累计 46/325 批，完成批覆盖 92/1009 个生产文件。部分批次 14 个，其中 8 个文件独立通过。下一批 Q028 为 automation 包入口。
+
+
+### Q028 automation 包入口
+
+- Q027 已提交 `88929a3a`。完整检查 `codey/automation/__init__.py`，其唯一内容是模块文档。包标记用于 setuptools 普通包发现，browser 和 browser_worker 由调用方按需导入。无修复或删除依据，保留源码。
+- 在 `D:\codey` 用 `python -c` 启动新进程，断言 `setuptools.find_packages(include=["codey*"])` 包含 `codey.automation`，导入后 `sys.modules` 未加载 automation 子模块或 Playwright。退出 0。对唯一源执行严格 mypy（强 Any 三标志）、Pyrefly、ty 和 Ruff，全部退出 0；日志 `.e2e-artifacts/code-quality-20261122/q028-*.log`。已有 lazy 行为验收沿用，未新增或复跑 pytest。
+- Q028 无需修改，记录随下一次代码提交入库。累计 47/325 批，完成批覆盖 93/1009 个生产文件。接续 Q029 的浏览器绑定、worker 进程和 IPC。
+
+
+### Q029 浏览器 worker 的命令与二进制传输契约
+
+- 原 Q029 按独立职责拆为传输契约 Q029、CDP 启动和绑定 Q029B、进程协调和 BrowserSession Q029C。详情读取移至原 DOM 观察 Q030。总数更新为 327 批，1009 个生产文件均保留原覆盖范围。
+- 完整检查 browser_ipc 与 browser_contracts。Python 二进制流 `write()` 返回本次实际写入长度，调用方线程锁只保证包不交错。用无外部副作用的内存短写流分别收 1、6、0 字节，原写法丢失帧内容，读端报 EOFError 或非法头，0 字节时写端还宣告成功。完整写入对照通过。改为推进剩余内存视图直至 frame 完成，无法推进时抛出 I/O 错误。
+- 命令期限的契约为可表示成有限正浮点数，解码器用 ValueError 报无效期限。输入一个超出浮点范围的整数时，原 `math.isfinite` 泄漏 OverflowError。显式转换期限并将该边界映射为现有 ValueError。类型合法的数值仍走原有限性和正数校验。
+- 在 `D:\codey` 先定向验证饱和队列和输出 schema 两个节点，2 passed。回归最初合放 `tests/test_browser_ipc_contract.py`，`python -m pytest -q tests/test_browser_ipc_contract.py --tb=short` 实际 4 failed、1 passed。修复后按提交职责拆为 `tests/test_browser_ipc_contract.py` 和 `tests/test_browser_command_contract.py`，相同断言及两个基线节点合计 7 passed，退出 0。另运行 `python -m pytest -q tests/test_browser_process.py::test_worker_real_browser_wait_cancel_and_binary_capture --tb=short`，真实 worker 定向集成 1 passed、退出 0。CDP 重连和 worker 其他生命周期测试分别归 Q029B/Q029C。
+- IPC 固定结构头的七条强 Any 诊断降至 0。两个源、两个回归的定向强 Any、Pyrefly、ty、Ruff 均退出 0。生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 及 kernel_type_precision_gate 均退出 0。日志在忽略的 `.e2e-artifacts/code-quality-20261122/q029-*.log`。两处修复可独立交付，将按帧写入和期限校验分开提交。

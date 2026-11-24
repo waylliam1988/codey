@@ -19,7 +19,7 @@ class ReadStream(Protocol):
 
 
 class WriteStream(Protocol):
-    def write(self, data: bytes, /) -> int: ...
+    def write(self, data: bytes | memoryview, /) -> int: ...
     def flush(self) -> None: ...
 
 
@@ -42,18 +42,29 @@ def _read_exact(stream: ReadStream, length: int) -> bytes:
 
 
 def read_packet(stream: ReadStream) -> BrowserPacket:
-    version, size, blob_size = _HEADER.unpack(_read_exact(stream, _HEADER.size))
+    # The fixed !III layout returns three unsigned integers.
+    fields: tuple[int, ...] = _HEADER.unpack(_read_exact(stream, _HEADER.size))
+    version, size, blob_size = fields
     if version != PROTOCOL_VERSION or not 0 < size <= MAX_MESSAGE_BYTES or blob_size > MAX_BLOB_BYTES:
         raise ValueError("invalid browser protocol version or frame length")
     message = parse_json_object(_read_exact(stream, size).decode("utf-8"))
     return BrowserPacket(message, _read_exact(stream, blob_size))
 
 
+def _write_all(stream: WriteStream, data: bytes) -> None:
+    remaining = memoryview(data)
+    while remaining:
+        written = stream.write(remaining)
+        if written <= 0:
+            raise OSError("browser worker pipe stopped accepting frame bytes")
+        remaining = remaining[written:]
+
+
 def write_packet(stream: WriteStream, packet: BrowserPacket) -> None:
     data = json.dumps(packet.message, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
     if not 0 < len(data) <= MAX_MESSAGE_BYTES or len(packet.blob) > MAX_BLOB_BYTES:
         raise ValueError("browser message exceeds transport bounds")
-    stream.write(_HEADER.pack(PROTOCOL_VERSION, len(data), len(packet.blob)))
-    stream.write(data)
-    stream.write(packet.blob)
+    _write_all(stream, _HEADER.pack(PROTOCOL_VERSION, len(data), len(packet.blob)))
+    _write_all(stream, data)
+    _write_all(stream, packet.blob)
     stream.flush()

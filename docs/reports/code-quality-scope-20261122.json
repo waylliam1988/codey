@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 1009,
   "region_count": 40,
-  "batch_count": 325,
+  "batch_count": 327,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -163,6 +163,8 @@
       "batches": [
         "Q028",
         "Q029",
+        "Q029B",
+        "Q029C",
         "Q030",
         "Q031",
         "Q032"
@@ -3234,7 +3236,10 @@
         "tests/durable/test_suspension.py",
         "tests/test_server.py::RunSnapshotTests::test_finish_non_approval_expires_same_run_shell_approval"
       ],
-      "result": "Finish now binds checkpoint revision and status to the runtime run ID before storing and emitting the terminal projection. Missing/foreign/foreign preversioned IDs failed all three cases before. The same cases passed after. Prior replay behavior for an already-versioned matching run remains covered. Direct 26 passed, callers 62 passed. All seven sources and the reviewed test cleared scoped strict Any and static gates. Whole production typing and kernel precision passed."
+      "result": "Finish now binds checkpoint revision and status to the runtime run ID before storing and emitting the terminal projection. Missing/foreign/foreign preversioned IDs failed all three cases before. The same cases passed after. Prior replay behavior for an already-versioned matching run remains covered. Direct 26 passed, callers 62 passed. All seven sources and the reviewed test cleared scoped strict Any and static gates. Whole production typing and kernel precision passed.",
+      "commits": [
+        "88929a3a"
+      ]
     },
     {
       "responsibility": "codey/automation: package entry and composition",
@@ -3242,28 +3247,74 @@
         "codey/automation/__init__.py"
       ],
       "id": "Q028",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_unchanged",
+      "reviewed_files": [
+        "codey/automation/__init__.py"
+      ],
+      "verified_files": [
+        "codey/automation/__init__.py"
+      ],
+      "candidate_test_count": 0,
+      "result": "Package initializer contains only a docstring and defines a regular setuptools package for intentional submodule imports. Fresh-process import and discovery passed without loading any automation submodule or Playwright. Scoped strict Any, Pyrefly, ty and Ruff passed. No source change or commit needed."
     },
     {
-      "responsibility": "codey/automation: browser contracts and interaction",
+      "responsibility": "Typed Browser actions and bounded parent/worker IPC framing",
       "files": [
-        "codey/automation/browser.py",
-        "codey/automation/browser_binding.py",
-        "codey/automation/browser_process.py",
-        "codey/automation/browser_session.py",
         "codey/automation/browser_contracts.py",
-        "codey/automation/browser_ipc.py",
-        "codey/automation/browser_worker_main.py",
-        "codey/automation/browser_detail.py"
+        "codey/automation/browser_ipc.py"
       ],
       "id": "Q029",
+      "status": "in_progress",
+      "reviewed_files": [
+        "codey/automation/browser_contracts.py",
+        "codey/automation/browser_ipc.py"
+      ],
+      "verified_files": [],
+      "candidate_test_count": 55,
+      "tests": [
+        "tests/test_browser_process.py",
+        "tests/test_browser_output_schemas.py",
+        "tests/test_browser_ipc_contract.py",
+        "tests/test_browser_command_contract.py"
+      ],
+      "reviewed_support": [
+        "tests/test_browser_ipc_contract.py",
+        "tests/test_browser_command_contract.py"
+      ],
+      "result": "Partial stream writes formerly dropped frame bytes, and oversized integer deadlines leaked OverflowError. Four failed before and the full-write control passed. Seven direct and one real worker test passed after, plus scoped strong typing and full production gates. Commit framing and deadline validation independently."
+    },
+    {
+      "id": "Q029B",
+      "responsibility": "Browser CDP startup, endpoint ownership and reconnect binding",
+      "files": [
+        "codey/automation/browser.py",
+        "codey/automation/browser_binding.py"
+      ],
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 55
+      "tests": [
+        "tests/test_browser.py",
+        "tests/test_browser_process_reconnect.py",
+        "tests/test_research_browser_cdp_lifecycle.py"
+      ]
+    },
+    {
+      "id": "Q029C",
+      "responsibility": "Browser worker admission, process lifetimes and BrowserSession delegation",
+      "files": [
+        "codey/automation/browser_process.py",
+        "codey/automation/browser_worker_main.py",
+        "codey/automation/browser_session.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": [
+        "tests/test_browser_process.py",
+        "tests/test_browser_process_reconnect.py",
+        "tests/test_task_browser_resources.py"
+      ]
     },
     {
       "responsibility": "codey/automation: browser contracts and interaction",
@@ -3275,7 +3326,8 @@
         "codey/automation/browser_frames.py",
         "codey/automation/browser_query_async.py",
         "codey/automation/browser_observation.py",
-        "codey/automation/browser_query.py"
+        "codey/automation/browser_query.py",
+        "codey/automation/browser_detail.py"
       ],
       "id": "Q030",
       "status": "not_started",
@@ -7523,6 +7575,7 @@
     "tests/test_browser_chat_followup_gate.py",
     "tests/test_browser_choice_presentation_ab.py",
     "tests/test_browser_click_plan.py",
+    "tests/test_browser_command_contract.py",
     "tests/test_browser_completion_production.py",
     "tests/test_browser_context_delivery.py",
     "tests/test_browser_contract_closure.py",
@@ -7551,6 +7604,7 @@
     "tests/test_browser_handoff_next_steps.py",
     "tests/test_browser_initial_navigation.py",
     "tests/test_browser_interaction.py",
+    "tests/test_browser_ipc_contract.py",
     "tests/test_browser_leaf_exposure_ab.py",
     "tests/test_browser_native_actions.py",
     "tests/test_browser_navigation_continuation.py",
@@ -9286,6 +9340,15 @@
       "path": "codey/providers/api_messages.py",
       "batch": "Q122",
       "reason": "Messages codec shares the protocol adapters and codec boundary already owned by Q122."
+    },
+    {
+      "batch": "Q029",
+      "replacement": [
+        "Q029",
+        "Q029B",
+        "Q029C"
+      ],
+      "reason": "Wire contracts, CDP identity and process lifetime have independent entry points and tests. The browser detail observation belongs to the existing DOM observation boundary Q030. Each original file keeps one owner and no source leaves the queue."
     }
   ]
 }
