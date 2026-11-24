@@ -1774,3 +1774,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 复用字符串键映射守卫收窄消息和编辑元数据。源基线 8 条 Any 诊断降至 0，两个生产文件和新增回归严格 Any 与 Ruff 均通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_admission_passive_edit_action.py tests/durable/test_atomic_admission.py tests/durable/test_edit_admission.py tests/durable/test_control_message_metadata.py tests/durable/test_inbox_placement.py tests/durable/test_workflow_fork.py --tb=short`，61 passed、0 失败或跳过、退出 0。早期三文件基线 22 passed，退出 0。调度和数据库迁移由后续批次验证。
 - Q050 完成。累计完成 86/349 批，完成批覆盖 150/1009 个生产文件，另有 18 批部分完成。下一批 Q050B 为批准物化和状态归约。
+
+
+### Q050B 审批物化和状态归约
+
+- Q050 已提交 `6e33b40e`。完整检查 `approval_transition.py`、`reducer.py` 和 `tests/durable/test_recovery.py`。`TaskCheckpoint` 接受 `pending_effect_ids: null` 且无当前挂起 ID 的状态，表示空索引。`python -m pytest -q tests/durable/test_recovery.py -k null_pending_index --tb=short` 修改前 2 failed、11 deselected、退出 1，意图与结算两个入口均尝试迭代 `None`。
+- 两条归约路径共用索引读取，把显式 null 当作空索引，并校验列表项目。回归验证意图加入新挂起 ID，结算投影为空。现有带多个挂起 ID、审批 CAS 和历史恢复用例均通过。审批物化源无需调整。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_recovery.py tests/durable/test_task_invariants.py tests/durable/test_approval_records.py tests/durable/test_approval_suspension.py tests/durable/test_approval_continuation_admission.py tests/durable/test_checkpoint_mutation_contract.py --tb=short`，58 passed、0 失败或跳过、退出 0。改前审批与变更合同的四文件基线为 37 passed。两个源和恢复测试的严格 Any 与 Ruff 通过，源基线 12 条诊断降至 0。生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 与 kernel_type_precision_gate 均退出 0。
+- Q050B 完成。累计完成 87/349 批，完成批覆盖 152/1009 个生产文件，另有 18 批部分完成。下一批 Q050C 为 durable 调度器。

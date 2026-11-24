@@ -4033,10 +4033,12 @@
       "responsibility": "Approval materialization and durable mutation reduction",
       "files": ["codey/durable/approval_transition.py", "codey/durable/reducer.py"],
       "id": "Q050B",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/durable/test_approval_records.py", "tests/durable/test_approval_suspension.py", "tests/durable/test_approval_continuation_admission.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/approval_transition.py", "codey/durable/reducer.py"],
+      "verified_files": ["codey/durable/approval_transition.py", "codey/durable/reducer.py"],
+      "tests": ["tests/durable/test_recovery.py", "tests/durable/test_task_invariants.py", "tests/durable/test_approval_records.py", "tests/durable/test_approval_suspension.py", "tests/durable/test_approval_continuation_admission.py", "tests/durable/test_checkpoint_mutation_contract.py"],
+      "reviewed_support": ["tests/durable/test_recovery.py"],
+      "result": "Use one typed pending-effect state reader and honor explicitly null indexes accepted by task checkpoints. 58 scoped tests, strict Any, Ruff and production gates passed."
     },
     {
       "responsibility": "Durable task scheduler, ownership and local reconciliation",
