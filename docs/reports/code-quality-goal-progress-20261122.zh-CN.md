@@ -1782,3 +1782,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 两条归约路径共用索引读取，把显式 null 当作空索引，并校验列表项目。回归验证意图加入新挂起 ID，结算投影为空。现有带多个挂起 ID、审批 CAS 和历史恢复用例均通过。审批物化源无需调整。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_recovery.py tests/durable/test_task_invariants.py tests/durable/test_approval_records.py tests/durable/test_approval_suspension.py tests/durable/test_approval_continuation_admission.py tests/durable/test_checkpoint_mutation_contract.py --tb=short`，58 passed、0 失败或跳过、退出 0。改前审批与变更合同的四文件基线为 37 passed。两个源和恢复测试的严格 Any 与 Ruff 通过，源基线 12 条诊断降至 0。生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 与 kernel_type_precision_gate 均退出 0。
 - Q050B 完成。累计完成 87/349 批，完成批覆盖 152/1009 个生产文件，另有 18 批部分完成。下一批 Q050C 为 durable 调度器。
+
+
+### Q050C durable 调度器
+
+- Q050B 已提交 `4be23c11`。完整检查 `scheduler.py` 和新增回归。调度器在持久记录取消后运行宿主清理。向活跃调用注入一次清理线程启动失败，`python -m pytest -q tests/durable/test_scheduler_abort_thread_start.py --tb=short` 修改前 1 failed、退出 1，任务已标取消但保留了无人完成的 abort invocation。在线程启动成功后、原锁内发布调用记录。相同回归确认持久取消保留、无悬空调用、再次取消完成清理。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_scheduler_abort_thread_start.py tests/durable/test_scheduler_abort_handler.py tests/durable/test_scheduler_abort_signal.py tests/durable/test_scheduler_wakeup_races.py tests/durable/test_scheduler_claim_release.py tests/durable/test_scheduler_local_reconcile.py tests/durable/test_scheduler_ownership.py tests/durable/test_scheduler.py -rs --tb=short`，49 passed、4 skipped、退出 0。原四文件基线 32 passed、4 skipped，退出 0。三个既有 skip 记录 Windows SQLite 清理限制，另一个说明直接所有权夹具与生产路径分离。
+- 使用 `python -m pytest -q tests/durable/test_scheduler_abort_thread_start.py tests/test_control_service_contract.py::test_health_and_scheduler_resume_preserve_the_scheduler_payload tests/test_control_service_contract.py::test_operator_and_conversation_identity_fences_are_independent --tb=short` 复核回归、服务恢复和授权边界，3 passed、退出 0。两组去重 51 项通过。源和新回归严格 Any 与 Ruff 通过，源基线已通过强 Any。生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q050C 完成。累计完成 88/349 批，完成批覆盖 153/1009 个生产文件，另有 18 批部分完成。下一批 Q050D 为工作流定义与重放摘要。

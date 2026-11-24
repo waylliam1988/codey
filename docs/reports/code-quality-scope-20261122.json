@@ -4044,10 +4044,12 @@
       "responsibility": "Durable task scheduler, ownership and local reconciliation",
       "files": ["codey/durable/scheduler.py"],
       "id": "Q050C",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/durable/test_scheduler.py", "tests/durable/test_scheduler_ownership.py", "tests/durable/test_scheduler_wakeup_races.py", "tests/durable/test_scheduler_local_reconcile.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/scheduler.py"],
+      "verified_files": ["codey/durable/scheduler.py"],
+      "tests": ["tests/durable/test_scheduler_abort_thread_start.py", "tests/durable/test_scheduler_abort_handler.py", "tests/durable/test_scheduler_abort_signal.py", "tests/durable/test_scheduler_wakeup_races.py", "tests/durable/test_scheduler_claim_release.py", "tests/durable/test_scheduler_local_reconcile.py", "tests/durable/test_scheduler_ownership.py", "tests/durable/test_scheduler.py", "tests/test_control_service_contract.py"],
+      "reviewed_support": ["tests/durable/test_scheduler_abort_thread_start.py"],
+      "result": "Publish abort invocations only after their thread starts, so a failed start leaves durable cancellation retryable. 51 distinct scoped tests passed, with four existing ownership skips. Strict Any, Ruff and production gates passed."
     },
     {
       "responsibility": "Workflow definition and replay digest",

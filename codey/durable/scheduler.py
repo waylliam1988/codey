@@ -265,25 +265,23 @@ class DurableTaskScheduler:
             invocation.signal.set()
             if handler is not None:
                 with self._lock:
-                    existing = self._abort_invocations.get(task_id)
-                    if existing is None:
+                    abort_invocation = self._abort_invocations.get(task_id)
+                    if abort_invocation is None:
                         abort_invocation = AbortInvocation(
                             task_id=task_id,
                             attempt_token=invocation.attempt_token,
                             signal=threading.Event(),
                             done=threading.Event(),
                         )
+                        thread = threading.Thread(
+                            target=self._run_abort_handler,
+                            args=(abort_invocation, handler),
+                            name=f"codey-abort-{task_id}",
+                            daemon=True,
+                        )
+                        # Other abort callers can wait only after startup succeeds.
+                        thread.start()
                         self._abort_invocations[task_id] = abort_invocation
-                    else:
-                        abort_invocation = existing
-                if existing is None:
-                    thread = threading.Thread(
-                        target=self._run_abort_handler,
-                        args=(abort_invocation, handler),
-                        name=f"codey-abort-{task_id}",
-                        daemon=True,
-                    )
-                    thread.start()
                 abort_invocation.done.wait()
                 if abort_invocation.error is not None:
                     raise abort_invocation.error
