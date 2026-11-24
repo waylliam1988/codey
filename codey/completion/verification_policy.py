@@ -121,34 +121,28 @@ def _bounded_entries(root: Path, ignored_paths: Sequence[str]) -> Iterable[tuple
         seen_dirs += 1
         yield current, True
         try:
-            children = current.iterdir()
-        except OSError:
-            continue
-        for child in children:
-            seen_entries += 1
-            if seen_entries > MAX_SCAN_ENTRIES:
-                return
-            name = child.name
-            if name.startswith(".") or name.lower() in TRUSTED_EXCLUDED_DIRS:
-                continue
-            try:
-                rel = child.relative_to(root).as_posix()
-            except ValueError:
-                continue
-            if path_matches_ignored_prefix(rel, ignored_paths):
-                continue
-            try:
-                if child.is_symlink():
+            for child in current.iterdir():
+                seen_entries += 1
+                if seen_entries > MAX_SCAN_ENTRIES:
+                    return
+                name = child.name
+                if name.startswith(".") or name.lower() in TRUSTED_EXCLUDED_DIRS:
                     continue
-                if child.is_dir():
+                rel = child.relative_to(root).as_posix()
+                if path_matches_ignored_prefix(rel, ignored_paths):
+                    continue
+                try:
+                    if child.is_symlink():
+                        continue
+                    is_directory = child.is_dir()
+                except OSError:
+                    continue
+                if is_directory:
                     pending.append(child)
                 else:
                     yield child, False
-            except OSError:
-                continue
-
-
-
+        except OSError:
+            continue
 
 
 def _executable_name(value: str) -> str:
