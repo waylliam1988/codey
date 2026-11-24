@@ -3060,11 +3060,13 @@
       "files": [
         "codey/app/shell_service.py"
       ],
-      "status": "in_progress",
+      "status": "completed_changed",
       "reviewed_files": [
         "codey/app/shell_service.py"
       ],
-      "verified_files": [],
+      "verified_files": [
+        "codey/app/shell_service.py"
+      ],
       "tests": [
         "tests/test_shell_contract.py",
         "tests/test_shell_approval_epoch.py",
@@ -3076,14 +3078,19 @@
         "tests/test_shell_approval_native_identity.py",
         "tests/test_shell_analysis_authorization.py",
         "tests/test_shell_approval_lifecycle.py",
-        "tests/test_command_permissions.py"
+        "tests/test_command_permissions.py",
+        "tests/test_server.py::RunSnapshotTests::test_shell_approval_continuation_plan_uses_active_run_and_pending_fallbacks",
+        "tests/test_server.py::RunSnapshotTests::test_shell_approval_continuation_plan_falls_back_to_pending_provider"
       ],
       "reviewed_support": [
         "tests/test_shell_execution_output_lifecycle.py",
         "tests/support/shell_execution.py",
         "tests/test_shell_continuation_reports_denial_and_reconciles_ui.py"
       ],
-      "result": "Shell output lifecycle independently verified. Baseline 32 passed. New regressions failed (spawn_error on optional store failure and running snapshot on stale approval), then both passed. Latest direct 53 passed and six subtests, callers 79 passed and two skipped. Strict Any 49 diagnostics to zero across source and two support files. Scoped Pyrefly/ty/Ruff and all production type and precision gates passed. Continuation text and its existing test typing remain in progress."
+      "result": "Verified shell output lifecycle, ticket execution and continuation. Output store failure and stale-generation snapshot regressions failed 2 before, passed 2 after. Final execution coverage: direct 53 passed and six subtests, callers 79 passed and two skipped. Spawn failure continuation claimed execution (1 failed, 2 passed), corrected and checked with direct and continuation-plan callers (14 passed, containing 11 previously run test nodes). The scoped checks leave 135 distinct passing pytest items, two skips, six subtests. Source and all three deeply reviewed support files passed strict Any, Pyrefly, ty and Ruff. Full production types and precision passed on the execution changes, followed by scoped checks for the text-only continuation change. Final commit hash will be recorded with Q025.",
+      "commits": [
+        "5a116e71"
+      ]
     },
     {
       "responsibility": "codey/app: answer and report projection",
