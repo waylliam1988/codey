@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 1009,
   "region_count": 40,
-  "batch_count": 349,
+  "batch_count": 352,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -312,6 +312,9 @@
         "Q050D",
         "Q050E",
         "Q051",
+        "Q051B",
+        "Q051C",
+        "Q051D",
         "Q052",
         "Q053",
         "Q054",
@@ -4073,18 +4076,19 @@
       "result": "Validate the original migration marker declaration before reading it and type SQLite row boundaries. 26 scoped tests, strict Any, Ruff and production gates passed."
     },
     {
-      "responsibility": "codey/durable: shared contracts and module services",
-      "files": [
-        "codey/durable/ancestry.py",
-        "codey/durable/contracts.py",
-        "codey/durable/control.py",
-        "codey/durable/entry_ownership.py",
-        "codey/durable/inbox.py",
-        "codey/durable/query_line.py",
-        "codey/durable/sqlite_display.py",
-        "codey/durable/sqlite_records.py"
-      ],
+      "responsibility": "Conversation ancestry and committed entry ownership",
+      "files": ["codey/durable/ancestry.py", "codey/durable/entry_ownership.py"],
       "id": "Q051",
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/ancestry.py", "codey/durable/entry_ownership.py"],
+      "verified_files": ["codey/durable/ancestry.py", "codey/durable/entry_ownership.py"],
+      "tests": ["tests/durable/test_workflow_fork.py", "tests/durable/test_edit_admission.py", "tests/durable/test_branch_revision_cas.py", "tests/durable/test_commit_events.py", "tests/durable/test_fork_ancestry.py", "tests/durable/test_display_index.py", "tests/durable/test_history_storage_paging.py"],
+      "result": "Remove an unreachable guard after checking for a missing inherited edit parent. 74 scoped tests, strict Any, Ruff and production gates passed."
+    },
+    {
+      "responsibility": "Durable ports and control records",
+      "files": ["codey/durable/contracts.py", "codey/durable/control.py"],
+      "id": "Q051B",
       "status": "not_started",
       "reviewed_files": [
         "codey/durable/control.py"
@@ -4092,9 +4096,27 @@
       "verified_files": [],
       "candidate_test_count": 1,
       "followups": [
-        "Q015D inspected durable/control.py latest/receipt/write contracts; session and configuration/receipt dictionaries still declare Any in this owning module. No source edits or full-file type claim here. ControlService validates returned records before consuming values; complete whole-file typing in Q051.",
+        "Q015D inspected durable/control.py latest/receipt/write contracts; session and configuration/receipt dictionaries still declare Any in this owning module. No source edits or full-file type claim here. ControlService validates returned records before consuming values; complete whole-file typing in Q051B.",
         "Q019B preparatory boundary review fully read durable/control.py. Legacy Any remains in latest/receipt/write session and config/result/params dictionaries. No dedicated strict Any baseline or behavioral tests executed for this dependency during Q019B; no source changes or governance-complete claim. Continue at user resume."
       ]
+    },
+    {
+      "responsibility": "Inbox read model and query line contract",
+      "files": ["codey/durable/inbox.py", "codey/durable/query_line.py"],
+      "id": "Q051C",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/durable/test_inbox_placement.py"]
+    },
+    {
+      "responsibility": "SQLite row decoding and display projections",
+      "files": ["codey/durable/sqlite_display.py", "codey/durable/sqlite_records.py"],
+      "id": "Q051D",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/durable/test_display_index.py", "tests/durable/test_database_cursor.py"]
     },
     {
       "responsibility": "codey/durable: shared contracts and module services",
@@ -9871,6 +9893,11 @@
       "batch": "Q050",
       "replacement": ["Q050", "Q050B", "Q050C", "Q050D", "Q050E"],
       "reason": "Admission, approval and mutation reduction, the scheduler, workflow definition, and SQLite migrations have different contracts and tests. All eight files retain one owner."
+    },
+    {
+      "batch": "Q051",
+      "replacement": ["Q051", "Q051B", "Q051C", "Q051D"],
+      "reason": "Conversation history and ownership, typed durable ports, inbox and read boundaries, and SQLite projections have different callers. All eight files retain one owner."
     }
   ]
 }

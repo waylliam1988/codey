@@ -1806,3 +1806,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_schema_contract.py tests/durable/test_recovery.py tests/durable/test_atomic_admission.py tests/durable/test_workflow_timeline.py --tb=short`，24 passed，退出 0。`python -m pytest -q tests/durable/test_database_cursor.py::test_concurrent_cold_start_serializes_schema_initialization tests/stress/test_durable_sqlite_concurrency.py --tb=short`，2 passed，退出 0，两组 0 失败或跳过。
 - 两个源的严格 Any 基线 14 条诊断，最终源及修改测试均为 0，Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q050E 完成。累计完成 90/349 批，完成批覆盖 156/1009 个生产文件，另有 18 批部分完成。下一批 Q051 为 durable 读取和控制合同。
+
+
+### Q051 会话祖先路径与提交条目所有权
+
+- Q050E 已提交 `75eaed20`。按会话历史、持久端口、inbox 读取和 SQLite 投影将原 Q051 拆为 Q051 至 Q051D。队列有 352 批，仍覆盖 1009 个生产文件。`control.py` 的已有阅读记录随其归属移至 Q051B。
+- 完整检查 `ancestry.py` 和 `entry_ownership.py`。在继承前缀的编辑父项不存在时已抛出 `KeyError`，因此后续 `position is not None` 守卫恒真。移除该冗余守卫，保留父项缺失诊断及原切片。条目所有权投影无需改动。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_workflow_fork.py tests/durable/test_edit_admission.py tests/durable/test_branch_revision_cas.py tests/durable/test_commit_events.py --tb=short`，基线 39 passed，退出 0。最终命令加入 `tests/durable/test_fork_ancestry.py tests/durable/test_display_index.py tests/durable/test_history_storage_paging.py`，74 passed、0 失败或跳过，退出 0。两源严格 Any、Ruff、生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 与 kernel_type_precision_gate 均退出 0。
+- Q051 完成。累计完成 91/352 批，完成批覆盖 158/1009 个生产文件，另有 18 批部分完成。下一批 Q051B 为持久端口与控制记录。

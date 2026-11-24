@@ -77,8 +77,7 @@ def path_from_local(
                     position = next((i for i, entry in enumerate(path) if entry.entry_id == bridge), None)
                     if position is None:
                         raise KeyError(f"edit parent {bridge} is not visible")
-                    if position is not None:
-                        path = path[:position + 1]
+                    path = path[:position + 1]
             path += tail
             continue
         position = next((index for index, entry in enumerate(path) if entry.entry_id == leaf), None)
