@@ -3827,10 +3827,12 @@
       "responsibility": "Completion contract and proof projection",
       "files": ["codey/completion/contract.py"],
       "id": "Q040B",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/test_completion_contract.py", "tests/test_completion_proof_authority.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/completion/contract.py"],
+      "verified_files": ["codey/completion/contract.py"],
+      "tests": ["tests/test_completion_contract_invalid_check.py", "tests/test_completion_contract.py", "tests/test_completion_proof_authority.py", "tests/test_run_trace.py"],
+      "reviewed_support": ["tests/test_completion_contract_invalid_check.py"],
+      "result": "Reject directly constructed check rows with unknown states before creating a completion contract. Type the proof projection boundary. 85 tests passed, and scoped strict Any, Ruff and all production gates passed."
     },
     {
       "responsibility": "Completion decision and engine orchestration",

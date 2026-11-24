@@ -21,8 +21,9 @@ Status derivation is a hard gate, not a score:
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.utils.refs import bounded_refs, digest_text, identifier, stable_ref
@@ -211,7 +212,11 @@ def build_completion_contract(
     overflow = False
     for row in checks:
         item = row if isinstance(row, CompletionCheck) else None
-        if item is None or (item.check_id, item.status) in seen:
+        if item is None:
+            continue
+        if not identifier(item.check_id, 80) or item.status not in CHECK_STATUSES:
+            return None
+        if (item.check_id, item.status) in seen:
             continue
         seen.add((item.check_id, item.status))
         if len(rows) >= MAX_COMPLETION_CHECKS:
@@ -286,7 +291,7 @@ def project_completion_proof(contract: CompletionContract | None) -> CompletionP
         status = COMPLETION_COMPLETE_WITH_LIMITATIONS
     else:
         status = COMPLETION_COMPLETE
-    deduped = tuple(dict.fromkeys(identifier(reason, 120) for reason in reasons if reason))
+    deduped = tuple({identifier(reason, 120): None for reason in reasons if reason})
     return CompletionProof(
         proof_id=stable_ref(
             COMPLETION_PROOF_PREFIX,
@@ -351,6 +356,11 @@ def completion_proof_payload(proof: CompletionProof | None) -> dict[str, object]
     return payload
 
 
+@runtime_checkable
+class _ProofPayload(Protocol):
+    def to_payload(self) -> object: ...
+
+
 def completion_proof_trace_payload(proof: object) -> dict[str, object]:
     """Trace projection accepting a CompletionProof, its payload, or a mapping.
 
@@ -360,8 +370,11 @@ def completion_proof_trace_payload(proof: object) -> dict[str, object]:
 
     if proof is None:
         return {}
-    to_payload = getattr(proof, "to_payload", None)
-    raw = to_payload() if callable(to_payload) else proof
+    raw = proof
+    if isinstance(proof, _ProofPayload):
+        to_payload = proof.to_payload
+        if callable(to_payload):
+            raw = to_payload()
     if not isinstance(raw, dict):
         return {}
     payload = completion_proof_payload(_proof_from_payload(raw))
@@ -370,21 +383,15 @@ def completion_proof_trace_payload(proof: object) -> dict[str, object]:
     return payload
 
 
-def _proof_from_payload(payload: dict[str, object]) -> CompletionProof | None:
+def _proof_from_payload(payload: Mapping[str, object]) -> CompletionProof | None:
     try:
-        checks_payload = _sequence_value(payload.get("checks"))
-        checks = tuple(
-            row
-            for row in (
-                completion_check(
-                    (item or {}).get("check_id") if isinstance(item, dict) else "",
-                    (item or {}).get("status") if isinstance(item, dict) else "",
-                    (item or {}).get("reason_code", "") if isinstance(item, dict) else "",
-                )
-                for item in checks_payload
-            )
-            if row is not None
-        )
+        checks: list[CompletionCheck] = []
+        for item in _sequence_value(payload.get("checks")):
+            if isinstance(item, dict):
+                fields: dict[object, object] = item
+                row = completion_check(fields.get("check_id"), fields.get("status"), fields.get("reason_code", ""))
+                if row is not None:
+                    checks.append(row)
         return CompletionProof(
             proof_id=str(payload.get("proof_id") or ""),
             contract_id=str(payload.get("contract_id") or ""),
@@ -394,7 +401,7 @@ def _proof_from_payload(payload: dict[str, object]) -> CompletionProof | None:
             satisfied=identifier(payload.get("status"), 40) in COMPLETION_SATISFIED_STATUSES,
             blocked_reason=str(payload.get("blocked_reason") or ""),
             reason_codes=tuple(str(item) for item in _sequence_value(payload.get("reason_codes"))),
-            checks=checks,
+            checks=tuple(checks),
             evidence_refs=tuple(str(item) for item in _sequence_value(payload.get("evidence_refs"))),
             limitation_refs=tuple(str(item) for item in _sequence_value(payload.get("limitation_refs"))),
             finding_refs=tuple(str(item) for item in _sequence_value(payload.get("finding_refs"))),

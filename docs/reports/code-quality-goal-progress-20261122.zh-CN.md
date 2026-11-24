@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q040，接续 Q040B。开放事项保存在治理队列。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q040B，接续 Q040C。开放事项保存在治理队列。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1636,3 +1636,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - `read_manifest_text` 承诺实际读取受字节预算约束。4 字节清单在首次检查之后增长，固定旧路径 metadata 时，原实现仍读取并返回超限内容。`python -m pytest -q tests/test_completion_manifest_read_limit.py --tb=short` 修改前 1 failed，退出 1。现在复用已有 `read_text_bounded_no_follow`，以打开的文件及实际读取的字节落实预算。4 字节正向对照继续返回内容并保留通用换行转换。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_completion_manifest_read_limit.py tests/test_verification_policy.py tests/test_completion_verification.py --tb=short`，79 passed、38 subtests passed，0 skip，退出 0。两文件 mypy 严格 Any 及 Ruff、全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。结果与 Q039 的只读记录同批保存。
 - Q040 完成。累计完成 70/340 批，覆盖 132/1009 个生产文件。下一批 Q040B 为完成检查合同与证明投影。
+
+
+### Q040B 完成检查合同与证明投影
+
+- Q040 已提交 `85b38685`。完整检查 `contract.py` 和新增回归。`build_completion_contract` 约定验证检查行并在无效时拒绝构造。直接构造的 `CompletionCheck("format", "unknown")` 与有效通过行混合后，原实现接受了合同，未知状态也没有阻止满足证明。`python -m pytest -q tests/test_completion_contract_invalid_check.py --tb=short` 修改前 1 failed，退出 1。构造合同前验证每条已有检查的标识和状态，拒绝非法行，保留有效合同和可选空行的处理。
+- 证明投影用结构化协议收窄 `to_payload`，读取历史行时以 `Mapping` 接受现有调用方。保序去重改为具体值类型的字典。一次中间注解把输入限制为 invariant `dict[object, object]`，全生产检查在 `kernel_contracts` 捕获。改为既有只读映射契约并复验，未改调用方。
+- 在 `D:\codey` 运行 `python -m pytest -q tests/test_completion_contract_invalid_check.py tests/test_completion_contract.py tests/test_completion_proof_authority.py tests/test_run_trace.py --tb=short`，最终 85 passed，0 skip，退出 0。两文件 mypy 严格 Any 由 9 条诊断降至 0，Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q040B 完成。累计完成 71/340 批，覆盖 133/1009 个生产文件。下一批 Q040C 为完成判定和引擎。
