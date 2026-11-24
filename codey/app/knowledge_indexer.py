@@ -36,11 +36,15 @@ class KnowledgeIndexer:
                 return
             self.running = True
             self.pending = False
-        threading.Thread(
-            target=self._worker,
-            name="codey-knowledge-rebuild",
-            daemon=True,
-        ).start()
+            try:
+                threading.Thread(
+                    target=self._worker,
+                    name="codey-knowledge-rebuild",
+                    daemon=True,
+                ).start()
+            except RuntimeError:
+                self.running = False
+                raise
 
     def _worker(self) -> None:
         while True:

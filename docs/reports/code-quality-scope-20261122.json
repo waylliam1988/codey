@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 1006,
   "region_count": 40,
-  "batch_count": 318,
+  "batch_count": 321,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -103,6 +103,9 @@
         "Q021B",
         "Q021C",
         "Q022",
+        "Q022B",
+        "Q022C",
+        "Q022D",
         "Q023",
         "Q024",
         "Q025",
@@ -1995,7 +1998,8 @@
         "tests/test_task_diff.py"
       ],
       "commits": [
-        "cb43afb5"
+        "cb43afb5",
+        "a71eaa40"
       ],
       "revalidation_required": [],
       "reopen_reason": "External13b05d6c/4eef1a78 added run_changes_response and server GET wiring. Revalidate actual delta, whole-file types and HTTP identity/authentication/cold reads; preserve prior contracts and user commits.",
@@ -2766,22 +2770,72 @@
       ]
     },
     {
-      "responsibility": "codey/app: knowledge and memory",
-      "files": [
-        "codey/app/knowledge_indexer.py",
-        "codey/app/memory_behaviors.py",
-        "codey/app/memory_observation.py",
-        "codey/app/memory_routes.py",
-        "codey/app/memory_learning.py",
-        "codey/app/memory_setup.py",
-        "codey/app/memory_candidates.py",
-        "codey/app/memory_verification.py"
-      ],
       "id": "Q022",
+      "responsibility": "Single-flight knowledge index rebuild ownership",
+      "files": [
+        "codey/app/knowledge_indexer.py"
+      ],
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/app/knowledge_indexer.py"
+      ],
+      "verified_files": [
+        "codey/app/knowledge_indexer.py"
+      ],
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
+      "reviewed_support": [
+        "tests/test_app_background_workers.py",
+        "tests/test_knowledge_indexer_startup.py"
+      ],
+      "tests": [
+        "tests/test_knowledge_indexer_startup.py",
+        "tests/test_app_background_workers.py",
+        "tests/test_architecture.py::ArchitectureBoundaryTests::test_knowledge_indexer_owns_single_flight_state",
+        "tests/test_server.py::RunSnapshotTests::test_restore_research_changes_schedules_rebuild_in_background",
+        "tests/test_server.py::RunSnapshotTests::test_restore_research_changes_coalesces_background_rebuilds",
+        "tests/test_server.py::RunSnapshotTests::test_restore_research_changes_rebuild_error_does_not_change_restore_result",
+        "tests/test_server.py::ResearchServerHelperTests::test_research_restore_response_preserves_status_mapping"
+      ],
+      "result": "Single-flight launch admission bug confirmed: controlled Thread.start RuntimeError leaves running=True without worker and racing schedule returns normally with zero rebuilds. Original new script2behaviorfail; failed launch must release ownership, normal-returned schedule cannot be coalesced against nonexistent worker. State registration and start now share admission lock; RuntimeError rolls running back and rethrows original exception. No added retry, queue, background worker or exception swallowing. Same2 inputs pass, disabled store boundary, original reentrant pending/rebuild-error tests and restore callers pass. Final direct6+2subtests, callers4: distinct10passes+2subtests, no skips/failures. Whole source/old direct test already strongAny0, new script Thread constructor Any4 ->0 through precise start protocol; whole3 source/test files strongAny/Pyrefly/ty/Ruff0, proof runner also0. Production mypy760/Pyrefly35suppressed166warnings/ty/precision0, source hash stable. No dead public API deletion or forced abstraction. Knowledge backend, memory composition/projections/routes and original shared-server support debt remain outside complete scope."
+    },
+    {
+      "id": "Q022B",
+      "responsibility": "Memory composition, source lifetime and terminal observation binding",
+      "files": [
+        "codey/app/memory_setup.py"
+      ],
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 10
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+    },
+    {
+      "id": "Q022C",
+      "responsibility": "Committed completion and tool receipt memory projections",
+      "files": [
+        "codey/app/memory_behaviors.py",
+        "codey/app/memory_candidates.py",
+        "codey/app/memory_verification.py",
+        "codey/app/memory_observation.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [
+        "codey/app/memory_verification.py"
+      ],
+      "verified_files": [],
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+    },
+    {
+      "id": "Q022D",
+      "responsibility": "Memory management HTTP actions and explicit feedback",
+      "files": [
+        "codey/app/memory_routes.py",
+        "codey/app/memory_learning.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
     },
     {
       "responsibility": "codey/app: knowledge and memory",
@@ -5115,7 +5169,7 @@
         "tests/test_task_diff.py",
         "tests/test_run_changes_http.py"
       ],
-      "result": "Only externally added62-line task_diff source reviewed/independently verified at necessary API boundary. Two actual functions have API and task_entry/project_completion callers, no dead export deletion or forced merge. Whole source strictAny/Pyrefly/ty/Ruff0, five task-diff tests and five actual HTTP cases pass. Reader test used an indirect private import not explicitly re-exported: before attr-defined1, canonical public definition import preserves original patched callsite/side-effect/assertions and yields whole-test strictAny0. Original other4 production sources remain unreviewed/unverified; entire batch partial.",
+      "result": "Only externally added61-line task_diff source reviewed/independently verified at necessary API boundary. Two actual functions have API and task_entry/project_completion callers, no dead export deletion or forced merge. Whole source strictAny/Pyrefly/ty/Ruff0, five task-diff tests and five actual HTTP cases pass. Reader test used an indirect private import not explicitly re-exported: before attr-defined1, canonical public definition import preserves original patched callsite/side-effect/assertions and yields whole-test strictAny0. Original other4 production sources remain unreviewed/unverified; entire batch partial.",
       "followups": [
         "Review remaining details/ledger_projection/ledger/text_clip at their own responsibility entry. Necessary open/append signatures at API recheck are not a full review of ledger.py."
       ]
@@ -7609,6 +7663,7 @@
     "tests/test_kernel_unification_ab_helpers.py",
     "tests/test_kernel_unknown_verification_invalidates_success.py",
     "tests/test_knowledge.py",
+    "tests/test_knowledge_indexer_startup.py",
     "tests/test_knowledge_interpretation_identity.py",
     "tests/test_knowledge_multilingual_recall.py",
     "tests/test_knowledge_repository.py",
@@ -8890,6 +8945,16 @@
       "path": "codey/toolchain/ecmascript.py",
       "batch": "Q226",
       "reason": "External commits 13b05d6c/4eef1a78 during Q021C added owned source. Header/import inventory only; preserve not-started owner, no review or verification claim."
+    },
+    {
+      "batch": "Q022",
+      "replacement": [
+        "Q022",
+        "Q022B",
+        "Q022C",
+        "Q022D"
+      ],
+      "reason": "Eight app knowledge/memory sources have four independent responsibility boundaries: index rebuild single-flight, backend composition/lifetime, committed receipt projections, and user management/feedback. Preserve all8 sources once. Full68-line indexer and42-line verification source read; remaining modules only headers/imports, verification not yet verified."
     }
   ]
 }
