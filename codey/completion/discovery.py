@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 
 from codey.utils.refs import parse_int
 from codey.workspace.map import EXCLUDED_DIRS as _MAP_EXCLUDED_DIRS
+from codey.workspace.paths import read_text_bounded_no_follow
 
 TRUSTED_EXCLUDED_DIRS = _MAP_EXCLUDED_DIRS
 """Directory names never descended during trusted verification discovery.
@@ -54,10 +55,8 @@ def read_manifest_text(path: Path, *, max_bytes: int) -> str:
         limit = parse_int(max_bytes)
         if limit is None:
             return ""
-        if path.stat().st_size > max(0, limit):
-            return ""
-        return path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError, ValueError):
+        return read_text_bounded_no_follow(path, max_bytes=limit)
+    except (OSError, OverflowError, ValueError):
         return ""
 
 

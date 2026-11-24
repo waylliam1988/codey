@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q038，接续 Q039。开放事项保存在治理队列。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q040，接续 Q040B。开放事项保存在治理队列。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1621,3 +1621,18 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 用只包含写入方法和引用序列化方法的结构化协议替代 Any，保留了对无效引用的运行时校验。合法小结果仍内联，已有独立测试验证成功的外部引用。
 - 在 `D:\codey` 运行 `python -m pytest -q tests/test_codemode_output_storage_failure.py tests/test_codemode_production_boundaries.py tests/test_read_result_contract.py --tb=short`，25 passed，0 skip，退出 0。两文件 mypy 严格 Any 和 Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q038 完成。累计完成 68/338 批，覆盖 130/1009 个生产文件。下一批 Q039 为完成检查包入口。
+
+
+### Q039 完成检查包入口
+
+- Q038 已提交 `2ff01219`。完整检查 `codey/completion/__init__.py`。该文件只有模块文档，包入口在冷启动时不加载子模块，也不启动工作线程。通过 `python -` 在新进程导入包，断言文档和线程列表，并用 `find_spec` 验证 contract、decision、engine、repair_context、verification_policy 均可发现。退出 0。
+- `python -m mypy codey/completion/__init__.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 和 `ruff check codey/completion/__init__.py` 均在 `D:\codey` 退出 0。下游行为验证归各生产模块批次。
+- Q039 完成，无需修改源码。累计完成 69/338 批，覆盖 131/1009 个生产文件。下一批 Q040 为完成判定、合同和发现。
+
+
+### Q040 验证候选的文件系统发现
+
+- 原 Q040 拆为文件系统发现 Q040、合同与证明 Q040B、完成判定与协调 Q040C。总数更新为 340 批，生产文件总数仍为 1009。完整检查 `discovery.py` 与新增回归。
+- `read_manifest_text` 承诺实际读取受字节预算约束。4 字节清单在首次检查之后增长，固定旧路径 metadata 时，原实现仍读取并返回超限内容。`python -m pytest -q tests/test_completion_manifest_read_limit.py --tb=short` 修改前 1 failed，退出 1。现在复用已有 `read_text_bounded_no_follow`，以打开的文件及实际读取的字节落实预算。4 字节正向对照继续返回内容并保留通用换行转换。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_completion_manifest_read_limit.py tests/test_verification_policy.py tests/test_completion_verification.py --tb=short`，79 passed、38 subtests passed，0 skip，退出 0。两文件 mypy 严格 Any 及 Ruff、全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。结果与 Q039 的只读记录同批保存。
+- Q040 完成。累计完成 70/340 批，覆盖 132/1009 个生产文件。下一批 Q040B 为完成检查合同与证明投影。

@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 1009,
   "region_count": 40,
-  "batch_count": 338,
+  "batch_count": 340,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -244,6 +244,8 @@
       "batches": [
         "Q039",
         "Q040",
+        "Q040B",
+        "Q040C",
         "Q041",
         "Q042",
         "Q043",
@@ -3804,24 +3806,40 @@
         "codey/completion/__init__.py"
       ],
       "id": "Q039",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_unchanged",
+      "reviewed_files": ["codey/completion/__init__.py"],
+      "verified_files": ["codey/completion/__init__.py"],
+      "tests": [],
+      "result": "Cold import exposes the package documentation without starting threads or loading child modules. Five direct child specs remain discoverable. Scoped strict Any and Ruff passed."
     },
     {
-      "responsibility": "codey/completion: shared contracts and module services",
-      "files": [
-        "codey/completion/contract.py",
-        "codey/completion/decision.py",
-        "codey/completion/engine.py",
-        "codey/completion/discovery.py"
-      ],
+      "responsibility": "Completion verification manifest and directory discovery helpers",
+      "files": ["codey/completion/discovery.py"],
       "id": "Q040",
+      "status": "completed_changed",
+      "reviewed_files": ["codey/completion/discovery.py"],
+      "verified_files": ["codey/completion/discovery.py"],
+      "tests": ["tests/test_completion_manifest_read_limit.py", "tests/test_verification_policy.py", "tests/test_completion_verification.py"],
+      "reviewed_support": ["tests/test_completion_manifest_read_limit.py"],
+      "result": "Read manifests through the existing descriptor-based bounded reader. 79 scoped cases and 38 subtests passed. Scoped strict Any, Ruff and production gates passed."
+    },
+    {
+      "responsibility": "Completion contract and proof projection",
+      "files": ["codey/completion/contract.py"],
+      "id": "Q040B",
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 24
+      "tests": ["tests/test_completion_contract.py", "tests/test_completion_proof_authority.py"]
+    },
+    {
+      "responsibility": "Completion decision and engine orchestration",
+      "files": ["codey/completion/decision.py", "codey/completion/engine.py"],
+      "id": "Q040C",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/test_completion_engine.py", "tests/test_completion_provider_illegal_row_blocks.py"]
     },
     {
       "responsibility": "codey/completion: completion review and edit validation",
@@ -9724,6 +9742,11 @@
       "batch": "Q037",
       "replacement": ["Q037", "Q037B", "Q037C"],
       "reason": "Source admission, kernel effect settlement and process/session transport have independently verifiable contracts. All three original files retain one owner."
+    },
+    {
+      "batch": "Q040",
+      "replacement": ["Q040", "Q040B", "Q040C"],
+      "reason": "Filesystem discovery, proof data, and completion decisions have distinct callers and scoped tests. All four original files retain one owner."
     }
   ]
 }
