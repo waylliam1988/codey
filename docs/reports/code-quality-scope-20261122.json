@@ -3451,6 +3451,9 @@
       "result": "Matching missing, empty or integer region keys formerly confirmed changed text (3 failed, 1 positive control passed). Same four passed when requiring the original nonempty string key. Strong Any and all type and precision gates passed. Three research workflow assertions failed identically in the explicit pre-edit baseline and final run. Direct query/shadow integration passed; keep cross-module follow-ups open.",
       "followups": [
         "Q084 to validate two dynamic query prompt assertions and a slow-query audit assertion. Prompt contract at browser_task_handoff._declared_plan and failure lineage in operations/browser_detail and completion_gate require joint review. Failure can carry query_click without marking query_region as confirmed."
+      ],
+      "commits": [
+        "0cceb56f"
       ]
     },
     {
@@ -3460,13 +3463,24 @@
         "codey/automation/browser_disclosure.py",
         "codey/automation/browser_detail.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/automation/browser_disclosure.py",
+        "codey/automation/browser_detail.py"
+      ],
+      "verified_files": [
+        "codey/automation/browser_disclosure.py",
+        "codey/automation/browser_detail.py"
+      ],
       "tests": [
         "tests/test_browser_detail_production.py",
-        "tests/test_browser_linked_record.py"
-      ]
+        "tests/test_browser_linked_record.py",
+        "tests/test_browser_native_disclosure.py"
+      ],
+      "reviewed_support": [
+        "tests/test_browser_native_disclosure.py"
+      ],
+      "result": "Observe the first native summary child even after a hidden preceding element is inserted, and omit that exact summary when requiring a nonempty body. Real Chromium regression failed then passed. Baseline and final integration 17 passed; combined 18 passed. Scoped strict Any, Pyrefly, ty and Ruff, production types and precision passed."
     },
     {
       "responsibility": "codey/automation: browser contracts and interaction",
@@ -7742,6 +7756,7 @@
     "tests/test_browser_ipc_contract.py",
     "tests/test_browser_leaf_exposure_ab.py",
     "tests/test_browser_native_actions.py",
+    "tests/test_browser_native_disclosure.py",
     "tests/test_browser_navigation_continuation.py",
     "tests/test_browser_navigation_handoff.py",
     "tests/test_browser_observation_candidates.py",

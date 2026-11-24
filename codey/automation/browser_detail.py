@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
 
 
-
+_TASK_URL = re.compile(r"https?://[^\s<>，。；]+")
 
 @dataclass(frozen=True)
 class DetailControl:
@@ -31,7 +31,7 @@ class DetailControl:
 
 
 def observe_details(browser: BrowserSession, document: JsonObject, task: str) -> tuple[DetailControl, ...]:
-    row = browser.inspect_details(document, re.sub(r"https?://[^\s<>，。；]+", "", task))
+    row = browser.inspect_details(document, _TASK_URL.sub("", task))
     controls = row.get("controls") if row is not None else None
     if not isinstance(controls, list):
         return ()
@@ -46,7 +46,7 @@ def read_detail(browser: BrowserSession, document: JsonObject, task: str, choice
                      if control.choice(document) == choice), None)
     if selected is None:
         return None
-    value = browser.inspect_details(document, re.sub(r"https?://[^\s<>，。；]+", "", task), selected.payload())
+    value = browser.inspect_details(document, _TASK_URL.sub("", task), selected.payload())
     if value is None:
         return None
     return {"status": "ok", "url": document["url"], "title": value["title"], "text": value["text"],

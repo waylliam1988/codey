@@ -35,7 +35,7 @@ DETAILS = r"""({task, selected}) => {
     const controls = owner.querySelectorAll('details');
     if (controls.length > 24) return null;
 
-    const textOf = (root, expanded, omitSummary = false) => {
+    const textOf = (root, expanded, omittedNode = null) => {
         let visited = 0, length = 0;
         const parts = [];
         const add = text => { parts.push(text); length += text.length; };
@@ -58,7 +58,7 @@ DETAILS = r"""({task, selected}) => {
             } else {
                 for (const child of node.childNodes) {
                     if (visited > 750 || length > 5500) break;
-                    if (omitSummary && child === root.firstElementChild && child.nodeName === 'SUMMARY') continue;
+                    if (child === omittedNode) continue;
                     visit(child);
                 }
             }
@@ -72,12 +72,12 @@ DETAILS = r"""({task, selected}) => {
     const found = [];
     let chosen = null;
     for (const [index, details] of [...controls].entries()) {
-        const summary = details.firstElementChild;
-        if (details.open || details.closest(owners) !== owner || !summary?.matches('summary') || !visible(summary)
+        const summary = details.querySelector(':scope > summary');
+        if (details.open || details.closest(owners) !== owner || !summary || !visible(summary)
             || summary.matches('[aria-disabled=true]') || summary.querySelector('a, button, input, [role=button]')
             || details.closest('[aria-busy=true]')) continue;
         const name = clean(summary.innerText);
-        if (!name || name.length > 120 || !textOf(details, details, true)) continue;
+        if (!name || name.length > 120 || !textOf(details, details, summary)) continue;
         found.push({index, name, owner: label});
         if (selected && selected.index === index && selected.name === name && selected.owner === label) {
             const text = textOf(owner, details);

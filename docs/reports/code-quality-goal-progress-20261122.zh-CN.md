@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q030B。Q030C 的查询身份修复已验证，研究调用方待跟进。下一批为 Q030D。保留历史验收，复核后续提交实际影响的范围。
+当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q030D。Q030C 的查询身份修复已验证，研究调用方待跟进。下一批为 Q031。保留历史验收，复核后续提交实际影响的范围。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1462,3 +1462,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 两项普通查询测例（文本、native）在正文已到达后拒绝出现任何 Execute this next step 提示。提示属于 `operations/browser_task_handoff.py` 的调用方选择合同。慢查询用例拒绝首个未确认读取的审计里有 query_click。现有失败结果用该字段连接原动作，且只有成功、完整的 query_region 才构成确认。完成门禁也读取失败动作的关联。记录至 Q084，结合实际提示内容和操作结果复核意图与测试合同。未调整原断言。
 - 三源和新回归的定向 mypy 强 Any、Pyrefly、ty、Ruff 全部退出 0。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 与 kernel_type_precision_gate 均退出 0。日志 `.e2e-artifacts/code-quality-20261122/q030c-*.log`。
 - Q030C 部分完成，提交独立通过的修复。完成 52/330 批，覆盖 104/1009 个生产文件。部分批次 15，其中 11 个文件独立验证。Q030D 接续页面展开与读取。
+
+
+### Q030D 原生详情展开观察
+
+- Q030C 已提交 `0cceb56f`。完整检查 `browser_disclosure.py` 和 `browser_detail.py`。HTML 的详情摘要是第一个 summary 元素子节点。当前页面可动态在其前插入普通元素，Chromium 仍用原摘要。
+- 真实 worker 页面先有 Shipping address 和 Empty details 两个原生详情，随后在两个摘要前分别插入一个隐藏 span。 `python -m pytest -q tests/test_browser_native_disclosure.py --tb=short` 修改前 1 failed、退出 1，观察列表为空。按第一个直接 summary 子元素识别，正文判定排除同一节点。按原选择读取 Dock 27，空详情不进入选择，页面保持折叠。相同用例修改后 1 passed、退出 0。收敛两处相同的任务 URL 去除模式。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_detail_production.py tests/test_browser_linked_record.py --tb=short`，基线与最终均 17 passed，退出 0。最终合计 18 项通过，无跳过。两源及回归定向严格 mypy、Pyrefly、ty 和 Ruff 均退出 0。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 和 kernel_type_precision_gate 均通过。
+- Q030D 完成。累计 53/330 批，完成批覆盖 106/1009 个生产文件。接续 Q031。
