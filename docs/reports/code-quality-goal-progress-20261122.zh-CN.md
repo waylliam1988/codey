@@ -1251,3 +1251,17 @@ Q022 已提交：`2d23e891`（fix(knowledge): roll back failed rebuild worker ad
 - 四完整生产源＋新回归强Any/Pyrefly/ty/Ruff全部exit0（runner也强Any0，共6file），q022c-local-*.json；无cast/ignore/检查降级/依赖。生产门串行：mypy **0/760file**、Pyrefly **0/35suppressed/166warnings**、ty **0**、kernel precision **0**，q022c-production-*.json/q022c-precision.json。修复后源码hash与起止HEAD稳定，Windows/Python3.12执行、类型目标3.11；不声称其他平台实测。
 - 必要契约/夹具依赖另作全文件Any基线，不能隐去未治理来源：`python -m mypy codey/operations/kernel_context.py codey/operations/kernel_contracts.py codey/durable/checkpoint.py codey/runtime/core/operation_payload.py --python-version 3.11 --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` → **1，21 diagnostics/4 files**，q022c-dependency-any-baseline.json。两operations源0；checkpoint.py13条（69/91-172的dict isinstance后无泛型及**字典传播），operation_payload.py8条（47/60/82/280/393/396的set/zip/字典/布尔传播）。四依赖均未修改，新增目标检查与这些局部诊断无数据/类型传播关系；普通生产三类型门仍通过。残余源分别明确留Q056/Q192，必要边界已用具体公开类型约束当前回归，不扩展为两大运行时文件重写，未宣称这些依赖已完成治理。若后续检查其完整模块，须连同行为基线和原精度门一起完成，不只改为宽泛object。
 - Q022C四源声明范围验收完成，待本地提交。累计 **41/321完整批次、78/1006完整批次生产源**，另10部分源独立验证，累计88；21条依赖Any及Q021C浏览器/463Any未解决，不能以此批完成冒称全仓完成。仅提交memory_candidates、新回归及两份进度；同时保存Q022B无需修改的检查记录，不夹带用户未跟踪报告。下一主批Q022D管理路由/显式反馈两源，goal保持active。
+
+Q022C 已提交：`87d0873f`（fix(memory): require task-only ownership for completion decisions）。
+
+### Q022D Memory management / explicit feedback（进行中）
+
+- 两源memory_routes.py364行、memory_learning.py76行已完整读。入口/api/ghost/action由app_api.ghost_action_response唯一转发；管理action为明确字符串命令，ValueError按既有客户端错误返回400，后端/投影不可用才是503。候选确认、跨作用域、原话摘要与request_id内容不可改写的合同仍来自memory-boundary/completion文档；不把现有测试自动当正确答案。先运行管理/反馈基线及全文件Any，再复现复杂JSON action值可能错误进入503的路径。
+- 已确认summary中items/exposures两个列表过滤与现有_scoped_values完全同语义：同一state key读取、dict条件、scope tuple成员判定、顺序、行对象身份、异常及无额外副作用一致，可在行为基线后收敛。与输入类型bug分成独立提交，暂不同时修改。
+
+- 基线`python -m pytest -q tests/test_memory_lifecycle.py tests/test_memory_learning_targets.py tests/test_memory_adaptation_flow.py --tb=short` → **0，34 passed，13.33秒**，q022d-baseline.json；两完整源与runner严格Any均0（3file），q022d-source-any-before.json。原脚本仅路由/节点名定位并执行，未改动或声称全文件类型治理。
+- **非法action错误报告为后端不可用：** /api/ghost/action的action是单一字符串命令；缺失/未知/错误类型均属客户端请求错误，现有DTO参数校验及HTTP400客户端错误合同有效，503用于服务/后端暂不可用，不能仅因JSON容器不可hash就误判后端故障。数组/对象payload经正常JSON解码后直接参与set成员判断，在访问任何后端前TypeError，进入服务错误503分支。使用真实AppContext(memory_enabled=False)和已存在会话，新脚本`python -m pytest -q tests/test_memory_action_input.py --tb=short`修改前实际 **1，4 failed/5 passed，1.69秒**，q022d-action-before.json；[]、非空list、{}、非空dict实际503而非400；null/bool/int/float及未知字符串对照原本400。不是测试/环境或生产后端错误，未增加mock异常或重写预期；下面只在公开入口使用已有require_json_string校验action。
+
+- 第一项修复只将memory_action公开入口的action读取改为require_json_string；在命令分派与后端访问之前完成类型校验，仍由既有ValueError分支返回400，真实服务错误503分支不动。不对私有下游重复校验或把未知数据按str强转。相同9节点 **0，9 passed，1.60秒**，q022d-action-after.json；所有拒绝路径断言无Core commit推进。
+- 直接`python -m pytest -q tests/test_memory_action_input.py tests/test_memory_lifecycle.py tests/test_memory_learning_targets.py --tb=short` → **0，38 passed，3.39秒**，q022d-action-direct.json；反馈/适应调用方`python -m pytest -q tests/test_memory_feedback.py tests/test_memory_adaptation_flow.py --tb=short` → **0，15 passed，15.87秒**，q022d-action-callers.json。两范围共53passed、0失败/0skip，基线和复跑不另累加。两完整生产源＋新完整脚本严格Any/Pyrefly/ty/Ruff全部0，runner强Any也0（4file），q022d-action-local-*.json。
+- 生产门串行mypy **0/760file**、Pyrefly **0/35suppressed/166warnings**、ty **0**、precision **0**，q022d-action-production-*.json/q022d-action-precision.json，源码hash/HEAD一致；第一项具备独立提交条件。后续summary重复职责收敛仍未执行，本批整体保持进行中，不以此53项通过提前结项。用户报告不暂存，未修改既有测试预期或复制工作区。

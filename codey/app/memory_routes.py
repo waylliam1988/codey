@@ -314,7 +314,7 @@ def memory_action(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[s
         payload = decode_json_object(body)
         session_id = require_json_string(payload.get("session_id", ""), "session_id")
         project = require_json_string(payload.get("project", ""), "project")
-        action = payload.get("action")
+        action = require_json_string(payload.get("action"), "action")
         if action == "propose_from_message":
             if not session_id or not ctx.durable.has_conversation(session_id):
                 raise ValueError("an existing session_id is required")

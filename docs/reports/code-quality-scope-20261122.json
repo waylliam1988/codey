@@ -2858,6 +2858,9 @@
       "followups": [],
       "reviewed_support": [
         "tests/test_memory_decision_ownership.py"
+      ],
+      "commits": [
+        "87d0873f"
       ]
     },
     {
@@ -2867,10 +2870,27 @@
         "codey/app/memory_routes.py",
         "codey/app/memory_learning.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
+      "status": "in_progress",
+      "reviewed_files": [
+        "codey/app/memory_routes.py",
+        "codey/app/memory_learning.py"
+      ],
       "verified_files": [],
-      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
+      "tests": [
+        "tests/test_memory_action_input.py",
+        "tests/test_memory_lifecycle.py",
+        "tests/test_memory_learning_targets.py",
+        "tests/test_memory_feedback.py",
+        "tests/test_memory_adaptation_flow.py"
+      ],
+      "reviewed_support": [
+        "tests/test_memory_action_input.py"
+      ],
+      "result": "Both364/76-line sources fully reviewed, original source/runner strictAny0, baseline34pass. First deterministic bug independently ready: JSON array/object action tags incorrectly raise TypeError into503 before backend access, while scalar/unknown tags return client400. Original new9cases4failed/5passed; public entry now require_json_string action before dispatch, same9pass with no Core commits. Direct38+feedback/adaptation15=53distinctpasses, no skips/failures. Whole2sources/new test strictAny/Pyrefly/ty/Ruff0 and runner0; production mypy760/Pyrefly35suppressed166warnings/ty/precision0. No casts/ignores or changing actual backend failures to success. Summary items/exposures duplicate filters are confirmed same semantics as existing helper, but refactor still pending; entire batch remains in progress.",
+      "followups": [
+        "After independent action type fix commit, converge summary items/exposures into existing _scoped_values with established behavior baseline; preserve order/row identity/errors and current caller scopes, no new abstractions."
+      ]
     },
     {
       "responsibility": "codey/app: knowledge and memory",
@@ -7760,6 +7780,7 @@
     "tests/test_manual_project_task_context.py",
     "tests/test_manual_write_benchmarks_have_real_identity.py",
     "tests/test_mechanical_surface.py",
+    "tests/test_memory_action_input.py",
     "tests/test_memory_adaptation_flow.py",
     "tests/test_memory_attempt_gate_lifecycle.py",
     "tests/test_memory_boundary.py",
