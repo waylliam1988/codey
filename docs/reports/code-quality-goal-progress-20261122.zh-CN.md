@@ -1814,3 +1814,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 完整检查 `ancestry.py` 和 `entry_ownership.py`。在继承前缀的编辑父项不存在时已抛出 `KeyError`，因此后续 `position is not None` 守卫恒真。移除该冗余守卫，保留父项缺失诊断及原切片。条目所有权投影无需改动。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_workflow_fork.py tests/durable/test_edit_admission.py tests/durable/test_branch_revision_cas.py tests/durable/test_commit_events.py --tb=short`，基线 39 passed，退出 0。最终命令加入 `tests/durable/test_fork_ancestry.py tests/durable/test_display_index.py tests/durable/test_history_storage_paging.py`，74 passed、0 失败或跳过，退出 0。两源严格 Any、Ruff、生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 与 kernel_type_precision_gate 均退出 0。
 - Q051 完成。累计完成 91/352 批，完成批覆盖 158/1009 个生产文件，另有 18 批部分完成。下一批 Q051B 为持久端口与控制记录。
+
+
+### Q051B 持久端口与控制记录
+
+- Q051 已提交 `e9bc702f`。完整检查 `contracts.py`，沿用 Q015D/Q019B 对 `control.py` 的行为审查并补齐待办类型。控制记录复用请求摘要与持久数据读取逻辑，声明真实会话、只读参数映射和存储对象结构。公开端口无需修改。
+- 在 `D:\codey`，`python -m pytest -q tests/test_control_service_contract.py tests/durable/test_control_message_metadata.py --tb=short` 基线为 18 passed，退出 0。最终加入 `tests/durable/test_contracts.py tests/durable/test_runtime_checkpoint_port.py`，21 passed，退出 0。临时刷新描述符后运行 `python -m pytest -q tests/test_external_control.py::test_visible_creation_and_original_receipt_are_idempotent tests/test_external_control.py::test_lost_receipt_does_not_readmit_input tests/test_external_control.py::test_content_conflict_and_revocation_survive_retries --tb=short`，3 passed，退出 0，描述符已恢复原字节。最终两组 24 passed、无失败或跳过。
+- 两源严格 Any，`control.py` 的 33 条诊断降为 0。Ruff、全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 与 kernel_type_precision_gate 均退出 0。
+- Q051B 完成。累计完成 92/352 批，完成批覆盖 160/1009 个生产文件，另有 18 批部分完成。下一批 Q051C 为 inbox 读取模型与查询边界。

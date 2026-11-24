@@ -4089,16 +4089,11 @@
       "responsibility": "Durable ports and control records",
       "files": ["codey/durable/contracts.py", "codey/durable/control.py"],
       "id": "Q051B",
-      "status": "not_started",
-      "reviewed_files": [
-        "codey/durable/control.py"
-      ],
-      "verified_files": [],
-      "candidate_test_count": 1,
-      "followups": [
-        "Q015D inspected durable/control.py latest/receipt/write contracts; session and configuration/receipt dictionaries still declare Any in this owning module. No source edits or full-file type claim here. ControlService validates returned records before consuming values; complete whole-file typing in Q051B.",
-        "Q019B preparatory boundary review fully read durable/control.py. Legacy Any remains in latest/receipt/write session and config/result/params dictionaries. No dedicated strict Any baseline or behavioral tests executed for this dependency during Q019B; no source changes or governance-complete claim. Continue at user resume."
-      ]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/contracts.py", "codey/durable/control.py"],
+      "verified_files": ["codey/durable/contracts.py", "codey/durable/control.py"],
+      "tests": ["tests/test_control_service_contract.py", "tests/durable/test_control_message_metadata.py", "tests/durable/test_contracts.py", "tests/durable/test_runtime_checkpoint_port.py", "tests/test_external_control.py"],
+      "result": "Close the type follow-up from Q015D/Q019B, share durable control receipt fingerprints and validate stored payload shapes. 24 scoped tests, strict Any, Ruff and production gates passed."
     },
     {
       "responsibility": "Inbox read model and query line contract",
