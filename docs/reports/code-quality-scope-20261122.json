@@ -2567,6 +2567,9 @@
         "tests/test_service_lifecycle.py",
         "tests/test_app_lifecycle_coordinator.py",
         "tests/test_control_runtime_ownership.py"
+      ],
+      "commits": [
+        "5fa495a9"
       ]
     },
     {
@@ -2576,10 +2579,34 @@
         "codey/app/tool_history.py"
       ],
       "id": "Q020",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 3
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/app/history_routes.py",
+        "codey/app/tool_history.py"
+      ],
+      "verified_files": [
+        "codey/app/history_routes.py",
+        "codey/app/tool_history.py"
+      ],
+      "candidate_test_count": 3,
+      "reviewed_support": [
+        "tests/test_history_routes.py",
+        "tests/test_tool_display_history.py",
+        "tests/test_reasoning_cold_history.py",
+        "tests/test_reasoning_display.py"
+      ],
+      "tests": [
+        "tests/test_history_routes.py",
+        "tests/test_tool_display_history.py",
+        "tests/test_reasoning_cold_history.py",
+        "tests/test_reasoning_display.py",
+        "tests/durable/test_display_index.py",
+        "tests/durable/test_history_snapshot_paging.py",
+        "tests/test_server_lazy_state.py",
+        "tests/test_ui_edit.py::test_edit_uses_target_chat_ownership_when_another_chat_is_primary"
+      ],
+      "followups": [],
+      "result": "Complete2-source scope: no independently confirmed production bug; tool_history full review and strongAny0 unchanged. history_routes1 strictAny diagnostic from dict.fromkeys None overload ->0 using typed membership placeholder, ordered keys unchanged. Four full support scripts1/15/33/63 diagnostics ->0, total113 across6files; original assertions retained, JSON/row/event/reply boundaries validated, typed BytesIO wire response replaces MagicMock and untyped cross-test helper dependency. Prior28+15 pass; final distinct43+35+2=80pass plus6subtests, no skips/failures, real browser cross-chat validation included. First introduced test bytes/text mismatch corrected by UTF8 decoding preserving original SSE contract. Six full files strictAny/Pyrefly/ty/Ruff0, production mypy756/Pyrefly35suppressed165warnings/ty/precision0. No actual worktree or external model, no production API deletion or forced abstraction. Evidence q020-*.json and progress commands."
     },
     {
       "responsibility": "codey/app: execution evidence and event projection",

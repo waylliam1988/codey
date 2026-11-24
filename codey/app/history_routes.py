@@ -31,7 +31,7 @@ def validate_runs_response(ctx: HistoryContext, body: Mapping[str, object]) -> t
             return 409, {"ok": False, "error": "history snapshot changed"}
         return 200, {"schema_version": 1, "session_id": session, "epoch": epoch,
                      "path_generation": 0, "snapshot_revision": 0, "display_version": None,
-                     "runs": [{"run_id": run, "visible": False} for run in dict.fromkeys(runs)]}
+                     "runs": [{"run_id": run, "visible": False} for run in dict.fromkeys(runs, True)]}
     try:
         result = ctx.durable.validate_history_runs(session, runs, epoch=epoch, generation=generation)
         return 200, result

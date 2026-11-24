@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,6 +9,7 @@ import pytest
 from codey.app.history_routes import validate_runs_response
 from codey.app.public_event_feed import PublicEventFeed
 from codey.durable import DurableSession, SQLiteDurableStore
+from codey.utils.object_fields import decoded_object
 
 
 @dataclass
@@ -17,8 +17,8 @@ class Context:
     durable: DurableSession
 
 
-@pytest.fixture
-def context(tmp_path: Path) -> Generator[Context]:
+@pytest.fixture()
+def context(tmp_path: Path) -> Generator[Context, None, None]:
     session = DurableSession(SQLiteDurableStore(tmp_path / "routes.sqlite"))
     try:
         yield Context(session)
@@ -52,7 +52,7 @@ def test_public_sse_encoding_preserves_path_identity_for_a_branch_without_entrie
     entry = context.durable.append_message("chat", "user_message", {"text": "question"})
     result = context.durable.branch("chat", entry.entry_id)
     assert result.record is not None
-    payload: dict[str, object] = json.loads(PublicEventFeed().encode(result.record.to_payload()).body)
+    payload = decoded_object(PublicEventFeed().encode(result.record.to_payload()).body.decode("utf-8"))
     page = context.durable.history_page("chat")
     assert payload["path_generation"] == page["path_generation"] == 1
     assert payload["revision"] == page["snapshot_revision"]

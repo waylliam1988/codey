@@ -1117,3 +1117,20 @@ Q019C 主提交已完成：`a79cbd7d`（fix(inputs): reject structured modes and
 - 四完整源/测试强Any/Pyrefly/ty/Ruff全exit0，ignored证据runner也强Any0；生产mypy **0/756源**、Pyrefly **0/35suppressed/165warnings**、ty **0**、precision **0**，q019d-production-*.json及q019d-precision.json。实际Windows/Python3.12、类型目标3.11，未验证其他平台。中途Ruff指出动态setattr与constructor语句预算，已通过明确惰性字段槽位解决，未加ignore或放宽阈值。
 - capability基线及直接组退出时均有同类RAM清理WinError5，指向其小型Git空提交创建的只读object；所有断言及退出码0。该根因已由Q019B独立只读文件探针证实，当前文件只有类型/字段收窄改动，不新增此清理路径。保留为未修复的共享测试清理待办与原目录证据，不声称清理成功或扩展本批修复。
 - Q019D声明范围验收完成，待创建本地提交。当前 **35/316批完整完成，68/1002生产文件属于完整完成批次**；另6个部分批次源独立验证，累计74。工作区用户审查报告保留未跟踪，不暂存。下一批Q020（history_routes.py/tool_history.py）沿未完成队列推进；总goal保持active，全仓尚未完成。
+
+Q019D 已提交：`5fa495a9`（fix(forks): fence workspace job publication during shutdown）。
+
+### Q020 History validation / tool presentation（进行中）
+
+- 恢复读取最新goal和工作区，上一轮三个实际提交属于progress；HEAD仍5fa495a9，用户审查报告保留未跟踪。沿未开始队列进入两个生产源，不重新检查已完成生产区域。两个文件已完整读；接口为history run版本验证及display-only工具/推理记录，不把展示消息送入模型上下文。参照uiux_implementation_2026-10-20与uiux_tool_stream_2026-11-06的身份/顺序契约，必要依赖只看调用签名，不扩展重写。
+- 修改前直接三文件history_routes/tool_display_history/reasoning_cold_history实际 **0，28 passed，2.35秒**；reasoning_display额外提供事件/原生回复生产者基线 **0，15 passed，1.47秒**。四个完整测试已阅读，强Any配置112条诊断；两个生产源1条（empty-chat去重dict.fromkeys默认值引入Any），tool_history本身0。尚未发现符合准入的新生产bug，不据猜测改变业务。
+- 当前做类型边界收窄：有类型的占位值保留去重顺序语义；四测试保留原断言并验证动态行/JSON/可空事件，将MagicMock响应改为有类型字节流替身，移除对另一个无类型测试脚本私有helper的依赖。尚待修改后行为、类型和相关调用方验证，不标完成。
+
+- 类型探针实际确认dict.fromkeys(runs)、显式None和参数化dict三种形式仍得到dict[str,Any|None]，不是database_id（其类型str）；最终只将未消费的membership值改True，键集合和首次顺序不变，不引入cast或ignore。tool_history全文件本来严格Any0，无需生产修改，保留公开入口与工具/推理identity语义，没有猜测性bug修复或无证据删除。
+- 四完整测试的强Any配置原诊断history1/tool15/cold33/reasoning63，共112，加生产1→最终六文件0；Pyrefly/ty/Ruff均exit0且无定向warning。BytesIO响应提供明确headers/read/context manager能力，同一请求字节经JSON字段校验后记录，原thinking wire、预算、原生回复及冷历史关键断言保留；可空事件与model回复显式收窄，原直接DurableSession测试补finally关闭资源。没有修改生产提供者的既有Any，也不将其视为本批已治理。
+- 第一轮修改后1failed/42passed是我在测试解码边界把合法bytes交给只接受str的decoded_object导致，非新生产bug；按原SSE的UTF8 JSON契约补解码，不改断言。最终`python -m pytest -q tests/test_history_routes.py tests/test_tool_display_history.py tests/test_reasoning_cold_history.py tests/test_reasoning_display.py --tb=short` → **0，43 passed，3.14秒**，q020-direct-second.json。
+- 共享存储/冷启动调用方：`python -m pytest -q tests/durable/test_display_index.py tests/durable/test_history_snapshot_paging.py tests/test_server_lazy_state.py --tb=short` → **0，35 passed/6 subtests passed，18.27秒**，q020-callers.json。浏览器调用方`python -m pytest -q tests/test_ui_edit.py::test_edit_uses_target_chat_ownership_when_another_chat_is_primary --tb=short` → **0，2 passed，9.37秒**，q020-browser.json。三组范围互不重复，总 **80 passed，另6subtests passed，0失败/0skip**；基线和中间复跑不重复累计。其余UI/workflow/全仓测试未执行，不声称全部通过；没有复制或创建worktree，没有重构建/发布资产或调用外部模型。
+- 生产Pyrefly **0/35suppressed/165warnings**、ty **0**、precision **0**；mypy仍在原活跃进程中，尚无最终汇总，不提前记通过。完成该门和最终hash/diff检查后才验收提交本批。
+
+- 最终同一mypy进程已正常汇总 **0/756源**，q020-production-mypy.json，未重启门禁。六文件全部强Any/Pyrefly/ty/Ruff通过，源码在直接/调用方/浏览器及生产门之间hash一致，diff已审查。无实际生产bug修复、公开API删除或重复生产实现合并；唯一生产修改只是空聊天验证的类型精度，tool_history检查后无需修改。测试替身职责限于当前脚本，没有删改其他无类型helper的API。
+- Q020声明范围验收完成，待本地提交。当前 **36/316批完整完成，70/1002生产文件属于完整完成批次**；另6个部分批次源独立验证，累计76。用户审查报告保留未跟踪；总goal保持active、全仓仍未完成。下一批Q021从事件投影依赖边界划分，先查看模块头和实际依赖，不重开已完成区域。
