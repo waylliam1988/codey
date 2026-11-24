@@ -56,7 +56,10 @@ def memory_summary(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, d
         selector: JsonObject = {}
         if "scope_kind" in query:
             selector["scope_kind"] = next(iter(query["scope_kind"]), "")
-        scope = selected_scope(selector, session_id, project)
+        try:
+            scope = selected_scope(selector, session_id, project)
+        except ValueError as exc:
+            return 400, {"ok": False, "error": str(exc)}
         scopes = unique_scopes((scope, "user"))
         policy_scopes = control_scopes(project, session_id) if scope == request_scope("", session_id) else scopes
         pending = [{"proposal_id": proposal.proposal_id, "version": proposal.version, "relations": [edge.to_payload() for edge in proposal.relations],

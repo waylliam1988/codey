@@ -2882,14 +2882,20 @@
         "tests/test_memory_lifecycle.py",
         "tests/test_memory_learning_targets.py",
         "tests/test_memory_feedback.py",
-        "tests/test_memory_adaptation_flow.py"
+        "tests/test_memory_adaptation_flow.py",
+        "tests/test_memory_summary_input.py",
+        "tests/test_memory_boundary.py::test_review_routes_and_source_deletion"
       ],
       "reviewed_support": [
-        "tests/test_memory_action_input.py"
+        "tests/test_memory_action_input.py",
+        "tests/test_memory_summary_input.py"
       ],
-      "result": "Both364/76-line sources fully reviewed, original source/runner strictAny0, baseline34pass. First deterministic bug independently ready: JSON array/object action tags incorrectly raise TypeError into503 before backend access, while scalar/unknown tags return client400. Original new9cases4failed/5passed; public entry now require_json_string action before dispatch, same9pass with no Core commits. Direct38+feedback/adaptation15=53distinctpasses, no skips/failures. Whole2sources/new test strictAny/Pyrefly/ty/Ruff0 and runner0; production mypy760/Pyrefly35suppressed166warnings/ty/precision0. No casts/ignores or changing actual backend failures to success. Summary items/exposures duplicate filters are confirmed same semantics as existing helper, but refactor still pending; entire batch remains in progress.",
+      "result": "Both364/76-line sources fully reviewed, original source/runner strictAny0, baseline34pass. First deterministic bug independently ready: JSON array/object action tags incorrectly raise TypeError into503 before backend access, while scalar/unknown tags return client400. Original new9cases4failed/5passed; public entry now require_json_string action before dispatch, same9pass with no Core commits. Direct38+feedback/adaptation15=53distinctpasses, no skips/failures. Whole2sources/new test strictAny/Pyrefly/ty/Ruff0 and runner0; production mypy760/Pyrefly35suppressed166warnings/ty/precision0. No casts/ignores or changing actual backend failures to success. Summary items/exposures duplicate filters are confirmed same semantics as existing helper, but refactor still pending; entire batch remains in progress. Second independent bug: summary scope DTO/identifier validation failures are client400, but old broad backend guard returns503. Real healthy Ghost fixture original4behaviorfail/2controls pass (valid query200, actual backend ValueError503). Isolated selector ValueError guard inside original service guard now full7pass, including scope resolution OSError503. Initial uncommitted split-try draft introduced escaping OSError, added control fails1, corrected without weakening expectations; not labeled original repository bug. Direct45+adaptation/review6=51distinctpasses in this phase, do not sum overlapping prior53. Whole2sources+2new tests strictAny/Pyrefly/ty/Ruff0; runner0. Production760/35suppressed166warnings/ty/precision0. Scope filtering refactor remains pending; whole batch in progress.",
       "followups": [
         "After independent action type fix commit, converge summary items/exposures into existing _scoped_values with established behavior baseline; preserve order/row identity/errors and current caller scopes, no new abstractions."
+      ],
+      "commits": [
+        "bc7ff75b"
       ]
     },
     {
@@ -7793,6 +7799,7 @@
     "tests/test_memory_lifecycle.py",
     "tests/test_memory_maintenance_runtime.py",
     "tests/test_memory_plasticity.py",
+    "tests/test_memory_summary_input.py",
     "tests/test_mimo.py",
     "tests/test_model_contract_consistency.py",
     "tests/test_model_input_binding.py",
