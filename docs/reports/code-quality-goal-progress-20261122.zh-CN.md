@@ -1869,3 +1869,8 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_inbox_placement.py tests/durable/test_generation_boundary_commit.py tests/durable/test_context_edit_revision_fence.py tests/durable/test_queued_input_revision.py tests/durable/test_steering_consumption.py --tb=short`，100 passed、无失败或跳过、退出 0。前三个文件的修改前基线为 74 passed。两种排队写入入口、陈旧头部和原子边界均有用例。另通过 `python -` 运行内存存储探针，按引导输入、被动写入交替入队两组，核对同一提交内先按原顺序放置两条写入，再按原顺序放置两条引导输入，退出 0。
 - `python -m mypy codey/durable/submission_operations.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 从 17 条诊断降至 0。同文件 `ruff check`、全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 `python -m tools.kernel_type_precision_gate` 均退出 0。
 - Q054C 完成。累计完成 98/356 批，完成批覆盖 170/1009 个生产文件，另有 17 批部分完成。下一批 Q054D 为任务检查点、所有权及尝试状态迁移。
+
+### Q054D 任务检查点、所有权及尝试状态迁移
+
+- Q054C 已提交 `ac1bf096`。扩大验证时发现 `test_atomic_task_failure.py` 的注入函数仍接收 SQLite 写入助手在 `b35d6f7d` 移除的第三个参数。该测试应在实际写入提交状态后注入 `OSError`，验证任务、提交和 effect 的原子回滚。使用 `python -` 在内存加载 `ac1bf096` 的 task operations，再以 `pytest.main` 运行 `tests/durable/test_atomic_task_failure.py::test_failure_during_submission_update_rolls_back_task_stop`，修改前因 mock 参数不符失败，退出 1。将 fixture 对齐当前两个参数后用相同生产实现重跑，1 passed、退出 0，保留回滚断言。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_atomic_task_failure.py --tb=short`，4 passed、无失败或跳过、退出 0。收窄序列化投影的事件对象并补齐故障注入签名，整个测试文件的严格 Any 与 Ruff 通过。全仓测试入口搜索确认该故障注入是两个 SQLite 私有提交更新助手的唯一 mock 调用方。

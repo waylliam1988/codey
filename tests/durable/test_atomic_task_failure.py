@@ -1,5 +1,6 @@
 """Scheduler termination preserves effects and atomically updates submissions."""
 
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -7,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from codey.durable import DurableSession, EffectRecord, MemoryDurableStore, SQLiteDurableStore, SubmissionStatus
+from codey.durable.model import SubmissionUpdate
+from codey.utils.object_fields import require_object_rows
 
 
 def running_tools(session: DurableSession) -> None:
@@ -37,7 +40,7 @@ def test_failure_preserves_effects_and_commits_checkpoint_submission_once(backen
     assert store.submission(task.submission_id).status is SubmissionStatus.UNANSWERED
     assert session.effects("task") == effects
     [record] = session.commits_after(before)
-    projections = record.to_payload()["projections"]
+    projections = require_object_rows(record.to_payload()["projections"])
     assert sum(event["type"] == "effect_settled" for event in projections) == 0
     assert sum(event["type"] == "submission_completed" for event in projections) == 1
 
@@ -51,8 +54,8 @@ def test_failure_during_submission_update_rolls_back_task_stop(tmp_path: Path, m
     before = session.commit_sequence()
     original_write = sqlite_store._write_submission_update
 
-    def crash_on_submission(database, update, entries):
-        original_write(database, update, entries)
+    def crash_on_submission(database: sqlite3.Connection, update: SubmissionUpdate | None) -> None:
+        original_write(database, update)
         if update is not None:
             raise OSError("crash during submission update")
 
@@ -76,10 +79,12 @@ def test_process_death_after_task_write_rolls_back_the_whole_failure(tmp_path: P
     session.close()
     script = """
 import os, sys
+import sqlite3
 import codey.durable.sqlite as storage
 from codey.durable import DurableSession, SQLiteDurableStore
+from codey.durable.model import TaskCheckpoint
 original = storage._write_task
-def crash(database, task):
+def crash(database: sqlite3.Connection, task: TaskCheckpoint | None) -> None:
     result = original(database, task)
     if task is not None:
         os._exit(74)
