@@ -1,6 +1,6 @@
 {
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
-  "source_count": 996,
+  "source_count": 1002,
   "region_count": 40,
   "batch_count": 316,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
@@ -410,7 +410,7 @@
     },
     {
       "path": "codey/operations",
-      "source_count": 115,
+      "source_count": 120,
       "batches": [
         "Q083",
         "Q084",
@@ -680,7 +680,7 @@
     },
     {
       "path": "codey/research",
-      "source_count": 98,
+      "source_count": 99,
       "batches": [
         "Q152",
         "Q153",
@@ -2466,7 +2466,10 @@
       "reviewed_support": [
         "tests/test_conversation_tree_routes.py"
       ],
-      "validation_warning": "q019b-git-cleanup-warning.json: retained Git object read-only; isolated shutil.rmtree on owned read-only probe reproduces PermissionError WinError5. All20 test assertions and process exit code0; shared pytest cleanup unchanged. No manual deletion of retained Git artifact; repair belongs to testing support, deferred on user pause."
+      "validation_warning": "q019b-git-cleanup-warning.json: retained Git object read-only; isolated shutil.rmtree on owned read-only probe reproduces PermissionError WinError5. All20 test assertions and process exit code0; shared pytest cleanup unchanged. No manual deletion of retained Git artifact; repair belongs to testing support, deferred on user pause.",
+      "commits": [
+        "bd2c1980"
+      ]
     },
     {
       "id": "Q019C",
@@ -2476,15 +2479,55 @@
         "codey/app/input_queue.py",
         "codey/app/input_queue_routes.py"
       ],
-      "status": "not_started",
+      "status": "completed_changed",
       "reviewed_files": [
-        "codey/app/conversation_runtime.py"
+        "codey/app/conversation_runtime.py",
+        "codey/app/input_queue.py",
+        "codey/app/input_queue_routes.py"
       ],
-      "verified_files": [],
+      "verified_files": [
+        "codey/app/conversation_runtime.py",
+        "codey/app/input_queue.py",
+        "codey/app/input_queue_routes.py"
+      ],
       "followups": [
-        "Q018 read conversation_runtime close contract and identified fixture fake worker ownership; runtime full-file Any at init/admissions/prepare remains. Input queue and routes headers only inventoried, not fully read."
+        "Public dispatch_one/bind/worker compatibility surface retained: no in-repository caller does not establish external dead-code safety. No real worktree commands performed.",
+        "DurableUserQuestionStore fully read as necessary question boundary dependency; legacy Any retained in its owning batch. Consumers validate record/selection fields; producer not declared governed."
       ],
-      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
+      "reviewed_support": [
+        "tests/test_conversation_input_routes.py",
+        "tests/test_conversation_elapsed_time.py",
+        "tests/durable/test_input_queue_authority.py",
+        "tests/durable/test_queued_input_revision.py",
+        "tests/durable/test_steering_consumption.py"
+      ],
+      "commits": [
+        "3e7d9c69"
+      ],
+      "result": "Complete3-source input/runtime governance; strict Any configuration599 original diagnostics across8 complete files ->0. JSON array/object delivery modes failed2 before target change with TypeError; type guard now returns existing409 rejection and no durable admission, complete route8pass. Independently diagnosed shared global clock fixture race with observed scheduler consumers; same elapsed assertion passes after module-local typed clock isolation, independent support commit. Remove two private closures only fed to unconditional no-op bind, preserve public compatibility. Concrete task/session/context and InputItem contracts, shared selection/draining boundary. Final distinct pytest scopes39+82+35+6=162passed plus6subtests, no skips/failures; public3API native Chromium paths pass. Full8files strictAny/Pyrefly/ty/Ruff0; production mypy756/Pyrefly35suppressed165warnings/ty/precision0, no whole pytest/worktree. Evidence q019c-*.json and progress commands.",
+      "tests": [
+        "tests/test_conversation_input_routes.py",
+        "tests/test_conversation_elapsed_time.py",
+        "tests/durable/test_input_queue_authority.py",
+        "tests/durable/test_queued_input_revision.py",
+        "tests/durable/test_steering_consumption.py",
+        "tests/test_conversation_questions.py",
+        "tests/test_conversation_question_http.py",
+        "tests/test_conversation_entry_auth.py",
+        "tests/test_input_attachments.py",
+        "tests/test_control_runtime_ownership.py",
+        "tests/durable/test_no_legacy_runtime_fallback.py",
+        "tests/durable/test_question_authority.py",
+        "tests/durable/test_inbox_placement.py",
+        "tests/durable/test_scheduler_claim_release.py",
+        "tests/durable/test_scheduler_local_reconcile.py",
+        "tests/test_task_submit_durable.py",
+        "tests/test_server_lazy_state.py",
+        "tests/test_conversation_live_browser.py::test_real_steer_is_consumed_by_the_current_task_without_a_second_run",
+        "tests/test_conversation_live_browser.py::test_real_stream_and_queued_input_keep_one_answer_and_survive_reload",
+        "tests/test_conversation_live_browser.py::test_real_question_card_resumes_the_native_run_and_opens_read_details"
+      ]
     },
     {
       "id": "Q019D",
@@ -3447,7 +3490,8 @@
         "codey/operations/browser_detail.py",
         "codey/operations/browser_upload.py",
         "codey/operations/browser_text_report.py",
-        "codey/operations/browser_result_evidence.py"
+        "codey/operations/browser_result_evidence.py",
+        "codey/operations/browser_linked_record.py"
       ],
       "id": "Q084",
       "status": "not_started",
@@ -3511,7 +3555,8 @@
         "codey/operations/provider_request_context.py",
         "codey/operations/context.py",
         "codey/operations/conversation_window.py",
-        "codey/operations/project_completion_context.py"
+        "codey/operations/project_completion_context.py",
+        "codey/operations/project_instructions.py"
       ],
       "id": "Q088",
       "status": "not_started",
@@ -3544,7 +3589,8 @@
         "codey/operations/explanation_repair.py",
         "codey/operations/project_completion_enforcement.py",
         "codey/operations/project_completion_flow.py",
-        "codey/operations/project_review_phase.py"
+        "codey/operations/project_review_phase.py",
+        "codey/operations/project_delivery.py"
       ],
       "id": "Q090",
       "status": "not_started",
@@ -3559,7 +3605,8 @@
         "codey/operations/project_candidate_validation.py",
         "codey/operations/project_verification.py",
         "codey/operations/review_flow.py",
-        "codey/operations/verification_history.py"
+        "codey/operations/verification_history.py",
+        "codey/operations/python_edit_assistance.py"
       ],
       "id": "Q091",
       "status": "not_started",
@@ -3726,7 +3773,8 @@
     {
       "responsibility": "codey/operations: task kernel and execution",
       "files": [
-        "codey/operations/task_handoff.py"
+        "codey/operations/task_handoff.py",
+        "codey/operations/model_handoff.py"
       ],
       "id": "Q101",
       "status": "not_started",
@@ -4626,7 +4674,8 @@
         "codey/research/source_search.py",
         "codey/research/source_trust.py",
         "codey/research/url_selection.py",
-        "codey/research/urls.py"
+        "codey/research/urls.py",
+        "codey/research/primary_sources.py"
       ],
       "id": "Q165",
       "status": "not_started",
@@ -8563,6 +8612,36 @@
         "Q019D"
       ],
       "reason": "Actual interfaces separate cache/snapshot/deletion ownership foundations (2files), passive configuration/branch HTTP (2files), durable queued input/worker lifecycle (3files), and isolated Git workspace subprocess jobs (1file). Inspect foundations first with controlled cache race evidence; preserve all8 original files once and no worktree creation. Four files fully read; other headers inventoried only."
+    },
+    {
+      "path": "codey/operations/browser_linked_record.py",
+      "batch": "Q084",
+      "reason": "New owned source from external commits after Q019B; module header/import inventory only, not reviewed or verified. Retain existing responsibility region and unfinished batch."
+    },
+    {
+      "path": "codey/operations/model_handoff.py",
+      "batch": "Q101",
+      "reason": "New owned source from external commits after Q019B; module header/import inventory only, not reviewed or verified. Retain existing responsibility region and unfinished batch."
+    },
+    {
+      "path": "codey/operations/project_delivery.py",
+      "batch": "Q090",
+      "reason": "New owned source from external commits after Q019B; module header/import inventory only, not reviewed or verified. Retain existing responsibility region and unfinished batch."
+    },
+    {
+      "path": "codey/operations/project_instructions.py",
+      "batch": "Q088",
+      "reason": "New owned source from external commits after Q019B; module header/import inventory only, not reviewed or verified. Retain existing responsibility region and unfinished batch."
+    },
+    {
+      "path": "codey/operations/python_edit_assistance.py",
+      "batch": "Q091",
+      "reason": "New owned source from external commits after Q019B; module header/import inventory only, not reviewed or verified. Retain existing responsibility region and unfinished batch."
+    },
+    {
+      "path": "codey/research/primary_sources.py",
+      "batch": "Q165",
+      "reason": "New owned source from external commits after Q019B; module header/import inventory only, not reviewed or verified. Retain existing responsibility region and unfinished batch."
     }
   ]
 }

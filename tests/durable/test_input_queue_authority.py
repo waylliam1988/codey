@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from codey.app.context import AppContext
+from codey.durable.model import TaskStatus
 from codey.runtime.core.api_selection import ApiRunSelection
 
 SELECTION = ApiRunSelection("local", "fixture", "fixture", "openai-completions", True)
@@ -65,10 +66,12 @@ def test_queued_input_remove_commits_an_abort_without_creating_another_task(tmp_
         )
         state.durable.start_task("active-task", state={})
         item = state.input_queue.create("input-one", _request(run_id), model_selection=SELECTION)
-        removed = state.input_queue.remove("input-one", int(item["revision"]))
+        removed = state.input_queue.remove("input-one", item["revision"])
 
         assert removed["state"] == "cancelled"
-        assert state.durable.task(run_id).status.value == "cancelled"
+        status = state.durable.task(run_id).status
+        assert isinstance(status, TaskStatus)
+        assert status.value == "cancelled"
         assert state.durable.store.submission(state.durable.task(run_id).submission_id).reason == "aborted"
         assert {task.task_id for task in state.durable.tasks()} == {"active-task", run_id}
     finally:

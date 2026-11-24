@@ -1,20 +1,24 @@
 """Queued edits and steering share the durable placement fence."""
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
+from pathlib import Path
 from threading import Barrier
 
 import pytest
 
-from codey.app.input_queue import DurableConversationInputQueue
+from codey.app.input_queue import DurableConversationInputQueue, InputItem
 from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
 from codey.durable.errors import CommitConflict
+from codey.utils.object_fields import mapping_fields
 
 
 @pytest.fixture(params=["memory", "sqlite"])
-def queue(request, tmp_path):
-    store = MemoryDurableStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "state.sqlite3")
+def queue(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[DurableConversationInputQueue]:
+    backend: object = request.param
+    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "state.sqlite3")
     session = DurableSession(store)
     session.admit_input(conversation_id="chat", request_id="active", task_id="active", text="current", provider_snapshot={})
     session.start_task("active", state={})
@@ -28,76 +32,95 @@ def queue(request, tmp_path):
     session.close()
 
 
-def test_edit_then_steer_preserves_identity_and_consumes_the_edited_text_once(queue):
+def test_edit_then_steer_preserves_identity_and_consumes_the_edited_text_once(queue: DurableConversationInputQueue) -> None:
     original = queue.get("queued")
+    assert original is not None
     updated = queue.edit("queued", original["revision"], "edited")
     assert updated["id"] == original["id"]
     assert updated["origin"] == original["origin"]
     assert updated["request"]["run_id"] == "queued"
-    assert queue.durable.task("queued").state["input_request"]["task"] == "original"
+    request = queue.durable.task("queued").state["input_request"]
+    assert mapping_fields(request) and request["task"] == "original"
     assert queue.durable.task("queued").state["task"] == "edited"
-    assert queue.durable.submission(queue.durable.task("queued").submission_id).content["text"] == "edited"
+    content = queue.durable.submission(queue.durable.task("queued").submission_id).content
+    assert content is not None and content["text"] == "edited"
     assert [entry.payload.get("text") for entry in queue.durable.context("chat")] == ["current"]
     steering = queue.steer("queued", updated["revision"])
     assert steering["request"]["input_mode"] == "steer"
     queue.durable.commit_generation_boundary("chat", task_id="active", at="post_tools")
-    assert queue.get("queued")["state"] == "consumed"
+    consumed = queue.get("queued")
+    assert consumed is not None and consumed["state"] == "consumed"
     assert queue.durable.commit_generation_boundary("chat", task_id="active", at="final") == ()
     assert [entry.payload.get("text") for entry in queue.durable.context("chat")] == ["current", "edited"]
     assert len(queue.durable.tasks()) == 2
 
 
-def test_placement_wins_over_a_late_edit_or_steer(queue):
+def test_placement_wins_over_a_late_edit_or_steer(queue: DurableConversationInputQueue) -> None:
     item = queue.get("queued")
+    assert item is not None
     queue.durable.complete_task("active", "done", state={})
     queue.durable.place_boundary_inputs("chat", at="final")
-    for operation in (lambda: queue.edit("queued", item["revision"], "too late"),
-                      lambda: queue.steer("queued", item["revision"])):
+    revision = item["revision"]
+    operations: tuple[Callable[[], InputItem], ...] = (
+        lambda: queue.edit("queued", revision, "too late"),
+        lambda: queue.steer("queued", revision),
+    )
+    for operation in operations:
         with pytest.raises(ValueError, match="revision|placed"):
             operation()
-    assert queue.get("queued")["request"]["task"] == "original"
+    placed = queue.get("queued")
+    assert placed is not None and placed["request"]["task"] == "original"
     assert len([entry for entry in queue.durable.context("chat") if entry.kind == "user_message"]) == 2
 
 
-def test_stale_revision_does_not_overwrite_another_edit(queue):
+def test_stale_revision_does_not_overwrite_another_edit(queue: DurableConversationInputQueue) -> None:
     item = queue.get("queued")
+    assert item is not None
     queue.edit("queued", item["revision"], "first edit")
     with pytest.raises(ValueError, match="revision"):
         queue.edit("queued", item["revision"], "stale edit")
-    assert queue.get("queued")["request"]["task"] == "first edit"
+    edited = queue.get("queued")
+    assert edited is not None and edited["request"]["task"] == "first edit"
 
 
 @pytest.mark.parametrize("text", ["", " ", "a" * 64001], ids=["empty", "blank", "too-long"])
-def test_invalid_edit_changes_nothing(queue, text):
+def test_invalid_edit_changes_nothing(queue: DurableConversationInputQueue, text: str) -> None:
     item = queue.get("queued")
+    assert item is not None
     with pytest.raises(ValueError, match="input text"):
         queue.edit("queued", item["revision"], text)
     assert queue.get("queued") == item
 
 
-def test_edit_and_placement_race_has_one_authoritative_result(queue):
+def test_edit_and_placement_race_has_one_authoritative_result(queue: DurableConversationInputQueue) -> None:
     item = queue.get("queued")
+    assert item is not None
+    revision = item["revision"]
     queue.durable.complete_task("active", "done", state={})
     barrier = Barrier(2)
 
-    def edit():
+    def edit() -> None:
         barrier.wait()
         with suppress(ValueError):
-            queue.edit("queued", item["revision"], "edited")
+            queue.edit("queued", revision, "edited")
 
-    def place():
+    def place() -> None:
         barrier.wait()
         queue.durable.place_boundary_inputs("chat", at="final")
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        list(pool.map(lambda operation: operation(), (edit, place)))
+        operations: tuple[Callable[[], None], ...] = (edit, place)
+        futures = [pool.submit(operation) for operation in operations]
+        for future in futures:
+            future.result()
     entries = [entry for entry in queue.durable.context("chat") if entry.by_task_id == "queued"]
     assert len(entries) == 1
-    assert entries[0].payload["text"] == queue.get("queued")["request"]["task"]
+    placed = queue.get("queued")
+    assert placed is not None and entries[0].payload["text"] == placed["request"]["task"]
     assert len(queue.durable.tasks()) == 2
 
 
-def test_store_rejects_revising_a_placed_submission(queue):
+def test_store_rejects_revising_a_placed_submission(queue: DurableConversationInputQueue) -> None:
     from codey.durable.model import DurableMutation, SubmissionUpdate
 
     task = queue.durable.task("active")

@@ -1,98 +1,85 @@
 """HTTP boundary and application lifecycle binding for conversation inputs."""
 from __future__ import annotations
 
-from functools import partial
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
-from codey.app import api, task_submit
-from codey.runtime.core.api_selection import ApiRunSelection
-from codey.task.entry_auth import EntryAuth
+from codey.app.input_queue import InputItem, capture_input_selection
+from codey.utils.object_fields import object_fields, require_object_rows
 
-
-def bind_input_queue(ctx: Any) -> None:
-    def ready() -> bool:
-        first = next(
-            (
-                item
-                for item in ctx.input_queue.list()
-                if item["state"] == "queued"
-                and ctx.active_run_for(session_id=str(item["request"].get("session_id") or "")) is None
-                and not ctx.stop_flag_for(str(item["request"].get("run_id") or "")).is_set()
-            ),
-            None,
-        )
-        return not ctx.closed and first is not None and not (
-            first and ctx.user_questions.pending(first["request"]["session_id"])
-        ) and not any(
-            item["decision"] == "pending" or item["continuation"] in {"queued", "resuming"}
-            for item in ctx.shell_approval_workflow.list_statuses()
-        )
-
-    def submit(body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        selection = ApiRunSelection.from_payload(body["captured_selection"]) if "captured_selection" in body else None
-        auth = EntryAuth(**body["captured_auth"]) if "captured_auth" in body else None
-        result = api.run_submit_response(body, partial(task_submit.submit_task, get_state=lambda: ctx, abort_if_stopped=True), ctx=ctx, captured_selection=selection, captured_auth=auth)
-        request_run_id = str(body.get("run_id") or "")
-        if result[0] == 409 and ctx.stop_flag_for(request_run_id).is_set():
-            return 409, {"error": "stopped"}
-        return result
-
-    ctx.input_queue.bind(ready, submit)
+if TYPE_CHECKING:
+    from codey.app.context import AppContext
 
 
-def inputs_response(ctx: Any, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
+def bind_input_queue(ctx: AppContext) -> None:
+    # Compatibility entry point; DurableTaskScheduler owns dispatch. The queue's
+    # bind method never installs callbacks or starts a second worker.
+    return None
+
+
+def _resolved_workspace(value: object) -> str:
+    if not isinstance(value, (str, Path)):
+        raise TypeError("workspace path must be text or a Path")
+    return str(Path(value).resolve())
+
+
+def _draining(ctx: AppContext) -> bool:
+    return ctx.control_service is not None and ctx.control_service.draining
+
+
+def inputs_response(ctx: AppContext, query: Mapping[str, list[str]]) -> tuple[int, dict[str, object]]:
     bind_input_queue(ctx)
-    identity = str((query.get("id") or [""])[0])
+    identity = (query.get("id") or [""])[0]
     if identity:
         item = ctx.input_queue.get(identity)
         if item is None:
             return 404, {"ok": False, "error": "input_not_found"}
         run = ctx.run_state_payload()
         terminal = run.get("last_terminal_event")
-        if isinstance(terminal, dict) and terminal.get("run_id") == item["request"]["run_id"]:
-            ctx.input_queue.completed(terminal["run_id"], terminal)
+        if object_fields(terminal) and terminal.get("run_id") == item["request"]["run_id"]:
+            ctx.input_queue.completed(str(terminal["run_id"]), terminal)
             item = ctx.input_queue.get(identity)
         return 200, {"ok": True, "item": item}
-    return 200, {"ok": True, "items": ctx.input_queue.list(str((query.get("session_id") or [""])[0]))}
+    return 200, {"ok": True, "items": ctx.input_queue.list((query.get("session_id") or [""])[0])}
 
 
-def input_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def input_action_response(ctx: AppContext, body: Mapping[str, object]) -> tuple[int, dict[str, object]]:
     bind_input_queue(ctx)
     identity = str(body.get("id") or "")
     action = body.get("action")
+    item: InputItem | None
     try:
         if action == "create":
-            if getattr(getattr(ctx, "control_service", None), "draining", False):
+            if _draining(ctx):
                 return 503, {"ok": False, "error": "server_draining"}
             source = body.get("request")
-            if not isinstance(source, dict):
+            if not object_fields(source):
                 raise ValueError("request required")
             request = {key: source[key] for key in ("session_id", "run_id", "project", "task", "provider", "intent", "requested_capabilities", "model_selection", "max_turns", "input_mode", "attachments") if key in source}
-            if request.get("input_mode", "follow_up") not in {"steer", "follow_up"}:
+            mode = request.get("input_mode", "follow_up")
+            if not isinstance(mode, str) or mode not in {"steer", "follow_up"}:
                 raise ValueError("invalid input mode")
             state = ctx.load_ui_state()
-            session = next((session for session in state["sessions"] if session["id"] == request.get("session_id")), None)
+            session = next((session for session in require_object_rows(state["sessions"]) if session["id"] == request.get("session_id")), None)
             if session is None:
                 raise ValueError("session not found")
             from codey.app.fork_workspaces import ensure_workspace_ready
 
             ensure_workspace_ready(ctx, str(session['id']))
-            project = next((project for project in state["projects"] if project["id"] == session.get("projectId")), None)
-            expected = str(Path(project["path"]).resolve()) if project else ""
-            actual = str(Path(request["project"]).resolve()) if request.get("project") else ""
+            project = next((project for project in require_object_rows(state["projects"]) if project["id"] == session.get("projectId")), None)
+            expected = _resolved_workspace(project["path"]) if project else ""
+            actual = _resolved_workspace(request["project"]) if request.get("project") else ""
             if expected != actual:
                 raise ValueError("input workspace changed")
-            from codey.providers.snapshot import capture_provider_selection
-
-            selection = capture_provider_selection(str(request.get("provider") or ""), request.get("model_selection"))
+            selection = capture_input_selection(str(request.get("provider") or ""), request.get("model_selection"))
             from codey.app.attachment_routes import prepare_queued_attachments
 
             selection, message_metadata, attachment_error = prepare_queued_attachments(ctx, request, selection)
             if attachment_error:
                 return attachment_error
             with ctx.task_runtime.spawn_line():
-                if getattr(getattr(ctx, "control_service", None), "draining", False):
+                if _draining(ctx):
                     return 503, {"ok": False, "error": "server_draining"}
                 item = ctx.input_queue.create(identity, request, model_selection=selection, **({"message_metadata": message_metadata} if message_metadata else {}))
         else:
@@ -103,9 +90,10 @@ def input_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str
             if item is None:
                 return 404, {"ok": False, "error": "input_not_found"}
             if action == "edit":
-                if not isinstance(body.get("text"), str):
+                text = body.get("text")
+                if not isinstance(text, str):
                     raise ValueError("input text required")
-                item = ctx.input_queue.edit(identity, revision, body["text"])
+                item = ctx.input_queue.edit(identity, revision, text)
             elif action == "steer":
                 item = ctx.input_queue.steer(identity, revision)
             elif action == "remove":
@@ -114,7 +102,7 @@ def input_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str
                 if ctx.active_run_for(session_id=str(item["request"].get("session_id") or "")) is not None:
                     return 409, {"ok": False, "error": "task still stopping"}
                 with ctx.task_runtime.spawn_line():
-                    if getattr(getattr(ctx, "control_service", None), "draining", False):
+                    if _draining(ctx):
                         return 503, {"ok": False, "error": "server_draining"}
                     item = ctx.input_queue.resume(identity, revision)
                     ctx.run_registry.clear_stop(str(item["request"].get("run_id") or ""))

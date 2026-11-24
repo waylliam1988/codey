@@ -13,20 +13,49 @@ import json
 import re
 import threading
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, NotRequired, TypedDict
+
+from codey.utils.object_fields import mapping_fields, object_fields, require_object_fields, sequence_items
 
 if TYPE_CHECKING:
+    from codey.durable.model import TaskCheckpoint
+    from codey.durable.session import DurableSession
     from codey.runtime.core.api_selection import ApiRunSelection
 
-Submit = Callable[[dict[str, Any]], tuple[int, dict[str, Any]]]
+Submit = Callable[[dict[str, object]], tuple[int, dict[str, object]]]
+
+
+class InputItem(TypedDict):
+    schema_version: int
+    id: str
+    request: dict[str, object]
+    state: str
+    revision: int
+    origin: str
+    consumed_by_run_id: object
+    entry_id: object
+    terminal: NotRequired[dict[str, object]]
 
 
 def _jsonable(value: object) -> object:
     if isinstance(value, Mapping):
-        return {str(key): _jsonable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
+        fields: Mapping[object, object] = value
+        return {str(key): _jsonable(item) for key, item in fields.items()}
+    if sequence_items(value):
         return [_jsonable(item) for item in value]
     return value
+
+
+def capture_input_selection(provider_id: str, value: object) -> ApiRunSelection | None:
+    from codey.providers.catalog import API_CONNECTIONS
+    from codey.providers.snapshot import capture_provider_selection
+    from codey.runtime.core.api_selection import ApiRunSelection
+
+    if provider_id not in API_CONNECTIONS:
+        return None
+    if value is not None and not isinstance(value, ApiRunSelection) and not mapping_fields(value):
+        raise ValueError("invalid model selection")
+    return capture_provider_selection(provider_id, value)
 
 
 class DurableConversationInputQueue:
@@ -37,7 +66,7 @@ class DurableConversationInputQueue:
     queue; queued state is derived from the durable task/submission records.
     """
 
-    def __init__(self, durable: Any, *, emit: Callable[[dict[str, Any]], None]) -> None:
+    def __init__(self, durable: DurableSession, *, emit: Callable[[dict[str, object]], None]) -> None:
         self.durable = durable
         self.emit = emit
         self.lock = threading.RLock()
@@ -46,7 +75,7 @@ class DurableConversationInputQueue:
         self.worker: threading.Thread | None = None
 
     @staticmethod
-    def _state_for_task(task: Any) -> str:
+    def _state_for_task(task: TaskCheckpoint) -> str:
         raw = task.state.get("input_state") if isinstance(task.state, Mapping) else None
         status = str(task.status)
         if raw == "consumed":
@@ -65,19 +94,17 @@ class DurableConversationInputQueue:
             return "submitted"
         return "submitted" if raw == "placed" else "queued"
 
-    def _item_for_task(self, task: Any) -> dict[str, Any] | None:
+    def _item_for_task(self, task: TaskCheckpoint) -> InputItem | None:
         state = task.state
-        if not isinstance(state, Mapping):
-            return None
         identity = state.get("input_identity")
-        request = state.get("input_request")
-        if not isinstance(identity, str) or not identity or not isinstance(request, Mapping):
+        raw_request = state.get("input_request")
+        if not isinstance(identity, str) or not identity or not isinstance(raw_request, Mapping):
             return None
         item_state = self._state_for_task(task)
-        normalized = _jsonable(dict(request))
-        if not isinstance(normalized, dict):
+        normalized = _jsonable(raw_request)
+        if not object_fields(normalized):
             return None
-        request = cast(dict[str, Any], normalized)
+        request = normalized
         origin = hashlib.sha256(json.dumps(request, sort_keys=True).encode()).hexdigest()
         # Admission identity remains immutable; queued revisions are projected
         # from the same task/submission that placement will consume.
@@ -85,12 +112,12 @@ class DurableConversationInputQueue:
             request["task"] = state["input_text"]
         if state.get("input_mode") in {"steer", "follow_up"}:
             request["input_mode"] = state["input_mode"]
-        item = {
+        item: InputItem = {
             "schema_version": 1,
             "id": identity,
             "request": copy.deepcopy(request),
             "state": item_state,
-            "revision": int(task.revision),
+            "revision": task.revision,
             "origin": origin,
             "consumed_by_run_id": state.get("consumed_by_task_id", ""),
             "entry_id": state.get("input_entry_id", ""),
@@ -101,8 +128,8 @@ class DurableConversationInputQueue:
                                 "run_id": task.task_id, "stop_reason": "error", "summary": reason}
         return item
 
-    def _items(self, session_id: str = "") -> builtins.list[dict[str, Any]]:
-        items: list[dict[str, Any]] = []
+    def _items(self, session_id: str = "") -> builtins.list[InputItem]:
+        items: list[InputItem] = []
         for task in self.durable.tasks():
             item = self._item_for_task(task)
             if item is None:
@@ -112,36 +139,37 @@ class DurableConversationInputQueue:
             items.append(item)
         return items
 
-    def get(self, identity: str) -> dict[str, Any] | None:
+    def get(self, identity: str) -> InputItem | None:
         with self.lock:
             for item in self._items():
                 if item["id"] == identity:
                     return item
             return None
 
-    def list(self, session_id: str = "") -> builtins.list[dict[str, Any]]:
+    def list(self, session_id: str = "") -> builtins.list[InputItem]:
         with self.lock:
             return self._items(session_id)
 
-    def create(self, identity: str, request: dict[str, Any], *, model_selection: ApiRunSelection | None = None, message_metadata: dict[str, object] | None = None) -> dict[str, Any]:
+    def create(self, identity: str, request: Mapping[str, object], *, model_selection: ApiRunSelection | None = None, message_metadata: dict[str, object] | None = None) -> InputItem:
         if not re.fullmatch(r"[a-zA-Z0-9_-]{1,100}", identity):
             raise ValueError("invalid input identity")
         if not request.get("session_id") or not request.get("run_id"):
             raise ValueError("invalid input identity")
-        if not isinstance(request.get("task"), str) or not 0 < len(request["task"].strip()) <= 64_000:
+        text = request.get("task")
+        if not isinstance(text, str) or not 0 < len(text.strip()) <= 64_000:
             raise ValueError("invalid input text")
         # Admission freezes the same provider contract as the direct /api/run
         # path.  The browser sends a compact model selection; a resumed task
         # must carry the complete, validated selection instead of trying to
         # reconstruct it from current settings.
-        from codey.providers.snapshot import capture_provider_selection, provider_snapshot
+        from codey.providers.snapshot import provider_snapshot
 
         provider_id = str(request.get("provider") or "")
-        raw_selection = request.get("model_selection")
-        selection = model_selection or capture_provider_selection(provider_id, raw_selection)
-        admitted_request = copy.deepcopy(request)
+        selection = model_selection or capture_input_selection(provider_id, request.get("model_selection"))
+        admitted_request = copy.deepcopy(dict(request))
         if selection is not None:
-            admitted_request["model_selection"] = selection.to_payload()
+            selection_payload: object = selection.to_payload()
+            admitted_request["model_selection"] = require_object_fields(selection_payload)
         with self.lock:
             existing = self.get(identity)
             if existing is not None:
@@ -192,7 +220,7 @@ class DurableConversationInputQueue:
                 self.durable.claim_task(task_id)
             elif str(task.status) != "running":
                 return False
-            item = self.get(str(item["id"])) or item
+            item = self.get(item["id"]) or item
         try:
             status, result = submit(copy.deepcopy(item["request"]))
         except Exception as exc:
@@ -213,7 +241,7 @@ class DurableConversationInputQueue:
                         {"input_state": "placed"},
                         expected_revision=current.revision,
                     )
-        self.emit({"type": "conversation_input", "session_id": item["request"]["session_id"], "input": self.get(str(item["id"])) or item})
+        self.emit({"type": "conversation_input", "session_id": item["request"]["session_id"], "input": self.get(item["id"]) or item})
         return True
 
     def bind(self, ready: Callable[[], bool], submit: Submit) -> None:
@@ -221,14 +249,14 @@ class DurableConversationInputQueue:
         # worker here would create a duplicate execution race.
         return None
 
-    def edit(self, identity: str, revision: int, text: str) -> dict[str, Any]:
+    def edit(self, identity: str, revision: int, text: str) -> InputItem:
         return self._revise(identity, revision, text=text)
 
-    def steer(self, identity: str, revision: int) -> dict[str, Any]:
+    def steer(self, identity: str, revision: int) -> InputItem:
         return self._revise(identity, revision, mode="steer")
 
     def _revise(self, identity: str, revision: int, *, text: str | None = None,
-                mode: str | None = None) -> dict[str, Any]:
+                mode: str | None = None) -> InputItem:
         from codey.durable.errors import CommitConflict
 
         with self.lock:
@@ -248,19 +276,20 @@ class DurableConversationInputQueue:
         self.wake.set()
         return updated
 
-    def remove(self, identity: str, revision: int) -> dict[str, Any]:
+    def remove(self, identity: str, revision: int) -> InputItem:
         with self.lock:
             item = self.get(identity)
             if item is None:
                 raise KeyError(f"unknown input identity: {identity}")
-            if int(item["revision"]) != int(revision):
+            if item["revision"] != revision:
                 raise ValueError("input revision conflict")
             if item["state"] != "queued":
                 raise ValueError("input is already placed or settled")
             request = item["request"]
-            if not isinstance(request, Mapping) or not isinstance(request.get("run_id"), str):
+            run_id = request.get("run_id")
+            if not isinstance(run_id, str):
                 raise ValueError("durable input request is missing run_id")
-            self.durable.request_cancel(str(request["run_id"]), reason="aborted", expected_revision=int(revision))
+            self.durable.request_cancel(run_id, reason="aborted", expected_revision=revision)
             updated = self.get(identity)
         if updated is None:
             raise RuntimeError("durable input cancellation did not produce a projection")
@@ -268,13 +297,13 @@ class DurableConversationInputQueue:
         self.wake.set()
         return updated
 
-    def resume(self, identity: str, revision: int) -> dict[str, Any]:
+    def resume(self, identity: str, revision: int) -> InputItem:
         raise ValueError("durable input resumption is handled by task scheduler")
 
     def pause(self, session_id: str = "") -> None:
         self.wake.set()
 
-    def completed(self, run_id: str, terminal: dict[str, Any]) -> None:
+    def completed(self, run_id: str, terminal: Mapping[str, object]) -> None:
         self.wake.set()
 
     def close(self) -> bool:
