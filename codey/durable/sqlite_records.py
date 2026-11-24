@@ -20,78 +20,116 @@ from codey.durable.model import (
     TaskCheckpoint,
     migrate_checkpoint_phase,
 )
+from codey.types.json_value import require_json_integer, require_json_string
+from codey.utils.object_fields import object_fields
+
+
+def _column(row: sqlite3.Row, key: str) -> object:
+    value: object = row[key]
+    return value
+
+
+def _text(row: sqlite3.Row, key: str) -> str:
+    return require_json_string(_column(row, key), key)
+
+
+def _optional_text(row: sqlite3.Row, key: str) -> str | None:
+    value = _column(row, key)
+    return None if value is None else require_json_string(value, key)
+
+
+def _integer(row: sqlite3.Row, key: str) -> int:
+    return require_json_integer(_column(row, key), key)
+
+
+def _checked_object(decoded: object, key: str) -> dict[str, object]:
+    if not object_fields(decoded):
+        raise ValueError(f"{key} must contain a JSON object")
+    return decoded
+
+
+def _object(row: sqlite3.Row, key: str) -> dict[str, object]:
+    decoded: object = json.loads(_text(row, key))
+    return _checked_object(decoded, key)
+
+
+def _optional_object(row: sqlite3.Row, key: str) -> dict[str, object] | None:
+    value = _optional_text(row, key)
+    if value is None:
+        return None
+    decoded: object = json.loads(value)
+    return None if decoded is None else _checked_object(decoded, key)
 
 
 def entry_from_row(row: sqlite3.Row) -> EntryDraft:
+    commit = _column(row, "commit_seq")
     return EntryDraft(
-        str(row["id"]),
-        str(row["conversation_id"]),
-        row["parent_id"],
-        str(row["kind"]),
-        json.loads(str(row["payload"])),
-        int(row["commit_seq"]) if row["commit_seq"] is not None else 0,
-        row["by_task_id"],
+        _text(row, "id"),
+        _text(row, "conversation_id"),
+        _optional_text(row, "parent_id"),
+        _text(row, "kind"),
+        _object(row, "payload"),
+        0 if commit is None else require_json_integer(commit, "commit_seq"),
+        _optional_text(row, "by_task_id"),
     )
 
 
 def task_from_row(row: sqlite3.Row) -> TaskCheckpoint:
-    phase, schema_version = migrate_checkpoint_phase(str(row["phase"]), int(row["schema_version"]))
+    phase, schema_version = migrate_checkpoint_phase(_text(row, "phase"), _integer(row, "schema_version"))
     return TaskCheckpoint(
-        task_id=str(row["id"]),
-        conversation_id=str(row["conversation_id"]),
-        submission_id=str(row["submission_id"]),
+        task_id=_text(row, "id"),
+        conversation_id=_text(row, "conversation_id"),
+        submission_id=_text(row, "submission_id"),
         phase=phase,
-        revision=int(row["revision"]),
-        provider_snapshot=json.loads(str(row["provider_snapshot"])),
-        state=json.loads(str(row["state"])),
-        current_turn_id=row["current_turn_id"],
-        pending_effect_id=row["pending_effect_id"],
-        status=str(row["status"]),
+        revision=_integer(row, "revision"),
+        provider_snapshot=_object(row, "provider_snapshot"),
+        state=_object(row, "state"),
+        current_turn_id=_optional_text(row, "current_turn_id"),
+        pending_effect_id=_optional_text(row, "pending_effect_id"),
+        status=_text(row, "status"),
         schema_version=schema_version,
     )
 
 
 def effect_from_row(row: sqlite3.Row) -> EffectRecord:
-    settlement = row["settlement"]
     return EffectRecord(
-        effect_id=str(row["id"]),
-        task_id=str(row["task_id"]),
-        category=str(row["category"]),
-        replay_class=str(row["replay_class"]),
-        args_digest=str(row["args_digest"]),
-        status=str(row["status"]),
-        intent=json.loads(str(row["intent"])),
-        settlement=None if settlement is None else json.loads(str(settlement)),
+        effect_id=_text(row, "id"),
+        task_id=_text(row, "task_id"),
+        category=_text(row, "category"),
+        replay_class=_text(row, "replay_class"),
+        args_digest=_text(row, "args_digest"),
+        status=_text(row, "status"),
+        intent=_object(row, "intent"),
+        settlement=_optional_object(row, "settlement"),
     )
 
 
 def artifact_from_row(row: sqlite3.Row) -> ArtifactRecord:
     return ArtifactRecord(
-        handle=str(row["handle"]),
-        sha256=str(row["sha256"]),
-        byte_count=int(row["byte_count"]),
-        storage_path=str(row["storage_path"]),
-        owner_task_id=None if row["owner_task_id"] is None else str(row["owner_task_id"]),
-        owner_effect_id=None if row["owner_effect_id"] is None else str(row["owner_effect_id"]),
-        created_at=str(row["created_at"]),
-        metadata=json.loads(str(row["metadata"])),
+        handle=_text(row, "handle"),
+        sha256=_text(row, "sha256"),
+        byte_count=_integer(row, "byte_count"),
+        storage_path=_text(row, "storage_path"),
+        owner_task_id=_optional_text(row, "owner_task_id"),
+        owner_effect_id=_optional_text(row, "owner_effect_id"),
+        created_at=_text(row, "created_at"),
+        metadata=_object(row, "metadata"),
     )
 
 
 def submission_from_row(row: sqlite3.Row) -> SubmissionRecord:
-    detail = row["detail"]
     return SubmissionRecord(
-        submission_id=str(row["id"]),
-        conversation_id=str(row["conversation_id"]),
-        request_id=str(row["request_id"]),
-        status=SubmissionStatus(str(row["status"])),
-        input_entry_id=None if row["entry_id"] is None else str(row["entry_id"]),
-        answer_entry_id=row["answer_entry_id"],
-        reason=row["reason"],
-        detail=None if detail is None else json.loads(str(detail)),
-        placement=SubmissionPlacement(str(row["placement"])),
-        mode=str(row["mode"]),
-        content=json.loads(str(row["content"])),
+        submission_id=_text(row, "id"),
+        conversation_id=_text(row, "conversation_id"),
+        request_id=_text(row, "request_id"),
+        status=SubmissionStatus(_text(row, "status")),
+        input_entry_id=_optional_text(row, "entry_id"),
+        answer_entry_id=_optional_text(row, "answer_entry_id"),
+        reason=_optional_text(row, "reason"),
+        detail=_optional_object(row, "detail"),
+        placement=SubmissionPlacement(_text(row, "placement")),
+        mode=_text(row, "mode"),
+        content=_optional_object(row, "content"),
     )
 
 

@@ -1830,3 +1830,10 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - inbox 条目使用现有 `SubmissionRecord`，消除 9 条严格 Any 诊断。查询端口无需调整。两源与回归严格 Any、Ruff、生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty、kernel_type_precision_gate 均退出 0。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_inbox_history_projection.py tests/durable/test_inbox_placement.py tests/durable/test_database_cursor.py tests/durable/test_commit_events.py --tb=short`，58 passed、无失败或跳过，退出 0。前两个相关旧测试文件的基线为 43 passed。
 - Q051C 完成。累计完成 93/352 批，完成批覆盖 162/1009 个生产文件，另有 18 批部分完成。下一批 Q051D 为 SQLite 行与展示投影。
+
+
+### Q051D SQLite 行与展示投影
+
+- Q051C 已提交 `06e56f72`。完整检查 `sqlite_records.py` 和 `sqlite_display.py`。共享 SQLite 文本、整数和可空文本字段读取，并在域对象构造前核对 JSON 对象形状。可选字段继续读取 SQLite NULL 和历史 JSON null。展示写入保持事务与分配顺序，明确报告缺失的序号或会话行。两个源的严格 Any 诊断从 61 条降为 0。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_display_index.py tests/durable/test_database_cursor.py tests/durable/test_commit_events.py --tb=short`，基线 40 passed。最终加入 `tests/durable/test_sqlite_record_mapping.py tests/durable/test_history_storage_paging.py tests/durable/test_artifact_metadata.py`，69 passed。两次均无失败或跳过，退出 0。两源 Ruff 及生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 都退出 0。
+- Q051D 完成。累计完成 94/352 批，完成批覆盖 164/1009 个生产文件，另有 18 批部分完成。下一批 Q052 将接续已部分核验的 SQLite 事务存储。

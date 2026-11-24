@@ -4110,10 +4110,11 @@
       "responsibility": "SQLite row decoding and display projections",
       "files": ["codey/durable/sqlite_display.py", "codey/durable/sqlite_records.py"],
       "id": "Q051D",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/durable/test_display_index.py", "tests/durable/test_database_cursor.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/sqlite_display.py", "codey/durable/sqlite_records.py"],
+      "verified_files": ["codey/durable/sqlite_display.py", "codey/durable/sqlite_records.py"],
+      "tests": ["tests/durable/test_sqlite_record_mapping.py", "tests/durable/test_display_index.py", "tests/durable/test_database_cursor.py", "tests/durable/test_commit_events.py", "tests/durable/test_history_storage_paging.py", "tests/durable/test_artifact_metadata.py"],
+      "result": "Use typed SQLite column readers and validate object shape at the durable row boundary. 69 scoped tests, strict Any, Ruff and production gates passed."
     },
     {
       "responsibility": "codey/durable: shared contracts and module services",
