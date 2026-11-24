@@ -458,7 +458,7 @@ class DurableCodeModeReplay:
         """Permanently close this invocation, retaining its first fatal cause."""
         with self._lock:
             if not self._failure:
-                self._failure = reason
+                self._failure = reason or "CodeMode replay invalidated"
 
     @contextmanager
     def admission(self) -> Generator[None, None, None]:

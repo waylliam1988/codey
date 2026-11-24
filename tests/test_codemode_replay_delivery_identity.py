@@ -31,3 +31,27 @@ def test_delivery_refuses_a_checkpoint_with_changed_replay_identity() -> None:
         assert durable.task("task") == before_delivery
     finally:
         durable.close()
+
+
+def test_delivery_refuses_admission_after_an_error_without_a_message() -> None:
+    durable = DurableSession(MemoryDurableStore())
+    try:
+        durable.admit_input(
+            conversation_id="chat", request_id="request", task_id="task", text="run",
+            provider_snapshot={"provider_id": "test"},
+        )
+        replay = DurableCodeModeReplay(
+            durable, "task", "execution", "fingerprint",
+            parent_effect_id="parent", runtime_contract="runtime",
+        )
+        with pytest.raises(ValueError), replay.admission():
+            raise ValueError()
+
+        checkpoint = durable.task("task")
+        with pytest.raises(CodeModeReplayError):
+            replay.record_delivery("too-late", 0)
+        assert durable.task("task") == checkpoint
+        with pytest.raises(CodeModeReplayError):
+            replay.assert_valid()
+    finally:
+        durable.close()

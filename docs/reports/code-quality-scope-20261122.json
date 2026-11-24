@@ -3699,10 +3699,12 @@
       "id": "Q035D",
       "responsibility": "Code Mode durable replay and repair authority",
       "files": ["codey/codemode/replay.py"],
-      "status": "in_progress",
+      "status": "completed_changed",
       "reviewed_files": ["codey/codemode/replay.py"],
-      "verified_files": [],
-      "tests": ["tests/test_codemode_replay_authority.py", "tests/test_codemode_repair_replay.py", "tests/test_codemode_replay_delivery_identity.py"]
+      "verified_files": ["codey/codemode/replay.py"],
+      "tests": ["tests/test_codemode_replay_authority.py", "tests/test_codemode_repair_replay.py", "tests/test_codemode_replay_delivery_identity.py"],
+      "reviewed_support": ["tests/test_codemode_replay_delivery_identity.py"],
+      "result": "Validate the replay identity in the result delivery transaction and permanently invalidate replay on an exception without a message. Final 35 passed. Scoped strict Any and Ruff and all production gates pass."
     },
     {
       "id": "Q035E",

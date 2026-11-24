@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，Q035D 进行中。开放事项保存在治理队列。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q035D，接续 Q035E。开放事项保存在治理队列。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1559,3 +1559,6 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 
 - Q035C 已提交 `bf323b82`。完整检查 `replay.py`。重放日志绑定 fingerprint、runtime contract、effect scope 和 schema。已在内存 durable store 建立有效日志并交付首个结果，再替换其执行指纹。`python -m pytest -q tests/test_codemode_replay_delivery_identity.py --tb=short` 修改前 1 failed，退出 1，旧交付事务没有拒绝身份不匹配。修改后事务共用现有 `_record` 校验再写入，回归核对拒绝后完整 checkpoint 保持相同。状态和交付事务在一次读取节点上校验及更新，移除了同一日志的重复反序列化和原列表回填。
 - 在 `D:\codey` 运行 `python -m pytest -q tests/test_codemode_replay_delivery_identity.py tests/test_codemode_replay_authority.py tests/test_codemode_repair_replay.py --tb=short`，34 passed，0 skip，退出 0。源码与新增测试的 mypy 严格 Any、Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 退出 0。
+- 身份校验修复已提交 `a3944ebb`。第二项回归在 `admission` 区段抛出无消息的 `ValueError()`。`invalidate` 约定永久关闭本次调用，但旧失败字段以空字符串表示正常，后续交付因此继续。`python -m pytest -q tests/test_codemode_replay_delivery_identity.py --tb=short` 修改前 1 failed、1 passed，退出 1，原因是后续交付没有抛 CodeModeReplayError。无消息的致命错误现在设置非空诊断，拒绝后续准入和成功验证，checkpoint 保留原值。
+- 最终同三文件命令 35 passed，0 skip，退出 0。`python -m mypy codey/codemode/replay.py tests/test_codemode_replay_delivery_identity.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-decorated`、两文件 Ruff、全生产 mypy、Pyrefly（0 errors、35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q035D 完成。累计完成 62/336 批，覆盖 121/1009 个生产文件。下一批 Q035E 为 JavaScript guest 和 Node 传输。
