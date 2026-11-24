@@ -132,9 +132,9 @@ def build_completion_decision(
         failure_class = classify_verification_failure(
             proof_status=proof_status,
             selected_check_present=selected_check is not None,
-            decisive_error_code=str(getattr(failure, "error_code", "") or ""),
-            decisive_exit_code=getattr(failure, "exit_code", None),
-            decisive_result_summary=str(getattr(failure, "result_summary", "") or ""),
+            decisive_error_code=failure.error_code if failure is not None else "",
+            decisive_exit_code=failure.exit_code if failure is not None else None,
+            decisive_result_summary=failure.result_summary if failure is not None else "",
         )
     return CompletionDecision(
         proof=proof,

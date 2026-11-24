@@ -3838,10 +3838,12 @@
       "responsibility": "Completion decision and engine orchestration",
       "files": ["codey/completion/decision.py", "codey/completion/engine.py"],
       "id": "Q040C",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/test_completion_engine.py", "tests/test_completion_provider_illegal_row_blocks.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/completion/decision.py", "codey/completion/engine.py"],
+      "verified_files": ["codey/completion/decision.py", "codey/completion/engine.py"],
+      "tests": ["tests/test_completion_engine.py", "tests/test_completion_provider_illegal_row_blocks.py", "tests/test_completion_verification.py", "tests/test_coldstart_contract_cleanup.py"],
+      "reviewed_support": ["tests/test_completion_engine.py"],
+      "result": "Use typed verification evidence and preserve the complete decision while replacing its proof. Final 35 passed and 18 subtests passed. Scoped strict Any, Ruff and all production gates passed."
     },
     {
       "responsibility": "codey/completion: completion review and edit validation",

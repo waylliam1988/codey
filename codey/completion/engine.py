@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from codey.completion.decision import (
@@ -195,10 +195,4 @@ class CompletionEngine:
             workspace_fingerprint=evidence.workspace_fingerprint,
             project=project,
         )
-        return CompletionDecision(
-            proof=proof,
-            provenance=decision.provenance,
-            analysis_run_refs=decision.analysis_run_refs,
-            failure_class=decision.failure_class,
-            local_state=decision.local_state,
-        )
+        return replace(decision, proof=proof)

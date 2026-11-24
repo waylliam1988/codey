@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q040B，接续 Q040C。开放事项保存在治理队列。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q040C，接续 Q041。开放事项保存在治理队列。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1644,3 +1644,10 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 证明投影用结构化协议收窄 `to_payload`，读取历史行时以 `Mapping` 接受现有调用方。保序去重改为具体值类型的字典。一次中间注解把输入限制为 invariant `dict[object, object]`，全生产检查在 `kernel_contracts` 捕获。改为既有只读映射契约并复验，未改调用方。
 - 在 `D:\codey` 运行 `python -m pytest -q tests/test_completion_contract_invalid_check.py tests/test_completion_contract.py tests/test_completion_proof_authority.py tests/test_run_trace.py --tb=short`，最终 85 passed，0 skip，退出 0。两文件 mypy 严格 Any 由 9 条诊断降至 0，Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q040B 完成。累计完成 71/340 批，覆盖 133/1009 个生产文件。下一批 Q040C 为完成判定和引擎。
+
+
+### Q040C 完成判定和引擎
+
+- Q040B 已提交 `f251961d`。完整检查 `decision.py`、`engine.py` 和引擎测试。判定读取已精确标注的 `CheckEvidence` 字段，保留缺少失败回执时的默认值。诊断补充用 dataclass replace 更新已有决定的 proof，避免手动复制决策字段。计数夹具改为实例方法替身，移除过时的类型忽略。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_completion_engine.py tests/test_completion_provider_illegal_row_blocks.py tests/test_completion_verification.py --tb=short`，基线 32 passed、18 subtests passed。加入 `tests/test_coldstart_contract_cleanup.py::CompletionEvidenceDirectTests` 的最终复核 35 passed、18 subtests passed，无 skip，两个命令退出 0。最终三文件 mypy 严格 Any 由 4 条诊断降至 0，Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 与 kernel_type_precision_gate 均退出 0。
+- Q040C 完成。累计完成 72/340 批，覆盖 135/1009 个生产文件。下一批 Q041 为编辑完整性监测。
