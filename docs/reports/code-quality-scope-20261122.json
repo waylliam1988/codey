@@ -3593,15 +3593,19 @@
         "tests/test_browser_worker.py",
         "tests/stress/test_browser_worker_generations.py",
         "tests/test_server_lazy_state.py",
-        "tests/test_browser_worker_result.py"
+        "tests/test_browser_worker_result.py",
+        "tests/test_browser_worker_close_outcome.py"
       ],
       "reviewed_support": [
         "tests/test_browser_worker.py",
         "tests/stress/test_browser_worker_generations.py",
-        "tests/test_browser_worker_result.py"
+        "tests/test_browser_worker_result.py",
+        "tests/test_browser_worker_close_outcome.py"
       ],
+      "result": "Worker returns exception-valued results and reports the close error when cancellation cleanup completes before the calling thread polls. Final 28 passed and 6 subtests passed. Four tests passed strict Any and whole-production mypy, Pyrefly, ty and the kernel precision gate passed.",
       "follow_up": [
-        "Preserve variadic callback compatibility while separating worker control parameters from callback binding. Eight strict Any diagnostics remain at Callable ellipsis entry and forwarding sites."
+        "Preserve variadic callback compatibility while separating worker control parameters from callback binding. Eight strict Any diagnostics remain at Callable ellipsis entry and forwarding sites.",
+        "Investigate the interval between a worker claiming a queued job and publishing it as the current job. Static control-flow evidence only so far."
       ]
     },
     {

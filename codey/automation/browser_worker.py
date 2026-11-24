@@ -162,6 +162,7 @@ class BrowserWorker:
                     if current.state == _JobState.QUEUED:
                         current.state = _JobState.CANCELLED
                     elif current.state == _JobState.RUNNING:
+                        current.outcome = self._close_error
                         current.state = _JobState.ABANDONED
         with contextlib.suppress(Exception):
             self._thread.join(timeout=max(0.0, float(timeout)))
