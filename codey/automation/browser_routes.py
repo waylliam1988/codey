@@ -27,7 +27,10 @@ class RouteReply:
 
     def fulfill(self, *, status: int = 200, content_type: str | None = None,
                 headers: dict[str, str] | None = None, body: str | bytes | None = None) -> None:
-        response_headers: JsonObject = {key: value for key, value in (headers or {}).items()}
+        response_headers: JsonObject = {
+            key: value for key, value in (headers or {}).items()
+            if content_type is None or key.lower() != "content-type"
+        }
         if content_type is not None:
             response_headers["content-type"] = content_type
         self.decision = {"decision": "fulfill", "status": status, "headers": response_headers}

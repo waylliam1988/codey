@@ -3552,7 +3552,8 @@
       ],
       "result": "Clipboard writes require a readable original text snapshot and attempt restoration even when the temporary write acknowledgement is lost. Oversized image coordinates produce the existing ValueError. Three failures before and all five tests pass after. Final six direct and twelve provider tests passed. Strict Any and all configured type and precision gates passed. Commit clipboard and image changes separately.",
       "commits": [
-        "83232c41"
+        "83232c41",
+        "42f25d6f"
       ]
     },
     {
@@ -3561,14 +3562,23 @@
       "files": [
         "codey/automation/browser_routes.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/automation/browser_routes.py"
+      ],
+      "verified_files": [
+        "codey/automation/browser_routes.py"
+      ],
       "tests": [
         "tests/test_browser_file_upload.py",
         "tests/test_browser_file_download.py",
-        "tests/test_browser_failed_source_retention.py"
-      ]
+        "tests/test_browser_failed_source_retention.py",
+        "tests/test_browser_route_content_type.py"
+      ],
+      "reviewed_support": [
+        "tests/test_browser_route_content_type.py"
+      ],
+      "result": "Explicit content_type now replaces any case variant of the same HTTP field before serialization. Original wire regression detected the conflicting field, while current Chromium already rendered the intended type. Final 13 passed. Scoped strict Any, Pyrefly, ty, Ruff and all production and precision gates passed."
     },
     {
       "id": "Q031D",
@@ -7869,6 +7879,7 @@
     "tests/test_browser_research_direct_steps.py",
     "tests/test_browser_research_gate.py",
     "tests/test_browser_result_adoption_ab.py",
+    "tests/test_browser_route_content_type.py",
     "tests/test_browser_scope_channels.py",
     "tests/test_browser_scope_probe_audit.py",
     "tests/test_browser_search_recovery.py",
