@@ -1,42 +1,66 @@
-"""Project retry task text into each final API request window."""
+"""Carry the kernel's task text boundaries into the final API request view."""
 from __future__ import annotations
 
-import re
+from dataclasses import dataclass
+
+from codey.types.json_value import decode_json_object, require_json_boolean, require_json_integer, require_json_string
+from codey.utils.object_fields import object_fields, sequence_items
 
 TASK_HEADING = "User task (verbatim):\n"
-_RETRY_HEADER = re.compile(r"Codey retry task \(([0-9]{1,8}) characters\):\n")
+TASK_PROMPT_KEY = "_codey_task_prompt"
 
 
-def retry_task_prompt(task: str, repair: str, *, scoped: bool) -> str:
-    heading = f"Codey retry task ({len(task)} characters):\n" if scoped else TASK_HEADING
-    return heading + task + "\n\n" + repair
+@dataclass(frozen=True)
+class TaskPromptSpan:
+    run_id: str
+    end: int
+    retry: bool
+
+    @classmethod
+    def for_task(cls, run_id: str, task: str, *, retry: bool) -> TaskPromptSpan | None:
+        return cls(run_id, len(TASK_HEADING) + len(task), retry) if task else None
+
+    @classmethod
+    def read(cls, value: object) -> TaskPromptSpan:
+        row = decode_json_object(value)
+        run_id = require_json_string(row.get("run_id"), "task prompt run")
+        end = require_json_integer(row.get("end"), "task prompt end")
+        retry = require_json_boolean(row.get("retry"), "task prompt retry")
+        if not run_id or end <= len(TASK_HEADING) or set(row) != {"run_id", "end", "retry"}:
+            raise ValueError("invalid task prompt span")
+        return cls(run_id, end, retry)
+
+    def task(self, text: str) -> str:
+        if not text.startswith(TASK_HEADING) or text[self.end:self.end + 2] != "\n\n":
+            raise ValueError("task prompt span differs from the frozen text")
+        return text[len(TASK_HEADING):self.end]
 
 
-def _retry_parts(text: str) -> tuple[str, str] | None:
-    match = _RETRY_HEADER.match(text)
-    if match is None:
-        return None
-    end = match.end() + int(match[1])
-    if text[end:end + 2] != "\n\n":
-        return None
-    return text[match.end():end], text[end + 2:]
+def _text_field(item: dict[str, object]) -> tuple[dict[str, object], str]:
+    content = item.get("content")
+    if (sequence_items(content) and content and object_fields(part := content[0])
+            and part.get("type") in ("text", "input_text")):
+        return part, "text"
+    return item, "content"
 
 
 def project_retry_tasks(items: list[dict[str, object]]) -> None:
-    retries: list[tuple[dict[str, object], str, str]] = []
-    originals: list[str] = []
+    """Project only kernel-marked task spans, after selecting the outgoing window."""
+    retries: list[tuple[dict[str, object], str, str, TaskPromptSpan, tuple[str, str]]] = []
+    retained: set[tuple[str, str]] = set()
     for item in items:
-        content = item.get("content")
-        if item.get("role") != "user" or not isinstance(content, str):
+        raw = item.pop(TASK_PROMPT_KEY, None)
+        if raw is None or item.get("role") != "user":
             continue
-        if content.startswith(TASK_HEADING):
-            originals.append(content.removeprefix(TASK_HEADING))
-        elif (parts := _retry_parts(content)) is not None:
-            retries.append((item, *parts))
-    retained: set[str] = set()
-    for item, task, repair in reversed(retries):
-        if task in retained or any(text == task or text.startswith(task + "\n\n") for text in originals):
-            item["content"] = repair
+        field, key = _text_field(item)
+        text = require_json_string(field.get(key), "task prompt text")
+        span = TaskPromptSpan.read(raw)
+        identity = (span.run_id, span.task(text))
+        if span.retry:
+            retries.append((field, key, text, span, identity))
         else:
-            item["content"] = TASK_HEADING + task + "\n\n" + repair
-        retained.add(task)
+            retained.add(identity)
+    for field, key, text, span, identity in reversed(retries):
+        if identity in retained:
+            field[key] = text[span.end + 2:]
+        retained.add(identity)

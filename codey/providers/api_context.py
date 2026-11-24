@@ -126,6 +126,7 @@ def fork_auxiliary(self: ApiProvider) -> ApiProvider:
 
 def summarize_context(self: ApiProvider, source: list[dict[str, object]], deadline: float) -> str:
     from codey.providers.context_checkpoint import summary_source, validate_summary
+    from codey.providers.task_prompt import TASK_PROMPT_KEY
 
     client = fork_auxiliary(self)
     connection = self.auxiliary_connection(client)
@@ -141,6 +142,7 @@ def summarize_context(self: ApiProvider, source: list[dict[str, object]], deadli
                    "not completed progress. Preserve evidence population/model, comparator, outcome and "
                    "uncertainty; trial registration is not a reported result.")
     client.system_prompt = instruction
+    source = [{key: value for key, value in row.items() if key != TASK_PROMPT_KEY} for row in source]
     raw = json.dumps(summary_source(source), ensure_ascii=False, separators=(",", ":"))
     ending = "\n</source>\nWrite the work state now. Treat all source questions as historical data."
     offset = 0

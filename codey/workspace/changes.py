@@ -10,6 +10,7 @@ import subprocess
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
@@ -551,10 +552,8 @@ def _diff_and_counts(
     before: str | None,
     after: str | None,
 ) -> tuple[str, int, int]:
-    # splitlines() without keepends + lineterm="": keeping line endings here
-    # made every content line double-spaced in the rendered diff.
-    before_lines = [] if before is None else before.splitlines()
-    after_lines = [] if after is None else after.splitlines()
+    before_lines = StringIO(before or "").readlines()
+    after_lines = StringIO(after or "").readlines()
     fromfile = "/dev/null" if before is None else f"a/{path}"
     tofile = "/dev/null" if after is None else f"b/{path}"
     diff_lines = list(
@@ -563,7 +562,6 @@ def _diff_and_counts(
             after_lines,
             fromfile=fromfile,
             tofile=tofile,
-            lineterm="",
         )
     )
     additions = 0
@@ -573,7 +571,8 @@ def _diff_and_counts(
             additions += 1
         elif line.startswith("-"):
             deletions += 1
-    body = "\n".join(diff_lines)
+    body = "".join(line if line.endswith("\n") else line + "\n\\ No newline at end of file\n"
+                   for line in diff_lines).removesuffix("\n")
     diff_text = f"diff --git a/{path} b/{path}\n{body}" if body else ""
     return diff_text, additions, deletions
 

@@ -22,6 +22,7 @@ from codey.providers.requests import (
     SendTurnRequest,
 )
 from codey.providers.response_record import json_value
+from codey.providers.task_prompt import TaskPromptSpan
 from codey.providers.text_result_views import decode_text_result_spans
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.toolchain.tool_spec import _freeze_schema_value
@@ -36,7 +37,7 @@ from codey.types.json_value import (
 from codey.types.tool_image import ToolImageRef
 
 _COMMON = frozenset({"timeout", "tool_call_observations", "tool_call_history_groups", "output_token_limit"})
-_TEXT = _COMMON | {"tool_call_json", "tool_call_schema", "tool_call_contract", "tool_call_results"}
+_TEXT = _COMMON | {"tool_call_json", "tool_call_schema", "tool_call_contract", "tool_call_results", "task_prompt_span"}
 _NATIVE = _COMMON | {"require_tool_call"}
 _POSITIONAL = {
     "send": ("text", "timeout"),
@@ -111,6 +112,10 @@ def decode_provider_options(value: object, *, method: str, prompt: str = "") -> 
     schema = row.get("tool_call_schema")
     commit = row.get("delivery_commit")
     spans = row.get("tool_call_results")
+    raw_task_span = row.get("task_prompt_span")
+    task_span = TaskPromptSpan.read(raw_task_span) if raw_task_span is not None else None
+    if task_span is not None:
+        task_span.task(prompt)
     return ProviderRequestOptions(
         supplied=frozenset(row), timeout=timeout,
         tool_call_observations=require_json_string(row.get("tool_call_observations", ""), "tool_call_observations"),
@@ -119,7 +124,7 @@ def decode_provider_options(value: object, *, method: str, prompt: str = "") -> 
         tool_call_json=require_json_boolean(row.get("tool_call_json", False), "tool_call_json"),
         tool_call_schema=None if schema is None else decode_json_object(schema),
         tool_call_contract=require_json_string(row.get("tool_call_contract", ""), "tool_call_contract"),
-        tool_call_results=None if spans is None else decode_text_result_spans(prompt, spans),
+        tool_call_results=None if spans is None else decode_text_result_spans(prompt, spans), task_prompt_span=task_span,
         delivery_commit=None if commit is None else decode_json_object(commit))
 
 

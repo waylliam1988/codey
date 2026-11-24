@@ -21,6 +21,7 @@ from codey.operations.kernel_contracts import (
 from codey.policies.browser_requirement import RESEARCH_PREFIX
 from codey.policies.tool_requirement import has_browser_field_bindings, parse_tool_success_check
 from codey.providers.base import AssistantTurn, ProviderToolResult
+from codey.providers.task_prompt import TASK_HEADING, TaskPromptSpan
 from codey.runtime.core import operation_payload
 from codey.runtime.core.operation_payload import (
     RuntimeExecutionCounters,
@@ -225,18 +226,19 @@ def _retry_snapshot(context: KernelContext, received: ReceivedProviderTurn, *, t
     return snapshot, None
 
 
-def _retry_prompt(context: KernelContext, snapshot: TurnSnapshot, decision: RetryDecision, *, text_reply: bool) -> str:
+def _retry_prompt(context: KernelContext, snapshot: TurnSnapshot, decision: RetryDecision, *,
+                  text_reply: bool) -> tuple[str, TaskPromptSpan | None]:
     from codey.operations.edit_base import bound_symbol_retry
 
     task = str(context.transport.user_task or context.session.task_text).strip()
     if bound_symbol_retry(snapshot) is not None and not decision["error"]:
-        return task
+        return task, None
     # A retry can be sent over a newly connected provider with no warm chat history.
     if text_reply and task:
-        from codey.providers.task_prompt import retry_task_prompt
-
-        return retry_task_prompt(task, decision["prompt"], scoped=context.request_scoped_context)
-    return decision["prompt"]
+        span = (TaskPromptSpan.for_task(context.sink.run_id, task, retry=True)
+                if context.request_scoped_context and context.capabilities.request_scoped_tool_context else None)
+        return TASK_HEADING + task + "\n\n" + decision["prompt"], span
+    return decision["prompt"], None
 
 
 def prepare_control_delivery(context: KernelContext, state: RuntimeOperationState) -> None:
@@ -290,14 +292,14 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
                 research.store if research is not None else None,
                 research.session_id if research is not None else "", research_scope=snapshot.research_scope,
                 tool_names=snapshot.tool_names)
-        retry_prompt = _retry_prompt(context, snapshot, decision, text_reply=messages is None)
+        retry_prompt, task_span = _retry_prompt(context, snapshot, decision, text_reply=messages is None)
         prompt = "\n\n".join(part for part in (observations, retry_prompt) if part)
         if messages is not None:
             messages = [ProviderToolResult(identity, "ERROR: " + (decision["error"] or prompt)) for identity in ids]
             if decision["error"]:
                 messages[-1] = replace(messages[-1], user_content=prompt)
         context.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages,
-                       counters=counters, handoff=handoff)
+                       counters=counters, handoff=handoff, task_span=task_span)
         return
     if decision["purpose"] == "question":
         from codey.durable.questions import DurableUserQuestionStore

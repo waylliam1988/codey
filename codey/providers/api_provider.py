@@ -354,12 +354,19 @@ class ApiProvider:
     def send(self, text: str, timeout: float | None = None, *, tool_call_json: bool = False,
              tool_call_schema: dict[str, object] | None = None, tool_call_contract: str = "",
              tool_call_results: list[dict[str, object]] | None = None, tool_call_observations: str = "",
-             tool_call_history_groups: int = 0, output_token_limit: int = 0) -> str:
+             tool_call_history_groups: int = 0, output_token_limit: int = 0,
+             task_prompt_span: object = None) -> str:
         if tool_call_json and self.text_tool_format != "json_schema":
             raise ValueError("JSON tool format is not enabled for this provider")
         if tool_call_schema is not None and not tool_call_json:
             raise ValueError("tool schema requires JSON tool format")
         pending: dict[str, object] = {"role": "user", "content": text}
+        if task_prompt_span is not None:
+            from codey.providers.task_prompt import TASK_PROMPT_KEY, TaskPromptSpan
+
+            span = TaskPromptSpan.read(task_prompt_span)
+            span.task(text)
+            pending[TASK_PROMPT_KEY] = asdict(span)
         if tool_call_results is not None:
             from codey.providers.text_result_views import TEXT_RESULTS_KEY, validate_text_results
 

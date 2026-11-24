@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.task_diff import load_task_changes, record_task_changes
 from codey.storage.managed_outputs import ManagedOutputStore
@@ -73,3 +75,21 @@ def test_task_diff_counts_content_that_begins_with_diff_markers(tmp_path: Path) 
     assert collect_task_changes(tmp_path, tracker)["files"] == [
         {"path": path.name, "status": "M", "additions": 1, "deletions": 1},
     ]
+
+
+@pytest.mark.parametrize(("before", "after", "hunk"), [
+    ("line", "line\n", "-line\n\\ No newline at end of file\n+line"),
+    ("line\n", "line", "-line\n+line\n\\ No newline at end of file"),
+])
+def test_task_diff_retains_end_of_file_newline_change(tmp_path: Path, before: str, after: str, hunk: str) -> None:
+    path = tmp_path / "source.txt"
+    path.write_bytes(before.encode())
+    tracker = ChangeTracker(tmp_path)
+    tracker.capture_before(path.name)
+    path.write_bytes(after.encode())
+    tracker.capture_after(path.name)
+
+    result = collect_task_changes(tmp_path, tracker)
+    body = result["diff"]
+    assert isinstance(body, str) and body.endswith("@@ -1 +1 @@\n" + hunk)
+    assert result["files"] == [{"path": path.name, "status": "M", "additions": 1, "deletions": 1}]

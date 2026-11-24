@@ -312,7 +312,10 @@ export interface ChangesDrawerDeps {
 
   function chunksForPath(chunks: DiffChunk[], path: string): DiffChunk[] {
     const target = (path || '').replace(/\\/g, '/');
-    return chunks.filter((c) => c.path === target || c.path.endsWith('/' + target));
+    return chunks.filter((chunk) => {
+      const candidate = chunk.path.replace(/\\/g, '/');
+      return candidate === target || (!activeRun && candidate.endsWith('/' + target));
+    });
   }
 
   function changeFileNode(file: ChangesData['files'][number]): ChangeNode {
@@ -507,6 +510,10 @@ export interface ChangesDrawerDeps {
           `<span class="diff-line del"><span class="ln">${oldLine || ''}</span><span class="mark">-</span>${escapeHtml(line.slice(1) || ' ')}</span>`,
         );
         oldLine += 1;
+        continue;
+      }
+      if (line === '\\ No newline at end of file') {
+        out.push(`<span class="diff-line meta">${escapeHtml(line)}</span>`);
         continue;
       }
       if (line) {

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field, fields
 from typing import ClassVar, Literal, TypeAlias
 
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
+from codey.providers.task_prompt import TaskPromptSpan
 from codey.providers.text_result_views import TextResultSpan
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.types.json_value import JsonObject
@@ -30,6 +31,7 @@ class ProviderRequestOptions:
     tool_call_schema: JsonObject | None = None
     tool_call_contract: str = ""
     tool_call_results: tuple[TextResultSpan, ...] | None = None
+    task_prompt_span: TaskPromptSpan | None = None
     delivery_commit: JsonObject | None = None
 
     def __post_init__(self) -> None:

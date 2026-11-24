@@ -46,6 +46,7 @@ from codey.providers.requests import (
     SendToolResultsRequest,
     SendTurnRequest,
 )
+from codey.providers.task_prompt import TaskPromptSpan
 from codey.providers.text_result_views import TextResultSpan
 from codey.runtime.core import operation_payload
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
@@ -466,7 +467,7 @@ class KernelContext:
                counters: RuntimeExecutionCounters | None = None,
                text_result_spans: tuple[TextResultSpan, ...] = (),
                coding_context_prepared: bool = False, initial_source_batch: bool = False,
-               handoff: str | None = None) -> None:
+               handoff: str | None = None, task_span: TaskPromptSpan | None = None) -> None:
         from codey.operations.explanation_repair import active, repair_messages, repair_prompt, repair_snapshot
         from codey.operations.provider_request import prepare_provider_request
 
@@ -477,6 +478,7 @@ class KernelContext:
             decision = self.decision(state) if state.leaf == operation_payload.LEAF_CONTROL_READY else None
             prompt = repair_prompt(self.session, self.completion_context, snapshot, native=self.native, decision=decision)
             text_result_spans = ()
+            task_span = None
             coding_context_prepared = True
             messages = repair_messages(messages, prompt, rejected_control=state.leaf == operation_payload.LEAF_CONTROL_READY)
         elif handoff is None and not acknowledge:
@@ -511,7 +513,7 @@ class KernelContext:
                 or (state.leaf == operation_payload.LEAF_TOOL_DELIVERY_PENDING and not initial_source_batch) else "",
             tool_task_notifications=notification_refs)
         tools = tuple(tools_from_specs(snapshot.model_specs))
-        options = ProviderRequestOptions()
+        options = ProviderRequestOptions(task_prompt_span=task_span)
         coding = ""
         # Full-turn prompts already contain their prepared context. Native
         # continuations still need a fresh projection after tool execution.
@@ -619,6 +621,9 @@ class KernelContext:
         if not self.attempt_gate_bound:
             record_outbound(self.observation.trace_recorder, prompt, admission=admission)
         progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)
+        task = str(self.transport.user_task or self.session.task_text or "").strip()
+        task_span = (TaskPromptSpan.for_task(self.sink.run_id, task, retry=False)
+                     if self.request_scoped_context and self.capabilities.request_scoped_tool_context else None)
         if not self.request_scoped_observations:
             prompt = "\n\n".join(part for part in (prompt, task_working_context(
                 self.session, self.execution.research_tools.ledger if self.execution.research_tools is not None else None,
@@ -628,7 +633,7 @@ class KernelContext:
                 provider=self.provider)) if part)
         self.freeze(state, snapshot, turn=turn, prompt=prompt, handoff=handoff,
                     counters=replace(state.counters, progress=progress.snapshot()),
-                    coding_context_prepared=True, initial_source_batch=prefetched is not None)
+                    coding_context_prepared=True, initial_source_batch=prefetched is not None, task_span=task_span)
 
     def prefetch_required_sources(self, snapshot: TurnSnapshot) -> bool:
         from codey.operations.browser_detail import initial_query_access
