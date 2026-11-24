@@ -37,7 +37,9 @@ class NativeInput:
         if self.keys:
             await self.release(page)
         keys = chord.split("+") if chord != "+" else ["+"]
-        if not keys or any(not key for key in keys):
+        if chord.endswith("++"):
+            keys[-2:] = ["+"]
+        if any(not key for key in keys):
             raise ValueError("invalid_key_chord")
         await handle.focus()
         try:

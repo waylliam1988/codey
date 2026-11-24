@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 1009,
   "region_count": 40,
-  "batch_count": 330,
+  "batch_count": 333,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -170,6 +170,9 @@
         "Q030C",
         "Q030D",
         "Q031",
+        "Q031B",
+        "Q031C",
+        "Q031D",
         "Q032"
       ],
       "direct_dependencies": [
@@ -3480,24 +3483,86 @@
       "reviewed_support": [
         "tests/test_browser_native_disclosure.py"
       ],
-      "result": "Observe the first native summary child even after a hidden preceding element is inserted, and omit that exact summary when requiring a nonempty body. Real Chromium regression failed then passed. Baseline and final integration 17 passed; combined 18 passed. Scoped strict Any, Pyrefly, ty and Ruff, production types and precision passed."
+      "result": "Observe the first native summary child even after a hidden preceding element is inserted, and omit that exact summary when requiring a nonempty body. Real Chromium regression failed then passed. Baseline and final integration 17 passed; combined 18 passed. Scoped strict Any, Pyrefly, ty and Ruff, production types and precision passed.",
+      "commits": [
+        "7194ea3c"
+      ]
     },
     {
-      "responsibility": "codey/automation: browser contracts and interaction",
+      "responsibility": "Native input, actionability, and browser invocation identity",
       "files": [
-        "codey/automation/browser_images.py",
         "codey/automation/browser_input.py",
         "codey/automation/browser_invocation.py",
-        "codey/automation/browser_native_input.py",
-        "codey/automation/browser_routes.py",
-        "codey/automation/browser_worker.py",
-        "codey/automation/web_clipboard.py"
+        "codey/automation/browser_native_input.py"
       ],
       "id": "Q031",
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/automation/browser_input.py",
+        "codey/automation/browser_invocation.py",
+        "codey/automation/browser_native_input.py"
+      ],
+      "verified_files": [
+        "codey/automation/browser_input.py",
+        "codey/automation/browser_invocation.py",
+        "codey/automation/browser_native_input.py"
+      ],
+      "candidate_test_count": 10,
+      "tests": [
+        "tests/test_browser_native_chord.py",
+        "tests/test_browser_native_actions.py::test_native_keys_selection_checkbox_and_hover",
+        "tests/test_browser_process.py::test_worker_loss_during_chord_releases_recorded_keys_on_exact_reconnect",
+        "tests/test_browser_interaction.py"
+      ],
+      "reviewed_support": [
+        "tests/test_browser_native_chord.py"
+      ],
+      "result": "Real Chromium press rejected Control++ despite native literal plus-key chord syntax. Final test confirms delivery with Ctrl pressed while an incomplete Control+ sends no input. Direct 14 passed. Scoped strict Any and static gates and full production and precision gates passed."
+    },
+    {
+      "id": "Q031B",
+      "responsibility": "Image and clipboard observation output",
+      "files": [
+        "codey/automation/browser_images.py",
+        "codey/automation/web_clipboard.py"
+      ],
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 10
+      "tests": [
+        "tests/test_browser_native_actions.py",
+        "tests/test_web_clipboard.py"
+      ]
+    },
+    {
+      "id": "Q031C",
+      "responsibility": "Parent browser route decision transport",
+      "files": [
+        "codey/automation/browser_routes.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": [
+        "tests/test_browser_file_upload.py",
+        "tests/test_browser_file_download.py",
+        "tests/test_browser_failed_source_retention.py"
+      ]
+    },
+    {
+      "id": "Q031D",
+      "responsibility": "Synchronous browser job worker and session worker lifetimes",
+      "files": [
+        "codey/automation/browser_worker.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": [
+        "tests/test_browser_worker.py",
+        "tests/stress/test_browser_worker_generations.py",
+        "tests/test_server_lazy_state.py"
+      ]
     },
     {
       "responsibility": "codey/automation: browser contracts and interaction",
@@ -7756,6 +7821,7 @@
     "tests/test_browser_ipc_contract.py",
     "tests/test_browser_leaf_exposure_ab.py",
     "tests/test_browser_native_actions.py",
+    "tests/test_browser_native_chord.py",
     "tests/test_browser_native_disclosure.py",
     "tests/test_browser_navigation_continuation.py",
     "tests/test_browser_navigation_handoff.py",
@@ -9512,6 +9578,16 @@
         "Q030D"
       ],
       "reason": "Document/frame and reference ownership has separate tests from snapshot presentation, record/query observation, and detail disclosure. All nine source files retain one owner."
+    },
+    {
+      "batch": "Q031",
+      "replacement": [
+        "Q031",
+        "Q031B",
+        "Q031C",
+        "Q031D"
+      ],
+      "reason": "Input/actionability, output capture, parent route transport and the legacy worker lifetime have independent contracts and verification. All seven files retain an owner."
     }
   ]
 }

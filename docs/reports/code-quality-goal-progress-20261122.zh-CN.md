@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q030D。Q030C 的查询身份修复已验证，研究调用方待跟进。下一批为 Q031。保留历史验收，复核后续提交实际影响的范围。
+当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q031。Q030C 的查询身份修复已验证，研究调用方待跟进。下一批为 Q031B。保留历史验收，复核后续提交实际影响的范围。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1470,3 +1470,12 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 真实 worker 页面先有 Shipping address 和 Empty details 两个原生详情，随后在两个摘要前分别插入一个隐藏 span。 `python -m pytest -q tests/test_browser_native_disclosure.py --tb=short` 修改前 1 failed、退出 1，观察列表为空。按第一个直接 summary 子元素识别，正文判定排除同一节点。按原选择读取 Dock 27，空详情不进入选择，页面保持折叠。相同用例修改后 1 passed、退出 0。收敛两处相同的任务 URL 去除模式。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_detail_production.py tests/test_browser_linked_record.py --tb=short`，基线与最终均 17 passed，退出 0。最终合计 18 项通过，无跳过。两源及回归定向严格 mypy、Pyrefly、ty 和 Ruff 均退出 0。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 和 kernel_type_precision_gate 均通过。
 - Q030D 完成。累计 53/330 批，完成批覆盖 106/1009 个生产文件。接续 Q031。
+
+
+### Q031 原生输入和调用身份
+
+- Q030D 已提交 `7194ea3c`。原 Q031 按原生输入、截图与剪贴板、父侧路由和同步 worker 生命周期拆为 Q031 至 Q031D。7 个生产文件都有归属，队列为 333 批。当前完整检查 browser_input、browser_invocation、browser_native_input。旧同步 actionability 函数保留，当前异步运行时复用同文件的实际命中测试。
+- Playwright 原生键盘文法允许末键是字面 `+`，所以 `Control++` 是 Ctrl 加加号键。真实 Chromium 中 `python -m pytest -q tests/test_browser_native_chord.py --tb=short` 修改前 1 failed、退出 1，错误为 invalid_key_chord。解析时保留这个末键后，真实输入事件收到 Ctrl 和加号。缺少末键的 `Control+` 仍拒绝且无输入变化。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_native_actions.py::test_native_keys_selection_checkbox_and_hover tests/test_browser_process.py::test_worker_loss_during_chord_releases_recorded_keys_on_exact_reconnect tests/test_browser_interaction.py --tb=short`，基线 13 passed。最终同命令加入 `tests/test_browser_native_chord.py`，14 passed，无跳过，退出 0。
+- 三源和新回归的定向严格 mypy、Pyrefly、ty、Ruff 均通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 和 kernel_type_precision_gate 均通过。日志 `.e2e-artifacts/code-quality-20261122/q031-*.log`。
+- Q031 完成。累计 54/333 批，完成批覆盖 109/1009 个生产文件。下一批 Q031B 为图片和剪贴板观察。
