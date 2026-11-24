@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Literal, TypeAlias, TypedDict
 
 from codey.durable.model import ArtifactRecord
+from codey.runtime.core.protocol_window import RESPONSES_REASONING
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string
 
 
@@ -74,6 +75,8 @@ def tool_call_message(payload: object) -> dict[str, object]:
     ]}
     if reply["reasoning"].strip():
         message["reasoning_content"] = reply["reasoning"]
+    if isinstance(reasoning := reply["raw"].get(RESPONSES_REASONING), list) and reasoning:
+        message[RESPONSES_REASONING] = reasoning
     return message
 
 

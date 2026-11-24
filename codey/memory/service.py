@@ -31,7 +31,6 @@ from codey.memory.contracts import (
     MemoryRetentionPolicy,
     MemoryReview,
 )
-from codey.memory.slots import SLOTS
 from codey.runtime.core.cancellation import DeadlineExceeded, TaskCancelled
 from codey.types.json_value import JsonValue
 
@@ -58,7 +57,7 @@ def _preferred_slots(items: tuple[MemoryItem, ...], scopes: tuple[str, ...]) -> 
     scoped = sorted(items, key=lambda item: (item.scope == "user", scopes.index(item.scope)))
     preferred: dict[str, str] = {}
     for item in scoped:
-        if item.kind == "preference" and item.slot in SLOTS:
+        if item.kind == "preference" and item.slot:
             preferred.setdefault(item.slot, item.item_id)
     return preferred
 

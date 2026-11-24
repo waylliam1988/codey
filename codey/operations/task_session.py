@@ -95,6 +95,7 @@ class TaskSession:
     search_results: dict[str, str] = field(default_factory=dict)
     opened_sources: set[str] = field(default_factory=set)
     source_ids: dict[str, str] = field(default_factory=dict)
+    handoff_source_urls: tuple[str, ...] = ()
     hit_targets: dict[str, HitTarget] = field(default_factory=dict)
     evidence: list[dict[str, str]] = field(default_factory=list)
     edited_files: dict[str, int] = field(default_factory=dict)

@@ -8,12 +8,13 @@ from codey.durable.session import DurableSession
 from codey.knowledge.model import canonical_json
 from codey.operations.kernel_receipts import restore_result_receipt
 from codey.policies.redaction import looks_prompt_visible_secret
+from codey.research.passages import receipt_passages
 from codey.runtime.core.api_selection import ApiRunSelection
 from codey.runtime.effects.effect_records import RuntimeEffectProjection, RuntimeEffectStore
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.task.model import HandoffRun, ModelHandoffRejected
 from codey.toolchain.tool_spec import canonical_tool_name
-from codey.types.json_value import JsonObject, decode_json_value
+from codey.types.json_value import JsonObject, JsonValue, decode_json_value
 
 OBSERVATION_DENIALS = frozenset({
     "project.write", "project.verify", "browser.effect", "browser.interact", "shell.approval",
@@ -70,8 +71,14 @@ def _unknown_action(effect: RuntimeEffectProjection) -> bool:
 
 def render_model_handoff(source: TaskCheckpoint, effects: tuple[RuntimeEffectProjection, ...],
                          outputs: ManagedOutputStore | None) -> str:
+    return model_handoff_context(source, effects, outputs)[0]
+
+
+def model_handoff_context(source: TaskCheckpoint, effects: tuple[RuntimeEffectProjection, ...],
+                          outputs: ManagedOutputStore | None) -> tuple[str, tuple[str, ...]]:
     rows: list[JsonObject] = []
     unknown: list[JsonObject] = []
+    source_urls: dict[str, None] = {}
     for effect in reversed(effects):
         intent, settlement = effect.intent, effect.settlement
         if _unknown_action(effect):
@@ -91,12 +98,25 @@ def render_model_handoff(source: TaskCheckpoint, effects: tuple[RuntimeEffectPro
                 row[key] = decode_json_value(result.canonical[key])
         if settlement.exit_code is not None:
             row["exit_code"] = settlement.exit_code
-        if (result.ok and result.call.name in {"read_file", "open_url", "open_result", "browser_read"}
+        if result.ok and result.canonical.get("read_passages"):
+            passages = receipt_passages(result.canonical["research_observation"], result.canonical["read_passages"])
+            originals: list[JsonValue] = []
+            for passage in passages[:3]:
+                excerpt = passage.excerpt[:500]
+                if excerpt and not looks_prompt_visible_secret(excerpt) and not looks_prompt_visible_secret(passage.source.final_url):
+                    originals.append({"passage_ref": passage.ref, "url": passage.source.final_url,
+                        "source_hash": passage.source.text_hash, "start": passage.start,
+                        "end": passage.start + len(excerpt), "excerpt": excerpt})
+                    source_urls[passage.source.final_url] = None
+            if originals:
+                row["original_passages"] = originals
+        elif (result.ok and result.call.name == "read_file"
                 and not result.truncated and len(result.model_text) <= 900
                 and not looks_prompt_visible_secret(result.model_text)):
             row["observed_text"] = result.model_text
         rows.append(row)
-    return ("User-authorized model handoff. These references describe original work from the source run. "
-            "Check the current workspace or page before relying on its present state. Preserve completed work. "
+    text = ("User-authorized model handoff. Follow the current user task. The source run's receipts are evidence "
+            "of completed work. Reuse their observed contents and verify the current version of any file or page you change. "
             "An unknown action requires a read-only observation before any new action is authorized.\n"
             + canonical_json({"source_run": source.task_id, "receipts": rows, "unknown_actions": unknown}))
+    return text, tuple(source_urls)

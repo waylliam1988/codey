@@ -314,6 +314,8 @@ def project_event(connection: sqlite3.Connection, event: MemoryEvent) -> None:
         old = require_json_integer(previous.get("sequence"), "sequence") if previous else 0
         if sequence < old:
             raise ValueError("observation cursor cannot move backwards")
+        if "candidates" in event.payload:
+            _candidate_proposals(connection, event)
         save(connection, "cursors", "core", "user", {"sequence": sequence})
     elif event.kind in {"memory.maintenance_batch", "memory.retained"}:
         from codey.ghost.maintenance import project_batch, project_retention

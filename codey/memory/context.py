@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from codey.memory.codec import item_from_payload, unique_scopes
 from codey.memory.contracts import MemoryItem, MemoryQuery, MemoryTrace
 from codey.memory.service import MemoryService, utc_now
-from codey.memory.slots import SLOTS, temporary_slot_override
+from codey.memory.slots import temporary_slot_override
 from codey.runtime.core.cancellation import DeadlineExceeded, TaskCancelled
 from codey.types.json_value import parse_json_object
 from codey.utils.refs import digest_text
@@ -75,7 +75,7 @@ def retrieve_context(service: MemoryService | None, *, task: str, project: str, 
             continue
         # Render as quoted data. Memory does not introduce a system instruction
         # or confer verification, permission or completion authority.
-        confirmed = item.kind == "preference" and item.slot in SLOTS and any(
+        confirmed = item.kind == "preference" and any(
             ref.startswith(("user-confirmed:", "decision:")) for ref in item.source_refs
         )
         heading = ("User-confirmed preference for this scope. Apply when relevant unless the current user request "

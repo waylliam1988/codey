@@ -6,12 +6,23 @@ import re
 from collections.abc import Mapping, Sequence
 
 from codey.providers.error_classification import RequestPrepError
-from codey.runtime.core.protocol_window import ProviderBinding
-from codey.types.json_value import JsonObject, decode_json_object, require_json_string
+from codey.runtime.core.protocol_window import REPLAY_BINDING, RESPONSES_REASONING, ProviderBinding
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_string
 from codey.types.tool_image import TOOL_IMAGES_KEY
 
 _PORTABLE_ID = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
-_PRIVATE_STATE = frozenset({"reasoning", "reasoning_content", "signature", "thought_signature", "encrypted_content"})
+PRIVATE_STATE = frozenset({"reasoning", "reasoning_content", "signature", "thought_signature",
+                           "thoughtSignature", "encrypted_content", RESPONSES_REASONING})
+_PRIVATE_BLOCKS = frozenset({"reasoning", "thinking", "redacted_thinking", "thought"})
+
+
+def _portable_value(value: JsonValue) -> JsonValue:
+    if isinstance(value, dict):
+        return {key: _portable_value(item) for key, item in value.items() if key not in PRIVATE_STATE}
+    if isinstance(value, list):
+        return [_portable_value(item) for item in value if not (
+            isinstance(item, dict) and isinstance(kind := item.get("type"), str) and kind in _PRIVATE_BLOCKS)]
+    return value
 
 
 def transform_replay_messages(messages: Sequence[Mapping[str, object]], target_binding: ProviderBinding, *,
@@ -24,6 +35,8 @@ def transform_replay_messages(messages: Sequence[Mapping[str, object]], target_b
     extra: list[tuple[int, JsonObject]] = []
     for index, raw in enumerate(messages):
         row = decode_json_object(dict(raw))
+        origin = row.pop(REPLAY_BINDING, None)
+        keep_private = row.get("role") == "assistant" and origin == target_binding.to_payload()
         if not supports_images and row.pop(TOOL_IMAGES_KEY, None):
             row["content"] = str(row.get("content") or "") + "\nA prior tool result included an image. This connection can replay its text."
         if row.get("role") == "tool":
@@ -57,9 +70,17 @@ def transform_replay_messages(messages: Sequence[Mapping[str, object]], target_b
                     identity = _replay_id(original, target_binding.protocol, index, position, consumed)
                     calls[original] = identity
                     consumed.add(identity)
-                    portable.append({"id": identity, "type": "function", "function": call["function"]})
+                    keep_private = keep_private and identity == original
+                    portable.append({**call, "id": identity, "type": "function"})
                 row["tool_calls"] = list(portable)
-        replay.append((index, {key: value for key, value in row.items() if key not in _PRIVATE_STATE}))
+        if not keep_private and row.get("role") == "assistant":
+            row = decode_json_object(_portable_value(row))
+        elif not keep_private:
+            row = {key: value for key, value in row.items() if key not in PRIVATE_STATE}
+        if not keep_private and isinstance(portable_calls := row.get("tool_calls"), list):
+            row["tool_calls"] = [{"id": call["id"], "type": "function", "function": call["function"]}
+                                 for raw_call in portable_calls for call in (decode_json_object(raw_call),)]
+        replay.append((index, row))
     replay.extend(extra)
     return replay
 

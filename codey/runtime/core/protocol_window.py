@@ -12,6 +12,9 @@ import json
 from dataclasses import dataclass
 from uuid import uuid4
 
+REPLAY_BINDING = "_codey_replay_binding"
+RESPONSES_REASONING = "_codey_responses_reasoning"
+
 
 class WindowMismatch(ValueError):
     """A result or recovery request belongs to another protocol window."""

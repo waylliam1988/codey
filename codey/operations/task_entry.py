@@ -151,6 +151,7 @@ def start_task_session(frame: RunFrame, work: RunWork, policy: TaskPolicy, kind:
         task_text=request.task,
         required_source_urls=required_urls,
         handoff=frame.handoff,
+        handoff_source_urls=frame.handoff_source_urls,
         project_changes_required=request.project_changes_required is True,
         verification_forbidden=("project.verify" in policy.denied_capabilities),
     )

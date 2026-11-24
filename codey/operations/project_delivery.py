@@ -39,6 +39,7 @@ _LIVE_PAGE = re.compile(
     r"|(?:在|到)[^。！？\n]{0,24}(?:页面|网页|浏览器)[^。！？\n]{0,24}(?:核验|验证)[^。！？\n]{0,24}(?:修改|更新|结果)",
     re.I,
 )
+_VERIFY_PAGE_URL = re.compile(r"\s+(?:at\s+)?<?(https?://[^\s<>]+)", re.I)
 _EDIT_SCOPE = re.compile(
     r"(?:^|[.!?;。；\n]\s+)(?:please\s+)?(?:"
     r"(?:only\s+(?:edit|modify|change)|(?:edit|modify|change)\s+only)"
@@ -77,8 +78,8 @@ def _delivery_documentation(session: TaskSession) -> tuple[str, ...]:
 
 def observed_delivery_links(session: TaskSession) -> ProjectDeliveryLinks:
     checks = session.policy.required_checks
-    wants_specification = (SOURCE_BEFORE_EDIT in checks
-                           and "documented record format" in instruction_text(session.task_text).casefold())
+    task = instruction_text(session.task_text)
+    wants_specification = SOURCE_BEFORE_EDIT in checks and "documented record format" in task.casefold()
     wants_application = PAGE_AFTER_EDIT in checks
     if not session.project or not (wants_specification or wants_application):
         return ProjectDeliveryLinks()
@@ -88,8 +89,12 @@ def observed_delivery_links(session: TaskSession) -> ProjectDeliveryLinks:
             if check_fetch_url(match["url"], resolve=False) is None:
                 groups.setdefault(match["role"].casefold(), set()).add(match["url"])
     spec, app = (groups.get(role, set()) for role in ("record specification", "application browser page"))
+    declared = {url for clause in _LIVE_PAGE.finditer(task)
+                if (page_match := _VERIFY_PAGE_URL.match(task, clause.end())) is not None
+                and check_fetch_url(url := page_match[1].rstrip(".,;:!?。；"), resolve=False) is None}
+    application = declared or app
     return ProjectDeliveryLinks(next(iter(spec)) if wants_specification and len(spec) == 1 else "",
-                                next(iter(app)) if wants_application and len(app) == 1 else "")
+                                next(iter(application)) if wants_application and len(application) == 1 else "")
 
 
 def documented_verification_paths(session: TaskSession) -> tuple[str, ...]:
@@ -349,6 +354,13 @@ def project_citation_labels(session: TaskSession) -> tuple[str, ...]:
                 and session.source_ids.get(label) == url):
             labels[label] = None
     return tuple(labels)
+
+
+def original_handoff_citation(session: TaskSession) -> tuple[str, str] | None:
+    if len(session.handoff_source_urls) != 1 or not _CITE_SOURCES.search(instruction_text(session.task_text)):
+        return None
+    url, = session.handoff_source_urls
+    return session.source_id_for(url), url
 
 
 def _action_page(result: ToolResult) -> str:

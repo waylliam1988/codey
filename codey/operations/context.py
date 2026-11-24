@@ -51,6 +51,7 @@ class RunFrame:
     entry_policy: TaskPolicy | None = None
     entry_session: TaskSession | None = None
     entry_research_tools: ResearchTools | None = None
+    handoff_source_urls: tuple[str, ...] = ()
 
 
 @dataclass

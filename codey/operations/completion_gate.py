@@ -535,6 +535,25 @@ def _browser_completion_block(session: TaskSession, text: str, context: Completi
     return None
 
 
+def _render_task_citations(session: TaskSession, text: str) -> str:
+    if session.policy.strict_research or not session.policy.allows("web.read"):
+        return text
+    from codey.operations.chat_citations import render_source_citations
+    from codey.operations.project_delivery import original_handoff_citation, project_citation_labels
+    from codey.policies.output_requirement import is_output_check
+
+    required = project_citation_labels(session)
+    sources = session.source_ids
+    if original := original_handoff_citation(session):
+        label, url = original
+        sources = {**sources, label: url}
+        required = tuple(dict.fromkeys((*required, label)))
+    if session.task_kind == "chat" or required:
+        return render_source_citations(text, sources=sources, searches=session.search_results,
+            literal=any(is_output_check(check) for check in session.policy.required_checks), required_sources=required)
+    return text
+
+
 def _evaluate_inner(session: TaskSession, done_text: object, *, context: CompletionContext,
                     observations: Mapping[str, ToolObservation] | None,
                     metadata: BrowserMetadata | MetadataPending | None = None,
@@ -550,18 +569,11 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
         return GateVerdict(False, str(exc), None)
     if block := _browser_completion_block(session, text, context, metadata):
         return block
-    from codey.operations.project_delivery import project_citation_labels, project_delivery_checks
+    from codey.operations.project_delivery import project_delivery_checks
 
     try:
         text, report = prepare_research_completion(session, text, context)
-        project_citations = project_citation_labels(session) if not session.policy.strict_research else ()
-        if ((session.task_kind == "chat" or project_citations)
-                and not session.policy.strict_research and session.policy.allows("web.read")):
-            from codey.operations.chat_citations import render_source_citations
-            from codey.policies.output_requirement import is_output_check
-
-            text = render_source_citations(text, sources=session.source_ids, searches=session.search_results,
-                literal=any(is_output_check(check) for check in session.policy.required_checks), required_sources=project_citations)
+        text = _render_task_citations(session, text)
     except ValueError as exc:
         # Field paths, allowed references and acquisition guidance belong to
         # the domain preparation error; the generic exception handler hides them.

@@ -136,8 +136,7 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
             if read is not None:
                 hints.append("The updated application page is already open. Read its current contents: " + canonical_json(read))
         else:
-            hints.append("The observed project documentation names the application page. "
-                         "For verification after edits, navigate with target=task and read the opened application page.")
+            hints.append("The application verification page is bound. Navigate with target=task and read the opened page.")
     elif links.application and session.edited_files and not ready_for_page:
         hints.append("Finish the requested project changes and get current project checks before verifying the application page.")
         scope = tuple(dict.fromkeys((*context.scope_files, *session.verification_paths)))

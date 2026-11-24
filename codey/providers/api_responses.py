@@ -6,6 +6,7 @@ from collections.abc import Callable
 from codey.providers.api_codec import GenerationSettings
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult, TurnFinish
 from codey.providers.error_classification import OutputLengthError, RequestPrepError
+from codey.runtime.core.protocol_window import RESPONSES_REASONING
 from codey.toolchain.tool_spec import thaw_schema_value
 from codey.types.json_value import decode_json_object, parse_json_object
 
@@ -28,6 +29,9 @@ def encode_context(messages: list[dict[str, object]]) -> list[dict[str, object]]
             if TOOL_IMAGES_KEY in message:
                 result[-1][TOOL_IMAGES_KEY] = message[TOOL_IMAGES_KEY]
         elif message.get("role") == "assistant" and message.get("tool_calls"):
+            reasoning = message.get(RESPONSES_REASONING)
+            if isinstance(reasoning, list):
+                result.extend(dict(decode_json_object(item)) for item in reasoning)
             if message.get("content"):
                 result.append({"role": "assistant", "content": message["content"]})
             raw_calls = message["tool_calls"]
@@ -165,6 +169,7 @@ def decode_exchange(body: dict[str, object], *, text_only: bool,
     calls: list[ProviderToolCall] = []
     text: list[str] = []
     reasoning: list[str] = []
+    reasoning_items: list[dict[str, object]] = []
     for item in decoded_output:
         kind = item.get("type")
         if not limited and "status" in item and item["status"] != "completed":
@@ -202,9 +207,11 @@ def decode_exchange(body: dict[str, object], *, text_only: bool,
             if not isinstance(summary, list):
                 raise RuntimeError("Responses returned malformed reasoning summary")
             reasoning.extend(str(decode_json_object(part).get("text", "")) for part in summary)
+            reasoning_items.append(item)
         else:
             raise RuntimeError(f"unsupported Responses output item: {kind}")
     turn = AssistantTurn(text="\n".join(text), tool_calls=tuple(calls), reasoning="\n".join(reasoning),
+                         raw={RESPONSES_REASONING: reasoning_items} if calls and reasoning_items else {},
                          finish=TurnFinish.OUTPUT_LIMIT if limited else TurnFinish.COMPLETE)
     if limited and text_only:
         raise OutputLengthError("text-only output truncated; refusing incomplete text execution", turn=turn)
