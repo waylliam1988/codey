@@ -1254,7 +1254,7 @@ Q022 已提交：`2d23e891`（fix(knowledge): roll back failed rebuild worker ad
 
 Q022C 已提交：`87d0873f`（fix(memory): require task-only ownership for completion decisions）。
 
-### Q022D Memory management / explicit feedback（进行中）
+### Q022D Memory management / explicit feedback（已完成）
 
 - 两源memory_routes.py364行、memory_learning.py76行已完整读。入口/api/ghost/action由app_api.ghost_action_response唯一转发；管理action为明确字符串命令，ValueError按既有客户端错误返回400，后端/投影不可用才是503。候选确认、跨作用域、原话摘要与request_id内容不可改写的合同仍来自memory-boundary/completion文档；不把现有测试自动当正确答案。先运行管理/反馈基线及全文件Any，再复现复杂JSON action值可能错误进入503的路径。
 - 已确认summary中items/exposures两个列表过滤与现有_scoped_values完全同语义：同一state key读取、dict条件、scope tuple成员判定、顺序、行对象身份、异常及无额外副作用一致，可在行为基线后收敛。与输入类型bug分成独立提交，暂不同时修改。
@@ -1272,3 +1272,11 @@ Q022D action类型修复已提交：`bc7ff75b`（fix(memory): validate action ta
 
 - 在原外层服务错误保护内，单独捕获selected_scope的ValueError为400，后端ValueError、其他scope解析错误仍按原合同503。第一版直接拆成两外层try虽通过初始6项，却会漏捕scope解析OSError；追加保留原服务错误语义的对照实际 **1，1 failed，1.34秒**（q022d-summary-scope-control-before.json），这是本轮未提交初稿引入的回归，不冒充原仓库bug。改为嵌套边界后完整7项 **0，7 passed，1.54秒**，q022d-summary-after-controls.json。没有放宽断言/吞异常或把后端故障改成功。
 - 直接`python -m pytest -q tests/test_memory_summary_input.py tests/test_memory_action_input.py tests/test_memory_lifecycle.py tests/test_memory_learning_targets.py --tb=short` → **0，45 passed，4.31秒**，q022d-summary-direct.json；调用方`python -m pytest -q tests/test_memory_adaptation_flow.py tests/test_memory_boundary.py::test_review_routes_and_source_deletion --tb=short` → **0，6 passed，11.73秒**，q022d-summary-callers.json。当前51项互不重复，前一修复53项与之有交集，不机械相加为唯一覆盖。两完整源＋两完整新测试严格Any/Pyrefly/ty/Ruff0，runner强Any亦0，共5file，q022d-summary-local-*.json。生产mypy760/Pyrefly35suppressed166warnings/ty/precision串行均exit0，q022d-summary-production-*.json/q022d-summary-precision.json；第二修复具备独立提交条件，待summary过滤收敛后才整批结项。
+
+Q022D summary范围校验修复已提交：`458c9730`（fix(memory): classify summary scope validation as client errors）。
+
+- 重构前补充公共summary范围基线：以真实MemoryItem/MemoryExposure合同生成完整DTO，仅通过有类型export_state夹具给出混合session/foreign-project/user的快照，验证两个字段只保留当前session＋user且原相对顺序不变。当前旧循环实现完整summary脚本 **0，8 passed，1.70秒**，q022d-filter-baseline.json；这不是bug的修改前失败，而是行为保持基线。随后只将items/exposures的相同过滤交给现有_scoped_values，删除两处被替代的循环及其局部临时变量，无新抽象/公开API变更；原行对象不复制、字段读取位置与过滤次序不变。
+- 重构后`python -m pytest -q tests/test_memory_summary_input.py tests/test_memory_lifecycle.py::test_summary_of_parent_controls_excludes_child_denials tests/test_memory_learning_targets.py::test_management_calibration_does_not_include_another_project tests/test_memory_boundary.py::test_review_routes_and_source_deletion --tb=short` → **0，11 passed，2.09秒**，q022d-filter-after.json。这覆盖所有被修改summary行为的直接回归与scope/校准/管理消费者；action与feedback函数未在此重构改变，沿用明确未受影响的此前成功结果，不机械重跑整个已通过集合。
+- 本批各阶段实际执行过且验收仍有效的不重复节点并集为 **62 passed、0失败/0skip**（action9、summary最终8、lifecycle24、learning_targets5、feedback10、adaptation5、review-route1），不是把53＋51＋11相加；新summary过滤测试已在重构前后执行。两完整源＋两完整新脚本严格Any/Pyrefly/ty/Ruff全部0，runner强Any0（5file），q022d-filter-local-*.json。未全面阅读/修改的原脚本仅计行为执行，不宣称其整文件Any完成。
+- 最终生产门在真实重构后串行补验：mypy **0/760file**、Pyrefly **0/35suppressed/166warnings**、ty **0**、kernel precision **0**，q022d-final-production-*.json/q022d-final-precision.json，记录当前源码hash和起止HEAD，无测试或门禁进程遗留。前后两确定性bug均已保存有效失败→相同输入通过证据；类型原0的源未做强行改动，memory_learning仅检查/验证后保留。源导入/语法由真实pytest与三类型门验证，未触及前端/打包入口、发布资产或复制源码树。
+- Q022D两源声明范围验收完成，待独立过滤收敛提交。累计 **42/321完整批次、80/1006完整批次生产源**；另10个部分源独立验证，累计90。21条运行时依赖Any和Q021C浏览器/463Any仍未解决；总goal active，全仓未完成。下一主批Q023仅memory_maintenance.py的原scheduler维护适配与游标生命周期；用户审查报告始终不暂存。

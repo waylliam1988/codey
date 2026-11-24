@@ -65,12 +65,10 @@ def memory_summary(ctx: AppContext, query: dict[str, list[str]]) -> tuple[int, d
         pending = [{"proposal_id": proposal.proposal_id, "version": proposal.version, "relations": [edge.to_payload() for edge in proposal.relations],
                     "item": proposal.item.to_payload()} for value in scopes for proposal in ctx.memory.proposals(value)]
         state = ctx.memory.export_state()
-        values = state.get("items", [])
-        visible: list[JsonValue] = [item for item in values if isinstance(item, dict) and item.get("scope") in scopes] if isinstance(values, list) else []
+        visible = _scoped_values(state, "items", scopes)
         records = [{"item": record.item.to_payload(), "state": record.state, "superseded_by": record.superseded_by}
                    for record in ctx.memory.records(scopes)]
-        exposure_rows = state.get("exposures", [])
-        exposures: list[JsonValue] = [row for row in exposure_rows if isinstance(row, dict) and row.get("scope") in scopes] if isinstance(exposure_rows, list) else []
+        exposures = _scoped_values(state, "exposures", scopes)
         return 200, {"ok": True, "enabled": state.get("enabled", False), "items": visible,
                      "pending": pending, "records": records, "selected_scope": scope, "exposures": exposures,
                      "families": _scoped_values(state, "families", scopes), "learning": _scoped_values(state, "learning", scopes),
