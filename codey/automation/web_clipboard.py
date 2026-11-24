@@ -24,30 +24,31 @@ def copy_action_text(
         origin=origin,
     )
     try:
-        previous = page.evaluate("navigator.clipboard.readText()")
-    except Exception:
-        previous = None
-
-    sentinel = f"__CLIPBOARD_CHECK_{uuid.uuid4().hex}__"
-    try:
-        page.evaluate("(text) => navigator.clipboard.writeText(text)", sentinel)
+        previous: object = page.evaluate("navigator.clipboard.readText()")
     except Exception:
         return ""
+    if not isinstance(previous, str):
+        return ""
 
+    sentinel = f"__CLIPBOARD_CHECK_{uuid.uuid4().hex}__"
     copied: str = ""
     try:
+        try:
+            page.evaluate("(text) => navigator.clipboard.writeText(text)", sentinel)
+        except Exception:
+            return ""
         cancellation.check()
         action.click()
         deadline = monotonic() + max(0.0, timeout)
         while monotonic() < deadline:
-            copied = page.evaluate("navigator.clipboard.readText()") or ""
+            value: object = page.evaluate("navigator.clipboard.readText()")
+            copied = value if isinstance(value, str) else ""
             if copied != sentinel:
                 break
             cancellation.wait(0.1)
     finally:
-        restore = previous if previous is not None else ""
         with contextlib.suppress(Exception):
-            page.evaluate("(text) => navigator.clipboard.writeText(text)", restore)
+            page.evaluate("(text) => navigator.clipboard.writeText(text)", previous)
 
     if not copied or copied == sentinel:
         return ""

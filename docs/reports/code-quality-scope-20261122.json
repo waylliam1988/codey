@@ -3517,7 +3517,10 @@
       "reviewed_support": [
         "tests/test_browser_native_chord.py"
       ],
-      "result": "Real Chromium press rejected Control++ despite native literal plus-key chord syntax. Final test confirms delivery with Ctrl pressed while an incomplete Control+ sends no input. Direct 14 passed. Scoped strict Any and static gates and full production and precision gates passed."
+      "result": "Real Chromium press rejected Control++ despite native literal plus-key chord syntax. Final test confirms delivery with Ctrl pressed while an incomplete Control+ sends no input. Direct 14 passed. Scoped strict Any and static gates and full production and precision gates passed.",
+      "commits": [
+        "de1b7b7d"
+      ]
     },
     {
       "id": "Q031B",
@@ -3526,13 +3529,25 @@
         "codey/automation/browser_images.py",
         "codey/automation/web_clipboard.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
+      "status": "in_progress",
+      "reviewed_files": [
+        "codey/automation/browser_images.py",
+        "codey/automation/web_clipboard.py"
+      ],
       "verified_files": [],
       "tests": [
-        "tests/test_browser_native_actions.py",
-        "tests/test_web_clipboard.py"
-      ]
+        "tests/test_web_clipboard.py",
+        "tests/test_browser_image_coordinates.py",
+        "tests/test_browser_native_actions.py::test_scrolled_image_mapping_and_pixel_validation",
+        "tests/test_deepseek.py",
+        "tests/test_mimo.py",
+        "tests/test_qwen.py"
+      ],
+      "reviewed_support": [
+        "tests/test_web_clipboard.py",
+        "tests/test_browser_image_coordinates.py"
+      ],
+      "result": "Clipboard writes require a readable original text snapshot and attempt restoration even when the temporary write acknowledgement is lost. Oversized image coordinates produce the existing ValueError. Three failures before and all five tests pass after. Final six direct and twelve provider tests passed. Strict Any and all configured type and precision gates passed. Commit clipboard and image changes separately."
     },
     {
       "id": "Q031C",
@@ -7816,6 +7831,7 @@
     "tests/test_browser_frame_group_cleanup.py",
     "tests/test_browser_full_surface_contract.py",
     "tests/test_browser_handoff_next_steps.py",
+    "tests/test_browser_image_coordinates.py",
     "tests/test_browser_initial_navigation.py",
     "tests/test_browser_interaction.py",
     "tests/test_browser_ipc_contract.py",

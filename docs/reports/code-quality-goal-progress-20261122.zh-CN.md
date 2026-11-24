@@ -1479,3 +1479,13 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_native_actions.py::test_native_keys_selection_checkbox_and_hover tests/test_browser_process.py::test_worker_loss_during_chord_releases_recorded_keys_on_exact_reconnect tests/test_browser_interaction.py --tb=short`，基线 13 passed。最终同命令加入 `tests/test_browser_native_chord.py`，14 passed，无跳过，退出 0。
 - 三源和新回归的定向严格 mypy、Pyrefly、ty、Ruff 均通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 和 kernel_type_precision_gate 均通过。日志 `.e2e-artifacts/code-quality-20261122/q031-*.log`。
 - Q031 完成。累计 54/333 批，完成批覆盖 109/1009 个生产文件。下一批 Q031B 为图片和剪贴板观察。
+
+
+### Q031B 图片和剪贴板输出
+
+- Q031 已提交 `de1b7b7d`。完整检查 browser_images、web_clipboard 和修改的测试脚本。
+- 剪贴板事务的有效合同是完成读取、写临时标志、执行站点复制并恢复用户的原文本。原文本读取失败时，旧代码仍写入临时值并恢复为空字符串；临时写确认失败时，旧代码没有尝试写回原文本。定向替身分别复现 4 次 evaluate 调用和最近一次写仍为临时值。现在读取无有效文本时提前结束，临时值写入纳入 finally 的恢复范围。站点 copy 点击只发生在临时值写入成功后。
+- 截图接口的数值边界需要有限浮点坐标。一个超出浮点范围的整数原先触发 OverflowError。明确转换并返回现有 ValueError。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_web_clipboard.py tests/test_browser_image_coordinates.py --tb=short`，修改前实际 3 failed、2 passed，修改后同断言 5 passed。最终加滚动坐标和像素检查节点 `tests/test_browser_native_actions.py::test_scrolled_image_mapping_and_pixel_validation`，6 passed。调用方 `python -m pytest -q tests/test_deepseek.py tests/test_mimo.py tests/test_qwen.py -k "copy or clipboard" --tb=short`，12 passed、116 deselected。最终两组 18 项通过，退出 0，0 skip。
+- PIL 11.3.0 的 Image.__enter__ 类型返回 Any。保持同样的 with 关闭语义，使用进入前已有具体类型的对象，避免后续传播。两源、两测试严格 Any 由 45 条诊断降至 0。Pyrefly、ty、Ruff 及全生产 mypy、Pyrefly、ty、kernel_type_precision_gate 均退出 0。生产 mypy 763 文件，Pyrefly 35 suppressed、165 warnings 未展示。日志 `.e2e-artifacts/code-quality-20261122/q031b-*.log`。
+- 两类修复职责独立，先交付剪贴板，再提交坐标校验。
