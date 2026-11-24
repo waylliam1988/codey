@@ -10,6 +10,7 @@ from codey.runs.task_diff import load_task_changes, record_task_changes
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.workspace import changes
 from codey.workspace.changes import ChangeTracker
+from codey.workspace.paths import read_text_or_none
 from codey.workspace.task_changes import collect_task_changes
 
 
@@ -49,10 +50,9 @@ def test_task_diff_reads_each_output_once(tmp_path: Path) -> None:
     tracker.capture_before(source.name)
     source.write_text("settled\n", encoding="utf-8")
     tracker.capture_after(source.name)
-    read = changes._read_text_or_none
 
     def read_and_write(path: Path, *, max_bytes: int) -> str | None:
-        text = read(path, max_bytes=max_bytes)
+        text = read_text_or_none(path, max_bytes=max_bytes)
         source.write_text("outside\n", encoding="utf-8")
         return text
 

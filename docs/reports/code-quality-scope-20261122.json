@@ -1964,11 +1964,13 @@
       "files": [
         "codey/app/api.py"
       ],
-      "status": "partial_follow_up",
+      "status": "completed_changed",
       "reviewed_files": [
         "codey/app/api.py"
       ],
-      "verified_files": [],
+      "verified_files": [
+        "codey/app/api.py"
+      ],
       "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93",
       "result": "Two ResumeRun API violations reproduced: omitted instruction becomes literal None (pre-fix 1 failed/7 passed); non-string source IDs coerced and submitted (4 failed/4 passed). Public DTO optional default/string constraints and absent-vs-explicit-default invariant justify fixes. Final whole contract script 17 passed; input/output/question group 33 passed; initial direct 41, API dependencies 39, lease 2 passed. Two whole files strict Any 33 -> 0; scoped tools passed (5 pre-existing warnings), final production/precision gates passed (35 suppressed/165 warnings), stable hashes. Legacy response objects and dataclass/result shapes validated at API boundary, no casting/budget relaxation. New question guard baseline on original HEAD 1 passed; old typed callback fixture baseline 4 passed; sources exactly restored. Shared test scripts only dependency verification, full typing ownership remains elsewhere.",
       "tests": [
@@ -1988,18 +1990,19 @@
         "tests/test_recovery_ownership_regression.py::ChangesGetTests",
         "tests/test_recovery_ownership_regression.py::RestoreLeaseTests",
         "tests/test_task_input_and_output_contracts.py",
-        "tests/durable/test_question_authority.py"
+        "tests/durable/test_question_authority.py",
+        "tests/test_run_changes_http.py",
+        "tests/test_task_diff.py"
       ],
       "commits": [
         "cb43afb5"
       ],
-      "revalidation_required": [
-        "codey/app/api.py"
-      ],
-      "reopen_reason": "Q015F moves unchanged response helpers to a shared module; API directly affected, scoped validation scheduled in current batch.",
-      "revalidation_result": "External change limited to transferring captured inferred_intent for a new auto task; explicit modes and resume remain unchanged. Added six boundary cases proving omitted/auto inference, blank inference fallback, explicit project/research preservation, and resume behavior without changing denied capabilities/source/research flags. Current scoped entry/input/edit/output/question group 32 passed; two whole files strict Any/Pyrefly/ty/Ruff pass (5 existing Pyrefly warnings). No production edits. q015c-revalidation-baseline.json and q015c-revalidation-final.json. Shared response helper move in Q015F: API/service/lease group 45 passed, local/research/HTTP helper classes 31 passed, whole API strict Any/scoped checks and production gates pass. Helper input/error/identity semantics unchanged.",
-      "followups": [
-        "External commits 13b05d6c/4eef1a78 changed this previously verified source during Q021C (task-diff HTTP contracts). Prior exact-source acceptance is stale. Preserve changes, require targeted behavior and whole-file Any revalidation at owner; production error gates passing is not full governance."
+      "revalidation_required": [],
+      "reopen_reason": "External13b05d6c/4eef1a78 added run_changes_response and server GET wiring. Revalidate actual delta, whole-file types and HTTP identity/authentication/cold reads; preserve prior contracts and user commits.",
+      "revalidation_result": "External13b05d6c/4eef1a78 actual task-diff API/GET route delta revalidated without production edits. New real authenticated HTTP cases cover401/no identity400/frozen separate runs200/cross-session+missing+alias404. Baseline48pass (including existing input/output38), final directly affected10pass, auth/owner/review callers33pass; distinct81pass, no skips/failures. Whole API/server/task_diff and two whole direct tests strictAny/Pyrefly/ty/Ruff0 (15existing Pyrefly warnings), typed proof runner0. Existing production760/error/precision gate remains valid: no production changes after last run. Shared server test typing debt and Q021C browser issues remain unresolved; no whole-goal claim.",
+      "followups": [],
+      "reviewed_support": [
+        "tests/test_run_changes_http.py"
       ]
     },
     {
@@ -2086,13 +2089,13 @@
         "codey/app/http_response.py"
       ],
       "verified_files": [
-        "codey/app/http_response.py"
+        "codey/app/http_response.py",
+        "codey/app/server.py"
       ],
       "candidate_test_count": "recompute at responsibility entry; original combined routing hint 93",
       "followups": [
         "Q008D repaired only ConsensusConnectionTests timeout fixture, preserving sibling-tab/new_chat/close expectations and asserting numeric 60/90s fallback. tests/test_server.py whole-file extra Any has 1709 diagnostics (q008d-server-any.log); shared script migration remains open. Q008D stays partial until coordinated verification.",
-        "Current strict shared test audit: tests/test_server.py 6727 lines / 1673 diagnostics, q015f-shared-support-validation.json. Includes untyped provider, agent and mock callbacks, unconstrained dicts and dynamic server exports. Route subsets execute successfully but do not prove whole-file typing. Keep Q008D and Q015F partially complete until this test-support debt is resolved by production responsibility. Do not reopen verified production server solely for optional cleanup.",
-        "External commits 13b05d6c/4eef1a78 changed this previously verified source during Q021C (task-diff HTTP contracts). Prior exact-source acceptance is stale. Preserve changes, require targeted behavior and whole-file Any revalidation at owner; production error gates passing is not full governance."
+        "Current strict shared test audit: tests/test_server.py 6727 lines / 1673 diagnostics, q015f-shared-support-validation.json. Includes untyped provider, agent and mock callbacks, unconstrained dicts and dynamic server exports. Route subsets execute successfully but do not prove whole-file typing. Keep Q008D and Q015F partially complete until this test-support debt is resolved by production responsibility. Do not reopen verified production server solely for optional cleanup."
       ],
       "tests": [
         "tests/test_server_boundaries.py",
@@ -2117,9 +2120,8 @@
         "q015f-construction-before.json",
         "q015f-construction-final.json"
       ],
-      "revalidation_required": [
-        "codey/app/server.py"
-      ]
+      "revalidation_required": [],
+      "revalidation_result": "External13b05d6c/4eef1a78 actual task-diff API/GET route delta revalidated without production edits. New real authenticated HTTP cases cover401/no identity400/frozen separate runs200/cross-session+missing+alias404. Baseline48pass (including existing input/output38), final directly affected10pass, auth/owner/review callers33pass; distinct81pass, no skips/failures. Whole API/server/task_diff and two whole direct tests strictAny/Pyrefly/ty/Ruff0 (15existing Pyrefly warnings), typed proof runner0. Existing production760/error/precision gate remains valid: no production changes after last run. Shared server test typing debt and Q021C browser issues remain unresolved; no whole-goal claim."
     },
     {
       "id": "Q016",
@@ -2756,7 +2758,8 @@
       "result": "Three sources reviewed and specifically verified, but batch PARTIAL due unresolved browser standard-entry startup and full browser support typing. Independent bridge race original1fail now same controlled input and5bridge+49caller tests pass (0c51f863); invalid commit cursors original3fail, minimal staged source same3+6purefeed9pass (c0d60512). Default0 event cache aliases sessions and masks private-event rejection: original2behaviorfail now same2pass, no nonpositive identity cache read/store/evict; positive event/commit reuse, byte/frame/1000-entry limits preserved. Common cache identity and integer conversion have one implementation each. Feed source63 plus two old support43 strongAny diagnostics ->0; bridge/replay original0. All3sources+5whole tests strictAny/Pyrefly/ty/Ruff0, three proof runners also strongAny0. Current final direct38 + feed/history/projection31 + lifecycle49 =118 distinct nonbrowser passes/no skips. Module-preloaded current browser2pass is conditional evidence, not cancellation of original3x(1fail/1pass); full browser source463diagnostics retained. Final production mypy760/Pyrefly35suppressed166warnings/ty/precision0 after external13b05d6c/4eef1a78, HEAD/hash captured. No source-tree/worktree copying, dependencies, casts, ignores or weakened tests.",
       "commits": [
         "0c51f863",
-        "c0d60512"
+        "c0d60512",
+        "54940c4b"
       ],
       "unverified_support": [
         "tests/test_conversation_live_browser.py"
@@ -5097,10 +5100,25 @@
         "codey/runs/task_diff.py"
       ],
       "id": "Q181",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 29
+      "status": "partial_follow_up",
+      "reviewed_files": [
+        "codey/runs/task_diff.py"
+      ],
+      "verified_files": [
+        "codey/runs/task_diff.py"
+      ],
+      "candidate_test_count": 29,
+      "reviewed_support": [
+        "tests/test_task_diff.py"
+      ],
+      "tests": [
+        "tests/test_task_diff.py",
+        "tests/test_run_changes_http.py"
+      ],
+      "result": "Only externally added62-line task_diff source reviewed/independently verified at necessary API boundary. Two actual functions have API and task_entry/project_completion callers, no dead export deletion or forced merge. Whole source strictAny/Pyrefly/ty/Ruff0, five task-diff tests and five actual HTTP cases pass. Reader test used an indirect private import not explicitly re-exported: before attr-defined1, canonical public definition import preserves original patched callsite/side-effect/assertions and yields whole-test strictAny0. Original other4 production sources remain unreviewed/unverified; entire batch partial.",
+      "followups": [
+        "Review remaining details/ledger_projection/ledger/text_clip at their own responsibility entry. Necessary open/append signatures at API recheck are not a full review of ledger.py."
+      ]
     },
     {
       "responsibility": "codey/runs: execution evidence and event projection",
@@ -8049,6 +8067,7 @@
     "tests/test_review_writer_reentry_requires_new_attempt.py",
     "tests/test_revival_coldstart.py",
     "tests/test_rg_search_contract.py",
+    "tests/test_run_changes_http.py",
     "tests/test_run_command_characterization.py",
     "tests/test_run_command_semantics.py",
     "tests/test_run_details.py",
