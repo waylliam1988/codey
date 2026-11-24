@@ -1134,3 +1134,20 @@ Q019D 已提交：`5fa495a9`（fix(forks): fence workspace job publication durin
 
 - 最终同一mypy进程已正常汇总 **0/756源**，q020-production-mypy.json，未重启门禁。六文件全部强Any/Pyrefly/ty/Ruff通过，源码在直接/调用方/浏览器及生产门之间hash一致，diff已审查。无实际生产bug修复、公开API删除或重复生产实现合并；唯一生产修改只是空聊天验证的类型精度，tool_history检查后无需修改。测试替身职责限于当前脚本，没有删改其他无类型helper的API。
 - Q020声明范围验收完成，待本地提交。当前 **36/316批完整完成，70/1002生产文件属于完整完成批次**；另6个部分批次源独立验证，累计76。用户审查报告保留未跟踪；总goal保持active、全仓仍未完成。下一批Q021从事件投影依赖边界划分，先查看模块头和实际依赖，不重开已完成区域。
+
+Q020 已提交：`edf0c69e`（refactor(history): type validation and display regression boundaries）。
+
+### Q021 Bounded event payload codecs（进行中）
+
+- 依据实际依赖拆原Q021五源为：Q021 event_payloads.py（551行独立codec）、Q021B event_bus.py（内存订阅/重放）、Q021C public_event_feed/durable_event_bridge/durable_events（公开投递与durable游标）。全部1002源保持唯一归属，批数316→318，完成数仍36不变。仅完整检查当前codec；bridge44/replay22行先前模块头读取即全文件，只记已读未验证，feed/bus头用于依赖归属，不重开已完成区域。
+- 修改前codec严格Any配置21条诊断；直接五测试 **0，25 passed，4.42秒**，q021-codec-baseline.json。五完整测试中browser timing原0，其余四文件126条；SSE共享fixture因无类型capture_events阻止消费者精度，作为必要支持扩入当前范围，原27条诊断。原MagicMock/SimpleNamespace替身、函数/泛型及动态行消费均在本批治理，不改生产HTTP owner API。
+- 未建立畸形receipt引用/非法final_delivery的正确处理契约：目前某些非法值会TypeError，字符串引用会被逐字符处理；调用方当前有效收据提供数组，尚无独立要求证明应省略、拒绝还是其他处理。保留原行为并记待确认，不按猜测增加成功返回或吞异常；继续可独立成立的类型治理与重复职责收敛。
+- 四段引用处理均是按字段文本上限clip、删除空串，再由调用方保留proof2/path4/ref4或完整reason_codes；收敛为唯一_receipt_texts，保留各字段上限、顺序与TypeError错误类别。初始25项基线之外，补充对原commit edf0c69e的内存模块加载（只git show单文件，无worktree/源码复制/工作文件切换），新两参数序列用例旧版本 **0，2 passed，1.08秒**，当前实现同输入 **0，2 passed，1.13秒**，q021-receipt-original/current.json。此为重构等价基线，不作为生产bug的修改前失败证据。
+- 浏览器动态字段用真实dict检查与Mapping[object,object]视图，只在消费处收窄具体整数/文本；不假定未知键和值类型。共享SSE fixture用有类型Handler/AppContext子类、真实owner检查和未绑定socket的超时状态替代SimpleNamespace，不监听端口；仍执行真实Handler._sse，patch按作用域恢复，断连/订阅关闭断言保留。原fake run_status返回{}落后于公开AppContext.run_status()->str契约，改idle字符串，仅修改夹具，不迁就错误夹具改变生产。相关消费者回归待执行后才宣称通过。
+
+- 最终兼容性补验包括Python原本支持的仅__getitem__序列，使用运行时协议验证索引接口后沿iter调用，不缩小原合法序列集合；仍保持字符串逐字符等未确认旧行为。三个list/tuple/indexed参数旧commit **0，3 passed，1.08秒**，当前 **0，3 passed，1.14秒**，q021-receipt-original-final/current-final.json。初始两个参数基线被此完整三参数范围替代，不重复累计或假称旧实现失败。
+- 八个完整源/测试（codec、browser timing、tool details、receipt bool、headless final/status、SSE helper、新序列基线）强Any/Pyrefly/ty/Ruff全部exit0，定向0warnings；原21+126+27=174条诊断归零，browser timing原0、新序列原0。两个ignored证据脚本也在同一强Any命令实际通过，共10file。过程中修正fixture只读property覆盖可写durable字段，以及ty对条件tuple字典的协变限制；通过真实字段/命名类型解决，未加cast/ignore或降级工具。
+- 最终直接命令`python -m pytest -q tests/test_browser_timing_events.py tests/test_conversation_tool_details.py tests/test_event_receipt_verification_requires_exact_boolean.py tests/test_headless_final_summary_preserves_structured_answers.py tests/test_headless_tool_status_requires_exact_boolean.py tests/test_event_payload_receipt_sequences.py --tb=short` → **0，28 passed，4.91秒**，q021-codec-complete.json。最后仅命名replayed tuple收窄后SSE节点两参数亦 **0，2 passed，1.25秒**，不重复累计。
+- 共享fixture及版本调用方`python -m pytest -q tests/durable/test_commit_events.py tests/durable/test_database_cursor.py tests/test_task_lifecycle_projection.py --tb=short` → **0，27 passed，3.34秒**，q021-fixture-callers.json；随后仅增加index-only receipt兼容分支及命名tuple，fixture源码/现有list/tuple路径不变，最终三种序列基线已验证，未机械重复无关游标测试。UI/headless语义调用方`python -m pytest -q tests/test_tool_result_ui_headless_semantic_parity.py tests/test_project_and_machine_outputs_preserve_final_delivery.py tests/test_headless_missing_tool_name_stays_missing.py --tb=short` → **0，9 passed，3.09秒**，q021-semantic-callers.json。最终三组互不重复 **64 passed，0失败/0skip**，不额外累计基线/旧模块探针/复跑。其他headless全文件与浏览器、事件总线、公有feed全部范围未执行，不声称全仓通过；无worktree、外部模型或资产发布。
+- 最终生产门mypy **0/756file**、Pyrefly **0/35suppressed/165warnings**、ty **0**、precision **0**，q021-production-*.json/q021-precision.json；最终源码hash和diff已核对。没有确认新的生产bug，不将类型重构包装成bug修复；只合并已确认同语义的四处receipt文本处理，不删除公开入口。public_event_feed的_encode/encode/publish/stream/_write既有Any仍归Q021C，仅因共享fixture读取必要订阅/stream边界，未修改或宣称已治理。
+- Q021声明范围验收完成，待本地提交。当前 **37/318批完整完成，71/1002生产文件属于完整完成批次**；另6个部分批次源独立验证，累计77。新增拆分只改变批次边界，不减少源范围；用户审查报告仍未跟踪且不暂存。下一批Q021B event_bus.py，Q021C及不明确畸形收据策略继续列队；总goal保持active。

@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 1002,
   "region_count": 40,
-  "batch_count": 316,
+  "batch_count": 318,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -100,6 +100,8 @@
         "Q019D",
         "Q020",
         "Q021",
+        "Q021B",
+        "Q021C",
         "Q022",
         "Q023",
         "Q024",
@@ -2606,22 +2608,83 @@
         "tests/test_ui_edit.py::test_edit_uses_target_chat_ownership_when_another_chat_is_primary"
       ],
       "followups": [],
-      "result": "Complete2-source scope: no independently confirmed production bug; tool_history full review and strongAny0 unchanged. history_routes1 strictAny diagnostic from dict.fromkeys None overload ->0 using typed membership placeholder, ordered keys unchanged. Four full support scripts1/15/33/63 diagnostics ->0, total113 across6files; original assertions retained, JSON/row/event/reply boundaries validated, typed BytesIO wire response replaces MagicMock and untyped cross-test helper dependency. Prior28+15 pass; final distinct43+35+2=80pass plus6subtests, no skips/failures, real browser cross-chat validation included. First introduced test bytes/text mismatch corrected by UTF8 decoding preserving original SSE contract. Six full files strictAny/Pyrefly/ty/Ruff0, production mypy756/Pyrefly35suppressed165warnings/ty/precision0. No actual worktree or external model, no production API deletion or forced abstraction. Evidence q020-*.json and progress commands."
+      "result": "Complete2-source scope: no independently confirmed production bug; tool_history full review and strongAny0 unchanged. history_routes1 strictAny diagnostic from dict.fromkeys None overload ->0 using typed membership placeholder, ordered keys unchanged. Four full support scripts1/15/33/63 diagnostics ->0, total113 across6files; original assertions retained, JSON/row/event/reply boundaries validated, typed BytesIO wire response replaces MagicMock and untyped cross-test helper dependency. Prior28+15 pass; final distinct43+35+2=80pass plus6subtests, no skips/failures, real browser cross-chat validation included. First introduced test bytes/text mismatch corrected by UTF8 decoding preserving original SSE contract. Six full files strictAny/Pyrefly/ty/Ruff0, production mypy756/Pyrefly35suppressed165warnings/ty/precision0. No actual worktree or external model, no production API deletion or forced abstraction. Evidence q020-*.json and progress commands.",
+      "commits": [
+        "edf0c69e"
+      ]
     },
     {
-      "responsibility": "codey/app: execution evidence and event projection",
+      "id": "Q021",
+      "responsibility": "Bounded browser and machine event payload codecs",
       "files": [
-        "codey/app/durable_event_bridge.py",
-        "codey/app/durable_events.py",
-        "codey/app/public_event_feed.py",
-        "codey/app/event_payloads.py",
+        "codey/app/event_payloads.py"
+      ],
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/app/event_payloads.py"
+      ],
+      "verified_files": [
+        "codey/app/event_payloads.py"
+      ],
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
+      "reviewed_support": [
+        "tests/test_browser_timing_events.py",
+        "tests/test_conversation_tool_details.py",
+        "tests/test_event_receipt_verification_requires_exact_boolean.py",
+        "tests/test_headless_final_summary_preserves_structured_answers.py",
+        "tests/test_headless_tool_status_requires_exact_boolean.py",
+        "tests/sse_http.py",
+        "tests/test_event_payload_receipt_sequences.py"
+      ],
+      "tests": [
+        "tests/test_browser_timing_events.py",
+        "tests/test_conversation_tool_details.py",
+        "tests/test_event_receipt_verification_requires_exact_boolean.py",
+        "tests/test_headless_final_summary_preserves_structured_answers.py",
+        "tests/test_headless_tool_status_requires_exact_boolean.py",
+        "tests/test_event_payload_receipt_sequences.py",
+        "tests/durable/test_commit_events.py",
+        "tests/durable/test_database_cursor.py",
+        "tests/test_task_lifecycle_projection.py",
+        "tests/test_tool_result_ui_headless_semantic_parity.py",
+        "tests/test_project_and_machine_outputs_preserve_final_delivery.py",
+        "tests/test_headless_missing_tool_name_stays_missing.py"
+      ],
+      "followups": [
+        "Contract question, not a confirmed production bug: malformed truthy receipt reference scalars or structured final_delivery may raise TypeError; string reference fields iterate characters. Current valid receipt callers provide arrays; omission vs rejection policy is not independently specified. Preserve existing behavior, no guessed normalization or suppressed exceptions; reopen only with contract evidence.",
+        "PublicEventFeed producer Any remains in Q021C. Consumer/helper governance here does not imply upstream source completion."
+      ],
+      "result": "Full551-line codec review. No independently confirmed production bug. Runtime dict views and scalar narrowing eliminate21 original source strongAny diagnostics; four identical receipt clip/filter loops share one helper while field-specific counts/order stay local. Original edf0c69e module executed in memory via read-only git show, lists/tuples/index-only sequence baselines3pass and current3pass; no worktree/file replacement or bug-before-failure claim. Original support126 plus necessary SSE helper27 ->0, total174 original diagnostics across8 full governed files including timing/new sequence0. Typed headless callbacks/provider and real Handler/AppContext owner fixture, validated bytes/JSON output, original assertions retained. Distinct final scopes28+27+9=64pass no skips/failures; no redundant baseline counts. Four checkers8files0, ignored runners also strongAny0; production mypy756/Pyrefly35suppressed165warnings/ty/precision0. No public deletions, baselines, casts, ignores, dependencies or external model/worktree/asset publishing."
+    },
+    {
+      "id": "Q021B",
+      "responsibility": "In-process event bus, bounded subscribers and replay scopes",
+      "files": [
         "codey/app/event_bus.py"
       ],
-      "id": "Q021",
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 33
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+    },
+    {
+      "id": "Q021C",
+      "responsibility": "Durable commit bridge, fixed-cursor replay and public SSE feed",
+      "files": [
+        "codey/app/durable_event_bridge.py",
+        "codey/app/durable_events.py",
+        "codey/app/public_event_feed.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [
+        "codey/app/durable_event_bridge.py",
+        "codey/app/durable_events.py"
+      ],
+      "verified_files": [],
+      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
+      "followups": [
+        "Q021 SSE fixture typing required reading public_event_feed subscription/stream seams. Legacy explicit Any remains in _encode, encode, publish, stream and _write; source unchanged and not claimed governed. Full Any audit and owned delivery validation belong to this future batch."
+      ]
     },
     {
       "responsibility": "codey/app: knowledge and memory",
@@ -8695,6 +8758,15 @@
       "path": "codey/research/primary_sources.py",
       "batch": "Q165",
       "reason": "New owned source from external commits after Q019B; module header/import inventory only, not reviewed or verified. Retain existing responsibility region and unfinished batch."
+    },
+    {
+      "batch": "Q021",
+      "replacement": [
+        "Q021",
+        "Q021B",
+        "Q021C"
+      ],
+      "reason": "551-line pure event codec is an independent large-file batch; event bus has separate in-process ownership/replay, while public feed and commit bridge own external delivery. Preserve all5 source paths once; only module heads inventoried except complete44/22line bridge/replay sources already read, neither governed or verified yet."
     }
   ]
 }

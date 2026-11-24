@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
+from typing import Protocol, runtime_checkable
 
 from codey.agents.shell_approval import shell_command_event_fields
 from codey.providers.diagnostics import sanitize_failure_facts
@@ -227,32 +228,37 @@ def browser_event_payload(event: object) -> dict[str, object] | None:
     payload = machine_event_payload(event)
     if payload is None or not isinstance(event, dict):
         return payload
-    if event.get("type") == "task_done":
-        if type(event.get("elapsed_ms")) is int:
-            payload["elapsed_ms"] = max(0, event["elapsed_ms"])
-        if isinstance(event.get("research"), dict):
+    event_fields: Mapping[object, object] = event
+    if event_fields.get("type") == "task_done":
+        elapsed = event_fields.get("elapsed_ms")
+        if type(elapsed) is int:
+            payload["elapsed_ms"] = max(0, elapsed)
+        research = event_fields.get("research")
+        if isinstance(research, dict):
+            research_fields: Mapping[object, object] = research
             fields = {"restoreable", "synthesis_id", "notes_created", "notes_updated", "source_urls", "sources_read",
                       "queries", "search_results", "opened_sources", "coverage", "citation_map", "evidence_items",
                       "counterpoints", "quality_warnings", "max_turns_used", "completion_proof", "followup_applied",
                       "followup_rounds", "pipeline_stop_reason", "planner_stop_reason", "fresh_source_count",
                       "new_evidence_count", "final_evidence_count", "attempted_fresh_source_count", "attempted_new_evidence_count"}
             budget = [64_000, 0]
-            payload["research"] = _bounded_research_value({key: value for key, value in event["research"].items() if key in fields}, budget)
+            payload["research"] = _bounded_research_value({key: value for key, value in research_fields.items() if key in fields}, budget)
             if budget[1]:
                 payload["research_truncated"] = True
-    if event.get("type") not in {"tool", "tool_started"}:
+    if event_fields.get("type") not in {"tool", "tool_started"}:
         return payload
-    payload["kind"] = clip_event_text(event.get("kind") or "", 80)
+    payload["kind"] = clip_event_text(event_fields.get("kind") or "", 80)
     for key in ('call_id', 'parent_call_id'):
-        if isinstance(event.get(key), str) and event[key]:
-            payload[key] = clip_event_text(event[key], 512)
-    if event.get("type") == "tool_started":
+        value = event_fields.get(key)
+        if isinstance(value, str) and value:
+            payload[key] = clip_event_text(value, 512)
+    if event_fields.get("type") == "tool_started":
         return payload
-    detail = event.get("detail")
+    detail = event_fields.get("detail")
     if isinstance(detail, str):
         payload["detail"] = clip_event_text(detail, 64_000)
-        payload["detail_truncated"] = event.get("detail_truncated") is True or len(detail) > 64_000
-    preview = event.get("preview")
+        payload["detail_truncated"] = event_fields.get("detail_truncated") is True or len(detail) > 64_000
+    preview = event_fields.get("preview")
     if isinstance(preview, dict):
         bounded: dict[str, object] = {}
         for key in ("additions", "deletions", "line_start", "line_end", "matches"):
@@ -355,9 +361,10 @@ def _receipt_work(receipt: Mapping[str, object]) -> dict[str, object]:
 
 
 def _receipt_verification(receipt: Mapping[str, object]) -> dict[str, object]:
-    verification = receipt.get("verification")
-    if not isinstance(verification, dict):
+    raw_verification = receipt.get("verification")
+    if not isinstance(raw_verification, dict):
         return {}
+    verification: Mapping[object, object] = raw_verification
     section: dict[str, object] = {}
     trust = clip_event_text(verification.get("trust") or "", 20)
     if trust:
@@ -367,20 +374,17 @@ def _receipt_verification(receipt: Mapping[str, object]) -> dict[str, object]:
     state = clip_event_text(verification.get("state") or "", 40)
     if state:
         section["state"] = state
-    proof_refs = [
-        clip_event_text(ref, 120)
-        for ref in (verification.get("proof_refs") or [])
-    ]
-    bounded_refs = [ref for ref in proof_refs if ref][:2]
+    bounded_refs = _receipt_texts(verification.get("proof_refs"), 120)[:2]
     if bounded_refs:
         section["proof_refs"] = bounded_refs
     return section
 
 
 def _receipt_integrity(receipt: Mapping[str, object]) -> dict[str, object]:
-    integrity = receipt.get("integrity")
-    if not isinstance(integrity, dict):
+    raw_integrity = receipt.get("integrity")
+    if not isinstance(raw_integrity, dict):
         return {}
+    integrity: Mapping[object, object] = raw_integrity
     section: dict[str, object] = {}
     status = clip_event_text(integrity.get("status") or "", 20)
     if status:
@@ -388,28 +392,35 @@ def _receipt_integrity(receipt: Mapping[str, object]) -> dict[str, object]:
     severity = clip_event_text(integrity.get("severity") or "", 20)
     if severity:
         section["severity"] = severity
-    reason_codes = [
-        clip_event_text(code, 80)
-        for code in (integrity.get("reason_codes") or [])
-    ]
-    bounded_codes = [code for code in reason_codes if code]
+    bounded_codes = _receipt_texts(integrity.get("reason_codes"), 80)
     if bounded_codes:
         section["reason_codes"] = bounded_codes
-    paths = [
-        clip_event_text(path, 240)
-        for path in (integrity.get("affected_paths") or [])
-    ]
-    bounded_paths = [path for path in paths if path][:4]
+    bounded_paths = _receipt_texts(integrity.get("affected_paths"), 240)[:4]
     if bounded_paths:
         section["affected_paths"] = bounded_paths
-    refs = [
-        clip_event_text(ref, 80)
-        for ref in (integrity.get("refs") or [])
-    ]
-    bounded_integrity_refs = [ref for ref in refs if ref][:4]
+    bounded_integrity_refs = _receipt_texts(integrity.get("refs"), 80)[:4]
     if bounded_integrity_refs:
         section["refs"] = bounded_integrity_refs
     return section
+
+
+@runtime_checkable
+class _IndexedReceipt(Protocol):
+    def __getitem__(self, index: int, /) -> object: ...
+
+
+def _receipt_texts(value: object, limit: int) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, Iterable):
+        items: Iterable[object] = value
+    elif isinstance(value, _IndexedReceipt):
+        # Python's iteration protocol also accepts index-only sequences.
+        items = iter(value)
+    else:
+        raise TypeError('receipt references must be iterable')
+    texts = [clip_event_text(item, limit) for item in items]
+    return [text for text in texts if text]
 
 
 def bounded_receipt(receipt: Mapping[str, object]) -> dict[str, object]:
