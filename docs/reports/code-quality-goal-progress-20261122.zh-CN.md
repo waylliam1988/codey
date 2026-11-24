@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q035C，接续 Q035D。开放事项保存在治理队列。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，Q035D 进行中。开放事项保存在治理队列。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1553,3 +1553,9 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 运行 `python -m pytest -q tests/test_codemode_host.py tests/test_codemode_production_boundaries.py tests/test_read_result_contract.py tests/test_browser_execution_defaults.py --tb=short`，46 passed、2 failed，0 skip，退出 1。用 `git show HEAD:codey/codemode/host.py` 在原进程中加载未修改宿主后，单独复现 `test_research_declared_navigation_precedes_read_and_controls` 与 `test_reloaded_document_does_not_inherit_old_fill_and_click_progress`，2 failed，退出 1。前者比较导航、读取和快照顺序，后者核对重载后等待指导。两条用例未调用宿主，登记到 Q084 审核浏览器交接契约。
 - 最终 `python -m pytest -q tests/test_codemode_host.py tests/test_codemode_production_boundaries.py --tb=short` 9 passed，退出 0，计入上述 46 个已过用例而不重复累计。两文件 mypy 严格 Any 和 Ruff、生产 mypy（763 文件）、Pyrefly（0 errors、35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q035C 完成。累计完成 61/336 批，覆盖 120/1009 个生产文件。下一批 Q035D 为持久化重放。
+
+
+### Q035D 持久化重放和修复授权
+
+- Q035C 已提交 `bf323b82`。完整检查 `replay.py`。重放日志绑定 fingerprint、runtime contract、effect scope 和 schema。已在内存 durable store 建立有效日志并交付首个结果，再替换其执行指纹。`python -m pytest -q tests/test_codemode_replay_delivery_identity.py --tb=short` 修改前 1 failed，退出 1，旧交付事务没有拒绝身份不匹配。修改后事务共用现有 `_record` 校验再写入，回归核对拒绝后完整 checkpoint 保持相同。状态和交付事务在一次读取节点上校验及更新，移除了同一日志的重复反序列化和原列表回填。
+- 在 `D:\codey` 运行 `python -m pytest -q tests/test_codemode_replay_delivery_identity.py tests/test_codemode_replay_authority.py tests/test_codemode_repair_replay.py --tb=short`，34 passed，0 skip，退出 0。源码与新增测试的 mypy 严格 Any、Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 退出 0。

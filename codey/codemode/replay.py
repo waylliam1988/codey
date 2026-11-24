@@ -420,7 +420,7 @@ class DurableCodeModeReplay:
         def initialize(current: TaskCheckpoint) -> Mapping[str, object] | None:
             records = self._records(current)
             if execution_id in records:
-                self._record(current)
+                self._record(records)
                 return None
             if readonly:
                 raise CodeModeReplayError("repair original recovery journal is unavailable")
@@ -438,7 +438,7 @@ class DurableCodeModeReplay:
             return {"codemode_replay": records}
 
         durable.transform_task_state(task_id, initialize)
-        record = self._record(durable.task(task_id))
+        record = self._record(self._records(durable.task(task_id)))
         self.context = {"epochMs": record["epoch_ms"], "seed": record["seed"], "executionId": execution_id}
 
     @classmethod
@@ -486,8 +486,8 @@ class DurableCodeModeReplay:
             records[key] = value
         return records
 
-    def _record(self, current: TaskCheckpoint) -> ReplayRecord:
-        record = self._records(current)[self.execution_id]
+    def _record(self, records: Mapping[str, ReplayRecord]) -> ReplayRecord:
+        record = records[self.execution_id]
         if (
             record["fingerprint"] != self.fingerprint
             or record.get("schema") != 3
@@ -499,7 +499,7 @@ class DurableCodeModeReplay:
 
     @property
     def delivery(self) -> tuple[DeliveryReference, ...]:
-        record = self._record(self.durable.task(self.task_id))
+        record = self._record(self._records(self.durable.task(self.task_id)))
         return tuple(record["delivery"])
 
     def record_delivery(self, call_id: str, child_index: int | None) -> None:
@@ -509,7 +509,7 @@ class DurableCodeModeReplay:
         with self.admission():
             def apply(current: TaskCheckpoint) -> Mapping[str, object] | None:
                 records = self._records(current)
-                record = records[self.execution_id]
+                record = self._record(records)
                 delivery = record["delivery"]
                 item: DeliveryReference = {"call_id": call_id, "child_index": child_index}
                 if self._delivery_index < len(delivery):
@@ -521,7 +521,6 @@ class DurableCodeModeReplay:
                 if self.readonly:
                     raise CodeModeReplayError("repair changed the original result delivery sequence")
                 delivery.append(item)
-                records[self.execution_id]["delivery"] = delivery
                 return {"codemode_replay": records}
 
             self.durable.transform_task_state(self.task_id, apply)
@@ -563,7 +562,7 @@ class DurableCodeModeReplay:
             def apply(current: TaskCheckpoint) -> Mapping[str, object] | None:
                 nonlocal result
                 records = self._records(current)
-                steps = self._record(current)["state"]
+                steps = self._record(records)["state"]
                 if index < len(steps):
                     step = steps[index]
                     if step["request"] != request:
@@ -585,7 +584,6 @@ class DurableCodeModeReplay:
                 else:
                     result = state.get(key)
                 steps.append({"request": request, "revision": current.revision + 1})
-                records[self.execution_id]["state"] = steps
                 patch: dict[str, object] = {"codemode_replay": records}
                 if op == "store":
                     patch["codemode_state"] = state
@@ -598,7 +596,7 @@ class DurableCodeModeReplay:
     def assert_valid(self) -> None:
         if self._failure:
             raise CodeModeReplayError(self._failure)
-        record = self._record(self.durable.task(self.task_id))
+        record = self._record(self._records(self.durable.task(self.task_id)))
         children = {
             effect.effect_id
             for effect in self.durable.effects(self.task_id)

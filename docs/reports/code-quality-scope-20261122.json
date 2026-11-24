@@ -3699,10 +3699,10 @@
       "id": "Q035D",
       "responsibility": "Code Mode durable replay and repair authority",
       "files": ["codey/codemode/replay.py"],
-      "status": "not_started",
-      "reviewed_files": [],
+      "status": "in_progress",
+      "reviewed_files": ["codey/codemode/replay.py"],
       "verified_files": [],
-      "tests": ["tests/test_codemode_replay_authority.py", "tests/test_codemode_repair_replay.py"]
+      "tests": ["tests/test_codemode_replay_authority.py", "tests/test_codemode_repair_replay.py", "tests/test_codemode_replay_delivery_identity.py"]
     },
     {
       "id": "Q035E",
