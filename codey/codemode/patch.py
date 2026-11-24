@@ -119,7 +119,14 @@ def _read_version(root: Path, session: TaskSession, canonical: str, refs: tuple[
             continue
         path = require_json_string(read.call.args.get("path"), "read path")
         version = read.canonical.get("file_version")
-        if canonical_project_path(root, path) == canonical and isinstance(version, str) and version.startswith("raw:sha256:"):
+        if not isinstance(version, str) or not version.startswith("raw:sha256:"):
+            continue
+        try:
+            observed_path = canonical_project_path(root, path)
+        except (OSError, ValueError):
+            # A stale read cannot authorize any of the currently resolved targets.
+            continue
+        if observed_path == canonical:
             versions.add(version)
     if len(versions) != 1:
         raise ValueError(f"patch needs one read_file version for {canonical}; read it here or select its base_result_ref")

@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q035D，接续 Q035E。开放事项保存在治理队列。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q035B，接续 Q036。开放事项保存在治理队列。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1562,3 +1562,19 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 身份校验修复已提交 `a3944ebb`。第二项回归在 `admission` 区段抛出无消息的 `ValueError()`。`invalidate` 约定永久关闭本次调用，但旧失败字段以空字符串表示正常，后续交付因此继续。`python -m pytest -q tests/test_codemode_replay_delivery_identity.py --tb=short` 修改前 1 failed、1 passed，退出 1，原因是后续交付没有抛 CodeModeReplayError。无消息的致命错误现在设置非空诊断，拒绝后续准入和成功验证，checkpoint 保留原值。
 - 最终同三文件命令 35 passed，0 skip，退出 0。`python -m mypy codey/codemode/replay.py tests/test_codemode_replay_delivery_identity.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-decorated`、两文件 Ruff、全生产 mypy、Pyrefly（0 errors、35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q035D 完成。累计完成 62/336 批，覆盖 121/1009 个生产文件。下一批 Q035E 为 JavaScript guest 和 Node 传输。
+
+
+### Q035E JavaScript guest 和 Node 传输
+
+- Q035D 的准入修复已提交 `6d5a4b55`。完整检查两个自有脚本的请求、结果编码、WASM 初始化及退出边界。QuickJS 供应商文件按范围排除。`node --check codey/codemode/guest_runner.js` 和 `node --check codey/codemode/node_runner.mjs` 均退出 0。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_codemode_runtime.py tests/test_codemode_source_preflight.py --tb=short`，109 passed，0 skip、fail 或 error，退出 0，覆盖结果编码、输入冻结、尺寸限制、调用封装和恢复确定性。
+- 使用仓库现有前端编译器对这两个运行时文件执行 `frontend/node_modules/.bin/tsc.cmd --allowJs --checkJs --noEmit --strict --target es2022 --module nodenext --skipLibCheck --typeRoots frontend/node_modules/@types codey/codemode/guest_runner.js codey/codemode/node_runner.mjs`。退出 1。guest 59 条诊断，其中 47 条隐式 any，主要来自动态 JSON、全局执行状态、回调和结果。Node 传输 24 条隐式 any，主要来自 QuickJS 对象、WASI 回调和 wire 边界。编译器还跟踪到供应商文件，不计入自有诊断。
+- `NodeWorkerRuntime.contract_digest` 哈希两个分发文件的原始字节，连注释变动也会让持久化日志的运行时合同失配。冻结恢复策略当前明确拒绝这种失配。后续与 Q038 验证旧日志兼容边界，再完成 wire 和第三方接口的类型收窄。本批未修改脚本，记为部分完成。累计仍为 62/336 批，完成批覆盖 121/1009 个生产文件。下一批 Q035B 为浏览器流程及多文件补丁。
+
+
+### Q035B 浏览器流程和多文件补丁
+
+- 完整检查 `browser_flow.py`、`patch.py` 和新增回归。`PATCH_DESCRIPTION` 要求通过目标自身的 `read_file` 版本完成预检。先实际读取两个项目文件，再把无关文件换成指向项目外的链接。对仍具有有效版本的目标预检时，旧代码因解析无关文件的旧回执而失败。`python -m pytest -q tests/test_codemode_patch_read_versions.py --tb=short` 修改前 1 failed，退出 1，报 `path escapes project root: other.txt`。
+- 候选回执的路径已经失效时，它不能为当前目标提供任何版本。跳过该候选后可以使用同批次的有效目标回执。回归同时验证真正请求预检该外部链接时仍被拒绝，预检没有修改项目或外部文件。浏览器流程的逐步校验和工具集合无需修改。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_codemode_patch_read_versions.py tests/test_project_patch.py tests/test_followup_mechanisms.py -k 'patch or flow' --tb=short`，16 passed、13 deselected，0 skip，退出 0。对两个生产文件和新增测试执行 mypy 严格 Any 与 Ruff，退出 0。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q035B 完成。累计完成 63/336 批，覆盖 123/1009 个生产文件。Q035E 的只读检查记录随本提交保存。下一批 Q036 为 JSON 编辑、结果修复和验证合同。

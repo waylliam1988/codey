@@ -3710,10 +3710,12 @@
       "id": "Q035E",
       "responsibility": "Code Mode JavaScript guest and Node process transport",
       "files": ["codey/codemode/guest_runner.js", "codey/codemode/node_runner.mjs"],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/test_codemode_runtime.py", "tests/test_codemode_source_preflight.py"]
+      "status": "partial_follow_up",
+      "reviewed_files": ["codey/codemode/guest_runner.js", "codey/codemode/node_runner.mjs"],
+      "verified_files": ["codey/codemode/guest_runner.js", "codey/codemode/node_runner.mjs"],
+      "tests": ["tests/test_codemode_runtime.py", "tests/test_codemode_source_preflight.py"],
+      "result": "109 scoped runtime and source-preflight tests and both Node syntax checks passed. Strict checkJs exit 1: 47 implicit-any diagnostics in the guest, 24 in the runner. Vendor QuickJS diagnostics excluded from these counts.",
+      "follow_up": ["Q038: raw guest and runner source bytes are part of the persisted runtime contract, including comment-only edits. Verify compatibility and preserve fail-closed semantics while defining explicit wire structures and typing the QuickJS boundary."]
     },
     {
       "id": "Q035B",
@@ -3722,15 +3724,16 @@
         "codey/codemode/browser_flow.py",
         "codey/codemode/patch.py"
       ],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "completed_changed",
+      "reviewed_files": ["codey/codemode/browser_flow.py", "codey/codemode/patch.py"],
+      "verified_files": ["codey/codemode/browser_flow.py", "codey/codemode/patch.py"],
       "tests": [
         "tests/test_followup_mechanisms.py",
-        "tests/test_project_patch.py"
+        "tests/test_project_patch.py",
+        "tests/test_codemode_patch_read_versions.py"
       ],
-      "candidate_test_count": "recompute at batch entry",
-      "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed"
+      "reviewed_support": ["tests/test_codemode_patch_read_versions.py"],
+      "result": "An expired unrelated read receipt can no longer block a patch with its own valid target receipt. Requested target path validation remains authoritative. Final 16 passed and 13 deselected. Scoped strict Any and Ruff and all production gates passed."
     },
     {
       "responsibility": "codey/codemode: completion review and edit validation",
