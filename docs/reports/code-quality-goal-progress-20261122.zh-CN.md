@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：用户要求完成 Q024C、提交后暂停（2026-11-24）；只收尾本批，不进入后续批次。以下第一、二批是恢复前的历史证据；本轮从干净的 `7555d488` 继续，按文末全仓分区队列推进。历史未完成项仍保留，不将历史提交或本轮局部验收视为全仓治理完成。
+当前状态：Q024C 已完成，按用户要求提交后暂停（2026-11-24），不进入后续批次。以下第一、二批是恢复前的历史证据；本轮从干净的 `7555d488` 继续，按文末全仓分区队列推进。历史未完成项仍保留，不将历史提交或本轮局部验收视为全仓治理完成。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1324,7 +1324,7 @@ Q023 已提交：`dcdacde9`（fix(memory): advance recovery past deleted task hi
 
 Q024B 已提交：`201d521e`（fix(approvals): reject facts with conflicting immutable identity）。
 
-### Q024C Approval worker / result recovery（进行中）
+### Q024C Approval worker / result recovery（已完成，提交后暂停）
 
 - workflow完整617行已读，范围HTTP决定、唯一worker接纳、结果持久化/投影与恢复；ShellService仅必要执行接口定位，实际进程/票据留Q024D。先运行三脚本基线与整文件Any，检查Thread.start失败是否留下虚假worker所有权。显式回调参数当前未调用但为公开兼容入口保留，不能因无仓内调用直接删；会用ParamSpec约束其任意调用签名而不引入Any。
 
@@ -1342,3 +1342,10 @@ Q024B 已提交：`201d521e`（fix(approvals): reject facts with conflicting imm
 - 最终完整直接组`python -m pytest -q tests/test_shell_approval_worker_admission.py tests/test_shell_approval_lifecycle.py tests/test_shell_approval_http_restart.py tests/test_shell_approval_text_result_reconstruction.py --tb=short` → **0，32passed，33.97秒**（q024c-accepted-direct-final.json）。既有未再受影响的调用方组`python -m pytest -q tests/test_command_permissions.py tests/test_shell_approval_epoch.py tests/durable/test_approval_records.py tests/test_shell_approval_effect_recovery.py tests/test_shell_approval_native_identity.py --tb=short`为 **0，65passed，42.10秒**；helper当时已是最终版本，后续只改lifecycle脚本，该组结果未失效。当前9文件不重复 **97passed、0失败/0skip**，不是累计所有前后重跑。原两个失败保留记录，已通过有独立前提依据的隔离修正处置，不以偶然单跑通过结项。
 - 最终串行强Any覆盖完整workflow/worker回归/lifecycle/helper及两个忽略runner **0/6file**；四个仓库源/测试Pyrefly0（仅1条原有冗余str warning）、ty0、六文件Ruff0（q024c-pause-local-*.json）。workflow69、helper5、lifecycle204诊断均已清零；中间变量重名、callback可空选项签名和import排序均为本轮初稿问题，已工具检出并修正，不冒充生产bug。最后一次验证哈希与当前四文件一致，无生产修改发生在原生产门之后，因此保留实际mypy760/Pyrefly35suppressed166warnings/ty/precision exit0证据，不机械重跑未失效的生产门。
 - 先提交生产worker修复及其独立回归，随后将已验证的共享fixture/lifecycle治理独立提交并结项暂停；第一次提交记录不声称后一个测试提交已发生。没有可证明可删的公开兼容Submit入口；start的started分支虽然最终continue，但含durable读取/异常效果，未按表面冗余强删。用户审查报告始终不暂存；总目标尚未完成。
+
+Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admission after rejected starts）。
+
+- 本次第二提交收录已完整验证的helper与lifecycle脚本治理，源与独立worker回归保持第一提交内容不变；没有暂停在失败状态。两个测试原先混入自动Core调度造成的全局停止/空闲假设均通过显式夹具隔离处置，原关闭和busy断言保留，没有为了迁就测试改正确生产行为。lifecycle完整24函数均已读并类型治理，无遗留204诊断；状态/事实Optional、JSON动态字段和mock结果工厂均有具体类型或运行时守卫。原完整4字段成功字典只收敛为一处有类型工厂，不用实际生产输出重写预期。
+- 暂停前最后直接32passed与未失效调用方65passed去重 **97passed、0失败/0skip**，所有应执行的局部验证已完成。最后串行六文件强Any、Pyrefly、ty、Ruff均exit0，源hash和本次入库测试/helper hash与证据一致；原生产三类型门/precision实际通过且自后仅测试脚本修改，因此保持有效。不运行全量pytest、不扩大到未检查shell进程实现、不重复已完成无变化生产批次。
+- Q024C声明范围结项；累计 **46/324完整批次、86/1006完整批次生产文件**，另9部分批次源独立验证，累计95，不把这9个算完整批次。两个正确性bug（此前Q024B事实身份与本批worker接纳）各有有效原失败→相同输入通过；本次两隔离问题是测试fixture问题，另列处理，不伪称为生产竞态修复。其余全仓范围与原Q021C浏览器/Any、Q189/Q200依赖Any等历史事项尚未完成，未标总goal完成。
+- 用户已要求“修完，提交后，暂停一下”；第二提交后goal设为paused并停止，不进入Q024D。第二提交hash避免自引用，在最终聊天报告和Git历史提供，下一次进度更新再补入commits数组。用户未跟踪审查报告未编辑/暂存/提交；不push、不改远端、不复制worktree或源码树。

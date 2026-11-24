@@ -1,33 +1,74 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Mapping
 from dataclasses import replace
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 
 from codey.app import api, shell_service
 from codey.app.context import AppContext
+from codey.app.shell_approval_workflow import ApprovalStatus
+from codey.durable.model import TaskStatus
+from codey.runtime.core.api_selection import ApiRunSelection
+from codey.runtime.effects.shell_approval_records import ShellApprovalFact
+from codey.task.model import TaskInput
+from codey.types.json_value import require_json_string
+from codey.utils.object_fields import require_object_fields, require_object_rows
 from tests.support.shell_approval import seed_requested_approval as seed
 
 
-def test_accept_returns_before_executor_finishes_and_is_idempotent(tmp_path, monkeypatch):
+def _completed_result() -> shell_service.ShellResult:
+    return {"ok": True, "status": "exit", "output": "done", "exit_code": 0}
+
+
+def _execute_completed(
+    ctx: shell_service.ShellExecutionContext, ticket: shell_service.ShellExecutionTicket,
+) -> shell_service.ShellResult:
+    return _completed_result()
+
+
+def _status(ctx: AppContext, approval_id: str = "approval") -> ApprovalStatus:
+    state = ctx.shell_approval_workflow.status(approval_id)
+    assert state is not None
+    return state
+
+
+def _latest(ctx: AppContext, approval_id: str = "approval") -> ShellApprovalFact:
+    fact = ctx.shell_approval_records.latest(approval_id)
+    assert fact is not None
+    return fact
+
+
+def _task_status(ctx: AppContext, run_id: str = "source") -> TaskStatus:
+    status = ctx.durable.task(run_id).status
+    assert isinstance(status, TaskStatus)
+    return status
+
+
+def _ignore_approval(approval_id: str) -> None:
+    return None
+
+
+def test_accept_returns_before_executor_finishes_and_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = AppContext(tmp_path)
     seed(ctx)
     release = threading.Event()
     entered = threading.Event()
     returned = threading.Event()
-    replies = []
+    replies: list[tuple[int, dict[str, object]]] = []
 
-    def execute(*args):
+    def execute(ctx: shell_service.ShellExecutionContext, ticket: shell_service.ShellExecutionTicket) -> shell_service.ShellResult:
         entered.set()
         assert release.wait(5)
-        return {"ok": True, "status": "exit", "output": "done", "exit_code": 0}
+        return _completed_result()
 
     monkeypatch.setattr(shell_service, "execute_shell_ticket", execute)
     submit = Mock(return_value="resume")
 
-    def request():
+    def request() -> None:
         replies.append(
             api.shell_approval_response(
                 ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=submit
@@ -56,19 +97,19 @@ def test_accept_returns_before_executor_finishes_and_is_idempotent(tmp_path, mon
         ctx.close()
 
 
-def test_result_is_durable_before_publication(tmp_path, monkeypatch):
+def test_result_is_durable_before_publication(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = AppContext(tmp_path)
     seed(ctx, continue_after=False)
     monkeypatch.setattr(
         shell_service,
         "execute_shell_ticket",
-        lambda *a: {"ok": True, "status": "exit", "output": "done", "exit_code": 0},
+        _execute_completed,
     )
     original = ctx.record_shell_result
-    observed = []
+    observed: list[dict[str, object] | None] = []
 
-    def publish(event):
-        observed.append(ctx.resolve_shell_approval(event["id"]))
+    def publish(event: Mapping[str, object]) -> None:
+        observed.append(ctx.resolve_shell_approval(require_json_string(event["id"], "id")))
         original(event)
 
     monkeypatch.setattr(ctx, "record_shell_result", publish)
@@ -80,7 +121,7 @@ def test_result_is_durable_before_publication(tmp_path, monkeypatch):
         ctx.close()
 
 
-def test_failed_decision_write_preserves_pending_card(tmp_path, monkeypatch):
+def test_failed_decision_write_preserves_pending_card(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = AppContext(tmp_path)
     fact = seed(ctx)
     from codey.app.shell_approval_state import restore_pending_shell_approvals
@@ -98,7 +139,7 @@ def test_failed_decision_write_preserves_pending_card(tmp_path, monkeypatch):
         ctx.close()
 
 
-def test_failed_expiry_write_preserves_pending_card(tmp_path, monkeypatch):
+def test_failed_expiry_write_preserves_pending_card(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = AppContext(tmp_path)
     seed(ctx)
     from codey.app.shell_approval_state import restore_pending_shell_approvals
@@ -110,12 +151,12 @@ def test_failed_expiry_write_preserves_pending_card(tmp_path, monkeypatch):
             with pytest.raises(OSError, match="durable unavailable"):
                 ctx.expire_pending_shell_approvals()
         assert "approval" in ctx.pending_shell_approvals(), "expiry removed the card before committing its verdict"
-        assert ctx.shell_approval_records.latest("approval").kind == "requested"
+        assert _latest(ctx, "approval").kind == "requested"
     finally:
         ctx.close()
 
 
-def test_failed_stop_write_still_invalidates_claimed_execution_ticket(tmp_path, monkeypatch):
+def test_failed_stop_write_still_invalidates_claimed_execution_ticket(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.app.shell_approval_state import restore_pending_shell_approvals
 
     ctx = AppContext(tmp_path)
@@ -139,7 +180,7 @@ def test_failed_stop_write_still_invalidates_claimed_execution_ticket(tmp_path, 
         ctx.close()
 
 
-def test_restart_accepted_allow_executes_but_claimed_allow_never_reexecutes(tmp_path, monkeypatch):
+def test_restart_accepted_allow_executes_but_claimed_allow_never_reexecutes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     first = AppContext(tmp_path)
     accepted = seed(first, "accepted", continue_after=False)
     claimed = seed(first, "claimed", continue_after=False)
@@ -152,23 +193,23 @@ def test_restart_accepted_allow_executes_but_claimed_allow_never_reexecutes(tmp_
     first.durable.wait_task("source", state={"stop_reason": "approval"})
     first.close()
     ctx = AppContext(tmp_path)
-    execute = Mock(return_value={"ok": True, "status": "exit", "output": "done", "exit_code": 0})
+    execute = Mock(return_value=_completed_result())
     monkeypatch.setattr(shell_service, "execute_shell_ticket", execute)
     try:
-        assert ctx.durable.task("source").status.value == "waiting"
+        assert _task_status(ctx).value == "waiting"
         ctx.shell_approval_workflow.start(Mock())
         assert ctx.shell_approval_workflow.wait(5)
         assert execute.call_count == 1
-        assert ctx.shell_approval_workflow.status("accepted")["execution"] == "settled"
-        assert ctx.shell_approval_workflow.status("claimed")["execution"] == "uncertain"
+        assert _status(ctx, "accepted")["execution"] == "settled"
+        assert _status(ctx, "claimed")["execution"] == "uncertain"
     finally:
         ctx.close()
 
 
-def test_stop_cancels_accepted_queue_across_restart(tmp_path, monkeypatch):
+def test_stop_cancels_accepted_queue_across_restart(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = AppContext(tmp_path)
     seed(ctx, continue_after=False)
-    monkeypatch.setattr(ctx.shell_approval_workflow, "_schedule", lambda _: None)
+    monkeypatch.setattr(ctx.shell_approval_workflow, "_schedule", _ignore_approval)
     api.shell_approval_response(ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=Mock())
     ctx.request_stop()
     ctx.close()
@@ -179,12 +220,12 @@ def test_stop_cancels_accepted_queue_across_restart(tmp_path, monkeypatch):
         restarted.shell_approval_workflow.start(Mock())
         assert restarted.shell_approval_workflow.wait(5)
         execute.assert_not_called()
-        assert restarted.shell_approval_workflow.status("approval")["decision"] == "cancelled"
+        assert _status(restarted, "approval")["decision"] == "cancelled"
     finally:
         restarted.close()
 
 
-def test_shutdown_preserves_undecided_approval(tmp_path):
+def test_shutdown_preserves_undecided_approval(tmp_path: Path) -> None:
     ctx = AppContext(tmp_path)
     seed(ctx)
     from codey.app.shell_approval_state import restore_pending_shell_approvals
@@ -193,37 +234,38 @@ def test_shutdown_preserves_undecided_approval(tmp_path):
     ctx.close()
     restarted = AppContext(tmp_path)
     try:
-        assert restarted.run_state_payload()["pending_event"]["id"] == "approval"
+        pending = require_object_fields(restarted.run_state_payload()["pending_event"])
+        assert pending["id"] == "approval"
     finally:
         restarted.close()
 
 
-def test_continuation_retry_never_reexecutes_settled_command(tmp_path, monkeypatch):
+def test_continuation_retry_never_reexecutes_settled_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = AppContext(tmp_path)
     seed(ctx)
-    execute = Mock(return_value={"ok": True, "status": "exit", "output": "done", "exit_code": 0})
+    execute = Mock(return_value=_completed_result())
     monkeypatch.setattr(shell_service, "execute_shell_ticket", execute)
     submit = Mock()
     try:
         api.shell_approval_response(ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=submit)
         assert ctx.shell_approval_workflow.wait(5)
-        assert ctx.shell_approval_workflow.status("approval")["continuation"] == "started"
+        assert _status(ctx, "approval")["continuation"] == "started"
         assert ctx.shell_approval_workflow.retry("approval", submit)[0] == 409
         assert execute.call_count == 1
         submit.assert_not_called()
-        assert ctx.durable.task("source").status.value in {"pending", "running"}
+        assert _task_status(ctx).value in {"pending", "running"}
         assert ctx.durable.approval("approval").continuation_run_id == "source"
     finally:
         ctx.close()
 
 
-def test_unpersisted_result_is_uncertain_and_not_published(tmp_path, monkeypatch):
+def test_unpersisted_result_is_uncertain_and_not_published(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = AppContext(tmp_path)
     seed(ctx)
     monkeypatch.setattr(
         shell_service,
         "execute_shell_ticket",
-        Mock(return_value={"ok": True, "status": "exit", "output": "done", "exit_code": 0}),
+        Mock(return_value=_completed_result()),
     )
     publish = Mock()
     monkeypatch.setattr(ctx, "record_shell_result", publish)
@@ -232,21 +274,16 @@ def test_unpersisted_result_is_uncertain_and_not_published(tmp_path, monkeypatch
         api.shell_approval_response(ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=Mock())
         assert ctx.shell_approval_workflow.wait(5)
         publish.assert_not_called()
-        assert ctx.shell_approval_workflow.status("approval")["execution"] == "uncertain"
+        assert _status(ctx, "approval")["execution"] == "uncertain"
         assert ctx.shell_approval_workflow.retry("approval", Mock())[0] == 409
     finally:
         ctx.close()
 
 
-def test_failed_result_write_does_not_block_next_approval(tmp_path, monkeypatch):
+def test_failed_result_write_does_not_block_next_approval(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = AppContext(tmp_path)
     execute = Mock(
-        return_value={
-            "ok": True,
-            "status": "exit",
-            "output": "done",
-            "exit_code": 0,
-        }
+        return_value=_completed_result()
     )
     monkeypatch.setattr(shell_service, "execute_shell_ticket", execute)
     submit = Mock()
@@ -298,15 +335,15 @@ def test_failed_result_write_does_not_block_next_approval(tmp_path, monkeypatch)
         ctx.close()
 
 
-def test_stop_during_execution_stays_cancelled_after_result_settlement(tmp_path, monkeypatch):
+def test_stop_during_execution_stays_cancelled_after_result_settlement(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = AppContext(tmp_path)
     seed(ctx)
     entered, release = threading.Event(), threading.Event()
 
-    def execute(*_):
+    def execute(ctx: shell_service.ShellExecutionContext, ticket: shell_service.ShellExecutionTicket) -> shell_service.ShellResult:
         entered.set()
         assert release.wait(5)
-        return {"ok": True, "status": "exit", "output": "done", "exit_code": 0}
+        return _completed_result()
 
     monkeypatch.setattr(shell_service, "execute_shell_ticket", execute)
     submit = Mock(return_value="unexpected")
@@ -320,13 +357,13 @@ def test_stop_during_execution_stays_cancelled_after_result_settlement(tmp_path,
         release.set()
         assert ctx.shell_approval_workflow.wait(5)
         submit.assert_not_called()
-        assert ctx.shell_approval_workflow.status("approval")["continuation"] == "cancelled"
+        assert _status(ctx, "approval")["continuation"] == "cancelled"
     finally:
         release.set()
         ctx.close()
 
 
-def test_resume_entry_blocks_pending_native_approval_before_new_window(tmp_path):
+def test_resume_entry_blocks_pending_native_approval_before_new_window(tmp_path: Path) -> None:
     ctx = AppContext(tmp_path)
     seed(ctx)
     submit = Mock(return_value="unexpected")
@@ -343,7 +380,7 @@ def test_resume_entry_blocks_pending_native_approval_before_new_window(tmp_path)
         ctx.close()
 
 
-def test_restart_preserves_explicit_unattached_chat(tmp_path):
+def test_restart_preserves_explicit_unattached_chat(tmp_path: Path) -> None:
     ctx = AppContext(tmp_path)
     seed(ctx)
     ctx.close()
@@ -354,16 +391,20 @@ def test_restart_preserves_explicit_unattached_chat(tmp_path):
         restarted.close()
 
 
-def test_restart_does_not_resubmit_continuation_when_durable_task_is_unknown(tmp_path, monkeypatch):
+def test_restart_does_not_resubmit_continuation_when_durable_task_is_unknown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = AppContext(tmp_path)
     seed(ctx)
-    execute = Mock(return_value={"ok": True, "status": "exit", "output": "done", "exit_code": 0})
+    execute = Mock(return_value=_completed_result())
     monkeypatch.setattr(shell_service, "execute_shell_ticket", execute)
-    submitted = []
+    submitted: list[str] = []
 
-    def enqueue(*args, **kwargs):
-        submitted.append(kwargs["run_id"])
-        return kwargs["run_id"]
+    def enqueue(session_id: str, project: str | None, task: str, max_turns: int,
+                continue_task: bool, provider_id: str, intent: str, /,
+                *, previous_run_id: str = "", initial_shell_results: tuple[dict[str, object], ...] = (),
+                model_selection: ApiRunSelection | None = None, run_id: str = "",
+                input: TaskInput | None = None) -> str | None:
+        submitted.append(run_id)
+        return run_id
 
     api.shell_approval_response(ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=enqueue)
     assert ctx.shell_approval_workflow.wait(5)
@@ -379,7 +420,7 @@ def test_restart_does_not_resubmit_continuation_when_durable_task_is_unknown(tmp
         restarted.close()
 
 
-def test_ui_state_does_not_own_approval_transcript(tmp_path):
+def test_ui_state_does_not_own_approval_transcript(tmp_path: Path) -> None:
     ctx = AppContext(tmp_path)
     fact = seed(ctx)
     state = {
@@ -407,15 +448,16 @@ def test_ui_state_does_not_own_approval_transcript(tmp_path):
         )
         restored = ctx.load_ui_state()
         assert restored["active_id"] == "session"
-        assert restored["sessions"][0]["title"] == "Approval session"
-        assert "messages" not in restored["sessions"][0]
+        sessions = require_object_rows(restored["sessions"])
+        assert sessions[0]["title"] == "Approval session"
+        assert "messages" not in sessions[0]
         latest = ctx.shell_approval_records.latest(fact.approval_id)
         assert latest is not None and latest.approval_id == fact.approval_id
     finally:
         ctx.close()
 
 
-def test_decision_requires_verified_command_even_with_live_card(tmp_path, monkeypatch):
+def test_decision_requires_verified_command_even_with_live_card(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = AppContext(tmp_path)
     fact = seed(ctx)
     from codey.app.shell_approval_state import restore_pending_shell_approvals
@@ -427,24 +469,24 @@ def test_decision_requires_verified_command_even_with_live_card(tmp_path, monkey
             ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=Mock()
         )
         assert code == 409 and payload["code"] == "command_unavailable"
-        assert ctx.shell_approval_records.latest(fact.approval_id).kind == "requested"
+        assert _latest(ctx, fact.approval_id).kind == "requested"
     finally:
         monkeypatch.undo()
         ctx.close()
 
 
-def test_worker_publication_never_holds_coordination_lock(tmp_path, monkeypatch):
+def test_worker_publication_never_holds_coordination_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = AppContext(tmp_path)
     seed(ctx)
     entered = threading.Event()
     original = ctx.emit
 
-    def emit(event):
+    def emit(event: dict[str, object]) -> None:
         entered.set()
         original(event)
 
     monkeypatch.setattr(ctx, "emit", emit)
-    monkeypatch.setattr(ctx.shell_approval_workflow, "_process", lambda _: None)
+    monkeypatch.setattr(ctx.shell_approval_workflow, "_process", _ignore_approval)
     try:
         # Approval admission holds ctx.lock while reading worker status. A
         # completing worker must not reverse that order during publication.
@@ -460,38 +502,38 @@ def test_worker_publication_never_holds_coordination_lock(tmp_path, monkeypatch)
         ctx.close()
 
 
-def test_missing_settled_receipt_is_uncertain_and_not_resubmitted(tmp_path, monkeypatch):
+def test_missing_settled_receipt_is_uncertain_and_not_resubmitted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = AppContext(tmp_path)
     seed(ctx, continue_after=False)
     monkeypatch.setattr(
         shell_service,
         "execute_shell_ticket",
-        Mock(return_value={"ok": True, "status": "exit", "output": "done", "exit_code": 0}),
+        Mock(return_value=_completed_result()),
     )
     try:
         api.shell_approval_response(ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=Mock())
         assert ctx.shell_approval_workflow.wait(5)
-        assert ctx.shell_approval_workflow.status("approval")["execution"] == "settled"
+        assert _status(ctx, "approval")["execution"] == "settled"
         monkeypatch.setattr(ctx.managed_outputs, "read_json_artifact", Mock(side_effect=ValueError("digest mismatch")))
-        assert ctx.shell_approval_workflow.status("approval")["execution"] == "uncertain"
+        assert _status(ctx, "approval")["execution"] == "uncertain"
         assert ctx.shell_approval_workflow.retry("approval", Mock())[0] == 409
     finally:
         ctx.close()
 
 
 @pytest.mark.parametrize("approved", [True, False])
-def test_missing_receipt_blocks_failed_continuation_retry_for_both_decisions(tmp_path, monkeypatch, approved):
+def test_missing_receipt_blocks_failed_continuation_retry_for_both_decisions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, approved: bool) -> None:
     ctx = AppContext(tmp_path)
     seed(ctx)
-    execute = Mock(return_value={"ok": True, "status": "exit", "output": "done", "exit_code": 0})
+    execute = Mock(return_value=_completed_result())
     monkeypatch.setattr(shell_service, "execute_shell_ticket", execute)
     submit = Mock(return_value=None)
     try:
         api.shell_approval_response(ctx, {"id": "approval", "approved": approved}, submit_task_after_slot_release=submit)
         assert ctx.shell_approval_workflow.wait(5)
-        assert ctx.shell_approval_workflow.status("approval")["continuation"] == "started"
+        assert _status(ctx, "approval")["continuation"] == "started"
         monkeypatch.setattr(ctx.shell_approval_workflow, "_read_result", Mock(side_effect=ValueError("digest mismatch")))
-        state = ctx.shell_approval_workflow.status("approval")
+        state = _status(ctx)
         assert state["continuation"] == "unavailable", "a failed continuation hid its missing result receipt"
         assert ctx.shell_approval_workflow.retry("approval", submit)[0] == 409
         assert submit.call_count == 0
@@ -500,18 +542,20 @@ def test_missing_receipt_blocks_failed_continuation_retry_for_both_decisions(tmp
         ctx.close()
 
 
-def test_background_shell_owns_visible_busy_state_until_it_settles(tmp_path, monkeypatch):
-    ctx = AppContext(tmp_path)
+def test_background_shell_owns_visible_busy_state_until_it_settles(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Keep this approval worker as the only live work contributing to busy.
+    ctx = AppContext(tmp_path, start_scheduler=False)
     seed(ctx, continue_after=False)
     entered, release = threading.Event(), threading.Event()
 
-    def execute(*_):
+    def execute(ctx: shell_service.ShellExecutionContext, ticket: shell_service.ShellExecutionTicket) -> shell_service.ShellResult:
         entered.set()
         assert release.wait(5)
-        return {"ok": True, "status": "exit", "output": "done", "exit_code": 0}
+        return _completed_result()
 
     monkeypatch.setattr(shell_service, "execute_shell_ticket", execute)
     try:
+        assert not ctx.run_registry.active_runs()
         api.shell_approval_response(ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=Mock())
         assert entered.wait(5)
         snapshot = ctx.run_state_payload()
@@ -520,13 +564,14 @@ def test_background_shell_owns_visible_busy_state_until_it_settles(tmp_path, mon
         assert snapshot["run_id"] == "source"
         release.set()
         assert ctx.shell_approval_workflow.wait(5)
+        assert not ctx.run_registry.active_runs()
         assert ctx.run_state_payload()["busy"] is False
     finally:
         release.set()
         ctx.close()
 
 
-def test_stop_before_continuation_admission_cannot_be_undone_by_new_work(tmp_path, monkeypatch):
+def test_stop_before_continuation_admission_cannot_be_undone_by_new_work(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.app import task_submit
 
     ctx = AppContext(tmp_path)
@@ -534,22 +579,32 @@ def test_stop_before_continuation_admission_cannot_be_undone_by_new_work(tmp_pat
     monkeypatch.setattr(
         shell_service,
         "execute_shell_ticket",
-        Mock(return_value={"ok": True, "status": "exit", "output": "done", "exit_code": 0}),
+        Mock(return_value=_completed_result()),
     )
-    monkeypatch.setattr(ctx.providers.model_preferences, "allows", lambda *_: True)
+    def allow_model(*selection: object) -> bool:
+        return True
+
+    monkeypatch.setattr(ctx.providers.model_preferences, "allows", allow_model)
     queued = Mock(return_value=True)
     monkeypatch.setattr(task_submit, "submit_browser_task", queued)
 
-    def submit(*args, **kwargs):
+    def submit(session_id: str, project: str | None, task: str, max_turns: int,
+               continue_task: bool, provider_id: str, intent: str, /,
+               *, previous_run_id: str = "", initial_shell_results: tuple[dict[str, object], ...] = (),
+               model_selection: ApiRunSelection | None = None, run_id: str = "",
+               input: TaskInput | None = None) -> str | None:
         ctx.request_stop()
         ctx.run_registry.stop_flag.clear()
-        return task_submit.submit_task(*args, get_state=lambda: ctx, **kwargs)
+        return task_submit.submit_task(session_id, project, task, max_turns, continue_task, provider_id, intent,
+                                       get_state=lambda: ctx, previous_run_id=previous_run_id,
+                                       initial_shell_results=initial_shell_results, model_selection=model_selection,
+                                       run_id=run_id, input=input)
 
     try:
         api.shell_approval_response(ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=submit)
         assert ctx.shell_approval_workflow.wait(5)
         queued.assert_called_once()
-        assert ctx.shell_approval_workflow.status("approval")["continuation"] == "started"
+        assert _status(ctx, "approval")["continuation"] == "started"
     finally:
         active = ctx.current_run()
         if active is not None:
@@ -557,15 +612,17 @@ def test_stop_before_continuation_admission_cannot_be_undone_by_new_work(tmp_pat
         ctx.close()
 
 
-def test_shutdown_between_result_and_resume_preserves_delivery_for_restart(tmp_path, monkeypatch):
-    ctx = AppContext(tmp_path)
+def test_shutdown_between_result_and_resume_preserves_delivery_for_restart(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Hold the durable wakeup queued until restart so this test owns the gap
+    # between receipt settlement and execution of the resumed task.
+    ctx = AppContext(tmp_path, start_scheduler=False)
     seed(ctx)
-    execute = Mock(return_value={"ok": True, "status": "exit", "output": "done", "exit_code": 0})
+    execute = Mock(return_value=_completed_result())
     monkeypatch.setattr(shell_service, "execute_shell_ticket", execute)
     entered, release = threading.Event(), threading.Event()
     original = ctx.record_shell_result
 
-    def publish(event):
+    def publish(event: Mapping[str, object]) -> None:
         original(event)
         entered.set()
         assert release.wait(5)
@@ -576,18 +633,20 @@ def test_shutdown_between_result_and_resume_preserves_delivery_for_restart(tmp_p
     try:
         api.shell_approval_response(ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=submit)
         assert entered.wait(5)
+        assert not ctx.run_registry.active_runs()
+        assert _task_status(ctx) is TaskStatus.PENDING
         closer.start()
         assert ctx.run_registry.stop_flag.wait(5)
         release.set()
         closer.join(5)
         assert not closer.is_alive() and ctx.closed
         submit.assert_not_called()
-        assert ctx.shell_approval_records.latest("approval").kind == "execution_settled"
+        assert _latest(ctx, "approval").kind == "execution_settled"
         restarted = AppContext(tmp_path)
         try:
             restarted.shell_approval_workflow.start(submit)
             assert restarted.shell_approval_workflow.wait(5)
-            assert restarted.shell_approval_workflow.status("approval")["continuation"] == "started"
+            assert _status(restarted, "approval")["continuation"] == "started"
             assert execute.call_count == 1
         finally:
             restarted.close()
@@ -598,7 +657,7 @@ def test_shutdown_between_result_and_resume_preserves_delivery_for_restart(tmp_p
         ctx.close()
 
 
-def test_invalid_shell_contract_settles_claim_without_spawning_or_replaying(tmp_path, monkeypatch):
+def test_invalid_shell_contract_settles_claim_without_spawning_or_replaying(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.policies.command_line import resolve_shell
 
     ctx = AppContext(tmp_path, start_scheduler=False)
@@ -611,12 +670,13 @@ def test_invalid_shell_contract_settles_claim_without_spawning_or_replaying(tmp_
         status, _ = api.shell_approval_response(ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=Mock())
         assert status == 202
         assert ctx.shell_approval_workflow.wait(5)
-        settled = ctx.shell_approval_workflow.status("approval")
+        settled = _status(ctx)
         assert settled["execution"] == "settled"
-        fact = ctx.shell_approval_records.latest("approval")
+        fact = _latest(ctx)
         result = ctx.shell_approval_workflow._read_result(fact)
         assert result["status"] == "spawn_error"
-        assert "not executed" in result["output"]
+        output = require_json_string(result["output"], "output")
+        assert "not executed" in output
         assert api.shell_approval_response(ctx, {"id": "approval", "approved": True}, submit_task_after_slot_release=Mock())[0] == 202
         assert ctx.shell_approval_workflow.wait(5)
         execute.assert_not_called()

@@ -1,6 +1,7 @@
 """Durable approval fixture using the same artifact contract as the hook."""
 
 import hashlib
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from codey.agents.shell_approval import shell_command_payload
@@ -20,11 +21,7 @@ def admit_shell_task(ctx: "AppContext", *, session_id: str, run_id: str, task: s
         return
     except KeyError:
         pass
-    selection = None
-    registry = getattr(ctx, "run_registry", None)
-    lookup_selection = getattr(registry, "api_selection_for", None)
-    if callable(lookup_selection):
-        selection = lookup_selection(run_id)
+    selection = ctx.run_registry.api_selection_for(run_id)
     from codey.providers.snapshot import provider_snapshot
     ctx.durable.admit_input(
         conversation_id=session_id,
@@ -47,10 +44,11 @@ def add_pending_approval(ctx: "AppContext", approval_id: str, pending: dict[str,
     row["shell"] = shell.to_payload()
     event = row.get("ui_event")
     if isinstance(event, dict):
-        row.setdefault("session_id", event.get("session_id"))
-        row.setdefault("run_id", event.get("run_id"))
-        row.setdefault("command", event.get("command", ""))
-        row.setdefault("cwd", event.get("cwd", "."))
+        event_fields: Mapping[object, object] = event
+        row.setdefault("session_id", event_fields.get("session_id"))
+        row.setdefault("run_id", event_fields.get("run_id"))
+        row.setdefault("command", event_fields.get("command", ""))
+        row.setdefault("cwd", event_fields.get("cwd", "."))
     row["analysis"] = analyze_shell(str(row.get("command") or ""), shell).to_payload()
     session_id = str(row.get("session_id") or "")
     run_id = str(row.get("run_id") or "")

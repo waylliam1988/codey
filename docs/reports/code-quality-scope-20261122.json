@@ -3007,7 +3007,7 @@
       "files": [
         "codey/app/shell_approval_workflow.py"
       ],
-      "status": "in_progress",
+      "status": "completed_changed",
       "reviewed_files": [
         "codey/app/shell_approval_workflow.py"
       ],
@@ -3030,10 +3030,12 @@
         "tests/support/shell_approval.py",
         "tests/test_shell_approval_lifecycle.py"
       ],
-      "result": "Production worker admission fix independently verified: rejected Thread.start RuntimeError retained phantom single-flight owner; accept/recovery original2fail/1validpass, same3pass after rollback and notify under original condition, exception propagates and durable approved decision remains recoverable. Whole workflow69 diagnostics->0, ParamSpec callback signatures and PendingApproval/typed AppContext boundaries, result object fields validated, no casts/ignores. New whole worker regression also strictAny0. Final workspace acceptance97distinctpass: final direct32 and prior unaffected final callers65. Lifecycle and shared fixture repairs fully verified in current workspace, to be committed separately next; do not claim all scope commits complete before then. Source normal production mypy760/Pyrefly35suppressed166warnings/ty/precision0 remain valid; all4governed files+2ignored runners strictAny0, scoped Pyrefly/ty/Ruff0 on stable hashes. User requested finish this batch then pause; Q024D not started.",
-      "followups": [
-        "Commit independently verified lifecycle fixture isolation and whole-file test typing, then pause per user."
-      ]
+      "result": "Completed workflow ownership/result recovery and all deeply reviewed supporting scripts. Worker startup bug: real approval accept/recovery paths original2fail/1controlpass, same3pass after RuntimeError rollback+notify while retaining durable decision and surfacing failure. Workflow69, shared fixture5 and complete lifecycle script204 diagnostics->0; new worker regression and two ignored evidence scripts also strictAny0 (6files), scoped Pyrefly/ty/Ruff0; one original redundant str warning disclosed. PendingApproval, ParamSpec callbacks, typed AppContext ports, runtime object-key/Optional/scalar validation, fresh typed success-result fixture preserves prior values, no casts/ignores/dependency/config changes. Existing lifecycle fixture failures were global-stop-event and global-busy assumptions with uncontrolled automatic Core dispatch: baseline final direct31pass/1fail; controlled valid active admission in old/current sources both stops per-run without global flag; complete closure rerun also27pass/1busyfail. Isolate only two tests with supported start_scheduler=False and assert no active run/queued wakeup, retain all original critical assertions and real restart scheduler. Original24test functions retained; static asserts99->106 is inventory only. Final exact direct4files32pass plus unchanged accepted callers5files65pass=97distinctpassed/no skips. Whole production mypy760/Pyrefly35suppressed166warnings/ty/precision0 remain valid on unchanged production hashes; final local six-file checks serial and source/test hashes stable. Source fix committed82cfb5e6; test fixture/typing closure committed separately immediately afterward, hash can be filled next progress update to avoid self-reference. User requested pause after this batch; Q024D not started, overall repository goal incomplete. Existing Q189/Q200/Q021C debts remain at their owners.",
+      "followups": [],
+      "commits": [
+        "82cfb5e6"
+      ],
+      "candidate_test_count": 9
     },
     {
       "id": "Q024D",
