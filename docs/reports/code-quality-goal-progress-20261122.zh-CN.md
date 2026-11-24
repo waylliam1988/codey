@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：goal 已按用户要求暂停（2026-11-23）。以下第一、二批是恢复前的历史证据；本轮从干净的 `7555d488` 继续，按文末全仓分区队列推进。历史未完成项仍保留，不将历史提交或本轮局部验收视为全仓治理完成。
+当前状态：用户重新启用 goal，当前 active（2026-11-24）。以下第一、二批是恢复前的历史证据；本轮从干净的 `7555d488` 继续，按文末全仓分区队列推进。历史未完成项仍保留，不将历史提交或本轮局部验收视为全仓治理完成。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1280,3 +1280,20 @@ Q022D summary范围校验修复已提交：`458c9730`（fix(memory): classify su
 - 本批各阶段实际执行过且验收仍有效的不重复节点并集为 **62 passed、0失败/0skip**（action9、summary最终8、lifecycle24、learning_targets5、feedback10、adaptation5、review-route1），不是把53＋51＋11相加；新summary过滤测试已在重构前后执行。两完整源＋两完整新脚本严格Any/Pyrefly/ty/Ruff全部0，runner强Any0（5file），q022d-filter-local-*.json。未全面阅读/修改的原脚本仅计行为执行，不宣称其整文件Any完成。
 - 最终生产门在真实重构后串行补验：mypy **0/760file**、Pyrefly **0/35suppressed/166warnings**、ty **0**、kernel precision **0**，q022d-final-production-*.json/q022d-final-precision.json，记录当前源码hash和起止HEAD，无测试或门禁进程遗留。前后两确定性bug均已保存有效失败→相同输入通过证据；类型原0的源未做强行改动，memory_learning仅检查/验证后保留。源导入/语法由真实pytest与三类型门验证，未触及前端/打包入口、发布资产或复制源码树。
 - Q022D两源声明范围验收完成，待独立过滤收敛提交。累计 **42/321完整批次、80/1006完整批次生产源**；另10个部分源独立验证，累计90。21条运行时依赖Any和Q021C浏览器/463Any仍未解决；总goal active，全仓未完成。下一主批Q023仅memory_maintenance.py的原scheduler维护适配与游标生命周期；用户审查报告始终不暂存。
+
+Q022D 过滤收敛已提交：`39a5535c`（refactor(memory): share summary scope filtering）。
+
+### Q023 Scheduler maintenance / history recovery（进行中）
+
+- 用户重新启用总goal，从真实HEAD 39a5535c和下一未开始批次继续；仅用户未跟踪审查报告保留，不触碰或暂存。Q019B原提交已核验，无新增证据，不重新检查已完成源。
+- 当前完整阅读memory_maintenance.py及test_memory_maintenance_runtime.py，范围是原scheduler的idle维护、两类恢复游标与失败投影重试；先执行原两项行为基线及整文件Any，再复现删除任务后append-only历史是否阻塞仍存活任务恢复。正确性依据为Core允许删除会话而commit历史保留，不得让已删除来源阻断其他会话的可选投影。未修改生产代码，尚未认定bug。
+
+- 原2节点基线0/2passed（q023-baseline.json）；完整源/现有测试/runner强Any基线1，源35-36两条Mapping条件传播，测试与runner0。真实MemoryDurableStore与SQLiteDurableStore删除已结算old-run会话后，commit前缀仍保留，再结算kept-run，维护在查询old-run时KeyError，两后端相同2failed/exit1（q023-deleted-task-before-valid.json）。前置删除/保留历史断言已实际通过；不依赖mock或错误测试预期。初稿额外调用不存在的MemoryService.close导致teardown AttributeError，已修正夹具后重新取得仅目标行为失败的证据，初稿不作正式复现依据。
+- 违反memory-boundary第51-54行的Core补读恢复和成功消费推进游标合同：已删除任务没有可恢复来源，应完成该历史条目消费而非永远阻塞其他会话。下一步仅识别task查询的缺失KeyError，不隐藏存储失败或投影返回False；补齐有效任务、已删除任务、重复维护和失败重试边界。
+
+- 修复仅处理历史task查询的缺失KeyError，将其视为已无来源的完成消费；其他错误照常抛出，投影False仍中止当前扫描而不跨过失败位置。_recover_knowledge仅补具体tuple[object,...]/Mapping[object,object]视图，三个所消费字段仍逐一判断，不按object掩盖动态字段约束。真实memory/SQLite相同输入 **0，2 passed，1.74秒**（q023-deleted-task-after.json），存活task经历恢复、历史游标到末尾、已删除task仍不存在，重复维护没有重复item。
+- 补充维护内投影失败不越过cursor、第二次可恢复；OSError不是缺失任务；知识恢复两种Ghost开关下False重试/只消费一次。直接完整脚本 **0，8 passed，2.93秒**（q023-direct-final.json）；知识fixture初稿依赖临时AppContext自动建knowledge而为None，属隔离配置问题，两失败不是生产bug，显式创建真实KnowledgeStore后8通过。随后仅把测试原函数引用从非公开重导出改为其原定义模块以满足mypy，受影响两节点在下面runtime批再次实际通过，无业务改动或预期放宽。
+- 关联memory/deletion：`python -m pytest -q tests/test_memory_boundary.py tests/test_memory_completion.py tests/durable/test_conversation_delete_commit.py --tb=short` → **0，62 passed，21.85秒**（q023-callers-memory.json）；scheduler/knowledge/cleanup：`python -m pytest -q tests/durable/test_scheduler.py tests/test_knowledge_version_graph.py tests/test_forget_session_cleanup.py tests/test_memory_maintenance_runtime.py::test_knowledge_recovery_retries_completion_then_consumes_it_once --tb=short` → **0，31 passed，7.89秒**（q023-callers-runtime.json）。去重8+62+31-2=**99 passed、0失败/0skip**；基线和复现不额外相加，未运行全量pytest，其余模块未覆盖。
+- 完整源/完整maintenance脚本/忽略runner强Any **0/3file**（q023-local-any-complete.json）；源/测试Pyrefly0、ty0、Ruff0（q023-local-{pyrefly,ty,ruff}.json）。生产门按要求串行执行：`python -m mypy codey --python-version 3.11` **0/760file**、`pyrefly check codey --python-version 3.11` **0/35suppressed/166warnings**、`ty check codey --python-version 3.11` **0**、`python -m tools.kernel_type_precision_gate` **0**（q023-production-*.json/q023-precision.json）。所有成功证据核对源码前后hash、最终工作区hash和起止HEAD一致；Windows/Python3.12实跑、类型目标3.11，不宣称其他平台实测。
+- MemoryMaintenance是AppContext唯一注册的原scheduler idle callback，_recover_knowledge由本类调用；两观察器分别维护持久memory游标与实例knowledge游标、消费不同事实且失败语义不同，不强行合并，不删除有契约入口。无需新依赖/配置/公开API变更，既有两个原测试断言全部保留。旧checkpoint/operation_payload Any、Q021C浏览器/463Any及其他未完成事项继续保留原队列。
+- Q023单源声明范围验收完成，准备独立本地提交。累计 **43/321完整批次、81/1006完整批次生产源**，另10部分源独立验证，累计91；全仓未完成、总goal active。下一主批Q024先按真实shell/审批职责核对是否需分区，不重开已完成源。用户未跟踪审查报告始终不暂存，无worktree/源码树复制或远端修改。

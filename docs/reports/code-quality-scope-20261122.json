@@ -2897,7 +2897,8 @@
       "followups": [],
       "commits": [
         "bc7ff75b",
-        "458c9730"
+        "458c9730",
+        "39a5535c"
       ]
     },
     {
@@ -2906,10 +2907,28 @@
         "codey/app/memory_maintenance.py"
       ],
       "id": "Q023",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 1
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/app/memory_maintenance.py"
+      ],
+      "verified_files": [
+        "codey/app/memory_maintenance.py"
+      ],
+      "candidate_test_count": 7,
+      "reviewed_support": [
+        "tests/test_memory_maintenance_runtime.py"
+      ],
+      "tests": [
+        "tests/test_memory_maintenance_runtime.py",
+        "tests/test_memory_boundary.py",
+        "tests/test_memory_completion.py",
+        "tests/durable/test_conversation_delete_commit.py",
+        "tests/durable/test_scheduler.py",
+        "tests/test_knowledge_version_graph.py",
+        "tests/test_forget_session_cleanup.py"
+      ],
+      "result": "Complete scheduler maintenance adapter review. Append-only commits retain deleted task IDs, direct task precheck blocked all subsequent live recovery: real memory+SQLite original2KeyError failures, same inputs2pass after missing-task-only handling; historical records consumed without resurrection, surviving task projects once. Non-KeyError storage errors propagate, failed projections retain retry position, knowledge completion cursor retries then consumes once with Ghost enabled/disabled. Whole source implicitAny2->0 via typed tuple/object Mapping views; whole maintenance tests/runner strictAny0, Pyrefly/ty/Ruff0. Final direct8+memory/deletion62+runtime/knowledge31 with2overlap=99distinctpassed/no skips. Initial fixture teardown used nonexistent MemoryService.close (not accepted evidence), corrected before valid original failure. Optional knowledge fixture initially absent by documented temporary-state setup, explicitly provisioned actual KnowledgeStore rather than production change. Final production mypy760/Pyrefly35suppressed166warnings/ty/precision0, final source hashes and HEAD stable. No public/dead-code deletions or forced merger of distinct cursors, no dependency/config/ignores/casts or worktree copies. Necessary previously governed dependencies only contract-located, not reopened.",
+      "followups": []
     },
     {
       "responsibility": "codey/app: shell execution and authorization",

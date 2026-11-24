@@ -31,9 +31,13 @@ class MemoryMaintenance:
         for record in records:
             projections = record.payload.get("projections")
             if isinstance(projections, tuple):
-                for event in projections:
-                    if (isinstance(event, Mapping) and event.get("type") == "task_progressed"
-                            and event.get("phase") == "completed" and isinstance(run_id := event.get("task_id"), str)
+                events: tuple[object, ...] = projections
+                for event in events:
+                    if not isinstance(event, Mapping):
+                        continue
+                    fields: Mapping[object, object] = event
+                    if (fields.get("type") == "task_progressed"
+                            and fields.get("phase") == "completed" and isinstance(run_id := fields.get("task_id"), str)
                             and not observe_knowledge(store, self.durable, self.outputs, run_id)):
                         return False
             self._knowledge_cursor = record.sequence
@@ -48,8 +52,13 @@ class MemoryMaintenance:
         for record in records:
             task_id = record.payload.get("task_id")
             if isinstance(task_id, str) and task_id:
-                task = self.durable.task(task_id)
-                if task.execution_kind != "tool" and not observe_terminal(self.memory, self.durable, task_id, self.outputs):
+                try:
+                    task = self.durable.task(task_id)
+                except KeyError:
+                    # Commit history outlives deleted conversations and their tasks.
+                    task = None
+                if (task is not None and task.execution_kind != "tool"
+                        and not observe_terminal(self.memory, self.durable, task_id, self.outputs)):
                     break
             last = record
         if last is not None:
