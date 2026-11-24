@@ -1,4 +1,6 @@
+import sqlite3
 import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -26,11 +28,13 @@ def test_concurrent_cold_start_serializes_schema_initialization(tmp_path: Path) 
     assert identities and all(identity == identities[0] for identity in identities)
 
 
-def test_cold_start_serializes_the_wal_change_before_schema_transactions(tmp_path, monkeypatch):
+def test_cold_start_serializes_the_wal_change_before_schema_transactions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     first_entered, release, second_entered = threading.Event(), threading.Event(), threading.Event()
-    calls = []
+    calls: list[bool] = []
 
-    def initialize(connect):
+    def initialize(connect: Callable[[], sqlite3.Connection]) -> str:
         calls.append(True)
         if len(calls) == 1:
             first_entered.set()
@@ -62,7 +66,7 @@ def test_history_and_replayed_events_use_the_persisted_database_identity(tmp_pat
 
 
 @pytest.mark.parametrize("scope,after", [("other-database", 1), (None, 1), ("current", 500), ("current", 1)])
-def test_sse_reconciles_database_reset_or_cursor_ahead_without_skipping_commits(scope, after) -> None:
+def test_sse_reconciles_database_reset_or_cursor_ahead_without_skipping_commits(scope: str | None, after: int) -> None:
     from tests.sse_http import capture_events
 
     session = DurableSession(MemoryDurableStore())

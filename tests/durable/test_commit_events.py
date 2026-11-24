@@ -8,15 +8,19 @@ from pathlib import Path
 import pytest
 
 from codey.durable import DurableSession, EffectRecord, MemoryDurableStore, SQLiteDurableStore
+from codey.durable.model import CommitRecord, CommitResult, DurableMutation, TaskCheckpoint
+from codey.utils.object_fields import require_object_rows
 
 
 @pytest.fixture(params=["memory", "sqlite"])
 def session(request: pytest.FixtureRequest, tmp_path: Path) -> DurableSession:
-    store = MemoryDurableStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    backend: object = request.param
+    assert backend in ("memory", "sqlite")
+    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     return DurableSession(store)
 
 
-def admit(session: DurableSession, *, task_id: str = "task"):
+def admit(session: DurableSession, *, task_id: str = "task") -> CommitResult:
     return session.admit_input(
         conversation_id="conversation", request_id="request", task_id=task_id,
         text="inspect", provider_snapshot={"provider_id": "local"},
@@ -31,7 +35,7 @@ def test_replay_retains_original_conversation_entry_and_task_identity(session: D
     assert payload["session_id"] == "conversation"
     assert payload["task_id"] == "task"
     assert payload["entry_ids"] == [session.entries("conversation")[0].entry_id]
-    assert {event["type"] for event in payload["projections"]} == {
+    assert {event["type"] for event in require_object_rows(payload["projections"])} == {
         "conversation_created", "entry_appended", "submission_admitted", "task_progressed",
     }
 
@@ -44,8 +48,13 @@ def test_append_returns_the_committed_entry_with_its_real_sequence(session: Dura
 
 
 def test_replayed_submission_does_not_publish_an_uncommitted_task_identity(session: DurableSession) -> None:
-    published = []
-    session._on_commit = lambda result, _mutation: published.append(result.record.to_payload())
+    published: list[dict[str, object]] = []
+
+    def publish(result: CommitResult, _mutation: DurableMutation) -> None:
+        assert result.record is not None
+        published.append(result.record.to_payload())
+
+    session._on_commit = publish
     result = admit(session)
     repeated = admit(session, task_id="task-that-was-never-created")
     assert repeated == result
@@ -63,16 +72,17 @@ def test_effect_settlement_event_and_checkpoint_have_one_commit(session: Durable
     result = session.settle_effect("task", EffectRecord("effect", "task", "tool_call", "safe", "digest", "ok", {}, {"ok": True}))
     [record] = session.commits_after(before)
     assert record.sequence == result.sequence
-    events = record.to_payload()["projections"]
+    events = require_object_rows(record.to_payload()["projections"])
     assert any(event["type"] == "effect_settled" and event["effect_id"] == "effect" for event in events)
     assert any(event["type"] == "task_progressed" and event["phase"] == "running" for event in events)
 
 
 def test_restart_after_commit_before_publication_replays_identical_event(tmp_path: Path) -> None:
     path = tmp_path / "durable.sqlite3"
-    observed = []
+    observed: list[dict[str, object]] = []
 
-    def publication_crash(result, _mutation):
+    def publication_crash(result: CommitResult, _mutation: DurableMutation) -> None:
+        assert result.record is not None
         observed.append(result.record.to_payload())
         raise RuntimeError("process stopped before SSE delivery")
 
@@ -91,7 +101,7 @@ def test_sqlite_failure_does_not_leave_an_event_or_advance_checkpoint(tmp_path: 
     admit(session)
     before = session.commits_after(0)
 
-    def fail_write(*_args):
+    def fail_write(_database: object, _task: TaskCheckpoint | None) -> None:
         raise OSError("checkpoint write failed")
 
     monkeypatch.setattr(sqlite_store, "_write_task", fail_write)
@@ -107,7 +117,8 @@ def test_real_process_exit_after_commit_before_publication(tmp_path: Path) -> No
     script = """
 import os, sys
 from codey.durable import DurableSession, SQLiteDurableStore
-def die(*_args):
+from codey.durable.model import CommitResult, DurableMutation
+def die(_result: CommitResult, _mutation: DurableMutation) -> None:
     os._exit(73)
 session = DurableSession(SQLiteDurableStore(sys.argv[1]), on_commit=die)
 session.admit_input(conversation_id='conversation', request_id='request', task_id='task',
@@ -133,3 +144,31 @@ def test_sse_replays_every_page_and_suppresses_queued_duplicates() -> None:
     replayed = [event for event in written if event["type"] == "durable_commit"]
     assert [event["commit_seq"] for event in replayed] == list(range(2, 522))
     assert all(event["session_id"] == "conversation" and event["entry_ids"] for event in replayed)
+
+
+@pytest.mark.parametrize("page_size", [1, 512])
+def test_replay_keeps_its_initial_cutoff_while_new_commits_arrive(
+    page_size: int, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from codey.app.durable_events import replay_commits
+
+    durable = DurableSession(MemoryDurableStore())
+    durable.create_conversation("chat")
+    for text in ("a", "b"):
+        durable.append_message("chat", "user_message", {"text": text})
+    initial_cutoff = durable.commit_sequence()
+    commits_after = durable.commits_after
+    cursors: list[int] = []
+
+    def arriving_page(sequence: int, *, limit: int = 100) -> tuple[CommitRecord, ...]:
+        cursors.append(sequence)
+        durable.append_message("chat", "user_message", {"text": "arrived during replay"})
+        return commits_after(sequence, limit=min(page_size, limit))
+
+    monkeypatch.setattr(durable, "commits_after", arriving_page)
+    try:
+        assert [record.sequence for record in replay_commits(durable, 0)] == list(range(1, initial_cutoff + 1))
+        assert durable.commit_sequence() > initial_cutoff
+        assert len(cursors) == (initial_cutoff if page_size == 1 else 1)
+    finally:
+        durable.close()

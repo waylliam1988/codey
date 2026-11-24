@@ -2710,18 +2710,21 @@
         "codey/app/durable_events.py",
         "codey/app/public_event_feed.py"
       ],
-      "status": "in_progress",
+      "status": "partial_follow_up",
       "reviewed_files": [
         "codey/app/durable_event_bridge.py",
         "codey/app/durable_events.py",
         "codey/app/public_event_feed.py"
       ],
       "verified_files": [
-        "codey/app/durable_event_bridge.py"
+        "codey/app/durable_event_bridge.py",
+        "codey/app/durable_events.py",
+        "codey/app/public_event_feed.py"
       ],
       "completion_condition": "whole-file review, Any audit, evidence for changes, scoped tests/checkers, diff review, record and local commit if changed",
       "followups": [
-        "Finish public feed/replay behavior and whole-file type validation. Browser startup/model-availability discrepancy under investigation; do not count browser or full batch as clean."
+        "Browser standard dual-protocol node remains unstable: three attempts each1failed/1passed at initial send-disabled; DOM says unavailable while same-run authenticated model_settings includes enabled local live-fixture. Current single case and controlled module-preloaded pair pass; old-source controls pass but import conditions differ. Root cause not established; do not declare failures independent of changes or repaired. Two rounds no definitive root: retain evidence q021c-browser-*.json and disabled-state JSON/PNG, stop same-condition retries; investigate model catalog/UI initialization at relevant owners.",
+        "tests/test_conversation_live_browser.py was inspected at peer/seed/open_live/send and target node during failure diagnosis. Whole-file strict Any463 diagnostics in contextmanager/HTTP handlers/fixtures, missing parameter/return types, dynamic JSON/callback containers (q021c-diagnostic-any.json). File unchanged and not governed; no whole-batch completion until this support debt and ordinary browser startup behavior are resolved. Frontend directory-consumer functions located only, no whole-file governance claim."
       ],
       "tests": [
         "tests/test_durable_event_bridge.py",
@@ -2744,12 +2747,19 @@
         "tests/test_public_event_feed_invalid_cursor.py"
       ],
       "reviewed_support": [
+        "tests/test_public_event_feed.py",
+        "tests/test_public_event_feed_invalid_cursor.py",
         "tests/test_durable_event_bridge.py",
-        "tests/test_public_event_feed_invalid_cursor.py"
+        "tests/durable/test_commit_events.py",
+        "tests/durable/test_database_cursor.py"
       ],
-      "result": "Independent bridge race fix ready: original controlled append-versus-last-flush interleaving fails1 with zero delivered after both futures finish; queue mutex serializes lock check/append and drain, fixed same input passes. Whole bridge test5 and explicit lifecycle/admission/approval/conversation callers49pass. Both whole bridge files strictAny/Pyrefly/ty/Ruff0. Public feed and replay work remains in progress; no whole-batch completion claim. Independent invalid-cursor commit: three original string/list/dict inputs fail on Git50a9b50b, minimal index-only change moves int/key into existing failure handler, same3+six pure feed nodes9pass. Cache/type work remains unstaged and not part of this commit.",
+      "result": "Three sources reviewed and specifically verified, but batch PARTIAL due unresolved browser standard-entry startup and full browser support typing. Independent bridge race original1fail now same controlled input and5bridge+49caller tests pass (0c51f863); invalid commit cursors original3fail, minimal staged source same3+6purefeed9pass (c0d60512). Default0 event cache aliases sessions and masks private-event rejection: original2behaviorfail now same2pass, no nonpositive identity cache read/store/evict; positive event/commit reuse, byte/frame/1000-entry limits preserved. Common cache identity and integer conversion have one implementation each. Feed source63 plus two old support43 strongAny diagnostics ->0; bridge/replay original0. All3sources+5whole tests strictAny/Pyrefly/ty/Ruff0, three proof runners also strongAny0. Current final direct38 + feed/history/projection31 + lifecycle49 =118 distinct nonbrowser passes/no skips. Module-preloaded current browser2pass is conditional evidence, not cancellation of original3x(1fail/1pass); full browser source463diagnostics retained. Final production mypy760/Pyrefly35suppressed166warnings/ty/precision0 after external13b05d6c/4eef1a78, HEAD/hash captured. No source-tree/worktree copying, dependencies, casts, ignores or weakened tests.",
       "commits": [
-        "0c51f863"
+        "0c51f863",
+        "c0d60512"
+      ],
+      "unverified_support": [
+        "tests/test_conversation_live_browser.py"
       ]
     },
     {

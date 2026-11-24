@@ -5,12 +5,19 @@ from __future__ import annotations
 import contextlib
 import json
 import queue
+import socket
 import threading
 from collections import OrderedDict, deque
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, SupportsIndex, SupportsInt
 
 from codey.app.event_payloads import browser_event_payload
+
+if TYPE_CHECKING:
+    from http.server import BaseHTTPRequestHandler
+
+    from codey.app.context import AppContext
 
 PUBLIC_FIELDS = {
     "conversation_inventory_changed": frozenset({"type"}),
@@ -104,8 +111,8 @@ class PublicEventFeed:
         self.cache_size = 0
         self.cache: OrderedDict[tuple[str, int], bytes] = OrderedDict()
 
-    def _encode(self, key: tuple[str, int], event: dict[str, Any]) -> bytes:
-        if key in self.cache:
+    def _encode(self, key: tuple[str, int] | None, event: dict[str, object]) -> bytes:
+        if key is not None and key in self.cache:
             self.cache.move_to_end(key)
             return self.cache[key]
         public = browser_event_payload(event)
@@ -119,6 +126,8 @@ class PublicEventFeed:
         if len(body) > self.max_frame_bytes:
             raise FeedOverflow("Public event exceeds frame budget")
         self.encodes += 1
+        if key is None:
+            return body
         while self.cache and (self.cache_size + len(body) > self.cache_limit or len(self.cache) >= 1000):
             _, old = self.cache.popitem(last=False)
             self.cache_size -= len(old)
@@ -127,21 +136,21 @@ class PublicEventFeed:
             self.cache_size += len(body)
         return body
 
-    def encode(self, event: dict[str, Any], sequence: int = 0) -> EncodedEvent:
-        commit = int(event.get("commit_seq") or 0)
-        key = ("commit", commit) if event.get("type") == "durable_commit" else ("event", sequence)
+    def encode(self, event: dict[str, object], sequence: int = 0) -> EncodedEvent:
+        commit = _commit_cursor(event)
+        key = _cache_key(event, sequence, commit)
         with self.lock:
             body = self._encode(key, event)
         return EncodedEvent(sequence, commit, str(event.get("session_id") or ""), body)
 
-    def publish(self, sequence: int, event: dict[str, Any]) -> None:
+    def publish(self, sequence: int, event: dict[str, object]) -> None:
         with self.lock:
             self.sequence = sequence
             if not self.subscribers:
                 return
             try:
-                commit = int(event.get("commit_seq") or 0)
-                key = ("commit", commit) if event.get("type") == "durable_commit" else ("event", sequence)
+                commit = _commit_cursor(event)
+                key = _cache_key(event, sequence, commit)
                 body = self._encode(key, event)
             except PrivateEvent:
                 return
@@ -175,7 +184,19 @@ class PublicEventFeed:
             self.cache_size = 0
 
 
-def stream(handler: Any, ctx: Any, feed: PublicEventFeed) -> None:
+def _cache_key(event: Mapping[str, object], sequence: int, commit: int) -> tuple[str, int] | None:
+    key = ("commit", commit) if event.get("type") == "durable_commit" else ("event", sequence)
+    return key if key[1] > 0 else None
+
+
+def _commit_cursor(event: Mapping[str, object]) -> int:
+    value = event.get("commit_seq") or 0
+    if isinstance(value, (int, float, str, bytes, bytearray, SupportsInt, SupportsIndex)):
+        return int(value)
+    raise TypeError("Durable commit cursor must support integer conversion")
+
+
+def stream(handler: BaseHTTPRequestHandler, ctx: AppContext, feed: PublicEventFeed) -> None:
     """Subscribe before replay; private SSE cursors wrap shared public bytes."""
     from urllib.parse import parse_qs, urlparse
 
@@ -184,12 +205,15 @@ def stream(handler: Any, ctx: Any, feed: PublicEventFeed) -> None:
     query = parse_qs(urlparse(handler.path).query)
     event_cursor, header_commit = sse_cursor(handler.headers.get("Last-Event-ID") or (query.get("last_event_id") or [""])[0])
     try:
-        commit_cursor = max(header_commit, int((query.get("after_commit_seq") or [0])[0]))
+        commit_cursor = max(header_commit, int((query.get("after_commit_seq") or ["0"])[0]))
     except ValueError:
         commit_cursor = 0
+    connection: object = handler.connection
+    if not isinstance(connection, socket.socket):
+        raise TypeError("SSE requires an HTTP socket connection")
     subscriber = feed.subscribe()
-    previous_timeout = handler.connection.gettimeout()
-    handler.connection.settimeout(10)
+    previous_timeout = connection.gettimeout()
+    connection.settimeout(10)
     try:
         handler.send_response(200)
         handler.send_header("Content-Type", "text/event-stream")
@@ -211,7 +235,7 @@ def stream(handler: Any, ctx: Any, feed: PublicEventFeed) -> None:
                 commit_cursor = record.sequence
                 _write(handler, encoded, subscriber.cutoff, commit_cursor)
             for seq, event in ctx.replay_events_after(event_cursor, max_event_id=subscriber.cutoff):
-                if event.get("type") == "durable_commit" and int(event.get("commit_seq") or 0) <= commit_cursor:
+                if event.get("type") == "durable_commit" and _commit_cursor(event) <= commit_cursor:
                     continue
                 try:
                     encoded = feed.encode(event, seq)
@@ -236,9 +260,9 @@ def stream(handler: Any, ctx: Any, feed: PublicEventFeed) -> None:
     finally:
         feed.unsubscribe(subscriber)
         with contextlib.suppress(OSError):
-            handler.connection.settimeout(previous_timeout)
+            connection.settimeout(previous_timeout)
 
 
-def _write(handler: Any, event: EncodedEvent, sequence: int, commit: int) -> None:
+def _write(handler: BaseHTTPRequestHandler, event: EncodedEvent, sequence: int, commit: int) -> None:
     handler.wfile.write(f"id: {sequence}:{commit}\ndata: ".encode() + event.body + b"\n\n")
     handler.wfile.flush()
