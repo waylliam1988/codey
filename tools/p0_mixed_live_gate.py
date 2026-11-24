@@ -11,6 +11,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from codey.research.ledger_receipts import source_observation
+from codey.research.passages import read_passage_refs
 from codey.runtime.core import cancellation
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 from tools.browser_production_live_gate import HTML, URL, run_case, select_target
@@ -133,8 +134,8 @@ def score_natural_mixed(project: Path, directory: Path, stop_reason: str,
     values_correct = record == {"amount": oracle.amount, "code": oracle.code}
     tests = _hidden_checks(project) if protected else {}
     checks_passed = bool(tests) and all(decode_json_object(row)["exit"] == 0 for row in tests.values())
-    sources: dict[str, JsonValue] = {}
-    page_ref = ""
+    sources: dict[str, EffectReceipt] = {}
+    page: EffectReceipt | None = None
     build = _application_version(project)
     events = [parse_json_object(line) for line in (directory / "events.jsonl").read_text(encoding="utf-8").splitlines()]
     answer = next((str(row.get("summary", "")) for row in reversed(events) if row.get("type") == "task_done"), "")
@@ -142,12 +143,12 @@ def score_natural_mixed(project: Path, directory: Path, stop_reason: str,
         url, body = _source_text(row)
         if edited and index < edited[0]:
             if url == oracle.specification_url and "integer" in body and "grams" in body and "string" in body:
-                sources[url] = row.identity
+                sources[url] = row
             if url == oracle.record_url and str(oracle.amount) in body and oracle.code in body:
-                sources[url] = row.identity
+                sources[url] = row
         if (edited and index > edited[-1] and url == oracle.application_url and build in body
                 and f"{oracle.amount} g" in body and oracle.code in body):
-            page_ref = row.identity
+            page = row
     citations = {oracle.specification_url, oracle.record_url}
     cited = citations == set(sources) and all(url in answer for url in citations)
     first = _first_request(directory)
@@ -156,15 +157,43 @@ def score_natural_mixed(project: Path, directory: Path, stop_reason: str,
         token not in initial_messages for token in (oracle.code, "#city", "#record", "pytest -q -p no:cacheprovider"))
     written = {path.replace("\\", "/").removeprefix("./") for index in edited
                if isinstance(path := receipts[index].result.call.args.get("path"), str)}
-    checks_current = bool(edited) and any(index > edited[-1] and row.result.call.name == "run"
-        and row.result.ok and row.exit_code == 0 for index, row in enumerate(receipts))
+    after_edits = receipts[edited[-1] + 1:] if edited else ()
+    current_checks = {(command, path or ".") for row in after_edits
+        if row.result.call.name == "run" and row.result.ok and row.exit_code == 0
+        and isinstance(command := row.result.call.args.get("command"), str)
+        and isinstance(path := row.result.call.args.get("path", ""), str)}
+    expected_checks = {(PYTHON_CHECK, "service"), (NODE_CHECK, ".")}
+    dispatched_clicks = [row.identity for row in receipts if row.result.call.name == "browser_click" and row.result.ok]
+    source_refs: JsonObject = {url: row.identity for url, row in sources.items()}
+    source_passages: JsonObject = {url: list[JsonValue](read_passage_refs(row.result.canonical["read_passages"]))
+        for url, row in sources.items()}
+    before_edits = {row.identity: row.result for row in receipts if row.result.call.name == "read_file" and row.result.ok}
+    edit_refs: list[JsonValue] = []
+    versions_bound = bool(edited)
+    for index in edited:
+        row = receipts[index]
+        basis = row.result.canonical.get("project_source_basis")
+        if not isinstance(basis, dict):
+            versions_bound = False
+            continue
+        binding = decode_json_object(basis)
+        edit_refs.append({"result_ref": row.identity, "basis": binding})
+        base = binding.get("base_result_ref")
+        read = before_edits.get(base) if isinstance(base, str) else None
+        versions_bound = (versions_bound and read is not None and binding.get("path") == read.call.args.get("path")
+                          and binding.get("file_version") == read.canonical.get("file_version")
+                          and binding.get("source_result_ref") == source_refs.get(oracle.record_url))
     checks = {"initial_payload_clean": initial_clean, "protected_files": protected, "business_values": values_correct,
               "requested_files_written": set(_BUSINESS_FILES) <= written, "independent_checks": checks_passed,
-              "model_verified": checks_current, "page_state_verified": bool(page_ref), "cited_sources": cited,
+              "model_verified": expected_checks <= current_checks, "page_state_verified": page is not None,
+              "bound_file_versions": versions_bound, "single_business_click": len(dispatched_clicks) == 1,
+              "cited_sources": cited,
               "task_completed": stop_reason == "done"}
     first_missing = next((name for name, okay in checks.items() if not okay), "")
     return {"passed": not first_missing, "checks": {key: value for key, value in checks.items()},
-            "first_missing": first_missing, "build": build, "page_ref": page_ref, "source_refs": sources, "tests": tests}
+            "first_missing": first_missing, "build": build, "page_ref": page.identity if page is not None else "",
+            "source_refs": source_refs, "source_passages": source_passages, "edit_refs": edit_refs,
+            "successful_browser_clicks": list[JsonValue](dispatched_clicks), "tests": tests}
 
 
 def mixed_task(_: str) -> str:

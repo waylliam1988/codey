@@ -364,7 +364,11 @@ def diff_snapshot(base: Mapping[str, JsonValue] | None, current: JsonObject) -> 
         return {**current, "kind": "full"}
     before = {str(row["ref"]): row for raw in before_raw if isinstance((row := raw), dict)}
     after = {str(row["ref"]): row for raw in after_raw if isinstance((row := raw), dict)}
-    added: list[JsonValue] = [row for key, row in after.items() if key not in before]
+    surviving = [key for key in before if key in after]
+    appended = [key for key in after if key not in before]
+    if surviving + appended != list(after):
+        return {**current, "kind": "full"}
+    added: list[JsonValue] = [after[key] for key in appended]
     changed: list[JsonValue] = [row for key, row in after.items() if key in before and before[key] != row]
     removed: list[JsonValue] = [key for key in before if key not in after]
     result: JsonObject = {key: value for key, value in current.items()

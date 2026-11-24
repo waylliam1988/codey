@@ -475,7 +475,7 @@ def _merge_results(connector_results: list[JsonObject], base_results: list[JsonO
             }
         )
         if len(merged) >= limit:
-            break
+            return merged
     for row in base_results:
         url = str(row.get("url") or "").strip()
         if not url:

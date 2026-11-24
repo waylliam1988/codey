@@ -93,7 +93,7 @@ def test_connector_aware_search_adds_pubmed_result_and_open_url_reads_connector_
     assert "hepatotoxicity" in opened
     assert "Kind: abstract only" in opened
     assert results[0]["url"] in tools.sources_read
-    assert base.fetches == []
+    assert base.fetches == ["https://doi.org/10.1000/example-doi"]
     assert tools.ledger.opened_sources_payload()[0]["final_url"] == results[0]["url"]
 
 
@@ -119,6 +119,14 @@ def test_connector_search_keeps_browser_material_when_connector_has_enough_resul
     assert results[:2] == connector_results
     assert results[2]["url"] == "https://example.com/generic"
     assert base.searches == [("clinical hepatotoxicity", 4)]
+
+
+def test_connector_search_counts_connector_hits_toward_result_limit() -> None:
+    base = FakeBaseSearchProvider()
+    provider = ConnectorAwareSearchProvider(base, rate_limit=False)
+    with mock.patch("codey.research.connector_search._read_url_text", side_effect=_fixture_response):
+        results = provider.search("clinical hepatotoxicity", limit=1)
+    assert [row["url"] for row in results] == ["https://pubmed.ncbi.nlm.nih.gov/12345678/"]
 
 
 def test_connector_live_search_uses_shared_medical_routing_terms() -> None:

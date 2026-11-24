@@ -92,6 +92,24 @@ def test_chinese_scope_filter_precedes_limit(tmp_path: Path) -> None:
         store.close()
 
 
+def test_recall_fills_unused_graph_slots_with_direct_hits(tmp_path: Path) -> None:
+    store = KnowledgeStore(tmp_path)
+    try:
+        store.repository.commit("observations", [
+            M(K(f"observation-{i}", "observation", "Atlas throughput", "observed_result",
+                scope="project", scope_id="atlas"))
+            for i in range(8)
+        ])
+        recall = KnowledgeRecall(store.repository)
+        access = KnowledgeAccess(project="atlas")
+        direct = recall.search("Atlas throughput", access=access, limit=8, depth=0)
+        assert len(direct) == 8
+        for depth in (1, 2):
+            assert recall.search("Atlas throughput", access=access, limit=8, depth=depth) == direct
+    finally:
+        store.close()
+
+
 def test_existing_index_upgrade_preserves_versions_and_commit_receipts(tmp_path: Path) -> None:
     store = KnowledgeStore(tmp_path)
     value = populate(store)
@@ -146,6 +164,9 @@ def test_compact_recall_keeps_complete_conditions_or_only_a_locator(tmp_path: Pa
         })
         hit = KnowledgeHit(replace(version, value=limited), "test")
         text = render_recall([hit], compact=True)
+        compact = render_recall([hit], max_chars=300, compact=True, include_answer_refs=False)
+        assert len(compact) <= 300 and "Recheck original evidence" in compact
+        assert parse_json_object(compact.splitlines()[-1])["id"] == value.id
         assert render_recall([hit], compact=True, max_chars=len(text)) == text
         row = parse_json_object(text.splitlines()[-1])
         assert row["conditions"] == limited.conditions and row["condition_count"] == 3

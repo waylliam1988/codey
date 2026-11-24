@@ -259,6 +259,7 @@ def test_pubmed_retains_confirmed_retraction_when_opening_or_falling_back_from_p
 ) -> None:
     pubmed = "https://pubmed.ncbi.nlm.nih.gov/12345678/"
     pmc = "https://pmc.ncbi.nlm.nih.gov/articles/PMC12345/"
+    doi = "https://doi.org/10.5555/fixture"
     requests: list[str] = []
     failures: list[str] = []
 
@@ -282,7 +283,7 @@ def test_pubmed_retains_confirmed_retraction_when_opening_or_falling_back_from_p
             <ArticleId IdType="pmc">PMC12345</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>"""
 
     def admit(url: str, *, use_cache: bool) -> None:
-        assert url in {pmc, pubmed}
+        assert url in {pmc, pubmed, doi}
 
     def record_failure(area: str, action: str, error: object, *, url: str = "") -> None:
         failures.append(str(error))
@@ -290,7 +291,11 @@ def test_pubmed_retains_confirmed_retraction_when_opening_or_falling_back_from_p
     monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", admit)
     ledger = ResearchLedger()
     result = ResearchSourceGateway(Connector(Sources()), ledger, on_failure=record_failure).open(pubmed)
-    assert result.status == "ok" and requests == [pmc]
+    assert result.status == "ok"
+    assert requests == ([pmc] if full_text_available else [pmc, doi])
+    attempts = result.acquisition["attempts"]
+    assert isinstance(attempts, list)
+    assert [decode_json_object(row)["requested_url"] for row in attempts] == [pubmed, *requests]
     assert result.document == snapshot_document(result.observation)
     assert result.document is not None and result.document.publication is not None
     assert result.document.publication.status == "retracted"

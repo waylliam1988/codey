@@ -93,6 +93,23 @@ def test_delta_display_retains_a_full_receipt_and_requires_identical_scope(brows
     assert input_only.ok and isinstance(rows, list) and len(rows) == 1
 
 
+def test_delta_displays_reordered_controls_in_current_order(browser: BrowserSession) -> None:
+    install(browser, '<section><button>First</button><button>Second</button></section>')
+    original = browser.snapshot(selector="section")
+    assert original.ok
+    revision = original.observation["revision"]
+    assert isinstance(revision, int)
+    assert browser.evaluate("document.querySelector('section').prepend(document.querySelector('button:last-child'))").ok
+    observed = browser.snapshot(selector="section", base_revision=revision)
+    assert observed.ok
+    view = parse_json_object(observed.model_text)
+    assert view["kind"] == "full"
+    before, after = original.observation["elements"], view["elements"]
+    assert isinstance(before, list) and isinstance(after, list)
+    assert [decode_json_object(row)["ref"] for row in after] == [decode_json_object(row)["ref"] for row in reversed(before)]
+    assert [decode_json_object(row)["name"] for row in after] == ["Second", "First"]
+
+
 def test_div_query_uses_an_explicit_observed_scope_and_never_confirms_an_unchanged_result(browser: BrowserSession) -> None:
     install(browser, '<button onclick="document.querySelector(\'#result\').textContent=\'173 QUARTZ_851\'">Query</button>'
                      '<div id=result>Waiting</div>')
@@ -106,8 +123,10 @@ def test_div_query_uses_an_explicit_observed_scope_and_never_confirms_an_unchang
     baseline = decode_json_object(clicked.observation["query_baseline"])
     assert browser.capture_query_result(baseline, pending="pending")["query_confirmed"] is True
     same = browser.click(query_ref, query=True, result_ref=result_ref)
-    page = browser.capture_query_result(decode_json_object(same.observation["query_baseline"]), pending="pending")
-    assert page["query_confirmed"] is False and "173 QUARTZ_851" in str(page["text"])
+    assert same.ok
+    with pytest.raises(QueryObservationError) as unchanged:
+        browser.capture_query_result(decode_json_object(same.observation["query_baseline"]), pending="pending")
+    assert unchanged.value.reason == "query_update_unconfirmed"
     assert browser.evaluate("document.querySelector('#result').outerHTML='<div id=result>Replacement</div>'").ok
     with pytest.raises(QueryObservationError):
         browser.capture_query_result(baseline, pending="pending")

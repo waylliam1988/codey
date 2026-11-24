@@ -99,13 +99,21 @@ class KnowledgeRecall:
                                 (query, *args, limit)).fetchall()
             seeds.extend((require_json_string(r[0], "knowledge id"), require_json_integer(r[1], "revision"), "literal content match") for r in rows)
         hits: dict[tuple[str, int], KnowledgeHit] = {}
-        for identity, revision, reason in seeds[:limit * 2]:
+        for identity, revision, reason in seeds:
+            key = (identity, revision)
+            if key in hits:
+                continue
             version = self.repository.read(identity, revision)
             if version and access.allows(version):
-                hits.setdefault((identity, revision), KnowledgeHit(version, reason, (f"{identity}@{revision}",)))
+                hits[key] = KnowledgeHit(version, reason, (f"{identity}@{revision}",))
+                if len(hits) == limit:
+                    break
         # Reserve room for related evidence, conditions and mechanisms rather than
         # letting a large number of direct source hits consume every slot.
-        hits = dict(list(hits.items())[:max(1, limit // 2) if depth else limit])
+        direct = hits
+        if not depth or limit == 1:
+            return list(direct.values())
+        hits = dict(list(direct.items())[:limit // 2])
         frontier = list(hits.values())
         for _ in range(depth):
             next_frontier: list[KnowledgeHit] = []
@@ -127,7 +135,11 @@ class KnowledgeRecall:
                     if len(hits) >= limit:
                         return list(hits.values())
             frontier = next_frontier
-        return list(hits.values())[:limit]
+        for key, hit in direct.items():
+            if len(hits) == limit:
+                break
+            hits.setdefault(key, hit)
+        return list(hits.values())
 
     def neighbors(self, version: KnowledgeVersion, access: KnowledgeAccess, *, limit: int = 8,
                   exclude_kinds: tuple[str, ...] = (), exclude_ids: tuple[str, ...] = ()) -> list[tuple[str, int, str]]:
@@ -152,6 +164,13 @@ class KnowledgeRecall:
         return list({key: None for key in outgoing + [(require_json_string(r[0], "knowledge id"), require_json_integer(r[1], "revision"), require_json_string(r[2], "relation")) for r in rows]})[:limit]
 
 
+def _recall_locator(version: KnowledgeVersion) -> str:
+    value = version.value
+    return canonical_json({"id": value.id, "revision": version.revision, "status": value.status,
+        "dependencies_changed": version.dependencies_changed, "condition_count": len(value.conditions),
+        "detail_available": True})
+
+
 def render_recall(hits: list[KnowledgeHit], *, max_chars: int = 6000, include_answer_refs: bool = True,
                   compact: bool = False) -> str:
     if not hits:
@@ -170,8 +189,14 @@ def render_recall(hits: list[KnowledgeHit], *, max_chars: int = 6000, include_an
         lines.append("This summary is a locator. Use knowledge_read with the exact id and revision. "
                      "Source/evidence reads enter the original passage citation channel. "
                      "An old claim or answer never substitutes for reading its original evidence.")
-    if compact and len("\n".join(lines)) > max_chars:
-        return ""
+    if compact:
+        locators = [_recall_locator(hit.version) for hit in hits]
+        if len("\n".join(lines)) + 1 + min(map(len, locators)) > max_chars:
+            lines = ["Saved knowledge locators. Recheck original evidence using knowledge_read with the exact id and revision."]
+            for locator in locators:
+                if len("\n".join(lines)) + 1 + len(locator) <= max_chars:
+                    lines.append(locator)
+            return "\n".join(lines) if len(lines) > 1 else ""
     for hit in hits:
         version, value = hit.version, hit.version.value
         row: JsonObject = {"id": value.id, "revision": version.revision, "kind": value.kind,
@@ -193,9 +218,7 @@ def render_recall(hits: list[KnowledgeHit], *, max_chars: int = 6000, include_an
         text = canonical_json(row)
         if compact and len(text) > remaining:
             # Keep a locator when the conclusion and its condition cannot travel together.
-            text = canonical_json({key: row[key] for key in (
-                "id", "revision", "status", "dependencies_changed", "condition_count", "detail_available",
-            )})
+            text = _recall_locator(version)
         if len(text) > remaining:
             continue
         lines.append(text)
