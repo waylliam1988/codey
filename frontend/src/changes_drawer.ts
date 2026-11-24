@@ -417,7 +417,7 @@ export interface ChangesDrawerDeps {
           current.remove();
           preview.setAttribute('aria-expanded', 'false');
         } else if (lastData?.html_previews && Object.hasOwn(lastData.html_previews, file.path)) {
-          wrap.append(htmlPreview(`Run preview · ${file.path}`, lastData.html_previews[file.path]));
+          wrap.append(htmlPreview(`Run preview · ${file.path}`, lastData.html_previews[file.path], 'static'));
           preview.setAttribute('aria-expanded', 'true');
         }
       };

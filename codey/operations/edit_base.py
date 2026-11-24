@@ -73,33 +73,39 @@ def current_definition(session: TaskSession, project: Path, path: str, name: str
     """Return the unique symbol, or None when a current complete read is needed."""
     from codey.research.calculation import file_selector_key
     from codey.toolchain.syntax_query import reindent_python_source
-    from codey.workspace.paths import path_hash, safe_join
 
     ref = symbol_read_refs(session._memory_results, session.executed).get(file_selector_key(path))
     if ref is None:
         return None
     try:
-        version = session._memory_results[ref].canonical.get("file_version")
-        if version != "raw:" + path_hash(safe_join(project, path), preserve_newlines=True):
+        observed = symbol_retry_source(session, project, path, name, ref)
+        if observed is None:
             return None
-        observed = symbol_retry_source(session, path, name, ref)
         return name if observed and observed.strip() == reindent_python_source(old).strip() else ""
     except (OSError, SyntaxError, ValueError):
         return None
 
 
-def symbol_retry_source(session: TaskSession, path: str, symbol: str, ref: str) -> str:
+def symbol_retry_source(session: TaskSession, project: Path, path: str, symbol: str, ref: str) -> str | None:
+    """Read the bound definition once its receipt still matches the workspace."""
     import ast
 
     from codey.toolchain.syntax_query import python_definitions, reindent_python_source
+    from codey.workspace.paths import path_hash, safe_join
 
     try:
-        source = edit_base_text(session, Path(session.project), path, ref)
+        source, version = _edit_base(session, project, path, ref)
+        if not version or path_hash(safe_join(project, path), preserve_newlines=version.startswith("raw:")) != (
+            version.removeprefix("raw:")
+        ):
+            return None
         matches = [node for node in python_definitions(source) if node.name == symbol]
         original = ast.get_source_segment(source, matches[0], padded=True) if len(matches) == 1 else None
         return reindent_python_source(original) if original else ""
-    except (OSError, SyntaxError, ValueError):
+    except SyntaxError:
         return ""
+    except (OSError, ValueError):
+        return None
 
 
 def _partial_edit_target(reply: str, snapshot: TurnSnapshot, session: TaskSession | None) -> tuple[str, tuple[str, ...]]:

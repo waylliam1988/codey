@@ -15,7 +15,7 @@ from codey.durable.model import ArtifactRecord, thaw_json
 from codey.knowledge.model import canonical_json
 from codey.operations import kernel_actions as wiring
 from codey.operations import kernel_events, kernel_prompt, kernel_protocol
-from codey.operations.edit_base import bound_symbol_retry, is_compact_symbol_retry, symbol_retry_source
+from codey.operations.edit_base import bound_symbol_retry, is_compact_symbol_retry
 from codey.operations.kernel_capabilities import KernelCapabilityView
 from codey.operations.kernel_contracts import (
     ClosingDecision,
@@ -79,15 +79,6 @@ def _host_acquisition_result(result: ToolResult) -> bool:
 
     return ((result.call.name == "web_search" and not result.call.call_id)
             or result.call.call_id in PRIMARY_ACQUISITION_IDS)
-
-
-def _symbol_retry_observation(session: TaskSession, snapshot: TurnSnapshot, options: ProviderRequestOptions,
-                              observations: str) -> tuple[ProviderRequestOptions, str]:
-    if (target := bound_symbol_retry(snapshot)) is not None:
-        path, symbol = target
-        if source := symbol_retry_source(session, path, symbol, dict(snapshot.symbol_read_refs).get(path, "")):
-            return replace(options, tool_call_history_groups=1), f"Current definition:\n{source}"
-    return options, observations
 
 
 class KernelContext:
@@ -533,20 +524,22 @@ class KernelContext:
             # second textual tool catalog that this request never sends.
             declaration = ((scoped_tool_contract or kernel_prompt._text_request_prompt("", snapshot))
                            if not self.native else canonical_json(json_value(tools)))
-            context = "" if bound_symbol_retry(snapshot) is not None else self.transport.context_text
+            source_only = bound_symbol_retry(snapshot) is not None
+            context = "" if source_only else self.transport.context_text
             fixed = "\n\n".join(part for part in (prompt, delivery_handoff,
                 context if context not in prompt else "",
                 coding if coding not in prompt else "", declaration,
                 canonical_json(json_value(messages)) if messages else "") if part)
-            observations = task_working_context(
+            observations = "" if source_only else task_working_context(
                 self.session, self.execution.research_tools.ledger if self.execution.research_tools is not None else None,
                 self.execution.research_tools.store if self.execution.research_tools is not None else None,
                 self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research_scope,
                 tool_names=snapshot.tool_names, provider=self.provider, fixed_context=fixed)
-            options, observations = _symbol_retry_observation(self.session, snapshot, options, observations)
             # Canonical replay excludes optional memory candidates. Each continuation must
             # carry its frozen context without relying on a warm wire history.
-            options = replace(options, supplied=options.supplied | {"tool_call_observations"}, tool_call_observations="\n\n".join(part for part in (
+            options = replace(options, supplied=options.supplied | {"tool_call_observations"},
+                tool_call_history_groups=1 if source_only else options.tool_call_history_groups,
+                tool_call_observations="\n\n".join(part for part in (
                 context if context and context not in prompt else "", observations, delivery_handoff,
                 coding if coding and coding not in prompt else "") if part))
             if self.session.task_kind == "research" and self.session.policy.strict_research:

@@ -8,7 +8,12 @@ from codey.agents.protocol import canonical_project_path
 from codey.codemode.verification import project_check_choices
 from codey.completion.verification_policy import _command_family
 from codey.knowledge.model import canonical_json
-from codey.operations.edit_base import current_definition, is_compact_symbol_retry, unchanged_definition
+from codey.operations.edit_base import (
+    bound_symbol_retry,
+    current_definition,
+    is_compact_symbol_retry,
+    unchanged_definition,
+)
 from codey.operations.kernel_protocol import TurnSnapshot
 from codey.operations.progress_comparison import ProjectCheckComparison
 from codey.operations.reference_handles import ReferenceHandleError, ReferenceHandleResolver
@@ -136,6 +141,7 @@ def project_check_handoff(session: TaskSession, snapshot: TurnSnapshot, project:
     resolver = ReferenceHandleResolver(session)
     last_edit = next((result for result in reversed(tuple(history.values()))
                       if result.ok and result.call.name == "edit" and type(result.audit.get("changed")) is bool), None)
+    source_only = bound_symbol_retry(snapshot) is not None
     observations: list[JsonValue] = []
     for fact, rerun, exact in selected:
         current = (fact.workspace_revision, fact.workspace_fingerprint) == (
@@ -156,7 +162,7 @@ def project_check_handoff(session: TaskSession, snapshot: TurnSnapshot, project:
             row["failed_tests"] = list(fact.failure_ids[:8])
             row["failure_list_complete"] = fact.complete and len(fact.failure_ids) <= 8
             row["locations"] = [_inspection(session, snapshot, project, resolver, frame) for frame in fact.frames]
-            if last_edit is not None and last_edit.audit.get("changed") is False:
+            if not source_only and last_edit is not None and last_edit.audit.get("changed") is False:
                 row["unchanged_edit"] = last_edit.call.args.get("path")
                 row["next"] = "Inspect the failing assertion and the current file before repeating the check."
                 if (target := unchanged_definition(last_edit)) is not None:

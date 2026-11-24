@@ -207,7 +207,12 @@ def no_progress_result(session: TaskSession, turn: int) -> KernelResult:
 
 def _retry_snapshot(context: KernelContext, received: ReceivedProviderTurn, *, text_reply: bool,
                     error: str) -> tuple[TurnSnapshot, str | None]:
-    from codey.operations.edit_base import compact_symbol_retry, is_compact_symbol_retry
+    from codey.operations.edit_base import (
+        bound_symbol_retry,
+        compact_symbol_retry,
+        is_compact_symbol_retry,
+        symbol_retry_source,
+    )
     from codey.operations.kernel_preparation import capture_turn_snapshot
     from codey.operations.research_submission_handoff import SUBMISSION_TOOLS
 
@@ -217,8 +222,18 @@ def _retry_snapshot(context: KernelContext, received: ReceivedProviderTurn, *, t
     if refresh:
         snapshot = capture_turn_snapshot(context.session, native=context.native)
     if text_reply and context.capabilities.text_tool_format == "json_schema":
-        snapshot = (received.snapshot if error and is_compact_symbol_retry(received.snapshot)
-                    else compact_symbol_retry(snapshot, received.reply, session=context.session))
+        retry = (received.snapshot if error and is_compact_symbol_retry(received.snapshot)
+                 else compact_symbol_retry(snapshot, received.reply, session=context.session))
+        if (target := bound_symbol_retry(retry)) is not None:
+            path, symbol = target
+            ref = dict(retry.symbol_read_refs).get(path, "")
+            project = context.execution.project_path
+            if project is not None and (source := symbol_retry_source(context.session, project, path, symbol, ref)):
+                return retry, f"Current definition:\n{source}"
+            snapshot, handoff = context.request_snapshot(snapshot)
+            reread = f"Read {path} again before retrying the edit." if "read_file" in snapshot.tool_names else ""
+            return snapshot, "\n\n".join(part for part in (handoff, reread) if part)
+        snapshot = retry
     if is_compact_symbol_retry(snapshot):
         return snapshot, ""
     if refresh:

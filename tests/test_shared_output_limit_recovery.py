@@ -113,6 +113,53 @@ def test_plain_send_remains_strict_and_never_commits_partial_text(
     assert history == [{"role": "user", "content": "question"}]
 
 
+@pytest.mark.parametrize("external_edit", [False, True])
+def test_symbol_recovery_requests_current_source_or_a_new_read(
+    runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, external_edit: bool,
+) -> None:
+    provider = ApiProvider("http://fixture.invalid/v1", "fixture", native_tools=False, thinking_enabled=False,
+                           text_tool_format="json_schema")
+    project = tmp_path / "project"
+    project.mkdir()
+    target = project / "example.py"
+    target.write_text("def value(): return 0\n", encoding="utf-8")
+    requests: list[str] = []
+
+    def generate(messages: object, *args: object, **kwargs: object) -> dict[str, object]:
+        requests.append("\n".join(str(part) for part in (
+            messages, kwargs.get("tool_call_contract", ""), kwargs.get("tool_call_observations", ""))))
+        turn = len(requests)
+        if turn == 1 or (turn == 3 and external_edit):
+            text = '{"tool":"read_file","args":{"path":"example.py"}}'
+        elif turn == 2:
+            if external_edit:
+                target.write_text("def value(): return 99\n", encoding="utf-8")
+            text = '{"tool":"edit","args":{"path":"example.py","replacements":['
+        elif turn == 3:
+            text = "def value(): return 1"
+        else:
+            text = '{"tool":"done","args":{"summary":"Finished"}}'
+        return response("openai-completions", text, limited=turn == 2)
+
+    monkeypatch.setattr(provider, "_generate", generate)
+    session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "project.write"})),
+                          task_kind="project", project=str(project), max_turns=4)
+    run_task_kernel(session, request=KernelRunRequest(
+        KernelTransportDeps(adapt_provider(provider), run_id="r", provider_id="local", user_task="Update example.py"),
+        KernelExecutionDeps(intent_sink=runtime.sink, project_path=project),
+        KernelObservationDeps(on_boundary=durable_generation_boundary_callback(
+            durable=runtime.durable, session_id="s", task_id="r", sink=runtime.sink))))
+    retry = requests[2]
+    if external_edit:
+        assert "Current definition:" not in retry
+        assert "Read example.py again" in retry
+        assert "def value(): return 99" in requests[3]
+        assert target.read_text(encoding="utf-8") == "def value(): return 99\n"
+    else:
+        assert "Current definition:\ndef value(): return 0" in retry
+        assert target.read_text(encoding="utf-8") == "def value(): return 1\n"
+
+
 class LimitedTransport(ProviderTransport):
     provider: object = None
     native_tools = False

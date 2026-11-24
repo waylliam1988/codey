@@ -8,17 +8,17 @@ import pytest
 
 from codey.operations.browser_task_handoff import _previous_page_observation
 from codey.operations.edit_base import compact_symbol_retry
-from codey.operations.kernel_context import _symbol_retry_observation
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.kernel_progress import KernelProgress
 from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.progress_comparison import ProjectCheckComparison
+from codey.operations.project_check_handoff import project_check_handoff
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TASK_POLICY_FILE_SCOPE_VERSION, TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, TurnFinish
-from codey.providers.requests import ProviderRequestOptions
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationTransitionError
 from codey.runtime.core.operation_reducer import admit_request_counters
@@ -126,9 +126,6 @@ def test_truncated_edit_binds_a_single_observed_definition_through_request_resto
     assert normalize_turn(partial, snapshot=snapshot).protocol_error
     retry = restore_snapshot(snapshot_description(compact_symbol_retry(snapshot, partial, session=session)))
     assert retry.tool_names == ("edit",)
-    options, observation = _symbol_retry_observation(session, retry, ProviderRequestOptions(), "old context")
-    assert options.tool_call_history_groups == 1
-    assert observation == "Current definition:\ndef labels(): return 1"
     good = normalize_turn(decode_text_turn('{"tool":"edit","args":{"content":"def labels(): return 2"}}'), snapshot=retry)
     assert not good.protocol_error
     assert good.calls[0].args == {"content": "def labels(): return 2", "path": "labels.py", "symbol": "labels",
@@ -143,6 +140,35 @@ def test_truncated_edit_binds_a_single_observed_definition_through_request_resto
     assert normalize_turn(AssistantTurn(text="I finished the change."), snapshot=retry).protocol_error
     wrong = decode_text_turn('{"tool":"edit","args":{"content":"def colors(): return 2","path":"colors.py"}}')
     assert normalize_turn(wrong, snapshot=retry).protocol_error
+
+
+def test_source_only_retry_keeps_failures_without_suggesting_tool_calls(tmp_path: Path) -> None:
+    definition = "def value(): return 0"
+    path = tmp_path / "example.py"
+    path.write_text(definition + "\n", encoding="utf-8")
+    session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "project.write", "project.verify"})),
+                          task_kind="project", project=str(tmp_path), workspace_revision=1,
+                          workspace_fingerprint="current")
+    assert execute_turn(session, [ToolCall("read_file", {"path": path.name})], run_id="read", turn=1,
+                        project_path=tmp_path)[0].ok
+    check = ToolResult(ToolCall("run", {"command": "python -m pytest"}), "failed", ok=False)
+    session._memory_results["check"] = check
+    session._memory_results["no-op"] = ToolResult(ToolCall("edit", {"path": path.name, "replacements": [
+        {"old_string": definition, "new_string": definition}]}), "unchanged", ok=True, audit={"changed": False})
+    fact = ProjectCheckComparison("python -m pytest", ".", "current", 1, ("FAILED test_value.py::test_value",),
+                                  "child", "check", frames=({"path": path.name, "line": 1, "source": definition,
+                                                            "assertions": ["assert 0 == 1"]},), workspace_revision=1)
+
+    def compare(result: ToolResult) -> ProjectCheckComparison | None:
+        return fact if result is check else None
+
+    partial = AssistantTurn(text='{"tool":"edit","args":{"path":"example.py","replacements":[',
+                            finish=TurnFinish.OUTPUT_LIMIT)
+    retry = compact_symbol_retry(build_turn_snapshot(session), partial, session=session)
+    assert retry.tool_names == ("edit",)
+    handoff = project_check_handoff(session, retry, tmp_path, compare)
+    assert "assert 0 == 1" in handoff and definition in handoff
+    assert '"tool":' not in handoff and '"next":' not in handoff
 
 
 @pytest.mark.parametrize("source_kind", ["unique", "ambiguous", "unobserved", "shadowed", "unread_conflict", "versioned",

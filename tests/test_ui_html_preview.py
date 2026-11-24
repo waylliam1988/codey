@@ -1,12 +1,17 @@
 """Exercise the app's HTML preview using the shipped bundle and real document reads."""
 from __future__ import annotations
 
+from urllib.parse import parse_qs, urlsplit
+
 from playwright.sync_api import Page, Route, expect
 
+from codey.app.api import run_changes_response
 from codey.app.context import AppContext
 from codey.app.documents import document_response
 from codey.app.server import CodeyHTTPServer
+from codey.runs.task_diff import record_task_changes
 from codey.utils.object_fields import object_fields
+from codey.workspace.changes import ChangeTracker
 from codey.workspace.session import session_workspace
 from tests.test_ui_workflow import page as page
 from tests.test_ui_workflow import ui_browser as ui_browser
@@ -114,7 +119,46 @@ def test_changes_offer_preview_for_existing_html_files(page: Page) -> None:
 
     page.route("**/api/changes", changes)
     page.evaluate("project => openChangesDrawer(project)", str(root))
-    expect(page.get_by_role("button", name="Preview deleted.html")).to_have_count(0)
-    page.get_by_role("button", name="Preview design.htm").click()
+    expect(page.get_by_role("button", name="Preview current workspace · deleted.html")).to_have_count(0)
+    page.get_by_role("button", name="Preview current workspace · design.htm").click()
     view = page.locator("#right-workspace").frame_locator('iframe[title="design.htm"]')
     expect(view.get_by_role("heading", name="Page design")).to_be_visible()
+
+
+def test_historical_preview_keeps_settled_html_and_blocks_navigation(page: Page) -> None:
+    context = CodeyHTTPServer.app_context
+    assert context is not None and context.state_home is not None and context.run_ledgers is not None
+    root = session_workspace(context.state_home, "a")
+    path = root / "settled.html"
+    tracker = ChangeTracker(root)
+    tracker.capture_before(path.name)
+    path.write_text(
+        '<!doctype html><head><meta http-equiv="Refresh" content="0;url=/preview-live"></head>'
+        '<body><h1>Settled value</h1><a href="/preview-live">Live link</a>'
+        '<script>document.querySelector("h1").textContent = "Changed by script"; location.href = "/preview-live";</script></body>',
+        encoding="utf-8",
+    )
+    tracker.capture_after(path.name)
+    run = "historical-preview"
+    writer = context.run_ledgers.open(run_id=run, session_id="a", project=root, task=run, provider="local", mode="project")
+    record_task_changes(writer, context.managed_outputs, tracker.collect_produced(), checks_passed=False, receipt={})
+    path.write_text("<h1>Live value</h1>", encoding="utf-8")
+    probes: list[str] = []
+
+    def live_page(route: Route) -> None:
+        probes.append(route.request.url)
+        route.fulfill(body="<h1>Live value</h1>", content_type="text/html")
+
+    def run_changes(route: Route) -> None:
+        status, payload = run_changes_response(context, parse_qs(urlsplit(route.request.url).query))
+        route.fulfill(status=status, json=payload)
+
+    page.route("**/api/run_changes?*", run_changes)
+    page.route("**/preview-live", live_page)
+    page.evaluate("args => ChangesDrawer.openRun(...args)", [str(root), "a", run])
+    page.get_by_role("button", name="Run preview · settled.html").click()
+    frame = page.frame_locator('iframe[title="Run preview · settled.html"]')
+    expect(frame.get_by_role("heading")).to_have_text("Settled value")
+    frame.get_by_text("Live link").click()
+    expect(frame.get_by_role("heading")).to_have_text("Settled value")
+    assert not probes
