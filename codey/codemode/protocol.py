@@ -174,9 +174,12 @@ def parse_codemode_args(args: Mapping[str, object], *, limits: CodeModeLimits | 
         _check_input_numbers(inputs)
         input_bytes = len(json.dumps(inputs, ensure_ascii=False, separators=(",", ":"),
                                     allow_nan=False).encode("utf-8")) if inputs else 0
-        source_bytes = len(code.encode("utf-8"))
     except (TypeError, ValueError, RecursionError) as exc:
         raise CodeModeInputError(f"codemode inputs must be a strict JSON object: {exc}") from exc
+    try:
+        source_bytes = len(code.encode("utf-8"))
+    except UnicodeEncodeError as exc:
+        raise CodeModeInputError("codemode code must contain valid Unicode") from exc
     if source_bytes + input_bytes > active_limits.source_bytes:
         raise CodeModeInputError("codemode source and inputs exceed source byte limit", code="source_limit")
     language = str(args.get("language", "javascript") or "javascript").strip().lower()
@@ -199,11 +202,13 @@ def parse_codemode_text(text: str, *, limits: CodeModeLimits | None = None) -> C
         raise ValueError("codemode text must be a string")
     try:
         decoded = parse_json_object(text)
+    except RecursionError as exc:
+        raise ValueError("codemode text exceeds the JSON nesting limit") from exc
     except json.JSONDecodeError as exc:
         if exc.msg == "Extra data":
             raise ValueError("codemode text must contain exactly one JSON object") from exc
         raise ValueError(f"codemode text is not valid JSON: {exc.msg}") from exc
-    if not isinstance(decoded, dict) or set(decoded) != {"tool", "args"}:
+    if set(decoded) != {"tool", "args"}:
         raise ValueError("codemode text must contain exactly one tool and args object")
     if decoded.get("tool") != "codemode":
         raise ValueError("codemode text must name the codemode tool")

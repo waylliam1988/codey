@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q036，接续 Q037。开放事项保存在治理队列。
+当前状态：在 master 的 `aebd6a28` 接续总 goal，已完成 Q037，接续 Q037B。开放事项保存在治理队列。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1569,7 +1569,7 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - Q035D 的准入修复已提交 `6d5a4b55`。完整检查两个自有脚本的请求、结果编码、WASM 初始化及退出边界。QuickJS 供应商文件按范围排除。`node --check codey/codemode/guest_runner.js` 和 `node --check codey/codemode/node_runner.mjs` 均退出 0。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_codemode_runtime.py tests/test_codemode_source_preflight.py --tb=short`，109 passed，0 skip、fail 或 error，退出 0，覆盖结果编码、输入冻结、尺寸限制、调用封装和恢复确定性。
 - 使用仓库现有前端编译器对这两个运行时文件执行 `frontend/node_modules/.bin/tsc.cmd --allowJs --checkJs --noEmit --strict --target es2022 --module nodenext --skipLibCheck --typeRoots frontend/node_modules/@types codey/codemode/guest_runner.js codey/codemode/node_runner.mjs`。退出 1。guest 59 条诊断，其中 47 条隐式 any，主要来自动态 JSON、全局执行状态、回调和结果。Node 传输 24 条隐式 any，主要来自 QuickJS 对象、WASI 回调和 wire 边界。编译器还跟踪到供应商文件，不计入自有诊断。
-- `NodeWorkerRuntime.contract_digest` 哈希两个分发文件的原始字节，连注释变动也会让持久化日志的运行时合同失配。冻结恢复策略当前明确拒绝这种失配。后续与 Q038 验证旧日志兼容边界，再完成 wire 和第三方接口的类型收窄。本批未修改脚本，记为部分完成。累计仍为 62/336 批，完成批覆盖 121/1009 个生产文件。下一批 Q035B 为浏览器流程及多文件补丁。
+- `NodeWorkerRuntime.contract_digest` 哈希两个分发文件的原始字节，连注释变动也会让持久化日志的运行时合同失配。冻结恢复策略当前明确拒绝这种失配。后续在 Q037C 验证旧日志兼容边界，再完成 wire 和第三方接口的类型收窄。本批未修改脚本，记为部分完成。累计仍为 62/336 批，完成批覆盖 121/1009 个生产文件。下一批 Q035B 为浏览器流程及多文件补丁。
 
 
 ### Q035B 浏览器流程和多文件补丁
@@ -1587,3 +1587,12 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 运行 `python -m pytest -q tests/test_codemode_json_nesting.py tests/test_codemode_json_edit.py tests/test_codemode_source_preflight.py --tb=short`，89 passed，退出 0。调整 shape 排序类型后仅复测受影响范围，`python -m pytest -q tests/test_codemode_source_preflight.py tests/test_p0_mixed_workflow.py::test_verification_choice_supplies_frozen_command_and_working_directory --tb=short`，75 passed，退出 0。最终去重 90 项，0 skip。
 - `python -m mypy codey/codemode/json_edit.py codey/codemode/shape_repair.py codey/codemode/verification.py tests/test_codemode_json_nesting.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 从 3 条诊断降至 0，同四文件 Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q036 完成。累计完成 64/336 批，覆盖 126/1009 个生产文件。下一批 Q037 为 Code Mode 核心执行和源码协议。
+
+
+### Q037 Code Mode 输入协议
+
+- Q036 已提交 `02281211`。原 Q037 拆为输入解码 Q037、核心执行与结算 Q037B、进程和会话 Q037C。总数更新为 338 批，生产文件总数仍为 1009。完整检查 `protocol.py` 和新增输入回归。
+- 文本入口通过 `ValueError` 表达无效请求。5000 层嵌套 JSON 在共享深度检查前先触发 Python 解码器 `RecursionError`。`python -m pytest -q tests/test_codemode_input_encoding.py --tb=short` 第一次 1 failed，退出 1。现在返回明确的深度诊断。移除 `parse_json_object` 已保证的重复字典类型检查，保留请求形状校验。两层数组有效对照继续解析成功。
+- 参数入口的 `code` 在语法分析前必须可以编码成 UTF-8。传入含孤立代理码点的代码时，旧的统一异常路径将问题归到有效的 `inputs`。同一测试命令新增用例后 1 failed、1 passed，退出 1。现在明确指出 `code` 的 Unicode 无效，普通非 BMP 字符仍可解析。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_codemode_input_encoding.py tests/test_codemode_contract.py tests/test_codemode_source_preflight.py tests/test_codemode_runtime.py --tb=short`，121 passed，0 skip，退出 0。两文件 mypy 严格 Any 和 Ruff 通过。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q037 完成。累计完成 65/338 批，覆盖 127/1009 个生产文件。下一批 Q037B 为核心执行和 effect 结算。

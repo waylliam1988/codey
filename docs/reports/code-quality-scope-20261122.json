@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 1009,
   "region_count": 40,
-  "batch_count": 336,
+  "batch_count": 338,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -209,6 +209,8 @@
         "Q035E",
         "Q036",
         "Q037",
+        "Q037B",
+        "Q037C",
         "Q038",
         "Q035B"
       ],
@@ -3715,7 +3717,7 @@
       "verified_files": ["codey/codemode/guest_runner.js", "codey/codemode/node_runner.mjs"],
       "tests": ["tests/test_codemode_runtime.py", "tests/test_codemode_source_preflight.py"],
       "result": "109 scoped runtime and source-preflight tests and both Node syntax checks passed. Strict checkJs exit 1: 47 implicit-any diagnostics in the guest, 24 in the runner. Vendor QuickJS diagnostics excluded from these counts.",
-      "follow_up": ["Q038: raw guest and runner source bytes are part of the persisted runtime contract, including comment-only edits. Verify compatibility and preserve fail-closed semantics while defining explicit wire structures and typing the QuickJS boundary."]
+      "follow_up": ["Q037C: raw guest and runner source bytes are part of the persisted runtime contract, including comment-only edits. Verify compatibility and preserve fail-closed semantics while defining explicit wire structures and typing the QuickJS boundary."]
     },
     {
       "id": "Q035B",
@@ -3751,20 +3753,34 @@
       "result": "Whole-document JSON reading and editing normalize decoder recursion failure as ValueError. Type the shape edit ordering key. Ninety scoped tests passed after deduplication. Scoped strict Any, Ruff and all production gates passed."
     },
     {
-      "responsibility": "codey/codemode: task kernel and execution",
-      "files": [
-        "codey/codemode/kernel.py",
-        "codey/codemode/protocol.py",
-        "codey/codemode/runtime.py"
-      ],
+      "responsibility": "Code Mode input decoding, bounds and source diagnostics",
+      "files": ["codey/codemode/protocol.py"],
       "id": "Q037",
+      "status": "completed_changed",
+      "reviewed_files": ["codey/codemode/protocol.py"],
+      "verified_files": ["codey/codemode/protocol.py"],
+      "tests": ["tests/test_codemode_input_encoding.py", "tests/test_codemode_contract.py", "tests/test_codemode_source_preflight.py", "tests/test_codemode_runtime.py"],
+      "reviewed_support": ["tests/test_codemode_input_encoding.py"],
+      "result": "Normalize excessive nesting at text admission and report malformed Unicode on the actual source field. 121 tests passed. Scoped strict Any and Ruff and all production gates passed."
+    },
+    {
+      "responsibility": "Code Mode execution orchestration and effect settlement",
+      "files": ["codey/codemode/kernel.py"],
+      "id": "Q037B",
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 57,
-      "follow_up": [
-        "Machine gate small batch: tests/test_read_result_contract.py has 3 failures: read-only host/kernel reject task_control write entries; inline declaration assertion conflicts with compact output. Classify fixture vs production contract independently; catalog.py has external dirty work, preserve it. Not caused by durable settlement execution; no assertions changed."
-      ]
+      "tests": ["tests/test_codemode_kernel_integration.py", "tests/test_codemode_protocol_closure.py", "tests/test_read_result_contract.py"]
+    },
+    {
+      "responsibility": "Code Mode Node transport and session runtime",
+      "files": ["codey/codemode/runtime.py"],
+      "id": "Q037C",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/test_codemode_runtime.py", "tests/test_codemode_discovery_session.py", "tests/test_codemode_replay_authority.py"],
+      "follow_up": ["Q035E: check the impact of comment-only guest and runner changes on persisted runtime identity before typing those scripts."]
     },
     {
       "responsibility": "codey/codemode: execution evidence and event projection",
@@ -9698,6 +9714,11 @@
       "batch": "Q035",
       "replacement": ["Q035", "Q035C", "Q035D", "Q035E"],
       "reason": "Shared data, selectors and checkpoint mutation can be verified separately from host admission, durable replay and the JavaScript runtime. All eight original files retain one owner."
+    },
+    {
+      "batch": "Q037",
+      "replacement": ["Q037", "Q037B", "Q037C"],
+      "reason": "Source admission, kernel effect settlement and process/session transport have independently verifiable contracts. All three original files retain one owner."
     }
   ]
 }
