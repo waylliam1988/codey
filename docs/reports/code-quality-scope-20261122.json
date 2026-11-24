@@ -2,7 +2,7 @@
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
   "source_count": 1009,
   "region_count": 40,
-  "batch_count": 327,
+  "batch_count": 330,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -166,6 +166,9 @@
         "Q029B",
         "Q029C",
         "Q030",
+        "Q030B",
+        "Q030C",
+        "Q030D",
         "Q031",
         "Q032"
       ],
@@ -3349,26 +3352,88 @@
       "reviewed_support": [
         "tests/test_browser_worker_startup_rollback.py"
       ],
-      "result": "Init write failure returned not_delivered while leaving a live child. Same real subprocess regression passed after cleanup and retry. Worker binary streams narrowed at entry, with raw/unbuffered stdio supported. Scoped strong Any and static checks passed. Final direct and reconnect groups 28 passed including 4 IPC dependency tests. Two previously covered cases also passed with unbuffered child stdio. Full production type and precision gates passed."
+      "result": "Init write failure returned not_delivered while leaving a live child. Same real subprocess regression passed after cleanup and retry. Worker binary streams narrowed at entry, with raw/unbuffered stdio supported. Scoped strong Any and static checks passed. Final direct and reconnect groups 28 passed including 4 IPC dependency tests. Two previously covered cases also passed with unbuffered child stdio. Full production type and precision gates passed.",
+      "commits": [
+        "b452600e"
+      ]
     },
     {
-      "responsibility": "codey/automation: browser contracts and interaction",
+      "responsibility": "Document/frame identity and observed node reference lifetime",
       "files": [
-        "codey/automation/browser_disclosure.py",
         "codey/automation/browser_document.py",
         "codey/automation/browser_refs.py",
-        "codey/automation/browser_snapshot.py",
-        "codey/automation/browser_frames.py",
-        "codey/automation/browser_query_async.py",
-        "codey/automation/browser_observation.py",
-        "codey/automation/browser_query.py",
-        "codey/automation/browser_detail.py"
+        "codey/automation/browser_frames.py"
       ],
       "id": "Q030",
+      "status": "completed_changed",
+      "reviewed_files": [
+        "codey/automation/browser_document.py",
+        "codey/automation/browser_refs.py",
+        "codey/automation/browser_frames.py"
+      ],
+      "verified_files": [
+        "codey/automation/browser_document.py",
+        "codey/automation/browser_refs.py",
+        "codey/automation/browser_frames.py"
+      ],
+      "candidate_test_count": 7,
+      "tests": [
+        "tests/test_browser_async_frames.py",
+        "tests/test_browser_element_registry.py",
+        "tests/test_browser_navigation_handoff.py",
+        "tests/test_browser_frame_group_cleanup.py"
+      ],
+      "reviewed_support": [
+        "tests/test_browser_frame_group_cleanup.py"
+      ],
+      "result": "Cancellation while deleting a temporary marker prevented releasing the Chromium object group in both node paths. Two real Chromium regressions failed before and passed after. Unified node group cleanup and reused already-decoded identity comparisons. Full batch 48 passed. Scoped strong Any, Pyrefly, ty and Ruff, full production types and precision passed."
+    },
+    {
+      "id": "Q030B",
+      "responsibility": "DOM snapshot construction, control semantics and revision diff",
+      "files": [
+        "codey/automation/browser_snapshot.py"
+      ],
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 7
+      "tests": [
+        "tests/test_browser_observation_regressions.py",
+        "tests/test_browser_async_runtime.py",
+        "tests/test_browser_readable_references.py"
+      ]
+    },
+    {
+      "id": "Q030C",
+      "responsibility": "Observed controls, record regions and query result binding",
+      "files": [
+        "codey/automation/browser_observation.py",
+        "codey/automation/browser_query.py",
+        "codey/automation/browser_query_async.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": [
+        "tests/test_browser_query_binding.py",
+        "tests/test_browser_shadow_query_regressions.py",
+        "tests/test_research_dynamic_queries.py"
+      ]
+    },
+    {
+      "id": "Q030D",
+      "responsibility": "Page disclosure controls and detail reading",
+      "files": [
+        "codey/automation/browser_disclosure.py",
+        "codey/automation/browser_detail.py"
+      ],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": [
+        "tests/test_browser_detail_production.py",
+        "tests/test_browser_linked_record.py"
+      ]
     },
     {
       "responsibility": "codey/automation: browser contracts and interaction",
@@ -7636,6 +7701,7 @@
     "tests/test_browser_fill_history_audit.py",
     "tests/test_browser_followup_ab.py",
     "tests/test_browser_followups_production.py",
+    "tests/test_browser_frame_group_cleanup.py",
     "tests/test_browser_full_surface_contract.py",
     "tests/test_browser_handoff_next_steps.py",
     "tests/test_browser_initial_navigation.py",
@@ -9386,6 +9452,16 @@
         "Q029C"
       ],
       "reason": "Wire contracts, CDP identity and process lifetime have independent entry points and tests. The browser detail observation belongs to the existing DOM observation boundary Q030. Each original file keeps one owner and no source leaves the queue."
+    },
+    {
+      "batch": "Q030",
+      "replacement": [
+        "Q030",
+        "Q030B",
+        "Q030C",
+        "Q030D"
+      ],
+      "reason": "Document/frame and reference ownership has separate tests from snapshot presentation, record/query observation, and detail disclosure. All nine source files retain one owner."
     }
   ]
 }

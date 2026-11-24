@@ -22,8 +22,10 @@ def _identity(value: object) -> tuple[str, str, str] | None:
 
 def same_document(left: object, right: object) -> bool:
     before, after = _identity(left), _identity(right)
-    if before is None or after is None:
-        return False
+    return before is not None and after is not None and _same_identity(before, after)
+
+
+def _same_identity(before: tuple[str, str, str], after: tuple[str, str, str]) -> bool:
     # Historical receipts lack target_id. Preserve their loader binding rather
     # than treating the newly recorded target field as a navigation.
     return (before[2] == after[2] and (not before[0] or not after[0] or before[0] == after[0])
@@ -32,4 +34,8 @@ def same_document(left: object, right: object) -> bool:
 
 def document_changed(left: object, right: object) -> bool:
     """Missing identity cannot prove that an unsettled action changed documents."""
-    return _identity(left) is not None and _identity(right) is not None and not same_document(left, right)
+    before = _identity(left)
+    if before is None:
+        return False
+    after = _identity(right)
+    return after is not None and not _same_identity(before, after)

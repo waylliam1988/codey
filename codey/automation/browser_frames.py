@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from uuid import uuid4
@@ -21,8 +21,17 @@ class FrameContext:
     document: JsonObject
 
     async def send(self, method: str, arguments: JsonObject | None = None) -> JsonObject:
-        raw: object = await self.cdp.send(method, arguments)
-        return decode_json_object(raw)
+        return await _cdp_send(self.cdp, method, arguments)
+
+
+async def _cdp_send(cdp: CDPSession, method: str, arguments: JsonObject | None = None) -> JsonObject:
+    send: Callable[[str, JsonObject | None], Awaitable[object]] = cdp.send
+    return decode_json_object(await send(method, arguments))
+
+
+def _evaluate(subject: Frame | JSHandle, expression: str, argument: object = None) -> Awaitable[object]:
+    evaluate: Callable[[str, object], Awaitable[object]] = subject.evaluate
+    return evaluate(expression, argument)
 
 
 def _find_frame(tree: JsonObject, frame_id: str) -> JsonObject | None:
@@ -62,22 +71,25 @@ async def frame_context(page: Page, frame: Frame, target_id: str) -> AsyncGenera
     key = "__codey_frame_" + uuid4().hex
     marker = uuid4().hex
     try:
-        await cdp.send("Runtime.enable")
-        await frame.evaluate("([key,value]) => Object.defineProperty(globalThis,key,{value,configurable:true})", [key, marker])
+        await _cdp_send(cdp, "Runtime.enable")
+        await _evaluate(
+            frame, "([key,value]) => Object.defineProperty(globalThis,key,{value,configurable:true})", [key, marker],
+        )
         selected: tuple[int, str] | None = None
         expression = "globalThis[" + json.dumps(key) + "] === " + json.dumps(marker)
         for context_id, auxiliary in tuple(contexts.items()):
-            raw: object = await cdp.send("Runtime.evaluate", {"expression": expression, "contextId": context_id,
-                                                            "returnByValue": True})
-            value = decode_json_object(decode_json_object(raw)["result"]).get("value")
+            evaluated = await _cdp_send(cdp, "Runtime.evaluate", {
+                "expression": expression, "contextId": context_id, "returnByValue": True,
+            })
+            value = decode_json_object(evaluated["result"]).get("value")
             if value is True:
                 if selected is not None:
                     raise RuntimeError("ambiguous_frame_world")
                 selected = context_id, require_json_string(auxiliary.get("frameId"), "frame id")
         if selected is None:
             raise RuntimeError("frame_world_unavailable")
-        raw_tree: object = await cdp.send("Page.getFrameTree")
-        tree = decode_json_object(decode_json_object(raw_tree)["frameTree"])
+        raw_tree = await _cdp_send(cdp, "Page.getFrameTree")
+        tree = decode_json_object(raw_tree["frameTree"])
         observed = _find_frame(tree, selected[1])
         if observed is None:
             raise RuntimeError("frame_document_unavailable")
@@ -90,24 +102,30 @@ async def frame_context(page: Page, frame: Frame, target_id: str) -> AsyncGenera
     finally:
         with suppress(Error, TimeoutError):
             async with asyncio.timeout(0.5):
-                await frame.evaluate("key => {delete globalThis[key]}", key)
+                await _evaluate(frame, "key => {delete globalThis[key]}", key)
         await cdp.detach()
+
+
+async def _release_node_group(context: FrameContext, key: str, group: str) -> None:
+    try:
+        with suppress(Error):
+            await _evaluate(context.frame, "key => {delete globalThis[key]}", key)
+    finally:
+        await context.send("Runtime.releaseObjectGroup", {"objectGroup": group})
 
 
 async def backend_node(context: FrameContext, node: ElementHandle) -> int:
     key = "__codey_node_" + uuid4().hex
     group = "codey-node-" + uuid4().hex
     try:
-        await node.evaluate("(node,key) => Object.defineProperty(globalThis,key,{value:node,configurable:true})", key)
+        await _evaluate(node, "(node,key) => Object.defineProperty(globalThis,key,{value:node,configurable:true})", key)
         remote = await context.send("Runtime.evaluate", {
             "expression": "globalThis[" + json.dumps(key) + "]", "contextId": context.context_id, "objectGroup": group})
         object_id = require_json_string(decode_json_object(remote["result"]).get("objectId"), "node object")
         observed = await context.send("DOM.describeNode", {"objectId": object_id})
         return require_json_integer(decode_json_object(observed["node"])["backendNodeId"], "backend node")
     finally:
-        with suppress(Error):
-            await context.frame.evaluate("key => {delete globalThis[key]}", key)
-        await context.send("Runtime.releaseObjectGroup", {"objectGroup": group})
+        await _release_node_group(context, key, group)
 
 
 async def backend_nodes(context: FrameContext, nodes: JSHandle) -> dict[str, int]:
@@ -115,7 +133,7 @@ async def backend_nodes(context: FrameContext, nodes: JSHandle) -> dict[str, int
     key = "__codey_nodes_" + uuid4().hex
     group = "codey-nodes-" + uuid4().hex
     try:
-        await nodes.evaluate("(nodes,key) => Object.defineProperty(globalThis,key,{value:nodes,configurable:true})", key)
+        await _evaluate(nodes, "(nodes,key) => Object.defineProperty(globalThis,key,{value:nodes,configurable:true})", key)
         expression = f"(() => {{const nodes=globalThis[{json.dumps(key)}];delete globalThis[{json.dumps(key)}];return nodes}})()"
         remote = await context.send("Runtime.evaluate", {"expression": expression,
             "contextId": context.context_id, "objectGroup": group})
@@ -138,9 +156,7 @@ async def backend_nodes(context: FrameContext, nodes: JSHandle) -> dict[str, int
                 pending.append(describe(name, remote_id))
         return dict(await asyncio.gather(*pending))
     finally:
-        with suppress(Error):
-            await context.frame.evaluate("key => {delete globalThis[key]}", key)
-        await context.send("Runtime.releaseObjectGroup", {"objectGroup": group})
+        await _release_node_group(context, key, group)
 
 
 async def resolve_backend(context: FrameContext, backend_node_id: int) -> ElementHandle:

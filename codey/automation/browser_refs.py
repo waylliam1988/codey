@@ -64,8 +64,8 @@ class ElementRegistry(Generic[Handle]):
 
     @staticmethod
     def _context_key(context: JsonObject | None) -> str:
-        return json.dumps({key: value for key, value in (context or {}).items() if key != "id"},
-                          ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        identity: JsonObject = {key: value for key, value in (context or {}).items() if key != "id"}
+        return json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
     def resolve(self, ref: str, document: JsonObject | None) -> ElementRecord[Handle]:
         record = self.records.get(ref)

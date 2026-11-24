@@ -4,7 +4,7 @@
 
 目标持续覆盖本仓库自有 Python、TypeScript/JavaScript 源码、工具和测试；排除依赖、第三方 QuickJS、生成的网页资源及构建产物。尚未完成全仓治理，不能据本记录推断仓库没有其他 bug。
 
-当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q029C。Q026 的生产修复已验证，项目生命周期用例待跟进。下一批为 Q030。保留历史验收，复核后续提交实际影响的范围。
+当前状态：在 master 的 `3e330232` 恢复总 goal，已完成 Q030。Q026 的生产修复已验证，项目生命周期用例待跟进。下一批为 Q030B。保留历史验收，复核后续提交实际影响的范围。
 
 - 直接使用当前工作目录，不创建、复制或切换 worktree，不覆盖用户原有修改。
 - 禁止全量 pytest；每次显式指定文件，按变更依赖逐批扩大。
@@ -1433,3 +1433,13 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_process.py tests/test_task_browser_resources.py --tb=short` 得基线 8 passed。最终在同命令加入 `tests/test_browser_ipc_contract.py tests/test_browser_worker_startup_rollback.py` 得 13 passed，`python -m pytest -q tests/test_browser_process_reconnect.py --tb=short` 得 15 passed，两组去重 28 项（含 Q029 的 4 项变更后重验）。以 `PYTHONUNBUFFERED=1` 单独重验启动回滚与真实 worker 取消、截图共 2 项，属于重复节点和不同启动模式。各组无跳过，均退出 0。
 - 最终强 Any、Pyrefly、ty、Ruff 覆盖三源、新测试和受影响的 IPC 源及原测试共 6 个文件，退出 0。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty、kernel_type_precision_gate 均通过。日志 `.e2e-artifacts/code-quality-20261122/q029c-*.log`。
 - Q029C 完成。累计 50/327 批，完成批覆盖 100/1009 个生产文件。Q030 接续 DOM、框架、查询和页面观察。
+
+
+### Q030 文档、框架与节点引用身份
+
+- Q029C 已提交 `b452600e`。原 Q030 按文档和元素引用、快照、查询和观察、详情读取拆为 Q030 至 Q030D。所有 9 个文件保留明确归属，队列更新为 330 批。当前完整检查 browser_document、browser_refs、browser_frames。
+- Chromium 运行时对象组在观察操作结束后必须释放。用真实 Chromium，分别观察一个及一批节点，在删除临时标记时注入 asyncio.CancelledError。原程序成功调用 DOM.describeNode，随后传播取消，但无 Runtime.releaseObjectGroup 请求。 `python -m pytest -q tests/test_browser_frame_group_cleanup.py --tb=short` 实际 2 failed，退出 1。最早以 Playwright Error 注入的对照原本通过，取消错误的回归才是证据。
+- 将同一节点清理过程收敛到一处，在 finally 中释放对象组，原取消继续传播。相同两项随后通过。共用已解码的文档身份比较，在需要比较变化时避免再次解码，保留缺失身份和历史可选字段规则。为 Playwright 的 CDP 和 evaluate 入口采用明确可等待返回对象，返回动态 JSON 前做运行时解码。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_async_frames.py tests/test_browser_element_registry.py tests/test_browser_navigation_handoff.py --tb=short`，基线 46 passed。最终加入 `tests/test_browser_frame_group_cleanup.py`，48 passed，无失败或跳过，退出 0。测试覆盖实际框架、节点引用、导航恢复。快照及详情后续有各自批次。
+- 对三源及回归执行定向严格 mypy（禁 Any 三标志）、Pyrefly、ty、Ruff，均退出 0。全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、165 warnings 未展示）、ty 和 kernel_type_precision_gate 均通过。日志 `.e2e-artifacts/code-quality-20261122/q030-*.log`。
+- Q030 完成。累计 51/330 批，完成批覆盖 103/1009 个生产文件。接续 Q030B 的 DOM 快照、控件语义和版本差异。
