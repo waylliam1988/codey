@@ -2090,3 +2090,10 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 收窄线程本地连接和 SQLite 行的类型，验证查询记录值，保留笔记路径及调用方映射接口。整文件 115 条严格 Any 诊断清除。首次生产 mypy 发现路径类型及历史查询字典与两个调用方不合，调整索引返回边界后通过。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_index_transactions.py tests/test_knowledge.py tests/test_knowledge_multilingual_recall.py tests/test_knowledge_indexer_startup.py tests/test_knowledge_sqlite_authority.py tests/test_knowledge_repository.py tests/test_knowledge_document_path.py tests/test_knowledge_version_graph.py --tb=short`，66 passed、无失败或跳过、退出 0。修改前原计划三文件基线 53 passed。索引与新增回归的完整严格 Any、Ruff、全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel 精度门禁均通过。
 - Q072B 完成。累计完成 128/371 批，覆盖 215/1011 个生产文件，另有 15 批部分完成。下一批 Q072C 审查 Knowledge 对象仓库。
+
+### Q072C Knowledge 对象仓库
+
+- Q072B 已提交 `63f279e5`。完整审查 `repository.py` 的版本、引用、清除及回执。隐私清除合同要求受影响提交不能重放。原提交和暂存提交引用同一对象版本，清除并重启后暂存提交仍返回已清除版本。执行 `python -m pytest -q tests/test_knowledge_repository_purge_receipts.py --tb=short`，修改前 1 failed、退出 1。修复后按回执的对象身份一并作废受影响提交并删除对应回执行，原回归通过，独立提交仍可查询。
+- 合并提交与重试的回执解码，将清除标记与回执一次查询。SQLite 行、历史对象和回执边界清除 34 条严格 Any 诊断。结构化旧对象仍按原 JSON 解码尺寸读取。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_repository_purge_receipts.py tests/test_knowledge_repository.py tests/test_long_term_knowledge.py tests/test_knowledge_multilingual_recall.py tests/test_knowledge_interpretation_identity.py tests/test_persistent_research_lifecycle.py::test_purge_removes_dependent_documents_exports_and_prevents_replay tests/test_persistent_research_lifecycle.py::test_shared_staged_excerpts_keep_stances_and_exact_source_text tests/test_research_process_fault_review.py::test_commit_receipt_fault --tb=short`，24 passed、无失败或跳过、退出 0。原计划两文件基线 13 passed。修改源码与新增回归的整文件严格 Any、Ruff、全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel 精度门禁均通过。
+- Q072C 完成。累计完成 129/371 批，覆盖 216/1011 个生产文件，另有 15 批部分完成。下一批 Q072D 审查 KnowledgeStore 装配与入口。

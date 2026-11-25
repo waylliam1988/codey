@@ -4564,8 +4564,10 @@
     },
     {
       "id": "Q072C", "responsibility": "Knowledge object repository, relations and purge", "files": ["codey/knowledge/repository.py"],
-      "status": "not_started", "reviewed_files": [], "verified_files": [],
-      "tests": ["tests/test_knowledge_repository.py", "tests/test_long_term_knowledge.py"]
+      "status": "completed_changed", "reviewed_files": ["codey/knowledge/repository.py"], "verified_files": ["codey/knowledge/repository.py"],
+      "tests": ["tests/test_knowledge_repository_purge_receipts.py", "tests/test_knowledge_repository.py", "tests/test_long_term_knowledge.py", "tests/test_knowledge_multilingual_recall.py", "tests/test_knowledge_interpretation_identity.py", "tests/test_persistent_research_lifecycle.py", "tests/test_research_process_fault_review.py"],
+      "reviewed_support": ["tests/test_knowledge_repository_purge_receipts.py"],
+      "result": "Privacy purge tombstones original and reused staged commit IDs and deletes affected receipt rows. Commit validation uses one typed lookup. The reopen regression and all 24 scoped cases and production gates passed."
     },
     {
       "id": "Q072D", "responsibility": "Knowledge store composition and entry points", "files": ["codey/knowledge/store.py"],
