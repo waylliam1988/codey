@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -12,12 +13,15 @@ from codey.durable.process import process_is_alive
 
 
 @pytest.mark.parametrize("pid", [None, True, False, 0, -1, "123"])
-def test_invalid_owner_is_not_alive(pid):
+def test_invalid_owner_is_not_alive(pid: object) -> None:
     assert process_is_alive(pid) is False
 
 
-def test_probe_current_and_child_process_without_signalling(monkeypatch):
-    monkeypatch.setattr(os, "kill", lambda *_args: pytest.fail("Windows process probes must not send signals"))
+def test_probe_current_and_child_process_without_signalling(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unexpected_signal(_pid: int, _signal: int) -> None:
+        pytest.fail("Windows process probes must not send signals")
+
+    monkeypatch.setattr(os, "kill", unexpected_signal)
     assert process_is_alive(os.getpid())
     if os.name != "nt":
         return
@@ -35,8 +39,15 @@ def test_probe_current_and_child_process_without_signalling(monkeypatch):
             child.wait(timeout=5)
 
 
+@pytest.mark.skipif(os.name != "nt", reason="checks a Windows process exit status")
+def test_exited_process_with_still_active_exit_code_is_not_alive() -> None:
+    with subprocess.Popen([sys.executable, "-c", "import sys; sys.exit(259)"]) as child:
+        assert child.wait(timeout=5) == 259
+        assert not process_is_alive(child.pid)
+
+
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
-def test_second_scheduler_cannot_kill_the_live_owner(tmp_path, backend):
+def test_second_scheduler_cannot_kill_the_live_owner(tmp_path: Path, backend: str) -> None:
     store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     session = DurableSession(store)
     try:

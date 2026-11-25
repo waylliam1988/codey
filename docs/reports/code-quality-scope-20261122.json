@@ -4321,10 +4321,11 @@
         "codey/durable/process.py"
       ],
       "id": "Q060",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 1
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/events.py", "codey/durable/process.py"],
+      "verified_files": ["codey/durable/events.py", "codey/durable/process.py"],
+      "tests": ["tests/durable/test_generation_boundary_commit.py", "tests/durable/test_commit_events.py", "tests/durable/test_inbox_history_projection.py", "tests/durable/test_branch_revision_cas.py", "tests/durable/test_process_probe.py", "tests/durable/test_execution_fencing.py", "tests/durable/test_recovery.py", "tests/durable/test_scheduler.py"],
+      "result": "Preserved the primary checkpoint identity in commit events and used the Win32 process wait state for liveness. Both regressions failed before the fixes. 84 scoped tests, platform-specific type checks and all production gates passed."
     },
     {
       "responsibility": "codey/durable: knowledge and memory",

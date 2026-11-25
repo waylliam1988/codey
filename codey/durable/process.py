@@ -2,17 +2,11 @@
 
 from __future__ import annotations
 
+import ctypes
 import os
-from typing import TYPE_CHECKING, Any
-
-if os.name == "nt" or TYPE_CHECKING:
-    import ctypes
-    from ctypes import wintypes
-
-    # Windows-only ctypes entry points are absent from Linux typeshed.
-    # Keep this dynamic adapter available to mypy without importing it at
-    # runtime on POSIX, where the code path is never reached.
-    _windows_ctypes: Any = ctypes
+import sys
+from collections.abc import Callable
+from ctypes import wintypes
 
 
 def process_is_alive(value: object) -> bool:
@@ -34,24 +28,35 @@ def process_is_alive(value: object) -> bool:
     return True
 
 
-def _windows_process_is_alive(pid: int) -> bool:
-    if pid > 0xFFFFFFFF:
-        return False
-    kernel32 = _windows_ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-    kernel32.OpenProcess.restype = wintypes.HANDLE
-    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, wintypes.LPDWORD]
-    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
-    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel32.CloseHandle.restype = wintypes.BOOL
-    handle = kernel32.OpenProcess(0x1000, False, pid)
-    if not handle:
-        # Access denied does not authorize stealing a live process's fence.
-        return bool(_windows_ctypes.get_last_error() == 5)
-    try:
-        code = wintypes.DWORD()
-        if not kernel32.GetExitCodeProcess(handle, _windows_ctypes.byref(code)):
-            raise _windows_ctypes.WinError(_windows_ctypes.get_last_error())
-        return code.value == 259
-    finally:
-        kernel32.CloseHandle(handle)
+if sys.platform == "win32":
+    def _windows_process_is_alive(pid: int) -> bool:
+        if pid > 0xFFFFFFFF:
+            return False
+        kernel32 = ctypes.WinDLL("kernel32")
+        open_process: Callable[[int, bool, int], int | None] = ctypes.WINFUNCTYPE(
+            wintypes.HANDLE, wintypes.DWORD, wintypes.BOOL, wintypes.DWORD, use_last_error=True,
+        )(("OpenProcess", kernel32))
+        wait: Callable[[int, int], int] = ctypes.WINFUNCTYPE(
+            wintypes.DWORD, wintypes.HANDLE, wintypes.DWORD, use_last_error=True,
+        )(("WaitForSingleObject", kernel32))
+        close: Callable[[int], int] = ctypes.WINFUNCTYPE(
+            wintypes.BOOL, wintypes.HANDLE,
+        )(("CloseHandle", kernel32))
+
+        synchronize = 0x00100000
+        handle = open_process(synchronize, False, pid)
+        if not handle:
+            # Access denied does not authorize stealing a live process's fence.
+            return ctypes.get_last_error() == 5
+        try:
+            # The handle is signaled on exit, regardless of the process exit code.
+            result = wait(handle, 0)
+            if result == 0xFFFFFFFF:  # WAIT_FAILED
+                raise ctypes.WinError(ctypes.get_last_error())
+            return result == 0x102  # WAIT_TIMEOUT
+        finally:
+            close(handle)
+
+else:
+    def _windows_process_is_alive(pid: int) -> bool:
+        raise OSError("Windows process probing requires Windows")
