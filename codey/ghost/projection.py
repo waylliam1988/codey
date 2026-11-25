@@ -159,7 +159,8 @@ def _decide(connection: sqlite3.Connection, event: MemoryEvent) -> None:
         if targets:
             raise ValueError("correction target is missing")
         controls = tuple(require_json_strings(proposal.get("control_scopes"), "control_scopes"))
-        confirmed = replace(item, source_refs=tuple(dict.fromkeys((*item.source_refs, *event.provenance))))
+        source_refs: dict[str, None] = dict.fromkeys((*item.source_refs, *event.provenance))
+        confirmed = replace(item, source_refs=tuple(source_refs))
         _store_item(connection, MemoryRecord(confirmed, control_scopes=controls))
         if item.slot == "code.language":
             from datetime import timedelta
@@ -200,7 +201,9 @@ def _delete(connection: sqlite3.Connection, event: MemoryEvent) -> None:
     if load(connection, "operations", event.event_id) is not None:
         return
     watermark = load(connection, "deleted_scopes", event.scope)
-    if watermark is not None and timestamp(require_json_string(watermark.get("at"), "at")) > timestamp(event.occurred_at):
+    watermark_at = timestamp(require_json_string(watermark.get("at"), "at")) if watermark is not None else None
+    deleted_at = timestamp(event.occurred_at)
+    if watermark_at is not None and watermark_at > deleted_at:
         save(connection, "operations", event.event_id, event.scope, {"deleted": 0})
         return
     refs = set(require_json_strings(event.payload.get("source_refs", []), "source_refs"))
@@ -220,8 +223,7 @@ def _delete(connection: sqlite3.Connection, event: MemoryEvent) -> None:
                 if collection == "items":
                     deleted += 1
                     removed_items.add(identity)
-    prior = load(connection, "deleted_scopes", event.scope)
-    if prior is None or timestamp(require_json_string(prior.get("at"), "at")) < timestamp(event.occurred_at):
+    if watermark_at is None or watermark_at < deleted_at:
         save(connection, "deleted_scopes", event.scope, event.scope, {"at": event.occurred_at})
     for ref in refs:
         save(connection, "deleted_sources", ref, event.scope, {"at": event.occurred_at})

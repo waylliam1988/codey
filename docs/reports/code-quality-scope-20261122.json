@@ -4426,10 +4426,11 @@
       "responsibility": "Ghost event projection and retention",
       "files": ["codey/ghost/projection.py", "codey/ghost/maintenance.py"],
       "id": "Q066C",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/test_memory_integrity.py", "tests/test_memory_maintenance_runtime.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/ghost/projection.py", "codey/ghost/maintenance.py"],
+      "verified_files": ["codey/ghost/projection.py", "codey/ghost/maintenance.py"],
+      "tests": ["tests/test_memory_integrity.py", "tests/test_memory_maintenance_runtime.py", "tests/test_memory_completion.py", "tests/test_memory_lifecycle.py", "tests/test_memory_boundary.py", "tests/test_memory_feedback.py", "tests/test_memory_adaptation_flow.py"],
+      "result": "Typed ordered provenance deduplication and reused the deletion watermark for the comparison and update in one transaction. Baseline 113 selected tests and 46 affected cases after the change passed, along with strict Any and the production gates."
     },
     {
       "responsibility": "Ghost backend composition and memory API",
