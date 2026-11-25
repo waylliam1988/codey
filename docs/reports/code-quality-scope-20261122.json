@@ -4436,10 +4436,12 @@
       "responsibility": "Ghost backend composition and memory API",
       "files": ["codey/ghost/backend.py"],
       "id": "Q066D",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/test_memory_boundary.py", "tests/test_memory_adaptation_flow.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/ghost/backend.py"],
+      "verified_files": ["codey/ghost/backend.py"],
+      "tests": ["tests/test_memory_completion.py", "tests/test_memory_boundary.py", "tests/test_memory_adaptation_flow.py", "tests/test_memory_maintenance_runtime.py", "tests/test_memory_learning_targets.py"],
+      "reviewed_support": ["tests/test_memory_completion.py"],
+      "result": "Compaction calculates its recovery cutoff before recording retention, so a date underflow leaves the projections and journal intact. The failing regression passed after the fix. 74 scoped tests, strict Any and all production gates passed."
     },
     {
       "responsibility": "codey/ghost: shared contracts and module services",

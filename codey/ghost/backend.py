@@ -222,11 +222,11 @@ class GhostMemory:
         self.compact(selected, as_of=as_of)
 
     def compact(self, policy: MemoryRetentionPolicy, *, as_of: str) -> MemoryRebuildResult:
+        floor = (timestamp(as_of) - timedelta(days=max(policy.experience_days, policy.archived_days))).isoformat()
         payload: JsonObject = {"max_experiences_per_scope": policy.max_experiences_per_scope,
             "experience_days": policy.experience_days, "archived_days": policy.archived_days, "keep_events": policy.keep_events}
         identity = "retention:" + digest({"at": as_of, **payload})
         self._command("memory.retained", identity, "user", as_of, payload, (identity,))
-        floor = (timestamp(as_of) - timedelta(days=max(policy.experience_days, policy.archived_days))).isoformat()
         return self.database.compact(as_of=floor, retired_before=as_of, keep_events=policy.keep_events, project=project_event)
 
     def observation_cursor(self) -> int:

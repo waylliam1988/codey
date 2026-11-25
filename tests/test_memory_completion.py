@@ -231,6 +231,20 @@ def test_repeated_compaction_retains_the_most_recent_command_identities(tmp_path
         reopened.set_control(oldest)
 
 
+def test_compaction_with_an_unrepresentable_cutoff_leaves_memory_and_journal_intact(tmp_path: Path) -> None:
+    store = backend(tmp_path)
+    store.observe(event("experience"))
+    before = store.export_state()
+    journal = store.rebuild()
+
+    with pytest.raises(OverflowError):
+        store.compact(MemoryRetentionPolicy(max_experiences_per_scope=0, keep_events=1),
+                      as_of="0001-01-01T00:00:00+00:00")
+
+    assert store.export_state() == before
+    assert store.rebuild() == journal
+
+
 @pytest.mark.parametrize("operation", ["install", "truncate"])
 def test_snapshot_transaction_failure_preserves_recoverability(tmp_path: Path, operation: str) -> None:
     import sqlite3
