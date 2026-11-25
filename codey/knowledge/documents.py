@@ -5,10 +5,28 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from typing import Any
+from typing import Protocol, TypedDict
 
 from codey.knowledge.index import KnowledgeIndex
 from codey.knowledge.note import KnowledgeNote, now_iso
+from codey.types.json_value import require_json_integer, require_json_string
+
+
+class _DocumentRow(Protocol):
+    def __getitem__(self, key: str | int, /) -> object: ...
+
+
+class NoteRevision(TypedDict):
+    revision: int
+    recorded_at: str
+    reason: str
+    deleted: int
+
+
+def _read_document(row: _DocumentRow) -> tuple[KnowledgeNote, str, int]:
+    markdown = require_json_string(row["markdown"], "markdown")
+    return (KnowledgeNote.from_markdown(markdown), require_json_string(row["path"], "path"),
+            require_json_integer(row["revision"], "revision"))
 
 
 class KnowledgeDocuments:
@@ -28,9 +46,10 @@ class KnowledgeDocuments:
                 conn.execute(sql)
 
     def initialized(self) -> bool:
-        return bool(self.index._read_conn().execute(
+        marker: object = self.index._read_conn().execute(
             "SELECT 1 FROM knowledge_meta WHERE key='documents_initialized'"
-        ).fetchone() is not None)
+        ).fetchone()
+        return marker is not None
 
     def initialize(self, notes: list[tuple[KnowledgeNote, str]]) -> None:
         with self.index.transaction() as conn:
@@ -43,64 +62,80 @@ class KnowledgeDocuments:
     def get(self, note_id: str, revision: int | None = None) -> tuple[KnowledgeNote, str, int] | None:
         conn = self.index._read_conn()
         if revision is None:
-            row = conn.execute("SELECT * FROM note_documents WHERE id=?", (note_id,)).fetchone()
+            sql = "SELECT * FROM note_documents WHERE id=?"
+            args: tuple[str | int, ...] = (note_id,)
         else:
-            row = conn.execute("SELECT * FROM note_revisions WHERE id=? AND revision=?", (note_id, revision)).fetchone()
+            sql = "SELECT * FROM note_revisions WHERE id=? AND revision=?"
+            args = (note_id, revision)
+        row: _DocumentRow | None = conn.execute(sql, args).fetchone()
         if row is None or row["markdown"] is None:
             return None
-        return KnowledgeNote.from_markdown(row["markdown"]), str(row["path"]), int(row["revision"])
+        return _read_document(row)
 
     def by_path(self, path: str) -> tuple[KnowledgeNote, str, int] | None:
-        row = self.index._read_conn().execute("SELECT id FROM note_documents WHERE path=?", (path,)).fetchone()
-        return self.get(str(row[0])) if row else None
+        row: _DocumentRow | None = self.index._read_conn().execute(
+            "SELECT * FROM note_documents WHERE path=?", (path,)).fetchone()
+        return _read_document(row) if row is not None else None
 
     def get_many(self, note_ids: list[str]) -> dict[str, tuple[KnowledgeNote, str, int]]:
         if not note_ids:
             return {}
-        rows = self.index._read_conn().execute(
+        rows: list[_DocumentRow] = self.index._read_conn().execute(
             "SELECT * FROM note_documents WHERE id IN (SELECT value FROM json_each(?))",
             (json.dumps(note_ids),)).fetchall()
-        found = {str(row["id"]): (KnowledgeNote.from_markdown(row["markdown"]), str(row["path"]), int(row["revision"]))
-                 for row in rows}
-        return {identity: found[identity] for identity in dict.fromkeys(note_ids) if identity in found}
+        found = {require_json_string(row["id"], "id"): _read_document(row) for row in rows}
+        unique_ids: dict[str, None] = dict.fromkeys(note_ids)
+        return {identity: found[identity] for identity in unique_ids if identity in found}
 
     def all(self) -> list[tuple[KnowledgeNote, str, int]]:
-        rows = self.index._read_conn().execute("SELECT * FROM note_documents ORDER BY id").fetchall()
-        return [(KnowledgeNote.from_markdown(row["markdown"]), str(row["path"]), int(row["revision"])) for row in rows]
+        rows: list[_DocumentRow] = self.index._read_conn().execute("SELECT * FROM note_documents ORDER BY id").fetchall()
+        return [_read_document(row) for row in rows]
 
     def write(self, note: KnowledgeNote, path: str, *, reason: str = "edit") -> int:
         text = note.to_markdown()
         with self.index.transaction() as conn:
-            old = conn.execute("SELECT markdown,revision FROM note_documents WHERE id=?", (note.id,)).fetchone()
-            if old and old["markdown"] == text:
-                return int(old["revision"])
+            old: _DocumentRow | None = conn.execute(
+                "SELECT markdown,revision,path FROM note_documents WHERE id=?", (note.id,)).fetchone()
+            unchanged_text = old is not None and old["markdown"] == text
+            if old is not None and unchanged_text and old["path"] == path:
+                return require_json_integer(old["revision"], "revision")
             version = self._next_revision(conn, note.id)
             conn.execute("INSERT INTO note_revisions VALUES(?,?,?,?,?,?)", (note.id, version, text, path, now_iso(), reason))
             conn.execute("INSERT INTO note_documents VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
                          "path=excluded.path,revision=excluded.revision,markdown=excluded.markdown",
                          (note.id, path, version, text))
+            if old is not None and unchanged_text:
+                conn.execute("INSERT INTO note_knowledge_refs "
+                             "SELECT note_id,?,target,revision FROM note_knowledge_refs WHERE note_id=? AND note_revision=?",
+                             (version, note.id, require_json_integer(old["revision"], "revision")))
             self.index.upsert(note, path=path, content_hash=hashlib.sha256(text.encode()).hexdigest()[:16])
             return version
 
     def remove(self, note_id: str, *, purge: bool = False) -> None:
         with self.index.transaction() as conn:
-            old = conn.execute("SELECT path FROM note_documents WHERE id=?", (note_id,)).fetchone()
-            if old:
+            old: _DocumentRow | None = conn.execute("SELECT path FROM note_documents WHERE id=?", (note_id,)).fetchone()
+            if old is not None:
                 conn.execute("INSERT INTO note_revisions VALUES(?,?,?,?,?,?)",
-                             (note_id, self._next_revision(conn, note_id), None, old[0], now_iso(), "compensation"))
+                             (note_id, self._next_revision(conn, note_id), None,
+                              require_json_string(old[0], "path"), now_iso(), "compensation"))
             conn.execute("DELETE FROM note_documents WHERE id=?", (note_id,))
             if purge:
                 conn.execute("DELETE FROM note_revisions WHERE id=?", (note_id,))
                 conn.execute("DELETE FROM note_knowledge_refs WHERE note_id=?", (note_id,))
             self.index.remove(note_id)
 
-    def history(self, note_id: str) -> list[dict[str, Any]]:
-        return [dict(row) for row in self.index._read_conn().execute(
+    def history(self, note_id: str) -> list[NoteRevision]:
+        rows: list[_DocumentRow] = self.index._read_conn().execute(
             "SELECT revision,recorded_at,reason,markdown IS NULL AS deleted FROM note_revisions WHERE id=? ORDER BY revision",
             (note_id,),
-        )]
+        ).fetchall()
+        return [NoteRevision(revision=require_json_integer(row["revision"], "revision"),
+                             recorded_at=require_json_string(row["recorded_at"], "recorded_at"),
+                             reason=require_json_string(row["reason"], "reason"),
+                             deleted=require_json_integer(row["deleted"], "deleted")) for row in rows]
 
     @staticmethod
     def _next_revision(conn: sqlite3.Connection, note_id: str) -> int:
-        row = conn.execute("SELECT COALESCE(MAX(revision),0)+1 FROM note_revisions WHERE id=?", (note_id,)).fetchone()
-        return int(row[0])
+        row: _DocumentRow = conn.execute(
+            "SELECT COALESCE(MAX(revision),0)+1 FROM note_revisions WHERE id=?", (note_id,)).fetchone()
+        return require_json_integer(row[0], "revision")

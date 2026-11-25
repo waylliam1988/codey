@@ -393,6 +393,12 @@
         "Q071C",
         "Q071D",
         "Q072",
+        "Q072B",
+        "Q072C",
+        "Q072D",
+        "Q072E",
+        "Q072F",
+        "Q072G",
         "Q073",
         "Q074"
       ],
@@ -4539,22 +4545,46 @@
       "result": "Full recall honors budgets too small for its introduction. Typed the provenance boundary. The 28-case production group passed. The expanded group passed 39 cases and reproduced three unchanged compact A/B fixture failures tracked in Q087."
     },
     {
-      "responsibility": "codey/knowledge: shared contracts and module services",
-      "files": [
-        "codey/knowledge/brief.py",
-        "codey/knowledge/store.py",
-        "codey/knowledge/changes.py",
-        "codey/knowledge/documents.py",
-        "codey/knowledge/index.py",
-        "codey/knowledge/repository.py",
-        "codey/knowledge/graph.py",
-        "codey/knowledge/version_graph.py"
-      ],
+      "responsibility": "Knowledge SQLite document revisions",
+      "files": ["codey/knowledge/documents.py"],
       "id": "Q072",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 67
+      "status": "completed_changed",
+      "reviewed_files": ["codey/knowledge/documents.py"],
+      "verified_files": ["codey/knowledge/documents.py"],
+      "tests": ["tests/test_knowledge_document_path.py", "tests/test_knowledge_sqlite_authority.py", "tests/test_knowledge_note_import.py", "tests/test_knowledge.py", "tests/test_knowledge_answer_scope.py"],
+      "reviewed_support": ["tests/test_knowledge_document_path.py"],
+      "result": "Document writes version changes in path even with identical Markdown. Attached exact references and prior paths remain available. Fifty-three scoped tests, whole-file strict Any and production gates passed."
+    },
+    {
+      "id": "Q072B", "responsibility": "Knowledge SQLite index and cache", "files": ["codey/knowledge/index.py"],
+      "status": "not_started", "reviewed_files": [], "verified_files": [],
+      "tests": ["tests/test_knowledge.py", "tests/test_knowledge_indexer_startup.py", "tests/test_knowledge_multilingual_recall.py"]
+    },
+    {
+      "id": "Q072C", "responsibility": "Knowledge object repository, relations and purge", "files": ["codey/knowledge/repository.py"],
+      "status": "not_started", "reviewed_files": [], "verified_files": [],
+      "tests": ["tests/test_knowledge_repository.py", "tests/test_long_term_knowledge.py"]
+    },
+    {
+      "id": "Q072D", "responsibility": "Knowledge store composition and entry points", "files": ["codey/knowledge/store.py"],
+      "status": "not_started", "reviewed_files": [], "verified_files": [],
+      "tests": ["tests/test_knowledge.py", "tests/test_knowledge_sqlite_authority.py", "tests/test_knowledge_note_import.py"],
+      "followups": ["Q072 found the store-level idempotency check uses the Markdown but not the existing stored path, potentially returning a canonical location without moving identical legacy content. Establish the public path contract and reproduce at the store entry before changing it."]
+    },
+    {
+      "id": "Q072E", "responsibility": "Knowledge changes and compensating writes", "files": ["codey/knowledge/changes.py"],
+      "status": "not_started", "reviewed_files": [], "verified_files": [],
+      "tests": ["tests/test_knowledge.py", "tests/test_knowledge_sqlite_authority.py", "tests/test_persistent_research_lifecycle.py"]
+    },
+    {
+      "id": "Q072F", "responsibility": "Knowledge evidence and version graphs", "files": ["codey/knowledge/graph.py", "codey/knowledge/version_graph.py"],
+      "status": "not_started", "reviewed_files": [], "verified_files": [],
+      "tests": ["tests/test_knowledge.py", "tests/test_knowledge_version_graph.py"]
+    },
+    {
+      "id": "Q072G", "responsibility": "Knowledge context brief assembly", "files": ["codey/knowledge/brief.py"],
+      "status": "not_started", "reviewed_files": [], "verified_files": [],
+      "tests": ["tests/test_knowledge.py", "tests/test_architecture.py"]
     },
     {
       "responsibility": "codey/knowledge: provider connection and selection",
@@ -10053,6 +10083,11 @@
       "batch": "Q071",
       "replacement": ["Q071", "Q071B", "Q071C", "Q071D"],
       "reason": "Archive identities, note persistence and its schema, concept graph composition, and recall have independently verifiable contracts."
+    },
+    {
+      "batch": "Q072",
+      "replacement": ["Q072", "Q072B", "Q072C", "Q072D", "Q072E", "Q072F", "Q072G"],
+      "reason": "Document revisions, SQLite index, structured repository, store composition, compensation, graphs, and brief assembly have independently verifiable relationships."
     },
     {
       "commit": "64bd6337",

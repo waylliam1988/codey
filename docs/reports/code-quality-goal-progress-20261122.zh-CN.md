@@ -2076,3 +2076,10 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - Q071C 已提交 `8238b0f2`。完整检查 `recall.py`。`max_chars` 约束完整检索文本，普通模式在预算小于说明头时仍返回整段说明。使用一条有效的会话条目请求 1 字符，在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_recall_budget.py --tb=short`。夹具补齐会话作用域后，修改前 1 failed、1 passed、退出 1。加入说明头的预算检查后两种模式均通过，并验证正常预算仍提供同一条目。
 - 最终执行 `python -m pytest -q tests/test_knowledge_recall_budget.py tests/test_knowledge_multilingual_recall.py tests/test_knowledge_repository.py tests/test_research_prior_knowledge.py tests/test_long_term_knowledge.py --tb=short`，28 passed、无失败或跳过、退出 0。加入 `tests/test_research_read_guidance_ab.py` 的扩展组为 39 passed、3 failed、退出 1。内存载入 `8238b0f2` 原检索文件后单跑实验文件，11 passed、3 failed、退出 1。两个 1 字符案例要求空字符串严格缩短，900 字符案例的固定实验标头无法处理短定位器。Q087 核对该实验夹具。
 - `recall.py` 和新回归的严格 Any 与 Ruff 通过，清除来源元数据边界的 1 条 Any 诊断。全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel 精度门禁均通过。Q071D 完成。累计完成 126/365 批，覆盖 213/1011 个生产文件，另有 15 批部分完成。下一批 Q072 检查 Knowledge 存储和图谱依赖。
+
+### Q072 Knowledge SQLite 文档版本
+
+- Q071D 已提交 `188f7b20`。按文档、索引、对象仓库、存储装配、补偿、图谱和上下文摘要拆分原八个文件。完整检查 `documents.py`。文档版本保存路径和 Markdown，补偿入口显式传入要恢复的路径。修改前执行 `python -m pytest -q tests/test_knowledge_document_path.py --tb=short`，相同 Markdown 写到新路径时仍返回版本 1，1 failed、退出 1。现在路径变化生成新版本，同路径同内容的重试保持幂等，原版本路径和固定知识引用均可读。最终组中的同一回归通过。
+- 统一文档行解码，按路径查询在同一 SELECT 内读取文档，清除本文件 27 条 Any 诊断。外层 `KnowledgeStore.write_note` 的独立提前返回另列 Q072D，届时验证公开路径合同。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_document_path.py tests/test_knowledge_sqlite_authority.py tests/test_knowledge_note_import.py tests/test_knowledge.py tests/test_knowledge_answer_scope.py --tb=short`，53 passed、无失败或跳过、退出 0。两份修改文件的完整严格 Any、Ruff、全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel 精度门禁均通过。
+- Q072 完成。累计完成 127/371 批，覆盖 214/1011 个生产文件，另有 15 批部分完成。下一批 Q072B 审查 SQLite 索引。
