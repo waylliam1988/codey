@@ -275,7 +275,7 @@ def _maintain(connection: sqlite3.Connection, event: MemoryEvent) -> None:
             _store_item(connection, replace(record, state="expired", state_changed_at=event.occurred_at), require_json_string(raw.get("run_id"), "run_id"))
 
 
-def project_event(connection: sqlite3.Connection, event: MemoryEvent) -> None:
+def project_event(connection: sqlite3.Connection, event: MemoryEvent, *, replaying: bool = False) -> None:
     if event.kind in {"task.completed", "task.failed", "memory.proposed"}:
         _observe(connection, event)
         if event.kind == "task.completed":
@@ -307,7 +307,7 @@ def project_event(connection: sqlite3.Connection, event: MemoryEvent) -> None:
     elif event.kind == "memory.repair_reviewed":
         from codey.ghost.repairs import project_repair
 
-        project_repair(connection, event)
+        project_repair(connection, event, replaying=replaying)
     elif event.kind == "memory.observation_checkpoint":
         from codey.types.json_value import require_json_integer
 

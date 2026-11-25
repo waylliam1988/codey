@@ -17,14 +17,18 @@ def _outcome(connection: sqlite3.Connection, identity: str, scope: str) -> JsonO
     return row
 
 
-def project_repair(connection: sqlite3.Connection, event: MemoryEvent) -> None:
+def project_repair(connection: sqlite3.Connection, event: MemoryEvent, *, replaying: bool = False) -> None:
     repair_id = require_json_string(event.payload.get("repair_id"), "repair_id")
     previous = load(connection, "repairs", repair_id)
     regression_id = require_json_string(event.payload.get("regression_id", ""), "regression_id")
     if regression_id:
         if previous is None:
             raise ValueError("repair is missing")
+        if not replaying and previous.get("scope") != event.scope:
+            raise ValueError("delayed regression belongs to a different repair scope")
         observed = _outcome(connection, regression_id, event.scope)
+        if not replaying and observed.get("category") != "completion_check":
+            raise ValueError("delayed regression requires a verification outcome")
         if observed.get("check_key") != previous.get("check_key") or observed.get("workspace_revision") != previous.get("workspace_revision"):
             raise ValueError("delayed regression belongs to a different check or revision")
         if timestamp(require_json_string(observed.get("at"), "at")) < timestamp(require_json_string(previous.get("at"), "at")):

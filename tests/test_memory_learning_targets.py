@@ -107,7 +107,14 @@ def test_due_review_selects_observation_using_recorded_policy(
         assert store.maintain_batch(retry) == result
 
 
-def test_repair_credit_requires_real_check_and_exact_revision(tmp_path: Path) -> None:
+@pytest.mark.parametrize(("regression_scope", "category", "expected_error"), [
+    (SCOPE, "completion_check", None),
+    ("project:other", "completion_check", "scope"),
+    (SCOPE, "tool_call", "verification"),
+])
+def test_repair_credit_requires_real_check_and_exact_revision(
+    tmp_path: Path, regression_scope: str, category: str, expected_error: str | None,
+) -> None:
     store = backend(tmp_path)
     store.observe(replace(event("facts"), kind="task.failed", payload={"outcomes": [
         {"effect_id": "original", "category": "tool_call", "status": "error"},
@@ -121,11 +128,20 @@ def test_repair_credit_requires_real_check_and_exact_revision(tmp_path: Path) ->
         store.observe(review)
     store.observe(replace(review, payload={**review.payload, "workspace_revision": "7:hash"}))
     assert store.proposals(SCOPE)[0].item.slot == "repair.pattern"
-    store.observe(replace(event("regression"), kind="task.failed", occurred_at=LATER, payload={"outcomes": [
-        {"effect_id": "later-check", "category": "completion_check", "value": "fail", "status": "fail",
+    store.observe(replace(event("regression"), kind="task.failed", occurred_at=LATER, scope=regression_scope, payload={"outcomes": [
+        {"effect_id": "later-check", "category": category, "value": "fail", "status": "fail",
          "workspace_revision": "7:hash", "check_key": "unit_tests"}]}))
-    store.observe(replace(event("repair-later"), kind="memory.repair_reviewed", occurred_at=LATER,
-        payload={"repair_id": "repair-one", "regression_id": "later-check"}))
+    delayed = replace(event("repair-later"), kind="memory.repair_reviewed", occurred_at=LATER, scope=regression_scope,
+                      payload={"repair_id": "repair-one", "regression_id": "later-check"})
+    if expected_error is None:
+        store.observe(delayed)
+    else:
+        before = store.export_state()
+        journal = store.rebuild()
+        with pytest.raises(ValueError, match=expected_error):
+            store.observe(delayed)
+        assert store.export_state() == before
+        assert store.rebuild() == journal
     before = store.export_state()
     store.rebuild()
     assert store.export_state() == before

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import timedelta
+from functools import partial
 
 from codey.ghost.controls import policy
 from codey.ghost.families import effective_family_state
@@ -56,6 +57,9 @@ from codey.types.json_value import (
     require_json_string,
     require_json_strings,
 )
+
+# Replay preserves decisions admitted under earlier validation rules.
+_replay_event = partial(project_event, replaying=True)
 
 
 def _candidate_filter(item: MemoryItem, state: MemoryFamilyState, query: MemoryQuery) -> str:
@@ -227,7 +231,7 @@ class GhostMemory:
             "experience_days": policy.experience_days, "archived_days": policy.archived_days, "keep_events": policy.keep_events}
         identity = "retention:" + digest({"at": as_of, **payload})
         self._command("memory.retained", identity, "user", as_of, payload, (identity,))
-        return self.database.compact(as_of=floor, retired_before=as_of, keep_events=policy.keep_events, project=project_event)
+        return self.database.compact(as_of=floor, retired_before=as_of, keep_events=policy.keep_events, project=_replay_event)
 
     def observation_cursor(self) -> int:
         with self.database.connect() as connection:
@@ -291,7 +295,7 @@ class GhostMemory:
                        "outcome": review.outcome}, (review.source_ref,))
 
     def rebuild(self) -> MemoryRebuildResult:
-        return self.database.rebuild(project_event)
+        return self.database.rebuild(_replay_event)
 
     def export_state(self) -> dict[str, JsonValue]:
         with self.database.connect() as connection:

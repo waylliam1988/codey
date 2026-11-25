@@ -4461,10 +4461,12 @@
         "codey/ghost/repairs.py"
       ],
       "id": "Q068",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_changed",
+      "reviewed_files": ["codey/ghost/repairs.py"],
+      "verified_files": ["codey/ghost/repairs.py"],
+      "tests": ["tests/test_memory_learning_targets.py", "tests/test_memory_feedback.py", "tests/test_memory_completion.py", "tests/test_memory_adaptation_flow.py"],
+      "reviewed_support": ["tests/test_memory_learning_targets.py"],
+      "result": "Delayed repair credit now requires a completion check in the original repair scope. Regression cases prove atomic rejection, and a legacy journal probe confirms replay and compaction preserve existing state. 49 scoped tests, strict Any and all production gates passed."
     },
     {
       "responsibility": "codey/knowledge: package entry and composition",
