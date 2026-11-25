@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from codey.knowledge.answer_refs import answer_scope
+from codey.knowledge.answer_refs import scope_for_versions
 from codey.knowledge.archive import stable_identity
 from codey.knowledge.model import (
     KnowledgeMutation,
@@ -20,7 +20,7 @@ from codey.knowledge.store import KnowledgeStore
 from codey.research.ledger import ResearchLedger
 from codey.research.reference import ResearchReference
 from codey.research.staging import StagedKnowledgeStore
-from codey.types.json_value import ToolArgs, require_json_string
+from codey.types.json_value import ToolArgs, decode_json_object, require_json_integer, require_json_string
 
 if TYPE_CHECKING:
     from codey.research.tools import ResearchToolOutput, ResearchTools
@@ -50,10 +50,20 @@ def restore_bindings(ledger: ResearchLedger, raw: object) -> None:
     pending = dict(ledger.references)
     for label, row in raw.items():
         if (not isinstance(label, str) or re.fullmatch(r"f[1-9][0-9]*", label) is None
-                or not isinstance(row, dict) or set(row) != {
-                    "object_id", "revision", "kind", "acquisition", "note_id", "passage_ref", "question_ref"}):
+                or not isinstance(row, dict)):
             raise ValueError("invalid research reference binding")
-        value = ResearchReference(**row)
+        binding = decode_json_object(row)
+        if binding.keys() != {"object_id", "revision", "kind", "acquisition", "note_id", "passage_ref", "question_ref"}:
+            raise ValueError("invalid research reference binding")
+        value = ResearchReference(
+            require_json_string(binding["object_id"], "object_id"),
+            require_json_integer(binding["revision"], "revision"),
+            require_json_string(binding["kind"], "kind"),
+            require_json_string(binding["acquisition"], "acquisition"),
+            require_json_string(binding["note_id"], "note_id"),
+            require_json_string(binding["passage_ref"], "passage_ref"),
+            require_json_string(binding["question_ref"], "question_ref"),
+        )
         if label in pending and pending[label] != value:
             raise ValueError("conflicting research reference binding")
         if any(key != label and (old.object_id, old.revision, old.question_ref) == (value.object_id, value.revision, value.question_ref)
@@ -94,13 +104,15 @@ def save_inference(tools: ResearchTools, args: ToolArgs) -> ResearchToolOutput:
         if any(not access.allows(version) for version in versions):
             raise ValueError("knowledge scope mismatch")
         refs = [KnowledgeReference(v.value.id, v.revision, "depends_on") for v in versions]
-        scope, scope_id = answer_scope(refs, tools.store, project=tools.project, session_id=tools.session_id)
+        scope, scope_id = scope_for_versions(versions, project=tools.project, session_id=tools.session_id)
+        reference_identities: list[dict[str, str | int]] = [{"id": ref.target, "revision": ref.revision} for ref in refs]
         identity = stable_identity("inference", tools.session_id, tools.project, statement,
-                                   canonical_json([{"id": r.target, "revision": r.revision} for r in refs]), limitations)
+                                   canonical_json(reference_identities), limitations)
+        provenance: dict[str, object] = {"limitations": limitations.strip(), "session_id": tools.session_id,
+                                         "basis": "candidate_inference_not_direct_source_evidence"}
         value = KnowledgeObject(identity, "inference", statement.strip(), "model_inference",
             title=statement[:160], scope=scope, scope_id=scope_id, status="candidate", references=tuple(refs),
-            provenance={"limitations": limitations.strip(), "session_id": tools.session_id,
-                        "basis": "candidate_inference_not_direct_source_evidence"})
+            provenance=provenance)
         previous = read_version(tools.store, identity)
         if previous is not None and previous.value != value:
             raise ValueError("inference identity conflict")

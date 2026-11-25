@@ -4474,10 +4474,11 @@
         "codey/knowledge/__init__.py"
       ],
       "id": "Q069",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_unchanged",
+      "reviewed_files": ["codey/knowledge/__init__.py"],
+      "verified_files": ["codey/knowledge/__init__.py"],
+      "tests": ["tests/test_architecture.py"],
+      "result": "Clean-process import left leaf modules unloaded and started no threads. One scoped architecture test, strict Any and Ruff passed."
     },
     {
       "responsibility": "codey/knowledge: answer and report projection",
@@ -4485,10 +4486,12 @@
         "codey/knowledge/answer_refs.py"
       ],
       "id": "Q070",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 1
+      "status": "completed_changed",
+      "reviewed_files": ["codey/knowledge/answer_refs.py"],
+      "verified_files": ["codey/knowledge/answer_refs.py"],
+      "tests": ["tests/test_knowledge_answer_scope.py", "tests/test_hybrid_knowledge_guidance.py", "tests/test_research_reference_coverage.py", "tests/test_research_question_ownership.py", "tests/test_research_long_term_loop.py"],
+      "reviewed_support": ["tests/test_knowledge_answer_scope.py"],
+      "result": "Refuse a missing pinned premise during answer scope selection and inherit the scope of resolved staged premises when creating an inference. Both regressions, 75 existing related cases and the production type gates passed. One unrelated known-baseline normalization failure was reproduced with the original modules and tracked in Q098."
     },
     {
       "responsibility": "codey/knowledge: knowledge and memory",
@@ -4917,7 +4920,8 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 166
+      "candidate_test_count": 166,
+      "followups": ["Q070 expanded case tests/test_research_long_term_loop.py::test_strict_optional_accumulation_cannot_create_a_second_answer fails at normalize_turn because protocol_error is empty. Reproduced with both Q070 sources loaded from 9b24f17a before collection. The failing assertion precedes execution and publication. Establish the current strict snapshot/tool admission contract and verify the actual execution defense."]
     },
     {
       "responsibility": "codey/operations: task kernel and execution",
@@ -5923,10 +5927,11 @@
         "codey/research/ledger_receipts.py"
       ],
       "id": "Q169",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 39
+      "status": "partial_follow_up",
+      "reviewed_files": ["codey/research/references.py"],
+      "verified_files": ["codey/research/references.py"],
+      "candidate_test_count": 39,
+      "followups": ["Carry forward Q070 review and whole-file strict Any for references.py. Q070 verified restored bindings, inference identity and inherited scope, including staged premise and commit. Review the other Q169 files and run additional affected tests only where their behavior warrants it."]
     },
     {
       "id": "Q169B",

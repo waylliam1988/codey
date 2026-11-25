@@ -2032,3 +2032,15 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 准入时增加作用域和正式检查核验。同一命令复验为 3 passed、退出 0，拒绝后原修复记录和日志未改变。重建与压缩按旧日志的原判定规则读取既有事件。另用 `python -` 从 `41b4f9f3` 加载旧归因投影、写入两种原本会被误接纳的事件，再验证新实现重建和压缩后导出状态一致，退出 0。历史归因保留原状态，新校验适用于新提交。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_memory_learning_targets.py tests/test_memory_feedback.py tests/test_memory_completion.py tests/test_memory_adaptation_flow.py --tb=short`，49 passed、无失败或跳过、退出 0。`repairs.py`、`projection.py`、`backend.py` 和回归完整文件的严格 Any 与 Ruff 通过。全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 `python -m tools.kernel_type_precision_gate` 均退出 0。
 - Q068 完成。累计完成 120/362 批，完成批覆盖 206/1011 个生产文件，另有 14 批部分完成。下一批 Q069 核对 Knowledge 包入口。
+
+### Q069 Knowledge 包入口
+
+- Q068 已提交 `9b24f17a`。完整检查 `codey/knowledge/__init__.py`，仅含包说明。在新进程用 `python -` 验证导入路径、子模块加载情况及线程列表，退出 0。`python -m mypy codey/knowledge/__init__.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 和同文件 Ruff 均退出 0。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_architecture.py::ArchitectureBoundaryTests::test_knowledge_brief_import_does_not_load_research_runtime --tb=short`，1 passed、无失败或跳过、退出 0。包入口无源码变更，记录随下一提交保留。累计完成 121/362 批，完成批覆盖 207/1011 个生产文件，另有 14 批部分完成。下一批 Q070 核对答案与报告引用投影。
+
+### Q070 答案引用与推论作用域
+
+- 完整检查 `answer_refs.py` 及必要调用方 `research/references.py`。研究发布合同要求派生内容继承已引用的受限前提。以实际 KnowledgeStore 验证两种输入。一是已经验证的个人前提随后被清除，旧实现将原引用当作空集合并返回全局作用域。二是个人前提仍在暂存区，旧推论读取父仓库并错误继承会话作用域。在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_answer_scope.py --tb=short`，修正最初夹具的输出字段后，修改前两项均因目标行为失败，退出 1。
+- 作用域推导拒绝缺失的固定版本，推论使用已经解析的暂存版本。相同命令复验 2 passed、退出 0。回归核对原引用身份、个人前提、暂存推论和最终持久化内容。研究引用恢复逐字段收窄，保留精确键集合、重复绑定及原身份序列。`answer_refs.py`、`research/references.py` 和新增回归的完整严格 Any 及 Ruff 均退出 0，`research/references.py` 的已验证范围记入 Q169。
+- 调用方执行 `python -m pytest -q tests/test_hybrid_knowledge_guidance.py tests/test_research_reference_coverage.py tests/test_research_question_ownership.py tests/test_research_long_term_loop.py --tb=short -o faulthandler_timeout=60`，75 passed、1 failed、无跳过、退出 1。失败节点 `test_strict_optional_accumulation_cannot_create_a_second_answer` 在归一化阶段得到空 `protocol_error`。用 `python -` 从 `9b24f17a` 在内存载入两份原源码再运行该节点，结果相同，1 failed、退出 1。断言发生在工具执行和发布之前，由 Q098 核对当前协议合同与执行防线。
+- 全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 `python -m tools.kernel_type_precision_gate` 均退出 0。Q070 完成。累计完成 122/362 批，完成批覆盖 208/1011 个生产文件，另有 15 批部分完成。下一批 Q071 拆分 Knowledge 档案写入、概念关系和检索模块。

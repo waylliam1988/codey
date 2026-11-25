@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from typing import TYPE_CHECKING, Protocol
 
-from codey.knowledge.model import KnowledgeReference
+from codey.knowledge.model import KnowledgeReference, KnowledgeVersion
 from codey.knowledge.recall import KnowledgeAccess
 from codey.types.json_value import decode_json_value, require_json_integer, require_json_string
 
@@ -54,9 +55,18 @@ def answer_references(raw: object, store: ReferenceStore | None, *,
 def answer_scope(references: list[KnowledgeReference], store: ReferenceStore, *,
                  project: str, session_id: str) -> tuple[str, str]:
     """A report inherits restricted premises instead of publishing them globally."""
-    restricted = {(version.value.scope, version.value.scope_id) for ref in references
-                  if (version := store.repository.read(ref.target, ref.revision)) is not None
-                  and version.value.scope != "global"}
+    def versions() -> Iterator[KnowledgeVersion]:
+        for reference in references:
+            version = store.repository.read(reference.target, reference.revision)
+            if version is None:
+                raise KnowledgeReferenceError("cited knowledge version is missing or inaccessible", reference)
+            yield version
+
+    return scope_for_versions(versions(), project=project, session_id=session_id)
+
+
+def scope_for_versions(versions: Iterable[KnowledgeVersion], *, project: str, session_id: str) -> tuple[str, str]:
+    restricted = {(version.value.scope, version.value.scope_id) for version in versions if version.value.scope != "global"}
     if len(restricted) > 1:
         raise ValueError("report combines incompatible restricted scopes")
     return next(iter(restricted)) if restricted else (
