@@ -4887,9 +4887,12 @@
       "id": "Q088C",
       "responsibility": "Shared kernel context and durable event wiring",
       "files": ["codey/operations/kernel_context.py"],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": []
+      "status": "completed_changed",
+      "reviewed_files": ["codey/operations/kernel_context.py"],
+      "verified_files": ["codey/operations/kernel_context.py"],
+      "tests": ["tests/test_kernel_round_stateflow.py", "tests/test_kernel_event_failure_returns_recovery_failure.py", "tests/test_deferred_source_prefetch.py", "tests/test_native_cancel_and_budget_close_preserve_authorized_tool_declarations.py", "tests/test_browser_navigation_handoff.py", "tests/test_kernel_parity_regressions.py", "tests/durable/test_operation_driver_restart.py", "tests/durable/test_operation_control_actions.py", "tests/durable/test_retry_observation_commit.py", "tests/durable/test_not_sent_continuations.py"],
+      "reviewed_support": ["tests/test_kernel_event_failure_returns_recovery_failure.py", "tests/test_deferred_source_prefetch.py", "tests/test_native_cancel_and_budget_close_preserve_authorized_tool_declarations.py"],
+      "result": "Updated three fixtures to exercise typed entry state, evidence-bound navigation recovery, and no-progress termination with budget remaining. The 68-case direct and 73-case durable groups passed. Kernel context and modified tests passed whole-file strict Any and Ruff. The pre-change parity probe setup timeout and synthesis deadline remain with Q274."
     },
     {
       "id": "Q088D",
@@ -7532,7 +7535,10 @@
       "reviewed_files": [],
       "verified_files": [],
       "candidate_test_count": 8,
-      "follow_up": ["Q033: five test_protocol_surface failures call an experimental renderer wrapper that does not accept the production outer_descriptions keyword. Reproduce at prototype admission and preserve the current catalog options."]
+      "follow_up": [
+        "Q033: five test_protocol_surface failures call an experimental renderer wrapper that does not accept the production outer_descriptions keyword. Reproduce at prototype admission and preserve the current catalog options.",
+        "Q088C baseline: tests/test_kernel_parity_regressions.py shared replay setup timed out after 180 seconds for seven cases inside tools/kernel_parity.py. The separate research synthesis probe raised a ResearchContinuationError with ERROR: deadline and then hit a Windows temporary directory cleanup error. Reproduce per case and trace the probe environment before adjusting any parity assertions or timeouts."
+      ]
     },
     {
       "responsibility": "tools: task kernel and execution",

@@ -71,7 +71,7 @@ def test_initial_handoff_distinguishes_later_source_obligations_from_prerequisit
     assert not session.executed
 
 
-def test_wrong_page_recovery_reuses_the_existing_task_navigation_selector(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_different_page_without_404_receipts_does_not_trigger_navigation_recovery(monkeypatch: pytest.MonkeyPatch) -> None:
     session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "browser.observe", "browser.interact"})),
         task_text=f"请打开 {URL}。", required_source_urls=frozenset({URL}))
     snapshot = build_turn_snapshot(session)
@@ -81,8 +81,9 @@ def test_wrong_page_recovery_reuses_the_existing_task_navigation_selector(monkey
     monkeypatch.setattr(browser, "document_identity", document)
     try:
         offered, hint = task_handoff(session, snapshot, CompletionContext(), browser)
-        assert '{"args":{"target":"task"},"tool":"browser_navigate"}' in hint
-        assert "instead of retyping its URL" in hint
+        assert '{"args":{"target":"task"},"tool":"browser_navigate"}' not in hint
+        assert "Return to the bound task page" not in hint
+        assert offered.task_navigation_url == URL
         assert set(offered.inventory_names) == set(snapshot.inventory_names)
         assert not session.executed
     finally:
