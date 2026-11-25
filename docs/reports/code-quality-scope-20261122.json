@@ -4667,11 +4667,12 @@
       "id": "Q077B",
       "responsibility": "Standalone launcher coordinator and rollback",
       "files": ["codey/launcher/runner.py"],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/test_release_control.py", "tests/test_release_activation_launch_failure.py", "tests/test_release_output_metadata_compatibility.py"],
-      "followups": ["The startup module and cache completed in Q077. Runner stays stdlib-only after being copied as one file. Its 149 strict Any diagnostics and coordinator state transitions require distinct fixture-scoped verification without copying the checkout."]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/launcher/runner.py"],
+      "verified_files": ["codey/launcher/runner.py"],
+      "tests": ["tests/test_launcher_child_cleanup.py", "tests/test_launcher_journal_write.py", "tests/test_release_output_metadata_compatibility.py", "tests/test_release_activation_launch_failure.py", "tests/test_release_validation_cache.py"],
+      "reviewed_support": ["tests/test_launcher_child_cleanup.py"],
+      "result": "Reap the owned child after startup rejection. Typed standalone boundaries clear 149 strict Any diagnostics. A temporary fixture verifies that rollback uses the live schema. All 31 scoped tests and production gates passed."
     },
     {
       "responsibility": "codey/launcher: task kernel and execution",

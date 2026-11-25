@@ -18,31 +18,50 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import BinaryIO
 
-if os.name == "nt" or TYPE_CHECKING:
-    # CREATE_NO_WINDOW is a Windows-only subprocess constant and is absent
-    # from Linux typeshed.
-    _windows_subprocess: Any = subprocess
+if sys.platform == "win32":
+    from subprocess import CREATE_NO_WINDOW
+else:
+    CREATE_NO_WINDOW = 0
 
 TERMINAL = frozenset({"active", "rolled_back", "recovery_required", "aborted"})
 
 
-def read(path: Path) -> dict[str, Any]:
-    if path.stat().st_size > 8 * 1024 * 1024:
-        raise ValueError("Oversized coordinator state")
-    value = json.loads(path.read_text(encoding="utf-8"))
+def _object(value: object, field: str) -> dict[str, object]:
     if not isinstance(value, dict):
-        raise ValueError("Coordinator state must be an object")
+        raise ValueError(f"{field} must be an object")
+    row: Mapping[object, object] = value
+    return {_text(key, f"{field} key"): item for key, item in row.items()}
+
+
+def _text(value: object, field: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string")
     return value
 
 
-def write(path: Path, value: dict[str, Any]) -> None:
+def _items(value: object, field: str) -> list[object]:
+    if not isinstance(value, list):
+        raise ValueError(f"{field} must be an array")
+    return value
+
+
+def read(path: Path) -> dict[str, object]:
+    if path.stat().st_size > 8 * 1024 * 1024:
+        raise ValueError("Oversized coordinator state")
+    value: object = json.loads(path.read_text(encoding="utf-8"))
+    return _object(value, "Coordinator state")
+
+
+def write(path: Path, value: Mapping[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".tmp")
+    document: dict[str, object] = dict(value)
     with temporary.open("w", encoding="utf-8") as stream:
-        json.dump(value, stream, ensure_ascii=False, allow_nan=False)
+        json.dump(document, stream, ensure_ascii=False, allow_nan=False)
         stream.flush()
         os.fsync(stream.fileno())
     for attempt in range(8):
@@ -52,21 +71,29 @@ def write(path: Path, value: dict[str, Any]) -> None:
         except PermissionError as exc:
             # Windows readers can briefly deny replacement of a journal.
             # A transient sharing failure must not roll back a healthy service.
-            if getattr(exc, "winerror", None) not in {5, 32, 33} or attempt == 7:
+            winerror: object = getattr(exc, "winerror", None)
+            if winerror not in (5, 32, 33) or attempt == 7:
                 raise
-            time.sleep(0.01 * 2 ** attempt)
+            time.sleep(0.01 * (1 << attempt))
 
 
 def schema(home: Path) -> str:
-    rows = []
+    rows: list[tuple[str, tuple[object, ...] | None, list[tuple[str, str, str | None]]]] = []
     # AppContext owns both the durable and auxiliary SQLite stores. Compare all
     # known databases, excluding private backup/probe trees.
     for path in sorted(home.glob("*.sqlite3")):
         with contextlib.closing(sqlite3.connect(path)) as database:
-            rows.append((path.name, database.execute("PRAGMA user_version").fetchone(),
-                         [(kind, name, _compatible_schema_sql(path.name, kind, name, sql))
-                          for kind, name, sql in database.execute(
-                              "SELECT type,name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name")]))
+            version: tuple[object, ...] | None = database.execute("PRAGMA user_version").fetchone()
+            records: Sequence[tuple[object, object, object]] = database.execute(
+                "SELECT type,name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name"
+            ).fetchall()
+            tables: list[tuple[str, str, str | None]] = []
+            for raw_kind, raw_name, raw_sql in records:
+                kind = _text(raw_kind, "schema object type")
+                name = _text(raw_name, "schema object name")
+                sql = None if raw_sql is None else _text(raw_sql, "schema object SQL")
+                tables.append((kind, name, _compatible_schema_sql(path.name, kind, name, sql)))
+            rows.append((path.name, version, tables))
     return hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest()
 
 
@@ -80,30 +107,37 @@ def _compatible_schema_sql(database: str, kind: str, name: str, sql: str | None)
     return sql
 
 
-def request(home: Path, operation: str, instance: str = "", *, lifecycle: bool = True) -> dict[str, Any]:
+def request(home: Path, operation: str, instance: str = "", *, lifecycle: bool = True) -> dict[str, object]:
     info = read(home / "service.json")
-    if instance and instance != info["instance_id"]:
+    instance_id = _text(info["instance_id"], "service instance ID")
+    if instance and instance != instance_id:
         raise RuntimeError("Service identity changed")
-    url = urllib.parse.urlparse(info["url"])
+    service_url = _text(info["url"], "service URL")
+    url = urllib.parse.urlparse(service_url)
     if url.scheme != "http" or url.hostname != "127.0.0.1" or url.username or url.password:
         raise ValueError("Coordinator discovery must name loopback")
-    params: dict[str, Any] = {"expected_instance_id": info["instance_id"]} if lifecycle else {}
-    message = urllib.request.Request(info["url"] + ("/api/lifecycle" if lifecycle else "/api/control"),
-        json.dumps({"operation": operation, "params": params}).encode(),
-        headers={"Content-Type": "application/json", "Authorization": "Bearer " + read(home / "control-credentials.json")["operator"],
-                 "X-Codey-Instance": info["instance_id"]})
+    params: dict[str, str] = {"expected_instance_id": instance_id} if lifecycle else {}
+    operator = _text(read(home / "control-credentials.json")["operator"], "operator credential")
+    payload: dict[str, object] = {"operation": operation, "params": params}
+    message = urllib.request.Request(service_url + ("/api/lifecycle" if lifecycle else "/api/control"),
+        json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json", "Authorization": "Bearer " + operator,
+                 "X-Codey-Instance": instance_id})
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open(message, timeout=5) as response:
-        value = json.loads(response.read(1024 * 1024))
+    response: BinaryIO = opener.open(message, timeout=5)
+    with response:
+        raw: object = json.loads(response.read(1024 * 1024))
+    value = _object(raw, "control response")
     if value.get("ok") is not True:
         raise RuntimeError(str(value.get("error")))
-    return dict(value["result"])
+    return _object(value["result"], "control result")
 
 
-def mark(home: Path, journal: dict[str, Any], phase: str, **fields: Any) -> None:
+def mark(home: Path, journal: dict[str, object], phase: str, **fields: object) -> None:
     journal.update(phase=phase, **fields)
-    journal["events"] = [*journal["events"], {"phase": phase, "time": time.time()}][-30:]
-    write(home / "upgrades" / (journal["upgrade_id"] + ".json"), journal)
+    events = _items(journal["events"], "upgrade events")
+    journal["events"] = [*events, {"phase": phase, "time": time.time()}][-30:]
+    write(home / "upgrades" / (_text(journal["upgrade_id"], "upgrade ID") + ".json"), journal)
 
 
 def wait_stopped(home: Path, instance: str, deadline: float) -> None:
@@ -119,38 +153,52 @@ def wait_stopped(home: Path, instance: str, deadline: float) -> None:
     raise TimeoutError("Old instance did not relinquish ownership")
 
 
-def launch(home: Path, journal: dict[str, Any], release: dict[str, Any], deadline: float) -> str:
+def launch(home: Path, journal: Mapping[str, object], release: Mapping[str, object], deadline: float) -> str:
     (home / "launcher").mkdir(exist_ok=True)
-    argv = [journal["python"], "-m", "codey", "serve", "--state-home", str(home), "--verify-only",
-            "--release-id", release["release_id"], "--port", str(journal.get("listen_port", 0))]
-    for root in journal["allowed_roots"]:
-        argv.extend(["--allow-project", root])
-    with (home / "launcher" / (journal["upgrade_id"] + "-startup.log")).open("ab") as output:
-        child = subprocess.Popen(argv, cwd=release["source"], stdin=subprocess.DEVNULL,
+    release_id = _text(release["release_id"], "release ID")
+    argv = [_text(journal["python"], "Python executable"), "-m", "codey", "serve", "--state-home", str(home),
+            "--verify-only", "--release-id", release_id, "--port", str(journal.get("listen_port", 0))]
+    for root in _items(journal["allowed_roots"], "allowed roots"):
+        argv.extend(["--allow-project", _text(root, "allowed root")])
+    identity = _text(journal["upgrade_id"], "upgrade ID")
+    with (home / "launcher" / (identity + "-startup.log")).open("ab") as output:
+        child = subprocess.Popen(argv, cwd=_text(release["source"], "release path"), stdin=subprocess.DEVNULL,
                                  stdout=output, stderr=subprocess.STDOUT,
-                                 creationflags=_windows_subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-    while time.time() < deadline:
-        if child.poll() is not None:
-            raise RuntimeError(f"Release exited during startup ({child.returncode})")
-        try:
-            health = request(home, "get_health", lifecycle=False)
-            if health["release_id"] != release["release_id"] or health["instance_id"] == journal["old_instance_id"]:
-                raise RuntimeError("Unexpected release instance")
-            if health["status"] == "verifying":
-                return str(health["instance_id"])
-        except (OSError, ValueError):
-            pass
-        time.sleep(0.1)
-    # Only the child created above can be terminated, never a discovered PID.
-    child.terminate()
-    child.wait(timeout=10)
-    raise TimeoutError("Candidate startup exceeded its deadline")
+                                 creationflags=CREATE_NO_WINDOW)
+    try:
+        while time.time() < deadline:
+            if child.poll() is not None:
+                raise RuntimeError(f"Release exited during startup ({child.returncode})")
+            try:
+                health = request(home, "get_health", lifecycle=False)
+                if health["release_id"] != release_id or health["instance_id"] == journal["old_instance_id"]:
+                    raise RuntimeError("Unexpected release instance")
+                if health["status"] == "verifying":
+                    return _text(health["instance_id"], "service instance ID")
+            except (OSError, ValueError):
+                pass
+            time.sleep(0.1)
+        raise TimeoutError("Candidate startup exceeded its deadline")
+    except BaseException:
+        # Only the child created above may be terminated.
+        with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+            if child.poll() is None:
+                child.terminate()
+                try:
+                    child.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait(timeout=10)
+        raise
 
 
-def _cutover(home: Path, journal: dict[str, Any]) -> None:
-    instance = journal["old_instance_id"]
+def _cutover(home: Path, journal: dict[str, object]) -> None:
+    instance = _text(journal["old_instance_id"], "old instance ID")
     deadline = journal["deadline"]
-    journal["listen_port"] = urllib.parse.urlparse(read(home / "service.json")["url"]).port
+    if not isinstance(deadline, (int, float)) or isinstance(deadline, bool):
+        raise ValueError("upgrade deadline must be numeric")
+    service_url = _text(read(home / "service.json")["url"], "service URL")
+    journal["listen_port"] = urllib.parse.urlparse(service_url).port
     mark(home, journal, "draining")
     request(home, "drain", instance)
     while time.time() < deadline:
@@ -166,8 +214,12 @@ def _cutover(home: Path, journal: dict[str, Any]) -> None:
     mark(home, journal, "quiescent")
     request(home, "shutdown", instance)
     wait_stopped(home, instance, max(deadline, time.time() + 10))
-    mark(home, journal, "starting", attempts=journal["attempts"] + 1)
-    candidate_instance = launch(home, journal, journal["candidate"], max(deadline, time.time() + 15))
+    attempts = journal["attempts"]
+    if type(attempts) is not int:
+        raise ValueError("upgrade attempts must be an integer")
+    mark(home, journal, "starting", attempts=attempts + 1)
+    candidate = _object(journal["candidate"], "candidate release")
+    candidate_instance = launch(home, journal, candidate, max(deadline, time.time() + 15))
     mark(home, journal, "verifying", candidate_instance_id=candidate_instance)
     if schema(home) != journal["schema_digest"]:
         raise RuntimeError("Candidate changed the live schema despite preflight")
@@ -175,42 +227,45 @@ def _cutover(home: Path, journal: dict[str, Any]) -> None:
     # pre-cutover files or assumes that a lost activate response meant failure.
     mark(home, journal, "opening", admission_may_have_opened=True)
     request(home, "activate", candidate_instance)
-    write(home / "active-release.json", journal["candidate"])
+    write(home / "active-release.json", candidate)
     mark(home, journal, "active")
 
 
-def _rollback(home: Path, journal: dict[str, Any], error: Exception) -> None:
+def _rollback(home: Path, journal: dict[str, object], error: Exception) -> None:
     mark(home, journal, "rolling_back", error=str(error)[:2000])
     try:
         info = None
         with contextlib.suppress(OSError):
             info = read(home / "service.json")
         if info:
-            if info["instance_id"] == journal["old_instance_id"]:
-                request(home, "activate", info["instance_id"])
+            instance = _text(info["instance_id"], "service instance ID")
+            if instance == journal["old_instance_id"]:
+                request(home, "activate", instance)
                 mark(home, journal, "aborted")
                 return
-            if info["release_id"] != journal["candidate"]["release_id"]:
+            if info["release_id"] != _object(journal["candidate"], "candidate release")["release_id"]:
                 raise RuntimeError("Unrelated service owns the state home")
-            state = request(home, "drain", info["instance_id"])
+            state = request(home, "drain", instance)
             if not state["quiescent"]:
                 raise RuntimeError("Candidate has work; preserve it for explicit recovery")
-            request(home, "shutdown", info["instance_id"])
-            wait_stopped(home, info["instance_id"], time.time() + 15)
+            request(home, "shutdown", instance)
+            wait_stopped(home, instance, time.time() + 15)
         if schema(home) != journal.get("schema_digest"):
             raise RuntimeError("Current database is incompatible with the previous runtime")
-        old_instance = launch(home, journal, journal["previous"], time.time() + 20)
+        previous = _object(journal["previous"], "previous release")
+        old_instance = launch(home, journal, previous, time.time() + 20)
         request(home, "activate", old_instance)
-        write(home / "active-release.json", journal["previous"])
+        write(home / "active-release.json", previous)
         mark(home, journal, "rolled_back", restored_instance_id=old_instance)
     except Exception as rollback_error:
         mark(home, journal, "recovery_required", recovery_error=str(rollback_error)[:2000])
 
 
-def coordinate(home: Path, journal: dict[str, Any]) -> None:
-    if journal["phase"] in TERMINAL:
+def coordinate(home: Path, journal: dict[str, object]) -> None:
+    phase = _text(journal["phase"], "upgrade phase")
+    if phase in TERMINAL:
         return
-    if journal["phase"] != "accepted":
+    if phase != "accepted":
         # A coordinator crash is reconciled conservatively. Never blindly
         # repeat a cutover or admit work merely because a process restarted.
         _rollback(home, journal, RuntimeError("Coordinator resumed an interrupted transition"))

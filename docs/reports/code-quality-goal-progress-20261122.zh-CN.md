@@ -2162,3 +2162,10 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 完整检查 `startup.py` 与 `validation_cache.py`。缓存应只返回符合 `Verification` 合同的检查证据。传入成功退出且时间字段为字符串的缓存行，`python -m pytest -q tests/test_launcher_cache_evidence.py --tb=short` 在修改前 1 failed、退出 1。改用有类型的行解码后，畸形缓存失效，正常行原样提供时间字段并标记为缓存命中。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_launcher_cache_evidence.py tests/test_release_validation_cache.py tests/test_desktop_startup.py::test_timing_failure_and_log_io_do_not_hide_original_startup_error --tb=short`，19 passed、无失败或跳过、退出 0。去掉新增回归的基线为 18 passed。整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁均通过。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。
 - Q077 完成。累计完成 138/372 批，覆盖 228/1011 个生产文件，另有 15 批部分完成。Q077B 继续检查独立协调器的状态与回滚，并处理该文件的 149 条严格 Any 诊断。
+
+### Q077B Launcher 独立协调器与回滚
+
+- Q077 已提交 `666d85ec`。完整检查 `runner.py`。候选进程应在启动失败时释放自身资源。健康检查返回意外实例会抛错，原路径漏掉对新建子进程的终止及回收。在 `D:\codey` 执行 `python -m pytest -q tests/test_launcher_child_cleanup.py --tb=short`，原回归 1 failed、退出 1，子进程替身仍存活。现在回收本次启动的子进程并保留原异常，等待正常终止超时后使用强制终止。
+- 收窄协调器 JSON、SQLite 元数据、HTTP 响应和进程参数，清除整文件 149 条严格 Any 诊断。仍可作为单文件运行。增加最小服务状态夹具，验证候选无法启动时使用当前 schema 恢复原运行时。用 `git show 666d85ec:codey/launcher/runner.py` 按 UTF-8 载入内存，对以下最终目标组仅移除新失败回归节点，基线 30 passed、退出 0。
+- `python -m pytest -q tests/test_launcher_child_cleanup.py tests/test_launcher_journal_write.py tests/test_release_output_metadata_compatibility.py tests/test_release_activation_launch_failure.py tests/test_release_validation_cache.py --tb=short`，31 passed、无失败或跳过、退出 0。修改源码及回归严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁通过。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。服务切换、健康拒绝及进程退出均通过临时夹具验证。
+- Q077B 完成。累计完成 139/372 批，覆盖 229/1011 个生产文件，另有 15 批部分完成。下一批 Q078 核对运行时清单与依赖边界。
