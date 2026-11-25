@@ -4815,13 +4815,13 @@
         "codey/operations/browser_resources.py"
       ],
       "id": "Q085",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "completed_changed",
+      "reviewed_files": ["codey/operations/browser_copy.py", "codey/operations/browser_progress.py", "codey/operations/browser_references.py", "codey/operations/browser_resources.py"],
+      "verified_files": ["codey/operations/browser_copy.py", "codey/operations/browser_progress.py", "codey/operations/browser_references.py", "codey/operations/browser_resources.py"],
       "candidate_test_count": 16,
-      "followups": [
-        "Q008D caller verification: tests/test_server_lazy_state.py has same 3 failures with HEAD consensus source (3 failed/8 passed/4 subtests). Actual import trace consensus_service -> project_audit_advisor -> task_loop -> kernel_driver -> kernel_context -> kernel_actions -> kernel_execution -> browser_progress -> browser_binding -> Playwright violates consensus_service import-light doc contract. q008d-lazy-import-chain.json; preserve regression assertions and repair at owning import boundary."
-      ]
+      "tests": ["tests/test_browser_copy_examples.py", "tests/test_browser_copy_production.py", "tests/test_browser_copy_upgrade_recovery.py", "tests/test_browser_typed_copy.py", "tests/test_browser_reference_choices.py", "tests/test_browser_readable_references.py", "tests/test_task_browser_resources.py", "tests/test_browser_assistance_resume.py", "tests/test_browser_background.py", "tests/test_browser_handoff_next_steps.py", "tests/test_server_lazy_state.py"],
+      "reviewed_support": ["tests/test_browser_copy_examples.py", "tests/test_browser_typed_copy.py", "tools/browser_typed_copy_live_gate.py"],
+      "result": "Typed source copy ignores both supported fence delimiters and artifact recovery sorts through a typed key. The routed lazy import regression passes after a8c6dee6. The typed-copy harness had five baseline route failures, repaired in b2f8f167. All targeted cases have passing results. Strict Any, Ruff and production gates passed."
     },
     {
       "responsibility": "codey/operations: answer and report projection",

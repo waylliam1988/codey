@@ -69,7 +69,7 @@ class CopyTarget:
 
 def copy_target(task: str) -> CopyTarget | None:
     """Recognize explicit typed field copies to one file, without guessing types."""
-    task = re.sub(r"```[\s\S]*?```", "", task)
+    task = re.sub(r"```[\s\S]*?```|~~~[\s\S]*?~~~", "", task)
     urls = {match.group(0).rstrip(".,;!?") for match in _URL.finditer(task)}
     targets = list(_TARGET.finditer(task))
     if (len(urls) != 1 or not targets or _OTHER_WORKFLOW.search(task)

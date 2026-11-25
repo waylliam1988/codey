@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping
 from codey.automation.browser_binding import BrowserBinding
 from codey.automation.browser_invocation import BrowserInvocation
 from codey.automation.browser_session import BrowserSession
+from codey.durable.model import ArtifactRecord
 from codey.durable.session import DurableSession
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import JsonObject, decode_json_object, require_json_integer
@@ -30,8 +31,11 @@ def browser_invocation(effect_ref: str, *, durable: DurableSession | None, store
 def restore_browser_progress(browser: BrowserSession, *, durable: DurableSession, store: ManagedOutputStore, run_id: str) -> None:
     if browser.resource_binding() is not None:
         return
-    artifacts = sorted(durable.artifacts_for_task(run_id), key=lambda row: (
-        require_json_integer(row.metadata.get("observed_at_ns", 0), "observed_at_ns")), reverse=True)
+
+    def observed_at(artifact: ArtifactRecord) -> int:
+        return require_json_integer(artifact.metadata.get("observed_at_ns", 0), "observed_at_ns")
+
+    artifacts = sorted(durable.artifacts_for_task(run_id), key=observed_at, reverse=True)
     restored_targets: set[str] = set()
     restored_binding = False
     for artifact in artifacts:
