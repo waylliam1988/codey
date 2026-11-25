@@ -1,9 +1,8 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import './render';
 import './process';
-import './messages';
+import { Messages } from './messages';
 import type { Message } from './types/domain';
-import { runtime } from './runtime';
 
 const submit = vi.fn();
 const refresh = vi.fn();
@@ -11,13 +10,24 @@ beforeEach(() => {
   vi.stubGlobal('CSS', { escape: (value: string) => value });
   submit.mockClear();
   refresh.mockClear();
-  runtime.ShellApprovals = { refresh };
-  window.Messages.init({ approveCommand: submit } as unknown as Parameters<typeof window.Messages.init>[0]);
+  Messages.init({
+    approvals: { refresh, retry: vi.fn(), remember: vi.fn() },
+    approveCommand: submit,
+    getActiveId: () => 'chat',
+    currentProjectPath: () => '',
+    getRunningSessionId: () => null,
+    isSessionRunning: () => false,
+    openDocument: vi.fn(),
+    statusRow: () => document.createElement('div'),
+    attachCurrentChatToPickedProject: vi.fn(),
+    continueTask: vi.fn(),
+    resumeTeaching: vi.fn(),
+  });
 });
 
-function render(fields: Partial<Message> = {}) {
+function render(fields: Partial<Extract<Message, { type: 'shell_request' }>> = {}) {
   const chat = document.createElement('div');
-  window.Messages.append(chat, {
+  Messages.append(chat, {
     type: 'shell_request',
     id: 'approval',
     sessionId: 'chat',
@@ -101,10 +111,10 @@ it.each(['before', 'after', 'replace'])('groups approved commands above the answ
   answer.className = 'msg asst';
   answer.dataset.runId = 'run';
   answer.textContent = 'The temperature is 27 C';
-  if (order === 'replace') window.Messages.append(chat, request);
+  if (order === 'replace') Messages.append(chat, request);
   if (order !== 'before') chat.append(answer);
-  if (order === 'replace') window.Messages.updateApprovals(chat, [result]);
-  else window.Messages.append(chat, result);
+  if (order === 'replace') Messages.updateApprovals(chat, [result]);
+  else Messages.append(chat, result);
   if (order === 'before') chat.append(answer);
   expect(chat.querySelectorAll('.command-card')).toHaveLength(1);
   expect(chat.querySelectorAll(':scope > .command-card, :scope > .shell-card')).toHaveLength(0);
@@ -113,7 +123,7 @@ it.each(['before', 'after', 'replace'])('groups approved commands above the answ
   expect(chat.lastElementChild).toBe(answer);
   const details = chat.querySelector<HTMLDetailsElement>('.command-card details')!;
   details.open = true;
-  window.Messages.updateApprovals(chat, [{ ...result, output: 'Updated output' }]);
+  Messages.updateApprovals(chat, [{ ...result, output: 'Updated output' }]);
   expect(chat.querySelectorAll('.command-card')).toHaveLength(1);
   expect(chat.querySelector<HTMLDetailsElement>('.command-card details')?.open).toBe(true);
   expect(chat.lastElementChild).toBe(answer);
@@ -130,7 +140,7 @@ it('settles one approval from mixed live/history result records rather than sele
     command: 'curl.exe weather',
   };
   const final: Message = { ...running, shellStatus: 'exit', exitCode: 0, output: '27 C' };
-  window.Messages.updateApprovals(chat, [running, final, running]);
+  Messages.updateApprovals(chat, [running, final, running]);
   expect(chat.querySelectorAll('.command-card')).toHaveLength(1);
   expect(chat.querySelector('.command-card')?.getAttribute('data-status')).toBe('success');
   expect(chat.querySelector('.shell-stdout')?.textContent).toBe('27 C');

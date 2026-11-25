@@ -1,3 +1,4 @@
+import { decodeHistoryMessage } from './domain/history_message';
 import {
   HistoryRepository,
   type HistoryResult,
@@ -10,15 +11,7 @@ import type { Message, Session } from './types/domain';
 
 /** Durable entry identity replaces a live projection; message text is never an identity. */
 export function reconcileHistory(current: Message[], items: HistoryResult['items']): Message[] {
-  const committed = items
-    .filter((item) => typeof item.type === 'string')
-    .map(
-      (item) =>
-        ({
-          ...item,
-          entryId: item.id,
-        }) as unknown as Message,
-    );
+  const committed = items.map(decodeHistoryMessage).filter((message) => message !== null);
   for (const message of committed) {
     if (
       message.type !== 'asst' ||
@@ -69,7 +62,7 @@ export function reconcileHistory(current: Message[], items: HistoryResult['items
           message.finalAnswer === false &&
           !!message.text?.trim(),
       )
-      .map((message) => message.runId as string),
+      .flatMap((message) => (message.runId ? [message.runId] : [])),
   );
   const visibleCommitted = committed.filter(
     (message) => !(message.type === 'asst' && message.runId && streamingRuns.has(message.runId)),

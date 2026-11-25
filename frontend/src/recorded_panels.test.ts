@@ -22,7 +22,7 @@ it('does not show a late recorded review in another conversation and only reads 
   session = 'two';
   resolve({
     ok: true,
-    text: async () => JSON.stringify({ ok: true, available: true, review: { summary: 'private review' } }),
+    json: async () => ({ ok: true, available: true, review: { summary: 'private review' } }),
   });
   await loading;
   expect(panel.review.textContent).not.toContain('private review');
@@ -35,17 +35,16 @@ it('shows a recorded finding and opens only its new-file line, not an old-diff l
     'fetch',
     vi.fn().mockResolvedValue({
       ok: true,
-      text: async () =>
-        JSON.stringify({
-          ok: true,
-          available: true,
-          review: {
-            status: 'complete',
-            verdict: 'changes_requested',
-            summary: 'An issue',
-            findings: [{ path: 'a.py', old_line: 5, issue: '<literal>' }],
-          },
-        }),
+      json: async () => ({
+        ok: true,
+        available: true,
+        review: {
+          status: 'complete',
+          verdict: 'changes_requested',
+          summary: 'An issue',
+          findings: [{ path: 'a.py', old_line: 5, issue: '<literal>' }],
+        },
+      }),
     }),
   );
   const open = vi.fn();

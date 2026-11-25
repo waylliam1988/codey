@@ -1,27 +1,31 @@
+import type { Message } from './types/domain';
+import { ProviderUI } from './provider_ui';
+import { Models } from './models';
+import { Composer } from './composer';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from './types/domain';
 
 it('rejects a replayed start after history restoration removed the browser attempt', async () => {
-  await import('./requests');
+  const { Requests } = await import('./requests');
   const restored = {
     id: 'restored',
     messages: [{ type: 'user', runId: 'finished' }],
     terminalRuns: ['finished'],
   } as Session;
-  window.Requests.init({ getSessions: () => [restored] } as Parameters<typeof window.Requests.init>[0]);
-  expect(window.Requests.acceptsEvent({ session_id: 'restored', run_id: 'finished', type: 'task_start' })).toBe(false);
-  expect(window.Requests.acceptsEvent({ session_id: 'restored', run_id: 'finished', type: 'task_done' })).toBe(true);
+  Requests.init({ getSessions: () => [restored] } as Parameters<typeof Requests.init>[0]);
+  expect(Requests.acceptsEvent({ session_id: 'restored', run_id: 'finished', type: 'task_start' })).toBe(false);
+  expect(Requests.acceptsEvent({ session_id: 'restored', run_id: 'finished', type: 'task_done' })).toBe(true);
 });
 
 it('renders pending request progress only in the process summary, keeping failure recovery separate', async () => {
   await import('./process');
-  await import('./requests');
+  const { Requests } = await import('./requests');
   const chat = document.createElement('div');
   const session = {
     id: 'single',
     messages: [{ type: 'user', id: 'question', text: 'test', attempts: [{ runId: 'run', state: 'running' }] }],
   } as Session;
-  window.Requests.init({
+  Requests.init({
     $: () => chat,
     getSessions: () => [session],
     getActiveId: () => session.id,
@@ -30,8 +34,8 @@ it('renders pending request progress only in the process summary, keeping failur
       wrapper.innerHTML = '<div><span></span></div>';
       return wrapper;
     },
-  } as unknown as Parameters<typeof window.Requests.init>[0]);
-  window.Requests.appendStatus(chat, { type: 'request_status', sessionId: 'single', requestId: 'question' });
+  } as unknown as Parameters<typeof Requests.init>[0]);
+  Requests.appendStatus(chat, { type: 'request_status', sessionId: 'single', requestId: 'question' });
   expect(chat.querySelector<HTMLElement>('.request-status')?.hidden).toBe(true);
   expect(chat.querySelector('.process-title')?.textContent).toBe('Working · Waiting for reply');
   expect(chat.querySelectorAll('.spinner')).toHaveLength(1);
@@ -57,15 +61,11 @@ describe('request recovery actions', () => {
         },
       ],
     };
-    const recoveryActions = vi.fn((attempt: Record<string, unknown>) =>
+    const recoveryActions = vi.fn((attempt: Message) =>
       attempt.sendFailure === 'model'
         ? [{ label: 'Choose model', onclick: vi.fn() }]
         : [{ label: 'Open', onclick: vi.fn() }],
     );
-    window.Composer = { recoveryActions, isSending: () => false } as unknown as typeof window.Composer;
-    window.Models = { allows: () => true } as unknown as typeof window.Models;
-    window.ProviderUI = { runSelection: () => ({ model: '' }) } as unknown as typeof window.ProviderUI;
-    window.Requests = {} as typeof window.Requests;
     const deps = {
       $: () => document.querySelector<HTMLElement>('#task')!,
       getSessions: () => [session],
@@ -89,9 +89,11 @@ describe('request recovery actions', () => {
       }),
     };
     await import('./process');
-    await import('./requests');
-    window.Requests.init(deps);
-    window.Requests.appendStatus(document.querySelector('#chat')!, {
+    const { Requests } = await import('./requests');
+    vi.spyOn(Models, 'allows').mockReturnValue(true);
+    vi.spyOn(ProviderUI, 'runSelection').mockReturnValue({});
+    Requests.init({ ...deps, composer: { recoveryActions, isSending: () => false, retryTask: vi.fn() } });
+    Requests.appendStatus(document.querySelector('#chat')!, {
       type: 'request_status',
       sessionId: session.id,
       requestId: 'request-1',
@@ -105,7 +107,7 @@ describe('request recovery actions', () => {
 it.each(['running', 'approval', 'done', 'stopped', 'error'])(
   'clears ambiguous admission metadata when lifecycle confirms %s',
   async (state) => {
-    await import('./requests');
+    const { Requests } = await import('./requests');
     const session = {
       id: 'confirmed',
       messages: [
@@ -125,13 +127,13 @@ it.each(['running', 'approval', 'done', 'stopped', 'error'])(
         },
       ],
     } as Session;
-    window.Requests.init({
+    Requests.init({
       getSessions: () => [session],
       getActiveId: () => '',
       persistActiveNow: vi.fn(),
-    } as unknown as Parameters<typeof window.Requests.init>[0]);
-    window.Requests.projectLifecycle({ session_id: session.id, run_id: 'run' }, state);
-    const attempt = window.Requests.forRun(session.id, 'run')!.attempt;
+    } as unknown as Parameters<typeof Requests.init>[0]);
+    Requests.projectLifecycle({ session_id: session.id, run_id: 'run' }, state);
+    const attempt = Requests.forRun(session.id, 'run')!.attempt;
     expect(attempt.sendFailure).toBeUndefined();
     expect(attempt.runOwner).toBeUndefined();
     if (state !== 'error') expect(attempt.error).toBeUndefined();

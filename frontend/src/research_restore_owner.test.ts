@@ -38,9 +38,8 @@ describe('research restore owner', () => {
       researchRuns: [],
     };
     let active = 'a';
-    window.ResearchRuns = {} as typeof window.ResearchRuns;
-    await import('./research_runs');
-    window.ResearchRuns.init({
+    const { ResearchRuns } = await import('./research_runs');
+    ResearchRuns.init({
       getSessions: () => [a, b],
       getActiveId: () => active,
       activeSession: () => [a, b].find((s) => s.id === active),
@@ -51,7 +50,7 @@ describe('research restore owner', () => {
       'fetch',
       vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, restored: [{ path: 'x' }] }) })),
     );
-    const promise = window.ResearchRuns.restore('a');
+    const promise = ResearchRuns.restore('a');
     active = 'b';
     await promise;
     expect(a.researchRuns).toHaveLength(0);

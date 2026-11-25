@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { parseDocumentLink } from './document_links';
-import './render';
+import { Render } from './render';
 
 it('parses Windows paths, spaces and line references without treating a drive as a URL scheme', () => {
   expect(parseDocumentLink('E:\\Selfie - 副本\\docs\\报告.md:12:3')).toEqual({
@@ -16,7 +16,7 @@ it('parses Windows paths, spaces and line references without treating a drive as
 
 it('renders local links and output filenames as file actions without executing Markdown HTML', () => {
   const body = document.createElement('div');
-  window.Render.renderMarkdown(
+  Render.renderMarkdown(
     body,
     '[报告](<E:/Selfie - 副本/docs/报告.md:12>) `docs/probe.py` <img src=x onerror=alert(1)>',
   );

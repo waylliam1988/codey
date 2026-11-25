@@ -1,6 +1,7 @@
+import { LocalContextDrawer } from './local_context_drawer';
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { runtime } from './runtime';
+
 import { messageSelectionOffsets, type LocalContextDeps, type MessageSelection } from './local_context_drawer';
 
 interface Drawer {
@@ -24,7 +25,7 @@ function isDrawer(value: unknown): value is Drawer {
   );
 }
 function drawer(): Drawer {
-  const value: unknown = runtime.LocalContextDrawer;
+  const value: unknown = LocalContextDrawer;
   if (isDrawer(value)) return value;
   throw new Error('Drawer unavailable');
 }
@@ -60,11 +61,6 @@ beforeEach(async () => {
   document.body.innerHTML = ['drawer', 'close', 'export', 'refresh', 'menu', 'subtitle', 'body']
     .map((id) => `<div id="local-context-${id}"></div>`)
     .join('');
-  runtime.UiState = {
-    setDrawerOpen: (id: string, open: boolean): void => {
-      element(id).classList.toggle('open', open);
-    },
-  };
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit): Promise<Response> => {
     if (url === '/api/ghost/action') {
       const body: unknown = JSON.parse(String(init?.body));

@@ -2,8 +2,6 @@ import { iconButton } from './icon_button';
 import type { Message } from './types/domain';
 import { fetchExecutionOutput, mergeOutputSnapshot, type ExecutionSnapshot } from './execution_output';
 import { commandOutputView } from './command_output_view';
-import { runtime } from './runtime';
-import type { createApprovalController } from './shell_approvals';
 
 type Copy = (text: string) => Promise<boolean>;
 
@@ -35,7 +33,11 @@ function copyButton(label: string, text: string | (() => string), copy: Copy): H
   return button;
 }
 
-export function commandCard(message: Message, copy: Copy): HTMLElement {
+export function commandCard(
+  message: Message,
+  copy: Copy,
+  remember?: (id: string, scope: 'session' | 'project') => Promise<unknown>,
+): HTMLElement {
   const card = document.createElement('div');
   card.className = 'msg shell command-card';
   if (message.id) card.dataset.approvalId = message.id;
@@ -151,8 +153,7 @@ export function commandCard(message: Message, copy: Copy): HTMLElement {
       retry.textContent = 'Retry saving';
       retry.onclick = () => {
         retry.disabled = true;
-        const approvals: ReturnType<typeof createApprovalController> = runtime.ShellApprovals;
-        void approvals.remember(message.id || '', scope);
+        void remember?.(message.id || '', scope);
       };
       notice.append(' ', retry);
     }

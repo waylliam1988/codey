@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 class FakeEventSource {
   static OPEN = 1;
+  static instances: FakeEventSource[] = [];
   readyState = FakeEventSource.OPEN;
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: (() => void) | null = null;
-  constructor(_url: string) {
-    (globalThis as unknown as { __lastEventSource?: FakeEventSource }).__lastEventSource = this;
+  constructor(readonly url: string) {
+    FakeEventSource.instances.push(this);
   }
   close(): void {}
 }
@@ -15,11 +16,12 @@ describe('SSE dispatch validation and recovery', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
-    delete (globalThis as { __lastEventSource?: FakeEventSource }).__lastEventSource;
+    vi.useRealTimers();
   });
 
   beforeEach(() => {
     vi.resetModules();
+    FakeEventSource.instances = [];
     localStorage.clear();
     vi.stubGlobal('EventSource', FakeEventSource);
   });
@@ -28,8 +30,9 @@ describe('SSE dispatch validation and recovery', () => {
     localStorage.setItem('codey:durable-cursor', JSON.stringify({ database_id: 'old', commit_seq: 90 }));
     const handled = vi.fn();
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
-    await import('./sse');
-    window.Sse.init({
+    const { Sse } = await import('./sse');
+    Sse.init({
+      forRun: () => null,
       setStatus: vi.fn(),
       applyRunState: vi.fn(),
       handleServerEvent: handled,
@@ -39,8 +42,8 @@ describe('SSE dispatch validation and recovery', () => {
       updateComposerContext: vi.fn(),
       refreshProviderStatus: vi.fn(),
     });
-    window.Sse.connect();
-    const source = (globalThis as unknown as { __lastEventSource: FakeEventSource }).__lastEventSource;
+    Sse.connect();
+    const [source] = FakeEventSource.instances;
     source.onmessage?.(
       new MessageEvent('message', { data: JSON.stringify({ type: 'hello', database_id: 'new', after_commit_seq: 0 }) }),
     );
@@ -69,8 +72,9 @@ describe('SSE dispatch validation and recovery', () => {
       vi.fn(() => new Promise(() => {})),
     );
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    await import('./sse');
-    window.Sse.init({
+    const { Sse } = await import('./sse');
+    Sse.init({
+      forRun: () => null,
       setStatus: vi.fn(),
       applyRunState: vi.fn(),
       handleServerEvent: vi.fn(() => {
@@ -82,8 +86,8 @@ describe('SSE dispatch validation and recovery', () => {
       updateComposerContext: vi.fn(),
       refreshProviderStatus: vi.fn(),
     });
-    window.Sse.connect();
-    const source = (globalThis as unknown as { __lastEventSource: FakeEventSource }).__lastEventSource;
+    Sse.connect();
+    const [source] = FakeEventSource.instances;
     for (const seq of [5, 6])
       source.onmessage?.(
         new MessageEvent('message', {
@@ -97,7 +101,8 @@ describe('SSE dispatch validation and recovery', () => {
           }),
         }),
       );
-    expect(JSON.parse(localStorage.getItem('codey:durable-cursor')!).commit_seq).toBe(4);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
+    expect(localStorage.getItem('codey:durable-cursor')).toBe('{"database_id":"db","commit_seq":4}');
   });
 
   it('does not consume an invalid event id and reconciles handler failures', async () => {
@@ -116,9 +121,9 @@ describe('SSE dispatch validation and recovery', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    window.Sse = {} as typeof window.Sse;
-    await import('./sse');
-    window.Sse.init({
+    const { Sse } = await import('./sse');
+    Sse.init({
+      forRun: () => null,
       setStatus: vi.fn(),
       applyRunState: vi.fn(),
       handleServerEvent,
@@ -128,8 +133,8 @@ describe('SSE dispatch validation and recovery', () => {
       updateComposerContext: vi.fn(),
       refreshProviderStatus: vi.fn(),
     });
-    window.Sse.connect();
-    const source = (globalThis as unknown as { __lastEventSource?: FakeEventSource }).__lastEventSource!;
+    Sse.connect();
+    const [source] = FakeEventSource.instances;
     source.onmessage?.(new MessageEvent('message', { data: JSON.stringify(null), lastEventId: '7' }));
     source.onmessage?.(
       new MessageEvent('message', { data: JSON.stringify({ type: 'reply', event_id: 7 }), lastEventId: '7' }),
@@ -138,5 +143,58 @@ describe('SSE dispatch validation and recovery', () => {
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(handleServerEvent).toHaveBeenCalledTimes(1);
     expect(errorSpy).toHaveBeenCalledWith('SSE event handling failed', expect.any(Error));
+  });
+
+  it('replays an interrupted async delivery from the confirmed cursors', async () => {
+    vi.useFakeTimers();
+    localStorage.setItem('codey:durable-cursor', JSON.stringify({ database_id: 'db', commit_seq: 4 }));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ busy: false }))));
+    let finish: () => void = () => {};
+    const delivered = vi.fn().mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { Sse } = await import('./sse');
+    Sse.init({
+      forRun: () => null,
+      setStatus: vi.fn(),
+      applyRunState: vi.fn(),
+      handleServerEvent: delivered,
+      acceptRun: vi.fn(),
+      setProviderBusy: vi.fn(),
+      updateSend: vi.fn(),
+      updateComposerContext: vi.fn(),
+      refreshProviderStatus: vi.fn(),
+    });
+    Sse.connect();
+    const [source] = FakeEventSource.instances;
+    const commit = new MessageEvent('message', {
+      lastEventId: '10:5',
+      data: JSON.stringify({ type: 'durable_commit', session_id: 'chat', commit_seq: 5 }),
+    });
+    const reply = new MessageEvent('message', {
+      lastEventId: '7:5',
+      data: JSON.stringify({ type: 'reply', session_id: 'chat', text: 'replayed' }),
+    });
+    source.onmessage?.(commit);
+    await Promise.resolve();
+    expect(delivered).toHaveBeenCalledTimes(1);
+    source.onmessage?.(reply);
+    source.onerror?.();
+    finish();
+    await vi.advanceTimersByTimeAsync(1000);
+    const replay = FakeEventSource.instances[1];
+    expect(replay.url).toBe('/api/events?database_id=db&after_commit_seq=4');
+    replay.onmessage?.(commit);
+    replay.onmessage?.(reply);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(delivered.mock.calls.map(([event, cursor]: unknown[]) => [event, cursor])).toEqual([
+      [expect.objectContaining({ type: 'durable_commit' }), '10:5'],
+      [expect.objectContaining({ type: 'durable_commit' }), '10:5'],
+      [expect.objectContaining({ type: 'reply' }), '7:5'],
+    ]);
+    expect(localStorage.getItem('codey:durable-cursor')).toBe('{"database_id":"db","commit_seq":5}');
   });
 });

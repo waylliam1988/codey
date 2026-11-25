@@ -1,3 +1,4 @@
+import { requestResponse } from './api/transport';
 export interface OutputSnapshot {
   stdout: string;
   total_bytes: number;
@@ -34,7 +35,7 @@ export async function fetchExecutionOutput(
 ): Promise<RetainedExecutionOutput | undefined> {
   const query = new URLSearchParams({ session_id: scope.session_id, run_id: scope.run_id });
   if (afterRevision >= 0) query.set('after_revision', String(afterRevision));
-  const response = await fetch(`/api/executions/${encodeURIComponent(scope.execution_id)}/output?${query}`);
+  const response = await requestResponse(`/api/executions/${encodeURIComponent(scope.execution_id)}/output?${query}`);
   if (response.status === 304) return undefined;
   if (!response.ok) throw new Error('Execution output unavailable');
   const data: unknown = await response.json();

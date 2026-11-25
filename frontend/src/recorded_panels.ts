@@ -1,8 +1,39 @@
+import { isRecord } from './domain/protocol';
 import { requestJson } from './api/transport';
 import { commandCard } from './command_card';
 import { iconButton } from './icon_button';
 import type { Message } from './types/domain';
 import type { DocumentRef } from './document_pane';
+
+function decodeRecordedReview(value: unknown) {
+  if (!isRecord(value) || typeof value.ok !== 'boolean' || typeof value.available !== 'boolean')
+    throw new Error('Invalid recorded review response');
+  const { ok, available, review } = value;
+  const text = (item: unknown) => (typeof item === 'string' ? item : undefined);
+  if (!available) return { ok, available, review: undefined };
+  if (!isRecord(review)) throw new Error('Missing recorded review');
+  const findings: unknown[] = Array.isArray(review.findings) ? review.findings : [];
+  return {
+    ok,
+    available,
+    review: {
+      verdict: text(review.verdict),
+      status: text(review.status),
+      summary: text(review.summary),
+      scope: review.scope,
+      findings: findings.map((item) => {
+        if (!isRecord(item)) throw new Error('Invalid recorded finding');
+        return {
+          path: text(item.path),
+          issue: text(item.issue),
+          suggested_fix: text(item.suggested_fix),
+          new_line: typeof item.new_line === 'number' ? item.new_line : undefined,
+          old_line: typeof item.old_line === 'number' ? item.old_line : undefined,
+        };
+      }),
+    },
+  };
+}
 
 export interface RecordedPanelDeps {
   sessionId(): string;
@@ -27,23 +58,10 @@ export class RecordedPanels {
     this.review.replaceChildren(body);
     if (!run) return;
     try {
-      const data = await requestJson<{
-        ok: boolean;
-        available: boolean;
-        review?: {
-          verdict?: string;
-          status?: string;
-          summary?: string;
-          scope?: unknown;
-          findings?: Array<{
-            path?: string;
-            new_line?: number;
-            old_line?: number;
-            issue?: string;
-            suggested_fix?: string;
-          }>;
-        };
-      }>(`/api/run_review?${new URLSearchParams({ session_id: session, run_id: run })}`);
+      const data = await requestJson(
+        `/api/run_review?${new URLSearchParams({ session_id: session, run_id: run })}`,
+        decodeRecordedReview,
+      );
       if (generation !== this.generation || this.deps.sessionId() !== session) return;
       if (!data.ok) throw new Error('Could not load recorded review');
       body.replaceChildren();

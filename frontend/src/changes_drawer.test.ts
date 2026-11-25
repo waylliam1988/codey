@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import './changes_drawer';
-import { runtime } from './runtime';
+import { ChangesDrawer } from './changes_drawer';
+
 import type { ChangesData } from './types/domain';
 
 function diff(path: string, line: string): ChangesData {
@@ -26,7 +26,6 @@ beforeEach(() => {
       <button id="changes-refresh"></button><button id="changes-close"></button>
       <div id="changes-body"></div>
     </section>`;
-  runtime.UiState = { pathName: (project: string) => project, setDrawerOpen: vi.fn() };
 });
 
 afterEach(() => vi.unstubAllGlobals());
@@ -43,7 +42,7 @@ it('keeps historical file previews scoped to the selected run in the same projec
   const fetchRun = vi.fn(async (sessionId: string, runId: string) =>
     sessionId === 'a' && runId === 'old' ? old : diff('b/shared b/file.txt', 'second run'),
   );
-  window.ChangesDrawer.init({
+  ChangesDrawer.init({
     $: element,
     fetchChanges: fetchWorkspace,
     fetchRunChanges: fetchRun,
@@ -52,8 +51,8 @@ it('keeps historical file previews scoped to the selected run in the same projec
     escapeHtml: (text) => text,
     previewHtml: vi.fn(),
   });
-  const pending = window.ChangesDrawer.openRun('project', 'a', 'old');
-  await window.ChangesDrawer.openRun('project', 'b', 'new');
+  const pending = ChangesDrawer.openRun('project', 'a', 'old');
+  await ChangesDrawer.openRun('project', 'b', 'new');
   resolveOld(diff('b/shared b/file.txt', 'first run'));
   await pending;
   element('changes-body').querySelector('button')?.click();
@@ -71,7 +70,7 @@ it('keeps historical file previews scoped to the selected run in the same projec
 it('shows each historical hunk only under its matching repository path', async () => {
   const root = diff('index.ts', 'root change');
   const nested = diff('src/index.ts', 'nested change');
-  window.ChangesDrawer.init({
+  ChangesDrawer.init({
     $: element,
     fetchChanges: vi.fn(),
     fetchRunChanges: async () => ({
@@ -84,7 +83,7 @@ it('shows each historical hunk only under its matching repository path', async (
     escapeHtml: (text) => text,
     previewHtml: vi.fn(),
   });
-  await window.ChangesDrawer.openRun('project', 'a', 'paths');
+  await ChangesDrawer.openRun('project', 'a', 'paths');
   const buttons = element('changes-body').querySelectorAll<HTMLButtonElement>('button');
   for (const button of buttons) button.click();
   const [rootPreview, nestedPreview] = element('changes-body').querySelectorAll('pre');
@@ -107,7 +106,7 @@ it('renders the selected run HTML and ignores output arriving after a run switch
       }),
   );
   vi.stubGlobal('fetch', fetch);
-  window.ChangesDrawer.init({
+  ChangesDrawer.init({
     $: element,
     fetchChanges: vi.fn(),
     fetchRunChanges: async (_sessionId, runId) => ({
@@ -132,17 +131,19 @@ it('renders the selected run HTML and ignores output arriving after a run switch
     previewHtml: vi.fn(),
   });
   const body = element('changes-body');
-  await window.ChangesDrawer.openRun('project', 'owner-a', 'first');
+  await ChangesDrawer.openRun('project', 'owner-a', 'first');
   expect(body.querySelector<HTMLButtonElement>('.change-html-preview')?.hidden).toBe(false);
   const check = body.querySelector('details');
   if (!check) throw new Error('Missing failed check');
   check.open = true;
-  await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining('run_id=child-a')));
+  await vi.waitFor(() =>
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('run_id=child-a'), expect.any(Object)),
+  );
 
-  await window.ChangesDrawer.openRun('project', 'owner-b', 'second');
+  await ChangesDrawer.openRun('project', 'owner-b', 'second');
   deliver(new Response(JSON.stringify({ revision: 1, execution_state: 'settled', stdout: 'wrong run' })));
   expect(body.querySelector<HTMLButtonElement>('.change-html-preview')?.hidden).toBe(false);
   expect(body.textContent).toContain('Checks passed');
   expect(body.textContent).not.toContain('wrong run');
-  expect(fetch).toHaveBeenCalledWith(expect.stringContaining('session_id=owner-a'));
+  expect(fetch).toHaveBeenCalledWith(expect.stringContaining('session_id=owner-a'), expect.any(Object));
 });

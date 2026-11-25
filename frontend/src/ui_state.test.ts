@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import './ui_state';
+import { UiState } from './ui_state';
 import type { Project, Session } from './types/domain';
 
 declare global {
@@ -12,7 +12,7 @@ declare global {
 
 describe('ui state persistence boundary', () => {
   beforeEach(() => {
-    window.UiState.init({
+    UiState.init({
       getSessions: () => [],
       setSessions: (value: Session[]) => {
         window.__testSessions = value;
@@ -30,12 +30,12 @@ describe('ui state persistence boundary', () => {
       getRevision: () => 0,
       setRevision: () => undefined,
     });
-    window.UiState.accept({ sessions: [], projects: [], active_id: '', revision: 0 });
+    UiState.accept({ sessions: [], projects: [], active_id: '', revision: 0 });
   });
 
   it('ignores malformed persisted entries without throwing', () => {
     expect(() =>
-      window.UiState.apply({
+      UiState.apply({
         sessions: [null, 42, { id: 's1', messages: [{ type: 'user', text: 'hello' }] }],
         projects: [null, { path: 'C:/project' }],
         active_id: 's1',
@@ -59,7 +59,7 @@ describe('ui state persistence boundary', () => {
       ),
     );
     let confirmed = false;
-    const saved = window.UiState.ensureSaved().then((ok) => {
+    const saved = UiState.ensureSaved().then((ok) => {
       confirmed = ok;
       return ok;
     });
@@ -77,17 +77,17 @@ describe('ui state persistence boundary', () => {
       messages: [{ type: 'user', text: 'secret transcript' }],
       draft: { text: 'draft', start: 0, end: 0, direction: 'none', revision: 1 },
     } as Session;
-    window.UiState.init({
+    UiState.init({
       getSessions: () => [session],
       setSessions: (value) => {
         window.__testSessions = value;
       },
     });
-    const current = window.UiState.current();
+    const current = UiState.current();
     expect((current.sessions as object[])[0]).not.toHaveProperty('messages');
-    window.UiState.cache();
+    UiState.cache();
     expect(localStorage.getItem('codey:ui-cache')).not.toContain('secret transcript');
-    window.UiState.apply({ sessions: [{ id: 's1', title: 'Chat', draft: session.draft }] });
+    UiState.apply({ sessions: [{ id: 's1', title: 'Chat', draft: session.draft }] });
     expect(window.__testSessions[0]).toMatchObject({
       messages: [{ type: 'user', text: 'secret transcript' }],
       draft: { text: 'draft' },
@@ -96,7 +96,7 @@ describe('ui state persistence boundary', () => {
   });
 
   it('restores a required reasoning reselection instead of silently sending defaults', () => {
-    window.UiState.apply({
+    UiState.apply({
       sessions: [
         {
           id: 's1',

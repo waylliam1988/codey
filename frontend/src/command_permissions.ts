@@ -1,3 +1,4 @@
+import { requestResponse } from './api/transport';
 import { createIconSvg } from './icon_button';
 
 /** Managing stored rules never submits a decision for the current command. */
@@ -60,7 +61,7 @@ export async function showCommandPermissions(
     try {
       const query = new URLSearchParams({ session_id: sessionId, project });
       if (allScopes) query.set('all', '1');
-      const response = await fetch(`/api/command_permissions?${query}`, {
+      const response = await requestResponse(`/api/command_permissions?${query}`, {
         signal: AbortSignal.any([request.signal, AbortSignal.timeout(15000)]),
       });
       if (!response.ok) throw new Error('Could not load saved permissions');
@@ -90,7 +91,7 @@ export async function showCommandPermissions(
         revoke.onclick = async () => {
           revoke.disabled = true;
           try {
-            const result = await fetch('/api/command_permissions/revoke', {
+            const result = await requestResponse('/api/command_permissions/revoke', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ id: rule.id }),

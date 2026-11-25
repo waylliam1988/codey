@@ -19,7 +19,11 @@ def _source() -> str:
 def test_required_runtime_modules_are_imported() -> None:
     main = (FRONTEND / "src/main.ts").read_text(encoding="utf-8")
     runtime = (FRONTEND / "src/app_runtime.ts").read_text(encoding="utf-8")
-    assert main.strip() == "import './appearance';\nimport './app_runtime';"
+    assert "import { mountAppearance } from './appearance';" in main
+    assert "import { mountApp } from './app_runtime';" in main
+    assert "mountAppearance();" in main
+    assert "mountApp();" in main
+    assert not (FRONTEND / "src/runtime.ts").exists()
     for name in ("operator_auth", "provider_ui", "ui_state", "sse", "composer", "conversation_ui"):
         assert f"./{name}" in runtime
 

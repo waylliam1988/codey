@@ -1,4 +1,6 @@
-import { runtime } from './runtime';
+import { isRecord } from './domain/display_values';
+import { requestResponse } from './api/transport';
+import { UiState } from './ui_state';
 import type { AttachmentRef } from './types/domain';
 
 const STORAGE = 'codey:attachment-drafts:v1';
@@ -38,10 +40,13 @@ export class ComposerAttachments {
     this.error.hidden = true;
     this.element.append(this.list, this.error);
     try {
-      const entries = JSON.parse(localStorage.getItem(STORAGE) || '[]');
+      const entries: unknown = JSON.parse(localStorage.getItem(STORAGE) || '[]');
       if (!Array.isArray(entries)) throw new Error('Invalid attachment drafts');
-      for (const [id, refs] of entries) {
-        if (typeof id !== 'string' || !Array.isArray(refs) || refs.length > 4 || refs.some((ref) => !validRef(ref)))
+      const drafts: unknown[] = entries;
+      for (const entry of drafts) {
+        if (!Array.isArray(entry)) throw new Error('Invalid attachment draft');
+        const [id, refs]: unknown[] = entry;
+        if (typeof id !== 'string' || !Array.isArray(refs) || refs.length > 4 || !refs.every(validRef))
           throw new Error('Invalid attachment drafts');
         this.chats.set(
           id,
@@ -111,24 +116,24 @@ export class ComposerAttachments {
 
   checkCapability(provider: string, selection: unknown, runId: string): void {
     if (!this.items().some((item) => (item.ref?.media_type || item.file?.type || '').startsWith('image/'))) return;
-    const key = JSON.stringify([this.session, provider, selection, runId]);
+    const session = this.session;
+    const key = JSON.stringify([session, provider, selection, runId]);
     if (key === this.capabilityKey) return;
     this.capabilityKey = key;
     this.capability = undefined;
     this.capabilityError = '';
     void (async () => {
       try {
-        if (!(await runtime.UiState.ensureSaved()))
-          throw new Error('Could not save this chat. Retry attaching the image.');
-        const response = await fetch('/api/attachments/capabilities', {
+        if (!(await UiState.ensureSaved())) throw new Error('Could not save this chat. Retry attaching the image.');
+        const response = await requestResponse('/api/attachments/capabilities', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: JSON.parse(key)[0], provider, model_selection: selection }),
+          body: JSON.stringify({ session_id: session, provider, model_selection: selection }),
           signal: AbortSignal.timeout(10000),
         });
-        const data = await response.json();
-        if (!response.ok || typeof data.images !== 'boolean')
-          throw new Error(data.error || 'Could not check image support.');
+        const data: unknown = await response.json();
+        if (!response.ok || !isRecord(data) || typeof data.images !== 'boolean')
+          throw new Error(errorMessage(data, 'Could not check image support.'));
         if (key !== this.capabilityKey) return;
         this.capability = data.images;
       } catch (error) {
@@ -206,27 +211,28 @@ export class ComposerAttachments {
     this.render();
     this.changed();
     try {
-      if (!(await runtime.UiState.ensureSaved())) throw new Error('Could not save this chat. Retry the upload.');
+      if (!(await UiState.ensureSaved())) throw new Error('Could not save this chat. Retry the upload.');
       const encoded = await fileData(item.file!);
       if (!this.items(id).includes(item)) return;
-      const response = await fetch('/api/attachments', {
+      const response = await requestResponse('/api/attachments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: id, name: item.file!.name, data: encoded }),
         signal: AbortSignal.any([item.controller.signal, AbortSignal.timeout(30000)]),
       });
-      const data = await response.json();
-      if (!response.ok || !validRef(data.attachment))
-        throw new Error(data.error || 'Could not upload this file. Retry.');
+      const data: unknown = await response.json();
+      if (!response.ok || !isRecord(data) || !validRef(data.attachment))
+        throw new Error(errorMessage(data, 'Could not upload this file. Retry.'));
+      const ref = data.attachment;
       if (!this.items(id).includes(item)) return;
-      if (this.items(id).some((other) => other !== item && other.ref?.id === data.attachment.id)) {
+      if (this.items(id).some((other) => other !== item && other.ref?.id === ref.id)) {
         this.chats.set(
           id,
           this.items(id).filter((other) => other !== item),
         );
         this.release(item);
       } else {
-        item.ref = data.attachment;
+        item.ref = ref;
         item.file = undefined;
         if (!item.ref!.media_type.startsWith('image/') && item.url) {
           this.release(item);
@@ -353,14 +359,19 @@ export class ComposerAttachments {
   }
 }
 
+function errorMessage(value: unknown, fallback: string): string {
+  return isRecord(value) && typeof value.error === 'string' ? value.error : fallback;
+}
+
 export function validRef(value: unknown): value is AttachmentRef {
-  const item = value as AttachmentRef;
+  const item = value;
   return (
-    !!item &&
+    isRecord(item) &&
     typeof item.id === 'string' &&
     /^att_[a-f0-9]{64}$/.test(item.id) &&
     typeof item.name === 'string' &&
     typeof item.media_type === 'string' &&
+    typeof item.size === 'number' &&
     Number.isSafeInteger(item.size) &&
     item.size > 0 &&
     item.size <= MAX_FILE &&
@@ -376,15 +387,15 @@ function fileData(file: File): Promise<string> {
   });
 }
 export async function readAttachment(session: string, id: string): Promise<{ data_url?: string }> {
-  const response = await fetch('/api/attachments/read', {
+  const response = await requestResponse('/api/attachments/read', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: session, id }),
     signal: AbortSignal.timeout(10000),
   });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || 'Attachment unavailable');
-  return data;
+  const data: unknown = await response.json();
+  if (!response.ok || !isRecord(data)) throw new Error(errorMessage(data, 'Attachment unavailable'));
+  return typeof data.data_url === 'string' ? { data_url: data.data_url } : {};
 }
 
 export function appendAttachmentRefs(host: HTMLElement, refs: AttachmentRef[] | undefined, session: string): void {

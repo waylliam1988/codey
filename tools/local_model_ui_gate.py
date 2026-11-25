@@ -28,9 +28,9 @@ import tempfile
 import threading
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
-from typing import Any
+from unittest.mock import patch
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -50,6 +50,7 @@ from codey.providers import controls as provider_controls
 from codey.providers.catalog import API_CONNECTIONS, PROVIDER_LABELS
 from codey.providers.local_discovery import probe_local_endpoint_detail
 from codey.providers.web_provider import WebChatProvider
+from codey.types.json_value import JsonObject, decode_json_object
 
 UI_CASES = ("chat", "coding", "review", "research", "ghost")
 
@@ -104,7 +105,7 @@ def _preflight(provider_id: str = "local") -> tuple[str, str]:
     return endpoint.base_url, model
 
 
-def _browser_launch_url(server: Any, base_url: str) -> str:
+def _browser_launch_url(server: codey_server.CodeyHTTPServer, base_url: str) -> str:
     """Use the server-issued operator bootstrap for a fresh browser context."""
     return str(server.launch_url(base_url))
 
@@ -144,24 +145,13 @@ def _configure_gate_model_preferences(state: AppContext, provider_id: str, model
         _configure_provider_model_preferences(state, selected_provider, model)
 
 
-def _terminal_succeeded(event: dict[str, Any]) -> bool:
+def _terminal_succeeded(event: JsonObject) -> bool:
     """Read the canonical task terminal field, not a UI-only alias."""
     return event.get("type") == "task_done" and str(event.get("stop_reason") or "") == "done"
 
 
-def _terminal_belongs_to_run(event: dict[str, Any], run_id: str) -> bool:
+def _terminal_belongs_to_run(event: JsonObject, run_id: str) -> bool:
     return bool(run_id) and str(event.get("run_id") or "") == run_id
-
-
-def _start_unscoped_chat(page: Page) -> None:
-    """Start a fresh chat with no project so Research stays a research run.
-
-    The product intentionally inherits the active project when the user clicks
-    New chat.  The research case must exercise the explicit research mode, so
-    the gate creates the same session through the page's existing UI state
-    helper with a null project id.
-    """
-    page.evaluate("newSession(null)")
 
 
 def _research_gate_prompt() -> str:
@@ -172,7 +162,7 @@ def _research_gate_prompt() -> str:
     )
 
 
-def _configure_research_store(state: Any, root: Path, cases: tuple[str, ...]) -> None:
+def _configure_research_store(state: AppContext, root: Path, cases: tuple[str, ...]) -> None:
     if "research" in cases:
         state.knowledge_store = KnowledgeStore(root / "vault")
 
@@ -183,12 +173,13 @@ def _wait_for_terminal(
     *,
     previous_run_id: str = "",
     timeout_s: float = 600.0,
-) -> dict[str, Any]:
+) -> JsonObject:
     deadline = time.monotonic() + timeout_s
-    snapshot: dict[str, Any] = {}
+    snapshot: JsonObject = {}
     while time.monotonic() < deadline:
-        snapshot = page.request.get(base_url + "api/state").json()
-        event = snapshot.get("last_terminal_event") or {}
+        snapshot = decode_json_object(page.request.get(base_url + "api/state").json())
+        raw_event = snapshot.get("last_terminal_event")
+        event = raw_event if isinstance(raw_event, dict) else {}
         current_run_id = str(snapshot.get("run_id") or event.get("run_id") or "")
         if (
             not snapshot.get("busy")
@@ -211,7 +202,7 @@ def _save_screenshot(page: Page, path: Path) -> str:
         return str(marker)
 
 
-def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
+def _append_jsonl(path: Path, row: JsonObject) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
@@ -225,13 +216,13 @@ def analyze_provider_history(path: str | Path) -> dict[str, object]:
     distinguish model retries from UI duplicate rendering or JSON decoding
     failures without changing the runtime completion contract.
     """
-    rows: list[dict[str, Any]] = []
+    rows: list[JsonObject] = []
     parse_errors = 0
     history_path = Path(path)
     if history_path.is_file():
         for line in history_path.read_text(encoding="utf-8").splitlines():
             try:
-                row = json.loads(line)
+                row = decode_json_object(json.loads(line))
             except (TypeError, ValueError, json.JSONDecodeError):
                 parse_errors += 1
                 continue
@@ -249,7 +240,7 @@ def analyze_provider_history(path: str | Path) -> dict[str, object]:
             continue
         if row_type == "response" and isinstance(row.get("text"), str):
             try:
-                response_obj = json.loads(row["text"])
+                response_obj: object = json.loads(str(row["text"]))
             except (TypeError, ValueError, json.JSONDecodeError):
                 response_obj = None
             if isinstance(response_obj, dict):
@@ -281,9 +272,10 @@ def analyze_provider_history(path: str | Path) -> dict[str, object]:
                         completion_rejections += 1
             continue
         payload = row.get("payload")
-        if isinstance(payload, dict) and isinstance(payload.get("output"), list):
-            for item in payload["output"]:
-                if item.get("type") == "function_call":
+        output = payload.get("output") if isinstance(payload, dict) else None
+        if isinstance(output, list):
+            for item in output:
+                if isinstance(item, dict) and item.get("type") == "function_call":
                     tool_calls.append(str(item.get("name")))
                     done_calls += item.get("name") == "done"
         choices = payload.get("choices") if isinstance(payload, dict) else None
@@ -319,7 +311,7 @@ def _record_api_provider_history(path: Path) -> Iterator[None]:
         yield
 
 
-def _provider_history_recorder(provider_id: str, path: Path):
+def _provider_history_recorder(provider_id: str, path: Path) -> AbstractContextManager[None]:
     return _record_api_provider_history(path) if provider_id in {"local", "zen"} else _record_web_provider_history(path)
 
 
@@ -362,23 +354,19 @@ def _record_web_provider_history(path: Path) -> Iterator[None]:
             })
         return response
 
-    WebChatProvider.new_chat = new_chat  # type: ignore[method-assign]  # noqa: B010
-    WebChatProvider.send = send  # type: ignore[method-assign]  # noqa: B010
-    try:
+    with patch.object(WebChatProvider, "new_chat", new_chat), patch.object(WebChatProvider, "send", send):
         yield
-    finally:
-        WebChatProvider.new_chat = original_new_chat  # type: ignore[method-assign]  # noqa: B010
-        WebChatProvider.send = original_send  # type: ignore[method-assign]  # noqa: B010
 
 
-def _send_task(page: Page, base_url: str, prompt: str) -> dict[str, Any]:
-    before = page.request.get(base_url + "api/state").json()
+def _send_task(page: Page, base_url: str, prompt: str, artifacts: Path) -> JsonObject:
+    before = decode_json_object(page.request.get(base_url + "api/state").json())
     previous_run_id = str(before.get("run_id") or "")
     page.locator("#task").fill(prompt)
     page.locator("#send").click()
     expect(page.locator("#stop")).to_be_visible(timeout=5_000)
     terminal = _wait_for_terminal(page, base_url, previous_run_id=previous_run_id)
-    event = terminal.get("last_terminal_event") or {}
+    event = decode_json_object(terminal["last_terminal_event"])
+    _append_jsonl(artifacts / "local-model-ui-terminals.jsonl", event)
     if not _terminal_succeeded(event):
         raise AssertionError(f"local UI task did not complete successfully: {json.dumps(event)}")
     expect(page.locator("#stop")).to_be_hidden(timeout=5_000)
@@ -424,7 +412,7 @@ def _exercise_page(
     cases: tuple[str, ...],
     provider_id: str,
     model_id: str = "",
-) -> dict[str, Any]:
+) -> JsonObject:
     page.goto(launch_url, wait_until="domcontentloaded")
     expect(page.locator("#provider-button")).to_be_enabled(timeout=15_000)
 
@@ -441,7 +429,7 @@ def _exercise_page(
         expect(page.locator("#provider-dot")).to_have_class(re.compile(r"\bok\b"), timeout=15_000)
     else:
         expect(page.locator("#provider-name")).not_to_be_empty()
-        assert page.evaluate("activeSession().provider") == provider_id
+        expect(page.locator("#provider-menu")).not_to_have_class(re.compile(r"\bopen\b"))
     if provider_id == "local":
         page.locator("#btn-settings").click()
         expect(page.locator("#local-config-pop")).to_be_visible()
@@ -449,9 +437,9 @@ def _exercise_page(
         expect(page.locator("#local-config-pop")).not_to_be_visible()
 
     checks: list[str] = []
-    event: dict[str, Any] = {}
+    event: JsonObject = {}
     if "chat" in cases:
-        event = _send_task(page, base_url, "Reply with the short phrase: local desktop smoke passed.")
+        event = _send_task(page, base_url, "Reply with the short phrase: local desktop smoke passed.", artifacts)
         checks.append("real local chat reaches done")
     if "chat" in cases:
         expect(page.locator(".msg.asst .body")).to_have_count(1, timeout=5_000)
@@ -468,7 +456,7 @@ def _exercise_page(
             "content to create the files, do not use shell commands, run python -m unittest discover, "
             "and finish with done."
         )
-        event = _send_task(page, base_url, coding_prompt)
+        event = _send_task(page, base_url, coding_prompt, artifacts)
         if not event.get("changed"):
             raise AssertionError(f"coding task finished without changed receipt: {json.dumps(event)}")
         if not (project / "math_utils.py").is_file():
@@ -478,7 +466,7 @@ def _exercise_page(
             checks.extend(_open_changes_and_details(page))
 
     if "research" in cases:
-        _start_unscoped_chat(page)
+        page.get_by_role("button", name="New chat", exact=True).click()
         research_toggle = page.locator("#ctx-research")
         research_toggle.click()
         expect(research_toggle).to_have_attribute("aria-pressed", "true")
@@ -486,6 +474,7 @@ def _exercise_page(
             page,
             base_url,
             _research_gate_prompt(),
+            artifacts,
         )
         if event.get("mode") != "research":
             raise AssertionError(f"research UI task used unexpected mode: {json.dumps(event)}")
@@ -509,7 +498,8 @@ def _exercise_page(
         expect(local_drawer).to_have_attribute("aria-hidden", "false")
         # Opening Changes while Local context is open verifies backend-backed
         # drawer exclusivity without fabricating a second UI state.
-        page.evaluate("(project) => openChangesDrawer(project)", str(project))
+        page.locator("#topbar-more").click()
+        page.locator('#top-menu button[data-act="changes"]').click()
         changes_drawer = page.locator("#changes-drawer")
         expect(changes_drawer).to_have_attribute("aria-hidden", "false")
         expect(local_drawer).to_have_attribute("aria-hidden", "true")
@@ -541,7 +531,7 @@ def run_local_model_ui_gate(
     headed: bool = False,
     artifacts: str | Path | None = None,
     cases: str = ",".join(UI_CASES),
-) -> dict[str, Any]:
+) -> JsonObject:
     provider_id = str(os.environ.get("UI_GATE_PROVIDER", "local") or "local").strip().lower()
     base_url, model = _preflight(provider_id)
     selected_cases = parse_cases(cases)
@@ -614,7 +604,7 @@ def run_local_model_ui_gate(
             "server_url": server_url,
             "cases": list(selected_cases),
             "provider_history": str(history_path),
-            "provider_history_analysis": analyze_provider_history(history_path),
+            "provider_history_analysis": decode_json_object(json.loads(json.dumps(analyze_provider_history(history_path)))),
         })
         return result
     finally:

@@ -5,26 +5,34 @@ import ts from 'typescript';
 
 describe('frontend type boundary hygiene', () => {
   const root = join(process.cwd(), 'src');
-  it('keeps history and event visibility contracts free of explicit any', () => {
-    for (const name of [
-      'history_repository.ts',
-      'conversation_history.ts',
-      'conversation_nav_index.ts',
-      'conversation_ui.ts',
-      'run_visibility.ts',
-      'run_event_coordinator.ts',
-      'run_stream_buffer.ts',
-      'messages.ts',
-    ]) {
-      const source = ts.createSourceFile(name, readFileSync(join(root, name), 'utf8'), ts.ScriptTarget.Latest);
-      const offenders: number[] = [];
-      const visit = (node: ts.Node): void => {
-        if (node.kind === ts.SyntaxKind.AnyKeyword) offenders.push(node.getStart(source));
-        ts.forEachChild(node, visit);
-      };
-      visit(source);
-      expect(offenders, name).toEqual([]);
-    }
+  it('keeps production modules free of explicit any, runtime registration and direct fetch', () => {
+    const offenders: string[] = [];
+    const inspect = (directory: string): void => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) inspect(path);
+        else if (path.endsWith('.ts') && !path.endsWith('.test.ts')) {
+          const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest);
+          const visit = (node: ts.Node): void => {
+            if (
+              node.kind === ts.SyntaxKind.AnyKeyword ||
+              (ts.isImportDeclaration(node) &&
+                ts.isStringLiteral(node.moduleSpecifier) &&
+                /(^|\/)runtime$/.test(node.moduleSpecifier.text)) ||
+              (entry.name !== 'transport.ts' &&
+                ts.isCallExpression(node) &&
+                ts.isIdentifier(node.expression) &&
+                node.expression.text === 'fetch')
+            )
+              offenders.push(path + ':' + node.getStart(source));
+            ts.forEachChild(node, visit);
+          };
+          visit(source);
+        }
+      }
+    };
+    inspect(root);
+    expect(offenders).toEqual([]);
   });
   const interfaceBody = (source: string, name: string): string => {
     const start = source.indexOf(`interface ${name}`);
@@ -50,29 +58,10 @@ describe('frontend type boundary hygiene', () => {
 
   it('does not use the broad Function compatibility dependency type', () => {
     const domain = readFileSync(join(root, 'types', 'domain.ts'), 'utf8');
-    expect(domain).not.toMatch(/ModuleDeps|Record<string,\s*Function>/);
+    expect(domain).not.toMatch(/\bModuleDeps\b|Record<string,\s*Function>/);
     for (const name of ['provider_ui.ts', 'local_context_drawer.ts', 'research_drawer.ts', 'model_settings.ts']) {
-      expect(readFileSync(join(root, name), 'utf8')).not.toMatch(/ModuleDeps|\bFunction\b/);
+      expect(readFileSync(join(root, name), 'utf8')).not.toMatch(/\bModuleDeps\b|\bFunction\b/);
     }
-  });
-
-  it('gives the SSE global a callable contract', () => {
-    const declarations = readFileSync(join(root, 'types', 'window.d.ts'), 'utf8');
-    expect(declarations).toMatch(/Sse:\s*SseApi;/);
-    expect(declarations).not.toMatch(/Sse:\s*any/);
-  });
-
-  it('keeps composer and request globals behind named contracts', () => {
-    const declarations = readFileSync(join(root, 'types', 'window.d.ts'), 'utf8');
-    expect(declarations).toMatch(/Composer:\s*import\('\.\.\/composer'\)\.ComposerApi;/);
-    expect(declarations).not.toMatch(/Composer:\s*any/);
-    expect(readFileSync(join(root, 'requests.ts'), 'utf8')).toMatch(/interface RequestsDeps/);
-    expect(declarations).toMatch(/Requests:\s*import\('\.\.\/requests'\)\.RequestsApi;/);
-    expect(declarations).toMatch(/ProviderUI:\s*import\('\.\.\/provider_ui'\)\.ProviderUiApi;/);
-    expect(declarations).toMatch(/UiState:\s*import\('\.\.\/ui_state'\)\.UiStateApi;/);
-    expect(declarations).toMatch(/ConversationUI:\s*import\('\.\.\/conversation_ui'\)\.ConversationUiApi;/);
-    expect(declarations).toMatch(/Messages:\s*import\('\.\.\/messages'\)\.MessagesApi;/);
-    expect(declarations).toMatch(/Process:\s*import\('\.\.\/process'\)\.ProcessApi;/);
   });
 
   it('does not expose Codey-prefixed browser globals', () => {

@@ -1,6 +1,6 @@
+import { UiState } from './ui_state';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ComposerAttachments, IMAGE_UNSUPPORTED } from './attachments';
-import { runtime } from './runtime';
 
 const ref = {
   id: 'att_' + 'a'.repeat(64),
@@ -21,8 +21,8 @@ function setup() {
 beforeEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
+  vi.spyOn(UiState, 'ensureSaved').mockResolvedValue(true);
   document.body.innerHTML = '<div class="composer-box"><textarea id="task"></textarea></div>';
-  runtime.UiState = { ensureSaved: vi.fn(async () => true) };
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => new Response(JSON.stringify({ ok: true, attachment: ref }))),

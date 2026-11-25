@@ -1,16 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import './render';
+import { Render } from './render';
 import * as markdown from './markdown';
 
 // Compiled by typecheck, never executed. Unused expect-error fails if the
 // global becomes any again, so these test actual type rejection.
 function renderTypeContract(): void {
   // @ts-expect-error Rendering requires an HTML container.
-  window.Render.renderMarkdown('chat', 'hello');
+  Render.renderMarkdown('chat', 'hello');
   // @ts-expect-error Stable Markdown rendering accepts no completion callback.
-  window.Render.updateMarkdown(document.body, 'hello', 42);
+  Render.updateMarkdown(document.body, 'hello', 42);
   // @ts-expect-error Tool kind must be a string.
-  window.Render.toolRowEl({ kind: 42 }, false);
+  Render.toolRowEl({ kind: 42 }, false);
 }
 void renderTypeContract;
 
@@ -24,7 +24,7 @@ describe('render boundaries', () => {
   ])('uses structured source failure %s and preserves diagnostic details', (code, label) => {
     const diagnostic = 'HTTP 403 page_blank; this text must not determine the category';
     const host = document.createElement('div');
-    window.Render.appendOrFoldTool(host, {
+    Render.appendOrFoldTool(host, {
       toolName: 'open_url',
       path: 'https://example.com/article',
       error: true,
@@ -46,13 +46,13 @@ describe('render boundaries', () => {
   });
 
   it('keeps unknown failures generic and never classifies diagnostic text', () => {
-    const row = window.Render.toolRowEl({ toolName: 'open_url', error: true, result: 'HTTP 403 page_blank' }, false);
+    const row = Render.toolRowEl({ toolName: 'open_url', error: true, result: 'HTTP 403 page_blank' }, false);
     expect(row.querySelector('.tl-result')?.textContent).toBe('Tool failed');
   });
 
   it('labels successful tools that have neither a path nor a command', () => {
     for (const name of ['research_plan', 'knowledge_search', 'read_tool_result']) {
-      const row = window.Render.toolRowEl({ kind: name, toolName: name, result: '{"questions":[]}' }, false);
+      const row = Render.toolRowEl({ kind: name, toolName: name, result: '{"questions":[]}' }, false);
       expect(row.querySelector('.tl-path')?.textContent).toBe(name.replaceAll('_', ' '));
       expect(row.textContent).not.toContain('{"questions"');
     }
@@ -60,9 +60,9 @@ describe('render boundaries', () => {
 
   it('renders receipt basis from proof without changing the final answer', () => {
     const answer = '{"ok":true}';
-    expect(window.Render.receiptSummary({ display: { summary: answer } })).toBe(answer);
+    expect(Render.receiptSummary({ display: { summary: answer } })).toBe(answer);
     expect(
-      window.Render.receiptSummary({
+      Render.receiptSummary({
         display: { summary: 'Completed' },
         completion_proof: {
           evidence_refs: ['source:verified'],
@@ -71,7 +71,7 @@ describe('render boundaries', () => {
       }),
     ).toBe('Completed\nEvidence: source:verified\nLimitations: limit:observed');
     expect(
-      window.Render.receiptSummary({
+      Render.receiptSummary({
         display: { summary: 'Completed', evidence_refs: ['model claim'] },
         completion_proof: { evidence_refs: [null, 7], limitation_refs: [] },
       }),
@@ -80,28 +80,28 @@ describe('render boundaries', () => {
 
   it('renders Windows CRLF headings and paragraphs without stalling', () => {
     const body = document.createElement('div');
-    window.Render.renderMarkdown(body, '# Report\r\n\r\n参数正常\r\n');
+    Render.renderMarkdown(body, '# Report\r\n\r\n参数正常\r\n');
     expect(body.querySelector('.md-h1')?.textContent).toBe('Report');
     expect(body.querySelector('p')?.textContent).toBe('参数正常');
   });
 
   it('keeps bold intact across inline code, file actions and safe links', () => {
     const body = document.createElement('div');
-    window.Render.renderMarkdown(body, '**最需要动手的地方：`selfie/ui/main_window.py` 有 2084 行。**');
+    Render.renderMarkdown(body, '**最需要动手的地方：`selfie/ui/main_window.py` 有 2084 行。**');
     expect(body.querySelector('strong [data-document-candidate]')?.textContent).toBe('selfie/ui/main_window.py');
     expect(body.textContent).not.toContain('**');
     body.replaceChildren();
-    window.Render.renderMarkdown(body, '**Read [source](https://example.com) and `**literal**`**');
+    Render.renderMarkdown(body, '**Read [source](https://example.com) and `**literal**`**');
     expect(body.querySelector('strong a')?.textContent).toBe('source');
     expect(body.querySelector('strong code')?.textContent).toBe('**literal**');
   });
 
   it('returns a finite nonnegative count for malformed receipts', () => {
-    expect(window.Render.receiptChangedCount({ work: { changed_count: 'bad' } }, {})).toBe(0);
-    expect(window.Render.receiptChangedCount({}, { changed_count: -4 })).toBe(0);
-    expect(window.Render.receiptChangedCount({}, { changed_count: 'bad' })).toBe(0);
-    expect(window.Render.receiptChangedCount(null, { changed_count: 3 })).toBe(3);
-    expect(window.Render.receiptChangedCount({ work: { changed_count: 2 } }, { changed_count: 3 })).toBe(2);
+    expect(Render.receiptChangedCount({ work: { changed_count: 'bad' } }, {})).toBe(0);
+    expect(Render.receiptChangedCount({}, { changed_count: -4 })).toBe(0);
+    expect(Render.receiptChangedCount({}, { changed_count: 'bad' })).toBe(0);
+    expect(Render.receiptChangedCount(null, { changed_count: 3 })).toBe(3);
+    expect(Render.receiptChangedCount({ work: { changed_count: 2 } }, { changed_count: 3 })).toBe(2);
   });
 
   it('isolates parser failure and retries rendering without invoking any task', () => {
@@ -109,7 +109,7 @@ describe('render boundaries', () => {
     const parser = vi.spyOn(markdown, 'renderMarkdownContent').mockImplementationOnce(() => {
       throw new Error('display failed');
     });
-    expect(() => window.Render.renderMarkdown(body, 'saved answer')).not.toThrow();
+    expect(() => Render.renderMarkdown(body, 'saved answer')).not.toThrow();
     expect(body.querySelector('.md-render-error')).not.toBeNull();
     body.querySelector<HTMLButtonElement>('.md-render-error button')!.click();
     expect(body.textContent).toContain('saved answer');
@@ -119,7 +119,7 @@ describe('render boundaries', () => {
 
   it('preserves nested lists, code text and safe links', () => {
     const body = document.createElement('div');
-    window.Render.renderMarkdown(
+    Render.renderMarkdown(
       body,
       '- parent\n  - child\n\n```ts\n<x>\n```\n\n[unsafe](javascript:alert) [safe](https://example.com)',
     );
@@ -133,9 +133,9 @@ describe('render boundaries', () => {
     const body = document.createElement('div');
     const code = Array.from({ length: 200 }, (_, index) => `print(${index})`).join('\n');
     const initial = '```python\n' + code + '\n```';
-    window.Render.updateMarkdown(body, initial);
+    Render.updateMarkdown(body, initial);
     const block = body.querySelector('pre')!;
-    window.Render.updateMarkdown(body, initial + '\n\nFinal paragraph');
+    Render.updateMarkdown(body, initial + '\n\nFinal paragraph');
     expect(body.querySelectorAll('pre')).toHaveLength(1);
     expect(body.querySelector('pre')).toBe(block);
     expect(block.querySelector('code')?.textContent).toBe(code);
@@ -144,16 +144,16 @@ describe('render boundaries', () => {
 
   it('keeps an already displayed streaming paragraph mounted as text grows', () => {
     const body = document.createElement('div');
-    window.Render.updateMarkdown(body, '第一段已经到达。');
+    Render.updateMarkdown(body, '第一段已经到达。');
     const paragraph = body.querySelector('p')!;
-    window.Render.updateMarkdown(body, '第一段已经到达。\n\n**完整回答**，保留已显示段落。');
+    Render.updateMarkdown(body, '第一段已经到达。\n\n**完整回答**，保留已显示段落。');
     expect(body.querySelector('p')).toBe(paragraph);
     expect(paragraph.textContent).toContain('第一段已经到达。');
   });
 
   it('uses icon-only copy actions and omits redundant result availability text', () => {
     const body = document.createElement('div');
-    window.Render.renderMarkdown(body, '```text\nhello\n```');
+    Render.renderMarkdown(body, '```text\nhello\n```');
     const codeCopy = body.querySelector<HTMLButtonElement>('.code-copy')!;
     expect(codeCopy.parentElement?.className).toBe('md-code-header');
     expect(codeCopy.parentElement?.querySelector('.code-language')?.textContent).toBe('text');
@@ -162,7 +162,7 @@ describe('render boundaries', () => {
     expect(codeCopy.querySelector('svg')).not.toBeNull();
     expect(codeCopy.getAttribute('aria-label')).toBe('Copy code');
 
-    const row = window.Render.toolRowEl({ kind: 'read', path: 'requirements.txt', result: 'full text' }, false);
+    const row = Render.toolRowEl({ kind: 'read', path: 'requirements.txt', result: 'full text' }, false);
     expect(row.querySelector('.tl-kind')?.textContent).toBe('');
     expect(row.querySelector('.tl-path')?.textContent).toBe('requirements.txt');
     expect(row.querySelector('.tl-result')?.textContent).toBe('');
@@ -171,8 +171,8 @@ describe('render boundaries', () => {
 
   it('groups canonical read tool aliases into a collapsed file group', () => {
     const host = document.createElement('div');
-    window.Render.appendOrFoldTool(host, { kind: 'read_file', path: 'README.md', result: 'one' });
-    window.Render.appendOrFoldTool(host, { kind: 'read_file', path: 'pyproject.toml', result: 'two' });
+    Render.appendOrFoldTool(host, { kind: 'read_file', path: 'README.md', result: 'one' });
+    Render.appendOrFoldTool(host, { kind: 'read_file', path: 'pyproject.toml', result: 'two' });
     const group = host.querySelector<HTMLElement>('.tool-group')!;
     expect(group.dataset.foldkind).toBe('read');
     expect(group.classList.contains('collapsed')).toBe(true);
@@ -183,8 +183,8 @@ describe('render boundaries', () => {
 
   it('groups events that provide the real tool name separately from kind', () => {
     const host = document.createElement('div');
-    window.Render.appendOrFoldTool(host, { toolName: 'read_file', path: 'README.md', result: 'one' });
-    window.Render.appendOrFoldTool(host, { toolName: 'read_file', path: 'pyproject.toml', result: 'two' });
+    Render.appendOrFoldTool(host, { toolName: 'read_file', path: 'README.md', result: 'one' });
+    Render.appendOrFoldTool(host, { toolName: 'read_file', path: 'pyproject.toml', result: 'two' });
     const group = host.querySelector<HTMLElement>('.tool-group')!;
     expect(group.dataset.foldkind).toBe('read');
     expect(group.querySelector('.tg-count')?.textContent).toBe('2 files');
@@ -192,11 +192,11 @@ describe('render boundaries', () => {
 
   it('keeps a new read after the intervening reasoning instead of folding it backwards', () => {
     const host = document.createElement('div');
-    window.Render.appendOrFoldTool(host, { kind: 'read', path: 'README.md', result: 'one' });
+    Render.appendOrFoldTool(host, { kind: 'read', path: 'README.md', result: 'one' });
     const reasoning = document.createElement('details');
     reasoning.className = 'thinking';
     host.append(reasoning);
-    window.Render.appendOrFoldTool(host, {
+    Render.appendOrFoldTool(host, {
       toolName: 'read_file',
       path: 'docs/影像零售技术栈发展方案.md',
       result: 'two',
@@ -208,7 +208,7 @@ describe('render boundaries', () => {
 
   it('does not ellipsize a file path when there is no result column', () => {
     const path = 'selfie/beauty/render_orchestrator/runtime_contract.py';
-    const row = window.Render.toolRowEl({ kind: 'read', path }, false);
+    const row = Render.toolRowEl({ kind: 'read', path }, false);
     expect(row.classList.contains('no-result')).toBe(true);
     expect(row.classList.contains('file-read')).toBe(true);
     expect(row.querySelector('.tl-path')?.textContent).toBe(path);

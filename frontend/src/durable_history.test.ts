@@ -1,11 +1,13 @@
+import { ConversationNav } from './conversation_nav';
+import { Composer } from './composer';
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { runtime } from './runtime';
+
 import './ui_state';
 import './process';
 import './render';
-import './messages';
-import './conversation_ui';
+import { Messages } from './messages';
+import { ConversationUI } from './conversation_ui';
 import type { ConversationUiDeps } from './conversation_ui';
 import type { Session } from './types/domain';
 
@@ -37,10 +39,8 @@ beforeEach(() => {
       disconnect() {}
     },
   );
-  runtime.Composer = { syncSession() {} };
-  runtime.ConversationNav = { init() {}, refresh() {} };
   session = { id: `durable-${++id}`, title: 'History', messages: [] } as unknown as Session;
-  runtime.ConversationUI.init({
+  ConversationUI.init({
     activeSession: () => session,
     activeProject: () => null,
     getSessions: () => [session],
@@ -59,7 +59,7 @@ beforeEach(() => {
   } as unknown as ConversationUiDeps);
 });
 afterEach(() => {
-  runtime.ConversationUI.forget(session.id);
+  ConversationUI.forget(session.id);
   vi.unstubAllGlobals();
 });
 
@@ -68,7 +68,7 @@ it('loads authoritative history after restart even when the UI has no messages',
     'fetch',
     vi.fn().mockResolvedValue(response([{ id: 'entry', entry_id: 'entry', type: 'user', text: 'restored' }])),
   );
-  runtime.ConversationUI.renderChat();
+  ConversationUI.renderChat();
   await vi.waitFor(() => expect(document.getElementById('chat')!.textContent).toContain('restored'));
   expect(session.messages).toHaveLength(1);
 });
@@ -79,9 +79,9 @@ it('replaces a branched path even when the new path has the same length', async 
     .mockResolvedValueOnce(response([{ id: 'old', entry_id: 'old', type: 'user', text: 'old branch' }]))
     .mockResolvedValueOnce(response([{ id: 'new', entry_id: 'new', type: 'user', text: 'new branch' }]));
   vi.stubGlobal('fetch', fetcher);
-  runtime.ConversationUI.renderChat();
+  ConversationUI.renderChat();
   await vi.waitFor(() => expect(session.messages[0]?.id).toBe('old'));
-  await runtime.ConversationUI.refreshHistory(session.id);
+  await ConversationUI.refreshHistory(session.id);
   expect(session.messages.map((item) => item.id)).toEqual(['new']);
   expect(document.getElementById('chat')!.textContent).toContain('new branch');
 });
@@ -95,7 +95,7 @@ it('can load an earlier durable page when the mounted page starts at zero', asyn
       .mockResolvedValueOnce(response(tail, true))
       .mockResolvedValueOnce(response([{ id: 'ancestor', entry_id: 'ancestor', type: 'user', text: 'ancestor' }])),
   );
-  runtime.ConversationUI.renderChat();
+  ConversationUI.renderChat();
   await vi.waitFor(() => expect(session.messages).toHaveLength(100));
   expect(document.querySelector('[data-history-sentinel]')).not.toBeNull();
   document.getElementById('chat-area')!.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true }));
@@ -109,7 +109,7 @@ it('offers a visible retry when durable history cannot be loaded', async () => {
     .mockRejectedValueOnce(new Error('offline'))
     .mockResolvedValueOnce(response([{ id: 'entry', entry_id: 'entry', type: 'user', text: 'restored' }]));
   vi.stubGlobal('fetch', fetcher);
-  runtime.ConversationUI.renderChat();
+  ConversationUI.renderChat();
   await vi.waitFor(() => expect(document.querySelector('[data-history-retry]')).not.toBeNull());
   document.querySelector<HTMLButtonElement>('[data-history-retry]')!.click();
   await vi.waitFor(() => expect(session.messages).toHaveLength(1));
@@ -117,7 +117,7 @@ it('offers a visible retry when durable history cannot be loaded', async () => {
 
 it('renders history retry as a quiet text action', async () => {
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
-  runtime.ConversationUI.renderChat();
+  ConversationUI.renderChat();
   await vi.waitFor(() => expect(document.querySelector('[data-history-retry]')).not.toBeNull());
   expect(document.querySelector<HTMLButtonElement>('[data-history-retry]')?.className).toBe('link-btn');
 });
@@ -130,8 +130,8 @@ it('refreshes from a replayed durable commit without an active run', async () =>
       .mockResolvedValueOnce(response([]))
       .mockResolvedValueOnce(response([{ id: 'answer', entry_id: 'answer', type: 'asst', text: 'committed answer' }])),
   );
-  await runtime.ConversationUI.refreshHistory(session.id);
-  await runtime.ConversationUI.observeCommit({
+  await ConversationUI.refreshHistory(session.id);
+  await ConversationUI.observeCommit({
     type: 'durable_commit',
     session_id: session.id,
     kind: 'mutation',
@@ -149,20 +149,20 @@ it('defers live commit refreshes while the reader is above the latest reply', as
     ]),
   );
   vi.stubGlobal('fetch', fetcher);
-  runtime.ConversationUI.renderChat();
+  ConversationUI.renderChat();
   await vi.waitFor(() => expect(session.messages).toHaveLength(2));
   const anchor = document.getElementById('chat')!.lastElementChild;
-  runtime.ConversationUI.stopFollowing();
-  await runtime.ConversationUI.observeCommit({
+  ConversationUI.stopFollowing();
+  await ConversationUI.observeCommit({
     type: 'durable_commit',
     session_id: session.id,
     kind: 'mutation',
     commit_seq: 8,
     entry_ids: ['tool-result'],
   });
-  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher.mock.calls.filter(([url]) => String(url).includes('/messages?limit='))).toHaveLength(1);
   expect(document.getElementById('chat')!.lastElementChild).toBe(anchor);
-  expect(runtime.ConversationUI.isFollowing()).toBe(false);
+  expect(ConversationUI.isFollowing()).toBe(false);
 });
 
 it('honors an upward user scroll even when a tool update changes the content height in the same frame', async () => {
@@ -173,7 +173,7 @@ it('honors an upward user scroll even when a tool update changes the content hei
     scrollHeight: { get: () => height, configurable: true },
     clientHeight: { value: 300, configurable: true },
   });
-  runtime.ConversationUI.renderChat();
+  ConversationUI.renderChat();
   await vi.waitFor(() => expect(session.messages).toHaveLength(1));
   area.scrollTop = 700;
   area.dispatchEvent(new Event('scroll'));
@@ -181,9 +181,9 @@ it('honors an upward user scroll even when a tool update changes the content hei
   height = 1200;
   area.scrollTop = 500;
   area.dispatchEvent(new Event('scroll'));
-  runtime.ConversationUI.scrollChat(false);
+  ConversationUI.scrollChat(false);
   expect(area.scrollTop).toBe(500);
-  expect(runtime.ConversationUI.isFollowing()).toBe(false);
+  expect(ConversationUI.isFollowing()).toBe(false);
 });
 
 it('syncs a committed final answer onto its mounted stream after a tool turn', async () => {
@@ -203,26 +203,25 @@ it('syncs a committed final answer onto its mounted stream after a tool turn', a
       ]),
     ),
   );
-  await runtime.ConversationUI.refreshHistory(session.id);
-  runtime.Messages.init({
+  await ConversationUI.refreshHistory(session.id);
+  const open = vi.fn();
+  Messages.init({
+    chatFork: { open },
     getActiveId: () => session.id,
     getRunningSessionId: () => null,
     isSessionRunning: () => false,
     openDocument: vi.fn(),
     currentProjectPath: () => '',
-    openChangesDrawer: vi.fn(),
     attachCurrentChatToPickedProject: vi.fn(),
     approveCommand: vi.fn(),
     continueTask: vi.fn(),
     resumeTeaching: vi.fn(),
     statusRow: () => document.createElement('div'),
   });
-  const open = vi.fn();
-  runtime.ChatFork = { open };
   const chat = document.getElementById('chat')!;
   chat.replaceChildren();
-  runtime.Messages.append(chat, { type: 'asst', runId: 'run', streamId: 'tool-stream', finalAnswer: false, text: '' });
-  runtime.Messages.append(chat, {
+  Messages.append(chat, { type: 'asst', runId: 'run', streamId: 'tool-stream', finalAnswer: false, text: '' });
+  Messages.append(chat, {
     type: 'asst',
     runId: 'run',
     streamId: 'answer-stream',
@@ -232,7 +231,7 @@ it('syncs a committed final answer onto its mounted stream after a tool turn', a
     text: 'Answer',
   });
   const mounted = chat.lastElementChild;
-  await runtime.ConversationUI.syncAnswerIdentity(session.id, 'run');
+  await ConversationUI.syncAnswerIdentity(session.id, 'run');
   expect(chat.lastElementChild).toBe(mounted);
   expect(mounted?.querySelectorAll('.msg-fork')).toHaveLength(1);
   expect(chat.querySelector('[data-stream-id="tool-stream"] .msg-fork')).toBeNull();

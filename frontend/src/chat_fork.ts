@@ -1,4 +1,5 @@
-import { requestJson, jsonBody } from './api/transport';
+import { isRecord } from './domain/protocol';
+import { requestEmpty, requestJson, jsonBody } from './api/transport';
 import { iconButton, createIconSvg } from './icon_button';
 
 interface ForkResult {
@@ -14,6 +15,38 @@ interface Metadata extends Partial<ForkResult> {
   worktree_message?: string;
   origin?: { session_id: string; entry_id: string } | null;
 }
+function decodeMetadata(value: unknown): Metadata {
+  if (!isRecord(value)) throw new Error('Invalid conversation branch metadata');
+  const { session_id, state, job, worktree, is_worktree, worktree_status, worktree_reason, worktree_message, origin } =
+    value;
+  return {
+    session_id: typeof session_id === 'string' ? session_id : undefined,
+    state: isRecord(state) ? state : undefined,
+    job:
+      isRecord(job) && typeof job.status === 'string'
+        ? { status: job.status, error: typeof job.error === 'string' ? job.error : undefined }
+        : undefined,
+    worktree: typeof worktree === 'boolean' ? worktree : undefined,
+    is_worktree: typeof is_worktree === 'boolean' ? is_worktree : undefined,
+    worktree_status:
+      worktree_status === 'available' || worktree_status === 'unavailable' || worktree_status === 'error'
+        ? worktree_status
+        : undefined,
+    worktree_reason: typeof worktree_reason === 'string' ? worktree_reason : undefined,
+    worktree_message: typeof worktree_message === 'string' ? worktree_message : undefined,
+    origin:
+      isRecord(origin) && typeof origin.session_id === 'string' && typeof origin.entry_id === 'string'
+        ? { session_id: origin.session_id, entry_id: origin.entry_id }
+        : null,
+  };
+}
+
+function decodeForkResult(value: unknown): ForkResult {
+  const metadata = decodeMetadata(value);
+  if (!metadata.session_id) throw new Error('Missing conversation branch identity');
+  return { ...metadata, session_id: metadata.session_id };
+}
+
 interface Deps {
   activeId(): string;
   isWorktree(id: string): boolean;
@@ -118,8 +151,9 @@ export class ChatFork {
     this.capabilityError = '';
     this.updateOptions();
     try {
-      const metadata = await requestJson<Metadata>(
+      const metadata = await requestJson(
         `/api/conversation_fork?${new URLSearchParams({ session_id: session, capabilities: '1' })}`,
+        decodeMetadata,
       );
       if (generation !== this.generation || check !== this.checkGeneration) return;
       if (typeof metadata?.worktree !== 'boolean') throw new Error('Could not verify Git workspace capabilities.');
@@ -217,7 +251,7 @@ export class ChatFork {
       const identity = sessionStorage.getItem(key) || crypto.randomUUID();
       sessionStorage.setItem(key, identity);
       this.notice.textContent = destination === 'worktree' ? 'Creating worktree…' : 'Creating chat…';
-      const result = await requestJson<ForkResult>('/api/conversation_tree/action', {
+      const result = await requestJson('/api/conversation_tree/action', decodeForkResult, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: jsonBody({
@@ -254,8 +288,9 @@ export class ChatFork {
       }
       const poll = async () => {
         try {
-          const status = await requestJson<Metadata>(
+          const status = await requestJson(
             `/api/conversation_fork?${new URLSearchParams({ session_id: result.session_id })}`,
+            decodeMetadata,
           );
           if (status.job?.status === 'ready' && status.state) {
             finish({ session_id: result.session_id, state: status.state });
@@ -279,8 +314,9 @@ export class ChatFork {
     let metadata = this.origin.get(session);
     if (!metadata || (metadata.job && metadata.job.status === 'pending')) {
       try {
-        metadata = await requestJson<Metadata>(
+        metadata = await requestJson(
           `/api/conversation_fork?${new URLSearchParams({ session_id: session })}`,
+          decodeMetadata,
         );
         this.origin.set(session, metadata);
       } catch {
@@ -340,7 +376,7 @@ export class ChatFork {
       retry.onclick = async () => {
         retry.disabled = true;
         try {
-          await requestJson('/api/conversation_fork/retry', {
+          await requestEmpty('/api/conversation_fork/retry', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: jsonBody({ session_id: session }),

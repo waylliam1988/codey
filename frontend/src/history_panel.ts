@@ -1,5 +1,6 @@
-import { requestJson, jsonBody, ApiError } from './api/transport';
-import { runtime } from './runtime';
+import { isRecord } from './domain/protocol';
+import { UiState } from './ui_state';
+import { requestEmpty, requestJson, jsonBody, ApiError } from './api/transport';
 import type { Session } from './types/domain';
 
 interface Tree {
@@ -7,12 +8,91 @@ interface Tree {
   head_entry_id: string | null;
   ancestors: Array<{ session_id: string; entry_id: string }>;
   related_sessions?: Array<{ session_id: string; title: string }>;
-  branches: Array<{ entry_id: string; text: string; kind: string; current: boolean }>;
+  branches: Array<{ entry_id: string; text: string; current: boolean }>;
 }
 interface ForkResult {
   session_id: string;
   state: Record<string, unknown>;
 }
+function decodeForkResult(value: unknown): ForkResult {
+  if (!isRecord(value) || typeof value.session_id !== 'string' || !isRecord(value.state))
+    throw new Error('Invalid branch response');
+  return { session_id: value.session_id, state: value.state };
+}
+
+function eventRows<T>(value: unknown, decode: (row: Record<string, unknown>) => T): T[] {
+  if (!Array.isArray(value)) throw new Error('Invalid history list');
+  return value.map((row: unknown) => {
+    if (!isRecord(row)) throw new Error('Invalid history item');
+    return decode(row);
+  });
+}
+
+function decodeTree(value: unknown): Tree {
+  if (
+    !isRecord(value) ||
+    typeof value.revision !== 'number' ||
+    (value.head_entry_id !== null && typeof value.head_entry_id !== 'string')
+  )
+    throw new Error('Invalid conversation tree');
+  return {
+    revision: value.revision,
+    head_entry_id: value.head_entry_id,
+    ancestors: eventRows(value.ancestors, (row) => {
+      if (typeof row.session_id !== 'string' || typeof row.entry_id !== 'string') throw new Error('Invalid ancestor');
+      return { session_id: row.session_id, entry_id: row.entry_id };
+    }),
+    related_sessions:
+      value.related_sessions === undefined
+        ? undefined
+        : eventRows(value.related_sessions, (row) => {
+            if (typeof row.session_id !== 'string' || typeof row.title !== 'string')
+              throw new Error('Invalid related chat');
+            return { session_id: row.session_id, title: row.title };
+          }),
+    branches: eventRows(value.branches, (row) => {
+      if (typeof row.entry_id !== 'string' || typeof row.text !== 'string' || typeof row.current !== 'boolean')
+        throw new Error('Invalid branch');
+      return { entry_id: row.entry_id, text: row.text, current: row.current };
+    }),
+  };
+}
+
+function decodeWorkflow(value: unknown) {
+  if (!isRecord(value) || typeof value.has_more !== 'boolean' || typeof value.after !== 'number')
+    throw new Error('Invalid workflow timeline');
+  return {
+    has_more: value.has_more,
+    after: value.after,
+    items: eventRows(value.items, (row) => {
+      if (
+        typeof row.commit_seq !== 'number' ||
+        typeof row.phase !== 'string' ||
+        typeof row.status !== 'string' ||
+        (row.head_entry_id !== null && typeof row.head_entry_id !== 'string') ||
+        typeof row.forkable !== 'boolean'
+      )
+        throw new Error('Invalid workflow checkpoint');
+      return {
+        commit_seq: row.commit_seq,
+        phase: row.phase,
+        status: row.status,
+        head_entry_id: row.head_entry_id,
+        forkable: row.forkable,
+      };
+    }),
+  };
+}
+
+function decodeBranchPage(value: unknown) {
+  if (!isRecord(value)) throw new Error('Invalid branch history page');
+  return eventRows(value.items, (row) => {
+    if (typeof row.type !== 'string') throw new Error('Invalid branch entry kind');
+    const text = [row.text, row.content, row.result].find((item): item is string => typeof item === 'string' && !!item);
+    return { type: row.type, text: text ?? '' };
+  });
+}
+
 interface Deps {
   session(): Session | undefined;
   switchSession(id: string): void;
@@ -57,11 +137,11 @@ export class HistoryPanel {
     const valid = () => this.deps.session()?.id === session.id && this.generation === generation;
     const mutate = async (key: string, url: string, payload: object) => {
       if (!valid()) return;
-      if (!(await runtime.UiState.ensureSaved())) {
+      if (!(await UiState.ensureSaved())) {
         notice.textContent = 'Save this conversation before creating a branch.';
         return;
       }
-      const baseline = runtime.UiState.current();
+      const baseline = UiState.current();
       let identity = this.requestIds.get(key);
       if (!identity) {
         try {
@@ -76,7 +156,7 @@ export class HistoryPanel {
       }
       notice.textContent = 'Creating branch…';
       try {
-        const result = await requestJson<ForkResult>(url, {
+        const result = await requestJson(url, decodeForkResult, {
           method: 'POST',
           body: jsonBody({ ...payload, request_id: identity }),
           headers: { 'Content-Type': 'application/json' },
@@ -115,18 +195,10 @@ export class HistoryPanel {
           content.textContent = 'No recorded workflow for this conversation.';
           return;
         }
-        const data = await requestJson<{
-          items: Array<{
-            commit_seq: number;
-            phase: string;
-            status: string;
-            head_entry_id: string | null;
-            forkable: boolean;
-            effect_changes: Array<{ status: string; category: string }>;
-          }>;
-          has_more: boolean;
-          after: number;
-        }>(`/api/workflows?${new URLSearchParams({ task_id: run, after: target.after || '0', limit: '100' })}`);
+        const data = await requestJson(
+          `/api/workflows?${new URLSearchParams({ task_id: run, after: target.after || '0', limit: '100' })}`,
+          decodeWorkflow,
+        );
         if (!valid()) return;
         const instruction = document.createElement('textarea');
         instruction.placeholder = 'Instructions for the new branch';
@@ -166,7 +238,7 @@ export class HistoryPanel {
           );
         return;
       }
-      const tree = await requestJson<Tree>(`/api/conversation_tree?session_id=${encodeURIComponent(session.id)}`);
+      const tree = await requestJson(`/api/conversation_tree?session_id=${encodeURIComponent(session.id)}`, decodeTree);
       if (!valid()) return;
       content.replaceChildren();
       const heading = document.createElement('h3');
@@ -196,16 +268,15 @@ export class HistoryPanel {
           preview.hidden = false;
           preview.textContent = 'Loading branch…';
           try {
-            const page = await requestJson<{
-              items: Array<{ type: string; text?: string; content?: string; result?: string }>;
-            }>(
+            const page = await requestJson(
               `/api/conversation_tree?${new URLSearchParams({ session_id: session.id, entry_id: branch.entry_id, leaf_id: branch.entry_id })}`,
+              decodeBranchPage,
             );
             if (!valid()) return;
             preview.replaceChildren();
-            for (const message of page.items) {
+            for (const message of page) {
               const text = document.createElement('p');
-              text.textContent = `${message.type} · ${message.text || message.content || message.result || ''}`;
+              text.textContent = `${message.type} · ${message.text}`;
               preview.append(text);
             }
           } catch (error) {
@@ -215,7 +286,7 @@ export class HistoryPanel {
         const choose = action('Use this branch', async () => {
           choose.disabled = true;
           try {
-            await requestJson('/api/conversation_tree/action', {
+            await requestEmpty('/api/conversation_tree/action', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: jsonBody({

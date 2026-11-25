@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { requestJson } from './api/transport';
+import { requestEmpty, requestJson } from './api/transport';
 import { ChatFork } from './chat_fork';
 
-vi.mock('./api/transport', () => ({ requestJson: vi.fn(), jsonBody: JSON.stringify }));
+vi.mock('./api/transport', () => ({ requestJson: vi.fn(), requestEmpty: vi.fn(), jsonBody: JSON.stringify }));
 const request = vi.mocked(requestJson);
 
 it('keeps an accepted child without navigating after its creation dialog was dismissed', async () => {
@@ -101,7 +101,7 @@ it('waits for an explicit local choice in a non-Git directory and sends the whol
     { active_id: 'source' },
     true,
   );
-  const payload = JSON.parse((request.mock.calls[1][1] as RequestInit).body as string);
+  const payload = JSON.parse((request.mock.calls[1][2] as RequestInit).body as string);
   expect(payload).toMatchObject({ action: 'fork', boundary: 'turn', destination: 'local', entry_id: 'question' });
   expect(fork.dialog.open).toBe(false);
 });
@@ -200,7 +200,10 @@ it('keeps an unavailable worktree disabled when local creation fails and explici
   await vi.waitFor(() => expect(deps.adopt).toHaveBeenCalled());
   const bodies = request.mock.calls
     .filter(([url]) => url === '/api/conversation_tree/action')
-    .map(([, init]) => JSON.parse(init!.body as string));
+    .map(([, , init]) => {
+      if (typeof init?.body !== 'string') throw new Error('Expected JSON request');
+      return JSON.parse(init.body);
+    });
   expect(bodies).toHaveLength(2);
   expect(bodies[0].request_id).toBe(bodies[1].request_id);
   expect(fork.dialog.open).toBe(false);
@@ -215,8 +218,10 @@ it('allows local creation after a failed check without accidentally enabling wor
   await fork.open('source', 'question');
   click(fork.dialog, 'Fork in the current environment');
   await vi.waitFor(() => expect(deps.adopt).toHaveBeenCalled());
-  const payload = JSON.parse(request.mock.calls[1][1]!.body as string);
-  expect(payload.destination).toBe('local');
+  const body = request.mock.calls[1][2]?.body;
+  if (typeof body !== 'string') throw new Error('Expected JSON request');
+  const payload: unknown = JSON.parse(body);
+  expect(payload).toMatchObject({ destination: 'local' });
 });
 
 it('distinguishes retrying a failed capability check from retrying a failed local creation', async () => {
@@ -332,7 +337,7 @@ it('offers both Git destinations and preserves request identity after an uncerta
   await vi.waitFor(() => expect(deps.adopt).toHaveBeenCalled());
   const bodies = request.mock.calls
     .filter((call) => call[0] === '/api/conversation_tree/action')
-    .map((call) => JSON.parse((call[1] as RequestInit).body as string));
+    .map((call) => JSON.parse((call[2] as RequestInit).body as string));
   expect(bodies).toHaveLength(2);
   expect(bodies[0].request_id).toBe(bodies[1].request_id);
 });
@@ -395,6 +400,6 @@ it('restores a failed setup with retry against the same accepted child', async (
     .mockResolvedValue({ job: { status: 'ready' }, origin: { session_id: 'source', entry_id: 'answer' } });
   click(document.querySelector('.chat-fork-setup')!, 'Retry');
   await vi.waitFor(() => expect(fork.isBlocked('child')).toBe(false));
-  const retry = request.mock.calls.find((call) => call[0] === '/api/conversation_fork/retry')!;
+  const retry = vi.mocked(requestEmpty).mock.calls.find((call) => call[0] === '/api/conversation_fork/retry')!;
   expect(JSON.parse((retry[1] as RequestInit).body as string)).toEqual({ session_id: 'child' });
 });

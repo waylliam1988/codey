@@ -2,9 +2,13 @@ import { expect, it, vi } from 'vitest';
 import { commandCard } from './command_card';
 import type { Message } from './types/domain';
 import './render';
-import './process';
+import { Process } from './process';
 
-function call(id: string, kind = 'codemode', extra: Partial<Message> = {}): Message {
+function call(
+  id: string,
+  kind = 'codemode',
+  extra: Partial<Extract<Message, { type: 'tool_pending' }>> = {},
+): Extract<Message, { type: 'tool_pending' }> {
   return {
     type: 'tool_pending',
     pending: true,
@@ -19,9 +23,12 @@ function call(id: string, kind = 'codemode', extra: Partial<Message> = {}): Mess
   };
 }
 const render = (host: HTMLElement, message: Message) => host.append(commandCard(message, vi.fn()));
-const append = (host: HTMLElement, message: Message) => window.Process.append(host, message, render);
-const complete = (host: HTMLElement, message: Message, extra: Partial<Message> = {}) =>
-  append(host, { ...message, type: 'tool', pending: false, result: 'Retained result', ...extra });
+const append = (host: HTMLElement, message: Message) => Process.append(host, message, render);
+const complete = (
+  host: HTMLElement,
+  message: Extract<Message, { type: 'tool_pending' }>,
+  extra: Partial<Extract<Message, { type: 'tool' }>> = {},
+) => append(host, { ...message, type: 'tool' as const, pending: false, result: 'Retained result', ...extra });
 const order = (host: Element) =>
   [...host.querySelectorAll<HTMLElement>('[data-call-id]')].map((node) => node.dataset.callId);
 
@@ -144,7 +151,7 @@ it('keeps command-card promotion in the original slot and preserves the child pa
     append(host, message),
   );
   append(host, {
-    type: 'shell_result',
+    type: 'shell_result' as const,
     id: 'approval',
     callId: 'shell',
     runId: 'run',
@@ -156,7 +163,7 @@ it('keeps command-card promotion in the original slot and preserves the child pa
   expect(order(host)).toEqual(['parent', 'shell', 'next-child', 'later']);
   expect(host.querySelector('.tool-children .command-card')).not.toBeNull();
   append(host, {
-    type: 'shell_result',
+    type: 'shell_result' as const,
     id: 'approval',
     callId: 'shell',
     runId: 'run',
@@ -175,7 +182,7 @@ it('keeps command-card promotion in the original slot and preserves the child pa
 it('keeps separate command slots when results have call IDs without approval IDs', () => {
   const host = document.createElement('div');
   const result = (callId: string, shellStatus: string) => ({
-    type: 'shell_result',
+    type: 'shell_result' as const,
     runId: 'run',
     callId,
     approved: true,
@@ -210,7 +217,7 @@ it('counts explicit command failures in the summary without relocating them', ()
     const host = document.createElement('div');
     append(host, call('command', 'shell'));
     append(host, call('later'));
-    append(host, { type: 'shell_result', runId: 'run', callId: 'command', approved: true, shellStatus });
+    append(host, { type: 'shell_result' as const, runId: 'run', callId: 'command', approved: true, shellStatus });
     expect(order(host)).toEqual(['command', 'later']);
     expect(host.querySelector('.process-title')?.textContent).toContain('1 failed tool');
     expect(host.querySelector('.process-title')?.textContent).not.toContain('ran 1 command');
@@ -221,16 +228,16 @@ it('restores the same order and explicit disclosures from retained starts and re
   const messages = [call('a', 'read'), call('b', 'read'), call('edit', 'edit'), call('c', 'read')];
   const final = [...messages]
     .reverse()
-    .map((message) => ({ ...message, type: 'tool', pending: false, result: 'Done' }));
+    .map((message) => ({ ...message, type: 'tool' as const, pending: false, result: 'Done' }));
   const first = document.createElement('div');
   [...messages, ...final].forEach((message) => append(first, message));
   first.querySelector<HTMLButtonElement>('.tool-group-summary')!.click();
   first.querySelector<HTMLDetailsElement>('.tool-disclosure')!.open = true;
   first.querySelector('pre')!.scrollTop = 35;
-  const saved = window.Process.capture(first);
+  const saved = Process.capture(first);
   const restored = document.createElement('div');
   [...messages, ...final].forEach((message) => append(restored, message));
-  window.Process.restore(restored, saved);
+  Process.restore(restored, saved);
   expect(order(restored)).toEqual(order(first));
   expect(restored.querySelector('.tool-group')!.classList.contains('collapsed')).toBe(false);
   expect(restored.querySelector<HTMLDetailsElement>('.tool-disclosure')!.open).toBe(true);

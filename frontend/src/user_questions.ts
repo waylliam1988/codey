@@ -1,3 +1,5 @@
+import { isRecord } from './domain/display_values';
+import { readJsonObject, requestResponse } from './api/transport';
 import { QuestionDraftStore, type QuestionDraft } from './question_draft_store';
 
 export interface UserQuestion {
@@ -17,19 +19,20 @@ interface QuestionDeps {
   changed(): void;
   instanceId?: string;
 }
-function questionRecord(value: unknown): value is UserQuestion {
+export function isQuestionRecord(value: unknown): value is UserQuestion {
   if (!value || typeof value !== 'object') return false;
-  const q = value as UserQuestion;
+  const q = value as Record<string, unknown>;
   return (
     typeof q.id === 'string' &&
     typeof q.session_id === 'string' &&
     typeof q.run_id === 'string' &&
     Number.isSafeInteger(q.revision) &&
+    typeof q.state === 'string' &&
     typeof q.question === 'string' &&
     Array.isArray(q.options) &&
     q.options.length >= 2 &&
     q.options.length <= 6 &&
-    q.options.every((option) => typeof option === 'string')
+    q.options.every((option: unknown) => typeof option === 'string')
   );
 }
 export class UserQuestions {
@@ -82,7 +85,7 @@ export class UserQuestions {
     return true;
   }
   apply(value: unknown, confirmed = false): boolean {
-    if (!questionRecord(value)) return false;
+    if (!isQuestionRecord(value)) return false;
     const old = this.items.get(value.id);
     if (old && (old.revision > value.revision || (!confirmed && old.revision === value.revision))) return false;
     this.items.set(value.id, value);
@@ -104,8 +107,8 @@ export class UserQuestions {
   }
   async refresh(): Promise<void> {
     try {
-      const response = await fetch('/api/questions'),
-        data = await response.json();
+      const response = await requestResponse('/api/questions'),
+        data = await readJsonObject(response);
       if (response.ok && Array.isArray(data.questions)) data.questions.forEach((q: unknown) => this.apply(q));
     } catch {
       /* Saved cards remain available for an explicit status check. */
@@ -116,9 +119,9 @@ export class UserQuestions {
     this.phases.set(identity, 'checking');
     this.syncViews(document.body);
     try {
-      const response = await fetch('/api/questions?id=' + encodeURIComponent(identity)),
-        data = await response.json();
-      if (!response.ok || !questionRecord(data.question)) throw new Error('Question unavailable');
+      const response = await requestResponse('/api/questions?id=' + encodeURIComponent(identity)),
+        data = await readJsonObject(response);
+      if (!response.ok || !isQuestionRecord(data.question)) throw new Error('Question unavailable');
       this.apply(data.question, true);
     } catch {
       this.phases.set(identity, 'unconfirmed');
@@ -132,7 +135,7 @@ export class UserQuestions {
     this.flushDraft(question.id);
     this.syncViews(document.body);
     try {
-      const response = await fetch('/api/questions', {
+      const response = await requestResponse('/api/questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -142,8 +145,9 @@ export class UserQuestions {
           ...(cancel ? { action: 'cancel' } : {}),
         }),
       });
-      const data = await response.json();
-      if (!questionRecord(data.question)) throw new Error(data.error || 'Answer was not confirmed');
+      const data = await readJsonObject(response);
+      if (!isQuestionRecord(data.question))
+        throw new Error(typeof data.error === 'string' ? data.error : 'Answer was not confirmed');
       this.apply(data.question, true);
       if (data.question.state !== 'answer_accepted' && data.question.state !== 'pending') {
         this.draftStore.clear(question.session_id, question.id);

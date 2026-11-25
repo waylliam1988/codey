@@ -40,15 +40,15 @@ function apply(index: number, persist = false): void {
   }
 }
 
-apply(savedIndex());
+export function mountAppearance(): void {
+  apply(savedIndex());
 
-const slider = document.getElementById('font-size-slider');
-if (slider instanceof HTMLInputElement) {
-  slider.addEventListener('input', () => apply(slider.valueAsNumber, true));
+  const slider = document.getElementById('font-size-slider');
+  if (slider instanceof HTMLInputElement) {
+    slider.addEventListener('input', () => apply(slider.valueAsNumber, true));
+  }
+
+  window.addEventListener('storage', (event) => {
+    if (event.key === STORAGE_KEY || event.key === null) apply(savedIndex());
+  });
 }
-
-window.addEventListener('storage', (event) => {
-  if (event.key === STORAGE_KEY || event.key === null) apply(savedIndex());
-});
-
-export {};

@@ -1,3 +1,5 @@
+import { isRecord } from './domain/display_values';
+import { readJsonObject, requestResponse } from './api/transport';
 export interface QueuedRequest {
   attachments?: AttachmentRef[];
   session_id: string;
@@ -31,17 +33,24 @@ interface OutboxDeps {
   observe(input: QueuedInput): void;
 }
 const STORAGE = 'codey:pending-input-delivery';
-function inputRecord(value: unknown): value is QueuedInput {
+export function isInputRecord(value: unknown): value is QueuedInput {
   if (!value || typeof value !== 'object') return false;
-  const item = value as QueuedInput;
+  const item = value as Record<string, unknown>;
+  const request = item.request;
   return (
     typeof item.id === 'string' &&
     Number.isSafeInteger(item.revision) &&
     typeof item.state === 'string' &&
-    !!item.request &&
-    typeof item.request.session_id === 'string' &&
-    typeof item.request.run_id === 'string' &&
-    typeof item.request.task === 'string'
+    typeof request === 'object' &&
+    request !== null &&
+    'session_id' in request &&
+    'run_id' in request &&
+    'task' in request &&
+    'provider' in request &&
+    typeof request.provider === 'string' &&
+    typeof request.session_id === 'string' &&
+    typeof request.run_id === 'string' &&
+    typeof request.task === 'string'
   );
 }
 
@@ -58,8 +67,8 @@ export class InputOutbox {
     element.className = 'pending-inputs';
     element.setAttribute('aria-live', 'polite');
     try {
-      const stored = JSON.parse(localStorage.getItem(STORAGE) || '[]');
-      if (!Array.isArray(stored) || !stored.every(inputRecord)) throw new Error('Invalid pending delivery state');
+      const stored: unknown = JSON.parse(localStorage.getItem(STORAGE) || '[]');
+      if (!Array.isArray(stored) || !stored.every(isInputRecord)) throw new Error('Invalid pending delivery state');
       stored.forEach((item) =>
         this.items.set(item.id, {
           ...item,
@@ -95,7 +104,7 @@ export class InputOutbox {
   }
 
   apply(value: unknown): boolean {
-    if (!inputRecord(value)) return false;
+    if (!isInputRecord(value)) return false;
     const old = this.items.get(value.id);
     if (old && old.revision >= value.revision && !old.local) return false;
     const item = { ...value, local: false };
@@ -137,26 +146,26 @@ export class InputOutbox {
     this.render();
     this.deps.changed();
     try {
-      const response = await fetch('/api/inputs', {
+      const response = await requestResponse('/api/inputs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'create', id: item.id, request }),
       });
-      const data = await response.json();
-      if (!response.ok || !inputRecord(data.item)) {
+      const data = await readJsonObject(response);
+      if (!response.ok || !isInputRecord(data.item)) {
         if (
           (response.status === 409 && data.error === 'input_queue_full') ||
           (response.status === 400 && data.code === 'attachment_invalid')
         ) {
           item.state = 'failed';
           item.rejected = true;
-          item.error = data.error;
+          item.error = typeof data.error === 'string' ? data.error : 'Input rejected';
           this.persist();
           this.render();
           this.deps.changed();
           return false;
         }
-        throw new Error(data.error || 'Delivery could not be confirmed');
+        throw new Error(typeof data.error === 'string' ? data.error : 'Delivery could not be confirmed');
       }
       this.apply(data.item);
       return true;
@@ -174,8 +183,8 @@ export class InputOutbox {
 
   async refresh(): Promise<void> {
     try {
-      const response = await fetch('/api/inputs');
-      const data = await response.json();
+      const response = await requestResponse('/api/inputs');
+      const data = await readJsonObject(response);
       if (!response.ok || !Array.isArray(data.items)) return;
       data.items.forEach((item: unknown) => this.apply(item));
     } catch {
@@ -187,18 +196,18 @@ export class InputOutbox {
     this.checking.add(identity);
     this.render();
     try {
-      const response = await fetch('/api/inputs?id=' + encodeURIComponent(identity)),
-        data = await response.json();
-      if (!response.ok || !inputRecord(data.item)) {
+      const response = await requestResponse('/api/inputs?id=' + encodeURIComponent(identity)),
+        data = await readJsonObject(response);
+      if (!response.ok || !isInputRecord(data.item)) {
         const item = this.items.get(identity);
         if (response.status === 404 && data.error === 'input_not_found' && item?.local) {
           item.state = 'failed';
           item.rejected = true;
-          item.error = data.error;
+          item.error = typeof data.error === 'string' ? data.error : 'Input rejected';
           this.persist();
           return;
         }
-        throw new Error(data.error || 'Status could not be confirmed');
+        throw new Error(typeof data.error === 'string' ? data.error : 'Status could not be confirmed');
       }
       this.apply(data.item);
     } catch (error) {
@@ -231,7 +240,7 @@ export class InputOutbox {
     this.checking.add(item.id);
     this.render();
     try {
-      const response = await fetch('/api/inputs', {
+      const response = await requestResponse('/api/inputs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -241,8 +250,9 @@ export class InputOutbox {
           ...(action === 'edit' ? { text } : {}),
         }),
       });
-      const data = await response.json();
-      if (!response.ok || !inputRecord(data.item)) throw new Error(data.error || 'Input could not be changed');
+      const data = await readJsonObject(response);
+      if (!response.ok || !isInputRecord(data.item))
+        throw new Error(typeof data.error === 'string' ? data.error : 'Input could not be changed');
       if (action === 'edit') this.editing.delete(item.id);
       this.apply(data.item);
     } catch (error) {

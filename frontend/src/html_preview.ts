@@ -13,7 +13,9 @@ export function isPreviewableHtml(file: ChangeFile): boolean {
   );
 }
 
-export function finishedHtmlPath(changes?: ChangesData): string | undefined {
+export function finishedHtmlPath(
+  changes?: Pick<ChangesData, 'files' | 'changed_count' | 'truncated'>,
+): string | undefined {
   if (!Array.isArray(changes?.files) || changes.truncated || changes.changed_count !== changes.files.length)
     return undefined;
   const files = changes.files.filter(isPreviewableHtml);

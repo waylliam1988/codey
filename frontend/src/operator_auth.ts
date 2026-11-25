@@ -1,4 +1,4 @@
-import { runtime } from './runtime';
+import { requestResponse } from './api/transport';
 // Browser-compatible source module; the bundler supplies the module wrapper.
 async function authorize() {
   const fragment = new URLSearchParams(window.location.hash.slice(1));
@@ -6,7 +6,7 @@ async function authorize() {
   if (token) {
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
   }
-  const response = await fetch(
+  const response = await requestResponse(
     '/api/operator_session',
     token
       ? {
@@ -23,4 +23,4 @@ async function authorize() {
   }
 }
 
-runtime.OperatorAuth = { authorize };
+export const OperatorAuth = { authorize };

@@ -1,8 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import { commandCard } from './command_card';
-import './render';
+import { Render } from './render';
 import { messageIcons } from './message_icons';
-import { runtime } from './runtime';
 
 it('keeps all retained output without permanent tail or permission controls', () => {
   const text = Array.from({ length: 80 }, (_, i) => String(i)).join('\n') + '\n';
@@ -37,8 +36,8 @@ it('uses the shared activity-row disclosure with a trailing chevron', () => {
 });
 
 it('uses the shared masked chevron for grouped Read and Search rows', () => {
-  const read = window.Render.createToolGroup('read');
-  const search = window.Render.createToolGroup('search');
+  const read = Render.createToolGroup('read');
+  const search = Render.createToolGroup('search');
   expect(read?.querySelector('.tg-chevron')?.textContent).toBe('');
   expect(search?.querySelector('.tg-chevron')?.textContent).toBe('');
   expect(read?.querySelector('.tg-chevron')?.getAttribute('aria-hidden')).toBe('true');
@@ -92,7 +91,6 @@ it('keeps command/output independently copyable while exposing truncation separa
 
 it('only surfaces permission failures and retries saving without rerunning a command', () => {
   const remember = vi.fn();
-  runtime.ShellApprovals = { remember };
   const success = commandCard(
     { type: 'shell_result', id: 'one', permissionScope: 'session', approved: true, shellStatus: 'exit', exitCode: 0 },
     vi.fn(),
@@ -109,6 +107,7 @@ it('only surfaces permission failures and retries saving without rerunning a com
       exitCode: 0,
     },
     vi.fn(),
+    remember,
   );
   expect(failure.querySelector('.command-permission-note')?.textContent).toContain('Permission not saved.');
   (failure.querySelector('.command-permission-note button') as HTMLButtonElement).click();

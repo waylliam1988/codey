@@ -1,0 +1,414 @@
+{
+  "conversation_inventory_changed": {
+    "projection": "direct",
+    "fields": {
+      "type": true
+    }
+  },
+  "durable_commit": {
+    "projection": "direct",
+    "fields": {
+      "branch_entry_id": true,
+      "commit_seq": true,
+      "committed_at": true,
+      "deleted": true,
+      "edited_entry_id": true,
+      "entry_ids": true,
+      "head_entry_id": true,
+      "input_id": true,
+      "kind": true,
+      "path_generation": true,
+      "replaced_run_ids": true,
+      "revision": true,
+      "run_id": true,
+      "schema_version": true,
+      "session_id": true,
+      "submission_id": true,
+      "task_id": true,
+      "type": true
+    },
+    "required": {
+      "session_id": true,
+      "commit_seq": true
+    }
+  },
+  "resync_required": {
+    "projection": "direct",
+    "fields": {
+      "cursor": true,
+      "dropped": true,
+      "reason": true,
+      "type": true
+    }
+  },
+  "reply": {
+    "projection": "direct",
+    "fields": {
+      "run_id": true,
+      "session_id": true,
+      "text": true,
+      "turn": true,
+      "type": true
+    }
+  },
+  "reply_stream": {
+    "projection": "direct",
+    "fields": {
+      "delta": true,
+      "done": true,
+      "generation": true,
+      "run_id": true,
+      "sequence": true,
+      "session_id": true,
+      "state": true,
+      "stream_id": true,
+      "text": true,
+      "turn": true,
+      "type": true
+    },
+    "required": {
+      "session_id": true,
+      "run_id": true,
+      "stream_id": true,
+      "sequence": true,
+      "state": true,
+      "text": true
+    }
+  },
+  "conversation_input": {
+    "projection": "direct",
+    "fields": {
+      "input": true,
+      "session_id": true,
+      "type": true
+    },
+    "required": {
+      "session_id": true,
+      "input": true
+    }
+  },
+  "user_question": {
+    "projection": "direct",
+    "fields": {
+      "id": true,
+      "question": true,
+      "questions": true,
+      "run_id": true,
+      "session_id": true,
+      "text": true,
+      "type": true
+    },
+    "required": {
+      "session_id": true,
+      "question": true
+    }
+  },
+  "user_question_state": {
+    "projection": "direct",
+    "fields": {
+      "question": true,
+      "session_id": true,
+      "type": true
+    },
+    "required": {
+      "session_id": true,
+      "question": true
+    }
+  },
+  "providers": {
+    "projection": "direct",
+    "fields": {
+      "default": true,
+      "probe_error": true,
+      "providers": true,
+      "type": true
+    }
+  },
+  "shell_result": {
+    "projection": "direct",
+    "fields": {
+      "approved": true,
+      "call_id": true,
+      "command": true,
+      "command_chars": true,
+      "command_preview": true,
+      "command_sha256": true,
+      "command_truncated": true,
+      "cwd": true,
+      "error": true,
+      "execution_id": true,
+      "exit_code": true,
+      "failure": true,
+      "id": true,
+      "ok": true,
+      "output": true,
+      "project": true,
+      "run_id": true,
+      "session_id": true,
+      "status": true,
+      "truncated": true,
+      "type": true
+    }
+  },
+  "shell_approval_status": {
+    "projection": "direct",
+    "fields": {
+      "approval_id": true,
+      "code": true,
+      "continuation": true,
+      "continuation_run_id": true,
+      "decision": true,
+      "error": true,
+      "execution": true,
+      "execution_id": true,
+      "id": true,
+      "revision": true,
+      "run_id": true,
+      "session_id": true,
+      "source_run_id": true,
+      "type": true
+    }
+  },
+  "teach_request": {
+    "projection": "direct",
+    "fields": {
+      "id": true,
+      "options": true,
+      "question": true,
+      "run_id": true,
+      "session_id": true,
+      "text": true,
+      "type": true
+    }
+  },
+  "ghost_post_turn_warning": {
+    "projection": "direct",
+    "fields": {
+      "error": true,
+      "run_id": true,
+      "session_id": true,
+      "text": true,
+      "type": true
+    }
+  },
+  "task_start": {
+    "projection": "machine",
+    "fields": {
+      "max_turns": true,
+      "mode": true,
+      "project": true,
+      "provider": true,
+      "run_id": true,
+      "schema_version": true,
+      "session_id": true,
+      "task_revision": true,
+      "task_status": true,
+      "type": true
+    }
+  },
+  "status": {
+    "projection": "machine",
+    "fields": {
+      "run_id": true,
+      "schema_version": true,
+      "session_id": true,
+      "status": true,
+      "task_revision": true,
+      "task_status": true,
+      "type": true
+    }
+  },
+  "info": {
+    "projection": "machine",
+    "fields": {
+      "run_id": true,
+      "schema_version": true,
+      "seq": true,
+      "session_id": true,
+      "task_revision": true,
+      "task_status": true,
+      "text": true,
+      "type": true
+    }
+  },
+  "shell_request": {
+    "projection": "machine",
+    "fields": {
+      "command": true,
+      "command_chars": true,
+      "command_sha256": true,
+      "command_truncated": true,
+      "cwd": true,
+      "deferred_tool_calls": true,
+      "deferred_tool_count": true,
+      "id": true,
+      "project": true,
+      "project_rule_available": true,
+      "risk_detail": true,
+      "risk_label": true,
+      "risk_title": true,
+      "run_id": true,
+      "schema_version": true,
+      "session_id": true,
+      "session_rule_available": true,
+      "task_revision": true,
+      "task_status": true,
+      "tool_name": true,
+      "type": true
+    }
+  },
+  "turn": {
+    "projection": "machine",
+    "fields": {
+      "note": true,
+      "reasoning": true,
+      "run_id": true,
+      "schema_version": true,
+      "session_id": true,
+      "task_revision": true,
+      "task_status": true,
+      "turn": true,
+      "type": true
+    }
+  },
+  "reasoning": {
+    "projection": "machine",
+    "fields": {
+      "run_id": true,
+      "schema_version": true,
+      "session_id": true,
+      "task_revision": true,
+      "task_status": true,
+      "text": true,
+      "turn": true,
+      "type": true
+    }
+  },
+  "tool_started": {
+    "projection": "machine",
+    "fields": {
+      "activity": true,
+      "call_id": true,
+      "command": true,
+      "kind": true,
+      "parent_call_id": true,
+      "path": true,
+      "run_id": true,
+      "schema_version": true,
+      "session_id": true,
+      "task_revision": true,
+      "task_status": true,
+      "tool": true,
+      "tool_id": true,
+      "tool_name": true,
+      "turn": true,
+      "type": true
+    }
+  },
+  "tool": {
+    "projection": "machine",
+    "fields": {
+      "activity": true,
+      "call_id": true,
+      "changed": true,
+      "command": true,
+      "detail": true,
+      "detail_truncated": true,
+      "effect_ref": true,
+      "elapsed_ms": true,
+      "exit_code": true,
+      "failure": true,
+      "kind": true,
+      "ok": true,
+      "output_bytes": true,
+      "output_handle": true,
+      "output_sha256": true,
+      "output_stored_bytes": true,
+      "parent_call_id": true,
+      "path": true,
+      "phase": true,
+      "preview": true,
+      "result": true,
+      "run_id": true,
+      "schema_version": true,
+      "session_id": true,
+      "status": true,
+      "task_revision": true,
+      "task_status": true,
+      "tool": true,
+      "tool_id": true,
+      "tool_name": true,
+      "truncated": true,
+      "turn": true,
+      "type": true
+    }
+  },
+  "task_done": {
+    "projection": "machine",
+    "fields": {
+      "changed": true,
+      "changes": true,
+      "elapsed_ms": true,
+      "failure": true,
+      "final_delivery": true,
+      "ledger_path": true,
+      "max_turns": true,
+      "mode": true,
+      "provider": true,
+      "provider_failure": true,
+      "receipt": true,
+      "research": true,
+      "research_truncated": true,
+      "review": true,
+      "run_id": true,
+      "schema_version": true,
+      "session_id": true,
+      "stop_reason": true,
+      "summary": true,
+      "summary_truncated": true,
+      "task_revision": true,
+      "task_status": true,
+      "turns": true,
+      "type": true
+    }
+  },
+  "review": {
+    "projection": "machine",
+    "fields": {
+      "review": true,
+      "run_id": true,
+      "schema_version": true,
+      "session_id": true,
+      "task_revision": true,
+      "task_status": true,
+      "text": true,
+      "type": true
+    }
+  },
+  "headless_close": {
+    "projection": "machine",
+    "fields": {
+      "exit_code": true,
+      "run_id": true,
+      "schema_version": true,
+      "session_id": true,
+      "stop_reason": true,
+      "task_revision": true,
+      "task_status": true,
+      "type": true
+    }
+  },
+  "hello": {
+    "projection": "direct",
+    "fields": {
+      "after_commit_seq": true,
+      "database_id": true,
+      "status": true,
+      "type": true
+    },
+    "required": {
+      "database_id": true,
+      "after_commit_seq": true
+    }
+  }
+}

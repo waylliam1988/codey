@@ -1,4 +1,3 @@
-import { runtime } from './runtime';
 import { createIconSvg } from './icon_button';
 import { showCommandPermissions } from './command_permissions';
 import type { Message } from './types/domain';
@@ -6,6 +5,7 @@ import type { Message } from './types/domain';
 export function approvalRequest(
   message: Message,
   approve: (id: string, allowed: boolean, scope?: string) => unknown,
+  refresh?: (id: string) => unknown,
 ): HTMLElement {
   const row = document.createElement('div');
   row.className = 'msg shell';
@@ -56,7 +56,7 @@ export function approvalRequest(
     error.textContent =
       message.approvalSubmission === 'checking' ? 'Confirming approval status…' : 'Decision could not be confirmed';
     if (message.approvalSubmission === 'unconfirmed') {
-      const check = button('Check status', () => runtime.ShellApprovals.refresh(message.id || ''));
+      const check = button('Check status', () => refresh?.(message.id || ''));
       check.disabled = false;
       actions.append(check);
     }

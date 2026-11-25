@@ -1,10 +1,12 @@
+import { ConversationNav } from './conversation_nav';
+import { Composer } from './composer';
 import { readFileSync } from 'node:fs';
 import { expect, it, vi } from 'vitest';
-import { runtime } from './runtime';
+
 import './render';
 import './process';
-import './messages';
-import './conversation_ui';
+import { Messages } from './messages';
+import { ConversationUI } from './conversation_ui';
 import type { Session } from './types/domain';
 import type { ConversationUiDeps } from './conversation_ui';
 
@@ -18,8 +20,6 @@ it('mounts recent complete turns first and prepends history without replacing th
       disconnect() {}
     },
   );
-  runtime.Composer = { syncSession() {} };
-  runtime.ConversationNav = { init() {} };
   const session = {
     id: 'history',
     title: 'History',
@@ -28,12 +28,12 @@ it('mounts recent complete turns first and prepends history without replacing th
       { type: 'asst', text: '回答 ' + index },
     ]).flat(),
   } as Session;
-  runtime.Messages.init({
+  Messages.init({
     getActiveId: () => session.id,
     getRunningSessionId: () => null,
     currentProjectPath: () => '',
-  } as Parameters<typeof window.Messages.init>[0]);
-  runtime.ConversationUI.init({
+  } as Parameters<typeof Messages.init>[0]);
+  ConversationUI.init({
     activeSession: () => session,
     activeProject: () => null,
     getSessions: () => [session],
@@ -44,9 +44,9 @@ it('mounts recent complete turns first and prepends history without replacing th
     syncProviderUI() {},
     updateComposerContext() {},
     syncResearchUseProjectButton() {},
-    appendMessageNode: runtime.Messages.append,
+    appendMessageNode: Messages.append,
   } as unknown as ConversationUiDeps);
-  runtime.ConversationUI.renderChat();
+  ConversationUI.renderChat();
   const chat = document.getElementById('chat')!;
   const initial = chat.querySelectorAll('.msg.user').length;
   expect(initial).toBeLessThanOrEqual(50);

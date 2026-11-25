@@ -1,8 +1,10 @@
+import { readJsonObject } from './api/transport';
 import {
   APPROVAL_CONTINUATIONS,
   APPROVAL_DECISIONS,
   APPROVAL_EXECUTIONS,
   type ApprovalState,
+  type Message,
   type Session,
 } from './types/domain';
 
@@ -92,7 +94,7 @@ export function createApprovalController(deps: ApprovalDeps) {
         shellStatus: state.decision === 'deny' ? 'denied' : state.execution,
         executionId: state.execution_id,
       });
-    const message = {
+    const message: Extract<Message, { type: 'shell_approval_status' }> = {
       type: 'shell_approval_status',
       id: state.id,
       sessionId: session.id,
@@ -110,7 +112,7 @@ export function createApprovalController(deps: ApprovalDeps) {
       else session.messages.push(message);
     }
     if (request && state.execution === 'running') {
-      const running = {
+      const running: Extract<Message, { type: 'shell_result' }> = {
         type: 'shell_result',
         id: state.id,
         sessionId: session.id,
@@ -148,7 +150,7 @@ export function createApprovalController(deps: ApprovalDeps) {
         signal: AbortSignal.timeout(15000),
       });
       if (!response.ok) throw new Error('Approval state unavailable');
-      apply(await response.json());
+      apply(await readJsonObject(response));
     } catch {
       submission(id, 'unconfirmed');
     }
@@ -170,7 +172,7 @@ export function createApprovalController(deps: ApprovalDeps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, approved, ...(scope !== 'once' ? { scope } : {}) }),
       });
-      const data = await response.json();
+      const data = await readJsonObject(response);
       if (response.status === 400 && data.error) {
         const session = find(id);
         const request = session?.messages.find((m) => m.type === 'shell_request' && m.id === id);
@@ -216,10 +218,15 @@ export function createApprovalController(deps: ApprovalDeps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, scope }),
       });
-      const data = await response.json();
+      const data = await readJsonObject(response);
       permissionResult(
         id,
-        response.ok ? data : { remember_error: data.error || 'Permission could not be saved.', remember_scope: scope },
+        response.ok
+          ? data
+          : {
+              remember_error: typeof data.error === 'string' ? data.error : 'Permission could not be saved.',
+              remember_scope: scope,
+            },
       );
     } catch {
       permissionResult(id, {
@@ -241,7 +248,7 @@ export function createApprovalController(deps: ApprovalDeps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
       });
-      const data = await response.json();
+      const data = await readJsonObject(response);
       if (data.type === 'shell_approval_status') apply(data);
       else await refresh(id);
     } catch {

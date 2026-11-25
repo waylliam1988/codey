@@ -1,9 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { runtime } from './runtime';
-import './research_graph';
+
+import { ResearchGraph } from './research_graph';
 
 afterEach(() => {
-  runtime.ResearchGraph.dispose();
+  ResearchGraph.dispose();
   document.body.replaceChildren();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -91,7 +91,7 @@ it('wakes a settled graph during drag, keeps its neighbors moving and cleans up 
   );
   const panel = document.createElement('div');
   document.body.append(panel);
-  runtime.ResearchGraph.render(panel, { sessionId: 'chat' });
+  ResearchGraph.render(panel, { sessionId: 'chat' });
   await vi.waitFor(() => expect(frames.size).toBe(1));
   const step = () => {
     const [id, callback] = [...frames][0];

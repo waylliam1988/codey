@@ -40,7 +40,7 @@ it('replaces removed Work and replies while retaining new live output and the pr
       { type: 'user', entryId: 'old', runId: 'old-run' },
       { type: 'tool', runId: 'old-run' },
       { type: 'pause', runId: 'old-run' },
-      { type: 'asst', runId: 'new-run', streamId: 'new-stream', finalAnswer: false, text: 'new live answer' },
+      { type: 'asst' as const, runId: 'new-run', streamId: 'new-stream', finalAnswer: false, text: 'new live answer' },
     ],
   } as Session;
   const history = new ConversationHistory(() => {});
@@ -190,9 +190,9 @@ it('keeps approval and execution records above their final answer and before the
     ],
     [
       { id: 'u1', type: 'user', runId: 'one' },
-      { id: 'a1', type: 'asst', runId: 'one', text: 'first answer' },
+      { id: 'a1', type: 'asst' as const, runId: 'one', text: 'first answer' },
       { id: 'u2', type: 'user', runId: 'two' },
-      { id: 'a2', type: 'asst', runId: 'two', text: 'second answer' },
+      { id: 'a2', type: 'asst' as const, runId: 'two', text: 'second answer' },
     ],
   );
   expect(rows.map((row) => row.type)).toEqual([
@@ -210,19 +210,19 @@ it('reconciles live entries using task identity while preserving identical messa
   const rows = reconcileHistory(
     [
       { type: 'user', id: 'browser', text: 'same', attempts: [{ runId: 'task-2', state: 'done' }] },
-      { type: 'asst', runId: 'task-2', text: 'answer', finalAnswer: true },
+      { type: 'asst' as const, runId: 'task-2', text: 'answer', finalAnswer: true },
     ],
     [
       { id: 'entry-1', type: 'user', text: 'same', runId: 'task-1' },
       { id: 'entry-2', type: 'user', text: 'same', runId: 'task-2' },
-      { id: 'entry-3', type: 'asst', text: 'answer', runId: 'task-2' },
+      { id: 'entry-3', type: 'asst' as const, text: 'answer', runId: 'task-2' },
     ],
   );
   expect(rows.map((row) => row.id)).toEqual(['entry-1', 'entry-2', 'entry-3']);
 });
 
 it('drops replaced branch entries and retains a transient partial reply', () => {
-  const partial = { type: 'asst', text: 'streaming', finalAnswer: false, runId: 'running' };
+  const partial = { type: 'asst' as const, text: 'streaming', finalAnswer: false, runId: 'running' };
   expect(
     reconcileHistory(
       [{ id: 'old', entryId: 'old', type: 'user' }, partial],
@@ -233,7 +233,7 @@ it('drops replaced branch entries and retains a transient partial reply', () => 
 
 it('does not duplicate a streamed answer when its durable entry arrives first', () => {
   const streamed: Message = {
-    type: 'asst',
+    type: 'asst' as const,
     runId: 'run-1',
     streamId: 'stream-1',
     streamState: 'partial',
@@ -245,7 +245,7 @@ it('does not duplicate a streamed answer when its durable entry arrives first', 
       [streamed],
       [
         { id: 'entry-user', type: 'user', runId: 'run-1', text: 'request' },
-        { id: 'entry-answer', type: 'asst', runId: 'run-1', text: 'partial' },
+        { id: 'entry-answer', type: 'asst' as const, runId: 'run-1', text: 'partial' },
       ],
     ),
   ).toEqual([{ id: 'entry-user', type: 'user', runId: 'run-1', text: 'request', entryId: 'entry-user' }, streamed]);
@@ -253,18 +253,27 @@ it('does not duplicate a streamed answer when its durable entry arrives first', 
 
 it('does not let empty tool-turn streams suppress the restored final answer', () => {
   const rows = reconcileHistory(
-    [{ type: 'asst', runId: 'run', streamId: 'tool-turn', text: '\n\n', finalAnswer: false, streamState: 'complete' }],
-    [{ id: 'answer', type: 'asst', runId: 'run', text: 'The final answer.' }],
+    [
+      {
+        type: 'asst' as const,
+        runId: 'run',
+        streamId: 'tool-turn',
+        text: '\n\n',
+        finalAnswer: false,
+        streamState: 'complete',
+      },
+    ],
+    [{ id: 'answer', type: 'asst' as const, runId: 'run', text: 'The final answer.' }],
   );
   expect(rows.find((row) => row.entryId === 'answer')?.text).toBe('The final answer.');
 });
 
 it('preserves confirmed stream identity while taking answer text from durable history', () => {
   const rows = reconcileHistory(
-    [{ type: 'asst', runId: 'run', entryId: 'answer', streamId: 'stream', finalAnswer: true, text: 'old' }],
+    [{ type: 'asst' as const, runId: 'run', entryId: 'answer', streamId: 'stream', finalAnswer: true, text: 'old' }],
     [
-      { id: 'answer', type: 'asst', runId: 'run', text: 'canonical' },
-      { id: 'other-answer', type: 'asst', runId: 'run', text: 'another part' },
+      { id: 'answer', type: 'asst' as const, runId: 'run', text: 'canonical' },
+      { id: 'other-answer', type: 'asst' as const, runId: 'run', text: 'another part' },
     ],
   );
   expect(rows[0]).toMatchObject({ entryId: 'answer', streamId: 'stream', streamState: 'complete', text: 'canonical' });
@@ -274,14 +283,21 @@ it('preserves confirmed stream identity while taking answer text from durable hi
 it('does not guess a stream identity across runs, commentary, or ambiguous answer parts', () => {
   const rows = reconcileHistory(
     [
-      { type: 'asst', runId: 'other', streamId: 'other-stream', finalAnswer: true, text: 'same' },
-      { type: 'asst', runId: 'run', streamId: 'commentary', finalAnswer: true, contentRole: 'commentary', text: '' },
-      { type: 'asst', runId: 'run', streamId: 'final', finalAnswer: true, text: 'same' },
+      { type: 'asst' as const, runId: 'other', streamId: 'other-stream', finalAnswer: true, text: 'same' },
+      {
+        type: 'asst' as const,
+        runId: 'run',
+        streamId: 'commentary',
+        finalAnswer: true,
+        contentRole: 'commentary',
+        text: '',
+      },
+      { type: 'asst' as const, runId: 'run', streamId: 'final', finalAnswer: true, text: 'same' },
     ],
     [
-      { id: 'part-1', type: 'asst', runId: 'run', text: 'same' },
-      { id: 'part-2', type: 'asst', runId: 'run', text: 'same' },
-      { id: 'different-run', type: 'asst', runId: 'new', text: 'same' },
+      { id: 'part-1', type: 'asst' as const, runId: 'run', text: 'same' },
+      { id: 'part-2', type: 'asst' as const, runId: 'run', text: 'same' },
+      { id: 'different-run', type: 'asst' as const, runId: 'new', text: 'same' },
     ],
   );
   expect(rows.filter((row) => row.entryId).every((row) => !row.streamId)).toBe(true);

@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Iterable, Mapping
+from importlib.resources import files
 from typing import Protocol, runtime_checkable
 
 from codey.agents.shell_approval import shell_command_event_fields
 from codey.providers.diagnostics import sanitize_failure_facts
 from codey.runtime.observe.events import MAX_EVENT_RESULT_CHARS, MAX_EVENT_TEXT_CHARS, clip_event_text
+from codey.types.json_value import decode_json_object
 from codey.utils.refs import coerce_int, strict_exit_code
 
 SCHEMA_VERSION = 1
@@ -223,13 +226,43 @@ def machine_event_payload(event: object) -> dict[str, object] | None:
     return None
 
 
+def _public_specs() -> dict[str, tuple[str, frozenset[str]]]:
+    raw: object = json.loads(files("codey.app").joinpath("public_events.json").read_text(encoding="utf-8"))
+    specs: dict[str, tuple[str, frozenset[str]]] = {}
+    for kind, item in decode_json_object(raw).items():
+        spec = decode_json_object(item)
+        projection = spec.get("projection")
+        if projection not in ("machine", "direct") or not isinstance(projection, str):
+            raise ValueError(f"Invalid public event projection for {kind}")
+        specs[kind] = projection, frozenset(decode_json_object(spec.get("fields")))
+    return specs
+
+
+_PUBLIC_SPECS = _public_specs()
+
+
 def browser_event_payload(event: object) -> dict[str, object] | None:
-    """Keep bounded inspection content on the browser's live and replay stream."""
-    payload = machine_event_payload(event)
-    if payload is None or not isinstance(event, dict):
-        return payload
+    """Project and select the fields declared by the public browser contract."""
+    if not isinstance(event, dict):
+        return None
     event_fields: Mapping[object, object] = event
-    if event_fields.get("type") == "task_done":
+    kind = event_fields.get("type")
+    if not isinstance(kind, str) or kind not in _PUBLIC_SPECS:
+        return None
+    projection, fields = _PUBLIC_SPECS[kind]
+    if projection == "direct":
+        return {key: event_fields[key] for key in fields if key in event_fields}
+    payload = machine_event_payload(event_fields)
+    if payload is None:
+        return None
+    _add_browser_details(kind, event_fields, payload)
+    return {key: payload[key] for key in fields if key in payload}
+
+
+def _add_browser_details(
+    kind: str, event_fields: Mapping[object, object], payload: dict[str, object]
+) -> None:
+    if kind == "task_done":
         elapsed = event_fields.get("elapsed_ms")
         if type(elapsed) is int:
             payload["elapsed_ms"] = max(0, elapsed)
@@ -245,40 +278,44 @@ def browser_event_payload(event: object) -> dict[str, object] | None:
             payload["research"] = _bounded_research_value({key: value for key, value in research_fields.items() if key in fields}, budget)
             if budget[1]:
                 payload["research_truncated"] = True
-    if event_fields.get("type") not in {"tool", "tool_started"}:
-        return payload
+    if kind not in {"tool", "tool_started"}:
+        return
     payload["kind"] = clip_event_text(event_fields.get("kind") or "", 80)
     for key in ('call_id', 'parent_call_id'):
         value = event_fields.get(key)
         if isinstance(value, str) and value:
             payload[key] = clip_event_text(value, 512)
-    if event_fields.get("type") == "tool_started":
-        return payload
+    if kind == "tool_started":
+        return
     detail = event_fields.get("detail")
     if isinstance(detail, str):
         payload["detail"] = clip_event_text(detail, 64_000)
         payload["detail_truncated"] = event_fields.get("detail_truncated") is True or len(detail) > 64_000
     preview = event_fields.get("preview")
     if isinstance(preview, dict):
-        bounded: dict[str, object] = {}
-        for key in ("additions", "deletions", "line_start", "line_end", "matches"):
-            value = preview.get(key)
-            if type(value) is int and 0 <= value <= 2**53 - 1:
-                bounded[key] = value
-        for key in ("diff_truncated", "diff_unavailable", "has_more"):
-            value = preview.get(key)
-            if type(value) is bool:
-                bounded[key] = value
-        query = preview.get("query")
-        if isinstance(query, str):
-            bounded["query"] = clip_event_text(query, 500)
-        diff = preview.get("diff")
-        if isinstance(diff, str):
-            bounded["diff"] = clip_event_text(diff, 64_000)
-            if len(diff) > 64_000:
-                bounded["diff_truncated"] = True
-        payload["preview"] = bounded
-    return payload
+        preview_fields: Mapping[object, object] = preview
+        payload["preview"] = _bounded_tool_preview(preview_fields)
+
+
+def _bounded_tool_preview(preview: Mapping[object, object]) -> dict[str, object]:
+    bounded: dict[str, object] = {}
+    for key in ("additions", "deletions", "line_start", "line_end", "matches"):
+        value = preview.get(key)
+        if type(value) is int and 0 <= value <= 2**53 - 1:
+            bounded[key] = value
+    for key in ("diff_truncated", "diff_unavailable", "has_more"):
+        value = preview.get(key)
+        if type(value) is bool:
+            bounded[key] = value
+    query = preview.get("query")
+    if isinstance(query, str):
+        bounded["query"] = clip_event_text(query, 500)
+    diff = preview.get("diff")
+    if isinstance(diff, str):
+        bounded["diff"] = clip_event_text(diff, 64_000)
+        if len(diff) > 64_000:
+            bounded["diff_truncated"] = True
+    return bounded
 
 
 def _bounded_research_value(value: object, budget: list[int], depth: int = 0) -> object:

@@ -12,9 +12,8 @@ afterEach(() => {
 });
 
 it('OAuth completion preserves unsaved model checkboxes and preference revision', async () => {
-  const { runtime } = await import('./runtime');
-  await import('./models');
-  await import('./model_settings');
+  const { Models } = await import('./models');
+  const { ModelSettings } = await import('./model_settings');
   document.body.innerHTML = `<button id="model-settings-save"></button><button id="model-settings-cancel"></button>
     <button id="model-settings-retry"></button><div id="model-settings-error"></div>
     <div id="model-settings-loading"></div><div id="model-settings-body"><div id="local-connection-editor"></div>
@@ -79,8 +78,8 @@ it('OAuth completion preserves unsaved model checkboxes and preference revision'
       return { ok: true, json: async () => structuredClone(state) };
     }),
   );
-  runtime.ModelSettings.init({ close: vi.fn() });
-  await runtime.ModelSettings.open();
+  ModelSettings.init({ close: vi.fn() });
+  await ModelSettings.open();
   document.querySelector<HTMLInputElement>('[aria-label="Use Two"]')?.click();
   const save = document.getElementById('model-settings-save') as HTMLButtonElement;
   expect(save.disabled).toBe(false);
@@ -89,18 +88,17 @@ it('OAuth completion preserves unsaved model checkboxes and preference revision'
   expect(document.querySelector<HTMLInputElement>('[aria-label="Use Two"]')?.checked).toBe(true);
   expect(document.querySelector<HTMLInputElement>('[aria-label="Use Three"]')?.checked).toBe(false);
   expect(save.disabled).toBe(false);
-  expect(runtime.Models.snapshot().preferences.revision).toBe(7);
+  expect(Models.snapshot().preferences.revision).toBe(7);
   expect(document.querySelector('.connection-auth')?.textContent).toContain('Connected');
   save.click();
   await vi.advanceTimersByTimeAsync(1);
   expect(sent[0]).toEqual({ base_revision: 7, sources: { fixture: { enabled: true, models: ['one', 'two'] } } });
-  runtime.ModelSettings.close();
+  ModelSettings.close();
 });
 
 it('merges auth revision independently of catalog time and retains full model capabilities', async () => {
-  const { runtime } = await import('./runtime');
-  await import('./models');
-  runtime.Models.applySettings({
+  const { Models } = await import('./models');
+  Models.applySettings({
     preferences: { revision: 4, sources: {} },
     in_use: [],
     sources: [
@@ -113,29 +111,29 @@ it('merges auth revision independently of catalog time and retains full model ca
       },
     ],
   });
-  runtime.Models.observeCatalog({
+  Models.observeCatalog({
     id: 'fixture',
     checked_at: 10,
     models: [],
     state: 'unavailable',
     authentication: { kind: 'oauth_device', state: 'signed_out', revision: 6, actions: ['login'] },
   });
-  let source = runtime.Models.snapshot().sources[0];
+  let source = Models.snapshot().sources[0];
   expect(source.models[0].thinking_default_allowed).toBe(true);
-  expect(source.authentication.state).toBe('signed_out');
+  expect(source.authentication?.state).toBe('signed_out');
   expect(source.state).toBe('unavailable');
-  runtime.Models.observeCatalog({
+  Models.observeCatalog({
     id: 'fixture',
     checked_at: 110,
     models: [{ id: 'new' }],
     state: 'ready',
     authentication: { kind: 'oauth_device', state: 'ready', revision: 3, actions: ['logout'] },
   });
-  source = runtime.Models.snapshot().sources[0];
+  source = Models.snapshot().sources[0];
   expect(source.models[0].id).toBe('new');
-  expect(source.authentication.revision).toBe(6);
+  expect(source.authentication?.revision).toBe(6);
   expect(source.state).toBe('unavailable');
-  runtime.Models.observeCatalog(
+  Models.observeCatalog(
     JSON.parse(
       JSON.stringify({
         id: 'fixture',
@@ -146,18 +144,17 @@ it('merges auth revision independently of catalog time and retains full model ca
       }),
     ),
   );
-  source = runtime.Models.snapshot().sources[0];
+  source = Models.snapshot().sources[0];
   expect(source.models[0].id).toBe('latest');
-  expect(source.authentication.revision).toBe(6);
+  expect(source.authentication?.revision).toBe(6);
   expect(source.state).toBe('unavailable');
 });
 
 it.each(['public', null, { kind: 'oauth_device', state: 'ready', revision: 1 }])(
   'ignores non-interactive authentication in an initial settings response: %j',
   async (authentication) => {
-    const { runtime } = await import('./runtime');
-    await import('./models');
-    runtime.Models.applySettings(
+    const { Models } = await import('./models');
+    Models.applySettings(
       JSON.parse(
         JSON.stringify({
           preferences: { revision: 1, sources: {} },
@@ -166,15 +163,14 @@ it.each(['public', null, { kind: 'oauth_device', state: 'ready', revision: 1 }])
         }),
       ),
     );
-    expect(runtime.Models.snapshot().sources[0].authentication).toBeUndefined();
-    expect(runtime.Models.snapshot().sources[0].models).toEqual([{ id: 'one' }]);
+    expect(Models.snapshot().sources[0].authentication).toBeUndefined();
+    expect(Models.snapshot().sources[0].models).toEqual([{ id: 'one' }]);
   },
 );
 
 it('opens all cached sources after a catalog supplies a transport authentication label', async () => {
-  const { runtime } = await import('./runtime');
-  await import('./models');
-  await import('./model_settings');
+  const { Models } = await import('./models');
+  const { ModelSettings } = await import('./model_settings');
   document.body.innerHTML = `<button id="model-settings-save"></button><button id="model-settings-cancel"></button>
     <button id="model-settings-retry"></button><div id="model-settings-error"></div>
     <div id="model-settings-loading"></div><div id="model-settings-body"><div id="local-connection-editor"></div>
@@ -198,16 +194,16 @@ it('opens all cached sources after a catalog supplies a transport authentication
     sources,
     in_use: [],
   };
-  runtime.Models.applySettings(state);
+  Models.applySettings(state);
   // /api/api_models and /api/model_catalog include this transport label.
-  runtime.Models.observeCatalog(JSON.parse(JSON.stringify({ ...sources[2], authentication: 'public' })));
+  Models.observeCatalog(JSON.parse(JSON.stringify({ ...sources[2], authentication: 'public' })));
   let finishRefresh!: (response: unknown) => void;
   vi.stubGlobal(
     'fetch',
     vi.fn(() => new Promise((resolve) => (finishRefresh = resolve))),
   );
-  runtime.ModelSettings.init({ close: vi.fn() });
-  const opening = runtime.ModelSettings.open();
+  ModelSettings.init({ close: vi.fn() });
+  const opening = ModelSettings.open();
   expect(document.getElementById('model-source-list')?.hidden).toBe(false);
   expect(Array.from(document.querySelectorAll<HTMLElement>('.model-source'), (node) => node.dataset.sourceId)).toEqual([
     'websites',
@@ -221,5 +217,5 @@ it('opens all cached sources after a catalog supplies a transport authentication
   await opening;
   expect(document.getElementById('model-settings-loading')?.hidden).toBe(true);
   expect(document.getElementById('model-settings-error')?.textContent).toBe('');
-  runtime.ModelSettings.close();
+  ModelSettings.close();
 });

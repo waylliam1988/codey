@@ -19,23 +19,6 @@ if TYPE_CHECKING:
 
     from codey.app.context import AppContext
 
-PUBLIC_FIELDS = {
-    "conversation_inventory_changed": frozenset({"type"}),
-    "durable_commit": frozenset({"type", "session_id", "commit_seq", "kind", "committed_at", "schema_version", "entry_ids", "task_id", "revision", "head_entry_id", "run_id", "submission_id", "input_id", "deleted", "branch_entry_id"}),
-    "resync_required": frozenset({"type", "reason", "cursor", "dropped"}),
-    "reply": frozenset({"type", "session_id", "run_id", "text", "turn"}),
-    "reply_stream": frozenset({"type", "session_id", "run_id", "text", "delta", "turn", "done", "generation", "stream_id", "sequence", "state"}),
-    "conversation_input": frozenset({"type", "session_id", "input"}),
-    "user_question": frozenset({"type", "session_id", "run_id", "question", "id", "text", "questions"}),
-    "user_question_state": frozenset({"type", "session_id", "question"}),
-    "providers": frozenset({"type", "providers", "default", "probe_error"}),
-    "shell_result": frozenset({"type", "session_id", "run_id", "id", "command", "command_preview", "command_sha256", "command_chars", "command_truncated", "cwd", "project", "status", "output", "exit_code", "execution_id", "approved", "error", "ok", "truncated", "failure"}),
-    "shell_approval_status": frozenset({"type", "session_id", "run_id", "source_run_id", "id", "approval_id", "decision", "execution", "continuation", "execution_id", "continuation_run_id", "revision", "error", "code"}),
-    "teach_request": frozenset({"type", "session_id", "run_id", "question", "text", "id", "options"}),
-    "ghost_post_turn_warning": frozenset({"type", "session_id", "run_id", "text", "error"}),
-}
-PUBLIC_FIELDS["durable_commit"] |= {"edited_entry_id", "replaced_run_ids", "path_generation"}
-PUBLIC_FIELDS["shell_result"] |= {"call_id"}
 
 
 class PrivateEvent(Exception):
@@ -117,12 +100,8 @@ class PublicEventFeed:
             return self.cache[key]
         public = browser_event_payload(event)
         if public is None:
-            fields = PUBLIC_FIELDS.get(str(event.get("type")))
-            if fields is None:
-                raise PrivateEvent
-            public = {key: value for key, value in event.items() if key in fields}
-        payload = public
-        body = json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode()
+            raise PrivateEvent
+        body = json.dumps(public, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode()
         if len(body) > self.max_frame_bytes:
             raise FeedOverflow("Public event exceeds frame budget")
         self.encodes += 1
@@ -233,7 +212,7 @@ def stream(handler: BaseHTTPRequestHandler, ctx: AppContext, feed: PublicEventFe
             for record in replay_commits(ctx.durable, commit_cursor):
                 encoded = feed.encode(record.to_payload())
                 commit_cursor = record.sequence
-                _write(handler, encoded, subscriber.cutoff, commit_cursor)
+                _write(handler, encoded, 0, commit_cursor)
             for seq, event in ctx.replay_events_after(event_cursor, max_event_id=subscriber.cutoff):
                 if event.get("type") == "durable_commit" and _commit_cursor(event) <= commit_cursor:
                     continue

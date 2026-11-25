@@ -1,3 +1,5 @@
+import { isRecord } from './domain/display_values';
+import { readJsonObject, requestResponse } from './api/transport';
 export interface DocumentScope {
   sessionId: string;
   workspace?: string;
@@ -9,7 +11,7 @@ async function read(
   path: string,
   representation: 'reference' | 'image',
 ): Promise<Record<string, unknown>> {
-  const response = await fetch('/api/documents/read', {
+  const response = await requestResponse('/api/documents/read', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -20,8 +22,15 @@ async function read(
       representation,
     }),
   });
-  const data = await response.json();
-  if (!response.ok || data.ok !== true) throw new Error(data.message || data.error || 'Could not read file');
+  const data = await readJsonObject(response);
+  if (!response.ok || data.ok !== true)
+    throw new Error(
+      typeof data.message === 'string'
+        ? data.message
+        : typeof data.error === 'string'
+          ? data.error
+          : 'Could not read file',
+    );
   return data;
 }
 
@@ -135,7 +144,7 @@ export async function hydrateDocumentContent(host: HTMLElement, scope: DocumentS
     jobs.push(() => loadImage(host, image, scope));
   await Promise.all(
     Array.from({ length: Math.min(4, jobs.length) }, async () => {
-      let job;
+      let job: (() => Promise<void>) | undefined;
       while ((job = jobs.shift())) await job();
     }),
   );

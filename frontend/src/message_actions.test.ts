@@ -1,16 +1,19 @@
+import { ConversationUI } from './conversation_ui';
+import { Composer } from './composer';
 import { expect, it, vi } from 'vitest';
 import './render';
 import './process';
-import './messages';
-import './research_runs';
+import { Messages } from './messages';
+import { ResearchRuns } from './research_runs';
 import type { Session } from './types/domain';
-import { runtime } from './runtime';
 
-function editDeps(): Parameters<typeof window.Messages.init>[0] {
+function editDeps(): Parameters<typeof Messages.init>[0] {
   return {
     getActiveId: () => 'chat',
     getRunningSessionId: () => null,
     isSessionRunning: () => false,
+    historyRevision: () => 12,
+    composer: { editMessage: vi.fn(), recoveryActions: () => [] },
     openDocument: vi.fn(),
     statusRow: () => document.createElement('div'),
     currentProjectPath: () => '',
@@ -24,34 +27,36 @@ function editDeps(): Parameters<typeof window.Messages.init>[0] {
 it.each(['', ' \n\n ', '[reference]: https://example.com'])(
   'keeps an empty stream out of layout and reveals later text: %j',
   (text) => {
-    window.Messages.init({
+    Messages.init({
+      ...editDeps(),
       getActiveId: () => 'chat',
       getRunningSessionId: () => null,
       currentProjectPath: () => '',
-    } as Parameters<typeof window.Messages.init>[0]);
+    });
     const host = document.createElement('div');
-    const message = { type: 'asst', streamId: 'stream', runId: 'run', finalAnswer: false, text };
-    window.Messages.append(host, message);
+    const message = { type: 'asst' as const, streamId: 'stream', runId: 'run', finalAnswer: false, text };
+    Messages.append(host, message);
     const node = host.querySelector<HTMLElement>('.msg.asst')!;
     expect(node.hidden).toBe(true);
-    expect(window.Messages.updateReply(host, { ...message, text: 'Now there is an answer.' })).toBe(true);
+    expect(Messages.updateReply(host, { ...message, text: 'Now there is an answer.' })).toBe(true);
     expect(host.querySelector('.msg.asst')).toBe(node);
     expect(node.hidden).toBe(false);
     expect(node.textContent).toContain('Now there is an answer.');
-    window.Messages.updateReply(host, message);
+    Messages.updateReply(host, message);
     expect(node.hidden).toBe(true);
   },
 );
 
 it('keeps an interrupted stream notice visible even when it has no prose', () => {
-  window.Messages.init({
+  Messages.init({
+    ...editDeps(),
     getActiveId: () => 'chat',
     getRunningSessionId: () => null,
     currentProjectPath: () => '',
-  } as Parameters<typeof window.Messages.init>[0]);
+  });
   const host = document.createElement('div');
-  window.Messages.append(host, {
-    type: 'asst',
+  Messages.append(host, {
+    type: 'asst' as const,
     streamId: 'stream',
     runId: 'run',
     text: '',
@@ -62,25 +67,22 @@ it('keeps an interrupted stream notice visible even when it has no prose', () =>
 });
 
 it('offers copy and edit on a user message without a fork action', () => {
-  window.Messages.init({ getActiveId: () => 'chat', getRunningSessionId: () => null } as Parameters<
-    typeof window.Messages.init
-  >[0]);
+  Messages.init({ ...editDeps(), getActiveId: () => 'chat', getRunningSessionId: () => null });
   const host = document.createElement('div');
-  window.Messages.append(host, { type: 'user', id: 'u', entryId: 'entry', text: 'Question' });
+  Messages.append(host, { type: 'user', id: 'u', entryId: 'entry', text: 'Question' });
   const actions = [...host.querySelectorAll<HTMLButtonElement>('.message-actions button')];
   expect(actions.map((button) => button.getAttribute('aria-label'))).toEqual(['Copy message', 'Edit message']);
   expect(actions[1].querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 21 21');
 });
 
 it('edits a user message inline and submits the edited text', async () => {
-  runtime.ConversationUI = { historyRevision: () => 12 } as typeof runtime.ConversationUI;
   const editMessage = vi.fn().mockResolvedValue(true);
-  window.Composer = { editMessage } as unknown as typeof window.Composer;
-  window.Messages.init({
+  Messages.init({
     ...editDeps(),
-  } as Parameters<typeof window.Messages.init>[0]);
+    composer: { editMessage, recoveryActions: () => [] },
+  });
   const host = document.createElement('div');
-  window.Messages.append(host, { type: 'user', id: 'u', entryId: 'entry-u', text: '原始请求' });
+  Messages.append(host, { type: 'user', id: 'u', entryId: 'entry-u', text: '原始请求' });
   host.querySelector<HTMLButtonElement>('.msg-edit')!.click();
   const input = host.querySelector<HTMLTextAreaElement>('.msg-edit-input')!;
   input.value = '修改后的请求';
@@ -94,32 +96,29 @@ it.each([
   { primary: 'chat', busy: true, opens: false },
   { primary: 'other-chat', busy: true, opens: false },
 ])('scopes editing to the target chat running state: %j', ({ primary, busy, opens }) => {
-  runtime.ConversationUI = { historyRevision: () => 12 } as typeof runtime.ConversationUI;
   const isSessionRunning = vi.fn((id: string) => id === 'chat' && busy);
-  window.Messages.init({
+  Messages.init({
     ...editDeps(),
     getActiveId: () => 'chat',
     getRunningSessionId: () => primary,
     isSessionRunning,
-  } as Parameters<typeof window.Messages.init>[0]);
+  });
   const host = document.createElement('div');
-  window.Messages.append(host, { type: 'user', id: 'u', entryId: 'entry-u', sessionId: 'chat', text: 'Original' });
+  Messages.append(host, { type: 'user', id: 'u', entryId: 'entry-u', sessionId: 'chat', text: 'Original' });
   host.querySelector<HTMLButtonElement>('.msg-edit')!.click();
   expect(!!host.querySelector('.msg-edit-input')).toBe(opens);
   expect(isSessionRunning).toHaveBeenCalledWith('chat');
 });
 
 it('cancels inline message editing without changing the original', () => {
-  runtime.ConversationUI = { historyRevision: () => 12 } as typeof runtime.ConversationUI;
-  window.Composer = { editMessage: vi.fn() } as unknown as typeof window.Composer;
-  window.Messages.init({
+  Messages.init({
     ...editDeps(),
     getActiveId: () => 'chat',
     getRunningSessionId: () => null,
     isSessionRunning: () => false,
-  } as Parameters<typeof window.Messages.init>[0]);
+  });
   const host = document.createElement('div');
-  window.Messages.append(host, { type: 'user', id: 'u', entryId: 'entry-u', text: '原始请求' });
+  Messages.append(host, { type: 'user', id: 'u', entryId: 'entry-u', text: '原始请求' });
   host.querySelector<HTMLButtonElement>('.msg-edit')!.click();
   host.querySelector<HTMLButtonElement>('.msg-edit-editor .text-btn')!.click();
   expect(host.querySelector('.body')?.textContent).toBe('原始请求');
@@ -127,14 +126,15 @@ it('cancels inline message editing without changing the original', () => {
 });
 
 it('retains an interrupted response locally and removes that notice on final settlement', () => {
-  window.Messages.init({
+  Messages.init({
+    ...editDeps(),
     getActiveId: () => 'chat',
     getRunningSessionId: () => null,
     currentProjectPath: () => '',
-  } as Parameters<typeof window.Messages.init>[0]);
+  });
   const host = document.createElement('div');
-  window.Messages.append(host, {
-    type: 'asst',
+  Messages.append(host, {
+    type: 'asst' as const,
     runId: 'r',
     streamId: 's',
     streamState: 'interrupted',
@@ -143,8 +143,8 @@ it('retains an interrupted response locally and removes that notice on final set
   expect(host.textContent).toContain('Response interrupted · partial text retained');
   expect(host.querySelector('.body')?.textContent).toBe('retained partial');
   expect([...host.querySelectorAll('button')].some((button) => /retry/i.test(button.textContent || ''))).toBe(false);
-  window.Messages.updateReply(host, {
-    type: 'asst',
+  Messages.updateReply(host, {
+    type: 'asst' as const,
     runId: 'r',
     streamId: 's',
     streamState: 'complete',
@@ -157,25 +157,32 @@ it('retains an interrupted response locally and removes that notice on final set
 
 it('adds the canonical fork action when a mounted streaming answer settles, without duplicate controls', () => {
   const open = vi.fn();
-  runtime.ChatFork = { open };
-  window.Messages.init({
+  Messages.init({
+    ...editDeps(),
+    chatFork: { open },
     getActiveId: () => 'chat',
     getRunningSessionId: () => null,
     currentProjectPath: () => '',
-  } as Parameters<typeof window.Messages.init>[0]);
+  });
   const host = document.createElement('div');
-  window.Messages.append(host, { type: 'asst', runId: 'run', streamId: 'stream', finalAnswer: false, text: 'Answer' });
+  Messages.append(host, {
+    type: 'asst' as const,
+    runId: 'run',
+    streamId: 'stream',
+    finalAnswer: false,
+    text: 'Answer',
+  });
   const node = host.querySelector('.msg.asst');
   const final = {
-    type: 'asst',
+    type: 'asst' as const,
     runId: 'run',
     streamId: 'stream',
     finalAnswer: true,
     entryId: 'entry-final',
     text: 'Answer',
   };
-  window.Messages.updateReply(host, final);
-  window.Messages.updateReply(host, final);
+  Messages.updateReply(host, final);
+  Messages.updateReply(host, final);
   expect(host.querySelector('.msg.asst')).toBe(node);
   const actions = [...host.querySelectorAll<HTMLButtonElement>('.message-actions button')];
   expect(actions.map((button) => button.getAttribute('aria-label'))).toEqual(['Copy message', 'Fork chat from here']);
@@ -187,19 +194,18 @@ it.each([undefined, 'terminal:run:answer'])(
   'attaches the committed identity after an empty tool-turn stream: %s',
   (answerId) => {
     const open = vi.fn();
-    runtime.ChatFork = { open };
-    window.Messages.init(editDeps());
+    Messages.init({ ...editDeps(), ...editDeps(), chatFork: { open } });
     const host = document.createElement('div');
-    window.Messages.append(host, { type: 'asst', runId: 'run', streamId: 'tool-turn', finalAnswer: false, text: '' });
-    window.Messages.append(host, {
-      type: 'asst',
+    Messages.append(host, { type: 'asst' as const, runId: 'run', streamId: 'tool-turn', finalAnswer: false, text: '' });
+    Messages.append(host, {
+      type: 'asst' as const,
       runId: 'run',
       streamId: 'answer-stream',
       finalAnswer: false,
       text: 'Answer',
     });
-    window.Messages.updateReply(host, {
-      type: 'asst',
+    Messages.updateReply(host, {
+      type: 'asst' as const,
       runId: 'run',
       streamId: 'answer-stream',
       finalAnswer: true,
@@ -209,7 +215,7 @@ it.each([undefined, 'terminal:run:answer'])(
     });
     const finalNode = host.querySelector('[data-stream-id="answer-stream"]');
     const canonical = {
-      type: 'asst',
+      type: 'asst' as const,
       runId: 'run',
       entryId: 'saved-answer',
       finalAnswer: true,
@@ -217,8 +223,8 @@ it.each([undefined, 'terminal:run:answer'])(
       contentRole: 'final' as const,
       text: 'Answer',
     };
-    expect(window.Messages.updateAnswerIdentity(host, canonical)).toBe(true);
-    expect(window.Messages.updateAnswerIdentity(host, canonical)).toBe(true);
+    expect(Messages.updateAnswerIdentity(host, canonical)).toBe(true);
+    expect(Messages.updateAnswerIdentity(host, canonical)).toBe(true);
     expect(host.querySelector('[data-stream-id="answer-stream"]')).toBe(finalNode);
     expect(host.querySelector('[data-stream-id="tool-turn"] .msg-fork')).toBeNull();
     expect(finalNode?.querySelectorAll('.msg-fork')).toHaveLength(1);
@@ -228,13 +234,13 @@ it.each([undefined, 'terminal:run:answer'])(
 );
 
 it('matches each settled answer by identity when a run has multiple answer nodes', () => {
-  window.Messages.init(editDeps());
+  Messages.init(editDeps());
   const host = document.createElement('div');
   for (const answerId of ['first', 'second'])
-    window.Messages.append(host, { type: 'asst', runId: 'run', answerId, text: answerId, finalAnswer: true });
+    Messages.append(host, { type: 'asst' as const, runId: 'run', answerId, text: answerId, finalAnswer: true });
   expect(
-    window.Messages.updateAnswerIdentity(host, {
-      type: 'asst',
+    Messages.updateAnswerIdentity(host, {
+      type: 'asst' as const,
       runId: 'run',
       answerId: 'second',
       entryId: 'entry-second',
@@ -289,8 +295,9 @@ it('opens the research report belonging to the message run', () => {
     },
   ];
   const openDocument = vi.fn();
-  window.ResearchRuns.init({ getSessions: () => sessions });
-  window.Messages.init({
+  ResearchRuns.init({ getSessions: () => sessions });
+  Messages.init({
+    ...editDeps(),
     getActiveId: () => 'chat',
     getRunningSessionId: () => null,
     openDocument,
@@ -298,14 +305,13 @@ it('opens the research report belonging to the message run', () => {
     attachCurrentChatToPickedProject: vi.fn(),
     statusRow: () => document.createElement('div'),
     currentProjectPath: () => '',
-    openChangesDrawer: vi.fn(),
     approveCommand: vi.fn(),
     continueTask: vi.fn(),
     resumeTeaching: vi.fn(),
-  } as Parameters<typeof window.Messages.init>[0]);
+  });
   const host = document.createElement('div');
 
-  window.Messages.append(host, { type: 'research_done', sessionId: 'chat', runId: 'run_a', text: 'Research A' });
+  Messages.append(host, { type: 'research_done', sessionId: 'chat', runId: 'run_a', text: 'Research A' });
   host.querySelector<HTMLButtonElement>('.artifact-open')!.click();
 
   expect(openDocument).toHaveBeenCalledWith('chat', { kind: 'research', note_id: 'note_a' });

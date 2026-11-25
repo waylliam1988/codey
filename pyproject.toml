@@ -58,6 +58,7 @@ codey = [
     "web/assets/*.ttf",
     "web/frontend-build.json",
 ]
+"codey.app" = ["public_events.json"]
 "codey.providers" = ["profiles.json"]
 "*" = ["*.mjs"]
 "codey.codemode" = ["*.mjs", "guest_runner.js", "quickjs/*.js", "quickjs/*.wasm", "quickjs/package.json", "quickjs/LICENSE", "quickjs/README.md"]

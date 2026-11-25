@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionStateStore, type SessionStateChange } from './session_state_store';
 import type { Message, Session } from './types/domain';
-import { runtime } from './runtime';
+
 import type { UiStateApi } from './ui_state';
-import './ui_state';
+import { UiState } from './ui_state';
 
 function session(id: string): Session {
   return {
@@ -17,7 +17,7 @@ function session(id: string): Session {
 
 function setup() {
   const changes: SessionStateChange[] = [];
-  const ui = runtime.UiState as UiStateApi;
+  const ui = UiState as UiStateApi;
   const forget = vi.fn(async (_id: string, _preserve: boolean) => true);
   const store = new SessionStateStore({
     ui: { ...ui, persist: vi.fn(), persistNow: vi.fn() },

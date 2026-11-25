@@ -1,5 +1,4 @@
 import { markdownHtml, renderMarkdownContent } from './markdown';
-import { runtime } from './runtime';
 import { createIconSvg } from './icon_button';
 import { toolFailureSummary } from './failure_presentation';
 export interface ToolPreview {
@@ -592,7 +591,9 @@ const renderApi = (function () {
     const proof = isRecord(receipt) && isRecord(receipt.completion_proof) ? receipt.completion_proof : null;
     if (!proof) return summary;
     const refs = (value: unknown): string[] =>
-      Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').slice(0, 12) : [];
+      Array.isArray(value)
+        ? value.filter((item: unknown): item is string => typeof item === 'string').slice(0, 12)
+        : [];
     const evidence = refs(proof.evidence_refs);
     const limitations = refs(proof.limitation_refs);
     return [
@@ -643,4 +644,4 @@ const renderApi = (function () {
 })();
 
 export type RenderApi = typeof renderApi;
-runtime.Render = renderApi;
+export const Render = renderApi;

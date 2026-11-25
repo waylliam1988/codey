@@ -1,3 +1,6 @@
+import { requestResponse } from './api/transport';
+import { decodeTaskStates, nonempty, sequence } from './domain/protocol';
+import { isRecord } from './domain/display_values';
 import type { RunState } from './types/domain';
 export type HistoryTask = NonNullable<RunState['task_states']>[number];
 export interface HistoryPage {
@@ -43,7 +46,7 @@ export async function validateHistoryRuns(
   runIds: string[],
   identity: HistoryIdentity,
 ): Promise<RunValidation> {
-  const response = await fetch('/api/history/validate_runs', {
+  const response = await requestResponse('/api/history/validate_runs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -56,27 +59,35 @@ export async function validateHistoryRuns(
   });
   if (response.status === 409) throw new HistorySnapshotChanged('Conversation history changed');
   if (!response.ok) throw new Error('Could not validate conversation tasks');
-  const data = (await response.json()) as Partial<HistoryPage> & { runs?: RunValidation['runs'] };
+  const data: unknown = await response.json();
   if (
+    !isRecord(data) ||
     data.schema_version !== 1 ||
     data.session_id !== sessionId ||
     data.epoch !== identity.epoch ||
     data.path_generation !== identity.pathGeneration ||
-    !Number.isSafeInteger(data.snapshot_revision) ||
-    (data.snapshot_revision as number) < identity.revision ||
+    !sequence(data.snapshot_revision, identity.revision) ||
     !Array.isArray(data.runs) ||
-    data.runs.length !== runIds.length ||
-    !data.runs.every(
-      (run) => run && typeof run.run_id === 'string' && runIds.includes(run.run_id) && typeof run.visible === 'boolean',
-    ) ||
-    new Set(data.runs.map((run) => run.run_id)).size !== runIds.length
+    data.runs.length !== runIds.length
   )
+    throw new HistorySnapshotChanged('Conversation task validation changed');
+  const runs = data.runs.map((run: unknown) => {
+    if (
+      !isRecord(run) ||
+      typeof run.run_id !== 'string' ||
+      !runIds.includes(run.run_id) ||
+      typeof run.visible !== 'boolean'
+    )
+      throw new HistorySnapshotChanged('Conversation task validation changed');
+    return { run_id: run.run_id, visible: run.visible };
+  });
+  if (new Set(runs.map((run) => run.run_id)).size !== runIds.length)
     throw new HistorySnapshotChanged('Conversation task validation changed');
   return {
     epoch: data.epoch,
     pathGeneration: data.path_generation,
-    revision: data.snapshot_revision as number,
-    runs: data.runs,
+    revision: data.snapshot_revision,
+    runs,
   };
 }
 
@@ -179,16 +190,15 @@ export class HistoryRepository {
 
   async search(sessionId: string, query: string): Promise<Array<Record<string, unknown>>> {
     if (!query.trim()) return [];
-    const response = await fetch(
+    const response = await requestResponse(
       `/api/sessions/${encodeURIComponent(sessionId)}/messages/search?q=${encodeURIComponent(query.trim().slice(0, 200))}`,
       { signal: AbortSignal.timeout(15000) },
     );
     if (response.status === 404) return [];
     if (!response.ok) throw new Error('Could not search conversation history');
-    const data = (await response.json()) as { hits?: unknown };
-    return Array.isArray(data.hits)
-      ? data.hits.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
-      : [];
+    const data: unknown = await response.json();
+    if (!isRecord(data) || !Array.isArray(data.hits)) throw new Error('Invalid history search response');
+    return data.hits.filter(isRecord);
   }
 
   async loadAround(sessionId: string, entryId: string): Promise<HistoryResult | null> {
@@ -214,51 +224,48 @@ export class HistoryRepository {
     const url = target
       ? `/api/conversation_tree?${new URLSearchParams({ session_id: sessionId, entry_id: target })}`
       : `/api/sessions/${encodeURIComponent(sessionId)}/messages?limit=100${cursor ? `&before=${encodeURIComponent(cursor)}` : ''}`;
-    const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    const response = await requestResponse(url, { signal: AbortSignal.timeout(15000) });
     if (!response.ok) {
-      const failure = (await response.json()) as { error?: string };
+      const failure: unknown = await response.json();
       if (
-        failure.error === 'history snapshot changed' ||
-        failure.error === 'cursor does not belong to current conversation path'
+        isRecord(failure) &&
+        (failure.error === 'history snapshot changed' ||
+          failure.error === 'cursor does not belong to current conversation path')
       )
         throw new HistorySnapshotChanged('Conversation history changed');
       throw new Error('Could not load conversation history');
     }
-    const data = (await response.json()) as Partial<HistoryPage>;
+    const data: unknown = await response.json();
     if (
+      !isRecord(data) ||
       data.schema_version !== 1 ||
       data.session_id !== sessionId ||
-      typeof data.epoch !== 'string' ||
-      !data.epoch ||
-      !Number.isSafeInteger(data.snapshot_revision) ||
-      (data.snapshot_revision as number) < 0 ||
-      !Number.isSafeInteger(data.path_generation) ||
-      (data.path_generation as number) < 0 ||
+      !nonempty(data.epoch) ||
+      !sequence(data.snapshot_revision) ||
+      !sequence(data.path_generation) ||
       !(data.display_version === null || typeof data.display_version === 'string') ||
       !Array.isArray(data.items) ||
-      !data.items.every(
-        (item) => item && typeof item === 'object' && typeof item.id === 'string' && item.id.length > 0,
-      ) ||
-      (data.task_states !== undefined &&
-        (!Array.isArray(data.task_states) ||
-          !data.task_states.every(
-            (task) =>
-              task &&
-              typeof task.session_id === 'string' &&
-              task.session_id.length > 0 &&
-              typeof task.run_id === 'string' &&
-              task.run_id.length > 0 &&
-              Number.isSafeInteger(task.task_revision) &&
-              task.task_revision >= 0 &&
-              ['pending', 'running', 'waiting', 'completing', 'completed', 'failed', 'cancelled'].includes(
-                task.task_status,
-              ),
-          ))) ||
       typeof data.has_more !== 'boolean' ||
-      (data.has_more && (typeof data.before_cursor !== 'string' || !data.before_cursor))
+      (data.has_more && !nonempty(data.before_cursor))
     )
       throw new Error('Invalid conversation history response');
-    return data as HistoryPage;
+    const items = data.items.map((item: unknown) => {
+      if (!isRecord(item) || !nonempty(item.id)) throw new Error('Invalid conversation history entry');
+      return item;
+    });
+    return {
+      schema_version: data.schema_version,
+      session_id: data.session_id,
+      epoch: data.epoch,
+      snapshot_revision: data.snapshot_revision,
+      path_generation: data.path_generation,
+      display_version: data.display_version,
+      has_more: data.has_more,
+      has_after: data.has_after === true,
+      before_cursor: typeof data.before_cursor === 'string' ? data.before_cursor : null,
+      task_states: data.task_states === undefined ? undefined : decodeTaskStates(data.task_states),
+      items,
+    };
   }
 }
 

@@ -1,3 +1,5 @@
+import { isModelSource } from './domain/model_values';
+import { readJsonObject, requestResponse } from './api/transport';
 import type { ConnectionAction, ConnectionAuthentication, ModelSource } from './types/domain';
 
 const activeStates = new Set(['starting', 'awaiting_authorization', 'exchanging']);
@@ -68,7 +70,7 @@ export function mountConnectionAuthentication(parent: HTMLElement, source: Model
     const attempt = snapshot.attempt_id;
     render();
     try {
-      const response = await fetch(
+      const response = await requestResponse(
         action ? '/api/connection_action' : '/api/connection_auth?source=' + encodeURIComponent(source.id),
         action
           ? {
@@ -78,28 +80,31 @@ export function mountConnectionAuthentication(parent: HTMLElement, source: Model
             }
           : { cache: 'no-store' },
       );
-      const data = await response.json();
+      const data = await readJsonObject(response);
       if (!current() || (!action && attempt !== snapshot.attempt_id)) return;
-      if (!response.ok) throw new Error(data.error || 'Connection operation failed');
+      if (!response.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Connection operation failed');
       const next = authentication(data.authentication);
       if (next.revision < snapshot.revision) return;
       const previousState = snapshot.state;
       snapshot = next;
-      const facts = data.source && data.source.id === source.id ? data.source : source;
+      const facts = isModelSource(data.source) && data.source.id === source.id ? data.source : source;
       deps.publish({ ...facts, authentication: next });
       deps.error('');
       if (next.state === 'ready' && previousState !== 'ready' && source.discoverable) {
-        const catalog = await fetch('/api/model_catalog', {
+        const catalog = await requestResponse('/api/model_catalog', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ source: source.id, force: false }),
         });
-        const discovered = await catalog.json();
+        const discovered = await readJsonObject(catalog);
         if (!current()) return;
         if (!catalog.ok)
-          throw new Error(discovered.error || 'Connected, but model refresh failed. Refresh models to retry.');
-        if (discovered.source?.id === source.id && Array.isArray(discovered.source.models))
-          deps.publish(discovered.source);
+          throw new Error(
+            typeof discovered.error === 'string'
+              ? discovered.error
+              : 'Connected, but model refresh failed. Refresh models to retry.',
+          );
+        if (isModelSource(discovered.source) && discovered.source.id === source.id) deps.publish(discovered.source);
       }
     } catch (error) {
       if (current()) deps.error(error instanceof Error ? error.message : String(error));

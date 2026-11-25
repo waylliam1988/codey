@@ -97,7 +97,15 @@ def test_sidebar_escape_cancels_drag_and_storage_failure_does_not_break_ui(page)
 def stub_clipboard(page, *, succeeds=True):
     page.evaluate("""succeeds => {
         window.copiedSelections = [];
-        Render.copyText = async text => { copiedSelections.push(text); return succeeds; };
+        window.clipboardSucceeds = succeeds;
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { writeText: async text => {
+                copiedSelections.push(text);
+                if (!clipboardSucceeds) throw new Error('Clipboard unavailable');
+            }},
+        });
+        document.execCommand = () => false;
     }""", succeeds)
 
 
@@ -211,7 +219,7 @@ def test_selection_copy_failure_keeps_retryable_menu_and_selected_snapshot(page)
     copy.click()
     expect(menu.get_by_role("status")).to_have_text("Could not copy")
     expect(copy).to_be_enabled()
-    page.evaluate("() => {Render.copyText = async text => {copiedSelections.push(text); return true}}")
+    page.evaluate("() => { clipboardSucceeds = true; }")
     copy.click()
     expect(menu).to_be_hidden()
     assert page.evaluate("copiedSelections") == [selected, selected]

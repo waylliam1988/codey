@@ -1,7 +1,8 @@
+import { ConversationNav } from './conversation_nav';
 import { readFileSync } from 'node:fs';
 import { expect, it, vi } from 'vitest';
-import { runtime } from './runtime';
-import './conversation_ui';
+
+import { ConversationUI } from './conversation_ui';
 import type { ConversationUiDeps } from './conversation_ui';
 
 it('keeps conversation following while reading the middle of command output', () => {
@@ -14,8 +15,7 @@ it('keeps conversation following while reading the middle of command output', ()
       disconnect() {}
     },
   );
-  runtime.ConversationNav = { init() {} };
-  runtime.ConversationUI.init({
+  ConversationUI.init({
     activeSession: () => undefined,
     getActiveId: () => 'chat',
     getSessions: () => [],
@@ -27,11 +27,11 @@ it('keeps conversation following while reading the middle of command output', ()
   Object.defineProperties(output, { scrollHeight: { value: 300 }, clientHeight: { value: 100 } });
   output.scrollTop = 50;
   document.getElementById('chat')!.append(output);
-  expect(runtime.ConversationUI.isFollowing()).toBe(true);
+  expect(ConversationUI.isFollowing()).toBe(true);
   output.dispatchEvent(new WheelEvent('wheel', { deltaY: -20, bubbles: true }));
-  expect(runtime.ConversationUI.isFollowing()).toBe(true);
+  expect(ConversationUI.isFollowing()).toBe(true);
   output.scrollTop = 0;
   output.dispatchEvent(new WheelEvent('wheel', { deltaY: -20, bubbles: true }));
-  expect(runtime.ConversationUI.isFollowing()).toBe(false);
+  expect(ConversationUI.isFollowing()).toBe(false);
   vi.unstubAllGlobals();
 });

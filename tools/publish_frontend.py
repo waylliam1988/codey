@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "frontend" / "dist"
 WEB = ROOT / "codey" / "web"
 BUILD_INPUTS = (
+    "codey/app/public_events.json",
     "frontend/index.html",
     "frontend/package.json",
     "frontend/package-lock.json",

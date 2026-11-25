@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import './render';
+import { Render } from './render';
 
 function render(text: string): HTMLElement {
   const host = document.createElement('div');
-  window.Render.renderMarkdown(host, text);
+  Render.renderMarkdown(host, text);
   return host;
 }
 
@@ -106,14 +106,14 @@ describe('conversation content contract', () => {
 
   it('keeps a full tool result inspectable without exposing it in the summary', () => {
     const result = 'retained output '.repeat(100);
-    const host = window.Render.standaloneToolEl({ kind: 'read', path: 'cache.py', result });
+    const host = Render.standaloneToolEl({ kind: 'read', path: 'cache.py', result });
     expect(host.querySelector('details')).not.toBeNull();
     expect(host.querySelector('pre')?.textContent).toBe(result);
     expect(host.querySelector('summary')?.textContent).not.toContain(result);
   });
 
   it('distinguishes an unknown browser effect from an ordinary failed action', () => {
-    const host = window.Render.standaloneToolEl({
+    const host = Render.standaloneToolEl({
       kind: 'browser click',
       result: 'Worker lost after dispatch',
       phase: 'unknown',
@@ -126,14 +126,14 @@ describe('conversation content contract', () => {
   });
 
   it('shows only the recorded duration of each completed browser action', () => {
-    const completed = window.Render.standaloneToolEl({ toolName: 'browser_click', elapsedMs: 27 });
+    const completed = Render.standaloneToolEl({ toolName: 'browser_click', elapsedMs: 27 });
     expect(completed.querySelector('.tl-result')?.textContent).toBe('27ms');
-    const pending = window.Render.standaloneToolEl({ toolName: 'browser_fill', pending: true, elapsedMs: 90000 });
+    const pending = Render.standaloneToolEl({ toolName: 'browser_fill', pending: true, elapsedMs: 90000 });
     expect(pending.querySelector('.tl-result')?.textContent).toBe('Working');
   });
 
   it('shows an edit diff and measured counts rather than another generic result row', () => {
-    const host = window.Render.standaloneToolEl({
+    const host = Render.standaloneToolEl({
       kind: 'edit',
       path: 'cache.py',
       result: 'edited cache.py',
@@ -145,7 +145,7 @@ describe('conversation content contract', () => {
 
   it('separates an actionable command denial from its original error', () => {
     const result = 'ERROR: project guard denied run: command_not_allowed; use shell with user approval';
-    const host = window.Render.standaloneToolEl({ kind: 'run', command: 'python test.py', result, error: true });
+    const host = Render.standaloneToolEl({ kind: 'run', command: 'python test.py', result, error: true });
     expect(host.querySelector('summary')?.textContent).not.toContain('requires approval');
     expect(host.querySelector('summary')?.textContent).toContain('blocked');
     expect(host.querySelector('pre')?.textContent).toBe(result);

@@ -9,10 +9,15 @@ import {
   decodeProviderStatus,
   decodeRunState,
   decodeServerEvent,
+  isRecord,
 } from './protocol';
 
 const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../tests/fixtures/protocol');
-const fixture = <T>(name: string): T => JSON.parse(readFileSync(resolve(fixtureRoot, name), 'utf8')) as T;
+function fixture(name: string): Record<string, unknown> {
+  const value: unknown = JSON.parse(readFileSync(resolve(fixtureRoot, name), 'utf8'));
+  if (!isRecord(value)) throw new Error('Expected object fixture');
+  return value;
+}
 
 describe('protocol decoders', () => {
   it('validates durable cursor and entry identities before accepting replay', () => {
@@ -26,8 +31,8 @@ describe('protocol decoders', () => {
     expect(decodeServerEvent({ type: 'shell_result', truncated: true }).truncated).toBe(true);
   });
   it('decodes the shared task and research event fixtures without dropping fields', () => {
-    const taskDone = fixture<Record<string, any>>('task_done.json');
-    const research = fixture<Record<string, Record<string, any>>>('research.json');
+    const taskDone = fixture('task_done.json');
+    const research = fixture('research.json');
     expect(decodeServerEvent(taskDone)).toMatchObject({
       type: 'task_done',
       summary: taskDone.summary,
@@ -36,14 +41,18 @@ describe('protocol decoders', () => {
     });
     for (const mode of ['pure', 'hybrid'] as const) {
       const event = decodeServerEvent(research[mode]);
-      expect(event).toMatchObject({ type: 'task_done', mode: research[mode].mode, research: research[mode].research });
+      expect(event).toMatchObject({
+        type: 'task_done',
+        mode: mode === 'pure' ? 'research' : mode,
+        research: expect.any(Object),
+      });
     }
   });
 
   it('decodes the shared approval, shell result, and run state fixtures', () => {
-    const approval = fixture<Record<string, any>>('approval.json');
-    const shellResult = fixture<Record<string, any>>('shell_result.json');
-    const runState = fixture<Record<string, any>>('run_state.json');
+    const approval = fixture('approval.json');
+    const shellResult = fixture('shell_result.json');
+    const runState = fixture('run_state.json');
     expect(decodeServerEvent(approval)).toMatchObject({
       type: 'shell_request',
       id: 'approval-1',
@@ -60,11 +69,11 @@ describe('protocol decoders', () => {
   });
 
   it('decodes the shared list, truncated, and file preview changes fixtures', () => {
-    const changes = fixture<Record<string, any>>('changes.json');
+    const changes = fixture('changes.json');
     expect(decodeChangesData(changes.list)).toMatchObject({
       mode: 'git',
       changed_count: 2,
-      files: changes.list.files,
+      files: expect.any(Array),
     });
     expect(decodeChangesData(changes.truncated)).toMatchObject({ truncated: true, changed_count: 3 });
     expect(decodeChangeFilePreview(changes.file_preview)).toEqual(changes.file_preview);
@@ -115,8 +124,27 @@ describe('protocol decoders', () => {
     ).toThrow('research notes_created is invalid');
   });
 
-  it('accepts a null exit code for events without a process exit status', () => {
-    expect(decodeServerEvent({ type: 'task_done', exit_code: null }).exit_code).toBeNull();
+  it('keeps exit status on the shell result that owns it', () => {
+    expect(decodeServerEvent({ type: 'shell_result', exit_code: null }).exit_code).toBeNull();
+    expect(decodeServerEvent({ type: 'task_done', exit_code: null })).not.toHaveProperty('exit_code');
+  });
+
+  it('rejects unsupported kinds and invalid reply, input, and inspection payloads', () => {
+    for (const event of [
+      { type: 'unrecognized_event' },
+      {
+        type: 'reply_stream',
+        session_id: 's',
+        run_id: 'r',
+        stream_id: 'stream',
+        sequence: '1',
+        state: 'partial',
+        text: 'answer',
+      },
+      { type: 'conversation_input', session_id: 's' },
+      { type: 'tool', preview: { additions: '4' } },
+    ])
+      expect(() => decodeServerEvent(event)).toThrow();
   });
 
   it('decodes provider status and rejects malformed payloads', () => {

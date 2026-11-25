@@ -155,18 +155,6 @@ class LocalModelUiGateTests(unittest.TestCase):
         self.assertTrue(gate._terminal_succeeded({"type": "task_done", "stop_reason": "done"}))
         self.assertFalse(gate._terminal_succeeded({"type": "task_done", "stop_reason": "error"}))
 
-    def test_research_session_is_created_without_project_context(self) -> None:
-        class Page:
-            def __init__(self) -> None:
-                self.expressions: list[str] = []
-
-            def evaluate(self, expression: str) -> None:
-                self.expressions.append(expression)
-
-        page = Page()
-        gate._start_unscoped_chat(page)
-        self.assertEqual(page.expressions, ["newSession(null)"])
-
     def test_research_gate_uses_user_task_and_production_supplies_contract(self) -> None:
         prompt = gate._research_gate_prompt()
         self.assertIn("First use web_search", prompt)

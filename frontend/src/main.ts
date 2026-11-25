@@ -1,2 +1,5 @@
-import './appearance';
-import './app_runtime';
+import { mountAppearance } from './appearance';
+import { mountApp } from './app_runtime';
+
+mountAppearance();
+mountApp();

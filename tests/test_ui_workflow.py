@@ -94,6 +94,8 @@ def page(ui_browser):
             data = {"providers": catalog, "default": "deepseek"}
         elif path == "model_settings":
             data = model_management_payload()
+        elif path == "state":
+            data = {"busy": False}
         elif path == "ui_state":
             if route.request.method == "GET":
                 data = {"state": app_context.load_ui_state()}
@@ -325,6 +327,25 @@ def test_settings_is_quiet_modal_with_advanced_dark_controls_and_focus_return(pa
     page.set_viewport_size({"width": 640, "height": 480})
     box = page.get_by_role("dialog", name="Settings", exact=True).bounding_box()
     assert box["y"] >= 12 and box["y"] + box["height"] <= 468
+
+
+def test_local_catalog_is_loaded_after_initial_model_preferences(page):
+    model = "local-test-model"
+    local = {"model": model, "models": [model], "base_url": "http://127.0.0.1:5001/v1", "connected": True}
+    connection = api_connection_payload(local)
+    settings = model_management_payload(connection)
+    settings["sources"][1]["models"] = []
+
+    def delayed_settings(route):
+        page.wait_for_timeout(200)
+        route.fulfill(json=settings)
+
+    page.route("**/api/model_settings", delayed_settings)
+    page.route("**/api/local_provider", lambda route: route.fulfill(json={"local": local}))
+    page.route("**/api/api_models", lambda route: route.fulfill(json={"connections": [connection]}))
+    page.reload()
+    page.locator("#provider-button").click()
+    expect(page.get_by_role("button", name=model, exact=True)).to_be_visible()
 
 
 def test_actual_model_and_supported_thinking_are_per_chat_and_sent_to_runtime(page):

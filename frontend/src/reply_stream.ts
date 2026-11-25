@@ -1,5 +1,7 @@
 import type { Message, Session } from './types/domain';
 import { isTerminalRun } from './run_lifecycle';
+type AnswerMessage = Extract<Message, { type: 'asst' }>;
+
 export interface ReplySnapshot {
   stream_id: string;
   run_id: string;
@@ -8,20 +10,20 @@ export interface ReplySnapshot {
   text: string;
 }
 
-export function streamMessage(session: Session, event: Partial<ReplySnapshot>): Message | null {
+export function streamMessage(session: Session, event: Partial<ReplySnapshot>): AnswerMessage | null {
   if (
     !event.stream_id ||
     !event.run_id ||
     typeof event.sequence !== 'number' ||
     !Number.isSafeInteger(event.sequence) ||
     event.sequence < 1 ||
-    typeof event.state !== 'string' ||
-    !['partial', 'complete', 'interrupted'].includes(event.state) ||
+    (event.state !== 'partial' && event.state !== 'complete' && event.state !== 'interrupted') ||
     typeof event.text !== 'string'
   )
     return null;
   const old = session.messages.find(
-    (message) => message.runId === event.run_id && message.streamId === event.stream_id,
+    (message): message is AnswerMessage =>
+      message.type === 'asst' && message.runId === event.run_id && message.streamId === event.stream_id,
   );
   if (old && ((old.streamSequence || 0) >= event.sequence || old.finalAnswer || old.streamState !== 'partial'))
     return null;
@@ -37,7 +39,7 @@ export function streamMessage(session: Session, event: Partial<ReplySnapshot>): 
     runId: event.run_id,
     streamId: event.stream_id,
     streamSequence: event.sequence,
-    streamState: event.state as Message['streamState'],
+    streamState: event.state,
     text: event.text,
     finalAnswer: false,
     ...(turnId ? { turnId } : {}),
@@ -45,14 +47,19 @@ export function streamMessage(session: Session, event: Partial<ReplySnapshot>): 
   };
 }
 
-export function finalStreamMessage(session: Session, runId: string, text: string, eventKey: string): Message | null {
+export function finalStreamMessage(
+  session: Session,
+  runId: string,
+  text: string,
+  eventKey: string,
+): AnswerMessage | null {
   const old = [...session.messages]
     .reverse()
     .find(
-      (message) =>
+      (message): message is AnswerMessage =>
         message.type === 'asst' &&
         message.runId === runId &&
-        message.streamId &&
+        !!message.streamId &&
         (message.text?.trim() === text.trim() || (message.text?.length === 64000 && text.startsWith(message.text))),
     );
   if (!old) return null;

@@ -1,3 +1,4 @@
+import { requestResponse } from './api/transport';
 import { HistorySnapshotChanged } from './history_repository';
 
 export interface NavigationItem {
@@ -35,7 +36,7 @@ async function loadNavigationSnapshot(session: string, signal: AbortSignal): Pro
   do {
     const query = new URLSearchParams({ session_id: session, navigation: '1' });
     if (cursor) query.set('before', cursor);
-    const response = await fetch(`/api/conversation_tree?${query}`, {
+    const response = await requestResponse(`/api/conversation_tree?${query}`, {
       signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
     });
     if (response.status === 409) throw new HistorySnapshotChanged('Navigation changed');

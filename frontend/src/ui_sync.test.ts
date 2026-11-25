@@ -1,17 +1,22 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import type { Project, Session } from './types/domain';
 import type { UiStateApi } from './ui_state';
 
 let ui: UiStateApi;
-let state: any;
+let state: { sessions: Session[]; projects: Project[]; active_id: string; revision: number; updated_at: number };
+interface SaveBody {
+  state: { sessions: { draft: { text: string } }[] };
+  base_revision: number;
+}
+type TestResponse = { ok: boolean; status?: number; json(): Promise<unknown> };
 beforeEach(async () => {
   vi.resetModules();
   vi.useFakeTimers();
   localStorage.clear();
   document.body.innerHTML =
     '<textarea id="task"></textarea><div id="ui-save-notice" hidden><span id="ui-save-message"></span><button id="ui-save-retry"></button></div>';
-  const { runtime } = await import('./runtime');
-  await import('./ui_state');
-  ui = runtime.UiState;
+
+  ui = (await import('./ui_state')).UiState;
   state = { sessions: [], projects: [], active_id: '', revision: 0, updated_at: 0 };
   ui.init({
     getSessions: () => state.sessions,
@@ -50,7 +55,7 @@ afterEach(() => {
 it('rebases a conflict and continues saving without a global blocked state', async () => {
   const remote = structuredClone(ui.current());
   remote.revision = 2;
-  const posts: any[] = [];
+  const posts: SaveBody[] = [];
   vi.stubGlobal(
     'fetch',
     vi.fn(async (_url, options) => {
@@ -66,13 +71,13 @@ it('rebases a conflict and continues saving without a global blocked state', asy
   expect(posts.map((post) => post.base_revision)).toEqual([1, 2]);
   state.sessions[0].draft.text = 'new draft';
   expect(await ui.ensureSaved()).toBe(true);
-  expect(posts.at(-1).state.sessions[0].draft.text).toBe('new draft');
+  expect(posts.at(-1)?.state.sessions[0].draft.text).toBe('new draft');
   expect(document.getElementById('ui-save-notice')!.hidden).toBe(true);
 });
 
 it('only acknowledges the edits captured by an in-flight save', async () => {
-  let resolve!: (value: any) => void;
-  const posts: any[] = [];
+  let resolve!: (value: TestResponse) => void;
+  const posts: SaveBody[] = [];
   vi.stubGlobal(
     'fetch',
     vi.fn((_url, options) => {
@@ -104,13 +109,13 @@ it('does not resurrect a remotely deleted chat when restoring an unsaved draft',
   );
   await ui.restoreFromServer();
   await ui.ensureSaved();
-  expect(state.sessions.some((s: any) => s.id === 'a')).toBe(false);
+  expect(state.sessions.some((s) => s.id === 'a')).toBe(false);
 });
 
 it('keeps transient failures silent and restores saving after reconnect', async () => {
   const fetch = vi.fn().mockRejectedValue(new Error('offline'));
   vi.stubGlobal('fetch', fetch);
-  ui.bindPagehide();
+  ui.bindPagehide(() => {});
   expect(await ui.ensureSaved()).toBe(false);
   expect(document.getElementById('ui-save-notice')!.hidden).toBe(true);
   expect(await ui.ensureSaved()).toBe(false);
@@ -124,16 +129,15 @@ it('keeps transient failures silent and restores saving after reconnect', async 
 
 it('atomically caches edits with their matching base and migrates old cache only once', () => {
   ui.cache();
-  const envelope = JSON.parse(localStorage.getItem('codey:ui-cache')!);
-  expect(envelope.state.sessions[0].draft.text).toBe('draft');
-  expect(envelope.confirmed.revision).toBe(1);
-  expect(envelope.state.sessions[0]).not.toHaveProperty('messages');
+  const envelope: unknown = JSON.parse(localStorage.getItem('codey:ui-cache')!);
+  expect(envelope).toMatchObject({ state: { sessions: [{ draft: { text: 'draft' } }] }, confirmed: { revision: 1 } });
+  expect(JSON.stringify(envelope)).not.toContain('"messages"');
   localStorage.removeItem('codey:ui-cache');
   localStorage.setItem('codey:sessions', JSON.stringify([{ id: 'legacy', draft: { text: 'recover' } }]));
   localStorage.setItem('codey:active', 'legacy');
-  expect((ui.cached().sessions as any[])[0].draft.text).toBe('recover');
+  expect(ui.cached().sessions).toMatchObject([{ draft: { text: 'recover' } }]);
   expect(localStorage.getItem('codey:sessions')).toBeNull();
-  expect(JSON.parse(localStorage.getItem('codey:ui-cache')!).confirmed).toBeNull();
+  expect(JSON.parse(localStorage.getItem('codey:ui-cache')!)).toMatchObject({ confirmed: null });
 });
 
 it.each([
@@ -159,7 +163,7 @@ it.each([
   ui.apply(ui.cached());
   const remote = { ...ui.current(), revision: 2, sessions: [{ id: 'a', draft: { text: '' } }] };
   let reads = 0;
-  const posts: any[] = [];
+  const posts: SaveBody[] = [];
   vi.stubGlobal(
     'fetch',
     vi.fn(async (_url, options) => {
@@ -174,16 +178,16 @@ it.each([
   await ui.restoreFromServer();
   await vi.advanceTimersByTimeAsync(2000);
   await ui.ensureSaved();
-  expect(state.sessions.map((s: any) => s.id)).toEqual(['a']);
+  expect(state.sessions.map((s) => s.id)).toEqual(['a']);
   expect(state.sessions[0].draft.text).toBe('RECOVER ME');
-  expect(posts.at(-1).state.sessions[0].draft.text).toBe('RECOVER ME');
+  expect(posts.at(-1)?.state.sessions[0].draft.text).toBe('RECOVER ME');
   expect(posts[0].base_revision).toBe(2);
 });
 
 it('recovers the latest draft when typing continues during first contact', async () => {
   localStorage.setItem('codey:ui-cache', JSON.stringify({ schema: 1, state: ui.current(), confirmed: null }));
   ui.apply(ui.cached());
-  let resolve!: (value: any) => void;
+  let resolve!: (value: TestResponse) => void;
   const remote = { ...ui.current(), revision: 2, sessions: [{ id: 'a', draft: { text: '' } }] };
   vi.stubGlobal(
     'fetch',
@@ -204,7 +208,7 @@ it('recovers the latest draft when typing continues during first contact', async
 });
 
 it('ignores an older mutation response after accepting a newer inventory', async () => {
-  let resolve!: (value: any) => void;
+  let resolve!: (value: TestResponse) => void;
   let calls = 0;
   vi.stubGlobal(
     'fetch',
@@ -220,6 +224,6 @@ it('ignores an older mutation response after accepting a newer inventory', async
   ui.accept({ ...ui.current(), revision: 4, sessions: [] });
   resolve({ ok: true, json: async () => ({ revision: 2 }) });
   expect(await pending).toBe(true);
-  expect(state.sessions.some((s: any) => s.id === 'a')).toBe(false);
+  expect(state.sessions.some((s) => s.id === 'a')).toBe(false);
   expect(state.revision).toBe(5);
 });

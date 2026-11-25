@@ -110,7 +110,8 @@ export interface RequestAttempt {
   sendFailure?: string;
   runOwner?: string;
 }
-export interface Message extends importToolDisplay {
+interface MessageFields extends importToolDisplay {
+  supersededRunIds?: string[];
   attachments?: AttachmentRef[];
   source?: { actor_id: string; name: string; kind: string };
   entryId?: string;
@@ -124,24 +125,6 @@ export interface Message extends importToolDisplay {
   contentRole?: 'commentary' | 'final';
   answerId?: string;
   answerPartIndex?: number;
-  failure?: {
-    schema_version: 1;
-    code: string;
-    category: string;
-    scope: 'tool' | 'run' | 'request' | 'render';
-    phase: string;
-    effect: 'not_started' | 'applied' | 'unknown' | 'not_applicable';
-    session_id?: string;
-    run_id?: string;
-    call_id?: string;
-    execution_id?: string;
-    source_id?: string;
-    incident_id: string;
-    resource?: { kind: string; path?: string; id?: string };
-    diagnostic?: string;
-    retry_after?: number;
-  };
-  type: string;
   approval?: ApprovalState;
   approvalSubmission?: 'sending' | 'checking' | 'unconfirmed';
   approvalError?: string;
@@ -202,6 +185,76 @@ export interface Message extends importToolDisplay {
   note_id?: string;
   excerpt?: string;
 }
+type MessageIdentity = 'id' | 'entryId' | 'sessionId' | 'runId' | 'eventKey' | 'text' | 'turnId';
+type MessageVariant<Kind extends string, Keys extends keyof MessageFields = never> = Kind extends string
+  ? { type: Kind } & Pick<MessageFields, MessageIdentity | Keys> &
+      Partial<Record<Exclude<keyof MessageFields, MessageIdentity | Keys>, never>>
+  : never;
+
+type ToolFields = keyof importToolDisplay;
+type CommandFields =
+  | ToolFields
+  | 'executionId'
+  | 'status'
+  | 'state'
+  | 'exitCode'
+  | 'shellStatus'
+  | 'approved'
+  | 'output'
+  | 'project'
+  | 'commandSha256'
+  | 'commandChars'
+  | 'commandTruncated'
+  | 'cwd'
+  | 'approval'
+  | 'approvalSubmission'
+  | 'approvalError'
+  | 'permissionScope'
+  | 'permissionSaveScope'
+  | 'permissionSaveError'
+  | 'sessionRuleAvailable'
+  | 'projectRuleAvailable'
+  | 'riskLabel'
+  | 'riskTitle'
+  | 'riskDetail';
+
+export type Message =
+  | MessageVariant<'user', 'attachments' | 'source' | 'queuedInputId' | 'attempts' | 'runOwner' | 'sendFailure'>
+  | MessageVariant<
+      'asst',
+      'streamId' | 'streamSequence' | 'streamState' | 'finalAnswer' | 'contentRole' | 'answerId' | 'answerPartIndex'
+    >
+  | MessageVariant<
+      'tool' | 'tool_pending',
+      | ToolFields
+      | 'changed'
+      | 'status'
+      | 'payload'
+      | 'confidence'
+      | 'source_url'
+      | 'requested_url'
+      | 'final_url'
+      | 'title'
+      | 'url'
+      | 'note_id'
+      | 'excerpt'
+    >
+  | MessageVariant<'shell_request' | 'shell_result' | 'shell_approval_status', CommandFields>
+  | MessageVariant<'turn' | 'thinking', 'n' | 'turn' | 'reasoning' | 'thinking' | 'note'>
+  | MessageVariant<
+      'request_status' | 'request_activity',
+      'requestId' | 'state' | 'sendFailure' | 'runOwner' | 'supersededRunIds'
+    >
+  | MessageVariant<'changes', 'count' | 'files' | 'project' | 'changed'>
+  | MessageVariant<
+      'done' | 'research_done' | 'err' | 'pause' | 'limit' | 'review',
+      'payload' | 'elapsedMs' | 'failure' | 'status' | 'changed' | 'project' | 'sendFailure' | 'runOwner'
+    >
+  | MessageVariant<
+      'info' | 'teach' | 'user_question' | 'run_state' | 'local_update_warning',
+      'state' | 'payload' | 'failure' | 'status' | 'note' | 'elapsedMs'
+    >;
+
 export interface ResearchRun {
   runId: string;
   restoreable: boolean;
@@ -360,9 +413,10 @@ export interface UiDeps {
   activeSession?: () => Session | undefined;
 }
 export interface SseDeps {
+  forRun(sessionId: string, runId: string): import('../requests').RequestMatch | null;
   setStatus(text: string, kind: string): void;
   applyRunState(data: RunState): void;
-  handleServerEvent(data: import('../domain/protocol').ServerEvent): void;
+  handleServerEvent(data: import('../domain/protocol').ServerEvent, cursor: string): void | Promise<void>;
   acceptRun(runId: string | null, sessionId: string | null): void;
   setProviderBusy(value: boolean): void;
   updateSend(): void;

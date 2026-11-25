@@ -1,7 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import './research_drawer';
+import { ResearchDrawer } from './research_drawer';
 import type { ResearchRunView } from './research_drawer';
-import { runtime } from './runtime';
 
 let run: ResearchRunView;
 let tab: string;
@@ -26,8 +25,13 @@ beforeEach(() => {
   };
   tab = 'evidence';
   copyText = vi.fn(async () => true);
-  runtime.ResearchDrawer.init({
-    $: (id: string) => document.getElementById(id),
+  ResearchDrawer.init({
+    openDocument: vi.fn(),
+    getResearchGraphDepth: () => 1,
+    setResearchGraphDepth: vi.fn(),
+    getResearchNoteFocusId: () => '',
+    setResearchNoteFocusId: vi.fn(),
+    $: (id: string) => document.getElementById(id)!,
     getCurrentRun: () => run,
     getActiveId: () => 'chat',
     getResearchDrawerTab: () => tab,
@@ -51,7 +55,7 @@ it('keeps evidence stance, excerpt, and locator distinct, with a keyboard-access
   ];
   run.counterpoints = ['Limited sample'];
   run.qualityWarnings = ['Missing metadata'];
-  runtime.ResearchDrawer.render('chat');
+  ResearchDrawer.render('chat');
 
   const [result, legacy] = document.querySelectorAll('.research-card');
   expect(result.querySelector('.research-stance')?.textContent).toBe('Contradicts');
@@ -71,7 +75,7 @@ it('groups source status using redirect aliases and keeps URL-only records uncla
     { requested_url: 'https://example.org/preprint', final_url: 'https://example.org/final.pdf', content_kind: 'pdf' },
     { title: 'Background', final_url: 'https://example.net/background' },
   ];
-  runtime.ResearchDrawer.render('chat');
+  ResearchDrawer.render('chat');
 
   const [cited, opened] = document.querySelectorAll<HTMLElement>('.research-source-section');
   expect(cited.querySelector('h3')?.textContent).toBe('Cited in report');
@@ -86,6 +90,6 @@ it('groups source status using redirect aliases and keeps URL-only records uncla
   run.citationMap = [];
   run.openedSources = [];
   run.sourceUrls = ['https://example.org/legacy'];
-  runtime.ResearchDrawer.render('chat');
+  ResearchDrawer.render('chat');
   expect(document.querySelector('.research-source-section h3')?.textContent).toBe('Recorded links');
 });

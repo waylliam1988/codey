@@ -1,23 +1,23 @@
 import { expect, it, vi } from 'vitest';
 import { reconcileHistory } from './conversation_history';
-import { runtime } from './runtime';
+
 import { SessionStateStore } from './session_state_store';
 import { SessionStateViews } from './session_state_views';
 import type { Session } from './types/domain';
-import './ui_state';
-import './process';
+import { UiState } from './ui_state';
+import { Process } from './process';
 import './render';
-import './messages';
+import { Messages } from './messages';
 
 it('keeps the final stream mounted when history refresh and terminal replay follow tool streams', () => {
   const chat = document.createElement('div');
   const session = { id: 'chat', title: 'Chat', messages: [] } as unknown as Session;
   const renderChat = () => {
     chat.replaceChildren();
-    for (const message of session.messages) runtime.Messages.append(chat, message);
+    for (const message of session.messages) Messages.append(chat, message);
   };
   const store: SessionStateStore = new SessionStateStore({
-    ui: { ...runtime.UiState, persist: vi.fn(), persistNow: vi.fn() },
+    ui: { ...UiState, persist: vi.fn(), persistNow: vi.fn() },
     defaultProvider: () => '',
     isRenaming: () => false,
     invalidate: (change) => views.invalidate(change),
@@ -32,12 +32,12 @@ it('keeps the final stream mounted when history refresh and terminal replay foll
   const views: SessionStateViews = new SessionStateViews({
     state: store,
     chat: () => chat,
-    messages: runtime.Messages,
-    process: runtime.Process,
+    messages: Messages,
+    process: Process,
     renderSidebar: vi.fn(),
     renderChat,
     scrollChat: vi.fn(),
-    appendMessageNode: (target, message) => runtime.Messages.append(target, message),
+    appendMessageNode: (target, message) => Messages.append(target, message),
     refreshApprovals: () => false,
     scopeChanged: vi.fn(),
     syncProvider: vi.fn(),
@@ -45,13 +45,12 @@ it('keeps the final stream mounted when history refresh and terminal replay foll
     updateComposerContext: vi.fn(),
     closeLocalContext: vi.fn(),
   });
-  runtime.Messages.init({
+  Messages.init({
     getActiveId: () => session.id,
     getRunningSessionId: () => null,
     isSessionRunning: () => false,
     currentProjectPath: () => '',
     openDocument: vi.fn(),
-    openChangesDrawer: vi.fn(),
     attachCurrentChatToPickedProject: vi.fn(),
     approveCommand: vi.fn(),
     continueTask: vi.fn(),
@@ -59,7 +58,7 @@ it('keeps the final stream mounted when history refresh and terminal replay foll
     statusRow: () => document.createElement('div'),
   });
   store.addMessage(session.id, {
-    type: 'asst',
+    type: 'asst' as const,
     runId: 'run',
     streamId: 'tool-stream',
     streamState: 'complete',
@@ -67,7 +66,7 @@ it('keeps the final stream mounted when history refresh and terminal replay foll
     text: '',
   });
   store.addMessage(session.id, {
-    type: 'asst',
+    type: 'asst' as const,
     runId: 'run',
     streamId: 'answer-stream',
     streamState: 'partial',
@@ -75,7 +74,7 @@ it('keeps the final stream mounted when history refresh and terminal replay foll
     text: 'Game created.',
   });
   const final = {
-    type: 'asst',
+    type: 'asst' as const,
     runId: 'run',
     text: 'Game created.',
     eventKey: 'terminal:run:answer',
@@ -87,7 +86,14 @@ it('keeps the final stream mounted when history refresh and terminal replay foll
   store.addMessage(session.id, final);
   const answer = chat.querySelector('[data-stream-id="answer-stream"]');
   session.messages = reconcileHistory(session.messages, [
-    { id: 'saved-answer', type: 'asst', runId: 'run', text: final.text, finalAnswer: true, contentRole: 'final' },
+    {
+      id: 'saved-answer',
+      type: 'asst' as const,
+      runId: 'run',
+      text: final.text,
+      finalAnswer: true,
+      contentRole: 'final',
+    },
   ]);
   store.addMessage(session.id, final);
   expect(chat.querySelector('[data-stream-id="tool-stream"]')?.hasAttribute('hidden')).toBe(true);

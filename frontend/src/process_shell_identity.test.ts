@@ -2,10 +2,10 @@ import { expect, it, vi } from 'vitest';
 import { commandCard } from './command_card';
 import type { Message } from './types/domain';
 import './render';
-import './process';
+import { Process } from './process';
 
 const render = (chat: HTMLElement, message: Message) => chat.append(commandCard(message, vi.fn()));
-const result = (callId = 'call-1', runId = 'run-1'): Message => ({
+const result = (callId = 'call-1', runId = 'run-1'): Extract<Message, { type: 'shell_result' }> => ({
   type: 'shell_result',
   id: `approval-${runId}-${callId}`,
   callId,
@@ -16,7 +16,7 @@ const result = (callId = 'call-1', runId = 'run-1'): Message => ({
   approved: true,
   exitCode: 0,
 });
-const tool = (callId = 'call-1', runId = 'run-1'): Message => ({
+const tool = (callId = 'call-1', runId = 'run-1'): Extract<Message, { type: 'tool' }> => ({
   type: 'tool',
   runId,
   callId,
@@ -30,11 +30,11 @@ const tool = (callId = 'call-1', runId = 'run-1'): Message => ({
 it.each([true, false])('shows an approved execution once when the command card arrives first: %s', (cardFirst) => {
   const chat = document.createElement('div');
   const messages = cardFirst ? [result(), tool()] : [tool(), result()];
-  messages.forEach((message) => window.Process.append(chat, message, render));
+  messages.forEach((message) => Process.append(chat, message, render));
   // Reconnect/history replay and a late start must not recreate the generic row.
-  window.Process.append(chat, { ...tool(), type: 'tool_pending', pending: true }, render);
-  window.Process.append(chat, tool(), render);
-  window.Process.append(chat, result(), render);
+  Process.append(chat, { ...tool(), type: 'tool_pending', pending: true }, render);
+  Process.append(chat, tool(), render);
+  Process.append(chat, result(), render);
   expect(chat.querySelectorAll('.command-card')).toHaveLength(1);
   expect(chat.querySelectorAll('.tool-line')).toHaveLength(0);
   expect(chat.querySelector('.shell-stdout')?.textContent).toBe('marker');
@@ -43,20 +43,20 @@ it.each([true, false])('shows an approved execution once when the command card a
 
 it('keeps identical commands with different call or run identities visible', () => {
   const chat = document.createElement('div');
-  window.Process.append(chat, result(), render);
-  window.Process.append(chat, tool(), render);
-  window.Process.append(chat, tool('call-2'), render);
-  window.Process.append(chat, tool('call-1', 'run-2'), render);
+  Process.append(chat, result(), render);
+  Process.append(chat, tool(), render);
+  Process.append(chat, tool('call-2'), render);
+  Process.append(chat, tool('call-1', 'run-2'), render);
   expect(chat.querySelectorAll('.command-card')).toHaveLength(1);
   expect(chat.querySelectorAll('.tool-line')).toHaveLength(2);
 });
 
 it('retains the open command output and ignores a late running snapshot', () => {
   const chat = document.createElement('div');
-  window.Process.append(chat, tool(), render);
-  window.Process.append(chat, result(), render);
+  Process.append(chat, tool(), render);
+  Process.append(chat, result(), render);
   chat.querySelector<HTMLDetailsElement>('.command-card details')!.open = true;
-  window.Process.append(chat, { ...result(), shellStatus: 'running', exitCode: null, output: '' }, render);
+  Process.append(chat, { ...result(), shellStatus: 'running', exitCode: null, output: '' }, render);
   expect(chat.querySelector<HTMLDetailsElement>('.command-card details')!.open).toBe(true);
   expect(chat.querySelector('.shell-stdout')?.textContent).toBe('marker');
   expect(chat.querySelectorAll('.tool-line')).toHaveLength(0);

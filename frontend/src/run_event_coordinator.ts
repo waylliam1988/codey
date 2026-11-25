@@ -12,12 +12,12 @@ import { RunStreamBuffer } from './run_stream_buffer';
 import type { SessionStateStore } from './session_state_store';
 import type { createApprovalController } from './shell_approvals';
 import { terminalAnswerMessage } from './terminal_answer';
-import type { ChangesData, ResearchPayload, ResearchRun, RunState } from './types/domain';
+import type { ChangesData, Message, ResearchPayload, ResearchRun, RunState } from './types/domain';
 import type { UiStateApi } from './ui_state';
 import type { UserQuestion, UserQuestions } from './user_questions';
 
 export interface RunEventTransport {
-  eventKey(data: ServerEvent, fallback?: string): string;
+  eventKey(cursor: string | number | undefined, fallback?: string): string;
   displayRunStatus(status: string): void;
   reconcileRunState(): Promise<RunState | null>;
   acceptRunResponse(response: Response, sessionId: string): Promise<void>;
@@ -55,25 +55,10 @@ export interface RunEventDeps {
   previewHtml(sessionId: string, path: string, workspace: string): void;
 }
 
-type ServerEventData = ServerEvent & {
-  preview?: import('./render').ToolPreview;
-  elapsed_ms?: number;
-  phase?: string;
-  stream_id?: string;
-  sequence?: number;
-  state?: string;
-  output_bytes?: number;
-  output_stored_bytes?: number;
-  detail?: string;
-  detail_truncated?: boolean;
-  final_delivery?: string;
-  failure?: import('./failure_presentation').FailureInfo;
-};
-
 /** Apply durable facts to disposable browser projections in their original order. */
 export class RunEventCoordinator {
   readonly projection: RunProjection;
-  private readonly replyStreamBuffer: RunStreamBuffer<ServerEventData>;
+  private readonly replyStreamBuffer: RunStreamBuffer<ServerEvent>;
   private inputRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly deps: RunEventDeps) {
@@ -96,7 +81,8 @@ export class RunEventCoordinator {
     source: LifecycleInput['source'],
     active?: boolean,
     historySessionId?: string,
-  ): boolean {
+    cursor?: string | number,
+  ): string | false {
     if (data.run_id && historySessionId && this.deps.history.acceptsRun(historySessionId, data.run_id) === false)
       return false;
     const runId = data.run_id || '',
@@ -124,7 +110,7 @@ export class RunEventCoordinator {
       state,
       active: active ?? (state === 'running' ? true : undefined),
       revision: data.task_revision,
-      sequence: eventSequence(data.event_id),
+      sequence: eventSequence(cursor),
       source,
     });
     if (!view) return false;
@@ -133,21 +119,20 @@ export class RunEventCoordinator {
     for (const target of displays) {
       this.deps.state.projectTerminalRun(target.id, runId, view.terminal, source === 'snapshot');
       if (view.state !== 'idle')
-        this.recordRunState(target.id, runId, target === owner || !view.active ? view.state : 'unknown', data);
+        this.recordRunState(target.id, runId, target === owner || !view.active ? view.state : 'unknown', data, cursor);
     }
     if (view.active) this.deps.composer.observeRun?.(sessionId, runId);
     this.deps.requests.projectLifecycle({ ...data, session_id: sessionId, run_id: runId }, view.state);
-    if (data.type === 'task_done') data.stop_reason = view.state;
     this.deps.ui.persist();
     if (this.projection.size) this.deps.transport.displayRunStatus('running');
     else this.deps.setStatus('', 'ok');
     this.deps.updateSend();
     this.deps.updateComposerContext();
     this.deps.syncResearchUseProjectButton();
-    return true;
+    return view.state;
   }
 
-  private handleReplyStream(data: ServerEventData) {
+  private handleReplyStream(data: ServerEvent) {
     const sid = data.session_id || '';
     const runId = (data.run_id || '').toString();
     const runIsActive = (id: string) => this.projection.isActive(id) || id === this.projection.primaryRun?.runId;
@@ -167,31 +152,30 @@ export class RunEventCoordinator {
       this.deps.state.addMessage(sid, message);
   }
 
-  handleServerEvent(raw: unknown, lifecycleSource: 'event' | 'snapshot' = 'event') {
-    const data = decodeServerEvent(raw) as ServerEventData;
+  handleServerEvent(data: ServerEvent, lifecycleSource: 'event' | 'snapshot' = 'event', cursor?: string | number) {
     if (data.type === 'conversation_inventory_changed') {
       void this.deps.ui.refreshInventory?.();
       return;
     }
     if (data.type === 'durable_commit') {
-      void this.deps.history.observeCommit(decodeServerEvent(raw));
+      const applied = this.deps.history.observeCommit(data);
       if (this.inputRefreshTimer === undefined)
         this.inputRefreshTimer = setTimeout(() => {
           this.inputRefreshTimer = undefined;
           void this.deps.composer.refreshQueuedInputs();
         }, 200);
-      return;
+      return applied;
     }
     if (data.type === 'user_question' || data.type === 'user_question_state') {
-      this.deps.questions.apply((raw as { question: unknown }).question);
+      this.deps.questions.apply(data.question);
       return;
     }
     if (data.type === 'conversation_input') {
-      this.deps.composer.applyQueuedInput((raw as { input: unknown }).input);
+      this.deps.composer.applyQueuedInput(data.input);
       return;
     }
     if (data.type === 'shell_approval_status') {
-      this.deps.approvals().apply(raw);
+      this.deps.approvals().apply(data);
       void this.reconcileRunState();
       return;
     }
@@ -219,18 +203,20 @@ export class RunEventCoordinator {
       data.type === 'task_done' && lifecycleSource === 'event' && this.projection.isActive(data.run_id || '');
     if (data.type === 'task_done') {
       this.replyStreamBuffer.flush();
-      if (!this.applyLifecycle(data, lifecycleSource)) return;
+      const reason = this.applyLifecycle(data, lifecycleSource, undefined, undefined, cursor);
+      if (!reason) return;
+      data = { ...data, stop_reason: reason };
     }
     this.deps.history.acceptRunEvent(data.session_id || '', data.run_id || '', () =>
-      this.handleDisplayEvent(raw, data, lifecycleSource, runningAtCompletion),
+      this.handleDisplayEvent(data, lifecycleSource, runningAtCompletion, cursor),
     );
   }
 
   private handleDisplayEvent(
-    raw: unknown,
-    data: ServerEventData,
+    data: ServerEvent,
     lifecycleSource: 'event' | 'snapshot',
     runningAtCompletion: boolean,
+    cursor?: string | number,
   ): void {
     if (data.type === 'reply_stream') {
       this.replyStreamBuffer.enqueue(data);
@@ -238,7 +224,7 @@ export class RunEventCoordinator {
     }
     this.replyStreamBuffer.flush();
     if (data.type === 'task_start') {
-      if (!this.applyLifecycle(data, lifecycleSource)) return;
+      if (!this.applyLifecycle(data, lifecycleSource, undefined, undefined, cursor)) return;
       const input = this.deps.composer.queuedInputForRun(data.run_id || '');
       if (input) this.observeQueuedInput({ ...input, state: 'dispatching' });
     }
@@ -269,7 +255,7 @@ export class RunEventCoordinator {
         note: (data.note || '').toString(),
         reasoning: typeof data.reasoning === 'string' ? data.reasoning : '',
         runId,
-        eventKey: this.deps.transport.eventKey(data, runId ? `turn:${runId}:${data.turn || 0}` : ''),
+        eventKey: this.deps.transport.eventKey(cursor, runId ? `turn:${runId}:${data.turn || 0}` : ''),
       });
       return;
     }
@@ -280,7 +266,7 @@ export class RunEventCoordinator {
           text: data.text,
           turn: data.turn || 0,
           runId,
-          eventKey: this.deps.transport.eventKey(data, `reasoning:${runId}:${data.turn || 0}`),
+          eventKey: this.deps.transport.eventKey(cursor, `reasoning:${runId}:${data.turn || 0}`),
         });
       return;
     }
@@ -312,7 +298,7 @@ export class RunEventCoordinator {
       const rawToolId = (data.call_id || data.tool_id || '').toString();
       const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';
       const toolStatus = (data.status || (data.ok === false ? 'error' : 'ok')).toString();
-      const message = {
+      const message: Extract<Message, { type: 'tool' }> = {
         type: 'tool',
         callId: data.call_id || '',
         parentCallId: data.parent_call_id || '',
@@ -350,7 +336,7 @@ export class RunEventCoordinator {
           type: 'info',
           text: data.text,
           runId,
-          eventKey: this.deps.transport.eventKey(data),
+          eventKey: this.deps.transport.eventKey(cursor),
         });
       return;
     }
@@ -362,7 +348,7 @@ export class RunEventCoordinator {
         text: 'Local memory update unavailable' + (detail ? ` · ${detail}` : ''),
         sessionId: sid,
         runId,
-        eventKey: this.deps.transport.eventKey(data, runId ? `local-health:${runId}:${data.error_ref || ''}` : ''),
+        eventKey: this.deps.transport.eventKey(cursor, runId ? `local-health:${runId}:${data.error_ref || ''}` : ''),
       });
       return;
     }
@@ -586,7 +572,7 @@ export class RunEventCoordinator {
           text: data.text,
           sessionId: sid,
           runId,
-          eventKey: this.deps.transport.eventKey(data),
+          eventKey: this.deps.transport.eventKey(cursor),
         });
       return;
     }
@@ -596,7 +582,15 @@ export class RunEventCoordinator {
     for (const row of tasks) {
       const state = lifecycleState(row.task_status, row.stop_reason, 'idle');
       this.applyLifecycle(
-        { ...row, type: state === 'running' ? 'task_start' : 'task_done' },
+        state === 'running'
+          ? {
+              type: 'task_start',
+              run_id: row.run_id,
+              session_id: row.session_id,
+              task_revision: row.task_revision,
+              task_status: row.task_status,
+            }
+          : { ...row, type: 'task_done' },
         'snapshot',
         state === 'running' || (owners.has(row.run_id) && ['approval', 'question', 'waiting'].includes(state)),
         historySessionId,
@@ -683,7 +677,7 @@ export class RunEventCoordinator {
       this.deps.requests.fail(sid, runId, input.error || 'Delivery could not be confirmed', {
         sendFailure: 'queued_input',
       });
-    if (input.state === 'completed' && input.terminal) this.handleServerEvent(input.terminal);
+    if (input.state === 'completed' && input.terminal) this.handleServerEvent(decodeServerEvent(input.terminal));
   }
 
   observeUserQuestion(question: UserQuestion): void {
@@ -705,7 +699,7 @@ export class RunEventCoordinator {
       });
   }
 
-  private recordRunState(sid: string, runId: string, state: string, data: ServerEvent & { elapsed_ms?: unknown }) {
+  private recordRunState(sid: string, runId: string, state: string, data: ServerEvent, cursor?: string | number) {
     const session = this.deps.state.sessions.find((item) => item.id === sid);
     if (!session || lastRunState(session, runId) === state) return;
     const revision = session.messages.filter((item) => item.type === 'run_state' && item.runId === runId).length;
@@ -714,7 +708,7 @@ export class RunEventCoordinator {
       state,
       runId,
       elapsedMs: typeof data.elapsed_ms === 'number' ? data.elapsed_ms : undefined,
-      eventKey: this.deps.transport.eventKey(data, `run-state:${runId}:${revision}:${state}`),
+      eventKey: this.deps.transport.eventKey(cursor, `run-state:${runId}:${revision}:${state}`),
     });
   }
 }

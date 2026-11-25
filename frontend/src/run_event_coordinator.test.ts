@@ -4,11 +4,11 @@ import { SessionStateStore } from './session_state_store';
 import type { RequestMatch } from './requests';
 import type { Session } from './types/domain';
 import type { UiStateApi } from './ui_state';
-import { runtime } from './runtime';
-import './ui_state';
+
+import { UiState } from './ui_state';
 
 function setup() {
-  const ui = runtime.UiState as UiStateApi;
+  const ui = UiState as UiStateApi;
   const requests = {
     forRun: vi.fn((_sessionId: string, _runId: string): RequestMatch | null => null),
     acceptsEvent: vi.fn(() => true),
@@ -91,24 +91,22 @@ function setup() {
 }
 
 const start = {
-  type: 'task_start',
+  type: 'task_start' as const,
   session_id: 'session',
   run_id: 'run',
   task_status: 'running',
   task_revision: 4,
-  event_id: 10,
 };
 
 const htmlDone = {
   ...start,
-  type: 'task_done',
+  type: 'task_done' as const,
   task_status: 'completed',
   stop_reason: 'done',
   task_revision: 5,
-  event_id: 11,
   mode: 'chat',
   changed: true,
-  changes: { changed_count: 1, files: [{ path: 'snake.html', status: 'A' }] },
+  changes: { mode: 'git', changed_count: 1, files: [{ path: 'snake.html', status: 'A' }] },
 };
 
 describe('RunEventCoordinator ordering', () => {
@@ -139,7 +137,7 @@ describe('RunEventCoordinator ordering', () => {
       coordinator.handleServerEvent({
         ...htmlDone,
         run_id: runId,
-        changes: { files, changed_count: changedCount },
+        changes: { mode: 'git', files: [...files], changed_count: changedCount },
       });
     }
     expect(deps.previewHtml).not.toHaveBeenCalled();
@@ -189,12 +187,11 @@ describe('RunEventCoordinator ordering', () => {
     });
     expect(session.messages.some((message) => message.streamId)).toBe(false);
     coordinator.handleServerEvent({
-      type: 'task_done',
+      type: 'task_done' as const,
       session_id: 'session',
       run_id: 'run',
       task_status: 'completed',
       task_revision: 5,
-      event_id: 11,
       mode: 'chat',
       summary: 'final',
       stop_reason: 'done',
@@ -228,13 +225,12 @@ describe('RunEventCoordinator ordering', () => {
       ],
     });
     coordinator.handleServerEvent({
-      type: 'task_done',
+      type: 'task_done' as const,
       run_id: 'run',
       session_id: 'session',
       task_revision: 6,
       task_status: 'waiting',
       stop_reason: 'approval',
-      event_id: 12,
     });
     expect(coordinator.projection.isActive('run')).toBe(true);
   });
@@ -243,9 +239,9 @@ describe('RunEventCoordinator ordering', () => {
     const { coordinator, deps, approvals } = setup();
     const question = { id: 'question' },
       input = { id: 'input' };
-    coordinator.handleServerEvent({ type: 'user_question', question });
-    coordinator.handleServerEvent({ type: 'conversation_input', input });
-    const approval = { type: 'shell_approval_status', id: 'approval' };
+    coordinator.handleServerEvent({ type: 'user_question', session_id: 'session', question });
+    coordinator.handleServerEvent({ type: 'conversation_input', session_id: 'session', input });
+    const approval = { type: 'shell_approval_status' as const, id: 'approval' };
     coordinator.handleServerEvent(approval);
     expect(deps.questions.apply).toHaveBeenCalledWith(question);
     expect(deps.composer.applyQueuedInput).toHaveBeenCalledWith(input);
@@ -324,7 +320,7 @@ describe('RunEventCoordinator ordering', () => {
     deps.history.acceptRunEvent.mockImplementation(() => {});
     coordinator.handleServerEvent(start);
     expect(session.messages).toEqual([]);
-    coordinator.handleServerEvent({ type: 'conversation_input', session_id: 'session', run_id: 'unknown', input: {} });
+    coordinator.handleServerEvent({ type: 'conversation_input', session_id: 'session', input: {} });
     coordinator.handleServerEvent({ type: 'shell_approval_status', session_id: 'session', run_id: 'unknown' });
     expect(deps.composer.applyQueuedInput).toHaveBeenCalledOnce();
     expect(approvals.apply).toHaveBeenCalledOnce();

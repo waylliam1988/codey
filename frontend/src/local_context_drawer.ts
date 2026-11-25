@@ -1,4 +1,5 @@
-import { runtime } from './runtime';
+import { requestResponse } from './api/transport';
+import { UiState } from './ui_state';
 
 export interface LocalContextDeps {
   $(id: string): HTMLElement;
@@ -190,7 +191,7 @@ let selectedScopeKind = '';
 let selectedMessage: MessageSelection | null = null;
 let pendingRequest: { key: string; id: string } | null = null;
 function setOpen(open: boolean): void {
-  const state: unknown = runtime.UiState;
+  const state: unknown = UiState;
   if (!isUiState(state)) throw new Error('UI state unavailable');
   state.setDrawerOpen('local-context-drawer', open);
 }
@@ -639,7 +640,7 @@ async function load(): Promise<void> {
   loadedScope = requested;
   $('subtitle').textContent = 'Loading...';
   try {
-    const response = await fetch(
+    const response = await requestResponse(
       '/api/ghost/summary?' +
         new URLSearchParams({ ...requested, ...(selectedScopeKind ? { scope_kind: selectedScopeKind } : {}) }),
       { cache: 'no-store' },
@@ -667,7 +668,7 @@ async function postAction(action: string, payload: Record<string, unknown> = {})
   const key = JSON.stringify(command);
   if (!pendingRequest || pendingRequest.key !== key) pendingRequest = { key, id: crypto.randomUUID() };
   try {
-    const response = await fetch('/api/ghost/action', {
+    const response = await requestResponse('/api/ghost/action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...command, request_id: pendingRequest.id }),
@@ -700,7 +701,7 @@ async function postAction(action: string, payload: Record<string, unknown> = {})
 }
 async function exportMemory(): Promise<void> {
   try {
-    const response = await fetch('/api/ghost/export', { cache: 'no-store' });
+    const response = await requestResponse('/api/ghost/export', { cache: 'no-store' });
     if (!response.ok) throw new Error('Export failed');
     const value: unknown = await response.json();
     $('export').textContent = (await deps.copyText(JSON.stringify(value, null, 2))) ? 'Copied' : 'Export failed';
@@ -726,4 +727,4 @@ function openSelection(selection: MessageSelection): void {
   selectedScopeKind = scope().project ? 'project' : 'session';
   open();
 }
-runtime.LocalContextDrawer = { init, open, openSelection, close, load, render, handleScopeChanged };
+export const LocalContextDrawer = { init, open, openSelection, close, load, render, handleScopeChanged };
