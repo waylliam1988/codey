@@ -4,12 +4,23 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Literal, TypedDict
 
 from codey.control.protocol import ControlError
 from codey.storage.atomic_io import filesystem_path
+from codey.types.json_value import require_json_string, require_json_strings
+from codey.utils.object_fields import object_fields
 
 DESCRIPTOR = "codey/runtime.json"
+
+
+class RuntimeDescriptor(TypedDict):
+    schema: Literal[1]
+    version: str
+    requires_python: str
+    dependencies: list[str]
+    mcp_dependencies: list[str]
+    files: list[str]
 
 
 def package_files(root: Path) -> list[str]:
@@ -29,23 +40,25 @@ def package_files(root: Path) -> list[str]:
     return sorted(files)
 
 
-def read_runtime(root: Path) -> dict[str, Any]:
+def read_runtime(root: Path) -> RuntimeDescriptor:
     try:
-        data = json.loads((root / DESCRIPTOR).read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
+        data: object = json.loads((root / DESCRIPTOR).read_text(encoding="utf-8"))
+        if not object_fields(data) or type(data.get("schema")) is not int or data["schema"] != 1:
             raise ValueError("Invalid runtime descriptor")
-        valid = (data.get("schema") == 1
-                 and isinstance(data.get("version"), str) and bool(data["version"])
-                 and isinstance(data.get("requires_python"), str)
-                 and all(isinstance(data.get(key), list) and all(isinstance(item, str) for item in data[key])
-                         for key in ("dependencies", "mcp_dependencies", "files")))
-        if not valid or not data["files"] or len(data["files"]) > 10_000:
+        version = require_json_string(data.get("version"), "version")
+        files = require_json_strings(data.get("files"), "files")
+        if not version or not files or len(files) > 10_000:
             raise ValueError("Invalid runtime descriptor")
-        if data["files"] != package_files(root):
+        if files != package_files(root):
             raise ValueError("Runtime inventory differs from its published descriptor")
-        if not {"codey/__main__.py", "codey/web/index.html"}.issubset(data["files"]):
+        if not {"codey/__main__.py", "codey/web/index.html"}.issubset(files):
             raise ValueError("Runtime requires its entry point and built frontend")
-        return data
+        return RuntimeDescriptor(
+            schema=1, version=version, files=files,
+            requires_python=require_json_string(data.get("requires_python"), "requires_python"),
+            dependencies=require_json_strings(data.get("dependencies"), "dependencies"),
+            mcp_dependencies=require_json_strings(data.get("mcp_dependencies"), "mcp_dependencies"),
+        )
     except (OSError, ValueError, TypeError) as exc:
         raise ControlError("RUNTIME_NOT_FOUND", "Published Codey runtime is missing or incomplete") from exc
 

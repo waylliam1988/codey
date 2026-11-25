@@ -2169,3 +2169,10 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 收窄协调器 JSON、SQLite 元数据、HTTP 响应和进程参数，清除整文件 149 条严格 Any 诊断。仍可作为单文件运行。增加最小服务状态夹具，验证候选无法启动时使用当前 schema 恢复原运行时。用 `git show 666d85ec:codey/launcher/runner.py` 按 UTF-8 载入内存，对以下最终目标组仅移除新失败回归节点，基线 30 passed、退出 0。
 - `python -m pytest -q tests/test_launcher_child_cleanup.py tests/test_launcher_journal_write.py tests/test_release_output_metadata_compatibility.py tests/test_release_activation_launch_failure.py tests/test_release_validation_cache.py --tb=short`，31 passed、无失败或跳过、退出 0。修改源码及回归严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁通过。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。服务切换、健康拒绝及进程退出均通过临时夹具验证。
 - Q077B 完成。累计完成 139/372 批，覆盖 229/1011 个生产文件，另有 15 批部分完成。下一批 Q078 核对运行时清单与依赖边界。
+
+### Q078 Launcher 运行时描述符与文件清单
+
+- Q077B 已提交 `e26452e4`。完整检查 `runtime.py`。发布器为描述符写入整数 schema 1。使用完整最小清单分别传入 JSON `true` 与 `1.0`，旧读取器都接受。在 `D:\codey` 执行 `python -m pytest -q tests/test_runtime_descriptor_schema.py --tb=short`，2 failed、退出 1。改用整数版本检查及具名字段解码后，两条用例均拒绝畸形版本并接受整数版本。源码原 15 条严格 Any 诊断清除。
+- 工作区原清单列出 900 项，实际应为 905 项，缺少 52 项并引用 47 项已移除的资产。`tests/test_runtime_publication.py` 与下列两个工作区清单节点的原组合是 9 passed、2 failed、退出 1，两处失败均在清单比对。按 `docs/startup.md` 执行 `python -m tools.publish_runtime`，本地重新生成 `codey/runtime.json`。字段元数据保持相同，905 项路径全部受 Git 跟踪。两个原失败节点通过。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_runtime_descriptor_schema.py tests/test_runtime_publication.py tests/test_task_contract_boundaries.py::test_checkout_inventory_includes_chat_contract_module tests/test_browser_experiment_boundary.py::test_runtime_inventory_excludes_browser_candidates tests/test_control_service_startup.py::test_source_materialization_does_not_require_tools_on_import_path tests/test_control_service_startup.py::test_checkout_materialization_republishes_and_retries_once --tb=short`，18 passed、无失败或跳过、退出 0。整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁均通过。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。完整工作树物化测试未执行，覆盖使用工作区只读核对与临时最小夹具。
+- Q078 完成。累计完成 140/372 批，覆盖 230/1011 个生产文件，另有 15 批部分完成。下一批 Q079 检查 Memory 包入口。

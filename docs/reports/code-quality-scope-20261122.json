@@ -4680,10 +4680,12 @@
         "codey/launcher/runtime.py"
       ],
       "id": "Q078",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 3,
+      "status": "completed_changed",
+      "reviewed_files": ["codey/launcher/runtime.py"],
+      "verified_files": ["codey/launcher/runtime.py"],
+      "tests": ["tests/test_runtime_descriptor_schema.py", "tests/test_runtime_publication.py", "tests/test_task_contract_boundaries.py", "tests/test_browser_experiment_boundary.py", "tests/test_control_service_startup.py"],
+      "reviewed_support": ["tests/test_runtime_descriptor_schema.py"],
+      "result": "Decode the runtime descriptor as typed fields and reject boolean or floating schema values. Both original regressions failed. Regenerated the local descriptor from the 905 tracked package paths and revalidated two failing checkout inventory cases. All 18 scoped tests and production gates passed. Full checkout copy fixtures were outside verification.",
       "followups": [
         "Q014C dependency test_release_control.py::test_browser_session_survives_service_replacement_but_bootstrap_does_not failed at snapshot/read_runtime before authentication: published descriptor has 876 files versus actual 877; missing codey/operations/browser_result_evidence.py (existing commit 1292e668). q014c-runtime-inventory.json. Q014C changes only typed auth tests; preserve rejection and refresh generated inventory via normal publisher when validating release/runtime scope. Runtime read_runtime explicit Any remains at Q078; diagnostic-path inspection is not whole-file governance.",
         "2026-11-23 external 303e7724 refreshed runtime descriptor; old missing browser_result_evidence/http_response names now present. Current file-name Python inventory checked at Q018 entry: listed 750, tracked 750, missing []. Old 876/877 observation is historical, not a current blocker proof. Runtime activation/copying tests remain unexecuted; validate current descriptor fully in Q078 without copying a worktree.",
