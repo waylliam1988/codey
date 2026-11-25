@@ -3,14 +3,17 @@ from __future__ import annotations
 
 import hashlib
 import importlib.metadata
+import math
 import os
 import platform
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal, NotRequired, TypedDict, cast
+from typing import Literal, NotRequired, TypedDict
 
 from codey.control.protocol import fingerprint
 from codey.storage.local_store import read_json_strict, write_json_atomic
+from codey.utils.object_fields import object_fields
 
 VALIDATION_RULES = "compile-and-cli-v1"
 
@@ -55,13 +58,25 @@ def cached_checks(home: Path, key: str, commands: list[list[str]]) -> list[Verif
         return None
     if not value or value.get("key") != key or value.get("commands") != commands:
         return None
-    rows = value.get("verification")
-    if (not isinstance(rows, list) or len(rows) != len(commands)
-            or any(not isinstance(row, dict) or row.get("argv") != command
-                   or row.get("state") != "settled" or type(row.get("exit_code")) is not int or row.get("exit_code") != 0
-                   for row, command in zip(rows, commands, strict=True))):
+    raw = value.get("verification")
+    if not isinstance(raw, list) or len(raw) != len(commands):
         return None
-    return [{**row, "state": "cached", "cache_key": key} for row in cast(list[Verification], rows)]
+    rows: Sequence[object] = raw
+    cached: list[Verification] = []
+    for row, command in zip(rows, commands, strict=True):
+        if (not object_fields(row) or row.get("argv") != command or row.get("state") != "settled"
+                or type(row.get("exit_code")) is not int or row["exit_code"] != 0):
+            return None
+        check: Verification = {"argv": command, "state": "cached", "exit_code": 0, "cache_key": key}
+        for field in ("started_at", "finished_at", "elapsed_seconds"):
+            if field in row:
+                timestamp = row[field]
+                if (not isinstance(timestamp, (int, float)) or isinstance(timestamp, bool)
+                        or isinstance(timestamp, float) and not math.isfinite(timestamp)):
+                    return None
+                check[field] = timestamp
+        cached.append(check)
+    return cached
 
 
 def save_checks(home: Path, key: str, commands: list[list[str]], rows: list[Verification]) -> None:

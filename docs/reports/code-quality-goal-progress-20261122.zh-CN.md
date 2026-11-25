@@ -2155,3 +2155,10 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - `python -m pytest -q tests/test_release_activation_launch_failure.py tests/test_release_materialization.py tests/test_release_validation_cache.py tests/test_control_service_contract.py::test_release_dispatch_preserves_persistent_owner_fields --tb=short`，21 passed、无失败或跳过、退出 0。原组基线 20 passed。夹具使用临时目录中的小型候选和进程替身。真实服务切换留至 Q077/Q078 的不复制工作树验证范围。
 - 修改源码和回归的整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁均通过。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。
 - Q076 完成。累计完成 137/371 批，覆盖 226/1011 个生产文件，另有 15 批部分完成。下一批 Q077 审查协调器、启动计时和验证缓存。
+
+### Q077 Launcher 启动计时与验证缓存
+
+- Q076 已提交 `0321f63b`。启动计时和缓存证据可用小型夹具直接验证。独立协调器有自己的持久状态及回滚路径，拆为 Q077B 验证。生产范围仍为原来的三个文件。
+- 完整检查 `startup.py` 与 `validation_cache.py`。缓存应只返回符合 `Verification` 合同的检查证据。传入成功退出且时间字段为字符串的缓存行，`python -m pytest -q tests/test_launcher_cache_evidence.py --tb=short` 在修改前 1 failed、退出 1。改用有类型的行解码后，畸形缓存失效，正常行原样提供时间字段并标记为缓存命中。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_launcher_cache_evidence.py tests/test_release_validation_cache.py tests/test_desktop_startup.py::test_timing_failure_and_log_io_do_not_hide_original_startup_error --tb=short`，19 passed、无失败或跳过、退出 0。去掉新增回归的基线为 18 passed。整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁均通过。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。
+- Q077 完成。累计完成 138/372 批，覆盖 228/1011 个生产文件，另有 15 批部分完成。Q077B 继续检查独立协调器的状态与回滚，并处理该文件的 149 条严格 Any 诊断。
