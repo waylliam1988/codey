@@ -2063,3 +2063,10 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 运行 `python -m pytest -q tests/test_memory_completion.py::test_rebuild_rejects_the_old_snapshot_schema_without_rewriting_state tests/test_memory_completion.py::test_batch_cursor_is_journal_owned_and_policy_version_is_strict --tb=short`。旧实现接纳具有有效校验和的 schema 1 和旧维护版本，2 failed、1 passed、退出 1。修改后这三项全部通过，拒绝时保留现有投影和日志。未修改任何实际用户数据库。
 - 最终 `python -m pytest -q tests/test_memory_completion.py tests/test_memory_learning_targets.py tests/test_memory_integrity.py tests/test_memory_maintenance_runtime.py tests/test_memory_feedback.py --tb=short` 为 67 passed、退出 0。验证两种时区表示、当前请求的重复与冲突、压缩后重试及重建。五份修改源码与两份回归的完整严格 Any 和 Ruff、全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 `python -m tools.kernel_type_precision_gate` 均退出 0。
 - 本次修订完成既有两批的重新验证。进度仍为 124/365 批，覆盖 211/1011 个生产文件，另有 15 批部分完成。续接 Q071C 的概念图验证。
+
+### Q071C Knowledge 概念图
+
+- 冷启动合同修订已提交 `636a519a`。完整检查 `concepts.py`。收窄 SQL 结果的只读视图，改用有类型的综合笔记记录，合并节点保留、边生成和摘要共用的关系排序。整文件 113 条严格 Any 诊断清除，Ruff 通过。全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel 精度门禁已在冷启动复验中同时覆盖此改动。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge.py::ConceptGraphBuilderTests tests/test_knowledge.py::UnifiedResearchGraphTests tests/test_knowledge_version_graph.py tests/test_long_term_knowledge.py tests/test_research_knowledge_acceptance.py --tb=short -o faulthandler_timeout=60`，27 passed、2 failed、退出 1。将 `9650f518` 的 `concepts.py` 在内存载入并用 `pytest.main` 分别运行前四段目标与最后一份文件，结果同为 27 passed（退出 0）和 2 failed（退出 1）。第一次内存载入因默认 GBK 解码失败，改用 UTF-8 后完成对照。
+- 两项集成失败均在首个 `web_search`。事件记录显示实际浏览器搜索因 `search_navigation_failed` 结束，概念图尚未执行。夹具替换了默认研究搜索工厂，但首轮混合任务未收到该替身的返回。Q162 跟进混合搜索装配及测试替身，原断言保留。
+- Q071C 完成。累计完成 125/365 批，覆盖 212/1011 个生产文件，另有 15 批部分完成。下一批 Q071D 检查检索范围与呈现。

@@ -10,8 +10,9 @@ Graph in graph.py stays untouched.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
-from typing import Any
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from functools import partial
 
 from codey.knowledge.concept_schema import normalize_concept
 from codey.knowledge.graph import (
@@ -33,6 +34,9 @@ MAX_EXCERPT_RELATIONS = 6
 _EDGE_ROW_SCAN = 2048
 _TAG_ROW_SCAN = 4096
 
+_ConceptRow = Mapping[str, object]
+_DeclaredRelations = dict[tuple[str, str, str], list["SupportRef"]]
+
 
 @dataclass(frozen=True)
 class SupportRef:
@@ -50,6 +54,14 @@ class MissingConceptLink:
     support_refs: tuple[SupportRef, ...]
     priority: float
     session_focus: bool = False
+
+
+@dataclass
+class _Synthesis:
+    id: str
+    title: str
+    session_id: str
+    concepts: list[str] = field(default_factory=list)
 
 
 def concept_node_id(concept: str) -> str:
@@ -79,10 +91,10 @@ class ConceptGraphBuilder:
         session_id = (session_id or "").strip()
         node_limit = _bounded_int(node_limit, DEFAULT_CONCEPT_NODE_LIMIT, 8, 200)
         edge_limit = _bounded_int(edge_limit, DEFAULT_CONCEPT_EDGE_LIMIT, 8, 400)
-        edge_rows = self.store.index.concept_edge_rows(
+        edge_rows: Sequence[_ConceptRow] = self.store.index.concept_edge_rows(
             _EDGE_ROW_SCAN, session_id=session_id
         )
-        tag_rows = self.store.index.tag_concept_rows(
+        tag_rows: Sequence[_ConceptRow] = self.store.index.tag_concept_rows(
             _TAG_ROW_SCAN, session_id=session_id
         )
 
@@ -155,10 +167,10 @@ class ConceptGraphBuilder:
         project = (project or "").strip()
         node_limit = _bounded_int(node_limit, DEFAULT_CONCEPT_NODE_LIMIT, 8, 200)
         limit = _bounded_int(limit, MAX_MISSING_SUGGESTIONS, 1, 32)
-        edge_rows = self.store.index.concept_edge_rows(
+        edge_rows: Sequence[_ConceptRow] = self.store.index.concept_edge_rows(
             _EDGE_ROW_SCAN, session_id=session_id
         )
-        tag_rows = self.store.index.tag_concept_rows(
+        tag_rows: Sequence[_ConceptRow] = self.store.index.tag_concept_rows(
             _TAG_ROW_SCAN, session_id=session_id
         )
         if strict_scope:
@@ -176,9 +188,9 @@ class ConceptGraphBuilder:
 
     def _aggregate_declared(
         self,
-        edge_rows: list[dict[str, Any]],
-    ) -> dict[tuple[str, str, str], list[SupportRef]]:
-        declared: dict[tuple[str, str, str], list[SupportRef]] = {}
+        edge_rows: Sequence[_ConceptRow],
+    ) -> _DeclaredRelations:
+        declared: _DeclaredRelations = {}
         for row in edge_rows:
             key = (str(row["src"]), str(row["dst"]), str(row["kind"]))
             notes = declared.setdefault(key, [])
@@ -191,12 +203,11 @@ class ConceptGraphBuilder:
         return declared
 
     def _aggregate_tags(
-        self, tag_rows: list[dict[str, Any]], session_id: str
-    ) -> tuple[dict[str, set[str]], set[str], list[dict[str, Any]]]:
+        self, tag_rows: Sequence[_ConceptRow], session_id: str
+    ) -> tuple[dict[str, set[str]], set[str], list[_Synthesis]]:
         tag_notes: dict[str, set[str]] = {}
         session_concepts: set[str] = set()
-        syntheses: list[dict[str, Any]] = []
-        synthesis_by_id: dict[str, dict[str, Any]] = {}
+        synthesis_by_id: dict[str, _Synthesis] = {}
         for row in tag_rows:
             concept = normalize_concept(row.get("tag"))
             if not concept:
@@ -206,18 +217,12 @@ class ConceptGraphBuilder:
             if session_id and str(row.get("session_id") or "") == session_id:
                 session_concepts.add(concept)
             if str(row.get("type") or "") == "synthesis":
-                entry: dict[str, Any] | None = synthesis_by_id.get(note_id)
+                entry = synthesis_by_id.get(note_id)
                 if entry is None:
-                    entry = {
-                        "id": note_id,
-                        "title": str(row.get("title") or note_id),
-                        "session_id": str(row.get("session_id") or ""),
-                        "concepts": list[str](),
-                    }
+                    entry = _Synthesis(note_id, str(row.get("title") or note_id), str(row.get("session_id") or ""))
                     synthesis_by_id[note_id] = entry
-                    syntheses.append(entry)
-                entry["concepts"].append(concept)
-        return tag_notes, session_concepts, syntheses
+                entry.concepts.append(concept)
+        return tag_notes, session_concepts, list(synthesis_by_id.values())
 
     def _concept_weights(
         self,
@@ -250,10 +255,7 @@ class ConceptGraphBuilder:
         kept: list[str] = []
         kept_set: set[str] = set()
 
-        for (src, dst, _kind), _notes in sorted(
-            declared.items(),
-            key=lambda item: _relation_rank(item, weights, session_concepts, session_id),
-        ):
+        for (src, dst, _kind), _notes in _ranked_relations(declared, weights, session_concepts, session_id):
             missing = [concept for concept in (src, dst) if concept not in kept_set]
             if len(kept) + len(missing) > node_limit:
                 continue
@@ -263,15 +265,10 @@ class ConceptGraphBuilder:
             if len(kept) >= node_limit:
                 break
 
-        remaining = sorted(
-            (concept for concept in weights if concept not in kept_set),
-            key=lambda c: (
-                c not in session_concepts,
-                c not in declared_concepts,
-                -weights[c],
-                c,
-            ),
-        )
+        def concept_rank(concept: str) -> tuple[bool, bool, float, str]:
+            return concept not in session_concepts, concept not in declared_concepts, -weights[concept], concept
+
+        remaining = sorted((concept for concept in weights if concept not in kept_set), key=concept_rank)
         for concept in remaining:
             if len(kept) >= node_limit:
                 break
@@ -288,10 +285,7 @@ class ConceptGraphBuilder:
         session_id: str,
         edge_limit: int,
     ) -> list[GraphEdge]:
-        ranked = sorted(
-            declared.items(),
-            key=lambda item: _relation_rank(item, weights, session_concepts, session_id),
-        )
+        ranked = _ranked_relations(declared, weights, session_concepts, session_id)
         edges: list[GraphEdge] = []
         for (src, dst, kind), notes in ranked:
             if len(edges) >= edge_limit:
@@ -313,7 +307,7 @@ class ConceptGraphBuilder:
         self,
         nodes: list[GraphNode],
         edges: list[GraphEdge],
-        syntheses: list[dict[str, Any]],
+        syntheses: list[_Synthesis],
         kept: set[str],
         session_id: str,
         *,
@@ -327,18 +321,18 @@ class ConceptGraphBuilder:
         for synthesis in syntheses:
             if added >= max_nodes or edge_budget <= 0:
                 break
-            concepts = [c for c in dict.fromkeys(synthesis["concepts"]) if c in kept]
+            concepts = [concept for concept in {concept: None for concept in synthesis.concepts} if concept in kept]
             if not concepts:
                 continue
             added += 1
             nodes.append(
                 GraphNode(
-                    id=synthesis["id"],
-                    label=synthesis["title"],
+                    id=synthesis.id,
+                    label=synthesis.title,
                     kind="synthesis",
                     note_type="synthesis",
                     weight=2.2,
-                    focus=bool(session_id and synthesis["session_id"] == session_id),
+                    focus=bool(session_id and synthesis.session_id == session_id),
                 )
             )
             for concept in concepts:
@@ -347,7 +341,7 @@ class ConceptGraphBuilder:
                 edge_budget -= 1
                 edges.append(
                     GraphEdge(
-                        src=synthesis["id"],
+                        src=synthesis.id,
                         dst=concept_node_id(concept),
                         kind="tagged",
                         weight=1.0,
@@ -376,11 +370,11 @@ def _missing_suggestions(
 
 
 def _filter_scope_rows(
-    rows: list[dict[str, Any]],
+    rows: Sequence[_ConceptRow],
     *,
     session_id: str,
     project: str,
-) -> list[dict[str, Any]]:
+) -> Sequence[_ConceptRow]:
     if session_id and project:
         return [
             row
@@ -480,6 +474,16 @@ def _relation_rank(
     )
 
 
+def _ranked_relations(
+    declared: _DeclaredRelations,
+    weights: dict[str, float],
+    session_concepts: set[str],
+    session_id: str,
+) -> list[tuple[tuple[str, str, str], list[SupportRef]]]:
+    return sorted(declared.items(), key=partial(_relation_rank, weights=weights,
+                                                 session_concepts=session_concepts, session_id=session_id))
+
+
 def _relation_sections(
     declared: dict[tuple[str, str, str], list[SupportRef]],
     kept: set[str],
@@ -493,10 +497,7 @@ def _relation_sections(
     which way a relation points and which notes support it.
     """
     sections: dict[str, dict[str, list[str]]] = {}
-    ranked = sorted(
-        declared.items(),
-        key=lambda item: _relation_rank(item, weights, session_concepts, session_id),
-    )
+    ranked = _ranked_relations(declared, weights, session_concepts, session_id)
     for (src, dst, kind), notes in ranked:
         support = _support_line(notes)
         if src in kept:
@@ -638,13 +639,14 @@ def build_unified_research_graph(
     edges = _trim_edges(edges, edge_limit, protected_keys=protected_edge_keys)
     focus_ids_out = tuple(node.id for node in nodes if node.focus)
     center_id = _center_id(nodes, evidence.center_id, focus_ids_out)
+    unique_warnings: dict[str, None] = dict.fromkeys(warnings)
     return ResearchGraphArtifact(
         center_id=center_id,
         focus_ids=focus_ids_out,
         depth=depth,
         nodes=tuple(nodes),
         edges=tuple(edges),
-        warnings=tuple(dict.fromkeys(warnings)),
+        warnings=tuple(unique_warnings),
     )
 
 
@@ -654,7 +656,8 @@ def _append_visible_note_tags(
     edges_by_id: dict[tuple[str, str, str], GraphEdge],
     note_ids: list[str],
 ) -> None:
-    for row in store.index.tags_for(note_ids, active_only=True):
+    tag_rows: Sequence[_ConceptRow] = store.index.tags_for(note_ids, active_only=True)
+    for row in tag_rows:
         note_id = str(row.get("note_id") or "")
         if note_id not in nodes_by_id:
             continue

@@ -4521,10 +4521,11 @@
       "responsibility": "Knowledge concept graph and support projections",
       "files": ["codey/knowledge/concepts.py"],
       "id": "Q071C",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/test_knowledge.py", "tests/test_long_term_knowledge.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/knowledge/concepts.py"],
+      "verified_files": ["codey/knowledge/concepts.py"],
+      "tests": ["tests/test_knowledge.py", "tests/test_knowledge_version_graph.py", "tests/test_long_term_knowledge.py", "tests/test_research_knowledge_acceptance.py"],
+      "result": "Typed projection inputs and synthesis summaries and consolidated relation ordering. Twenty-seven direct and adjacent tests passed before and after the change. Two headless fixture cases failed at the first web search with the same baseline behavior and are tracked in Q162."
     },
     {
       "responsibility": "Knowledge access and recall presentation",
@@ -5854,7 +5855,8 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 42
+      "candidate_test_count": 42,
+      "followups": ["Q071C acceptance expansion: both tests/test_research_knowledge_acceptance.py variants fail in the first headless web_search before graph composition. The ledger records browser search_navigation_failed even though the test patches the default research factory. The same two failures reproduced with the concepts module loaded from 9650f518. Verify the current hybrid search assembly and update the deterministic fixture when that contract is established."]
     },
     {
       "responsibility": "codey/research: source acquisition and discovery",
