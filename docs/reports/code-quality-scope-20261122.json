@@ -4585,9 +4585,10 @@
     },
     {
       "id": "Q072F", "responsibility": "Knowledge evidence and version graphs", "files": ["codey/knowledge/graph.py", "codey/knowledge/version_graph.py"],
-      "status": "not_started", "reviewed_files": [], "verified_files": [],
-      "tests": ["tests/test_knowledge.py", "tests/test_knowledge_version_graph.py"],
-      "followups": ["Q072D typed note_references, so Pyrefly now reports four redundant str/int conversions in version_graph.py. Review with this batch."]
+      "status": "completed_changed", "reviewed_files": ["codey/knowledge/graph.py", "codey/knowledge/version_graph.py"], "verified_files": ["codey/knowledge/graph.py", "codey/knowledge/version_graph.py"],
+      "tests": ["tests/test_knowledge_graph_center.py", "tests/test_knowledge.py", "tests/test_knowledge_version_graph.py", "tests/test_persistent_research_lifecycle.py", "tests/test_server.py"],
+      "reviewed_support": ["tests/test_knowledge_graph_center.py"],
+      "result": "The graph retains its center when trimming to the node budget. The original regression failed, and all 57 scoped cases passed after the fix. Typed transport payloads, source rows, ranking and version lookups clear strict Any diagnostics and four redundant conversion warnings. Production gates passed."
     },
     {
       "id": "Q072G", "responsibility": "Knowledge context brief assembly", "files": ["codey/knowledge/brief.py"],

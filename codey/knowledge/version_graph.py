@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Any
+from collections.abc import Mapping
+from typing import Protocol
 
 from codey.knowledge.graph import GraphEdge, GraphNode, ResearchGraphArtifact
 from codey.knowledge.model import KnowledgeVersion
 from codey.knowledge.recall import KnowledgeAccess, KnowledgeRecall
 from codey.knowledge.store import KnowledgeStore
+from codey.types.json_value import require_json_integer, require_json_string
+
+
+class _GraphRow(Protocol):
+    def __getitem__(self, key: int, /) -> object: ...
 
 
 def version_node_id(identity: str, revision: int) -> str:
@@ -29,9 +35,10 @@ def version_detail(version: KnowledgeVersion) -> str:
     if not value.conditions:
         lines.append("- Not extracted; absence does not mean unrestricted applicability.")
     lines.append("\nProvenance:")
+    provenance: Mapping[str, object] = value.provenance
     for key in ("url", "locator", "page", "retrieved_at", "study_id", "independence", "basis", "source_statement_type"):
-        if value.provenance.get(key) is not None:
-            lines.append(f"- {key}: {value.provenance[key]}")
+        if provenance.get(key) is not None:
+            lines.append(f"- {key}: {provenance[key]}")
     lines.append("\nPinned references:")
     lines.extend(f"- {ref.relation}: {ref.target} (version {ref.revision})" for ref in value.references)
     lines.append("\nA connection is not proof. Candidate relationships remain hypotheses.")
@@ -45,12 +52,12 @@ def _focus_versions(store: KnowledgeStore, focus_ids: tuple[str, ...] | list[str
             raw_id, raw_revision = identity.removeprefix("knowledge:").rsplit("@", 1)
             if raw_revision.isdecimal():
                 seeds.append((raw_id, int(raw_revision)))
-        elif store.repository.read(identity):
-            version = store.repository.read(identity)
-            if version:
-                seeds.append((identity, version.revision))
+            continue
+        version = store.repository.read(identity)
+        if version is not None:
+            seeds.append((identity, version.revision))
         else:
-            seeds.extend((str(row["target"]), int(row["revision"])) for row in store.note_references(identity))
+            seeds.extend((row["target"], row["revision"]) for row in store.note_references(identity))
     return seeds
 
 
@@ -59,36 +66,46 @@ def build_version_graph(store: KnowledgeStore, session_id: str, *, focus_ids: tu
     conn = store.index._read_conn()
     # Session membership is a projection; the payload and evidence remain owned by
     # the repository. This query never mixes unrelated private projects.
-    notes: list[dict[str, Any]] = store.index.recent(24, session_id=session_id) if session_id else []
+    notes: list[dict[str, object]] = store.index.recent(24, session_id=session_id) if session_id else []
     project = next((str(note["project"]) for note in notes if note.get("project")), "")
     if not project and session_id:
-        projects = conn.execute("SELECT DISTINCT project FROM knowledge_commit_context WHERE session_id=? AND project!='' LIMIT 2",
-                                (session_id,)).fetchall()
-        project = str(projects[0][0]) if len(projects) == 1 else ""
+        projects: list[_GraphRow] = conn.execute(
+            "SELECT DISTINCT project FROM knowledge_commit_context WHERE session_id=? AND project!='' LIMIT 2",
+            (session_id,),
+        ).fetchall()
+        project = require_json_string(projects[0][0], "knowledge project") if len(projects) == 1 else ""
     depth, node_limit, edge_limit = max(0, min(3, depth)), max(1, min(200, node_limit)), max(0, min(400, edge_limit))
     access = KnowledgeAccess(project, session_id, store.owner_id)
     seeds: list[tuple[str, int]] = []
     seeds.extend(_focus_versions(store, focus_ids))
     for note in notes:
-        seeds.extend((str(row["target"]), int(row["revision"])) for row in store.note_references(str(note["id"])))
+        seeds.extend((row["target"], row["revision"]) for row in store.note_references(str(note["id"])))
     if session_id:
-        rows = conn.execute("SELECT v.id,v.revision FROM knowledge_versions v "
-                            "JOIN knowledge_commit_context c ON c.commit_id=v.commit_id "
-                            "WHERE c.session_id=? ORDER BY v.recorded_at DESC LIMIT 64", (session_id,)).fetchall()
-        seeds.extend((str(row[0]), int(row[1])) for row in rows)
+        rows: list[_GraphRow] = conn.execute(
+            "SELECT v.id,v.revision FROM knowledge_versions v "
+            "JOIN knowledge_commit_context c ON c.commit_id=v.commit_id "
+            "WHERE c.session_id=? ORDER BY v.recorded_at DESC LIMIT 64", (session_id,),
+        ).fetchall()
+        seeds.extend((require_json_string(row[0], "knowledge id"),
+                      require_json_integer(row[1], "knowledge revision")) for row in rows)
     if not seeds:
         return None
     versions: dict[tuple[str, int], KnowledgeVersion] = {}
-    for identity, revision in dict.fromkeys(seeds):
+    unique_seeds: dict[tuple[str, int], None] = dict.fromkeys(seeds)
+    for identity, revision in unique_seeds:
         version = store.repository.read(identity, revision)
         if version and access.allows(version):
             versions[(identity, revision)] = version
     if not versions:
         return ResearchGraphArtifact(warnings=("No accessible versions in the requested scope.",))
     priority = {"answer": 0, "inference": 1, "claim": 2, "question": 3, "entity": 4, "evidence": 5, "source": 6}
-    ranked = sorted(versions.items(), key=lambda row: priority.get(row[1].value.kind, 7))
-    focus = {key for key, _version in ranked[:max(1, node_limit // 3)]}
-    queue = deque((version, 0) for _key, version in ranked[:node_limit])
+
+    def rank(key: tuple[str, int]) -> int:
+        return priority.get(versions[key].value.kind, 7)
+
+    ranked = sorted(versions, key=rank)
+    focus = set(ranked[:max(1, node_limit // 3)])
+    queue = deque((versions[key], 0) for key in ranked[:node_limit])
     kept: dict[tuple[str, int], KnowledgeVersion] = {}
     recall = KnowledgeRecall(store.repository)
     while queue and len(kept) < node_limit:
@@ -107,12 +124,13 @@ def build_version_graph(store: KnowledgeStore, session_id: str, *, focus_ids: tu
     edges: list[GraphEdge] = []
     for key, version in kept.items():
         value = version.value
+        provenance: Mapping[str, object] = value.provenance
         nodes.append(GraphNode(id=version_node_id(*key), label=value.title or value.content[:80],
             kind={"entity": "concept", "answer": "synthesis", "inference": "hypothesis"}.get(value.kind, value.kind),
             note_type=value.kind, status=value.status, interpretation_review=version.interpretation_review,
             dependencies_changed=version.dependencies_changed,
             focus=key in focus, excerpt=version_detail(version), virtual=True,
-            url=str(value.provenance.get("url") or "")))
+            url=str(provenance.get("url") or "")))
         for ref in value.references:
             if (ref.target, ref.revision) not in kept or len(edges) >= edge_limit:
                 continue

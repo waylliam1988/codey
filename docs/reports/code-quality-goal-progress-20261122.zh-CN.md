@@ -2113,3 +2113,10 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_compensation_refs.py tests/test_knowledge.py tests/test_knowledge_sqlite_authority.py tests/test_knowledge_document_path.py tests/test_knowledge_answer_scope.py tests/test_knowledge_repository.py tests/test_knowledge_repository_purge_receipts.py tests/test_persistent_research_lifecycle.py::test_explicit_commit_undo_and_session_graph tests/test_persistent_research_lifecycle.py::test_purge_removes_dependent_documents_exports_and_prevents_replay tests/test_long_term_knowledge.py::test_candidate_note_is_preserved_as_uncertain_and_undo_withdraws --tb=short`，62 passed、无失败或跳过、退出 0。原基线四个目标为 52 passed。
 - 五份修改文件的整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁均通过。Pyrefly 0 errors（35 suppressed、168 warnings 未展示）。初次验证定位到索引重建仍使用旧解码入口，复用同一个行解码器后门禁通过。
 - Q072E 完成。累计完成 131/371 批，覆盖 218/1011 个生产文件，另有 15 批部分完成。下一批 Q072F 审查证据与版本图。
+
+### Q072F Knowledge 证据与版本图
+
+- Q072E 已提交 `dce7aa99`。完整检查 `graph.py` 与 `version_graph.py`。图的中心必须是返回的焦点节点。请求首个有效焦点为问题，另附八个较高类型权重的事实，节点预算为 8。执行 `python -m pytest -q tests/test_knowledge_graph_center.py --tb=short`，旧实现返回被裁掉的问题作为中心，1 failed、退出 1。排序优先保留中心后，同一回归验证中心、焦点标记和节点预算。
+- 图负载与排序使用具体类型，SQLite 投影按列解码。显式版本焦点保留原解析规则，无版本焦点只读取一次对象头。两份源码清除 99 条严格 Any 诊断，Q072D 的四处冗余转换也已移除。整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁均通过。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_graph_center.py tests/test_knowledge.py tests/test_knowledge_version_graph.py tests/test_persistent_research_lifecycle.py::test_explicit_commit_undo_and_session_graph tests/test_persistent_research_lifecycle.py::test_answer_pins_cited_versions_and_replay_rejects_changed_output tests/test_server.py::ResearchGraphApiTests tests/test_server.py::ResearchServerHelperTests::test_research_graph_response_parses_bounded_query tests/test_server.py::ResearchServerHelperTests::test_research_graph_response_reports_unconfigured_store --tb=short`，57 passed、无失败或跳过、退出 0。原基线三个目标为 47 passed。验证版本固定、项目访问范围和 API 图数据。
+- Q072F 完成。累计完成 132/371 批，覆盖 220/1011 个生产文件，另有 15 批部分完成。下一批 Q072G 审查 Knowledge 上下文摘要。

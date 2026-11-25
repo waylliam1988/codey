@@ -10,10 +10,10 @@ import hashlib
 import re
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any
 from urllib.parse import urlparse
 
 from codey.knowledge.store import KnowledgeStore
+from codey.types.json_value import JsonObject
 from codey.utils.refs import coerce_int
 
 GRAPH_EDGE_KINDS = (
@@ -72,7 +72,7 @@ class GraphNode:
     interpretation_review: str = ""
     dependencies_changed: bool = False
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "id": self.id,
             "label": self.label,
@@ -100,7 +100,7 @@ class GraphEdge:
     virtual: bool = False
     detail: str = ""
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "id": f"{self.src}->{self.dst}:{self.kind}",
             "src": self.src,
@@ -122,7 +122,7 @@ class ResearchGraphArtifact:
     edges: tuple[GraphEdge, ...] = ()
     warnings: tuple[str, ...] = ()
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         return {
             "center_id": self.center_id,
             "focus_ids": list(self.focus_ids),
@@ -231,6 +231,7 @@ class KnowledgeGraphBuilder:
         session_id = (session_id or "").strip()
         if not session_id:
             return ()
+        rows: list[dict[str, object]]
         try:
             rows = self._required_store.index.recent(
                 1,
@@ -238,12 +239,12 @@ class KnowledgeGraphBuilder:
                 types=("synthesis", "decision"),
             )
         except Exception:
-            rows = list[dict[str, Any]]()
+            rows = []
         if not rows:
             try:
                 rows = self._required_store.index.recent(1, session_id=session_id)
             except Exception:
-                rows = list[dict[str, Any]]()
+                rows = []
         return tuple(str(row.get("id") or "") for row in rows if row.get("id"))
 
     def _expand_note_ids(self, focus: tuple[str, ...], depth: int) -> tuple[str, ...]:
@@ -280,11 +281,11 @@ class KnowledgeGraphBuilder:
 
     def _trim_note_rows(
         self,
-        rows: list[dict[str, Any]],
+        rows: list[JsonObject],
         focus_ids: tuple[str, ...],
         edges: tuple[GraphEdge, ...],
         limit: int,
-    ) -> list[dict[str, Any]]:
+    ) -> list[JsonObject]:
         if len(rows) <= limit:
             return rows
         edge_bonus: dict[str, int] = {}
@@ -297,11 +298,12 @@ class KnowledgeGraphBuilder:
             edge_bonus[edge.dst] = max(edge_bonus.get(edge.dst, 0), bonus)
         focus = set(focus_ids)
 
-        def rank(row: dict[str, Any]) -> tuple[Any, ...]:
+        def rank(row: JsonObject) -> tuple[bool, bool, int, int, int, str]:
             note_id = str(row.get("id") or "")
             note_type = str(row.get("type") or "note")
             return (
-                1 if note_id in focus else 0,
+                note_id == focus_ids[0],
+                note_id in focus,
                 _TYPE_PRIORITY.get(note_type, 10),
                 edge_bonus.get(note_id, 0),
                 degree[note_id],
@@ -310,7 +312,7 @@ class KnowledgeGraphBuilder:
 
         return sorted(rows, key=rank, reverse=True)[:limit]
 
-    def _note_node(self, row: dict[str, Any], degree: int, focus_ids: tuple[str, ...]) -> GraphNode:
+    def _note_node(self, row: JsonObject, degree: int, focus_ids: tuple[str, ...]) -> GraphNode:
         note_id = str(row.get("id") or "")
         note_type = str(row.get("type") or "note") or "note"
         return GraphNode(
@@ -437,9 +439,9 @@ class KnowledgeGraphBuilder:
             return edges
         focus = set(focus_ids)
 
-        def rank(edge: GraphEdge) -> tuple[Any, ...]:
+        def rank(edge: GraphEdge) -> tuple[bool, int, float, str, str]:
             return (
-                1 if edge.src in focus or edge.dst in focus else 0,
+                edge.src in focus or edge.dst in focus,
                 _EDGE_PRIORITY.get(edge.kind, 0),
                 edge.weight,
                 edge.src,
@@ -449,7 +451,7 @@ class KnowledgeGraphBuilder:
         return sorted(edges, key=rank, reverse=True)[:limit]
 
 
-def _degree(edges: tuple[GraphEdge, ...]) -> Counter[Any]:
+def _degree(edges: tuple[GraphEdge, ...]) -> Counter[str]:
     degree: Counter[str] = Counter()
     for edge in edges:
         degree[edge.src] += 1
@@ -487,7 +489,7 @@ def _source_label(url: str) -> str:
     return _clip(host, 58)
 
 
-def _source_titles_from_rows(rows: list[dict[str, Any]]) -> dict[str, str]:
+def _source_titles_from_rows(rows: list[JsonObject]) -> dict[str, str]:
     titles: dict[str, str] = {}
     for row in rows:
         body = str(row.get("body") or "")
