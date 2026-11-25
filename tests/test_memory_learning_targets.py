@@ -54,14 +54,8 @@ def test_due_behavior_review_updates_only_from_matching_exposure(tmp_path: Path)
     assert store.export_state() == before
 
 
-@pytest.mark.parametrize(("older_at", "policy_version", "expected_observation", "expected_outcome"), [
-    ("2026-11-20T01:00:00+08:00", None, "newer", "supported"),
-    ("2026-11-19T17:00:00+00:00", None, "newer", "supported"),
-    ("2026-11-20T01:00:00+08:00", "memory-v3", "older", "contradicted"),
-])
-def test_due_review_selects_observation_using_recorded_policy(
-    tmp_path: Path, older_at: str, policy_version: str | None, expected_observation: str, expected_outcome: str,
-) -> None:
+@pytest.mark.parametrize("older_at", ["2026-11-20T01:00:00+08:00", "2026-11-19T17:00:00+00:00"])
+def test_due_review_selects_the_latest_matching_observation_by_instant(tmp_path: Path, older_at: str) -> None:
     store = backend(tmp_path)
     confirm(store, "pref")
     item = store.records((SCOPE,))[0].item
@@ -82,29 +76,21 @@ def test_due_review_selects_observation_using_recorded_policy(
         }))
 
     request = MemoryMaintenanceRequest("review:due", EXPIRED, max_items=1)
-    if policy_version is not None:
-        request = replace(request, policy_version=policy_version)
     result = store.maintain_batch(request)
     assert not result.complete
     predictions = store.export_state()["predictions"]
     assert isinstance(predictions, list) and isinstance(predictions[0], dict)
-    assert predictions[0]["feedback_id"] == expected_observation
-    assert predictions[0]["status"] == expected_outcome
-    if policy_version == "memory-v3":
-        proposal, = store.proposals(SCOPE)
-        store.decide(MemoryDecision(proposal.proposal_id, proposal.version, True, "user:review-confirm", EXPIRED))
+    assert predictions[0]["feedback_id"] == "newer"
+    assert predictions[0]["status"] == "supported"
     before = store.export_state()
     assert store.maintain_batch(request) == result
-    if policy_version == "memory-v3":
-        retry = MemoryMaintenanceRequest(request.operation_id, EXPIRED, max_items=1)
-        assert store.maintain_batch(retry) == result
-        with pytest.raises(ValueError, match="different content"):
-            store.maintain_batch(replace(retry, max_items=2))
+    with pytest.raises(ValueError, match="different content"):
+        store.maintain_batch(replace(request, max_items=2))
     store.rebuild()
     assert store.export_state() == before
-    if policy_version == "memory-v3":
-        store.compact(MemoryRetentionPolicy(), as_of=EXPIRED)
-        assert store.maintain_batch(retry) == result
+    store.compact(MemoryRetentionPolicy(), as_of=EXPIRED)
+    assert store.maintain_batch(request) == result
+    assert store.export_state() == before
 
 
 @pytest.mark.parametrize(("regression_scope", "category", "expected_error"), [

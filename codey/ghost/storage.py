@@ -78,9 +78,6 @@ def save(connection: sqlite3.Connection, collection: str, identity: str, scope: 
 
 
 def _retained_identities(value: JsonValue) -> dict[str, str]:
-    if isinstance(value, dict):
-        # Version 1 preserved the hashes but did not store their journal order.
-        return {identity: require_json_string(digest, "event digest") for identity, digest in value.items()}
     if not isinstance(value, list):
         raise ValueError("invalid retained memory event identities")
     identities: dict[str, str] = {}
@@ -133,9 +130,8 @@ class GhostDatabase:
         finally:
             connection.close()
 
-    def append(self, event: MemoryEvent, project: ProjectEvent, *, legacy_retry: MemoryEvent | None = None) -> None:
+    def append(self, event: MemoryEvent, project: ProjectEvent) -> None:
         value = canonical(event_payload(event))
-        legacy_value = canonical(event_payload(legacy_retry)) if legacy_retry is not None else value
         with self.connect(write=True) as connection:
             base_rows = texts(connection.execute("SELECT payload FROM recovery_base WHERE id = 1"))
             if base_rows:
@@ -143,7 +139,7 @@ class GhostDatabase:
                 identities = _retained_identities(base.get("identities"))
                 retired = identities.get(event.event_id)
                 if retired is not None:
-                    if all(retired != hashlib.sha256(candidate.encode()).hexdigest() for candidate in (value, legacy_value)):
+                    if retired != hashlib.sha256(value.encode()).hexdigest():
                         raise ValueError("memory event identity already names different content")
                     return
                 retired_before = require_json_string(base.get("retired_before"), "retired_before")
@@ -154,7 +150,7 @@ class GhostDatabase:
                     return
             previous = texts(connection.execute("SELECT event_json FROM events WHERE event_id = ?", (event.event_id,)))
             if previous:
-                if previous[0] not in (value, legacy_value):
+                if previous[0] != value:
                     raise ValueError("memory event identity already names different content")
                 return
             head = parse_json_object(texts(connection.execute("SELECT payload FROM journal_head WHERE id = 1"))[0])
@@ -216,8 +212,10 @@ class GhostDatabase:
     def _base(text: str) -> JsonObject:
         base = parse_json_object(text)
         expected = base.pop("checksum", None)
-        if expected != hashlib.sha256(canonical(base).encode()).hexdigest() or base.get("schema_version") not in (1, 2):
+        if expected != hashlib.sha256(canonical(base).encode()).hexdigest():
             raise ValueError("memory recovery base is corrupt")
+        if base.get("schema_version") != 2:
+            raise ValueError("unsupported memory snapshot schema")
         if base.get("projector_version") != 3:
             raise ValueError("unsupported memory projector recovery version")
         return base

@@ -2056,3 +2056,10 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 笔记工厂、导出和 YAML 动态读取的整文件类型收窄，保留延迟导入 PyYAML。移除私有 `_WIKILINK_RE`，仓内仅历史 AST 基线提到该名，运行路径使用能识别关系类型的 `_WIKILINK_KIND_RE`。用 `python -` 加载 `b567c266` 旧实现比较三份有效 YAML 的笔记值、导出字节及链接结果，并在同一探针确认导入笔记模块仍不加载 YAML，退出 0。首次探针的内联问题字符串未加引号导致 YAML 解析失败，修正输入后重跑。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_note_import.py tests/test_fail_closed_runtime_sweep.py::GhostKnowledgeSweepTests::test_store_skips_malformed_legacy_notes tests/test_knowledge.py tests/test_knowledge_sqlite_authority.py tests/test_knowledge_repository.py tests/test_knowledge_answer_scope.py --tb=short`，57 passed、无失败或跳过、退出 0。覆盖旧笔记迁移、显式导入、SQLite 文档、概念关系和研究归档调用方。
 - 两份生产源码及回归严格 Any 与 Ruff 均退出 0，原 55 条 mypy 诊断已清除。全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 `python -m tools.kernel_type_precision_gate` 均退出 0。Q071B 完成。累计完成 124/365 批，覆盖 211/1011 个生产文件，另有 15 批部分完成。下一批 Q071C 审查概念图。
+
+### Q066 与 Q066B 冷启动合同修订
+
+- 用户明确这两项按冷启动处理。快照读取只接受保存日志顺序的 schema 2，维护只接受当前 `memory-v4`。移除旧哈希映射解码、`memory-v3` 重放排序及跨版本重试匹配。当前快照保留最近命令的日志顺序，预测复盘在执行和重放时均按 UTC 时刻选择最新观测。
+- 在 `D:\codey` 运行 `python -m pytest -q tests/test_memory_completion.py::test_rebuild_rejects_the_old_snapshot_schema_without_rewriting_state tests/test_memory_completion.py::test_batch_cursor_is_journal_owned_and_policy_version_is_strict --tb=short`。旧实现接纳具有有效校验和的 schema 1 和旧维护版本，2 failed、1 passed、退出 1。修改后这三项全部通过，拒绝时保留现有投影和日志。未修改任何实际用户数据库。
+- 最终 `python -m pytest -q tests/test_memory_completion.py tests/test_memory_learning_targets.py tests/test_memory_integrity.py tests/test_memory_maintenance_runtime.py tests/test_memory_feedback.py --tb=short` 为 67 passed、退出 0。验证两种时区表示、当前请求的重复与冲突、压缩后重试及重建。五份修改源码与两份回归的完整严格 Any 和 Ruff、全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 `python -m tools.kernel_type_precision_gate` 均退出 0。
+- 本次修订完成既有两批的重新验证。进度仍为 124/365 批，覆盖 211/1011 个生产文件，另有 15 批部分完成。续接 Q071C 的概念图验证。

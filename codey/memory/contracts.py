@@ -23,7 +23,6 @@ MEMORY_CANDIDATE_LIMIT = 4
 MEMORY_CANDIDATE_TEXT_LIMIT = 1200
 MEMORY_EXPERIENCE_EXCERPT_CHARS = 2000
 MEMORY_POLICY_VERSION = "memory-v3"
-LEGACY_MEMORY_MAINTENANCE_POLICY_VERSION = "memory-v3"
 MEMORY_MAINTENANCE_POLICY_VERSION = "memory-v4"
 MEMORY_CONTROLS: tuple[MemoryControlName, ...] = (
     "accept_events", "retrieve_projections", "run_maintenance", "admit_hints",

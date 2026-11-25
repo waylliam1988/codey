@@ -9,11 +9,7 @@ from datetime import timedelta
 from codey.ghost.controls import policy
 from codey.ghost.storage import rows, save, texts
 from codey.memory.codec import record_from_payload, record_payload, record_recency, timestamp
-from codey.memory.contracts import (
-    LEGACY_MEMORY_MAINTENANCE_POLICY_VERSION,
-    MEMORY_MAINTENANCE_POLICY_VERSION,
-    MemoryEvent,
-)
+from codey.memory.contracts import MEMORY_MAINTENANCE_POLICY_VERSION, MemoryEvent
 from codey.types.json_value import (
     JsonObject,
     parse_json_object,
@@ -24,8 +20,7 @@ from codey.types.json_value import (
 
 
 def project_batch(connection: sqlite3.Connection, event: MemoryEvent) -> None:
-    version = event.payload.get("policy_version")
-    if version not in (LEGACY_MEMORY_MAINTENANCE_POLICY_VERSION, MEMORY_MAINTENANCE_POLICY_VERSION):
+    if event.payload.get("policy_version") != MEMORY_MAINTENANCE_POLICY_VERSION:
         raise ValueError("unsupported maintenance policy version")
     limit = require_json_integer(event.payload.get("max_items"), "max_items")
     cursor = require_json_string(event.payload.get("cursor"), "cursor")
@@ -49,7 +44,7 @@ def project_batch(connection: sqlite3.Connection, event: MemoryEvent) -> None:
     save(connection, "cursors", "maintenance", "user", {"cursor": result["cursor"]})
     from codey.ghost.learning import review_due
 
-    review_due(connection, event, legacy_order=version == LEGACY_MEMORY_MAINTENANCE_POLICY_VERSION)
+    review_due(connection, event)
 
 
 def project_retention(connection: sqlite3.Connection, event: MemoryEvent) -> None:

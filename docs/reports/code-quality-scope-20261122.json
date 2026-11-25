@@ -4412,7 +4412,7 @@
       "reviewed_files": ["codey/ghost/storage.py", "codey/ghost/controls.py"],
       "verified_files": ["codey/ghost/storage.py", "codey/ghost/controls.py"],
       "tests": ["tests/test_memory_completion.py", "tests/test_memory_integrity.py", "tests/test_memory_lifecycle.py", "tests/test_memory_maintenance_runtime.py", "tests/test_memory_boundary.py"],
-      "result": "Kept retained command digests in journal order across compactions and read both legacy and ordered recovery bases. 98 scoped tests and all type gates passed."
+      "result": "Kept retained command digests in journal order across compactions. The cold-start contract uses the ordered schema exclusively. The original 98 scoped tests and the 67-case cold-start revalidation passed with all type gates."
     },
     {
       "responsibility": "Ghost memory families, learning and conflict rules",
@@ -4423,7 +4423,7 @@
       "verified_files": ["codey/ghost/families.py", "codey/ghost/learning.py", "codey/ghost/conflicts.py"],
       "tests": ["tests/test_memory_feedback.py", "tests/test_memory_learning_targets.py", "tests/test_memory_plasticity.py", "tests/test_memory_completion.py", "tests/test_memory_lifecycle.py", "tests/test_memory_integrity.py", "tests/test_memory_maintenance_runtime.py", "tests/test_memory_boundary.py", "tests/test_memory_adaptation_flow.py"],
       "reviewed_support": ["tests/test_memory_learning_targets.py"],
-      "result": "New maintenance events select the latest attributable observation by UTC instant. Legacy events retain their replay semantics, and identical prior operations remain retryable before and after compaction. The changed maintenance and storage boundaries passed strict Any, 136 scoped tests and all production gates."
+      "result": "Maintenance selects the latest attributable observation by UTC instant during both processing and replay. The cold-start contract admits only the current maintenance version. Current operations remain retryable before and after compaction. The original 136 scoped tests and the 67-case cold-start revalidation passed with all type gates."
     },
     {
       "responsibility": "Ghost event projection and retention",

@@ -199,7 +199,7 @@ def _validate_observation(connection: sqlite3.Connection, prediction: JsonObject
         raise ValueError("observation has no matching versioned exposure")
 
 
-def review_due(connection: sqlite3.Connection, event: MemoryEvent, *, legacy_order: bool = False) -> None:
+def review_due(connection: sqlite3.Connection, event: MemoryEvent) -> None:
     from dataclasses import replace
 
     from codey.ghost.storage import texts
@@ -232,11 +232,7 @@ def review_due(connection: sqlite3.Connection, event: MemoryEvent, *, legacy_ord
                 except ValueError:
                     continue
             matches.append(row)
-        # Old events may have later decisions that refer to their original review proposals.
-        if legacy_order:
-            matches.sort(key=lambda row: str(row.get("occurred_at", row.get("at"))))
-        else:
-            matches.sort(key=lambda row: timestamp(require_json_string(row.get("occurred_at", row.get("at")), "observed_at")))
+        matches.sort(key=lambda row: timestamp(require_json_string(row.get("occurred_at", row.get("at")), "observed_at")))
         observed = matches[-1] if matches else None
         actual = observed.get("rating" if target == "feedback" else "value") if observed else None
         expected = prediction.get("expected_rating" if target == "feedback" else "expected_value")

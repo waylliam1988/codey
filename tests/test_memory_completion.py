@@ -14,7 +14,8 @@ import pytest
 from codey.app.context import AppContext
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.app.memory_routes import memory_action
-from codey.memory.codec import digest
+from codey.ghost.storage import texts
+from codey.memory.codec import canonical, digest
 from codey.memory.contracts import (
     MemoryControl,
     MemoryEvaluation,
@@ -27,7 +28,7 @@ from codey.memory.contracts import (
 from codey.providers import api_transport
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ChatProvider
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 from tests.test_memory_boundary import NOW, SCOPE, backend, event
 from tests.test_memory_lifecycle import EXPIRED, LATER, confirm
 
@@ -192,7 +193,8 @@ def test_family_missing_evidence_and_parent_quarantine_block_consumption(tmp_pat
     assert not store.retrieve(MemoryQuery("example", (SCOPE,), NOW, context="chat", shadow=True)).items
 
 
-def test_batch_cursor_is_journal_owned_and_policy_version_is_strict(tmp_path: Path) -> None:
+@pytest.mark.parametrize("unsupported_version", ["memory-v3", "future"])
+def test_batch_cursor_is_journal_owned_and_policy_version_is_strict(tmp_path: Path, unsupported_version: str) -> None:
     store = backend(tmp_path)
     for index in range(3):
         confirm(store, str(index))
@@ -200,8 +202,10 @@ def test_batch_cursor_is_journal_owned_and_policy_version_is_strict(tmp_path: Pa
     assert backend(tmp_path).maintenance_cursor() == result.cursor
     store.rebuild()
     assert store.maintenance_cursor() == result.cursor
+    before = store.rebuild()
     with pytest.raises(ValueError, match="policy version"):
-        store.maintain_batch(MemoryMaintenanceRequest("batch:unknown", EXPIRED, policy_version="future"))
+        store.maintain_batch(MemoryMaintenanceRequest("batch:unknown", EXPIRED, policy_version=unsupported_version))
+    assert store.rebuild() == before
 
 
 def test_snapshot_rejects_stale_commands_outside_retained_retry_window(tmp_path: Path) -> None:
@@ -229,6 +233,24 @@ def test_repeated_compaction_retains_the_most_recent_command_identities(tmp_path
     assert reopened.rebuild() == compacted
     with pytest.raises(ValueError, match="retry window"):
         reopened.set_control(oldest)
+
+
+def test_rebuild_rejects_the_old_snapshot_schema_without_rewriting_state(tmp_path: Path) -> None:
+    store = backend(tmp_path)
+    confirm(store, "keep")
+    store.compact(MemoryRetentionPolicy(keep_events=0), as_of=EXPIRED)
+    before = store.export_state()
+    with store.database.connect(write=True) as connection:
+        payload, = texts(connection.execute("SELECT payload FROM recovery_base WHERE id = 1"))
+        snapshot = parse_json_object(payload)
+        snapshot.update(schema_version=1, identities={})
+        del snapshot["checksum"]
+        snapshot["checksum"] = digest(snapshot)
+        connection.execute("UPDATE recovery_base SET payload = ? WHERE id = 1", (canonical(snapshot),))
+
+    with pytest.raises(ValueError, match="snapshot schema"):
+        store.rebuild()
+    assert store.export_state() == before
 
 
 def test_compaction_with_an_unrepresentable_cutoff_leaves_memory_and_journal_intact(tmp_path: Path) -> None:
