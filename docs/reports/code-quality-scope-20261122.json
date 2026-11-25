@@ -4876,10 +4876,12 @@
       "id": "Q088B",
       "responsibility": "Run context, provider request context, and conversation window activation",
       "files": ["codey/operations/context.py", "codey/operations/provider_request_context.py", "codey/operations/conversation_window.py"],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "followups": ["Q026 routed the Writer activation counter in tests/test_project_auto_local_review_lifecycle.py. Verify durable-window activation with current fixtures before changing assertions; unresolved review dispatch remains with Q027/Q090."]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/operations/context.py", "codey/operations/provider_request_context.py", "codey/operations/conversation_window.py"],
+      "verified_files": ["codey/operations/context.py", "codey/operations/provider_request_context.py", "codey/operations/conversation_window.py"],
+      "tests": ["tests/test_conversation_lifecycle.py", "tests/test_window_activation_contract.py", "tests/durable/test_provider_context_authority.py", "tests/test_run_hooks_lifecycle.py", "tests/test_kernel_domain_contracts.py", "tests/test_edit_conversation_plan.py", "tests/durable/test_context_edit_folding.py", "tests/test_project_auto_local_review_lifecycle.py", "tests/test_cli_review_readonly_and_cold_reuse.py", "tests/test_desktop_cli_project_review_parity.py"],
+      "reviewed_support": ["tests/test_conversation_lifecycle.py", "tests/test_window_activation_contract.py", "tests/support/local_review_fixture.py"],
+      "result": "Validate the legacy restore capability and prepare its context before opening the window. The 68-case activation and context group passed. The Writer fixture now observes the atomic window path and five review cases passed. Four review dispatch failures matched the HEAD replay and remain under Q090. Whole-file strict Any, Ruff and production gates passed."
     },
     {
       "id": "Q088C",
@@ -4931,7 +4933,8 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 95
+      "candidate_test_count": 95,
+      "followups": ["Q088B repaired the Writer count and verified two newly passing lifecycle cases. Both tests/test_desktop_cli_project_review_parity.py cases and tests/test_project_auto_local_review_lifecycle.py::test_project_automatically_reviews_with_same_local_model_and_repairs_once[True-False] and [True-True] still report zero Reviewer windows, identically with the prior window implementation and fixture loaded from Git. Trace Reviewer dispatch/model selection and complete Any review of these two test scripts."]
     },
     {
       "responsibility": "codey/operations: completion review and edit validation",

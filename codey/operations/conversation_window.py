@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from typing import Protocol
 
 from codey.durable.model import thaw_json
 from codey.providers.compat_transport import declared_callable
@@ -14,6 +15,15 @@ from codey.utils.object_fields import object_fields
 
 class WindowActivationError(RuntimeError):
     """The planned protocol window cannot be activated safely."""
+
+
+class _DurableActivation(Protocol):
+    def __call__(self, messages: list[dict[str, object]], *, source_entry_ids: tuple[str, ...],
+                 reason: str) -> object: ...
+
+
+class _ContextLoaderWithSources(Protocol):
+    def __call__(self, messages: list[dict[str, object]], *, source_entry_ids: tuple[str, ...]) -> object: ...
 
 
 def replayed_result_ids(action: WindowAction | None) -> frozenset[str]:
@@ -30,22 +40,23 @@ def replayed_result_ids(action: WindowAction | None) -> frozenset[str]:
 def activate_window(provider: object, action: WindowAction | None) -> ProtocolWindowRef | None:
     """Execute one planned action and return the provider's active reference."""
     if action is None:
-        current = getattr(provider, "window_ref", None)
-        return current if isinstance(current, ProtocolWindowRef) else None
+        return _current_window(provider)
     if isinstance(action, ReuseWindow):
-        current = getattr(provider, "window_ref", None)
-        if not isinstance(current, ProtocolWindowRef) or current != action.ref:
+        current = _current_window(provider)
+        if current is None or current != action.ref:
             raise WindowActivationError("protocol window reference mismatch")
         return current
-    activate = declared_callable(provider, "activate_durable_window") if action.context is not None else None
-    if activate is not None and action.context is not None:
-        try:
-            opened = activate(_durable_messages(action), source_entry_ids=action.context.entry_ids, reason=action.reason.value)
-        except Exception as exc:
-            raise WindowActivationError(f"durable context activation failed: {exc}") from exc
-        if not isinstance(opened, ProtocolWindowRef):
-            raise WindowActivationError("provider returned an invalid protocol window reference")
-        return opened
+    if action.context is not None:
+        activate: _DurableActivation | None = declared_callable(provider, "activate_durable_window")
+        if activate is not None:
+            try:
+                opened = activate(_durable_messages(action), source_entry_ids=action.context.entry_ids, reason=action.reason.value)
+            except Exception as exc:
+                raise WindowActivationError(f"durable context activation failed: {exc}") from exc
+            if not isinstance(opened, ProtocolWindowRef):
+                raise WindowActivationError("provider returned an invalid protocol window reference")
+            return opened
+    restore = _prepare_context_restore(provider, action)
     # Window lifecycle is a declared provider capability. Do not infer it
     # from dynamic attributes on adapters or test doubles.
     # A concrete injected provider may declare its capability on the instance
@@ -57,54 +68,72 @@ def activate_window(provider: object, action: WindowAction | None) -> ProtocolWi
         instance_attrs = vars(provider)
     except TypeError:
         instance_attrs = {}
-    reset = instance_attrs.get("reset_window")
+    reset: object = instance_attrs.get("reset_window")
     if not callable(reset):
-        reset = getattr(type(provider), "reset_window", None)
+        class_reset: object = getattr(type(provider), "reset_window", None)
+        reset = class_reset
     if not callable(reset):
-        reset = None
-    if not callable(reset):
-        declared_new_chat = instance_attrs.get("new_chat")
+        declared_new_chat: object = instance_attrs.get("new_chat")
         if not callable(declared_new_chat):
-            declared_new_chat = getattr(type(provider), "new_chat", None)
+            class_new_chat: object = getattr(type(provider), "new_chat", None)
+            declared_new_chat = class_new_chat
         if not callable(declared_new_chat):
             raise WindowActivationError("provider cannot open a protocol window")
-        new_chat = object.__getattribute__(provider, "new_chat")
         try:
+            new_chat: Callable[[], object] = object.__getattribute__(provider, "new_chat")
             new_chat()
-            _restore_context(provider, action)
+            if restore is not None:
+                restore()
         except Exception as exc:
             raise WindowActivationError(f"provider new chat failed: {exc}") from exc
-        current = getattr(provider, "window_ref", None)
-        return current if isinstance(current, ProtocolWindowRef) else None
+        return _current_window(provider)
     try:
-        opened = object.__getattribute__(provider, "reset_window")()
+        reset_window: Callable[[], object] = object.__getattribute__(provider, "reset_window")
+        opened = reset_window()
     except Exception as exc:
         raise WindowActivationError(f"protocol window reset failed: {exc}") from exc
     if not isinstance(opened, ProtocolWindowRef):
         raise WindowActivationError("provider returned an invalid protocol window reference")
-    _restore_context(provider, action)
+    if restore is not None:
+        restore()
     return opened
 
 
-def _restore_context(provider: object, action: OpenWindow) -> None:
-    if action.context is None:
-        return
-    load = object.__getattribute__(provider, "load_durable_context")
+def _current_window(provider: object) -> ProtocolWindowRef | None:
+    current: object = getattr(provider, "window_ref", None)
+    return current if isinstance(current, ProtocolWindowRef) else None
+
+
+def _prepare_context_restore(provider: object, action: OpenWindow) -> Callable[[], None] | None:
+    if (context := action.context) is None:
+        return None
+    try:
+        load: object = object.__getattribute__(provider, "load_durable_context")
+    except AttributeError as exc:
+        raise WindowActivationError("provider cannot load planned durable context") from exc
     if not callable(load):
         raise WindowActivationError("provider cannot load planned durable context")
     try:
         messages = _durable_messages(action)
-        parameters: Mapping[str, inspect.Parameter]
-        try:
-            parameters = inspect.signature(load).parameters
-        except (TypeError, ValueError):
-            parameters = {}
-        if "source_entry_ids" in parameters:
-            load(messages, source_entry_ids=action.context.entry_ids)
-        else:
-            load(messages)
     except Exception as exc:
         raise WindowActivationError(f"durable context activation failed: {exc}") from exc
+    loader: Callable[[list[dict[str, object]]], object] = load
+    try:
+        parameters: Mapping[str, inspect.Parameter] = inspect.signature(loader).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+
+    def restore() -> None:
+        try:
+            if "source_entry_ids" in parameters:
+                with_sources: _ContextLoaderWithSources = load
+                with_sources(messages, source_entry_ids=context.entry_ids)
+            else:
+                loader(messages)
+        except Exception as exc:
+            raise WindowActivationError(f"durable context activation failed: {exc}") from exc
+
+    return restore
 
 
 def _durable_messages(action: OpenWindow) -> list[dict[str, object]]:
