@@ -4209,10 +4209,11 @@
       "responsibility": "Durable tool-task input and identity",
       "files": ["codey/durable/tool_task.py"],
       "id": "Q054E",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/test_tool_task_next_stage.py"]
+      "status": "completed_unchanged",
+      "reviewed_files": ["codey/durable/tool_task.py"],
+      "verified_files": ["codey/durable/tool_task.py"],
+      "tests": ["tests/test_tool_task_next_stage.py", "tests/test_tool_task_background.py"],
+      "result": "Verified stable identities, v1-v3 payload compatibility, validation, atomic admission and recovery. 17 scoped tests, schema probes, strict Any and Ruff passed."
     },
     {
       "responsibility": "codey/durable: task kernel and execution",
@@ -4221,13 +4222,14 @@
         "codey/durable/task_queries.py"
       ],
       "id": "Q055",
-      "status": "partial_follow_up",
+      "status": "completed_changed",
       "reviewed_files": [
+        "codey/durable/task_projection.py",
         "codey/durable/task_queries.py"
       ],
-      "verified_files": [],
-      "candidate_test_count": 0,
-      "result": "task_queries.py settlement caller migrated and whole-file strict Any passed; cutoff, scope and conflict rules retained. task_projection.py remains unreviewed; do not count this batch complete."
+      "verified_files": ["codey/durable/task_projection.py", "codey/durable/task_queries.py"],
+      "tests": ["tests/durable/test_history_storage_paging.py", "tests/test_task_lifecycle_projection.py", "tests/durable/test_settlement_history_projection.py", "tests/durable/test_settlement_projection_cost.py"],
+      "result": "Retained the earlier task_queries settlement migration in 60f68f9b. Completed the checkpoint projection review and verified both files with 29 scoped tests, strict Any and Ruff."
     },
     {
       "responsibility": "codey/durable: context and checkpoint boundaries",
@@ -4236,13 +4238,11 @@
         "codey/durable/context.py"
       ],
       "id": "Q056",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 14,
-      "followups": [
-        "Q022C necessary real-checkpoint contract inspection: full-file strict Any13 at checkpoint.py69/91-172, dict narrowing and **payload/record propagation, q022c-dependency-any-baseline.json. Current file unchanged; public operation_from_checkpoint boundary tested via real memory/SQLite regression, not full module review. Own remaining type migration and full related behavior at Q056; no completion claim."
-      ]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/checkpoint.py", "codey/durable/context.py"],
+      "verified_files": ["codey/durable/checkpoint.py", "codey/durable/context.py"],
+      "tests": ["tests/durable/test_context.py", "tests/durable/test_context_edit_folding.py", "tests/durable/test_runtime_checkpoint_port.py", "tests/durable/test_operation_execution_counters.py", "tests/durable/test_operation_driver_restart.py", "tests/durable/test_generation_boundary_commit.py", "tests/durable/test_provider_response_receipts.py", "tests/durable/test_retry_observation_commit.py", "tests/test_native_delivery.py"],
+      "result": "Closed multi-result tool groups before budget accounting and typed checkpoint migration and effect projection boundaries. 120 scoped tests passed, 3 existing skips. Native coding context integration stalled on the committed baseline too; fixture scheduling follow-up belongs to Q095."
     },
     {
       "responsibility": "codey/durable: conversation and input lifecycle",
@@ -4805,7 +4805,8 @@
       "verified_files": [],
       "candidate_test_count": 153,
       "followups": [
-        "Q009 caller verification: checkpoint True-done node waits indefinitely for an owned tool task; no worker threads in py-spy dump. Test constructs MemoryDurableStore without scheduler and calls _run_one_writer_attempt directly. Original HEAD writer_failover call-phase bounded reproduction has same wait_tool_task stack, 0 calls into governed module; interrupted exit 2, no completed test count. Route fixture runtime/scheduler contract investigation, retain assertions. Evidence q009-caller-baseline.json / q009-caller-wait-stack.log."
+        "Q009 caller verification: checkpoint True-done node waits indefinitely for an owned tool task; no worker threads in py-spy dump. Test constructs MemoryDurableStore without scheduler and calls _run_one_writer_attempt directly. Original HEAD writer_failover call-phase bounded reproduction has same wait_tool_task stack, 0 calls into governed module; interrupted exit 2, no completed test count. Route fixture runtime/scheduler contract investigation, retain assertions. Evidence q009-caller-baseline.json / q009-caller-wait-stack.log.",
+        "Q056 expanded caller verification: tests/test_native_coding_context_after_edits.py [False-False] stalls in evaluate_completion -> wait_tool_task. Reloading both Q056 files from 7d3bb375 reproduced a pending child with no attempt token, and the thread dump contained only the test and observation timer. The run_agent fixture creates its own memory store and does not start a child worker. Follow up on the fixture scheduling contract and run all four test cases."
       ]
     },
     {

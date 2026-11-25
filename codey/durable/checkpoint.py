@@ -24,6 +24,7 @@ from codey.durable.model import (
 )
 from codey.durable.reducer import with_effect_intents, with_effect_settlement
 from codey.types.json_value import canonical_json_object, require_json_string, require_json_strings
+from codey.utils.object_fields import object_fields
 
 if TYPE_CHECKING:
     from codey.durable.contracts import RuntimeCheckpointPort
@@ -50,24 +51,23 @@ def operation_from_checkpoint(task: TaskCheckpoint, session_id: str) -> RuntimeO
     payload = thaw_json(task.state.get("operation"))
     if payload is None:
         return None
-    if isinstance(payload, dict) and "task_policy" in task.state:
+    if not object_fields(payload):
+        raise RuntimeOperationTransitionError("invalid durable operation checkpoint")
+    if "task_policy" in task.state:
         payload["task_policy"] = thaw_json(task.state["task_policy"])
-    # Older formats have no durable counters. Preserve their exact execution
-    # position; migration never invents a received reply or restarts execution.
-    if isinstance(payload, dict) and type(payload.get("schema_version")) is int and payload["schema_version"] in {1, 2}:
-        from codey.runtime.core.operation_payload import RuntimeExecutionCounters
+    version = payload.get("schema_version")
+    if type(version) is int and 1 <= version <= 5:
+        if version in {1, 2}:
+            from codey.runtime.core.operation_payload import RuntimeExecutionCounters
 
-        safe_positions = {"accepted", "terminal", "writer_settled", "repair_settled",
-                          "completion_proof_recorded", "repair_context_admitted"}
-        if payload.get("leaf") not in safe_positions or payload.get("stop_reason") in {"approval", "question"}:
-            raise RuntimeOperationTransitionError("legacy execution counters are unavailable; migration cannot reset budgets")
-        payload = {**payload, "schema_version": 5, "counters": RuntimeExecutionCounters().to_payload()}
-    if isinstance(payload, dict) and type(payload.get("schema_version")) is int and payload["schema_version"] in {3, 4}:
-        # Schema 4 only adds a prepared-request position. Existing schema-3
-        # positions and budgets keep their meaning; no execution is inferred.
-        payload = {**payload, "schema_version": 5}
-    if isinstance(payload, dict) and type(payload.get("schema_version")) is int and payload["schema_version"] == 5:
-        payload = {**payload, "schema_version": 6}
+            # Older formats have no durable counters. Only migrate positions
+            # where initializing counters cannot restart active execution.
+            safe_positions = {"accepted", "terminal", "writer_settled", "repair_settled",
+                              "completion_proof_recorded", "repair_context_admitted"}
+            if payload.get("leaf") not in safe_positions or payload.get("stop_reason") in {"approval", "question"}:
+                raise RuntimeOperationTransitionError("legacy execution counters are unavailable; migration cannot reset budgets")
+            payload["counters"] = RuntimeExecutionCounters().to_payload()
+        payload["schema_version"] = 6
     state = RuntimeOperationState.from_payload(payload)
     if state is None or state.run_id != task.task_id or state.session_id != session_id:
         raise RuntimeOperationTransitionError("invalid durable operation checkpoint")
@@ -88,16 +88,19 @@ def _delivery_rows(snapshot: dict[str, object]) -> list[dict[str, object]]:
         ("delivered_effect_ids", "delivered", "delivery_delivered"),
     ):
         for identity in require_json_strings(snapshot[field], field):
-            rows.append(delivery_record_entry({**base, "record_kind": kind,
-                "ref": f"{ref}:{intent['batch_id']}:{identity}", "provider_effect_id": identity}))
+            row: dict[str, object] = {**base, "record_kind": kind,
+                "ref": f"{ref}:{intent['batch_id']}:{identity}", "provider_effect_id": identity}
+            rows.append(delivery_record_entry(row))
     if snapshot["is_recovered"]:
-        rows.append(delivery_record_entry({**base, "record_kind": "recovered",
+        recovered: dict[str, object] = {**base, "record_kind": "recovered",
             "ref": f"delivery_recovered:{intent['batch_id']}",
             "recovered_effect_ids": snapshot["recovered_effect_ids"],
-            "recovered_reads": snapshot["recovered_reads"], "recovered_lookups": snapshot["recovered_lookups"]}))
+            "recovered_reads": snapshot["recovered_reads"], "recovered_lookups": snapshot["recovered_lookups"]}
+        rows.append(delivery_record_entry(recovered))
     if snapshot["is_abandoned"]:
-        rows.append(delivery_record_entry({**base, "record_kind": "abandoned",
-            "ref": f"delivery_abandoned:{intent['batch_id']}", "reason": snapshot["abandoned_reason"]}))
+        abandoned: dict[str, object] = {**base, "record_kind": "abandoned",
+            "ref": f"delivery_abandoned:{intent['batch_id']}", "reason": snapshot["abandoned_reason"]}
+        rows.append(delivery_record_entry(abandoned))
     return rows
 
 
@@ -121,26 +124,30 @@ def checkpoint_entries(task: TaskCheckpoint, effects: tuple[EffectRecord, ...], 
         # their receipt shape is intentionally outside the runtime projection.
         if effect.category == "shell":
             continue
-        rows.append(effect_intent_entry(RuntimeEffectIntent.from_payload(dict(canonical_json_object(effect.intent)))))
+        intent = canonical_json_object(effect.intent)
+        rows.append(effect_intent_entry(RuntimeEffectIntent.from_payload(intent)))
         if effect.settlement is not None:
-            rows.append(effect_settlement_entry(RuntimeEffectSettlement.from_payload(
-                dict(canonical_json_object(effect.settlement)))))
+            settlement = canonical_json_object(effect.settlement)
+            rows.append(effect_settlement_entry(RuntimeEffectSettlement.from_payload(settlement)))
     snapshots = thaw_json(task.state.get("delivery_batches", ()))
     if not isinstance(snapshots, list):
         raise RuntimeOperationTransitionError("invalid delivery checkpoint")
-    for snapshot in snapshots:
-        if not isinstance(snapshot, dict):
+    snapshot_values: list[object] = snapshots
+    for snapshot in snapshot_values:
+        if not object_fields(snapshot):
             raise RuntimeOperationTransitionError("invalid delivery batch snapshot")
         rows.extend(_delivery_rows(dict(canonical_json_object(snapshot))))
     if state.leaf == LEAF_TERMINAL:
+        outcome: dict[str, object] = outcome_for_terminal(state).to_payload()
         rows.append({"lane": state.lane, "operation_id": state.operation_id,
-                     "kind": "operation_settled", "payload": outcome_for_terminal(state).to_payload()})
+                     "kind": "operation_settled", "payload": outcome})
     return tuple(_entry(session_id, row) for row in rows)
 
 
 def delivery_snapshot(batch: DeliveryBatchProjection) -> dict[str, object]:
+    intent: dict[str, object] = batch.intent.to_payload()
     return {
-        "intent": batch.intent.to_payload(), "send_attempts": list(batch.send_attempts),
+        "intent": intent, "send_attempts": list(batch.send_attempts),
         "superseded_effect_ids": list(batch.superseded_effect_ids),
         "delivered_effect_ids": list(batch.delivered_effect_ids),
         "is_recovered": batch.is_recovered, "recovered_effect_ids": list(batch.recovered_effect_ids),
@@ -167,9 +174,14 @@ def _effect_changes(projections: tuple[RuntimeEffectProjection, ...], effects: t
     settlements: list[EffectRecord] = []
     for effect in projections:
         intent = effect.intent
+        intent_payload: dict[str, object] = intent.to_payload()
+        settlement = effect.settlement
+        settlement_payload: dict[str, object] | None = None
+        if settlement is not None:
+            settlement_payload = settlement.to_payload()
         record = EffectRecord(intent.effect_id, intent.run_id, intent.effect_category, str(intent.replay_class),
-            intent.args_digest, effect.settlement.status if effect.settlement else "pending",
-            intent.to_payload(), effect.settlement.to_payload() if effect.settlement else None)
+            intent.args_digest, settlement.status if settlement is not None else "pending",
+            intent_payload, settlement_payload)
         previous = known.get(record.effect_id)
         if previous is None:
             if record.settlement is not None:

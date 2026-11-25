@@ -1878,3 +1878,25 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 取消与失败共用挂起 effect ID 的验证，失败路径保留检查点顺序。对不可变元数据、问题和完成状态使用现有类型守卫。修改前直接基线 21 passed，扩大测试时 84 passed、1 fixture failure、退出 1，原因见上。最终在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_task_ownership_and_finalization.py tests/durable/test_execution_fencing.py tests/durable/test_task_authority.py tests/durable/test_waiting_reverse_index.py tests/durable/test_scheduler.py tests/durable/test_scheduler_wakeup_races.py tests/durable/test_suspension.py --tb=short`，81 passed、无失败或跳过、退出 0，与单独通过的 4 项原子失败测试合计 85 项去重。
 - `python -m mypy codey/durable/task_state.py codey/durable/task_operations.py tests/durable/test_task_ownership_and_finalization.py tests/durable/test_atomic_task_failure.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 从生产文件和回滚测试各 11 条诊断降至 0。同四文件 Ruff、全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q054D 完成。累计完成 99/356 批，完成批覆盖 172/1009 个生产文件，另有 17 批部分完成。下一批 Q054E 为持久工具任务入参与身份。
+
+### Q054E 工具任务入参与身份
+
+- Q054D 已提交 `7d3bb375`。完整检查 `tool_task.py` 的来源 effect 到任务与执行 effect 的身份派生、JSON 边界和三版入参兼容。通过 `python -` 运行直接探针，验证 v1 恢复后台标记、v2 保持业务参数、v3 保留资源绑定，三版可重新编码解码，并拒绝 7 个无效输入。退出 0。源无需修改，`python -m mypy codey/durable/tool_task.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 和 `ruff check codey/durable/tool_task.py` 均退出 0。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_tool_task_next_stage.py --tb=short`，8 passed、退出 0。调用方执行 `python -m pytest -q tests/test_tool_task_background.py::test_acceptance_is_atomic_and_replays_one_child_without_verification tests/test_tool_task_background.py::test_snapshot_and_argument_contracts_agree tests/test_tool_task_background.py::test_tool_kind_and_input_cannot_change_after_admission tests/test_tool_task_background.py::test_failed_admission_rolls_back_receipt_child_and_execution_position tests/test_tool_task_background.py::test_process_restart_never_repeats_an_uncertain_or_settled_execution --tb=short`，9 passed、退出 0。两次均无失败或跳过。
+- Q054E 完成。累计完成 100/356 批，完成批覆盖 173/1009 个生产文件，另有 17 批部分完成。记录随下一提交保存。下一批 Q055 补齐任务投影与查询的验证。
+
+### Q055 任务投影与查询
+
+- 完整检查 `task_projection.py`，确认生命周期快照从持久检查点读取身份、版本、所有权及状态。沿用 `60f68f9b` 对 `task_queries.py` 的检查及迁移记录。两文件本轮无追加修改。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_history_storage_paging.py tests/test_task_lifecycle_projection.py tests/durable/test_settlement_history_projection.py tests/durable/test_settlement_projection_cost.py --tb=short`，29 passed、无失败或跳过、退出 0，覆盖历史一致性、已终态任务、查询截止点及结算投影成本。两文件 `python -m mypy codey/durable/task_projection.py codey/durable/task_queries.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 与同范围 `ruff check` 均退出 0。
+- Q055 完成。累计完成 101/356 批，完成批覆盖 175/1009 个生产文件，另有 16 批部分完成。记录随下一提交保存。下一批 Q056 为上下文及检查点边界。
+
+### Q056 上下文及检查点边界
+
+- 完整检查 `context.py` 和 `checkpoint.py`。Chat Completions 请求构造要求工具调用及其结果完整配对。用一个调用含两条结果的历史，令计数器每条消息计 1，在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_context.py::test_selecting_one_result_keeps_every_result_of_the_same_assistant_call --tb=short`。原来预算 2 返回调用和最后一条结果，预算 3 保留整组，1 failed、1 passed、退出 1。先从选中结果恢复调用，再补齐整组后计算预算。同两条件通过，连同已有合成结果单例共 3 passed、退出 0。
+- 收窄解冻检查点和交付记录边界，合并旧版本升级到 schema 6 的分支。通过 `python -` 加载 HEAD 解码函数作对照，使用实际运行 fixture 的检查点验证 schema 1–6、有无 operation、拒绝 4 个无效版本，以及旧版计数初始化与新版本保留计数。退出 0。初次手工构造的 payload 未通过原解码器校验，探针退出 1，已用实际 fixture 重新建立输入。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_context.py tests/durable/test_context_edit_folding.py tests/durable/test_runtime_checkpoint_port.py tests/durable/test_operation_execution_counters.py tests/durable/test_operation_driver_restart.py --tb=short`，修改前 62 passed，修改后 63 passed，均退出 0。检查点最后一次精度修改后重跑其中后三文件，25 passed、退出 0，为重复验证。
+- 扩展组 `python -m pytest -q tests/durable/test_generation_boundary_commit.py tests/durable/test_provider_response_receipts.py tests/durable/test_retry_observation_commit.py tests/test_native_delivery.py --tb=short -rs`，57 passed、3 skipped、退出 0。3 个原有 skip 涉及已移除的投影记录注入和早期多批次 fixture。两组合计 120 项去重通过、3 跳过。
+- 额外运行上组及 `tests/test_native_coding_context_after_edits.py` 时，2 分钟栈报告显示在 `evaluate_completion → wait_tool_task` 等待，主动终止后进程退出 1，无完整计数。通过 `python -` 从 `7d3bb375` 在内存重载两份源并复跑该文件的 `test_native_receipts_include_refreshed_coding_context_after_creation[False-False]`。同一等待点的工具子任务为 pending 且 attempt token 为空，只有测试线程与观察计时线程，主动中断后退出 1，0 项完成。独立 fixture 只创建 MemoryDurableStore，没有启动工具任务 worker。四个原生编辑续跑变体留给 Q095 的 fixture 调度验证。
+- `python -m mypy codey/durable/checkpoint.py codey/durable/context.py tests/durable/test_context.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 退出 0，检查点源原有 13 条、上下文测试原有 11 条诊断均消除。同三文件 Ruff、全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q056 完成。累计完成 102/356 批，完成批覆盖 177/1009 个生产文件，另有 16 批部分完成。下一批 Q057 为会话与输入生命周期。

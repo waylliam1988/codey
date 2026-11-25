@@ -240,11 +240,25 @@ def _restore_tool_pairs(selected: list[EntryDraft], candidates: Sequence[EntryDr
     paired_calls: set[str] = set()
     paired_results: set[str] = set()
 
+    # Restore calls from selected results before closing each call group.
+    for entry in selected:
+        if entry.kind != "tool_result" or entry.entry_id not in index:
+            continue
+        match = _find_tool_call(candidates, index[entry.entry_id], entry.payload.get("call_id"))
+        if match is None:
+            removals.add(entry.entry_id)
+            continue
+        paired_calls.add(match.entry_id)
+        paired_results.add(entry.entry_id)
+        if match.entry_id not in selected_ids:
+            additions.append(match)
+            selected_ids.add(match.entry_id)
+
     # A selected call must remain a valid provider message even if the process
     # died before its result was committed.  Prefer a committed result, then
     # synthesize an explicit error result; silently dropping the call changes
     # the model's history and makes the next request non-deterministic.
-    for entry in selected:
+    for entry in (*selected, *additions):
         if entry.kind != "tool_call":
             continue
         call_ids = _tool_call_ids(entry)
@@ -280,23 +294,6 @@ def _restore_tool_pairs(selected: list[EntryDraft], candidates: Sequence[EntryDr
             paired_calls.add(entry.entry_id)
             paired_results.add(synthetic_id)
 
-    for entry in selected:
-        if entry.kind != "tool_result":
-            continue
-        if entry.entry_id not in index:
-            if entry.entry_id in paired_results:
-                continue
-            removals.add(entry.entry_id)
-            continue
-        match = _find_tool_call(candidates, index[entry.entry_id], entry.payload.get("call_id"))
-        if match is None:
-            removals.add(entry.entry_id)
-            continue
-        paired_calls.add(match.entry_id)
-        paired_results.add(entry.entry_id)
-        if match.entry_id not in selected_ids:
-            additions.append(match)
-            selected_ids.add(match.entry_id)
     for entry in (*selected, *additions):
         if entry.kind == "tool_call" and entry.entry_id not in paired_calls:
             removals.add(entry.entry_id)

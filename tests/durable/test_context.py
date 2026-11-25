@@ -1,3 +1,7 @@
+from collections.abc import Mapping
+
+import pytest
+
 from codey.durable import EntryDraft, build_context
 
 
@@ -29,7 +33,7 @@ def test_every_candidate_is_counted_in_provider_message_order() -> None:
         EntryDraft("assistant", "conversation-1", "user", "assistant_message", {"text": "second"}),
     )
 
-    def count(messages) -> int:
+    def count(messages: tuple[Mapping[str, object], ...]) -> int:
         if len(messages) == 2:
             assert [message["role"] for message in messages] == ["user", "assistant"]
         return len(messages)
@@ -46,7 +50,13 @@ def test_missing_tool_result_precedes_the_next_user_message() -> None:
     assert [message["role"] for message in snapshot.messages] == ["assistant", "tool", "user"]
 
 
-def test_selecting_one_result_keeps_every_result_of_the_same_assistant_call() -> None:
+@pytest.mark.parametrize(
+    ("budget", "expected"),
+    [(2, ()), (3, ("call", "result-a", "result-b"))],
+)
+def test_selecting_one_result_keeps_every_result_of_the_same_assistant_call(
+    budget: int, expected: tuple[str, ...],
+) -> None:
     entries = (
         EntryDraft("call", "conversation-1", None, "tool_call", {
             "tool_calls": [{"id": "a"}, {"id": "b"}],
@@ -54,8 +64,9 @@ def test_selecting_one_result_keeps_every_result_of_the_same_assistant_call() ->
         EntryDraft("result-a", "conversation-1", "call", "tool_result", {"call_id": "a", "content": "a"}),
         EntryDraft("result-b", "conversation-1", "result-a", "tool_result", {"call_id": "b", "content": "b"}),
     )
-    snapshot = build_context(entries, token_budget=3, token_counter=lambda messages: len(messages))
-    assert snapshot.entry_ids == ("call", "result-a", "result-b")
+    snapshot = build_context(entries, token_budget=budget, token_counter=len)
+    assert snapshot.entry_ids == expected
+    assert snapshot.token_count == len(expected)
 
 
 def test_context_budget_keeps_recent_entries_and_digest_is_stable() -> None:
@@ -125,7 +136,7 @@ def test_context_uses_provider_token_counter_when_supplied() -> None:
     )
     calls: list[int] = []
 
-    def count(messages) -> int:
+    def count(messages: tuple[Mapping[str, object], ...]) -> int:
         calls.append(len(messages))
         return len(messages) * 10
 
@@ -140,9 +151,9 @@ def test_context_budget_counter_receives_provider_order() -> None:
         EntryDraft("user", "conversation-1", None, "user_message", {"text": "first"}),
         EntryDraft("assistant", "conversation-1", "user", "assistant_message", {"text": "second"}),
     )
-    seen: list[tuple[dict[str, object], ...]] = []
+    seen: list[tuple[Mapping[str, object], ...]] = []
 
-    def count(messages: tuple[dict[str, object], ...]) -> int:
+    def count(messages: tuple[Mapping[str, object], ...]) -> int:
         seen.append(messages)
         return len(messages)
 
