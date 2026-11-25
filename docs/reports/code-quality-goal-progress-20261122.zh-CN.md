@@ -2120,3 +2120,10 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 图负载与排序使用具体类型，SQLite 投影按列解码。显式版本焦点保留原解析规则，无版本焦点只读取一次对象头。两份源码清除 99 条严格 Any 诊断，Q072D 的四处冗余转换也已移除。整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁均通过。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_graph_center.py tests/test_knowledge.py tests/test_knowledge_version_graph.py tests/test_persistent_research_lifecycle.py::test_explicit_commit_undo_and_session_graph tests/test_persistent_research_lifecycle.py::test_answer_pins_cited_versions_and_replay_rejects_changed_output tests/test_server.py::ResearchGraphApiTests tests/test_server.py::ResearchServerHelperTests::test_research_graph_response_parses_bounded_query tests/test_server.py::ResearchServerHelperTests::test_research_graph_response_reports_unconfigured_store --tb=short`，57 passed、无失败或跳过、退出 0。原基线三个目标为 47 passed。验证版本固定、项目访问范围和 API 图数据。
 - Q072F 完成。累计完成 132/371 批，覆盖 220/1011 个生产文件，另有 15 批部分完成。下一批 Q072G 审查 Knowledge 上下文摘要。
+
+### Q072G Knowledge 上下文摘要
+
+- Q072F 已提交 `3fc8e613`。完整检查 `brief.py`。摘要只将引用可解析的结论纳入关键结论。长行开头有有效 `[1]`，末尾有未登记的 `[99]` 时，旧逻辑先截断再验证，错误将其归入关键结论。执行 `python -m pytest -q tests/test_knowledge_brief_citations.py --tb=short`，1 failed、退出 1，实际返回两条关键结论。
+- 校验完整候选行，并要求展示片段仍带可用引用。回归中只引用 `[1]` 的长行仍列为关键结论，混合引用落到限制项。源码原已通过整文件严格 Any，改后与回归一同通过。Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁均通过。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_brief_citations.py tests/test_knowledge.py tests/test_architecture.py::ArchitectureBoundaryTests::test_source_trust_and_brief_projection_stay_projection_only tests/test_architecture.py::ArchitectureBoundaryTests::test_knowledge_brief_import_does_not_load_research_runtime tests/test_project_task_context.py tests/test_research_to_code_ab.py --tb=short`，82 passed、2 subtests passed、无失败或跳过、退出 0。去掉回归文件的修改前基线为 81 passed、2 subtests passed。
+- Q072G 完成。累计完成 133/371 批，覆盖 221/1011 个生产文件，另有 15 批部分完成。下一批 Q073 审查 Knowledge 对象和版本模型。

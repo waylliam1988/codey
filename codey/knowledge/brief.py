@@ -128,6 +128,7 @@ def _section_lines(
     *,
     limit: int = SECTION_ITEM_LIMIT,
     strip_bullets: bool = True,
+    max_chars: int | None = MAX_ITEM_CHARS,
 ) -> tuple[str, ...]:
     out: list[str] = []
     for line in (text or "").splitlines():
@@ -139,7 +140,8 @@ def _section_lines(
         # Long lines are clipped, never dropped: with the raw excerpt gone
         # from the handoff, silently losing a long conclusion would hide
         # exactly the content the writer needs.
-        stripped = _clip(stripped, MAX_ITEM_CHARS)
+        if max_chars is not None:
+            stripped = _clip(stripped, max_chars)
         if stripped.casefold() not in {row.casefold() for row in out}:
             out.append(stripped)
         if len(out) >= max(0, limit):
@@ -166,11 +168,14 @@ def _conclusion_lines(
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     supported: list[str] = []
     uncited: list[str] = []
-    for item in _section_lines(text, limit=CONCLUSION_SCAN_LIMIT):
-        if _has_valid_citation(item, valid_citation_ids):
-            supported.append(item)
+    for item in _section_lines(text, limit=CONCLUSION_SCAN_LIMIT, max_chars=None):
+        excerpt = _clip(item, MAX_ITEM_CHARS)
+        if _has_valid_citation(item, valid_citation_ids) and (
+            excerpt == item or _has_valid_citation(excerpt, valid_citation_ids)
+        ):
+            supported.append(excerpt)
         else:
-            uncited.append(f"{item} [uncited]")
+            uncited.append(f"{excerpt} [uncited]")
     return tuple(supported), tuple(uncited)
 
 

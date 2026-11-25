@@ -4592,8 +4592,10 @@
     },
     {
       "id": "Q072G", "responsibility": "Knowledge context brief assembly", "files": ["codey/knowledge/brief.py"],
-      "status": "not_started", "reviewed_files": [], "verified_files": [],
-      "tests": ["tests/test_knowledge.py", "tests/test_architecture.py"]
+      "status": "completed_changed", "reviewed_files": ["codey/knowledge/brief.py"], "verified_files": ["codey/knowledge/brief.py"],
+      "tests": ["tests/test_knowledge_brief_citations.py", "tests/test_knowledge.py", "tests/test_architecture.py", "tests/test_project_task_context.py", "tests/test_research_to_code_ab.py"],
+      "reviewed_support": ["tests/test_knowledge_brief_citations.py"],
+      "result": "Validate both the full conclusion and its displayed excerpt so clipping cannot hide an unknown citation. The regression failed on the old implementation. All 82 scoped cases and 2 subtests, whole-file strict Any and production gates passed."
     },
     {
       "responsibility": "codey/knowledge: provider connection and selection",
