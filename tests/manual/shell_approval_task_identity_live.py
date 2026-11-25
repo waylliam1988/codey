@@ -15,7 +15,7 @@ from unittest.mock import patch
 from codey.app import api
 from codey.app.context import AppContext
 from codey.app.task_services import build_task_deps
-from codey.operations.task_entry import run_task_submission
+from codey.operations.task_submission import run_task_submission
 from codey.providers import api_generation
 from codey.providers.local_connection import capture_selection, config_for_selection, open_selection
 from codey.task.model import StartTask, TaskSubmission

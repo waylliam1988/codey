@@ -8,7 +8,8 @@ import pytest
 from codey.operations.kernel_prompt import _result_context
 from codey.operations.task_session import TaskSession
 from codey.operations.tool_task_delivery import NOTIFICATION_MAX_CHARS, pending_tool_task_notifications
-from codey.operations.tool_tasks import run_tool_task, tool_task_snapshot
+from codey.operations.tool_task_reads import tool_task_snapshot
+from codey.operations.tool_tasks import run_tool_task
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import decode_json_object, parse_json_object, require_json_string

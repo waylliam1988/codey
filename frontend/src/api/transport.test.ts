@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ApiError, requestJson } from './transport';
+import { requestJson } from './transport';
 
 describe('requestJson', () => {
   const decode = (value: unknown): { ok: boolean } => {

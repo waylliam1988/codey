@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import socket
+import threading
 from collections.abc import Iterable, Sequence
 from http.client import HTTPMessage
 
@@ -39,6 +40,7 @@ class _CapturedHandler(Handler):
         owner = object.__new__(CodeyHTTPServer)
         owner.app_context = ctx
         owner.public_feed = feed
+        owner.event_slots = threading.BoundedSemaphore(1)
         self.server = owner
         self.path = path
         self.headers = HTTPMessage()

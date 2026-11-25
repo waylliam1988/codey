@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import queue
 import secrets
 import shutil
@@ -11,6 +12,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import IO, Literal, Protocol
 
@@ -239,6 +241,18 @@ class CodeModeRuntime(Protocol):
         """Run one program and mediate all host calls through ``invoke``."""
 
 
+@lru_cache(maxsize=8)
+def _node_engine_identity(
+    node: str, executable_identity: tuple[int, int, int, int], environment: tuple[tuple[str, str], ...],
+) -> str:
+    probe = subprocess.run([node, "-p", "JSON.stringify({node:process.version,v8:process.versions.v8,"
+        "icu:process.versions.icu,unicode:process.versions.unicode,platform:process.platform,arch:process.arch,"
+        "timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,"
+        "locale:Intl.DateTimeFormat().resolvedOptions().locale})"],
+        check=True, capture_output=True, text=True, encoding="utf-8", timeout=5, env=dict(environment))
+    return probe.stdout
+
+
 class NodeWorkerRuntime:
     """Run a QuickJS/WASM guest in disposable Node transport, mediating tools."""
 
@@ -248,18 +262,18 @@ class NodeWorkerRuntime:
 
     def contract_digest(self) -> str:
         """Bind recovery to the worker, actual engine and ambient JS semantics."""
-        probe = subprocess.run([self.node, "-p", "JSON.stringify({node:process.version,v8:process.versions.v8,"
-            "icu:process.versions.icu,unicode:process.versions.unicode,platform:process.platform,arch:process.arch,"
-            "timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,"
-            "locale:Intl.DateTimeFormat().resolvedOptions().locale})"],
-            check=True, capture_output=True, text=True, encoding="utf-8", timeout=5)
+        executable = Path(self.node).resolve(strict=True)
+        stat = executable.stat()
+        engine = _node_engine_identity(
+            str(executable), (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns), tuple(sorted(os.environ.items())),
+        )
         assets = Path(__file__).parent
         dependencies = [assets / "guest_runner.js", *sorted((assets / "quickjs").glob("*.js")),
                         assets / "quickjs" / "quickjs.wasm", assets / "quickjs" / "package.json"]
         contract = {"schema": 2, "runner": hashlib.sha256(self.runner.read_bytes()).hexdigest(),
                     "sandbox": {path.relative_to(assets).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
                                 for path in dependencies}, "memory_bytes": 64 * 1024 * 1024,
-                    "engine": parse_json_object(probe.stdout), "rpc": 1, "determinism": 1,
+                    "engine": parse_json_object(engine), "rpc": 1, "determinism": 1,
                     "result_delivery": "completion_order_terminal_drain", "child_admission": "per_effect",
                     "heap_mb": 128, "timeout": "per_attempt"}
         return hashlib.sha256(json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest()

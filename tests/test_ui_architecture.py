@@ -18,14 +18,15 @@ def _source() -> str:
 
 def test_required_runtime_modules_are_imported() -> None:
     main = (FRONTEND / "src/main.ts").read_text(encoding="utf-8")
-    runtime = (FRONTEND / "src/app_runtime.ts").read_text(encoding="utf-8")
-    assert "import { mountAppearance } from './appearance';" in main
-    assert "import { mountApp } from './app_runtime';" in main
+    runtime = (FRONTEND / "src/app/app_runtime.ts").read_text(encoding="utf-8")
+    assert "import { mountAppearance } from './app/appearance';" in main
+    assert "import { mountApp } from './app/app_runtime';" in main
     assert "mountAppearance();" in main
     assert "mountApp();" in main
     assert not (FRONTEND / "src/runtime.ts").exists()
-    for name in ("operator_auth", "provider_ui", "ui_state", "sse", "composer", "conversation_ui"):
-        assert f"./{name}" in runtime
+    for module in ("./operator_auth", "../providers/provider_ui", "../state/ui_state", "../sse",
+                   "../conversation/composer", "../conversation/conversation_ui"):
+        assert module in runtime
 
 def test_every_html_resource_reference_exists_in_public_or_publish_output() -> None:
     refs = re.findall(r'(?:src|href)="([^"]+)"', _html())
@@ -84,7 +85,7 @@ def test_production_runtime_does_not_publish_module_globals() -> None:
         "ModelSettings", "ResearchGraph", "ConversationNav", "Models",
     )
     source_files = [
-        path for path in (FRONTEND / "src").glob("*.ts")
+        path for path in (FRONTEND / "src").rglob("*.ts")
         if not path.name.endswith(".test.ts") and path.name != "runtime.ts"
     ]
     source = "\n".join(path.read_text(encoding="utf-8") for path in source_files)

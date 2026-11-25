@@ -21,8 +21,8 @@ from codey.agents.shell_approval import shell_command_event_fields
 from codey.app.context import AppContext
 from codey.app.event_payloads import SCHEMA_VERSION, machine_event_payload
 from codey.app.task_services import build_task_deps
-from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import CaptureProviderFailure, CollectChanges
+from codey.operations.task_submission import run_task_submission
 from codey.providers.base import ChatProvider
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.providers.registry import connect_provider as default_connect_provider

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codey.policies.command_line import split_run_command
+from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
     StoreCorruption,
@@ -258,25 +259,11 @@ class ProjectFactsStore:
         fact = _verified_command(command, cwd)
         if fact is None:
             return False
-        facts = self.load(project)
-        commands = [
-            item
-            for item in facts.commands
-            if (item.command, item.cwd) != (fact.command, fact.cwd)
-        ]
-        commands.append(fact)
-        commands = commands[-MAX_VERIFIED_COMMANDS:]
-        write_json_atomic(
-            self.path_for(project),
-            {
-                "schema_version": SCHEMA_VERSION,
-                "commands": [item.to_payload() for item in commands],
-                "successful_changes": [
-                    item.to_payload()
-                    for item in facts.successful_changes[-MAX_SUCCESSFUL_CHANGES:]
-                ],
-            },
-        )
+        path = self.path_for(project)
+        with with_file_lock(path):
+            facts = self.load(project)
+            commands = tuple(item for item in facts.commands if (item.command, item.cwd) != (fact.command, fact.cwd))
+            self._write(path, ProjectFacts((*commands, fact)[-MAX_VERIFIED_COMMANDS:], facts.successful_changes))
         return True
 
     def record_successful_change(
@@ -296,23 +283,22 @@ class ProjectFactsStore:
         )
         if change is None:
             return False
-        facts = self.load(project)
-        changes = [
-            item
-            for item in facts.successful_changes
-            if (item.task, item.files, item.checks) != (change.task, change.files, change.checks)
-        ]
-        changes.append(change)
-        changes = changes[-MAX_SUCCESSFUL_CHANGES:]
-        write_json_atomic(
-            self.path_for(project),
-            {
-                "schema_version": SCHEMA_VERSION,
-                "commands": [item.to_payload() for item in facts.commands[-MAX_VERIFIED_COMMANDS:]],
-                "successful_changes": [item.to_payload() for item in changes],
-            },
-        )
+        path = self.path_for(project)
+        with with_file_lock(path):
+            facts = self.load(project)
+            identity = (change.task, change.files, change.checks)
+            changes = tuple(item for item in facts.successful_changes
+                            if (item.task, item.files, item.checks) != identity)
+            self._write(path, ProjectFacts(facts.commands, (*changes, change)[-MAX_SUCCESSFUL_CHANGES:]))
         return True
+
+    @staticmethod
+    def _write(path: Path, facts: ProjectFacts) -> None:
+        write_json_atomic(path, {
+            "schema_version": SCHEMA_VERSION,
+            "commands": [item.to_payload() for item in facts.commands],
+            "successful_changes": [item.to_payload() for item in facts.successful_changes],
+        })
 
     def render(self, project: str | Path) -> str:
         facts = self.load(project)

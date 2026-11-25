@@ -9,7 +9,7 @@ from types import MappingProxyType
 import tree_sitter_javascript
 from tree_sitter import Language, Node, Parser
 
-from codey.types.json_value import JsonValue, canonical_json_object, parse_json_object
+from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, parse_json_object
 
 
 def _freeze_value(value: JsonValue) -> object:
@@ -220,9 +220,22 @@ def _check_commented_statements(code: str) -> None:
         )
 
 
+def codemode_parameters() -> tuple[tuple[str, JsonObject], ...]:
+    return (
+        ("code", {"type": "string"}),
+        ("inputs", {"type": "object", "additionalProperties": True,
+                    "description": "Named JSON data fields exposed as read-only inputs in JavaScript."}),
+        ("language", {"type": "string", "enum": ["javascript", "js"]}),
+        ("repair_of", {"type": "string", "pattern": "^cmr_[A-Za-z0-9_-]{6,64}$",
+                       "description": "Optional kernel-issued token for a return-only receipt replay."}),
+    )
+
+
 def parse_codemode_args(args: Mapping[str, object], *, limits: CodeModeLimits | None = None) -> CodeModeProgram:
     if not isinstance(args, Mapping):
         raise CodeModeInputError("codemode args must be an object")
+    if args.keys() - {name for name, _ in codemode_parameters()}:
+        raise CodeModeInputError("unsupported CodeMode arguments")
     active_limits = limits or CodeModeLimits()
     code = args.get("code")
     if not isinstance(code, str) or not code.strip():

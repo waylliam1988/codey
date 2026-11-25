@@ -6,12 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from codey.codemode.catalog import snapshot_catalog
 from codey.codemode.navigation import resolve_task_navigation
 from codey.knowledge.model import canonical_json
 from codey.operations.browser.browser_task_handoff import handoff_call
+from codey.operations.browser.catalog import snapshot_catalog
 from codey.operations.browser.turn_surface import offer_browser_call
-from codey.operations.kernel.kernel_protocol import TurnSnapshot, normalize_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.provider_receipts import TURN_SNAPSHOT_SCHEMA, restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot

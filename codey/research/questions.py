@@ -27,7 +27,7 @@ class QuestionSessionView(Protocol):
     def policy(self) -> TaskPolicy: ...
 
 def requires_question_ref(session: QuestionSessionView) -> bool:
-    from codey.research.answer_contract import whole_research
+    from codey.research.task_mode import whole_research
 
     if whole_research(session):
         return False

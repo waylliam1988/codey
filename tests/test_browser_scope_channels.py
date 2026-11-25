@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from codey.automation.browser_session import BrowserSession
-from codey.operations.source_execution import open_source
+from codey.operations.research.source_execution import open_source
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
@@ -19,9 +19,9 @@ from codey.research.ledger_receipts import restore_ledger_observation
 from codey.research.passages import passage_ref, restore_passages
 from codey.research.source_document import SourceDocument, SourceReadScope
 from codey.research.source_gateway import OpenedSource
-from codey.research.source_observation import source_observation
+from codey.research.source_observation import snapshot_document, source_observation
 from codey.research.source_reading import render_source_read
-from codey.research.source_snapshots import captured_source, document_snapshot, snapshot_document
+from codey.research.source_snapshots import captured_source, document_snapshot
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object, require_json_integer, require_json_string

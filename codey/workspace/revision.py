@@ -12,10 +12,9 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import project_key, write_json_atomic
@@ -26,6 +25,7 @@ SCHEMA_VERSION = 1
 INITIAL_WORKSPACE_REVISION = 1
 MAX_REVISION_BYTES = 8 * 1024
 MAX_FINGERPRINT_FILES = 5_000
+MAX_FINGERPRINT_DIR_ENTRIES = 2_000
 MAX_FINGERPRINT_CONTENT_BYTES = 512 * 1024 * 1024
 COVERAGE_RULE_VERSION = 2
 WORKSPACE_FINGERPRINT_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -107,7 +107,7 @@ class WorkspaceIdentity:
             return cls()
         return cls.trusted_pair(audit.get("workspace_revision"), audit.get("workspace_fingerprint"))
 
-    def attach_to_audit(self, audit: dict[str, Any]) -> dict[str, Any]:
+    def attach_to_audit(self, audit: Mapping[str, object]) -> dict[str, object]:
         out = dict(audit)
         if self.trusted:
             out["workspace_revision"] = self.revision
@@ -164,6 +164,7 @@ def scan_workspace_fingerprint(project: str | Path, *, ignored_paths: Iterable[s
         json.dumps(
             {
                 "version": COVERAGE_RULE_VERSION,
+                "max_dir_entries": MAX_FINGERPRINT_DIR_ENTRIES,
                 "excluded_dirs": sorted(FINGERPRINT_EXCLUDED_DIRS),
                 "ignored_paths": ignores,
             },
@@ -171,7 +172,7 @@ def scan_workspace_fingerprint(project: str | Path, *, ignored_paths: Iterable[s
         ).encode("utf-8")
     )
     budget = BoundedScanBudget(
-        max_files=MAX_FINGERPRINT_FILES, max_dirs=500, max_dir_entries=1_000, max_bytes=MAX_FINGERPRINT_CONTENT_BYTES
+        max_files=MAX_FINGERPRINT_FILES, max_dirs=500, max_dir_entries=MAX_FINGERPRINT_DIR_ENTRIES, max_bytes=MAX_FINGERPRINT_CONTENT_BYTES
     )
 
     def allowed(path: Path) -> bool:

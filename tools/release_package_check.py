@@ -122,7 +122,7 @@ def check_source_archive(archive: Path) -> None:
     with tarfile.open(archive) as source:
         names = {name.split("/", 1)[1] for name in source.getnames() if "/" in name}
     required = {"tools/build_runtime.py", "tools/publish_runtime.py", "codey/runtime.json",
-                "frontend/src/desktop_splash.css", "tests/test_desktop_startup.py"}
+                "frontend/src/app/desktop_splash.css", "tests/test_desktop_startup.py"}
     missing = required - names
     if missing:
         raise ValueError(f"Source archive is missing required build inputs: {sorted(missing)}")

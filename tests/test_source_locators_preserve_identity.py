@@ -9,7 +9,7 @@ from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import ledger_observation
-from codey.research.source_snapshots import snapshot_document
+from codey.research.source_observation import snapshot_document
 from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object

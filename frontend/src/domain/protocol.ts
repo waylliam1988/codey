@@ -1,8 +1,8 @@
 import { isFailureInfo, isRecord, isToolPreview } from './display_values';
-import { isInputRecord } from '../input_outbox';
-import { isQuestionRecord } from '../user_questions';
+import { isInputRecord } from '../runs/input_outbox';
+import { isQuestionRecord } from '../runs/user_questions';
 import publicEventFields from '../../../codey/app/public_events.json';
-import { decodeApprovalState } from '../shell_approvals';
+import { decodeApprovalState } from '../runs/shell_approvals';
 export type ProviderCatalog = {
   providers: Array<{ id: string; label: string }>;
   labels: Record<string, string>;
@@ -23,7 +23,7 @@ type PublicEventKind = keyof typeof publicEventFields;
 type ServerPayload = {
   question?: unknown;
   input?: unknown;
-  preview?: import('../render').ToolPreview;
+  preview?: import('../render/render').ToolPreview;
   elapsed_ms?: number;
   phase?: string;
   stream_id?: string;
@@ -83,7 +83,7 @@ type ServerPayload = {
   exit_code?: number | null;
   retry_after?: number;
   provider_failure?: { action?: string; kind?: string; provider?: string; stage?: string };
-  failure?: import('../failure_presentation').FailureInfo;
+  failure?: import('../runs/failure_presentation').FailureInfo;
   providers?: unknown;
   changes?: Pick<ChangesData, 'changed_count' | 'mode' | 'files'>;
   research?: ResearchPayload;

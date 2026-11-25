@@ -6,17 +6,17 @@ from dataclasses import replace
 
 import pytest
 
-from codey.codemode.catalog import snapshot_catalog
 from codey.codemode.host import CodeModeHost
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.operations.browser.browser_task_handoff import initial_navigation
 from codey.operations.browser.browser_waits import complete_wait_args
+from codey.operations.browser.catalog import snapshot_catalog
 from codey.operations.browser.turn_surface import offer_browser_call
 from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
-from codey.operations.research_submission_handoff import research_browser_handoff
+from codey.operations.research.research_submission_handoff import research_browser_handoff
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy

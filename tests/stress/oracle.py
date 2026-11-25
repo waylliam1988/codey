@@ -240,7 +240,7 @@ class InvariantChecker:
             if type(report_text) is not str or not report_text.strip():
                 _fail("completion_truthful", self._prefix("strict Research without report text"))
             try:
-                from codey.research.report_quality import parse_citation_rows
+                from codey.research.citations import parse_citation_rows
             except Exception as exc:
                 _fail("completion_truthful", self._prefix(f"citation parser unavailable: {type(exc).__name__}"))
             try:
@@ -350,7 +350,7 @@ def completion_view_from_gate(
     parsed citations -- so the oracle recomputes success, applicability, and
     containment instead of trusting a ``*_valid = True`` claim.
     """
-    from codey.research.report_quality import parse_citation_rows
+    from codey.research.citations import parse_citation_rows
 
     complete = bool(getattr(verdict, "complete", False) is True)
     proof = getattr(verdict, "proof", None)

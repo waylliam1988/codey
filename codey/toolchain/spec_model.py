@@ -7,6 +7,7 @@ from types import MappingProxyType
 
 from codey.toolchain.result_schema import text_output_schema
 from codey.toolchain.schema_validation import _valid_custom_schema
+from codey.types.json_value import JsonObject, canonical_json_object
 
 EXECUTION_CLAIMS_GUIDANCE = (
     "Optional execution_claims must match actual result_ref, status, exit_code_scope "
@@ -80,3 +81,15 @@ def freeze_spec_parameters(spec: ToolSpec) -> ToolSpec:
         raise RuntimeError(f"tool snapshot freeze failed for {getattr(spec, 'name', '?')}: {exc}") from exc
     return replace(spec, parameters=params, output_schema=MappingProxyType(
         {key: _freeze_schema_value(value) for key, value in spec.output_schema.items()}))
+
+
+def schema_for_spec(spec: ToolSpec) -> JsonObject:
+    properties: JsonObject = {}
+    for param_name, schema in spec.parameters:
+        properties[param_name] = canonical_json_object(schema) if isinstance(schema, Mapping) else {"type": "string"}
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(spec.required),
+        "additionalProperties": False,
+    }

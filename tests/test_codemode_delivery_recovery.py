@@ -11,9 +11,8 @@ import pytest
 from codey.codemode.host import CodeModeHost
 from codey.codemode.replay import DurableCodeModeReplay
 from codey.durable import DurableSession, SQLiteDurableStore
+from codey.operations import tool_operation
 from codey.operations.generation_boundary import durable_generation_boundary_callback
-from codey.operations.kernel import kernel_execution
-from codey.operations.kernel.kernel_execution import ToolDelegate
 from codey.operations.kernel_contracts import (
     KernelExecutionDeps,
     KernelObservationDeps,
@@ -25,6 +24,7 @@ from codey.operations.provider_session import adapt_provider
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_loop import run_task_kernel
 from codey.operations.task_session import TaskSession
+from codey.operations.tool_operation import ToolDelegate
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.write.mutation_line import RuntimeMutationLine
@@ -110,7 +110,7 @@ def test_restart_reuses_settled_effects_and_original_delivery_frontier(
 
     recovering = True
     monkeypatch.setattr(DurableCodeModeReplay, "record_delivery", original_record)
-    invoke_leaf = kernel_execution._run_via_delegate_or_fn
+    invoke_leaf = tool_operation._run_via_delegate_or_fn
 
     def no_read_dispatch(delegate: ToolDelegate | None, runnable: Mapping[str, ToolExecutor], session: TaskSession,
                          call: ToolCall, name: str, *, active_turn: int, tool_index: int,
@@ -119,7 +119,7 @@ def test_restart_reuses_settled_effects_and_original_delivery_frontier(
         return invoke_leaf(delegate, runnable, session, call, name, active_turn=active_turn,
                            tool_index=tool_index, project_path=project_path)
 
-    monkeypatch.setattr(kernel_execution, "_run_via_delegate_or_fn", no_read_dispatch)
+    monkeypatch.setattr(tool_operation, "_run_via_delegate_or_fn", no_read_dispatch)
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
     durable.recover_scheduler_state()
     if durable.task("r").status == "pending":

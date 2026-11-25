@@ -139,6 +139,21 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 offenders[path.relative_to(ROOT).as_posix()] = blocked
         self.assertEqual(offenders, {})
 
+    def test_refactored_execution_imports_have_one_direction(self) -> None:
+        edges = {
+            "operations/kernel_receipts.py": {"codey.operations.task_effects"},
+            "operations/kernel/kernel_protocol.py": {"codey.operations.kernel.turn_presentation"},
+            "operations/tool_operation.py": {"codey.operations.kernel.kernel_execution", "codey.operations.tool_tasks"},
+            "operations/tool_task_reads.py": {"codey.operations.tool_tasks"},
+            "codemode/catalog.py": {"codey.operations"},
+            "codemode/types.py": {"codey.codemode.catalog"},
+            "research/provenance.py": {"codey.research.report_quality"},
+            "research/ledger.py": {"codey.research.ledger_receipts"},
+        }
+        for source, blocked in edges.items():
+            with self.subTest(source=source):
+                self.assertEqual(imports_with_forbidden_prefixes(ROOT / "codey" / source, blocked), [])
+
     def test_agents_package_does_not_import_operations(self) -> None:
         offenders: dict[str, list[str]] = {}
         for path in codey_python_files("agents"):
@@ -192,7 +207,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # task_submit.py, execution in operations/.
         self.assertIn("from codey.app import task_submit", source)
         self.assertNotIn("codey.operations.task_entry", imports)
-        self.assertIn("codey.operations.task_entry", submit_imports)
+        self.assertIn("codey.operations.task_submission", submit_imports)
         self.assertNotIn("on_shell_request(cwd_rel", source)
         self.assertNotIn("conversation.prepare_model_handoff", source)
 

@@ -161,7 +161,7 @@ def test_settled_content_recovery_uses_original_arguments_after_source_and_file_
     document = context.browser_document
     assert document is not None
     snapshot, _ = browser_task_handoff(session, build_turn_snapshot(session), context)
-    from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
+    from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
     from codey.operations.project.declared_field_input import model_spec
 
     binding = snapshot.input_binding

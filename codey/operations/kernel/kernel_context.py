@@ -15,7 +15,8 @@ from codey.knowledge.model import canonical_json
 from codey.operations import kernel_actions as wiring
 from codey.operations import kernel_events, kernel_prompt
 from codey.operations.kernel import kernel_protocol
-from codey.operations.kernel.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
+from codey.operations.kernel.kernel_protocol import ReceivedProviderTurn
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.kernel_capabilities import KernelCapabilityView
 from codey.operations.kernel_contracts import (
     ClosingDecision,
@@ -30,7 +31,7 @@ from codey.operations.kernel_preparation import capture_turn_snapshot, prepare_k
 from codey.operations.kernel_progress import KernelProgress, ProjectCheckCycle, project_check_cycle
 from codey.operations.kernel_trace import record_outbound, record_turn
 from codey.operations.project.edit_base import bound_symbol_retry, is_compact_symbol_retry
-from codey.operations.project_prompt_context import prepare_coding_context
+from codey.operations.project.project_prompt_context import prepare_coding_context
 from codey.operations.provider_request_context import ProviderRequestContext
 from codey.operations.task_guidance import task_result_context, task_working_context
 from codey.operations.task_session import TaskSession, turn_effect_id
@@ -323,7 +324,7 @@ class KernelContext:
     def restore_facts(self) -> None:
         from codey.operations.kernel_facts import project_execution_record, project_result_observation
         from codey.operations.kernel_receipts import restore_result_receipt
-        from codey.operations.verification_history import rebuild_verifications, settled_projections
+        from codey.operations.project.verification_history import rebuild_verifications, settled_projections
 
         effects = settled_projections(self.durable, self.sink.run_id)
         research_ids = (_research_effect_ids(effects, self.transport.run_id, self.effect_scope)
@@ -341,7 +342,7 @@ class KernelContext:
                     or identity in self.session.executed or identity in self.session.restored_effect_ids):
                 continue
             if effect.intent.run_id != self.sink.run_id and effect.settlement.status == "interrupted":
-                from codey.operations.tool_tasks import tool_execution_result
+                from codey.operations.tool_task_reads import tool_execution_result
 
                 restored = tool_execution_result(self.durable, self.durable.task(effect.intent.run_id),
                                                 store=self.sink.managed_outputs)
@@ -370,7 +371,7 @@ class KernelContext:
             if ledger is not None:
                 assert staged_ledger is not None
                 ledger.commit_projection(staged_ledger)
-                from codey.operations.research_continuation import restore_note_proposals
+                from codey.operations.research.research_continuation import restore_note_proposals
                 tools = self.execution.research_tools
                 if tools is not None:
                     restore_note_proposals(tools, result.canonical)
@@ -392,7 +393,7 @@ class KernelContext:
         _evidence_with_session_facts(self.completion_context.execution_evidence, self.session)
         tools = self.execution.research_tools
         if tools is not None:
-            from codey.operations.research_continuation import ResearchContinuation
+            from codey.operations.research.research_continuation import ResearchContinuation
             projector: _ResearchProjector = ResearchContinuation
             projector.project_urls(tools)
         if self.execution.browser_session is not None:
@@ -834,7 +835,7 @@ class KernelContext:
     def _compare_project_check(self, result: ToolResult, *,
                                include_accepted: bool = False) -> ProjectCheckComparison | None:
         from codey.operations.progress_comparison import compare_project_check
-        from codey.operations.tool_tasks import settled_check_for_progress
+        from codey.operations.tool_task_reads import settled_check_for_progress
 
         execution = settled_check_for_progress(self.durable, result, owner_task_id=self.sink.run_id,
                                                 receipts=self.session._memory_results, include_accepted=include_accepted)
@@ -847,7 +848,7 @@ class KernelContext:
         return self.project_check_comparisons[ref]
 
     def _request_check_handoff(self, snapshot: TurnSnapshot, handoff: str | None) -> tuple[TurnSnapshot, str]:
-        from codey.operations.project_check_handoff import project_check_handoff
+        from codey.operations.project.project_check_handoff import project_check_handoff
 
         if handoff is None:
             snapshot, handoff = self.request_snapshot(snapshot)
@@ -872,7 +873,7 @@ class KernelContext:
                 and result.call.call_id.startswith("required-source:") for result in results) and not self.cancelled():
             self.prepare_turn(state, prefetched=results)
             return
-        from codey.operations.task_handoff import report_completes_task
+        from codey.operations.research.research_completion_checks import report_completes_task
         from codey.research.answer_contract import submitted_answer
 
         if (report_completes_task(self.session) and not self.cancelled() and results and results[-1].ok

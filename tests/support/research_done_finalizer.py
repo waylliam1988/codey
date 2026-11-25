@@ -9,7 +9,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from codey.research import report_quality
+from codey.research.citations import parse_citation_rows
 from codey.research.ledger import ResearchLedger, normalize_evidence_stance
 from codey.research.object_model import ResearchClaim, build_research_record
 from codey.research.urls import opened_url
@@ -204,7 +204,7 @@ def _old_source_numbers(
 ) -> dict[int, int] | None:
     mapping: dict[int, int] = {}
     urls_by_number: dict[int, set[str]] = {}
-    for citation in report_quality.parse_citation_rows(source_text, ledger):
+    for citation in parse_citation_rows(source_text, ledger):
         url = opened_url(ledger, citation.url)
         if url in number_for_url:
             number = citation.number
@@ -539,7 +539,7 @@ def _derive_required_lines_from_saved_evidence(
 
 def _source_numbers_by_url(sources_text: str, ledger: ResearchLedger) -> dict[str, int]:
     numbers: dict[str, int] = {}
-    for row in report_quality.parse_citation_rows(sources_text, ledger):
+    for row in parse_citation_rows(sources_text, ledger):
         raw_url = (row.url or "").strip()
         if not raw_url:
             continue

@@ -22,7 +22,7 @@ from codey.operations.kernel_contracts import (
     ToolExecutor,
 )
 from codey.operations.kernel_trace import record_outbound
-from codey.operations.project_prompt_context import prepare_coding_context
+from codey.operations.project.project_prompt_context import prepare_coding_context
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
 from codey.policies.command_line import ShellSpec
 from codey.providers.attempt_gate import AttemptGateCallback, AttemptGateClient
@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
     from codey.durable import DurableStore
     from codey.durable.session import DurableSession
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy

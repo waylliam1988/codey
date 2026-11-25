@@ -38,7 +38,7 @@ def revision_ready(session):
 
 
 def revision_tool_names(session, names):
-    from codey.research.answer_contract import whole_research
+    from codey.research.task_mode import whole_research
 
     if names is not None:
         names = tuple(name for name in names if name != PREPARE)
@@ -53,7 +53,7 @@ def revision_tool_names(session, names):
 
 
 def revision_guidance(session, guidance):
-    from codey.research.answer_contract import whole_research
+    from codey.research.task_mode import whole_research
 
     if (whole_research(session) and getattr(session, "model_tool_names", None) is None
             and not revision_ready(session) and session.policy.allows("knowledge.write")
@@ -63,7 +63,8 @@ def revision_guidance(session, guidance):
 
 
 def preparation_result(session, scope, call):
-    from codey.research.answer_contract import AnswerScope, digest, whole_research
+    from codey.research.answer_contract import AnswerScope, digest
+    from codey.research.task_mode import whole_research
     from codey.runtime.core.models import ToolResult
 
     if (not whole_research(session) or not isinstance(scope, AnswerScope)

@@ -9,7 +9,7 @@ from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.research_completion_checks import knowledge_reference_checks
+from codey.operations.research.research_completion_checks import knowledge_reference_checks
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult

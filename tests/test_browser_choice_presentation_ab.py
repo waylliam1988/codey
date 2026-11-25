@@ -11,7 +11,8 @@ import pytest
 from playwright.sync_api import Route
 
 from codey.operations.browser.browser_references import BrowserReferences
-from codey.operations.kernel.kernel_protocol import ModelInputBinding, normalize_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
+from codey.operations.kernel.turn_contract import ModelInputBinding
 from codey.operations.project.declared_field_input import model_spec
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot

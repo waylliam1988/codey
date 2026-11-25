@@ -192,7 +192,7 @@ def test_kernel_prompt_has_no_domain_branch_or_completion_dependencies() -> None
     assert "Research evidence rules" not in source
     tree = ast.parse(source)
     forbidden = ("codey.research", "codey.operations.project_completion_checks",
-                 "codey.operations.project_verification")
+                 "codey.operations.project.project_verification")
     domain_imports = [node for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
                       and (node.module or "").startswith(forbidden)]
     # Protocol repair recognizes the frozen whole-answer scope to preserve an

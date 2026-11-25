@@ -12,7 +12,6 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.knowledge.concepts import build_unified_research_graph
 from codey.knowledge.model import KnowledgeObject, KnowledgeReference
 from codey.knowledge.store import KnowledgeStore
-from codey.research.browser_search import BrowserSearchProvider
 from codey.types.json_value import JsonObject, decode_json_object, encode_transport_value
 from tests.test_research_submission_handoff_production import NativeExperimentProvider, install_http, requests
 from tools.completion_explanation_ab import ExperimentProvider, Target
@@ -28,7 +27,7 @@ def test_production_entry_acquire_restart_associate_revise_and_trace(
     quote = "Only one writer may commit at a time. Multiple readers can proceed."
     calls: list[tuple[str, str]] = []
 
-    class Search(BrowserSearchProvider):
+    class Search:
         def search(self, query: str, limit: int = 8) -> list[JsonObject]:
             calls.append(("search", query))
             return [{"title": "Concurrency experiment", "url": url, "snippet": quote}]

@@ -36,8 +36,8 @@ import contextlib
 from codey.agents.request import AgentRequest
 from codey.app import server
 from codey.app import task_submit as task_submit
-from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
+from codey.operations.task_submission import run_task_submission
 from codey.runtime.core.models import ToolCall
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent

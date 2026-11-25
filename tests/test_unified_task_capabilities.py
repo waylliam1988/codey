@@ -14,13 +14,14 @@ from codey.operations.completion_gate import evaluate
 from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_facts import bind_source_identity, project_execution_record, project_result_observation
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
+from codey.operations.research.research_completion_checks import report_completes_task
 from codey.operations.task_execution import ExecutionDelegate
-from codey.operations.task_handoff import report_completes_task
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, TaskPolicy, build_task_policy
 from codey.protocols.text_turn import decode_text_turn
-from codey.research.answer_contract import answer_scope, submit_answer, whole_research
+from codey.research.answer_contract import answer_scope, submit_answer
+from codey.research.task_mode import whole_research
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject
@@ -78,7 +79,7 @@ def test_missing_legacy_research_plan_blocks_only_its_question_bound_tools() -> 
 
 
 def test_codemode_verification_uses_verify_grant_independently_of_edit_grant() -> None:
-    from codey.codemode.catalog import snapshot_catalog
+    from codey.operations.browser.catalog import snapshot_catalog
 
     policy = TaskPolicy(frozenset({"control", "project.read", "project.verify"}))
     session = TaskSession(policy, task_kind="research")
@@ -144,7 +145,8 @@ def test_report_cannot_finish_required_implementation_or_failed_verification(tmp
 
 
 def test_outer_and_nested_contracts_share_descriptions_and_keep_full_signatures() -> None:
-    from codey.codemode.catalog import render_declarations, snapshot_catalog
+    from codey.codemode.catalog import render_declarations
+    from codey.operations.browser.catalog import snapshot_catalog
     session = TaskSession(build_task_policy(Request(), task_kind="project"), project_changes_required=True)
     snapshot = offer_browser_tools(build_turn_snapshot(session), session)
     outer = next(spec for spec in snapshot.model_specs if spec.name == "read_file")

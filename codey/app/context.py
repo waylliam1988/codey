@@ -79,8 +79,6 @@ class _Closable(Protocol):
     def close(self) -> object: ...
 
 
-REVIEW_FIX_TURNS = 12
-REVIEW_LOG_LINES = 80
 SSE_REPLAY_LIMIT = 512
 def _close_if_discarded(store: object) -> None:
     """Best-effort close for a double-checked loser (e.g. KnowledgeStore index)."""

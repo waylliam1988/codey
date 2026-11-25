@@ -351,9 +351,13 @@ class ResearchLedger:
         if not final_url or not query:
             return
         if source_snapshot is None:
-            from codey.research.ledger_receipts import ledger_observation
+            from codey.research.source_observation import source_snapshot as encode_source
 
-            source_snapshot = ledger_observation(self, "open", url=final_url)
+            source = self.source_record_for_url(final_url)
+            if source is None:
+                raise ValueError("missing research observation for open")
+            source_snapshot = encode_source(source, self.source_text_for_url(final_url),
+                                           self.source_pages_for_url(final_url))
         bounded_hits: list[SourceSearchLocator] = []
         for hit in hits[:MAX_PAYLOAD_SOURCE_SEARCHES]:
             if not isinstance(hit, dict):

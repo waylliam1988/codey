@@ -9,7 +9,8 @@ import pytest
 from codey.automation.browser_session import BrowserSession
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.operations.kernel.kernel_execution import execute_turn
-from codey.operations.kernel.kernel_protocol import normalize_turn, refresh_snapshot_contract
+from codey.operations.kernel.kernel_protocol import normalize_turn
+from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot

@@ -32,8 +32,7 @@ from codey.research.reference import ResearchReference
 from codey.research.report_evidence import check_report_evidence
 from codey.research.source_document import OpenedSource, SourceDocument, SourcePage
 from codey.research.source_gateway import ResearchSourceGateway
-from codey.research.source_observation import source_observation, source_snapshot
-from codey.research.source_snapshots import snapshot_document
+from codey.research.source_observation import snapshot_document, source_observation, source_snapshot
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.effects.effect_records import RuntimeEffectSettlement
 from codey.toolchain.runtime import read_file, write_file

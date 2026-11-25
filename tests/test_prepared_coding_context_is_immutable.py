@@ -5,7 +5,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from codey.completion.verification_policy import VerificationCandidate
-from codey.operations.project_prompt_context import prepare_coding_context
+from codey.operations.project.project_prompt_context import prepare_coding_context
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.workspace.coding_context import CodingContext, render_coding_context
@@ -50,7 +50,7 @@ def test_native_suggested_verification_is_not_a_json_reply_instruction():
 
 
 def test_context_preparation_passes_the_actual_completion_context(monkeypatch):
-    from codey.operations import project_prompt_context
+    from codey.operations.project import project_prompt_context
 
     contexts = []
     monkeypatch.setattr(project_prompt_context, "project_completion_checks",

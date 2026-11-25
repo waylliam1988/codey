@@ -16,7 +16,7 @@ from tools import release_package_check as release
 
 COMMIT = "a" * 40
 SOURCE_FILES = {"tools/build_runtime.py": b"# backend", "tools/publish_runtime.py": b"# inventory",
-                "codey/runtime.json": b"{}", "frontend/src/desktop_splash.css": b"body{}",
+                "codey/runtime.json": b"{}", "frontend/src/app/desktop_splash.css": b"body{}",
                 "tests/test_desktop_startup.py": b"# source fixture"}
 
 

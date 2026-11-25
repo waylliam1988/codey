@@ -49,7 +49,7 @@ def preparation_spec() -> ToolSpec:
 
 
 def revision_tool_names(session: Any, names: tuple[str, ...] | None) -> tuple[str, ...] | None:
-    from codey.research.answer_contract import whole_research
+    from codey.research.task_mode import whole_research
 
     if (not whole_research(session) or names is None or "knowledge_commit" not in names
             or getattr(session, "model_tool_names", None) is not None or revision_ready(session)
@@ -59,7 +59,7 @@ def revision_tool_names(session: Any, names: tuple[str, ...] | None) -> tuple[st
 
 
 def revision_guidance(session: Any, guidance: str) -> str:
-    from codey.research.answer_contract import whole_research
+    from codey.research.task_mode import whole_research
 
     if (whole_research(session) and getattr(session, "model_tool_names", None) is None
             and not revision_ready(session) and session.policy.allows("knowledge.write")
@@ -69,7 +69,8 @@ def revision_guidance(session: Any, guidance: str) -> str:
 
 
 def preparation_result(session: Any, scope: object, call: ToolCall) -> ToolResult:
-    from codey.research.answer_contract import AnswerScope, digest, whole_research
+    from codey.research.answer_contract import AnswerScope, digest
+    from codey.research.task_mode import whole_research
 
     if (not whole_research(session) or not isinstance(scope, AnswerScope)
             or scope.task_digest != digest(session.task_text) or call.args

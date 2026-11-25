@@ -10,19 +10,21 @@ from types import SimpleNamespace
 
 import pytest
 
-from codey.codemode.catalog import build_catalog_snapshot, render_declarations, snapshot_catalog
+from codey.codemode.catalog import build_catalog_snapshot, render_declarations
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.shape_repair import readonly_settled, shape_diagnostic
 from codey.codemode.types import ToolCatalogEntry
 from codey.memory.candidates import CANDIDATE_FIELD
 from codey.operations.browser.browser_followups import click_followup_plan
+from codey.operations.browser.catalog import snapshot_catalog
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import evaluate
 from codey.operations.completion_output import explanation_text, prepare_completion_output
 from codey.operations.explanation_repair import repair_prompt as explanation_repair_prompt
 from codey.operations.file_field_binding import bound_content, file_rules, validate_content
 from codey.operations.kernel.kernel_execution import execute_turn
-from codey.operations.kernel.kernel_protocol import normalize_turn, refresh_snapshot_contract
+from codey.operations.kernel.kernel_protocol import normalize_turn
+from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.kernel_contracts import RetryDecision, ToolExecutor
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.kernel_preparation import prepare_kernel_turn
@@ -45,7 +47,8 @@ from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.research.source_document import OpenedSource
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.web_intent import explicit_browser_checks
-from codey.toolchain.tool_spec import ToolSpec, _schema_for_spec, freeze_spec_parameters, spec_for_tool
+from codey.toolchain.spec_model import schema_for_spec
+from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, spec_for_tool
 from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_object, parse_json_object
 from tests.test_explanation_delivery_contract import session_for
 from tests.test_receipt_bound_edit_surface_probe import install_http
@@ -179,7 +182,7 @@ def test_explanation_interface_only_exposes_paragraphs(kind: str, native: bool, 
     done = next(spec for spec in snapshot.model_specs if spec.name == "done")
     assert set(dict(done.parameters)) == {"paragraphs"}
     assert done.required == ("paragraphs",)
-    assert _schema_for_spec(done)["additionalProperties"] is False
+    assert schema_for_spec(done)["additionalProperties"] is False
     assert "report_sections.coverage" not in snapshot.contract_text and "open_questions" not in snapshot.contract_text
     assert len(done.json_examples) == 1
     assert done.json_examples[0] == '{"tool":"done","args":{"paragraphs":["First paragraph.","Second paragraph."]}}'
@@ -547,7 +550,7 @@ def test_repair_stays_restricted_after_receipt_read_protocol_retry_and_restore(
         assert set(dict(done.parameters)) <= {"paragraphs", CANDIDATE_FIELD}
         valid = normalize_turn(decode_text_turn(done.json_examples[0]), snapshot=restored)
         assert not valid.protocol_error
-        assert _schema_for_spec(done)["additionalProperties"] is False
+        assert schema_for_spec(done)["additionalProperties"] is False
         messages = provider_requests(directory)[-1]["messages"]
         assert isinstance(messages, list)
         content = [decode_json_object(message).get("content") for message in messages]

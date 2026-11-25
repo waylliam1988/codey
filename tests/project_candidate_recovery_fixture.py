@@ -88,8 +88,8 @@ def scenario(tmp_path: Path, *, kind: str = 'stagnant', source: str = GOOD, faul
     # Import application stores only after pytest's isolated-home conftest.
     from codey.app.context import AppContext
     from codey.operations import project_adapter
-    from codey.operations.task_entry import run_task_submission
     from codey.operations.task_run import TaskRunDeps
+    from codey.operations.task_submission import run_task_submission
     from codey.providers.diagnostics import capture_provider_failure
     from codey.reviews.core import ReviewResult
     from codey.reviews.identity import ReviewIdentity, capture_snapshot

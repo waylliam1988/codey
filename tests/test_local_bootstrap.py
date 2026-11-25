@@ -997,7 +997,7 @@ def test_save_rejects_invalid_env_budget_without_persisting(monkeypatch) -> None
 def test_frontend_source_text_preserves_template_markup_after_type_erasure() -> None:
     from tools.frontend_source import frontend_source_text
 
-    text = frontend_source_text("changes_drawer")
+    text = frontend_source_text("workspace/changes_drawer")
     assert "</span>" in text
     assert "${escapeHtml(line.slice(1) || ' ')}</span>" in text
 

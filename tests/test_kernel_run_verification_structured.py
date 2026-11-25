@@ -11,7 +11,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from codey.operations.kernel import kernel_execution as execute
+from codey.operations import tool_operation
 from codey.operations.task_session import TaskSession
 from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -54,7 +54,7 @@ class StructuredRunVerificationTests(unittest.TestCase):
         session = _session()
         call = ToolCall(name="run", args={"command": "echo hi"}, call_id="c2")
         # Injected executor path: raw string result with pass text, no exit code.
-        result, ok, exit_code = execute._run_via_delegate_or_fn(
+        result, ok, exit_code = tool_operation._run_via_delegate_or_fn(
             None, {"run": lambda c: "all pass OK"}, session, call, "run",
             active_turn=1, tool_index=0,
         )

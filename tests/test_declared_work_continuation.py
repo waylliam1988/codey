@@ -20,7 +20,7 @@ from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.kernel_prompt import working_context
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
-from codey.operations.research_submission_handoff import research_browser_handoff, research_submission_handoff
+from codey.operations.research.research_submission_handoff import research_browser_handoff, research_submission_handoff
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot

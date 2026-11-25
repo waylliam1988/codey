@@ -7,7 +7,8 @@ from codey.knowledge.model import canonical_json
 from codey.research.answer_contract import AnswerScope, AnswerSessionView
 from codey.research.finding_stage import comparison_stage
 from codey.research.passages import read_passage_refs
-from codey.toolchain.tool_spec import ToolSpec, _check_spec_value_against_schema, freeze_spec_parameters
+from codey.toolchain.schema_validation import check_schema_value
+from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters
 from codey.types.json_value import JsonValue, ToolArgs, canonical_json_object, decode_json_object, parse_json_object
 
 
@@ -60,7 +61,7 @@ def finding_choices(spec: ToolSpec, scope: AnswerScope, session: AnswerSessionVi
         arguments = parse_json_object(rule.arguments_json)
         value = arguments.get("comparison")
         if (set(arguments) != {"comparison"} or not isinstance(value, dict)
-                or _check_spec_value_against_schema(spec.name, "comparison", comparison, value, strict=True)):
+                or check_schema_value(spec.name, "comparison", comparison, value, strict=True)):
             continue
         if value not in choices:
             choices.append(value)

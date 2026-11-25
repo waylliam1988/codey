@@ -24,6 +24,8 @@ interface TitleEdit {
 
 export function createTitleEditor(deps: TitleEditorDeps, element: HTMLElement) {
   let titleEdit: TitleEdit | null = null;
+  let pointerTimer: ReturnType<typeof setTimeout> | undefined;
+  const listeners = new AbortController();
   function finishTitleEdit(edit: TitleEdit, value: string | null, restoreFocus = false): void {
     if (titleEdit !== edit) return;
     titleEdit = null;
@@ -88,28 +90,29 @@ export function createTitleEditor(deps: TitleEditorDeps, element: HTMLElement) {
     if (titleEdit) titleEdit.pointerAway = false;
   }
   function initTitleRename() {
+    const options = { capture: true, signal: listeners.signal };
     document.addEventListener(
       'pointerdown',
-      (e) => {
-        if (titleEdit && e.target !== titleEdit.input) titleEdit.pointerAway = true;
+      (event) => {
+        if (titleEdit && event.target !== titleEdit.input) titleEdit.pointerAway = true;
       },
-      true,
+      options,
     );
-    // Commit during the click event, after its target has been determined, so
-    // sidebar rerendering cannot swallow a click on the next chat.
-    document.addEventListener('click', finishTitleBlur, true);
+    // Commit after the click target is fixed so a sidebar render cannot swallow the click.
+    document.addEventListener('click', finishTitleBlur, options);
     document.addEventListener(
       'pointerup',
       () => {
         const edit = titleEdit;
-        setTimeout(() => {
+        clearTimeout(pointerTimer);
+        pointerTimer = setTimeout(() => {
           if (titleEdit === edit) finishTitleBlur();
         }, 0);
       },
-      true,
+      options,
     );
-    document.addEventListener('pointercancel', finishTitleBlur, true);
-    window.addEventListener('blur', finishTitleBlur);
+    document.addEventListener('pointercancel', finishTitleBlur, options);
+    window.addEventListener('blur', finishTitleBlur, { signal: listeners.signal });
   }
   function renderTitle(s: Session, p: Project | null | undefined) {
     if (titleEdit && (titleEdit.id !== s.id || !titleEdit.input.isConnected))
@@ -149,5 +152,15 @@ export function createTitleEditor(deps: TitleEditorDeps, element: HTMLElement) {
     title.append(name);
   }
   initTitleRename();
-  return { renderTitle, isRenamingSession: (id: string) => titleEdit?.id === id };
+  return {
+    renderTitle,
+    isRenamingSession: (id: string) => titleEdit?.id === id,
+    dispose() {
+      listeners.abort();
+      clearTimeout(pointerTimer);
+      titleEdit = null;
+      const button = element.querySelector<HTMLButtonElement>('.crumb-chat');
+      if (button) button.onclick = null;
+    },
+  };
 }

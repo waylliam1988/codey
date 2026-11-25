@@ -1,0 +1,896 @@
+import { ChangesDrawer } from '../workspace/changes_drawer';
+import { ConversationNav } from './conversation_nav';
+import { LocalContextDrawer } from '../workspace/local_context_drawer';
+import { Composer } from './composer';
+import { createTitleEditor } from './title_editor';
+import { mountSidebarResize } from './sidebar_resize';
+import { createSelectionMenu } from './selection_menu';
+import { Messages } from './messages';
+import { Process } from '../runs/process';
+import { ProviderUI } from '../providers/provider_ui';
+import { Render } from '../render/render';
+import { UiState } from '../state/ui_state';
+import type { HistoryTask } from './history_repository';
+import { createTranscriptViewport, type TranscriptView } from './transcript_viewport';
+import type { Message, Project, Session } from '../types/domain';
+import type { ProcessSnapshot } from '../runs/process';
+import { ConversationSearch } from './conversation_search';
+import { ConversationHistory } from './conversation_history';
+import { HistoryRepository } from './history_repository';
+import { iconButton } from '../render/icon_button';
+import type { ServerEvent } from '../domain/protocol';
+export interface ConversationUiApi {
+  init(deps: ConversationUiDeps): void;
+  renderChat(): void;
+  refreshHistory(sessionId: string, force?: boolean, background?: boolean): Promise<void>;
+  historyRevision(sessionId: string): number | undefined;
+  acceptsRun(sessionId: string, runId: string): boolean;
+  acceptRunEvent(sessionId: string, runId: string, accept: () => void): void;
+  runEventVersion(sessionId: string): string;
+  searchHistory(): void;
+  observeCommit(event: ServerEvent): Promise<void>;
+  scrollChat(capture?: boolean): void;
+  captureView(): void;
+  scrollToMessage(anchor: HTMLElement, smooth: boolean): void;
+  isFollowing(): boolean;
+  updateLatest(): void;
+  updateNotice(): void;
+  stopFollowing(): void;
+  refreshApprovals(): boolean;
+  revealApproval(id: string): void;
+  syncAnswerIdentity(sessionId: string, runId: string): Promise<void>;
+  matchesSession(session: Session): boolean;
+  matchesProject(project: Project): boolean;
+  appendGroupLabel(list: HTMLElement, text: string, hasMatches: boolean | number): void;
+  updateSearch(): void;
+  isSearching(): boolean;
+  isRenamingSession(id: string): boolean;
+  forget(id: string): void;
+  openFile(path: string | null, project?: string): unknown;
+  menuOpened(menu: HTMLElement, anchor: HTMLElement): void;
+  menusClosed(restore?: boolean): void;
+}
+export interface ConversationUiDeps {
+  syncComposer?(): void;
+  chatFork?: Pick<import('./chat_fork').ChatFork, 'showOrigin'>;
+  userQuestions?: Pick<import('../runs/user_questions').UserQuestions, 'syncViews'>;
+  projectTasks(tasks: HistoryTask[], sessionId: string): void;
+  activeSession(): Session | undefined;
+  activeProject(): Project | null | undefined;
+  getSessions(): Session[];
+  getProjects(): Project[];
+  getActiveId(): string;
+  getRunningSessionId(): string | null;
+  sessionProject(session: Session): Project | null | undefined;
+  currentProviderId(): string;
+  syncProviderUI(provider: string): void;
+  updateComposerContext(): void;
+  syncResearchUseProjectButton(active?: string): void;
+  appendMessageNode(chat: HTMLElement, message: Message): void;
+  renderSidebar(): void;
+  switchSession(id: string): void;
+  closeAllMenus(active?: string): void;
+  closeOtherDrawers(): void;
+  currentProjectPath(): string;
+  commitSessionRename(id: string, value: string): void;
+  renameInputEl(
+    value: string,
+    onCommit: (value: string | null | undefined) => void,
+    onCancel: () => void,
+  ): HTMLInputElement;
+}
+/* Conversation continuity, quiet status, search, and keyboard navigation. */
+interface ViewState extends TranscriptView {
+  messages: Message[] | null;
+  nodes: Node[] | null;
+  disclosures: ProcessSnapshot[];
+}
+let deps: ConversationUiDeps;
+let shownId = '';
+const historyRendered = new Set<string>();
+const forcedHistoryRefresh = new Set<string>();
+const views = new Map<string, ViewState>();
+const historyStarts = new Map<string, number>();
+const loadingHistory = new Map<string, symbol>();
+const deferredHistory = new Set<string>();
+const answerIdentityRequests = new Map<string, Map<string, symbol>>();
+let historyObserver: IntersectionObserver | undefined;
+let searchPanel: ConversationSearch | null = null;
+const focusRendering = new Map<string, symbol>();
+let searchOrigin: { session: string; entry: string; offset: number; scroll: number; following: boolean } | null = null;
+
+async function focusHistory(entryId: string): Promise<void> {
+  const session = deps.activeSession();
+  if (!session) return;
+  forcedHistoryRefresh.add(session.id);
+  viewport.setFollowing(false);
+  const request = Symbol();
+  focusRendering.set(session.id, request);
+  try {
+    if (!(await history.focus(session, entryId)) || deps.activeSession() !== session) return;
+  } finally {
+    if (focusRendering.get(session.id) === request) focusRendering.delete(session.id);
+  }
+  const target = $('chat').querySelector<HTMLElement>(`[data-entry-id="${CSS.escape(entryId)}"]`);
+  if (!target) throw new Error('Message could not be displayed');
+  viewport.setScroll(
+    $('chat-area').scrollTop +
+      target.getBoundingClientRect().top -
+      $('chat-area').getBoundingClientRect().top -
+      (searchPanel && !searchPanel.element.hidden ? searchPanel.element.offsetHeight + 16 : 24),
+  );
+  captureView();
+}
+function searchHistory(): void {
+  if (!searchPanel) {
+    searchPanel = new ConversationSearch({
+      sessionId: () => deps.getActiveId(),
+      jump: focusHistory,
+      restore: async () => {
+        const origin = searchOrigin;
+        if (!origin || origin.session !== deps.getActiveId()) return;
+        if (origin.following) {
+          await refreshHistory(origin.session);
+          backToLatest();
+        } else if (origin.entry) {
+          await focusHistory(origin.entry);
+          const target = $('chat').querySelector<HTMLElement>(`[data-entry-id="${CSS.escape(origin.entry)}"]`);
+          if (target)
+            viewport.setScroll(
+              $('chat-area').scrollTop +
+                target.getBoundingClientRect().top -
+                $('chat-area').getBoundingClientRect().top -
+                origin.offset,
+            );
+        } else viewport.setScroll(origin.scroll);
+        captureView();
+      },
+    });
+    document.querySelector('main')?.append(searchPanel.element);
+  }
+  if (searchPanel.element.hidden) {
+    const top = $('chat-area').getBoundingClientRect().top;
+    const anchor = Array.from($('chat').querySelectorAll<HTMLElement>('[data-entry-id]')).find(
+      (node) => node.getBoundingClientRect().bottom >= top,
+    );
+    searchOrigin = {
+      session: deps.getActiveId(),
+      entry: anchor?.dataset.entryId || '',
+      offset: (anchor?.getBoundingClientRect().top || top) - top,
+      scroll: $('chat-area').scrollTop,
+      following: isFollowing(),
+    };
+  }
+  searchPanel.open();
+}
+const history = new ConversationHistory((session, revealEarlier, tasks, removedRuns) => {
+  if (tasks) deps.projectTasks(tasks, session.id);
+  UiState?.hydrateSessionIndexes(session);
+  if (revealEarlier) {
+    // A mounted history window prepends its older entries in-place after
+    // the repository resolves. Re-rendering here would replace the visible
+    // tail and invalidate selections, anchors, and browser node handles.
+    historyStarts.set(session.id, 0);
+    return;
+  } else {
+    if (focusRendering.has(session.id)) historyStarts.set(session.id, 0);
+    else historyStarts.delete(session.id);
+  }
+  // A mounted conversation owns its visible nodes while live events are
+  // arriving. Durable commits are still reconciled into the session model,
+  // but rebuilding the tree here would detach nodes the user is reading.
+  // An empty mount still needs the first authoritative history render.
+  const force = forcedHistoryRefresh.delete(session.id) || removedRuns;
+  if (deps.activeSession() === session && historyRendered.has(session.id) && !force) return;
+  historyRendered.add(session.id);
+  views.delete(session.id);
+  if (deps.activeSession() === session) renderChat(focusRendering.has(session.id));
+});
+const HISTORY_BATCH = 100;
+let menuTrigger: HTMLElement | null = null;
+let selectionMenu: ReturnType<typeof createSelectionMenu> | undefined;
+let viewport: ReturnType<typeof createTranscriptViewport>;
+let titleEditor: ReturnType<typeof createTitleEditor>;
+
+function $<T extends HTMLElement = HTMLElement>(id: string): T {
+  const element = document.getElementById(id);
+  if (!element) throw new Error(`Missing conversation UI element: ${id}`);
+  return element as T;
+}
+function query(): string {
+  return $<HTMLInputElement>('chat-search').value.trim().toLocaleLowerCase();
+}
+function matchesSession(s: Session): boolean {
+  const p = deps.sessionProject(s);
+  return [s.title, p && p.name].filter(Boolean).join(' ').toLocaleLowerCase().includes(query());
+}
+function matchesProject(p: Project): boolean {
+  return (
+    !query() ||
+    String(p.name || '')
+      .toLocaleLowerCase()
+      .includes(query()) ||
+    deps.getSessions().some((s: Session) => s.projectId === p.id && matchesSession(s))
+  );
+}
+function appendGroupLabel(list: HTMLElement, text: string, hasMatches: boolean): void {
+  const label = document.createElement('div');
+  label.className = 'group-label';
+  label.textContent = text;
+  label.hidden = !!query() && !hasMatches;
+  list.appendChild(label);
+}
+function updateSearch() {
+  if (!deps) return;
+  $('chat-search-clear').hidden =
+    $<HTMLInputElement>('chat-search').hidden || !$<HTMLInputElement>('chat-search').value;
+  const empty = !!query() && !deps.getProjects().some(matchesProject) && !deps.getSessions().some(matchesSession);
+  $('search-empty').hidden = !empty;
+  $('session-list').hidden = empty;
+}
+function isFollowing(): boolean {
+  return viewport?.following() ?? true;
+}
+function stopFollowing(): void {
+  viewport?.interruptFollowing();
+}
+function scrollToMessage(anchor: HTMLElement, smooth: boolean): void {
+  viewport.scrollToMessage(anchor, smooth);
+}
+function revealApproval(id: string): void {
+  const card = $('chat').querySelector<HTMLElement>(`[data-approval-id="${CSS.escape(id)}"]`);
+  if (!card) return;
+  const area = $('chat-area'),
+    bounds = area.getBoundingClientRect(),
+    rect = card.getBoundingClientRect();
+  // Scroll only the transcript, never the main grid or the document.
+  viewport.setScroll(area.scrollTop + rect.top - bounds.top - Math.max(16, (area.clientHeight - rect.height) / 2));
+  card.focus({ preventScroll: true });
+  captureView();
+}
+function refreshApprovals(): boolean {
+  const session = deps.activeSession();
+  if (!session || session.id !== shownId) return false;
+  const chat = $('chat'),
+    area = $('chat-area'),
+    top = area.getBoundingClientRect().top;
+  const anchor = Array.from(chat.children).find((node) => node.getBoundingClientRect().bottom > top);
+  const offset = anchor?.getBoundingClientRect().top;
+  const scroll = area.scrollTop;
+  if (!Messages.updateApprovals(chat, session.messages)) return false;
+  if (isFollowing()) viewport.setScroll(area.scrollHeight);
+  else if (anchor?.isConnected && offset !== undefined)
+    viewport.setScroll(area.scrollTop + anchor.getBoundingClientRect().top - offset);
+  else viewport.setScroll(scroll);
+  captureView();
+  updateLatest();
+  return true;
+}
+async function syncAnswerIdentity(sessionId: string, runId: string): Promise<void> {
+  const session = deps.getSessions().find((item) => item.id === sessionId);
+  if (!session) return;
+  const isAnswer = (message: Message) =>
+    message.type === 'asst' &&
+    message.runId === runId &&
+    message.finalAnswer !== false &&
+    message.contentRole !== 'commentary';
+  let answers = session.messages.filter(isAnswer);
+  if (!answers.length) return;
+  const requests = answerIdentityRequests.get(sessionId) ?? new Map<string, symbol>();
+  answerIdentityRequests.set(sessionId, requests);
+  const request = Symbol();
+  requests.set(runId, request);
+  const isCurrent = () => answerIdentityRequests.get(sessionId)?.get(runId) === request;
+  try {
+    if (answers.some((message) => !message.entryId)) {
+      // Read canonical identity without replacing the reader's history window.
+      const page = await new HistoryRepository().loadLatest(sessionId);
+      if (!page || !isCurrent() || deps.getSessions().find((item) => item.id === sessionId) !== session) return;
+      answers = session.messages.filter(isAnswer);
+      const committed = page.items.filter(
+        (item) => item.type === 'asst' && item.runId === runId && item.contentRole !== 'commentary',
+      );
+      session.messages = session.messages.map((message) => {
+        if (!answers.includes(message) || message.entryId) return message;
+        const matches = committed.filter((item) => item.answerId && item.answerId === message.answerId);
+        const source =
+          matches.length === 1 ? matches[0] : answers.length === 1 && committed.length === 1 ? committed[0] : undefined;
+        return source ? { ...message, entryId: String(source.id) } : message;
+      });
+    }
+    if (deps.activeSession() === session) {
+      for (const message of session.messages.filter(isAnswer)) Messages.updateAnswerIdentity($('chat'), message);
+      scrollChat();
+    }
+  } catch {
+    /* Without a confirmed entry, never fork from a guessed message. */
+  } finally {
+    if (isCurrent()) {
+      requests.delete(runId);
+      if (!requests.size) answerIdentityRequests.delete(sessionId);
+    }
+  }
+}
+function backToLatest() {
+  viewport.endUserScroll();
+  const sessionId = deps.getActiveId();
+  if (history.hasAfter(sessionId) || deferredHistory.has(sessionId)) {
+    void refreshHistory(sessionId).then(() => {
+      if (deps.getActiveId() !== sessionId) return;
+      viewport.setFollowing(true);
+      scrollChat();
+    });
+    return;
+  }
+  viewport.setFollowing(true);
+  viewport.clearIntent();
+  scrollChat();
+}
+
+function captureView() {
+  if (!shownId) return;
+  const session = deps.getSessions().find((s: Session) => s.id === shownId);
+  if (!session) {
+    views.delete(shownId);
+    return;
+  }
+  views.delete(shownId);
+  views.set(shownId, {
+    messages: session.messages.slice(),
+    nodes: Array.from($('chat').childNodes),
+    disclosures: Process.capture($('chat')),
+    ...viewport.capture(),
+  });
+  const cached = Array.from(views.values()).filter((view) => view.nodes);
+  for (const old of cached.slice(0, Math.max(0, cached.length - 6))) {
+    old.nodes = null;
+    old.messages = null;
+  }
+}
+function unchanged(view: ViewState | undefined, session: Session): boolean {
+  return !!(
+    view &&
+    view.nodes &&
+    view.messages &&
+    view.messages.length === session.messages.length &&
+    view.messages.every((m: Message, i: number) => sameMessage(m, session.messages[i]))
+  );
+}
+function sameMessage(previous: Message, current: Message | undefined): boolean {
+  if (!current || previous === current || previous.type !== current.type) return previous === current;
+  // Server event keys are immutable identities. This avoids deep serialization when a
+  // reconciled state snapshot recreated otherwise unchanged message objects.
+  if (previous.eventKey && previous.eventKey === current.eventKey) return true;
+  if (
+    previous.type === 'asst' &&
+    previous.text === current.text &&
+    previous.runId === current.runId &&
+    previous.streamId === current.streamId &&
+    previous.streamSequence === current.streamSequence &&
+    previous.streamState === current.streamState &&
+    previous.finalAnswer === current.finalAnswer &&
+    previous.contentRole === current.contentRole &&
+    previous.turnId === current.turnId &&
+    previous.answerId === current.answerId
+  )
+    return true;
+  if (
+    previous.type === 'user' &&
+    previous.id === current.id &&
+    previous.text === current.text &&
+    previous.attempts?.length === current.attempts?.length &&
+    previous.attempts?.every((attempt, index) => JSON.stringify(attempt) === JSON.stringify(current.attempts?.[index]))
+  )
+    return true;
+  return JSON.stringify(previous) === JSON.stringify(current);
+}
+function renderChat(force = false) {
+  if (!deps) return;
+  const s = deps.activeSession();
+  if (!s) return;
+  if (shownId && shownId !== s.id) {
+    searchPanel?.hide();
+    document.querySelector('main')?.classList.remove('composer-animating');
+  }
+  const chat = $('chat');
+  document.querySelector('main')?.classList.toggle('empty-conversation', !s.messages.length);
+  // Streaming handlers update the existing assistant node in place. Other
+  // state projections may request a render while a response is still live;
+  // keep that node mounted until the stream has settled or the user changes
+  // sessions.
+  const hasLiveStream = s.messages.some(
+    (message) => message.type === 'asst' && Boolean(message.streamId) && message.finalAnswer === false,
+  );
+  if (!force && shownId === s.id && hasLiveStream && chat.querySelector('.msg.asst[data-stream-id]')) return;
+  history.ensure(s);
+  deps.syncComposer?.();
+  const p = deps.activeProject();
+  titleEditor.renderTitle(s, p);
+  deps.syncProviderUI(deps.currentProviderId());
+  deps.updateComposerContext();
+  deps.syncResearchUseProjectButton();
+  const changing = shownId !== s.id;
+  if (changing) {
+    selectionMenu?.closeSelectionMenu();
+    captureView();
+    viewport.clearJump();
+  }
+  const saved = views.get(s.id);
+  const scroll = changing && saved ? saved.scroll : $('chat-area').scrollTop;
+  const follow = changing ? !saved || saved.following : isFollowing();
+  const reader = changing ? saved : { scroll, anchor: viewport.readingAnchor() };
+  if (unchanged(saved, s)) {
+    if (changing && saved?.nodes) chat.replaceChildren(...saved.nodes);
+  } else {
+    const disclosures = changing ? saved?.disclosures : Process.capture(chat);
+    const streams = new Map(
+      Array.from(chat.querySelectorAll<HTMLElement>('.msg.asst[data-stream-id]')).map((node) => [
+        `${node.dataset.runId}:${node.dataset.streamId}`,
+        node,
+      ]),
+    );
+    chat.replaceChildren();
+    if (s.messages.length) {
+      let start = historyStarts.get(s.id);
+      if (start === undefined || start >= s.messages.length)
+        start = historyBoundary(s.messages, Math.max(0, s.messages.length - HISTORY_BATCH));
+      historyStarts.set(s.id, start);
+      addHistoryLoader(chat, s, start);
+      for (const m of s.messages.slice(start)) {
+        const before = chat.lastElementChild;
+        const stream = m.streamId && m.finalAnswer === false ? streams.get(`${m.runId}:${m.streamId}`) : undefined;
+        if (stream) chat.append(stream);
+        else deps.appendMessageNode(chat, m);
+        if (m.entryId && before !== chat.lastElementChild && chat.lastElementChild instanceof HTMLElement)
+          chat.lastElementChild.dataset.entryId = m.entryId;
+      }
+    }
+    Process.restore(chat, disclosures);
+  }
+  if (history.failed(s.id)) {
+    const notice = document.createElement('div');
+    notice.className = 'history-loader';
+    notice.append(document.createTextNode('Could not load conversation history'));
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'link-btn';
+    retry.textContent = 'Retry';
+    retry.dataset.historyRetry = '';
+    retry.onclick = () => {
+      void refreshHistory(s.id);
+    };
+    notice.append(retry);
+    chat.prepend(notice);
+  }
+  shownId = s.id;
+  void deps.chatFork?.showOrigin(s.id);
+  deps.userQuestions?.syncViews(chat);
+  viewport.setFollowing(follow);
+  if (changing) viewport.clearIntent();
+  if (isFollowing()) viewport.setScroll($('chat-area').scrollHeight);
+  else {
+    viewport.setScroll(scroll);
+    viewport.restoreReading(reader);
+  }
+  captureView();
+  updateLatest();
+  updateNotice();
+}
+
+async function refreshHistory(sessionId: string, force = true, background = false): Promise<void> {
+  const session = deps?.getSessions().find((item) => item.id === sessionId);
+  if (!session) return;
+  if (background && sessionId === shownId && (!isFollowing() || loadingHistory.has(sessionId))) {
+    deferredHistory.add(sessionId);
+    return;
+  }
+  if (background && searchPanel && !searchPanel.element.hidden && sessionId === shownId && history.hasAfter(sessionId))
+    return;
+  if (force) forcedHistoryRefresh.add(sessionId);
+  deferredHistory.delete(sessionId);
+  await history.refresh(session);
+}
+async function observeCommit(event: ServerEvent): Promise<void> {
+  let pathChanged = false;
+  if (event.session_id && event.path_generation !== undefined && event.revision !== undefined)
+    pathChanged = history.observePath(event.session_id, event.path_generation, event.revision);
+  if (event.type === 'durable_commit' && event.session_id && (event.edited_entry_id || pathChanged)) {
+    const session = deps.getSessions().find((item) => item.id === event.session_id);
+    if (session) history.retireRuns(session, event.replaced_run_ids || []);
+    views.delete(event.session_id);
+    historyRendered.delete(event.session_id);
+    historyStarts.delete(event.session_id);
+    loadingHistory.delete(event.session_id);
+    answerIdentityRequests.delete(event.session_id);
+    if (event.session_id === shownId) {
+      searchPanel?.hide();
+      searchOrigin = null;
+      viewport.setFollowing(true);
+    }
+  }
+  if (
+    event.type === 'durable_commit' &&
+    event.session_id &&
+    (event.entry_ids?.length || pathChanged || event.kind === 'branch' || event.kind === 'fork')
+  ) {
+    // Every durable entry commit can change the visible conversation. The
+    // render path preserves an active stream node, so forcing the history
+    // reconciliation here also makes queued turns appear immediately after
+    // their terminal entry is committed.
+    const force = true;
+    if (event.kind === 'branch' || event.kind === 'fork') historyRendered.delete(event.session_id);
+    await refreshHistory(
+      event.session_id,
+      force,
+      !event.edited_entry_id && !pathChanged && event.kind !== 'branch' && event.kind !== 'fork',
+    );
+    if (event.session_id === deps.getActiveId())
+      ConversationNav.refresh(pathChanged || event.kind === 'branch' || event.kind === 'fork');
+  }
+}
+function historyBoundary(messages: Message[], index: number): number {
+  while (index > 0 && messages[index]?.type !== 'user') index--;
+  return index;
+}
+function addHistoryLoader(chat: HTMLElement, session: Session, start: number): void {
+  historyObserver?.disconnect();
+  chat.querySelector(':scope > [data-history-sentinel]')?.remove();
+  if (!start && !history.hasMore(session.id)) return;
+  const loader = document.createElement('div');
+  loader.className = 'history-loader';
+  loader.dataset.historySentinel = '';
+  loader.setAttribute('role', 'status');
+  loader.setAttribute('aria-live', 'polite');
+  if (loadingHistory.has(session.id)) {
+    const spinner = document.createElement('span');
+    spinner.className = 'spinner';
+    spinner.setAttribute('aria-label', 'Loading earlier messages');
+    loader.append(spinner);
+  } else if (history.failed(session.id)) {
+    loader.append(
+      iconButton('Retry loading earlier messages', 'reload', () => {
+        void loadEarlier(true);
+      }),
+    );
+  }
+  chat.prepend(loader);
+  historyObserver?.observe(loader);
+}
+
+async function loadEarlier(retry = false): Promise<void> {
+  const session = deps.activeSession();
+  if (!session || session.id !== shownId || loadingHistory.has(session.id) || (history.failed(session.id) && !retry))
+    return;
+  const start = historyStarts.get(session.id) || 0;
+  if (!start && !history.hasMore(session.id)) return;
+  const request = Symbol();
+  loadingHistory.set(session.id, request);
+  const chat = $('chat');
+  viewport.readEarlier();
+  addHistoryLoader(chat, session, start);
+  try {
+    let prefix: Message[];
+    let next = 0;
+    if (start) {
+      next = historyBoundary(session.messages, Math.max(0, start - HISTORY_BATCH));
+      prefix = session.messages.slice(next, start);
+    } else {
+      const first = session.messages[0];
+      await history.earlier(session);
+      if (deps.activeSession() !== session || loadingHistory.get(session.id) !== request) return;
+      const index = session.messages.findIndex((message) => sameMessage(first, message));
+      if (index < 0) {
+        views.delete(session.id);
+        renderChat(true);
+        return;
+      }
+      prefix = session.messages.slice(0, index);
+    }
+    if (deps.activeSession() !== session || loadingHistory.get(session.id) !== request) return;
+    const areaTop = $('chat-area').getBoundingClientRect().top;
+    const anchor = Array.from(chat.children).find(
+      (node) =>
+        !(node instanceof HTMLElement && node.hasAttribute('data-history-sentinel')) &&
+        node.getBoundingClientRect().bottom > areaTop,
+    );
+    const top = anchor?.getBoundingClientRect().top;
+    const fragment = document.createElement('div');
+    for (const message of prefix) {
+      const previous = fragment.lastElementChild;
+      deps.appendMessageNode(fragment, message);
+      if (message.entryId && previous !== fragment.lastElementChild && fragment.lastElementChild instanceof HTMLElement)
+        fragment.lastElementChild.dataset.entryId = message.entryId;
+    }
+    chat.querySelector(':scope > [data-history-sentinel]')?.remove();
+    chat.prepend(...fragment.childNodes);
+    historyStarts.set(session.id, next);
+    if (anchor?.isConnected && top !== undefined)
+      viewport.setScroll($('chat-area').scrollTop + anchor.getBoundingClientRect().top - top);
+    captureView();
+  } finally {
+    if (loadingHistory.get(session.id) === request) loadingHistory.delete(session.id);
+    if (deps.activeSession() === session) {
+      addHistoryLoader(chat, session, historyStarts.get(session.id) || 0);
+      captureView();
+      updateLatest();
+    }
+  }
+}
+
+function scrollChat(capture = true) {
+  document.querySelector('main')?.classList.toggle('empty-conversation', !deps.activeSession()?.messages.length);
+  viewport.syncLayout();
+  if (capture) captureView();
+  updateLatest();
+  updateNotice();
+}
+function updateLatest() {
+  $('back-to-latest').hidden = !history.hasAfter(deps.getActiveId()) && (isFollowing() || viewport.isAtLatest());
+}
+
+function updateNotice() {
+  if (!deps) return;
+  const sessions = deps.getSessions();
+  const runningId = deps.getRunningSessionId();
+  const owner = sessions.find((s: Session) => s.id === runningId);
+  const status = $('status');
+  if (owner && status.classList.contains('run')) {
+    const text = status.querySelector('.status-text');
+    if (text) text.textContent = owner.id === deps.getActiveId() ? 'Running' : 'Running in ' + owner.title;
+    let open = status.querySelector('button');
+    if (owner.id !== deps.getActiveId()) {
+      if (!open) {
+        open = document.createElement('button');
+        open.type = 'button';
+        open.className = 'link-btn';
+        open.textContent = 'Open';
+        status.append(open);
+      }
+      open.onclick = () => deps.switchSession(owner.id);
+    } else if (open) open.remove();
+  }
+}
+
+function openFile(path: string | null, project = '') {
+  const target = project || deps.currentProjectPath();
+  if (target && path) return ChangesDrawer.open(target, path);
+}
+function forget(id: string) {
+  views.delete(id);
+  historyRendered.delete(id);
+  forcedHistoryRefresh.delete(id);
+  historyStarts.delete(id);
+  loadingHistory.delete(id);
+  deferredHistory.delete(id);
+  history.forget(id);
+}
+
+function menuOpened(menu: HTMLElement, anchor: HTMLElement) {
+  menuTrigger = anchor;
+  menu.setAttribute('role', 'menu');
+  (menu as HTMLElement)
+    .querySelectorAll('button')
+    .forEach((button: Element) => button.setAttribute('role', 'menuitem'));
+  anchor.setAttribute('aria-expanded', 'true');
+  menu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+}
+function menusClosed(restore = false) {
+  selectionMenu?.closeSelectionMenu(restore);
+  if (menuTrigger) {
+    menuTrigger.setAttribute('aria-expanded', 'false');
+    if (restore && menuTrigger.isConnected) {
+      const row = menuTrigger.closest('.session-item, .project-row');
+      row?.querySelector<HTMLElement>('.session-title, .project-main')?.focus();
+      menuTrigger.focus();
+    }
+    menuTrigger = null;
+  }
+}
+
+function init(nextDeps: ConversationUiDeps) {
+  deps = nextDeps;
+  const narrow = matchMedia('(max-width: 720px)');
+  const collapseOnNarrow = () => {
+    if (narrow.matches) {
+      document.body.classList.add('sidebar-collapsed');
+      $('aside').inert = true;
+      $('show-sidebar').style.display = '';
+    }
+  };
+  collapseOnNarrow();
+  narrow.addEventListener('change', collapseOnNarrow);
+  const search = $<HTMLInputElement>('chat-search'),
+    searchToggle = $<HTMLButtonElement>('chat-search-toggle'),
+    searchClear = $<HTMLButtonElement>('chat-search-clear');
+  const setSearchOpen = (open: boolean) => {
+    search.hidden = !open;
+    searchToggle.hidden = open;
+    searchToggle.setAttribute('aria-expanded', String(open));
+    searchClear.hidden = !open || !search.value;
+  };
+  searchToggle.onclick = () => {
+    setSearchOpen(true);
+    search.focus();
+  };
+  searchClear.onclick = () => {
+    search.value = '';
+    search.dispatchEvent(new Event('input'));
+    search.focus();
+  };
+  search.addEventListener('blur', () => {
+    if (!query()) setSearchOpen(false);
+  });
+  $('chat-search').addEventListener('input', () => {
+    deps.renderSidebar();
+  });
+  $('chat-search').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      search.value = '';
+      search.dispatchEvent(new Event('input'));
+      setSearchOpen(false);
+      searchToggle.focus();
+    }
+  });
+  const area = $('chat-area');
+  viewport = createTranscriptViewport(area, $('chat'), {
+    sessionId: () => shownId,
+    currentView: () => views.get(shownId),
+    capture: captureView,
+    updateLatest,
+    onResize: () => {
+      if (shownId) scrollChat();
+    },
+    loadEarlier: () => {
+      void loadEarlier();
+    },
+    onReading: () => {
+      history.pauseRefresh(shownId);
+      if (shownId) deferredHistory.add(shownId);
+    },
+  });
+  historyObserver?.disconnect();
+  if (typeof IntersectionObserver !== 'undefined') {
+    historyObserver = new IntersectionObserver(
+      (entries) => {
+        if (!isFollowing() && entries.some((entry) => entry.isIntersecting)) void loadEarlier();
+      },
+      { root: area, rootMargin: '100px 0px 0px 0px' },
+    );
+  }
+  $('back-to-latest').onclick = backToLatest;
+  document.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
+      const target = e.target instanceof Element ? e.target : null;
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key.toLowerCase() === 'f' &&
+        !target?.closest('.document-pane,[role="dialog"]')
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        searchHistory();
+        return;
+      }
+      const menu = target?.closest('.ctx-menu.open');
+      if (menu && ['ArrowDown', 'ArrowUp', 'Home', 'End', 'Escape'].includes(e.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === 'Escape') {
+          menusClosed(true);
+          deps.closeAllMenus();
+          return;
+        }
+        const rows = Array.from(menu.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')).filter(
+          (node) => !node.hidden,
+        );
+        const index = document.activeElement instanceof HTMLButtonElement ? rows.indexOf(document.activeElement) : -1;
+        const next =
+          e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? rows.length - 1
+              : (index + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length;
+        rows[next]?.focus();
+        return;
+      }
+      const drawer = document.querySelector('.changes-drawer.open:not(.workspace .changes-drawer)');
+      if (drawer && e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        deps.closeOtherDrawers();
+      } else if (drawer && e.key === 'Tab') {
+        const rows = Array.from(
+          drawer.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input, [tabindex="0"]'),
+        ).filter((el) => el.getClientRects().length);
+        const first = rows[0],
+          last = rows[rows.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
+    },
+    true,
+  );
+  $('chat').addEventListener('click', (e) => {
+    const target = e.target instanceof Element ? e.target : null;
+    const path = target?.closest('.cf-path');
+    if (path) openFile(path.textContent, path.closest<HTMLElement>('[data-project]')?.dataset.project);
+  });
+  document.querySelectorAll<HTMLElement>('.changes-drawer').forEach((el) => {
+    el.inert = !el.classList.contains('open');
+  });
+  selectionMenu = createSelectionMenu({
+    activeSession: deps.activeSession,
+    getActiveId: deps.getActiveId,
+    closeAllMenus: deps.closeAllMenus,
+    closeProviderMenu: ProviderUI.closeMenu,
+    stopFollowing,
+    quoteInReply: Composer.quoteInReply,
+    openSelection: LocalContextDrawer.openSelection,
+    copyText: Render.copyText,
+  });
+  titleEditor = createTitleEditor(deps, $('sess-title'));
+  mountSidebarResize($('sidebar-resize'), $('aside'), deps.closeAllMenus, selectionMenu.closeSelectionMenu);
+  ConversationNav.init({
+    stopFollowing,
+    scrollToMessage,
+    getActiveId: nextDeps.getActiveId,
+    getMessages: () => deps.activeSession()?.messages || [],
+    reveal: async (entryId: string, message?: Message) => {
+      if (message?.entryId || !message) {
+        await focusHistory(entryId);
+        return;
+      }
+      const session = deps.activeSession();
+      if (!session || !session.messages.includes(message)) throw new Error('Message unavailable');
+      historyStarts.set(session.id, historyBoundary(session.messages, session.messages.indexOf(message)));
+      views.delete(session.id);
+      renderChat(true);
+    },
+  });
+}
+
+export const ConversationUI = {
+  init,
+  renderChat,
+  refreshHistory,
+  historyRevision: (id: string) => history.revision(id),
+  acceptsRun: (id: string, runId: string) => history.acceptsRun(id, runId),
+  acceptRunEvent: (id: string, runId: string, accept: () => void) => {
+    const session = deps.getSessions().find((item) => item.id === id);
+    if (!session) return;
+    history.ensure(session);
+    history.acceptRunEvent(id, runId, accept);
+  },
+  runEventVersion: (id: string) => history.runEventVersion(id),
+  searchHistory,
+  observeCommit,
+  scrollChat,
+  captureView,
+  scrollToMessage,
+  isFollowing,
+  updateLatest,
+  updateNotice,
+  stopFollowing,
+  refreshApprovals,
+  revealApproval,
+  syncAnswerIdentity,
+  matchesSession,
+  matchesProject,
+  appendGroupLabel,
+  updateSearch,
+  isSearching: () => !!query(),
+  isRenamingSession: (id: string) => titleEditor?.isRenamingSession(id) ?? false,
+  forget,
+  openFile,
+  menuOpened,
+  menusClosed,
+} satisfies ConversationUiApi;

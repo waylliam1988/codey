@@ -43,7 +43,7 @@ def test_real_5796b29d_snapshot_is_preserved_but_rejected_by_current_runtime() -
 @pytest.mark.parametrize("version", [1, 2, 3, 4])
 def test_control_presentation_versions_are_explicit_and_tampering_cannot_select_another_contract(version: Literal[1, 2, 3, 4]) -> None:
     from codey.operations.browser.turn_surface import offer_browser_tools
-    from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
+    from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
     from tests.test_browser_result_adoption_ab import session_with_snapshot
 
     session = session_with_snapshot()
@@ -64,7 +64,7 @@ def test_control_presentation_versions_are_explicit_and_tampering_cannot_select_
 
 def test_unversioned_d379cc63_control_presentation_restores_as_choices() -> None:
     from codey.operations.browser.turn_surface import offer_browser_tools
-    from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
+    from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
     from tests.test_browser_result_adoption_ab import session_with_snapshot
 
     session = session_with_snapshot()

@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 
 from codey.operations.browser.turn_surface import offer_browser_tools
-from codey.operations.kernel.kernel_protocol import ModelInputBinding, TurnSnapshot, normalize_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
+from codey.operations.kernel.turn_contract import ModelInputBinding, TurnSnapshot
 from codey.operations.kernel_prompt import _text_request_prompt
 from codey.operations.project.declared_field_input import model_spec
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description

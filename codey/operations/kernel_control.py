@@ -33,7 +33,8 @@ from codey.types.json_value import canonical_json_object, decode_json_object, re
 
 if TYPE_CHECKING:
     from codey.operations.kernel.kernel_context import KernelContext
-    from codey.operations.kernel.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
+    from codey.operations.kernel.kernel_protocol import ReceivedProviderTurn
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.operations.task_session import TaskSession
 
 
@@ -88,13 +89,14 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
     from codey.operations.browser.browser_text_report import report_scope
     from codey.operations.browser.browser_upload import upload_completion_scope
     from codey.operations.completion_gate import evaluate
-    from codey.operations.project_verification import refresh_verification_candidates
+    from codey.operations.project.project_verification import refresh_verification_candidates
 
     context.restore_facts()
     from codey.durable.model import TASK_TERMINAL_STATUSES
+    from codey.operations.project.verification_workflow import completion_workflow
     from codey.operations.tool_task_delivery import notified_tool_tasks
-    from codey.operations.tool_tasks import terminal_tool_task_observations, wait_tool_task
-    from codey.operations.verification_workflow import completion_workflow
+    from codey.operations.tool_task_reads import terminal_tool_task_observations
+    from codey.operations.tool_tasks import wait_tool_task
 
     plan = context.plan(state)
     if plan.control is not None and plan.control.kind == "done":
@@ -189,7 +191,8 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
 def _reject_completion(context: KernelContext, state: RuntimeOperationState, followup: str, *,
                        failure_key: str, error_source: str = "", error_type: str = "") -> None:
     from codey.operations.kernel_progress import KernelProgress
-    from codey.research.answer_contract import submitted_answer, whole_research
+    from codey.research.answer_contract import submitted_answer
+    from codey.research.task_mode import whole_research
 
     progress = KernelProgress(context.transport.stagnant_turns, snapshot=state.counters.progress)
     research = whole_research(context.session)
@@ -227,7 +230,7 @@ def _retry_snapshot(context: KernelContext, received: ReceivedProviderTurn, *, t
         is_compact_symbol_retry,
         symbol_retry_source,
     )
-    from codey.operations.research_submission_handoff import SUBMISSION_TOOLS
+    from codey.operations.research.research_submission_handoff import SUBMISSION_TOOLS
 
     snapshot = received.snapshot
     # Submission and detail handoffs depend on the current document.

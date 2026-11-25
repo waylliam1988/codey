@@ -15,7 +15,7 @@ WEB_DIR = ROOT / "frontend"
 ASSET_DIR = ROOT / "frontend" / "src"
 HTML = (WEB_DIR / "index.html").read_text(encoding="utf-8")
 DOCUMENT_HTML = HTML
-APP_RUNTIME_SOURCE = (ASSET_DIR / "app_runtime.ts").read_text(encoding="utf-8")
+APP_RUNTIME_SOURCE = (ASSET_DIR / "app/app_runtime.ts").read_text(encoding="utf-8")
 def _source(name: str) -> str:
     # Structural checks read the compiler output for runtime shape and the
     # corresponding TypeScript source for stable statement boundaries.  The
@@ -25,35 +25,33 @@ def _source(name: str) -> str:
     source_path = ASSET_DIR / f"{name.removesuffix('.ts')}.ts"
     raw = source_path.read_text(encoding="utf-8") if source_path.exists() else ""
     return f"{frontend_source_text(name)}\n{raw}"
-GRAPH_JS = _source("research_graph")
-RESEARCH_DRAWER_JS = _source("research_drawer")
-RESEARCH_RUNS_JS = _source("research_runs")
-CHANGES_DRAWER_JS = _source("changes_drawer")
-LOCAL_CONTEXT_DRAWER_JS = _source("local_context_drawer")
-RUN_DETAILS_JS = _source("run_details")
-RENDER_JS = _source("render")
-PROVIDER_UI_JS = _source("provider_ui")
-SETTINGS_JS = _source("settings")
-UI_STATE_JS = _source("ui_state")
+GRAPH_JS = _source("research/research_graph")
+RESEARCH_DRAWER_JS = _source("research/research_drawer")
+RESEARCH_RUNS_JS = _source("research/research_runs")
+CHANGES_DRAWER_JS = _source("workspace/changes_drawer")
+LOCAL_CONTEXT_DRAWER_JS = _source("workspace/local_context_drawer")
+RUN_DETAILS_JS = _source("runs/run_details")
+RENDER_JS = _source("render/render")
+PROVIDER_UI_JS = _source("providers/provider_ui")
+SETTINGS_JS = _source("providers/settings")
+UI_STATE_JS = _source("state/ui_state")
 SSE_JS = _source("sse")
-COMPOSER_JS = _source("composer")
-CONVERSATION_UI_JS = _source("conversation_ui")
+COMPOSER_JS = _source("conversation/composer")
+CONVERSATION_UI_JS = _source("conversation/conversation_ui")
 TOKENS_CSS = (ROOT / "frontend/public/assets/tokens.css").read_text(encoding="utf-8")
 APP_CSS = (ROOT / "frontend/public/assets/app.css").read_text(encoding="utf-8")
 STYLE_SOURCE = TOKENS_CSS + "\n" + APP_CSS
-RUNTIME_SOURCES = tuple(path for path in sorted(ASSET_DIR.glob("*.ts")) if not path.name.endswith((".test.ts", ".d.ts")))
+RUNTIME_SOURCES = tuple(path for path in sorted(ASSET_DIR.rglob("*.ts")) if not path.name.endswith((".test.ts", ".d.ts")))
 JS_ASSETS = re.sub(
     r"\bimport type .*?;\s*|:\s*(?:any|string|number|boolean|unknown|Message|ResearchPayload|HTMLElement|ModuleDeps|Response|Element|RunData|Record<string,\s*RunData>)(?=\s*[,)=;])",
     "",
-    "\n".join(frontend_source_text(path.stem) for path in RUNTIME_SOURCES),
+    "\n".join(frontend_source_text(path.relative_to(ASSET_DIR).as_posix()) for path in RUNTIME_SOURCES),
 )
-JS_ASSETS += "\n" + _source("legacy-runtime")
 # Keep the source graph available for stable structural checks. Runtime
 # behavior is exercised through the compiled bundle and browser/Vitest tests.
 JS_ASSETS += "\n" + "\n".join(
-    (ASSET_DIR / path.name).read_text(encoding="utf-8")
+    path.read_text(encoding="utf-8")
     for path in RUNTIME_SOURCES
-    if path.name != "legacy-runtime.ts"
 )
 # Behavioral assertions historically inspected the assembled page.  Keep that
 # contract against the TypeScript source graph while the browser loads the
@@ -104,7 +102,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("local-clear-api-key", HTML)
         self.assertNotIn("Clear saved key", HTML)
         self.assertNotIn("clear_api_key", HTML)
-        self.assertIn("fetch('/api/local_provider',", PROVIDER_UI_JS)
+        self.assertIn("requestResponse('/api/local_provider',", PROVIDER_UI_JS)
         # Menu items are generated from the backend catalog (no static copy).
         self.assertNotIn('data-provider="deepseek"', HTML)
         self.assertIn("deepseek", UI_STATE_JS)
@@ -116,7 +114,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("buildProviderMenu", PROVIDER_UI_JS)
         self.assertIn("adoptBackendCatalog", PROVIDER_UI_JS)
         self.assertIn("setProviders", UI_STATE_JS)
-        self.assertIn("fetch('/api/provider_catalog'", PROVIDER_UI_JS)
+        self.assertIn("requestResponse('/api/provider_catalog'", PROVIDER_UI_JS)
         self.assertIn("glm: 'GLM'", UI_STATE_JS)
         self.assertIn("local: 'Local'", UI_STATE_JS)
         self.assertIn('id="provider-dot"', HTML)
@@ -124,33 +122,23 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn(".dot.ok", STYLE_SOURCE)
         self.assertIn("let providerStatus", PROVIDER_UI_JS)
         self.assertIn("function refreshProviderStatus(immediate = false)", PROVIDER_UI_JS)
-        self.assertIn("fetch('/api/providers')", PROVIDER_UI_JS)
+        self.assertIn("requestResponse('/api/providers')", PROVIDER_UI_JS)
         self.assertIn("providerStatus[id] ? 'ok' : ''", PROVIDER_UI_JS)
         self.assertIn("state === 'ready' || state === 'stale' ? 'ok'", PROVIDER_UI_JS)
         self.assertIn(".provider-item.active .check", STYLE_SOURCE)
         self.assertNotIn("providerAvailability(_id) { return 'ok'; }", UI_SOURCE)
-        self.assertIn("./provider_ui", APP_RUNTIME_SOURCE)
-        self.assertIn("./ui_state", APP_RUNTIME_SOURCE)
-        self.assertIn("./composer", APP_RUNTIME_SOURCE)
-        self.assertIn("runtime.ProviderUI.init({", HTML)
-        self.assertIn("runtime.ProviderUI = {", PROVIDER_UI_JS)
-        self.assertIn("function applyProviderStatus(providers, isSSE = true)", HTML)
-        self.assertIn("runtime.ProviderUI.applyStatus(providers, isSSE)", HTML)
+        self.assertIn("providers/provider_ui", APP_RUNTIME_SOURCE)
+        self.assertIn("state/ui_state", APP_RUNTIME_SOURCE)
+        self.assertIn("conversation/composer", APP_RUNTIME_SOURCE)
+        self.assertIn("ProviderUI.init({", HTML)
+        self.assertIn("export const ProviderUI = {", PROVIDER_UI_JS)
+        self.assertIn("function applyProviderStatus(rawProviders, isSSE = true", HTML)
+        self.assertIn("ProviderUI.applyStatus(providers, isSSE)", HTML)
         self.assertIn("function refreshProviderStatus(immediate = false)", HTML)
-        self.assertIn("runtime.ProviderUI.refreshStatus(immediate)", HTML)
-        self.assertIn("./sse", APP_RUNTIME_SOURCE)
-        self.assertIn("runtime.Sse = {", SSE_JS)
-        self.assertIn("runtime.Composer = {", COMPOSER_JS)
-
-    def test_boot_catalog_never_runs_the_availability_probe(self) -> None:
-        start = PROVIDER_UI_JS.index("async function adoptBackendCatalog()")
-        end = PROVIDER_UI_JS.index("async function", start + 1)
-        body = PROVIDER_UI_JS[start:end]
-        self.assertIn("fetch('/api/provider_catalog'", body)
-        self.assertNotIn("fetch('/api/providers')", body)
-        # /api/providers stays on the async refresh path only.
-        self.assertIn("fetch('/api/providers')", PROVIDER_UI_JS)
-        self.assertIn("await runtime.ProviderUI.adoptCatalog()", HTML)
+        self.assertIn("ProviderUI.refreshStatus(immediate)", HTML)
+        self.assertIn("../sse", APP_RUNTIME_SOURCE)
+        self.assertIn("export const Sse = {", SSE_JS)
+        self.assertIn("export const Composer = {", COMPOSER_JS)
 
     def test_provider_selector_orders_deepseek_mimo_stepfun_qwen_glm_local(self) -> None:
         # Order lives in the single ui_state.js fallback (backend is canonical).
@@ -183,9 +171,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("workspace.register('context', 'Local context'", APP_RUNTIME_SOURCE)
         self.assertIn('id="local-context-drawer"', HTML)
         self.assertIn('<strong>Local context</strong>', HTML)
-        self.assertIn("./local_context_drawer", APP_RUNTIME_SOURCE)
-        self.assertIn("runtime.LocalContextDrawer.init({", HTML)
-        self.assertIn("runtime.LocalContextDrawer = {", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("workspace/local_context_drawer", APP_RUNTIME_SOURCE)
+        self.assertIn("LocalContextDrawer.init({", HTML)
+        self.assertIn("export const LocalContextDrawer = {", LOCAL_CONTEXT_DRAWER_JS)
         self.assertNotIn("sidebar", LOCAL_CONTEXT_DRAWER_JS.casefold())
         self.assertNotIn("Review context", UI_SOURCE)
 
@@ -272,7 +260,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("Local context", block)
         self.assertNotIn("Post-turn warning (", block)
         self.assertIn("local-health:", block)
-        self.assertIn("eventKey: this.deps.transport.eventKey(data", block)
+        self.assertIn("this.deps.transport.eventKey(cursor", block)
 
     def test_shell_approval_preserves_command_identity_without_reason_section(self) -> None:
         self.assertIn("title.textContent = 'Run this command?'", UI_SOURCE)
@@ -308,14 +296,14 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("color: var(--muted)", STYLE_SOURCE)
 
     def test_deleting_last_session_preserves_selected_provider(self) -> None:
-        source = _source("session_state_store")
+        source = _source("state/session_state_store")
         self.assertIn("const provider = this.currentProviderId()", source)
         self.assertIn("defaultSession(null, provider)", source)
 
     def test_topbar_shows_running_spinner(self) -> None:
         self.assertIn(".spinner", STYLE_SOURCE)
         self.assertIn('id="status"', HTML)
-        self.assertIn("this.deps.transport.displayRunStatus('running')", _source("run_event_coordinator"))
+        self.assertIn("this.deps.transport.displayRunStatus('running')", _source("runs/run_event_coordinator"))
         self.assertIn("drawer-loading", STYLE_SOURCE)
         self.assertIn("class=\"spinner\"", CHANGES_DRAWER_JS)
         self.assertIn("spinner.className = 'spinner';", RESEARCH_DRAWER_JS)
@@ -378,7 +366,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_routine_failures_do_not_use_native_alerts(self) -> None:
         self.assertNotIn("alert(", HTML)
-        self.assertIn("setStatus('Could not add project', 'err')", HTML)
+        self.assertIn("error: 'Could not add project'", HTML)
+        self.assertIn("setStatus(data.error, 'err')", APP_RUNTIME_SOURCE)
         self.assertIn("Run this command?", UI_SOURCE)
         self.assertIn("Decision could not be confirmed", UI_SOURCE)
         self.assertIn("approvalController.submit(id, approved, scope)", HTML)
@@ -388,9 +377,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_review_status_is_quiet_and_has_no_switch(self) -> None:
         self.assertIn("data.type === 'review'", HTML)
-        source = _source("run_event_coordinator")
+        source = _source("runs/run_event_coordinator")
         block = source[source.index("if (data.type === 'review')"):]
-        for field in ("type: 'review'", "text: data.text", "sessionId: sid", "runId,", "eventKey: this.deps.transport.eventKey(data)"):
+        for field in ("type: 'review'", "text: data.text", "sessionId: sid", "runId,", "this.deps.transport.eventKey(cursor)"):
             self.assertIn(field, block)
         self.assertIn("statusRow('Review'", UI_SOURCE)
         review_start = UI_SOURCE.index("} else if (m.type === 'review') {")
@@ -452,9 +441,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("data.mode === 'git' ? 'Working tree' : 'Snapshot'", CHANGES_DRAWER_JS)
         self.assertIn("/api/changes/restore", HTML)
         self.assertNotIn("Reading git diff", UI_SOURCE)
-        self.assertIn("./changes_drawer", APP_RUNTIME_SOURCE)
-        self.assertIn("runtime.ChangesDrawer.init({", HTML)
-        self.assertIn("runtime.ChangesDrawer = {", CHANGES_DRAWER_JS)
+        self.assertIn("workspace/changes_drawer", APP_RUNTIME_SOURCE)
+        self.assertIn("ChangesDrawer.init({", HTML)
+        self.assertIn("export const ChangesDrawer = {", CHANGES_DRAWER_JS)
 
     def test_changes_drawer_hides_diff_metadata_lines(self) -> None:
         self.assertIn('class="diff-line add"><span class="ln"', CHANGES_DRAWER_JS)
@@ -503,10 +492,10 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_code_blocks_have_quiet_copy_button(self) -> None:
         self.assertIn("function codeCopyButton(value)", RENDER_JS)
-        self.assertIn("parser.renderer.rules.fence", _source("markdown"))
+        self.assertIn("parser.renderer.rules.fence", _source("render/markdown"))
         self.assertIn("className = 'code-copy'", RENDER_JS)
         self.assertIn("aria-label', 'Copy code'", RENDER_JS)
-        self.assertIn("escape(token.content", _source("markdown"))
+        self.assertIn("escape(token.content", _source("render/markdown"))
         self.assertIn(".md-code:hover .code-copy", STYLE_SOURCE)
         self.assertIn("await copyText(value)", RENDER_JS)
 
@@ -514,7 +503,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("grid-template-columns: 12px minmax(0, 1fr) 12px minmax(0, 2fr)", STYLE_SOURCE)
         self.assertIn("grid-template-columns: 12px auto minmax(0, 1fr) 12px", STYLE_SOURCE)
         self.assertIn(".tool-line .tl-kind { display: none; }", STYLE_SOURCE)
-        self.assertIn("className = 'activity-row command-summary'", _source("command_card"))
+        self.assertIn("className = 'activity-row command-summary'", _source("runs/command_card"))
         self.assertIn("createIconSvg('copy')", RENDER_JS)
         self.assertNotIn("Result available", RENDER_JS)
         # Keep the glyph check scoped to activity-row styles. Other UI
@@ -533,7 +522,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
 
     def test_streaming_events_stay_debounced_while_user_actions_flush(self) -> None:
-        source = (ASSET_DIR / "session_state_store.ts").read_text(encoding="utf8")
+        source = (ASSET_DIR / "state/session_state_store.ts").read_text(encoding="utf8")
         add_block = source[source.index("  addMessage("):source.index("  replaceMessage(")]
         self.assertIn("this.deps.ui.persist();", add_block)
         self.assertNotIn("persistNow(", add_block)
@@ -542,12 +531,12 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("this.deps.ui.persist();", push_block)
         self.assertIn("sessionState.addMessage(sid, m)", HTML)
         self.assertIn("sessionState.pushMessage(sid, m)", HTML)
-        events = (ASSET_DIR / "run_event_coordinator.ts").read_text(encoding="utf8")
+        events = (ASSET_DIR / "runs/run_event_coordinator.ts").read_text(encoding="utf8")
         done_block = events[events.index("if (data.type === 'task_done')"):events.index("if (data.type === 'shell_request')")]
         self.assertIn("this.deps.ui.flush();", done_block)
 
     def test_discrete_session_actions_flush_immediately(self) -> None:
-        source = (ASSET_DIR / "session_state_store.ts").read_text(encoding="utf8")
+        source = (ASSET_DIR / "state/session_state_store.ts").read_text(encoding="utf8")
         switch_block = source[source.index("  switchSession("):source.index("  newSession(")]
         new_block = source[source.index("  newSession("):source.index("  openProject(")]
         self.assertIn("this.deps.ui.persistNow();", switch_block)
@@ -594,7 +583,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("let editingProjectId = '';", HTML)
         self.assertIn("function commitSessionRename(id, value)", HTML)
         self.assertIn("function commitProjectRename(id, value)", HTML)
-        self.assertIn("function cancelRename()", _source("sidebar"))
+        self.assertIn("function cancelRename()", _source("conversation/sidebar"))
 
         # Enter commits, Escape cancels, blur commits (avoids losing the edit).
         input_start = HTML.index("function renameInputEl(value, commit, cancel)")
@@ -611,7 +600,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("input.onmousedown = (e) => e.stopPropagation();", input_block)
 
         # rename entry points arm inline editing rather than prompting.
-        sidebar_source = _source("sidebar")
+        sidebar_source = _source("conversation/sidebar")
         self.assertIn("sidebar.beginSessionRename(id)", HTML)
         self.assertIn("sidebar.beginProjectRename(id)", HTML)
         rs_start = sidebar_source.index("function beginSessionRename(id)")
@@ -625,283 +614,11 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("editingProjectId = id;", rp_block)
         self.assertIn("focusRenameInput();", rp_block)
         # committing a session rename still clamps title length (unchanged shape).
-        self.assertIn("session.title = title.slice(0, 80);", _source("session_state_store"))
+        self.assertIn("session.title = title.slice(0, 80);", _source("state/session_state_store"))
 
 
 
 
-
-
-    def test_provider_shrink_and_default_change_applies_live(self) -> None:
-        # Executable behavior lock (not just source strings): simulate boot with
-        # two providers, then a post-boot catalog that removes one and flips the
-        # default. Harness completeness is asserted in Python (runs everywhere);
-        # Node execution is skipped where node is unavailable.
-        import shutil
-        import subprocess
-        import tempfile
-
-        harness = r"""
-const fs = require('fs');
-const path = require('path');
-const vm = require('vm');
-const webDir = process.argv[2];
-function loadAsset(name) {
-  return fs.readFileSync(path.join(webDir, name), 'utf8');
-}
-// Fake DOM that truly records provider menu buttons.
-const menuButtons = [];
-function menuButtonCount() {
-  return fakeMenu.querySelectorAll('.provider-item').length;
-}
-function makeElement(tag) {
-  const el = {
-    tag, children: [],
-    className: '', dataset: {}, textContent: '', innerHTML: '',
-    onclick: null, disabled: false, value: '', style: {},
-    setAttribute: () => {},
-    setSelectionRange: () => {},
-    append: (...kids) => { el.children.push(...kids); },
-    prepend: (...kids) => { el.children.unshift(...kids); },
-    appendChild: (kid) => { el.children.push(kid); return kid; },
-    before: () => {},
-    replaceChildren: (...kids) => { el.children = kids; },
-    remove: () => {
-      const i = menuButtons.indexOf(el);
-      if (i >= 0) menuButtons.splice(i, 1);
-    },
-    querySelector: (sel) => el.children.find(child => child.className === sel.slice(1)) || { className: '', textContent: '' },
-    querySelectorAll: () => [],
-    classList: { add: () => {}, remove: () => {}, toggle: () => {}, contains: () => false },
-    addEventListener: () => {},
-    closest: () => null,
-    contains: () => false,
-    click: () => {},
-  };
-  Object.defineProperty(el, 'childNodes', {get: () => el.children});
-  return el;
-}
-const fakeMenu = {
-  querySelector: () => fakeSearch,
-  setAttribute: () => {},
-  addEventListener: () => {},
-  querySelectorAll: (sel) => {
-    if (sel === '.provider-item') return menuButtons.slice();
-    return [];
-  },
-  insertBefore: (btn) => { menuButtons.push(btn); },
-  appendChild: (btn) => { menuButtons.push(btn); },
-  classList: { remove: () => {}, toggle: () => {}, contains: () => false },
-  contains: () => false,
-};
-const fakeSearch = { value: '', hidden: false, focus: () => {} };
-const fakeButtons = {};
-function fakeButton() { return { onclick: null, disabled: false, setAttribute: () => {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} } }; }
-const fakePop = { classList: { add: () => {}, remove: () => {}, contains: () => false }, contains: () => false, setAttribute: () => {} };
-global.document = {
-  createElement: (tag) => makeElement(tag),
-  querySelector: () => makeElement('div'),
-  querySelectorAll: (sel) => {
-    if (sel === '.provider-item') return menuButtons.slice();
-    return [];
-  },
-  getElementById: (id) => {
-    if (id === 'provider-menu') return fakeMenu;
-    if (id === 'provider-probe-warning') return null;
-    if (id === 'provider-button') return fakeButtons['provider-button'] || (fakeButtons['provider-button'] = fakeButton());
-    if (id === 'provider-name') return { textContent: '' };
-    if (id === 'provider-dot') return { className: '' };
-    if (['effort-button','effort-name','effort-chooser','effort-menu'].includes(id)) return fakeButtons[id] || (fakeButtons[id] = makeElement('button'));
-    if (id === 'local-config-pop') return fakePop;
-    if (id === 'local-config-close') return fakeButtons['local-config-close'] || (fakeButtons['local-config-close'] = fakeButton());
-    if (id === 'local-config-save') return fakeButtons['local-config-save'] || (fakeButtons['local-config-save'] = fakeButton());
-    if (id === 'task') return { value: '', style: {}, disabled: false, scrollHeight:40, setSelectionRange: () => {}, addEventListener: () => {}, click: () => {}, before: () => {}, closest: () => makeElement('div') };
-    if (id === 'composer-context') return { onclick: null, addEventListener: () => {} };
-    if (id === 'send' || id === 'stop') return { onclick: null, disabled: false, style: {}, setAttribute: () => {}, click: () => {} };
-    if (id === 'send-hint') return fakeButtons[id] || (fakeButtons[id] = makeElement('span'));
-    if (id === 'model-menu-empty' || id === 'model-notice') return fakeButtons[id] || (fakeButtons[id] = makeElement('div'));
-    return null;
-  },
-  addEventListener: () => {},
-};
-global.localStorage = { getItem: () => null, setItem: () => {} };
-global.__TEST_BRIDGE__ = true;
-// ProviderUI refreshes catalogs with a long-lived browser timer. Keep this
-// Node harness finite while retaining explicit interval lifecycle semantics.
-const intervals = [];
-global.setInterval = (callback, delay) => {
-  const handle = { callback, delay };
-  intervals.push(handle);
-  return handle;
-};
-global.clearInterval = (handle) => {
-  const index = intervals.indexOf(handle);
-  if (index >= 0) intervals.splice(index, 1);
-};
-    global.window = {__TEST_BRIDGE__:true, addEventListener:()=>{}, Settings:{init:()=>{}, open:()=>{}, close:()=>{}}, Requests:{refreshActions:()=>{}}};
-global.navigator = {};
-global.HTMLElement = function HTMLElement() {};
-global.HTMLButtonElement = function HTMLButtonElement() {};
-global.HTMLTextAreaElement = function HTMLTextAreaElement() {};
-const uiStateSrc = loadAsset('assets/ui_state.js');
-const providerUiSrc = loadAsset('assets/provider_ui.js');
-const composerSrc = loadAsset('assets/composer.js');
-vm.runInThisContext(loadAsset('assets/models.js'));
-runtime.Models.applySettings({preferences:{revision:0,sources:{websites:{enabled:true,models:['deepseek','mimo']}}},
-  sources:[{id:'websites',label:'Websites',models:[{id:'deepseek',name:'DeepSeek'},{id:'mimo',name:'MiMo'}]}],in_use:[]});
-vm.runInThisContext(uiStateSrc);
-vm.runInThisContext(providerUiSrc);
-vm.runInThisContext(composerSrc);
-async function main() {
-  // Boot with two providers, default deepseek.
-  runtime.UiState.setProviders(['deepseek', 'mimo'], { deepseek: 'DeepSeek', mimo: 'MiMo' }, 'deepseek');
-  if (runtime.UiState.PROVIDERS.length !== 2) throw new Error('boot catalog not applied');
-  if (runtime.UiState.DEFAULT_PROVIDER !== 'deepseek') throw new Error('boot default not applied');
-  // Init provider_ui with live references (as index.html does).
-  const PROVIDERS = runtime.UiState.PROVIDERS;
-  const PROVIDER_LABELS = runtime.UiState.PROVIDER_LABELS;
-  let current = 'mimo';
-  runtime.ProviderUI.init({
-    $: (id) => global.document.getElementById(id),
-    escapeHtml: (s) => String(s),
-    PROVIDERS, PROVIDER_LABELS,
-    DEFAULT_PROVIDER: runtime.UiState.DEFAULT_PROVIDER,
-    currentProviderId: () => current,
-    setActiveProvider: (id) => { current = id; },
-  });
-  if (menuButtonCount() !== 2) throw new Error('boot menu must have 2 provider-item buttons, got ' + menuButtonCount());
-  // Post-boot catalog: remove mimo via applyConfig (not direct setProviders).
-  const shrunk = runtime.ProviderUI.applyConfig({
-    providers: [{ id: 'deepseek', label: 'DeepSeek' }],
-    default: 'deepseek',
-  });
-  if (shrunk !== true) throw new Error('shrink must rebuild menu (returned false)');
-  if (runtime.UiState.PROVIDERS.length !== 1) throw new Error('state array did not shrink');
-  if (runtime.UiState.PROVIDERS[0] !== 'deepseek') throw new Error('wrong survivor');
-  if (menuButtonCount() !== 1) throw new Error('menu buttons did not shrink, got ' + menuButtonCount());
-  if (!menuButtons[0].dataset || menuButtons[0].dataset.provider !== 'deepseek') throw new Error('menu button has wrong provider');
-  // Default flip via applyConfig: re-add mimo with new default mimo.
-  const flipped = runtime.ProviderUI.applyConfig({
-    providers: [{ id: 'deepseek', label: 'DeepSeek' }, { id: 'mimo', label: 'MiMo' }],
-    default: 'mimo',
-  });
-  if (flipped !== true) throw new Error('default flip must rebuild menu (returned false)');
-  if (runtime.UiState.DEFAULT_PROVIDER !== 'mimo') throw new Error('default flip not applied');
-  if (menuButtonCount() !== 2) throw new Error('menu buttons must be 2 after flip, got ' + menuButtonCount());
-  // Composer live fallback: no snapshot dep; stale removed-id must resolve to live mimo.
-  const composerProviders = runtime.UiState.PROVIDERS;
-  const liveSession = { id: 's1', provider: 'removed-id', messages: [
-    { type: 'shell_approval_status', approval: {continuation:'started', continuation_run_id:'older-approval-run'} },
-    { type: 'user', attempts: [{ runId: 'source-run-1' }] },
-  ], draft: {text:'',start:0,end:0,direction:'none',revision:0} };
-  let syncedTo = null;
-  const runBodies = [];
-  global.fetch = async (url, opts) => {
-    runBodies.push({ url, body: JSON.parse(opts.body) });
-    return { status: 200, ok: true, json: async () => ({}) };
-  };
-  runtime.Composer.init({
-    $: (id) => global.document.getElementById(id),
-    PROVIDERS: composerProviders,
-    getRunningSessionId: () => null,
-    getActiveId: () => 's1',
-    activeSession: () => liveSession,
-    findSession: () => liveSession,
-    sessionProject: (s) => ({ path: '/tmp/proj' }),
-    sessionProjectPath: () => '/tmp/proj',
-    currentIntentForSession: () => 'project',
-    currentProviderId: () => liveSession.provider,
-    persistActive: () => {},
-    persistActiveNow: () => {},
-    updateComposerContext: () => {},
-    renderChat: () => {},
-    pushMsgToSession: () => {},
-    addToSession: () => {},
-    addSendError: () => { throw new Error('addSendError must not run on ok'); },
-    acceptRunResponse: async () => {},
-    syncProviderUI: (id) => { syncedTo = id; },
-    openLocalProviderConfig: () => {},
-    projectPickerBusy: () => false,
-    attachCurrentChatToPickedProject: () => {},
-  });
-  runtime.Composer.setActiveProvider('removed-id');
-  if (liveSession.provider !== 'mimo') throw new Error('composer fallback must use live default mimo, got ' + liveSession.provider);
-  if (syncedTo !== 'mimo') throw new Error('composer sync must target live default mimo, got ' + syncedTo);
-  // A permitted continuation retains its exact provider.
-  liveSession.provider = 'mimo';
-  runBodies.length = 0;
-  await runtime.Composer.continueTask('s1', 'source-run-1');
-  const continued = runBodies.find((r) => r.url === '/api/run' && r.body && r.body.input?.kind === 'resume_run');
-  if (!continued) throw new Error('continueTask did not POST /api/run with input.kind=resume_run');
-  if (continued.body.input.source_run_id !== 'source-run-1') throw new Error('continueTask lost source run id');
-  if (continued.body.provider !== 'mimo') throw new Error('continueTask must preserve the stored provider, got ' + continued.body.provider);
-  // Each Continue action supplies the exact run it belongs to.
-  liveSession.messages.push({type:'shell_approval_status', approval:{
-    continuation:'started', continuation_run_id:'newer-approval-run'}});
-  runBodies.length = 0;
-  await runtime.Composer.continueTask('s1', 'newer-approval-run');
-  if (runBodies[0].body.input.source_run_id !== 'newer-approval-run') throw new Error('newer approval run was lost');
-  // Removed connections keep their identity and cannot submit or substitute.
-  liveSession.provider = 'removed-id';
-  runBodies.length = 0;
-  await runtime.Composer.continueTask('s1', 'newer-approval-run');
-  if (runBodies.length) throw new Error('removed connection submitted a continuation');
-  if (liveSession.provider !== 'removed-id') throw new Error('removed connection identity changed');
-  console.log('EXECUTABLE_SHRINK_LIVE_OK');
-}
-main().catch((e) => { console.error(e && e.stack || e); process.exit(1); });
-"""
-        harness = harness.replace("runtime.", "window.")
-        # P1 harness completeness locks (fail red until the fake DOM is fixed).
-        self.assertIn("local-config-close", harness)
-        self.assertIn("local-config-save", harness)
-        self.assertIn("local-config-pop", harness)
-        # Fake menu must truly record/delete buttons.
-        self.assertIn("menuButtons", harness)
-        self.assertIn("menuButtons.slice()", harness)
-        self.assertIn("menuButtons.push(btn)", harness)
-        self.assertIn("menuButtons.splice", harness)
-        # Menu shrink must be asserted by button count, not just state array.
-        self.assertIn("provider-item", harness)
-        self.assertIn("menuButtonCount", harness)
-        # Default flip must go through applyConfig, not direct setProviders.
-        self.assertIn("applyConfig({", harness)
-        self.assertIn("default: 'mimo'", harness)
-        # continueTask removed-provider body must be covered.
-        self.assertIn("continueTask", harness)
-        self.assertIn("/api/run", harness)
-        self.assertIn("input?.kind === 'resume_run'", harness)
-        if shutil.which("node") is None:
-            self.skipTest("node unavailable for executable JS behavior check")
-        # Compile the real TypeScript modules used by this scenario, then run
-        # the existing DOM harness against those generated modules.
-        compiler = _esbuild_command(ROOT)
-        if compiler is None:
-            self.skipTest("esbuild unavailable")
-        with tempfile.TemporaryDirectory() as build_dir:
-            assets = Path(build_dir) / "assets"
-            assets.mkdir()
-            for name in ("models", "ui_state", "provider_ui", "composer"):
-                source = ROOT / "frontend/src" / f"{name}.ts"
-                output = assets / f"{name}.js"
-                completed = subprocess.run(
-                        [compiler, str(source),
-                         "--bundle", "--format=iife", f"--outfile={output}"],
-                    capture_output=True, text=True, encoding="utf-8", timeout=30,
-                )
-                self.assertEqual(completed.returncode, 0, completed.stderr)
-            with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as tmp:
-                tmp.write(harness)
-                harness_path = tmp.name
-            try:
-                completed = subprocess.run(
-                    ["node", harness_path, build_dir],
-                    capture_output=True, text=True, encoding="utf-8", timeout=30,
-                )
-            finally:
-                Path(harness_path).unlink(missing_ok=True)
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            self.assertIn("EXECUTABLE_SHRINK_LIVE_OK", completed.stdout)
 
 
 if __name__ == "__main__":

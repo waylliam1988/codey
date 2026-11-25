@@ -14,7 +14,7 @@ from unittest.mock import patch
 from codey.automation.browser_contracts import BrowserAction
 from codey.automation.browser_session import BrowserSession
 from codey.operations.kernel.kernel_context import KernelContext
-from codey.operations.kernel.kernel_protocol import TurnSnapshot
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.research.execution import ResearchExecutor
 from codey.operations.task_execution import ExecutionDelegate
 from codey.policies.tool_requirement import _browser_body

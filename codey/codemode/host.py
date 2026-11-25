@@ -14,7 +14,7 @@ from codey.operations.browser.browser_references import BrowserReferences
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.constants import STALE_READ_REFERENCE_CODE, STALE_READ_REFERENCE_ERROR
 from codey.toolchain.result_schema import validate_output
-from codey.toolchain.tool_spec import _check_spec_value_against_schema
+from codey.toolchain.schema_validation import check_schema_value
 from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_object, require_json_string
 
 
@@ -210,7 +210,7 @@ class CodeModeHost:
         files = args.get("files")
         if contract is None or self._plan_patch is None or self._bound_edit is not None or not isinstance(files, list):
             return {"ok": False, "error": "Multi-file patch is unavailable for this edit contract."}
-        if error := _check_spec_value_against_schema("edit", "args", contract, args, strict=True):
+        if error := check_schema_value("edit", "args", contract, args, strict=True):
             return {"ok": False, "error": error}
         indices = (index, *self._allocate_children(len(files) - 1))
         rows = tuple(decode_json_object(row) for row in files)
@@ -246,7 +246,7 @@ class CodeModeHost:
         contract = canonical_json_object(self._catalog["edit"].parameters).get("x-codey-semantic-edit")
         if contract is None or self._semantic_plan is None or self._plan_patch is None or self._bound_edit is not None:
             return {"ok": False, "error": "Semantic edits are unavailable for this contract"}
-        if error := _check_spec_value_against_schema("edit", "args", contract, args, strict=True):
+        if error := check_schema_value("edit", "args", contract, args, strict=True):
             return {"ok": False, "error": error}
         ref = args["semantic_result_ref"]
         assert isinstance(ref, str)
@@ -315,7 +315,7 @@ class CodeModeHost:
             decoded_args = complete_wait_args(decoded_args, properties.get("timeout_ms"),
                 stage=self._browser_stage() if self._browser_stage is not None else 0,
                 original=self._original_browser_wait(index) if self._original_browser_wait is not None else None)
-            if error := _check_spec_value_against_schema(tool_name, "args", parameters, decoded_args, strict=True):
+            if error := check_schema_value(tool_name, "args", parameters, decoded_args, strict=True):
                 raise ValueError(error)
         if tool_name == "edit" and self._bound_edit is not None:
             ref = decoded_args.get("base_result_ref")

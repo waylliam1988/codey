@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from codey.completion.verification_policy import VerificationCandidate
 from codey.operations.completion_gate import evaluate
-from codey.operations.project_verification import refresh_verification_candidates
+from codey.operations.project.project_verification import refresh_verification_candidates
 from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy

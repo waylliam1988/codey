@@ -10,7 +10,7 @@ import pytest
 
 from codey.completion.verification_policy import VerificationCandidate
 from codey.operations.completion_gate import evaluate
-from codey.operations.project_verification import refresh_verification_candidates
+from codey.operations.project.project_verification import refresh_verification_candidates
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.observe.execution_evidence import ExecutionEvidence

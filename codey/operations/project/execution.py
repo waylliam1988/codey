@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from codey.operations.kernel_result import result_from_outcome
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.toolchain.tool_names import runtime_tool_name
 from codey.types.json_value import (
     JsonObject,
     JsonValue,
@@ -52,8 +53,7 @@ class ProjectExecutor:
             result = policy_denial_result(call, check.message, reason_code=check.reason_code)
             return result, False, None
         name = (call.name or "").strip().lower()
-        runtime_name = {"list_dir": "ls", "read_file": "read", "grep": "search",
-                        "find_references": "references"}.get(name, name)
+        runtime_name = runtime_tool_name(name)
         try:
             if name == "syntax_query":
                 from codey.toolchain.syntax_query import syntax_query

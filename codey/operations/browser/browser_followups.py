@@ -19,7 +19,7 @@ from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 
 if TYPE_CHECKING:
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
 
 DIRECT_TOOLS = ("browser_snapshot", "browser_fill", "browser_click", "browser_read")
 SINGLE_STEP_TOOLS = ("browser_wait", "browser_eval", "browser_tab_list", "browser_download")

@@ -38,7 +38,7 @@ from codey.operations.project_completion_checks import (
     resolve_verification_requirement,
     verification_plan_feedback,
 )
-from codey.operations.research_completion_checks import (
+from codey.operations.research.research_completion_checks import (
     citation_requirement_checks,
     prepare_research_completion,
     research_completion_feedback,
@@ -627,7 +627,10 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
     if requested_read is not None:
         checks.append(requested_read)
     checks.extend(source_requirement_checks(session, context, report=report))
-    from codey.operations.research_completion_checks import investigation_attempt_checks, knowledge_reference_checks
+    from codey.operations.research.research_completion_checks import (
+        investigation_attempt_checks,
+        knowledge_reference_checks,
+    )
 
     checks.extend(knowledge_reference_checks(session, context))
     checks.extend(investigation_attempt_checks(session))

@@ -30,7 +30,7 @@ from codey.workspace.context_admission import ContextCandidate
 
 if TYPE_CHECKING:
     from codey.operations.browser.browser_copy import CopyTurn
-    from codey.operations.kernel.kernel_protocol import ModelInputBinding, TurnSnapshot
+    from codey.operations.kernel.turn_contract import ModelInputBinding, TurnSnapshot
     from codey.operations.kernel_contracts import ToolExecutor
     from codey.operations.project.project_instructions import ProjectInstructionBinding
     from codey.policies.task_policy import TaskPolicy
@@ -217,7 +217,7 @@ def _restore_spec(value: object) -> ToolSpec:
 def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSpec],
                            copy: CopyTurn | None, policy: TaskPolicy,
                            model_specs: tuple[ToolSpec, ...]) -> tuple[ModelInputBinding | None, bool]:
-    from codey.operations.kernel.kernel_protocol import ModelInputBinding
+    from codey.operations.kernel.turn_contract import ModelInputBinding
 
     if payload is None:
         if copy is not None and "codemode" in names:
@@ -391,7 +391,7 @@ def _restore_executors(
 
 
 def restore_snapshot(payload: object) -> TurnSnapshot:
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.policies.output_requirement import explanation_spec, has_explanation
     from codey.policies.task_policy import TaskPolicy
 
@@ -471,7 +471,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         custom_executors=bindings, implementation_compatible=bool(compatible), nested_tool_names=tuple(nested),
         research_scope=scope, ignore_runtime_claims=ignore_runtime_claims,
         browser_copy=copy, input_binding=input_binding, task_navigation_url=navigation_url,
-        task_source_url=source_url, captured_model_specs=model_specs,
+        task_source_url=source_url, model_specs=model_specs,
         browser_followups=followups, browser_fill_text=fill_text, browser_references=references,
         project_instructions=_restore_project_instructions(payload, policy),
         navigation_verifies=_restore_navigation_verification(payload, navigation_url, followups, names, nested),
@@ -491,7 +491,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     if snapshot.browser_followups and (not set(direct) <= direct_surface
             or not allows_surface(snapshot, direct, research=research)):
         raise ValueError("captured browser follow-ups exceed the authorized browser interface")
-    from codey.operations.kernel.kernel_protocol import render_snapshot_contract
+    from codey.operations.kernel.turn_presentation import render_snapshot_contract
     from codey.toolchain.tool_prompt import contract_semantics
 
     if contract_semantics(contract) != contract_semantics(render_snapshot_contract(snapshot)):

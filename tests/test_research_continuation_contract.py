@@ -9,7 +9,11 @@ import pytest
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.research_continuation import ResearchContinuation, ResearchInvocation, restore_note_proposals
+from codey.operations.research.research_continuation import (
+    ResearchContinuation,
+    ResearchInvocation,
+    restore_note_proposals,
+)
 from codey.providers.response_record import json_value
 from codey.research.pipeline import ResearchContinuationError
 from codey.research.tools import ResearchTools

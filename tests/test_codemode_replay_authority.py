@@ -15,6 +15,7 @@ from codey.codemode.runtime import CodeModeRuntime, DeliveryRecorder, NodeWorker
 from codey.codemode.state import CodeModeStateStore
 from codey.codemode.types import CodeModeResult, DeliveryReference, ToolCatalogEntry
 from codey.durable import DurableSession, SQLiteDurableStore
+from codey.operations import tool_operation
 from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.kernel_contracts import ToolExecutor
 from codey.operations.provider_session import adapt_provider
@@ -397,6 +398,7 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(
             return result
 
         monkeypatch.setattr(subprocess, "run", changed_engine)
+        monkeypatch.setenv("CODEY_TEST_CHANGED_NODE_ENVIRONMENT", "1")
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
     durable.recover_scheduler_state()
     if durable.task("r").status == "pending":
@@ -405,10 +407,9 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(
     resumed_sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="local", durable=durable, managed_outputs=managed)
     fresh = _new_session(project)
     fresh.verification_forbidden = scoped
-    from codey.operations.kernel import kernel_execution
-    invoke = kernel_execution._run_via_delegate_or_fn
+    invoke = tool_operation._run_via_delegate_or_fn
 
-    from codey.operations.kernel.kernel_execution import ToolDelegate
+    from codey.operations.tool_operation import ToolDelegate
 
     def no_dispatch(delegate: ToolDelegate | None, runnable: Mapping[str, ToolExecutor], session: TaskSession,
                     call: ToolCall, name: str, *, active_turn: int, tool_index: int,
@@ -418,7 +419,7 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(
         return invoke(delegate, runnable, session, call, name, active_turn=active_turn,
                       tool_index=tool_index, project_path=project_path)
 
-    monkeypatch.setattr(kernel_execution, "_run_via_delegate_or_fn", no_dispatch)
+    monkeypatch.setattr(tool_operation, "_run_via_delegate_or_fn", no_dispatch)
     try:
         result = run_task_kernel(fresh, request=request(resumed_sink))
         parents = [effect for effect in durable.effects("r") if effect.intent.get("tool_name") == "codemode"]

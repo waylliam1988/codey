@@ -13,7 +13,6 @@ from dataclasses import dataclass, replace
 from typing import Protocol
 
 from codey.knowledge.model import canonical_json
-from codey.policies.task_policy import TaskPolicy
 from codey.research.answer_fields import AnswerField, freeze_field, render_fields
 from codey.research.answer_values import (
     AnswerScopePayload,
@@ -25,6 +24,7 @@ from codey.research.answer_values import (
 from codey.research.knowledge_updates import normalize_updates, updates_schema
 from codey.research.passages import ReadPassage, read_passage_refs
 from codey.research.questions import is_investigation_tool
+from codey.research.task_mode import ResearchPolicyView
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec
@@ -92,14 +92,6 @@ KNOWLEDGE_READ_GUIDANCE = (
 )
 
 
-class ResearchPolicyView(Protocol):
-    @property
-    def task_kind(self) -> str: ...
-
-    @property
-    def policy(self) -> TaskPolicy: ...
-
-
 class AnswerSessionView(ResearchPolicyView, Protocol):
     @property
     def task_text(self) -> str: ...
@@ -109,14 +101,6 @@ class AnswerSessionView(ResearchPolicyView, Protocol):
 
     @property
     def executed(self) -> Mapping[str, ExecutionRecord]: ...
-
-
-def whole_research(session: ResearchPolicyView) -> bool:
-    return whole_research_policy(session.policy, task_kind=session.task_kind)
-
-
-def whole_research_policy(policy: TaskPolicy, *, task_kind: str) -> bool:
-    return policy.strict_research and task_kind != "evidence_followup"
 
 
 def digest(value: object) -> str:

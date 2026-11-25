@@ -22,9 +22,9 @@ from codey.operations.project.execution import ProjectExecutor
 from codey.operations.project_adapter import run as agent_run
 from codey.operations.recovery import policy_from_durable_task
 from codey.operations.task_effects import KernelEffectSink
-from codey.operations.task_entry import run_task_submission
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_run import TaskRunDeps
+from codey.operations.task_submission import run_task_submission
 from codey.providers.api_provider import ApiProvider
 from codey.runtime.core.cancellation import start_process, wait_process
 from codey.runtime.core.models import ToolCall, ToolResult

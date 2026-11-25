@@ -9,7 +9,8 @@ from codey.automation.browser_session import BrowserSession
 from codey.operations.browser.browser_task_handoff import bind_browser_references, browser_task_handoff
 from codey.operations.browser.turn_surface import offer_browser_call, offer_browser_tools
 from codey.operations.completion_context import CompletionContext
-from codey.operations.kernel.kernel_protocol import TurnSnapshot, normalize_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession

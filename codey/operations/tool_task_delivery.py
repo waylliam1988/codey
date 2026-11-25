@@ -15,7 +15,7 @@ from codey.operations.provider_receipts import (
     request_artifact_for_effect,
 )
 from codey.operations.provider_request_context import ProviderRequestContext
-from codey.operations.tool_tasks import terminal_tool_task_observations, tool_task_snapshot
+from codey.operations.tool_task_reads import terminal_tool_task_observations, tool_task_snapshot
 from codey.providers.base import ProviderToolResult
 from codey.providers.response_record import decode_reply
 from codey.runtime.core.models import ToolResult
@@ -107,7 +107,7 @@ def pending_tool_task_notifications(durable: DurableSession, *, owner_task_id: s
         # A short command's result is already in its original result delivery.
         if origin.settlement is None:
             continue
-        from codey.operations.tool_tasks import owned_tool_task
+        from codey.operations.tool_task_reads import owned_tool_task
 
         owned_tool_task(durable, child.task_id, owner_task_id=owner_task_id)
         value = tool_task_snapshot(durable, child, store=store, args={"limit": 1600}, include_output=False)

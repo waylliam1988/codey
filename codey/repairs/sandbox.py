@@ -37,12 +37,16 @@ class RepairSandbox:
         shutil.rmtree(self.temp_root, ignore_errors=True)
 
 
+def repair_source_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
 def create_repair_sandbox(
     source_root: str | Path | None = None,
     *,
     extra_files: tuple[str, ...] = (),
 ) -> RepairSandbox:
-    source = Path(source_root) if source_root is not None else Path(__file__).resolve().parents[1]
+    source = Path(source_root) if source_root is not None else repair_source_root()
     source = source.resolve()
     package_root = source / "codey"
     if package_root.is_symlink():

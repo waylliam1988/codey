@@ -1,5 +1,5 @@
-import { mountAppearance } from './appearance';
-import { mountApp } from './app_runtime';
+import { mountAppearance } from './app/appearance';
+import { mountApp } from './app/app_runtime';
 
 mountAppearance();
 mountApp();

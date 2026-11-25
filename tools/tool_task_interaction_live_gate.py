@@ -22,7 +22,7 @@ from playwright.sync_api import Route
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.operations.tool_task_delivery import notified_tool_tasks
-from codey.operations.tool_tasks import tool_task_snapshot
+from codey.operations.tool_task_reads import tool_task_snapshot
 from codey.providers.api_request_policy import LocalRequestPolicy
 from codey.research.browser_search import BrowserSearchProvider
 from codey.types.json_value import (

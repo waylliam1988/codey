@@ -28,8 +28,8 @@ from codey.codemode.state import CodeModeStateStore
 from codey.codemode.types import CodeModeResult, DeliveryReference, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.env_names import NATIVE_TOOLS_ENV
 from codey.operations import turn_snapshot
-from codey.operations.kernel import kernel_protocol
-from codey.operations.kernel.kernel_protocol import TurnSnapshot
+from codey.operations.kernel.turn_contract import TurnSnapshot
+from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.turn_snapshot import KernelSessionView
 from codey.policies.tool_requirement import require_tool_success
 from codey.protocols.codemode import CodeModeLimits
@@ -127,7 +127,7 @@ def codemode_only_surface(snapshot: TurnSnapshot) -> TurnSnapshot:
     inventory = tuple(inventory_names)
     by_name = {spec.name: spec for spec in snapshot.frozen_specs}
     executors = dict(snapshot.custom_executors)
-    return kernel_protocol.refresh_snapshot_contract(replace(
+    return refresh_snapshot_contract(replace(
         snapshot, tool_names=outer,
         frozen_specs=tuple(by_name[name] for name in inventory),
         custom_executors=tuple((name, executors[name]) for name in inventory),

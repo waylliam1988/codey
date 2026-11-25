@@ -216,6 +216,8 @@ class LocalService:
         if self.httpd is not None:
             if self.thread is not None and self.thread.is_alive():
                 self.httpd.shutdown()
+            if self.feed is not None:
+                self.feed.close()
             self.httpd.server_close()
             self.httpd = None
         if self.control is not None:
@@ -224,8 +226,6 @@ class LocalService:
         if self._unobserve is not None:
             self._unobserve()
             self._unobserve = None
-        if self.feed is not None:
-            self.feed.close()
         if self.ctx is not None:
             for _attempt in range(30):
                 if self.ctx.close():

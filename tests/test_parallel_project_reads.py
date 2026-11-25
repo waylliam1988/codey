@@ -7,6 +7,7 @@ import pytest
 
 from codey.agents import tool_execution
 from codey.agents.tools import AgentToolFns, build_project_tool_fns
+from codey.operations import tool_operation
 from codey.operations.kernel import kernel_execution
 from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.kernel_result import _error_result
@@ -46,7 +47,7 @@ def test_denied_and_failed_parallel_slots_settle_once_in_order(tmp_path: Path, m
     tools = build_project_tool_fns(state_home=None)
     session = TaskSession(TaskPolicy(frozenset({"control", "project.read"})), project=str(tmp_path))
     guards: list[object] = []
-    execute = kernel_execution.execute_tool_operation
+    execute = tool_operation.execute_tool_operation
 
     def check(*args: object, **kwargs: object) -> ToolResult | None:
         call = args[2]
@@ -57,7 +58,7 @@ def test_denied_and_failed_parallel_slots_settle_once_in_order(tmp_path: Path, m
         return None
 
     def execute_read(
-        session: TaskSession, call: ToolCall, *, delegate: kernel_execution.ToolDelegate | None,
+        session: TaskSession, call: ToolCall, *, delegate: tool_operation.ToolDelegate | None,
         runnable: Mapping[str, kernel_execution.ToolExecutor], turn: int, tool_index: int, project_path: Path | None,
         snapshot: kernel_execution.TurnSnapshot | None,
     ) -> tuple[ToolResult, bool, int | None]:
@@ -67,7 +68,7 @@ def test_denied_and_failed_parallel_slots_settle_once_in_order(tmp_path: Path, m
                        tool_index=tool_index, project_path=project_path, snapshot=snapshot)
 
     monkeypatch.setattr(kernel_execution, "_guarded_slot_result", check)
-    monkeypatch.setattr(kernel_execution, "execute_tool_operation", execute_read)
+    monkeypatch.setattr(tool_operation, "execute_tool_operation", execute_read)
     calls = [ToolCall("read_file", {"path": path}) for path in paths]
     results = execute_turn(session, calls, project_path=tmp_path, tool_fns=tools, snapshot=build_turn_snapshot(session))
     assert guards == list(paths)

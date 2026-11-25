@@ -1,34 +1,39 @@
 """Measure tool errors in Chromium: jsdom cannot detect overlapping text."""
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import Browser, sync_playwright
 
-from tools.frontend_source import frontend_source
+from tools.frontend_source import frontend_bundle
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(scope="module")
-def layout_browser():
+def layout_browser() -> Iterator[Browser]:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         yield browser
         browser.close()
 
 
+@pytest.fixture(scope="module")
+def render_bundle() -> str:
+    return frontend_bundle("render/render.ts")
+
+
 @pytest.mark.parametrize("assets", ["frontend/public/assets", "codey/web/assets"])
 @pytest.mark.parametrize("width", [320, 800])
 @pytest.mark.parametrize("compact", [False, True])
-def test_tool_errors_do_not_overlap_or_overflow(layout_browser, assets, width, compact):
+def test_tool_errors_do_not_overlap_or_overflow(layout_browser: Browser, render_bundle: str, assets: str, width: int, compact: bool) -> None:
     page = layout_browser.new_page(viewport={"width": width, "height": 800})
     try:
         page.set_content('<div id="fixture"></div>')
         for name in ("tokens.css", "app.css"):
             page.add_style_tag(content=(ROOT / assets / name).read_text(encoding="utf-8"))
         page.add_style_tag(content="body { display:block; padding:16px; overflow:auto; }")
-        page.add_script_tag(content=frontend_source("failure_presentation").replace("export ", ""))
-        page.add_script_tag(content=frontend_source("render"))
+        page.add_script_tag(content=render_bundle)
         page.evaluate("""compact => {
           const rows = [
             {kind:'search', path:'氦气 价格 上涨 2026 卡塔尔 出口 中断 半导体 液氦',
@@ -40,7 +45,7 @@ def test_tool_errors_do_not_overlap_or_overflow(layout_browser, assets, width, c
             {kind:'search', path:'氦气价格最新信息', result:'8 results'},
             {kind:'search', path:'query in progress', pending:true, activity:'Working'}
           ];
-          for (const row of rows) document.querySelector('#fixture').append(Render.toolRowEl(row, compact));
+          for (const row of rows) document.querySelector('#fixture').append(fixture.Render.toolRowEl(row, compact));
         }""", compact)
         measurements = page.locator(".tool-line").evaluate_all("""rows => rows.map(row => {
           const bounds = row.getBoundingClientRect();

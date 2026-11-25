@@ -7,9 +7,10 @@ from types import SimpleNamespace
 import pytest
 
 from codey.app.context import AppContext
-from codey.operations import kernel_actions, project_prompt_context, task_loop
+from codey.operations import kernel_actions, task_loop
 from codey.operations.context import RunWork
 from codey.operations.kernel.kernel_protocol import ReceivedProviderTurn
+from codey.operations.project import project_prompt_context
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy

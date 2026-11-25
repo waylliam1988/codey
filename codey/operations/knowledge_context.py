@@ -45,7 +45,7 @@ def knowledge_background(tools: ResearchTools | None, session: TaskSession, ques
         "Global is explicitly public; temporary content uses session scope.\n") if allows("knowledge.write") else ""
     strict_research: object = getattr(policy, "strict_research", False)
     if strict_research:
-        from codey.research.answer_contract import whole_research
+        from codey.research.task_mode import whole_research
 
         # Whole-answer publication derives scope; its input accepts no scope fields.
         prefix = "" if whole_research(session) else scope_guidance

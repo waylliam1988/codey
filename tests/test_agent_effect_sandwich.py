@@ -18,9 +18,9 @@ from codey.agents.tools import AgentToolFns
 from codey.app import server
 from codey.app import task_submit as task_submit
 from codey.durable import DurableSession, EffectRecord
-from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
 from codey.operations.task_run import start_run_operation as _start_run_operation
+from codey.operations.task_submission import run_task_submission
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall
 from codey.runtime.core.operation_state import (

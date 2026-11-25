@@ -13,7 +13,7 @@ from codey.app.headless_runner import HeadlessAppContext, HeadlessRequest, _run_
 from codey.app.task_services import build_task_deps
 from codey.automation.browser_contracts import RouteDecision
 from codey.durable.questions import DurableUserQuestionStore
-from codey.operations.task_entry import run_task_submission
+from codey.operations.task_submission import run_task_submission
 from codey.task.model import ResumeRun, TaskSubmission
 from codey.types.json_value import JsonObject, decode_json_object, require_json_integer, require_json_string
 from tools.browser_experiment_sources import ResumableBrowserSearchProvider

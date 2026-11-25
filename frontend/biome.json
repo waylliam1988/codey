@@ -20,7 +20,12 @@
     "rules": {
       "recommended": false,
       "suspicious": {
-        "noExplicitAny": "error"
+        "noExplicitAny": "error",
+        "noDoubleEquals": "error"
+      },
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnreachable": "error"
       }
     }
   },

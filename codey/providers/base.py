@@ -79,13 +79,12 @@ class ProviderToolDefinition:
 
 
 def tools_from_specs(specs: tuple[ToolSpec, ...]) -> list[ProviderToolDefinition]:
-    from codey.toolchain.spec_model import _freeze_schema_value
+    from codey.toolchain.spec_model import _freeze_schema_value, schema_for_spec
     from codey.toolchain.tool_prompt import model_tool_description
-    from codey.toolchain.tool_spec import _schema_for_spec
 
     tools: list[ProviderToolDefinition] = []
     for spec in specs:
-        frozen = _freeze_schema_value(_schema_for_spec(spec))
+        frozen = _freeze_schema_value(schema_for_spec(spec))
         if not isinstance(frozen, Mapping):
             raise TypeError("tool parameters must be an object")
         tools.append(ProviderToolDefinition(spec.name, model_tool_description(spec), frozen))

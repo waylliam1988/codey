@@ -10,7 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from codey.codemode.catalog import build_catalog_snapshot, snapshot_catalog
+from codey.codemode.catalog import build_catalog_snapshot
 from codey.codemode.host import CodeModeHost
 from codey.codemode.identity import child_call_index
 from codey.codemode.output import externalize_value
@@ -21,6 +21,7 @@ from codey.codemode.shape_repair import preflight_shape_diagnostic, readonly_set
 from codey.codemode.state import CodeModeStateStore
 from codey.codemode.types import DeliveryReference, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.operations.browser.browser_references import BrowserReferences
+from codey.operations.browser.catalog import snapshot_catalog
 from codey.protocols.codemode import CodeModeInputError, CodeModeLimits, parse_codemode_args
 from codey.runtime.core import cancellation
 from codey.runtime.core.codemode_identity import parent_execution_id
@@ -34,7 +35,7 @@ if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
     from codey.durable import DurableStore
     from codey.durable.session import DurableSession
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.operations.kernel_contracts import StopSignal, ToolExecutor
     from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_session import TaskSession

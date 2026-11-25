@@ -161,7 +161,7 @@ def _seal_cancel_before_runtime(deps: TaskRunDeps, run_id: str, event: dict[str,
 
 
 def _settle_research_publications(deps: TaskRunDeps, session_id: str, run_id: str) -> None:
-    from codey.operations.research_continuation import ResearchContinuation
+    from codey.operations.research.research_continuation import ResearchContinuation
     from codey.operations.research_publication import settle_cancelled_publications
     from codey.runtime.write.checkpoint import operation_from_checkpoint
     from codey.runtime.write.research_publication import PUBLICATION_TOOL

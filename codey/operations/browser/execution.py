@@ -10,7 +10,7 @@ from codey.automation.browser_document import same_document
 from codey.automation.browser_receipts import delivery
 from codey.operations.browser import browser_followups, browser_text_report, browser_upload
 from codey.operations.kernel_provenance import _kernel_workspace_identity_of, _with_trusted_workspace_state
-from codey.operations.research_submission_handoff import traces_workflow_document
+from codey.operations.research.research_submission_handoff import traces_workflow_document
 from codey.policies.browser_requirement import PAGE_TRANSITIONS, browser_receipt_tools
 from codey.policies.tool_requirement import has_browser_field_bindings
 from codey.runtime.core import cancellation

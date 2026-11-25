@@ -10,7 +10,8 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from codey.durable.model import ArtifactRecord
     from codey.durable.session import DurableSession
-    from codey.operations.kernel.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
+    from codey.operations.kernel.kernel_protocol import ReceivedProviderTurn
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.operations.task_session import TaskSession
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
@@ -44,13 +45,9 @@ from codey.runtime.effects.tool_result_delivery import (
     compute_batch_digest,
     new_batch_id,
 )
+from codey.toolchain.tool_names import runtime_tool_name
 from codey.toolchain.tool_spec import spec_for_tool
 from codey.types.json_value import JsonObject
-
-
-def _runtime_name(name: str) -> str:
-    return {"list_dir": "ls", "read_file": "read", "grep": "search",
-            "find_references": "references"}.get(name, name)
 
 
 class DurableStateView(Protocol):
@@ -132,7 +129,7 @@ class KernelEffectSink:
         for identity, call, index in items:
             if identity in self._old_pending:
                 continue
-            name = _runtime_name(call.name or "")
+            name = runtime_tool_name(call.name or "")
             spec = specs.get(call.name) if specs is not None else spec_for_tool(call.name or "")
             replay_class = (spec.replay_class if spec is not None
                             else tool_replay_policy(name).replay_class)

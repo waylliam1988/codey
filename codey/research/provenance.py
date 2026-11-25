@@ -70,7 +70,7 @@ def _citation_text(text: str) -> str:
 def citation_problem(summary: str, *, ledger: ResearchLedger, source_ids: dict[str, str],
                      require_citation: bool) -> str | None:
     """Validate only contract-scoped citations against the committed ledger."""
-    from codey.research.report_quality import parse_citation_rows
+    from codey.research.citations import parse_citation_rows
     from codey.utils.citation_scanner import citation_ref_items, source_id_ref_items
 
     text = _citation_text(summary)

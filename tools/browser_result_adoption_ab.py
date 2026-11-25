@@ -22,7 +22,7 @@ from codey.operations.browser import browser_task_handoff as handoff
 from codey.operations.browser.browser_task_handoff import handoff_call, query_result_handoff
 from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel.kernel_context import KernelContext
-from codey.operations.kernel.kernel_protocol import TurnSnapshot
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
 from codey.policies.tool_requirement import require_tool_success

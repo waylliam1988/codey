@@ -13,7 +13,7 @@ from codey.automation.browser_session import MAX_SNAPSHOT_ELEMENTS, MAX_SNAPSHOT
 from codey.operations.browser.browser_followups import pending_click
 from codey.operations.browser.browser_task_handoff import browser_task_handoff
 from codey.operations.completion_context import CompletionContext
-from codey.operations.kernel.kernel_protocol import TurnSnapshot
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.task_session import TaskSession
 from codey.types.json_value import JsonObject, decode_json_object
 from tools.browser_leaf_exposure_ab import Case, run_arm

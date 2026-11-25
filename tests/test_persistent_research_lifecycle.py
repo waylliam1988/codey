@@ -12,7 +12,7 @@ from codey.knowledge.model import KnowledgeObject as K
 from codey.knowledge.model import KnowledgeReference as R
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.research_completion_checks import knowledge_reference_checks
+from codey.operations.research.research_completion_checks import knowledge_reference_checks
 from codey.operations.research_iteration import _persist_synthesis
 from codey.policies.task_policy import TaskPolicy
 from codey.research.methods import research_method_guidance
@@ -363,7 +363,7 @@ def test_repeated_staged_note_updates_keep_prior_evidence(tmp_path):
 
 
 def test_repeated_staged_update_receipts_restore_cumulative_proposals_after_commit(tmp_path):
-    from codey.operations.research_continuation import restore_note_proposals
+    from codey.operations.research.research_continuation import restore_note_proposals
     from codey.operations.task_execution import ExecutionDelegate
     from codey.operations.task_session import TaskSession
     from codey.runtime.core.models import ToolCall

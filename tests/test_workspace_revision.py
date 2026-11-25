@@ -140,6 +140,22 @@ class WorkspaceRevisionStoreTests(unittest.TestCase):
         self.assertTrue(after.startswith("sha256:"))
         self.assertNotEqual(before, after)
 
+    def test_workspace_fingerprint_covers_large_test_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td)
+            tests = project / "tests"
+            tests.mkdir()
+            for index in range(1_005):
+                (tests / f"test_{index:04}.py").write_text("value = 1\n", encoding="utf-8")
+
+            before = workspace_fingerprint(project)
+            (tests / "test_1004.py").write_text("value = 2\n", encoding="utf-8")
+            after = workspace_fingerprint(project)
+
+        self.assertTrue(before.startswith("sha256:"))
+        self.assertTrue(after.startswith("sha256:"))
+        self.assertNotEqual(before, after)
+
     def test_workspace_fingerprint_honors_ignored_paths(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             project = Path(td) / "project"

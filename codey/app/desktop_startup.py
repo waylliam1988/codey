@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
@@ -224,8 +225,25 @@ class DesktopStartup:
 
 
 class StartupBridge:
-    def __init__(self, startup: DesktopStartup) -> None:
+    def __init__(self, startup: DesktopStartup, folder_dialog: Callable[[str], str | None] | None = None) -> None:
         self._startup = startup
+        self._folder_dialog = folder_dialog
+        self._picker = threading.Lock()
+
+    def pick_folder(self, initial: str) -> dict[str, object]:
+        if self._folder_dialog is None or not self._picker.acquire(blocking=False):
+            return {"ok": False, "busy": True}
+        try:
+            start = Path(initial).expanduser() if initial else Path.home()
+            selected = self._folder_dialog(str(start if start.is_dir() else Path.home()))
+            if selected is None:
+                return {"ok": False, "cancelled": True}
+            path = Path(selected).resolve()
+            if not path.is_dir():
+                return {"ok": False, "error": "selected path is not a directory"}
+            return {"ok": True, "path": str(path), "name": path.name or str(path)}
+        finally:
+            self._picker.release()
 
     def retry(self) -> bool:
         return self._startup.retry()

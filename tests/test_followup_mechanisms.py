@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from codey.codemode.catalog import snapshot_catalog
 from codey.codemode.host import CodeModeHost
+from codey.operations.browser.catalog import snapshot_catalog
 from codey.operations.browser.turn_surface import offer_browser_tools
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot

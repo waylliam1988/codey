@@ -35,7 +35,7 @@ from codey.workspace.coding_context import CodingContext, render_coding_context
 from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
 
 if TYPE_CHECKING:
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.toolchain.tool_spec import ToolSpec
 
 __all__ = [

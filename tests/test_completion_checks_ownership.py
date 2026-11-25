@@ -2,7 +2,7 @@
 
 - ``operations.project_completion_checks`` owns project/edit/verification
   and engine evidence checks.
-- ``operations.research_completion_checks`` owns source/ledger/report checks.
+- ``operations.research.research_completion_checks`` owns source/ledger/report checks.
 - ``operations.completion_gate`` owns the final contract/proof combination
   and is the sole combiner entry for the final task completion proof:
   check providers never mint or reference the final proof object. The
@@ -18,8 +18,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_check_provider_modules_exist() -> None:
     assert (ROOT / "codey/operations/project_completion_checks.py").exists()
-    assert (ROOT / "codey/operations/research_completion_checks.py").exists()
-    from codey.operations import project_completion_checks, research_completion_checks
+    assert (ROOT / "codey/operations/research/research_completion_checks.py").exists()
+    from codey.operations import project_completion_checks
+    from codey.operations.research import research_completion_checks
 
     assert callable(getattr(project_completion_checks, "project_completion_checks", None))
     assert callable(getattr(research_completion_checks, "source_requirement_checks", None))
@@ -33,7 +34,7 @@ def test_gate_is_sole_final_proof_combiner() -> None:
     assert "project_completion_proof" in gate_text
     for rel in (
         "codey/operations/project_completion_checks.py",
-        "codey/operations/research_completion_checks.py",
+        "codey/operations/research/research_completion_checks.py",
     ):
         text = (ROOT / rel).read_text(encoding="utf-8-sig")
         assert "project_completion_proof" not in text, rel

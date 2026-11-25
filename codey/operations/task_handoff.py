@@ -12,7 +12,7 @@ from codey.research.quote_slots import requests_exact_quote
 if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
     from codey.operations.completion_context import CompletionContext
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.operations.task_session import TaskSession
     from codey.runtime.core.models import ToolResult
     from codey.task.web_intent import WebIntent
@@ -32,7 +32,7 @@ def _project_surface(session: TaskSession, snapshot: TurnSnapshot) -> bool:
 
 def _project_catalog(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                      intent: WebIntent) -> TurnSnapshot:
-    from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
+    from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 
     compact = (_project_surface(session, snapshot) and context.browser_document is None
                and not intent.browser_navigation_requested and not snapshot.browser_followups)
@@ -64,16 +64,6 @@ def _select_outer_tools(session: TaskSession, snapshot: TurnSnapshot, context: C
     if browser_steps or ready_for_page:
         snapshot = offer_browser_call(snapshot, session, "browser_navigate")
     return snapshot
-
-
-def report_completes_task(session: TaskSession) -> bool:
-    """Only report-only work can propose completion directly from submission."""
-    from codey.operations.project.project_delivery import PAGE_AFTER_EDIT
-    from codey.operations.project_completion_checks import _task_requires_modification
-
-    return (not _task_requires_modification(session)
-            and PAGE_AFTER_EDIT not in session.policy.required_checks
-            and not session.edited_files)
 
 
 def _quote_guidance(session: TaskSession, snapshot: TurnSnapshot) -> str:
@@ -114,7 +104,10 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
         resolve_verification_requirement,
         verification_plan_feedback,
     )
-    from codey.operations.research_submission_handoff import research_browser_handoff, research_submission_handoff
+    from codey.operations.research.research_submission_handoff import (
+        research_browser_handoff,
+        research_submission_handoff,
+    )
     from codey.operations.task_guidance import request_tool_guidance
     from codey.runtime.core.models import ToolCall
     from codey.task.web_intent import explicit_web_intent

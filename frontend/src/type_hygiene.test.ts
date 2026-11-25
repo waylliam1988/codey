@@ -59,7 +59,12 @@ describe('frontend type boundary hygiene', () => {
   it('does not use the broad Function compatibility dependency type', () => {
     const domain = readFileSync(join(root, 'types', 'domain.ts'), 'utf8');
     expect(domain).not.toMatch(/\bModuleDeps\b|Record<string,\s*Function>/);
-    for (const name of ['provider_ui.ts', 'local_context_drawer.ts', 'research_drawer.ts', 'model_settings.ts']) {
+    for (const name of [
+      'providers/provider_ui.ts',
+      'workspace/local_context_drawer.ts',
+      'research/research_drawer.ts',
+      'providers/model_settings.ts',
+    ]) {
       expect(readFileSync(join(root, name), 'utf8')).not.toMatch(/\bModuleDeps\b|\bFunction\b/);
     }
   });
@@ -92,8 +97,8 @@ describe('frontend type boundary hygiene', () => {
 
   it('keeps named runtime contracts free of catch-all index signatures', () => {
     const domain = readFileSync(join(root, 'types', 'domain.ts'), 'utf8');
-    const research = readFileSync(join(root, 'research_drawer.ts'), 'utf8');
-    const graph = readFileSync(join(root, 'research_graph.ts'), 'utf8');
+    const research = readFileSync(join(root, 'research/research_drawer.ts'), 'utf8');
+    const graph = readFileSync(join(root, 'research/research_graph.ts'), 'utf8');
     expect(interfaceBody(domain, 'UiDeps')).not.toMatch(/\[key: string\]/);
     expect(interfaceBody(domain, 'ResearchRun')).not.toMatch(/\[key: string\]/);
     expect(interfaceBody(domain, 'ResearchPayload')).not.toMatch(/\[key: string\]/);
@@ -104,7 +109,7 @@ describe('frontend type boundary hygiene', () => {
   });
 
   it('routes provider catalog and status boundaries through decoders', () => {
-    const provider = readFileSync(join(root, 'provider_ui.ts'), 'utf8');
+    const provider = readFileSync(join(root, 'providers/provider_ui.ts'), 'utf8');
     expect(provider).toMatch(/decodeProviderCatalog\(data\)/);
     expect(provider).toMatch(/decodeProviderStatus\(rawProviders\)/);
     expect(provider).not.toMatch(/function extractCatalog\(/);
@@ -112,7 +117,7 @@ describe('frontend type boundary hygiene', () => {
 
   it('boots the application runtime without the legacy bridge name', () => {
     const main = readFileSync(join(root, 'main.ts'), 'utf8');
-    expect(main).toContain("'./app_runtime'");
+    expect(main).toContain("'./app/app_runtime'");
     expect(main).not.toContain("'./legacy-runtime'");
   });
 });

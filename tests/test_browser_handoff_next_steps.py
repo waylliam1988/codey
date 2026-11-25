@@ -31,7 +31,8 @@ from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import prepare_completion_output
 from codey.operations.kernel.kernel_context import KernelContext
 from codey.operations.kernel.kernel_execution import execute_turn
-from codey.operations.kernel.kernel_protocol import TurnSnapshot, normalize_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.kernel_contracts import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description

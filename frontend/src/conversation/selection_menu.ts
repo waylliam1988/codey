@@ -1,4 +1,4 @@
-import { messageSelectionOffsets, type MessageSelection } from '../local_context_drawer';
+import { messageSelectionOffsets, type MessageSelection } from '../workspace/local_context_drawer';
 import type { Session } from '../types/domain';
 
 interface SelectionMenuDeps {

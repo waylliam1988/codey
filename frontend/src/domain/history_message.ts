@@ -1,4 +1,4 @@
-import { validRef } from '../attachments';
+import { validRef } from '../conversation/attachments';
 import type { Message } from '../types/domain';
 import { isFailureInfo, isRecord, isToolPreview } from './display_values';
 

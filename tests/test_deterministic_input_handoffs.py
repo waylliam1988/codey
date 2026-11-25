@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 
 from codey.automation.browser_session import BrowserSession
-from codey.codemode.catalog import snapshot_catalog
 from codey.codemode.host import CodeModeHost
 from codey.completion.verification_policy import VerificationCandidate
 from codey.knowledge.model import canonical_json
 from codey.operations.browser.browser_references import reference_spec
 from codey.operations.browser.browser_task_handoff import _input_after_click, query_result_handoff
+from codey.operations.browser.catalog import snapshot_catalog
 from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_preparation import capture_turn_snapshot

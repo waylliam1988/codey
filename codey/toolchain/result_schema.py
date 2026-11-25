@@ -151,15 +151,14 @@ def search_output_schema() -> dict[str, object]:
 
 def validate_output(name: str, schema: Mapping[str, object], value: object) -> None:
     """Use the existing tool schema validator for successful result values."""
-    from codey.toolchain.schema_validation import _valid_custom_schema
+    from codey.toolchain.schema_validation import _valid_custom_schema, check_schema_value
     from codey.toolchain.spec_model import thaw_schema_value
-    from codey.toolchain.tool_spec import _check_spec_value_against_schema
     from codey.types.json_value import decode_json_value
 
     decode_json_value(value)
     if not _valid_custom_schema(thaw_schema_value(schema)):
         raise ValueError(f"invalid output schema for {name}")
-    error = _check_spec_value_against_schema(name, "result", schema, value, strict=True)
+    error = check_schema_value(name, "result", schema, value, strict=True)
     if error:
         raise ValueError(f"invalid structured result: {error}")
 

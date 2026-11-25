@@ -19,9 +19,9 @@ if TYPE_CHECKING:
 
 def tool_signature(spec: ToolSpec) -> str:
     from codey.toolchain.result_schema import schema_typescript
-    from codey.toolchain.tool_spec import _schema_for_spec
+    from codey.toolchain.spec_model import schema_for_spec
 
-    return f"{spec.name}(args: {schema_typescript(_schema_for_spec(spec))})"
+    return f"{spec.name}(args: {schema_typescript(schema_for_spec(spec))})"
 
 
 def model_tool_description(spec: ToolSpec) -> str:
@@ -79,10 +79,9 @@ def contract_semantics(text: str) -> tuple[str, ...]:
 
 def tool_repair_text(error: str, spec: ToolSpec) -> str:
     """A self-contained repair for one captured tool, never its entire catalog."""
-    from codey.toolchain.spec_model import thaw_schema_value
-    from codey.toolchain.tool_spec import _schema_for_spec
+    from codey.toolchain.spec_model import schema_for_spec, thaw_schema_value
 
-    schema = json.dumps(thaw_schema_value(_schema_for_spec(spec)), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    schema = json.dumps(thaw_schema_value(schema_for_spec(spec)), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return (f"{error}\nCurrent {spec.name} contract:\n{spec.description}\n"
             f"Arguments (JSON Schema; only declared fields): {schema}")
 

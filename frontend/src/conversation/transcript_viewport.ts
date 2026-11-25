@@ -1,4 +1,4 @@
-import { nestedOwnsScroll } from '../scroll_owner';
+import { nestedOwnsScroll } from '../render/scroll_owner';
 
 interface ReadingAnchor {
   index: number;

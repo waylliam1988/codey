@@ -16,8 +16,8 @@ from codey.completion.verification_policy import (
     discover_verification_candidates,
     select_verification_candidate,
 )
-from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
+from codey.operations.task_submission import run_task_submission
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult
 from codey.providers.diagnostics import capture_provider_failure
 from codey.runtime.core.run_result import RunResult

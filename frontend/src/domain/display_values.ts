@@ -1,5 +1,5 @@
-import type { FailureInfo } from '../failure_presentation';
-import type { ToolPreview } from '../render';
+import type { FailureInfo } from '../runs/failure_presentation';
+import type { ToolPreview } from '../render/render';
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

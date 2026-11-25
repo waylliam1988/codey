@@ -10,7 +10,8 @@ import pytest
 
 from codey.operations.browser.turn_surface import offer_browser_tools
 from codey.operations.completion_context import CompletionContext
-from codey.operations.kernel.kernel_protocol import normalize_turn, refresh_snapshot_contract
+from codey.operations.kernel.kernel_protocol import normalize_turn
+from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot

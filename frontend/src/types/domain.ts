@@ -37,7 +37,7 @@ export interface ApprovalState {
   continuation: ApprovalContinuation;
   revision: number;
 }
-import type { ToolDisplay as importToolDisplay } from '../render';
+import type { ToolDisplay as importToolDisplay } from '../render/render';
 export interface ModelChoice {
   enabled: boolean;
   models: string[];
@@ -330,7 +330,7 @@ export interface ChangeVerification {
     command: string;
     cwd: string;
     exit_code: number;
-    output?: import('../execution_output').ExecutionOutputScope;
+    output?: import('../runs/execution_output').ExecutionOutputScope;
   };
 }
 export interface RunData {
@@ -413,7 +413,7 @@ export interface UiDeps {
   activeSession?: () => Session | undefined;
 }
 export interface SseDeps {
-  forRun(sessionId: string, runId: string): import('../requests').RequestMatch | null;
+  forRun(sessionId: string, runId: string): import('../runs/requests').RequestMatch | null;
   setStatus(text: string, kind: string): void;
   applyRunState(data: RunState): void;
   handleServerEvent(data: import('../domain/protocol').ServerEvent, cursor: string): void | Promise<void>;

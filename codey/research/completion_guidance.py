@@ -9,9 +9,9 @@ from codey.research.context_view import build_research_context_view
 
 if TYPE_CHECKING:
     from codey.knowledge.store import KnowledgeStore
-    from codey.research.answer_contract import ResearchPolicyView
     from codey.research.ledger import ResearchLedger
     from codey.research.staging import StagedKnowledgeStore
+    from codey.research.task_mode import ResearchPolicyView
 
 
 def render_research_observations(session: ResearchPolicyView, ledger: ResearchLedger | None = None,

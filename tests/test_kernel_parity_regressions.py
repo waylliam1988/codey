@@ -72,7 +72,7 @@ def test_ordinary_done_rejects_retired_followup_questions():
 
 @pytest.mark.parametrize("verification", ["failed", "stale", "no-identity"])
 def test_coding_context_never_calls_failed_or_stale_verification_fresh(verification):
-    from codey.operations.project_prompt_context import prepare_coding_context
+    from codey.operations.project.project_prompt_context import prepare_coding_context
     from codey.operations.task_session import TaskSession
     from codey.workspace.coding_context import render_coding_context
 
@@ -89,7 +89,7 @@ def test_coding_context_never_calls_failed_or_stale_verification_fresh(verificat
 
 
 def test_coding_context_without_project_read_grant_is_not_rendered():
-    from codey.operations.project_prompt_context import prepare_coding_context
+    from codey.operations.project.project_prompt_context import prepare_coding_context
     from codey.operations.task_session import TaskSession
 
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), read_files={"secret.py"})
@@ -373,7 +373,7 @@ def test_native_cancellation_closes_followon_ids_without_executing():
 
 def test_verification_refresh_drops_a_candidate_removed_by_a_later_edit():
     from codey.completion.verification_policy import VerificationCandidate
-    from codey.operations.project_verification import refresh_verification_candidates
+    from codey.operations.project.project_verification import refresh_verification_candidates
     from codey.operations.task_session import TaskSession
 
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"project.write"})))
@@ -389,7 +389,7 @@ def test_verification_refresh_drops_a_candidate_removed_by_a_later_edit():
 
 def test_recovery_keeps_questions_and_forbidden_hint_without_importing_candidate_proof():
     from codey.completion.verification_policy import VerificationCandidate
-    from codey.operations.project_verification import refresh_verification_candidates
+    from codey.operations.project.project_verification import refresh_verification_candidates
     from codey.operations.task_session import TaskSession
 
     def _explicit_state(*, forbidden: bool, questions: list[str]):

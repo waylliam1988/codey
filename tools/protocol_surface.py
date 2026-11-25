@@ -19,7 +19,7 @@ from codey.operations import completion_gate, turn_snapshot
 from codey.operations.browser.browser_text_report import BrowserMetadata, MetadataPending
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import tool_facts
-from codey.operations.kernel.kernel_protocol import TurnSnapshot
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import KernelSessionView
 from codey.policies.requirement import RequirementEvaluation

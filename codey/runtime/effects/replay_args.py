@@ -127,8 +127,6 @@ def validate_replay_args_shape(
     if canonical_name == "codemode":
         from codey.protocols.codemode import parse_codemode_args
 
-        if set(args) - {key for key, _schema in TOOL_DEFINITION_BY_NAME["codemode"].parameters}:
-            raise ValueError("unsupported CodeMode replay arguments")
         parse_codemode_args(args)
         return dict(args)
 

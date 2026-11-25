@@ -5,7 +5,6 @@ import json
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING
 
 from codey.codemode.navigation import TASK_SOURCE_TOOLS, task_navigation_schema, task_source_schema
 from codey.codemode.patch import MAX_PATCH_FILES, PATCH_DESCRIPTION
@@ -17,38 +16,11 @@ from codey.codemode.types import (
     ToolCatalogEntry,
     ToolCatalogSnapshot,
 )
-from codey.operations.browser.browser_references import BrowserReferences, reference_spec
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.toolchain.result_schema import model_output_schema, schema_typescript
-from codey.toolchain.tool_spec import ToolSpec, _schema_for_spec, is_text_batch_tool
+from codey.toolchain.spec_model import schema_for_spec
+from codey.toolchain.tool_spec import ToolSpec, is_text_batch_tool
 from codey.types.json_value import JsonObject, canonical_json_object, require_json_strings
-
-if TYPE_CHECKING:
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
-
-
-def snapshot_catalog(
-    snapshot: TurnSnapshot, *, allow_writes: bool = True, observed_choices: bool = True,
-) -> ToolCatalogSnapshot:
-    """Derive model choices or replay capabilities from the same frozen specs."""
-    names = set(snapshot.nested_tool_names)
-    writable = allow_writes and snapshot.policy is not None and snapshot.policy.allows("project.write")
-    return build_codemode_catalog(
-        (spec for spec in snapshot.frozen_specs if spec.name in names),
-        allow_project_edit=writable and "edit" in names,
-        allow_project_run=allow_writes and snapshot.policy is not None and snapshot.policy.allows("project.verify")
-            and "run" in names,
-        task_navigation_url=snapshot.task_navigation_url,
-        task_source_url=snapshot.task_source_url,
-        task_source_selector=snapshot.task_source_url is not None,
-        browser_followup_checks=(snapshot.policy.required_checks if snapshot.policy else ())
-        if snapshot.browser_followups else None,
-        observe_link_navigation=snapshot.research_scope is None,
-        browser_result_reads=snapshot.research_scope is not None,
-        browser_references=snapshot.browser_references if observed_choices else None,
-        browser_flows=snapshot.browser_followups,
-        semantic_edits=True,
-    )
 
 
 def build_catalog_snapshot(rows: Iterable[Mapping[str, object] | ToolCatalogEntry]) -> ToolCatalogSnapshot:
@@ -102,7 +74,7 @@ def build_catalog_from_specs(specs: Mapping[str, ToolSpec] | Iterable[ToolSpec])
         rows.append({
             "name": name,
             "description": spec.description,
-            "parameters": _schema_for_spec(spec),
+            "parameters": schema_for_spec(spec),
             "namespace": executor,
             "grant": spec.grant,
             "read_only": spec.read_only,
@@ -119,10 +91,8 @@ def build_codemode_catalog(
     task_navigation_url: str | None = None,
     task_source_selector: bool = True,
     task_source_url: str | None = None,
-    browser_followup_checks: tuple[str, ...] | None = None,
-    observe_link_navigation: bool = False,
+    click_followups: JsonObject | None = None,
     browser_result_reads: bool = False,
-    browser_references: BrowserReferences | None = None,
     browser_flows: bool = False,
     semantic_edits: bool = False,
 ) -> ToolCatalogSnapshot:
@@ -142,20 +112,7 @@ def build_codemode_catalog(
     if allow_project_run is None:
         allow_project_run = allow_writes
     source_values: Iterable[ToolSpec] = specs.values() if isinstance(specs, Mapping) else specs
-    values = tuple(reference_spec(spec, browser_references) for spec in source_values)
-    if browser_followup_checks is not None:
-        from codey.operations.browser.browser_followups import PURPOSES, click_plans, model_spec
-
-        plans = click_plans(browser_followup_checks, {spec.name for spec in values})
-        control_steps = plans.get("controls")
-        if isinstance(control_steps, list) and any(spec.name == "browser_read" and not spec.required for spec in values):
-            plans["controls"] = [*control_steps, {"name": "browser_read", "args": JsonObject()}]
-        from codey.operations.browser.browser_followups import add_link_observation
-
-        add_link_observation(plans, browser_followup_checks, enabled=observe_link_navigation)
-        purposes = tuple(purpose for purpose in PURPOSES if purpose in plans)
-        values = tuple(model_spec(spec, None, click_purposes=purposes)
-                       if spec.name == "browser_click" else spec for spec in values)
+    values = tuple(source_values)
     result_actions = {spec.name for spec in values if spec.executor == "browser" and spec.effect == "page_mutation"}
     snapshot = build_catalog_from_specs(values)
     allowed: list[ToolCatalogEntry] = []
@@ -203,11 +160,11 @@ def build_codemode_catalog(
                     " In whole-answer Research, a delivered page action also acquires current formal page text "
                     "after its follow-ups. The action receipt remains authoritative if acquisition fails.")
             allowed.append(entry)
-    if browser_followup_checks is not None:
+    if click_followups is not None:
         for index, entry in enumerate(allowed):
             if entry.name == "browser_click":
                 allowed[index] = replace(entry, parameters={**canonical_json_object(entry.parameters),
-                                                           "x-codey-click-plans": plans})
+                                                           "x-codey-click-plans": click_followups})
     if browser_flows and any(entry.name == "browser_read" for entry in allowed):
         from codey.codemode.browser_flow import flow_schema
 
@@ -299,7 +256,7 @@ def _entry_type_declarations(entry: ToolCatalogEntry, *, json_edit: bool) -> tup
 def _compact_entry(entry: ToolCatalogEntry, outer: ToolSpec | None, *, guidance: str,
                    json_edit: bool) -> tuple[tuple[str, ...], tuple[str, ...]]:
     ordinary = {key: value for key, value in entry.parameters.items() if key not in _NESTED_SCHEMA_METADATA}
-    same_input = outer is not None and canonical_json_object(ordinary) == _schema_for_spec(outer)
+    same_input = outer is not None and canonical_json_object(ordinary) == schema_for_spec(outer)
     signatures = _entry_signatures(entry, json_edit=json_edit, include_ordinary=not same_input, compact=True)
     if not signatures:
         return (), ()

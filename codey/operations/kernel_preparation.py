@@ -6,9 +6,9 @@ from codey.operations import kernel_prompt, turn_snapshot
 from codey.operations.browser.browser_text_report import report_scope
 from codey.operations.browser.browser_upload import upload_scope
 from codey.operations.completion_context import CompletionContextInput
-from codey.operations.kernel.kernel_protocol import TurnSnapshot
-from codey.operations.project_prompt_context import prepare_coding_context
-from codey.operations.project_verification import refresh_verification_candidates
+from codey.operations.kernel.turn_contract import TurnSnapshot
+from codey.operations.project.project_prompt_context import prepare_coding_context
+from codey.operations.project.project_verification import refresh_verification_candidates
 from codey.operations.task_session import TaskSession
 from codey.policies.browser_requirement import parse_browser_requirement
 from codey.policies.output_requirement import has_explanation, is_output_check

@@ -14,6 +14,10 @@ if TYPE_CHECKING:
     from codey.runtime.core.run_result import RunResult
 
 
+REVIEW_FIX_TURNS = 12
+REVIEW_LOG_LINES = 80
+
+
 def build_task_deps(
     state: TaskSubmissionState,
     *,
@@ -28,7 +32,6 @@ def build_task_deps(
     # Resolve services only when a task starts; importing the app must not
     # initialize browser connections or load the research runtime.
     from codey.app import consensus_service, review_service, sibling_probe
-    from codey.app.context import REVIEW_FIX_TURNS, REVIEW_LOG_LINES
     from codey.operations import project_adapter
     from codey.operations.task_run import TaskRunDeps
     from codey.providers import diagnostics

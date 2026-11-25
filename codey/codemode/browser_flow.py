@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from codey.codemode.types import ToolCatalogEntry
-from codey.toolchain.tool_spec import _check_spec_value_against_schema
+from codey.toolchain.schema_validation import check_schema_value
 from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_object
 
 _FLOW_TOOLS = ("browser_navigate", "browser_snapshot", "browser_wait", "browser_read", "browser_tab_list")
@@ -23,7 +23,7 @@ def flow_schema(entries: Mapping[str, ToolCatalogEntry]) -> JsonObject:
 
 
 def flow_steps(args: JsonObject, contract: JsonObject) -> tuple[tuple[str, JsonObject], ...]:
-    if error := _check_spec_value_against_schema("browser_snapshot", "args", contract, args, strict=True):
+    if error := check_schema_value("browser_snapshot", "args", contract, args, strict=True):
         raise ValueError(error)
     raw = args.get("flow")
     if not isinstance(raw, list) or not 1 <= len(raw) <= 6:

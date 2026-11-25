@@ -18,7 +18,8 @@ from unittest.mock import patch
 
 from codey.operations.browser.browser_followups import codemode_only
 from codey.operations.kernel.kernel_context import KernelContext
-from codey.operations.kernel.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
+from codey.operations.kernel.turn_contract import TurnSnapshot
+from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.kernel_prompt import _text_request_prompt
 from codey.policies.tool_requirement import decode_answer
 from codey.providers.base import ProviderToolDefinition, tools_from_specs

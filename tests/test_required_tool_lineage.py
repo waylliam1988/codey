@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from codey.codemode.kernel import build_execute_turn_executor
+from codey.operations import tool_operation
 from codey.operations.completion_gate import evaluate
 from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.kernel.kernel_protocol import normalize_turn
@@ -255,17 +256,16 @@ def test_ordinary_write_without_a_route_requirement_still_completes(runtime):
 def test_parallel_child_receipts_satisfy_both_targets_before_and_after_restart(runtime, monkeypatch):
     import threading
 
-    from codey.operations.kernel import kernel_execution
 
     barrier = threading.Barrier(2)
-    original = kernel_execution._run_via_delegate_or_fn
+    original = tool_operation._run_via_delegate_or_fn
 
     def synchronized(*args, **kwargs):
         if args[4] == "read_file":
             barrier.wait(timeout=5)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(kernel_execution, "_run_via_delegate_or_fn", synchronized)
+    monkeypatch.setattr(tool_operation, "_run_via_delegate_or_fn", synchronized)
     (runtime.project / "a.txt").write_text("A\n", encoding="utf-8")
     (runtime.project / "b.txt").write_text("B\n", encoding="utf-8")
     results = _execute(runtime, [_code(

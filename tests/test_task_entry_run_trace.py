@@ -10,8 +10,8 @@ from codey.agents.handoff import ConversationSnapshot, render_summary_prompt
 from codey.agents.request import AgentRequest
 from codey.app import server
 from codey.app import task_submit as task_submit
-from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
+from codey.operations.task_submission import run_task_submission
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import ResearchRecord, build_research_record
 from codey.research.pipeline import ResearchIterationRun

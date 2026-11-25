@@ -89,7 +89,7 @@ def test_same_facts_strict_research_still_blocks_without_evidence_report() -> No
 
 
 def test_strict_report_does_not_parse_or_rewrite_markdown_even_with_saved_evidence():
-    from codey.operations.research_completion_checks import strict_research_checks
+    from codey.operations.research.research_completion_checks import strict_research_checks
     from codey.research.ledger import ResearchLedger
 
     url = "https://example.com/a"
@@ -112,7 +112,7 @@ def test_strict_report_does_not_parse_or_rewrite_markdown_even_with_saved_eviden
 
 def test_ordinary_reference_repair_does_not_demand_unavailable_acquisition_tools():
     from codey.completion.contract import CHECK_FAIL, CompletionCheck
-    from codey.operations.research_completion_checks import research_completion_feedback
+    from codey.operations.research.research_completion_checks import research_completion_feedback
 
     session = _session(TaskPolicy(grants=frozenset({"control", "knowledge.read"})))
     feedback = research_completion_feedback(session, "", None, [

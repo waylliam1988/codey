@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from codey.codemode.catalog import render_declarations, snapshot_catalog
+from codey.codemode.catalog import render_declarations
 from codey.codemode.replay import repair_catalog_digest
+from codey.operations.browser.catalog import snapshot_catalog
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot

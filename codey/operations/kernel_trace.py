@@ -9,7 +9,7 @@ from codey.utils.refs import digest_text
 from codey.workspace.context_admission import ContextAdmissionResult
 
 if TYPE_CHECKING:
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.runs.trace import RunTraceRecorder
     from codey.runtime.core.models import ToolPlan
 

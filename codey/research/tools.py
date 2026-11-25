@@ -186,8 +186,8 @@ class ResearchTools:
                     pages: str = "") -> ResearchToolOutput:
         """Read an exact captured version without executing another acquisition."""
         from codey.research.ledger_receipts import restore_ledger_observation
-        from codey.research.source_observation import source_observation
-        from codey.research.source_snapshots import select_source_pages, snapshot_document
+        from codey.research.source_observation import snapshot_document, source_observation
+        from codey.research.source_snapshots import select_source_pages
 
         selected = select_source_pages(observation, pages) if pages else observation
         document = snapshot_document(selected)

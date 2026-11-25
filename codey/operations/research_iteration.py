@@ -14,7 +14,7 @@ from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.model import KnowledgeReference
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.kernel_contracts import KernelResult
-from codey.operations.research_continuation import ResearchContinuation
+from codey.operations.research.research_continuation import ResearchContinuation
 from codey.policies.task_policy import TaskPolicy
 from codey.research.answer_report import AnswerReport
 from codey.research.ledger import ResearchLedger
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 from codey.memory.context import retrieve_context
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.kernel_request_builder import KernelRunRequestBuilder
-from codey.operations.research_continuation import ResearchInvocation
+from codey.operations.research.research_continuation import ResearchInvocation
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_loop import (
     KernelExecutionDeps,

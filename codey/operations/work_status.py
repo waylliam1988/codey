@@ -12,7 +12,7 @@ from codey.operations.completion_output import tool_facts
 from codey.operations.explicit_execution_requirements import requested_output_read_check
 from codey.operations.file_field_binding import validate_field
 from codey.operations.project_completion_checks import collect_completion_workspace, project_evidence_checks
-from codey.operations.research_completion_checks import source_requirement_checks
+from codey.operations.research.research_completion_checks import source_requirement_checks
 from codey.operations.task_session import TaskSession
 from codey.policies.browser_requirement import BrowserPageRounds, parse_browser_requirement
 from codey.policies.requirement import RequirementEvaluation

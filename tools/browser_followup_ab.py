@@ -22,7 +22,8 @@ from codey.operations import turn_snapshot
 from codey.operations.browser import turn_surface
 from codey.operations.kernel import kernel_context, kernel_protocol
 from codey.operations.kernel.kernel_context import KernelContext
-from codey.operations.kernel.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
+from codey.operations.kernel.turn_contract import TurnSnapshot
+from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_guidance import task_result_context
 from codey.operations.task_session import TaskSession

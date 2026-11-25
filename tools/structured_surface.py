@@ -20,15 +20,15 @@ from codey.codemode.runtime import NodeWorkerRuntime
 from codey.completion.contract import CompletionCheck
 from codey.operations import completion_gate, completion_output, kernel_control, turn_snapshot
 from codey.operations.completion_context import CompletionContext
-from codey.operations.kernel.kernel_protocol import TurnSnapshot
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import KernelSessionView
 from codey.policies.requirement import RequirementEvaluation
 from codey.providers.base import ProviderToolDefinition, tools_from_specs
 from codey.providers.text_tool_schema import text_tool_schema
+from codey.toolchain.schema_validation import check_schema_value
 from codey.toolchain.spec_model import thaw_schema_value
 from codey.toolchain.tool_prompt import json_contract_text
-from codey.toolchain.tool_spec import _check_spec_value_against_schema
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 from tools import mechanical_surface
 from tools.completion_artifact_audit import tool_receipts
@@ -158,7 +158,7 @@ def compile_plan(args: JsonObject, schemas: Mapping[str, JsonObject]) -> JsonObj
     # descriptions. Use its shared value checker, not the custom-output
     # schema allowlist (which deliberately excludes that metadata).
     shape = object_schema({"steps": {"type": "array", "minItems": 1, "maxItems": 16, "items": {}}}, ["steps"])
-    error = _check_spec_value_against_schema("structured_plan", "args", shape, args, strict=True)
+    error = check_schema_value("structured_plan", "args", shape, args, strict=True)
     if error:
         raise ValueError(error)
     steps = args["steps"]
@@ -170,7 +170,7 @@ def compile_plan(args: JsonObject, schemas: Mapping[str, JsonObject]) -> JsonObj
         "args": {"type": "object"}, "allow_failure": {"type": "boolean"},
     }, ["id", "op", "args"])
     for index, value in enumerate(steps):
-        error = _check_spec_value_against_schema("structured_plan", f"steps[{index}]", step_shape, value, strict=True)
+        error = check_schema_value("structured_plan", f"steps[{index}]", step_shape, value, strict=True)
         if error:
             raise ValueError(error)
         step = decode_json_object(value)
@@ -181,7 +181,7 @@ def compile_plan(args: JsonObject, schemas: Mapping[str, JsonObject]) -> JsonObj
         op = str(step["op"])
         parameters = decode_json_object(step["args"])
         schema = schemas[op]
-        error = _check_spec_value_against_schema(op, f"steps[{index}].args", schema, parameters, strict=True)
+        error = check_schema_value(op, f"steps[{index}].args", schema, parameters, strict=True)
         if error:
             raise ValueError(error)
     return {"code": PROGRAM, "inputs": {"steps": steps, "cached_tools": [str(name) for name in CACHED_TOOLS],
@@ -194,7 +194,7 @@ def prechecked_invoke(host: CodeModeHost, name: str, args: dict[str, object],
     entry = host._catalog.get(name)
     if entry is not None:
         schema = decode_json_object(thaw_schema_value(entry.parameters))
-        error = _check_spec_value_against_schema(name, "args", schema, args, strict=True)
+        error = check_schema_value(name, "args", schema, args, strict=True)
         if error:
             raise ValueError(error)
     return original(host, name, args)

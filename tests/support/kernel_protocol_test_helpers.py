@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from collections.abc import Collection
 
-from codey.operations.kernel.kernel_protocol import TurnSnapshot
 from codey.operations.kernel.kernel_protocol import normalize_turn as _normalize_turn
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import DecodedTextTurn, decode_text_turn
 from codey.providers.base import AssistantTurn

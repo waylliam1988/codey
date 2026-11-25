@@ -197,4 +197,89 @@ describe('SSE dispatch validation and recovery', () => {
     ]);
     expect(localStorage.getItem('codey:durable-cursor')).toBe('{"database_id":"db","commit_seq":5}');
   });
+
+  async function streamFixture() {
+    const handled = vi.fn();
+    const applyRunState = vi.fn();
+    const { Sse } = await import('./sse');
+    Sse.init({
+      forRun: () => null,
+      setStatus: vi.fn(),
+      applyRunState,
+      handleServerEvent: handled,
+      acceptRun: vi.fn(),
+      setProviderBusy: vi.fn(),
+      updateSend: vi.fn(),
+      updateComposerContext: vi.fn(),
+      refreshProviderStatus: vi.fn(),
+    });
+    Sse.connect();
+    const [source] = FakeEventSource.instances;
+    const emit = (id: string, event: object) => {
+      source.onmessage?.(new MessageEvent('message', { lastEventId: id, data: JSON.stringify(event) }));
+    };
+    return { Sse, source, emit, handled, applyRunState };
+  }
+
+  it('deduplicates transient events and accepts a replay reset', async () => {
+    const { emit, handled } = await streamFixture();
+    const reply = { type: 'reply', session_id: 'session', text: 'response' };
+    emit('9', reply);
+    emit('9', reply);
+    emit('8', reply);
+    emit('0', { type: 'resync_required', cursor: 0, reason: 'sse_cursor_ahead' });
+    emit('1', reply);
+    emit('1', reply);
+
+    await vi.waitFor(() =>
+      expect(handled.mock.calls.map(([event, cursor]: unknown[]) => [event, cursor])).toEqual([
+        [expect.objectContaining({ type: 'reply' }), '9'],
+        [expect.objectContaining({ type: 'resync_required' }), '0'],
+        [expect.objectContaining({ type: 'reply' }), '1'],
+      ]),
+    );
+  });
+
+  it('advances durable and transient cursors independently', async () => {
+    const { Sse, emit, handled } = await streamFixture();
+    for (const [cursor, commit] of [
+      ['9:10', 10],
+      ['9:10', 10],
+      ['9:11', 11],
+      ['8:12', 12],
+    ] as const) {
+      emit(cursor, { type: 'durable_commit', session_id: 'session', commit_seq: commit });
+    }
+    emit('10:11', { type: 'reply', session_id: 'session', text: 'response' });
+    await vi.waitFor(() =>
+      expect(handled.mock.calls.map(([, cursor]: unknown[]) => cursor)).toEqual(['9:10', '9:11', '8:12', '10:11']),
+    );
+    expect(Sse.eventKey('9:10')).toBe('sse:9:10');
+  });
+
+  it('drops an incomplete reconciliation buffer and refreshes the state again', async () => {
+    const pending: Array<(response: Response) => void> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>((resolve) => pending.push(resolve))),
+    );
+    const { Sse, emit, handled, applyRunState } = await streamFixture();
+    const first = Sse.reconcileRunState();
+    for (let id = 1; id <= 101; id++) {
+      emit(String(id), { type: 'reply', session_id: 'session', text: 'response' });
+    }
+    expect(pending).toHaveLength(1);
+    pending.shift()?.(new Response(JSON.stringify({ busy: false, run_status: 'first' })));
+    await first;
+    expect(handled).not.toHaveBeenCalled();
+    expect(pending).toHaveLength(1);
+    pending.shift()?.(new Response(JSON.stringify({ busy: false, run_status: 'second' })));
+    await vi.waitFor(() =>
+      expect(applyRunState.mock.calls.map(([state]: unknown[]) => state)).toEqual([
+        { busy: false, run_status: 'first' },
+        { busy: false, run_status: 'second' },
+      ]),
+    );
+    expect(handled).not.toHaveBeenCalled();
+  });
 });

@@ -20,7 +20,7 @@ from codey.workspace.revision import WorkspaceIdentity
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.operations.task_session import TaskSession
     from codey.runtime.core.models import ToolCall, ToolResult
     from codey.types.json_value import JsonObject

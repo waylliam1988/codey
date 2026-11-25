@@ -5,22 +5,21 @@ import hashlib
 from dataclasses import replace
 
 from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import ledger_observation
-from codey.research.pdf_extract import parse_pages
-from codey.research.source_document import SourceDocument, SourcePage
-from codey.research.source_observation import source_observation, source_snapshot
+from codey.research.source_document import SourceDocument
+from codey.research.source_observation import (
+    SourceSnapshotUnavailable,
+    snapshot_document,
+    source_observation,
+    source_snapshot,
+)
 from codey.types.json_value import JsonObject
-
-
-class SourceSnapshotUnavailable(ValueError):
-    """The requested captured version or PDF page is absent; reacquisition is explicit."""
 
 
 def captured_source(ledger: ResearchLedger, url: str, text_hash: str = "") -> JsonObject:
     """Resolve captured bytes; a missing version never falls back to the live URL."""
     current = ledger.source_record_for_url(url)
     if current is not None and (not text_hash or current.text_hash == text_hash):
-        return ledger_observation(ledger, "open", url=url)
+        return source_snapshot(current, ledger.source_text_for_url(url), ledger.source_pages_for_url(url))
     for passage in ledger.read_passages.values():
         if passage.source.final_url == url and passage.source.text_hash == text_hash:
             return source_snapshot(passage.source, passage.source_text, dict(passage.pages))
@@ -30,21 +29,6 @@ def captured_source(ledger: ResearchLedger, url: str, text_hash: str = "") -> Js
         if source.final_url == url and source.text_hash == text_hash:
             return snapshot
     raise SourceSnapshotUnavailable("the captured source version is unavailable; open_url explicitly to acquire a new version")
-
-
-def snapshot_document(observation: JsonObject, *, pages: str = "") -> SourceDocument:
-    source, text, page_map = source_observation(observation)
-    selected = parse_pages(pages) if pages else source.pages_read
-    if pages:
-        if source.content_kind != "pdf" or any(number not in page_map for number in selected):
-            raise SourceSnapshotUnavailable("requested pages are not in the captured source; use open_url to acquire them")
-        text = "\n\n".join(f"[page {number}]\n{page_map[number]}" for number in selected)
-        page_map = {number: page_map[number] for number in selected}
-    return SourceDocument(requested_url=source.requested_url, final_url=source.final_url,
-        title=source.title, text=text, content_kind=source.content_kind, mime_type=source.mime_type,
-        truncated=source.truncated, page_count=source.page_count, pages_read=selected,
-        read_scope=source.read_scope, publication=source.publication, pdf_sha256=source.pdf_sha256,
-        page_texts=tuple(SourcePage(number=number, text=body) for number, body in page_map.items()))
 
 
 def document_snapshot(document: SourceDocument) -> JsonObject:

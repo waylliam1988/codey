@@ -16,7 +16,7 @@ from codey.types.json_value import JsonObject
 
 if TYPE_CHECKING:
     from codey.operations.completion_context import CompletionContext
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.operations.task_session import TaskSession
     from codey.operations.work_status import WorkStatus
 
@@ -68,7 +68,8 @@ def lower(args: JsonObject, edit: ToolSpec) -> JsonObject:
 
 def offer(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
           status: WorkStatus) -> tuple[TurnSnapshot, str]:
-    from codey.operations.kernel.kernel_protocol import ModelInputBinding, refresh_snapshot_contract
+    from codey.operations.kernel.turn_contract import ModelInputBinding
+    from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 
     fields = tuple(row for row in status.tools if row.rule.file_path)
     names = {"codemode", "read_file", "edit"}
@@ -110,7 +111,8 @@ def offer(session: TaskSession, snapshot: TurnSnapshot, context: CompletionConte
     sources = tuple(ref for ref in records if ref in witnesses)
     binding = ModelInputBinding("declared_fields", model_spec(original, tuple(retryable)), sources)
     offered = replace(snapshot, input_binding=binding)
-    from codey.research.answer_contract import submitted_answer, whole_research
+    from codey.research.answer_contract import submitted_answer
+    from codey.research.task_mode import whole_research
 
     report = ("Report submission is still pending. Use submit_research_answer with the acquired evidence and citations; "
               "if the task requests a report before editing, submit it before this copy. "

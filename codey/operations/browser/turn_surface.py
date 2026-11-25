@@ -5,10 +5,10 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from codey.operations.browser import browser_followups
-from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
+from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 
 if TYPE_CHECKING:
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.operations.turn_snapshot import KernelSessionView
     from codey.types.json_value import ToolArgs
 

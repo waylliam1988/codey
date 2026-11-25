@@ -11,7 +11,8 @@ from codey.automation.browser_receipts import query_document
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import evaluate
 from codey.operations.completion_output import prepare_completion_output
-from codey.operations.kernel.kernel_protocol import TurnSnapshot, normalize_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.kernel_facts import project_execution_record, project_result_observation
 from codey.operations.kernel_receipts import restore_result_receipt
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description

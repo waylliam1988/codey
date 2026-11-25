@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -13,7 +13,7 @@ from unittest.mock import patch
 from codey.automation.browser_session import BrowserSession
 from codey.operations.kernel import kernel_protocol
 from codey.operations.kernel.kernel_context import KernelContext
-from codey.operations.kernel.kernel_protocol import TurnSnapshot
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.protocols.text_turn import DecodedTextTurn, TextError, TextRequest, TextRequests
 from codey.providers.base import AssistantTurn, ProviderToolResult
 from codey.providers.text_result_views import TextResultSpan
@@ -111,6 +111,7 @@ def choice_snapshot(snapshot: TurnSnapshot, document: JsonObject, rows: list[Jso
     return replace(snapshot, tool_names=(*snapshot.tool_names, TOOL),
         frozen_specs=(*snapshot.frozen_specs[:position], spec, *snapshot.frozen_specs[position:]),
         custom_executors=(*snapshot.custom_executors[:position], (TOOL, None), *snapshot.custom_executors[position:]),
+        model_specs=(*snapshot.model_specs, public_spec(spec)),
         contract_text=json_contract_text((*snapshot.model_specs, public_spec(spec))))
 
 
@@ -137,25 +138,6 @@ def experiment(directory: Path, case: natural.Case, arm: Arm) -> Generator[None,
     active: BrowserSession | None = None
     with readback.readback_experiment(directory, "B", case, automatic_readback=arm.automatic, guidance=False):
         freeze, normalize = KernelContext.freeze, kernel_protocol.normalize_turn
-        descriptor: object = vars(TurnSnapshot)["model_specs"]
-        assert isinstance(descriptor, property) and descriptor.fget is not None
-        getter: Callable[[TurnSnapshot], object] = descriptor.fget
-
-        def original_specs(snapshot: TurnSnapshot) -> tuple[ToolSpec, ...]:
-            values = getter(snapshot)
-            if not isinstance(values, tuple):
-                raise ValueError("invalid model specs")
-            rows: tuple[object, ...] = values
-            result: list[ToolSpec] = []
-            for row in rows:
-                if not isinstance(row, ToolSpec):
-                    raise ValueError("invalid model spec")
-                result.append(row)
-            return tuple(result)
-
-        def specs(snapshot: TurnSnapshot) -> tuple[ToolSpec, ...]:
-            return tuple(public_spec(spec) if spec.name == TOOL else spec for spec in original_specs(snapshot))
-
         def prepare(context: KernelContext, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int,
                     prompt: str = "", messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                     counters: RuntimeExecutionCounters | None = None, text_result_spans: tuple[TextResultSpan, ...] = (),
@@ -212,7 +194,7 @@ def experiment(directory: Path, case: natural.Case, arm: Arm) -> Generator[None,
                 reply = TextRequests((TextRequest("codemode", {"code": PROGRAM, "inputs": {"ref": ref}}),))
             return normalize(reply, snapshot=snapshot)
 
-        with (patch.object(TurnSnapshot, "model_specs", property(specs)), patch.object(KernelContext, "freeze", prepare),
+        with (patch.object(KernelContext, "freeze", prepare),
               patch.object(kernel_protocol, "normalize_turn", lower)):
             yield
 

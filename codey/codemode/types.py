@@ -39,24 +39,6 @@ class ToolCatalogSnapshot:
     entries: tuple[ToolCatalogEntry, ...]
     digest: str
 
-    def summary(self, *, budget: int = 2_000) -> CatalogSummary:
-        from codey.codemode.catalog import catalog_summary
-
-        return catalog_summary(self, budget=budget)
-
-    def search(
-        self, query: str = "", *, namespace: str | None = None, limit: int = 10, offset: int = 0,
-    ) -> CatalogSearchResult:
-        from codey.codemode.catalog import catalog_search
-
-        return catalog_search(self, query, namespace=namespace, limit=limit, offset=offset)
-
-    def describe(self, path: str) -> CatalogSearchItem | None:
-        from codey.codemode.catalog import catalog_describe
-
-        return catalog_describe(self, path)
-
-
 @dataclass(frozen=True)
 class CatalogSearchItem:
     path: str

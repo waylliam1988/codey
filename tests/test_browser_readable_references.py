@@ -9,14 +9,17 @@ from pathlib import Path
 import pytest
 
 from codey.automation.browser_session import BrowserSession
-from codey.codemode.catalog import catalog_describe, render_declarations, snapshot_catalog
+from codey.codemode.catalog import catalog_describe, render_declarations
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.operations.browser.browser_references import BrowserReferences
 from codey.operations.browser.browser_task_handoff import bind_browser_references
+from codey.operations.browser.catalog import snapshot_catalog
 from codey.operations.browser.turn_surface import offer_browser_tools
 from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel.kernel_execution import execute_turn
-from codey.operations.kernel.kernel_protocol import TurnSnapshot, normalize_turn, refresh_snapshot_contract
+from codey.operations.kernel.kernel_protocol import normalize_turn
+from codey.operations.kernel.turn_contract import TurnSnapshot
+from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_execution import ExecutionDelegate

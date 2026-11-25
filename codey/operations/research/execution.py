@@ -249,8 +249,8 @@ class ResearchExecutor:
 
     def _execute_source_open(self, call: ToolCall, tools: ResearchTools, *, turn: int,
                              tool_index: int) -> tuple[ToolResult, bool, int | None]:
-        from codey.operations.source_execution import open_source
-        from codey.research.source_snapshots import SourceSnapshotUnavailable
+        from codey.operations.research.source_execution import open_source
+        from codey.research.source_observation import SourceSnapshotUnavailable
 
         if call.name == "open_url":
             url = str(call.args.get("url") or "")
@@ -417,7 +417,7 @@ class ResearchExecutor:
             }
 
     def _lower_knowledge_sources(self, args: ToolArgs) -> tuple[ToolArgs, str]:
-        from codey.operations.source_execution import lower_knowledge_sources
+        from codey.operations.research.source_execution import lower_knowledge_sources
 
         return lower_knowledge_sources(self.session, args)
 
@@ -433,7 +433,7 @@ class ResearchExecutor:
         return {**args, "source_ref": sources[reference]}, ""
 
     def _resolve_alias_url(self, alias: str, args: ToolArgs) -> str:
-        from codey.operations.source_execution import resolve_alias_url
+        from codey.operations.research.source_execution import resolve_alias_url
 
         return resolve_alias_url(self.session, alias, args)
 

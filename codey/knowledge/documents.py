@@ -5,10 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from dataclasses import replace
 from typing import Protocol, TypedDict
 
 from codey.knowledge.index import KnowledgeIndex
 from codey.knowledge.note import KnowledgeNote, now_iso
+from codey.knowledge.repository import decode_knowledge_object
 from codey.types.json_value import require_json_integer, require_json_string
 
 
@@ -21,12 +23,6 @@ class NoteRevision(TypedDict):
     recorded_at: str
     reason: str
     deleted: int
-
-
-def _read_document(row: _DocumentRow) -> tuple[KnowledgeNote, str, int]:
-    markdown = require_json_string(row["markdown"], "markdown")
-    return (KnowledgeNote.from_markdown(markdown), require_json_string(row["path"], "path"),
-            require_json_integer(row["revision"], "revision"))
 
 
 class KnowledgeDocuments:
@@ -59,6 +55,28 @@ class KnowledgeDocuments:
                 self.write(note, path, reason="legacy_import")
             conn.execute("INSERT INTO knowledge_meta VALUES('documents_initialized','1')")
 
+    def answer_reference(self, identity: str, revision: int) -> tuple[str, int, str] | None:
+        rows: list[_DocumentRow] = self.index._read_conn().execute(
+            "SELECT v.id, v.revision, v.payload FROM note_knowledge_refs AS r "
+            "JOIN knowledge_versions AS v ON v.id=r.target AND v.revision=r.revision "
+            "WHERE r.note_id=? AND r.note_revision=? AND v.kind='answer'",
+            (identity, revision),
+        ).fetchall()
+        for row in rows:
+            value = decode_knowledge_object(require_json_string(row["payload"], "knowledge payload"))
+            if (value.provenance.get("basis") == "settled_whole_answer_submission"
+                    and value.provenance.get("synthesis_id") == identity):
+                return (require_json_string(row["id"], "answer id"),
+                        require_json_integer(row["revision"], "answer revision"), value.content)
+        return None
+
+    def _read_document(self, row: _DocumentRow) -> tuple[KnowledgeNote, str, int]:
+        note = KnowledgeNote.from_markdown(require_json_string(row["markdown"], "markdown"))
+        revision = require_json_integer(row["revision"], "revision")
+        if not note.body and (answer := self.answer_reference(note.id, revision)) is not None:
+            note = replace(note, body=answer[2])
+        return note, require_json_string(row["path"], "path"), revision
+
     def get(self, note_id: str, revision: int | None = None) -> tuple[KnowledgeNote, str, int] | None:
         conn = self.index._read_conn()
         if revision is None:
@@ -70,12 +88,12 @@ class KnowledgeDocuments:
         row: _DocumentRow | None = conn.execute(sql, args).fetchone()
         if row is None or row["markdown"] is None:
             return None
-        return _read_document(row)
+        return self._read_document(row)
 
     def by_path(self, path: str) -> tuple[KnowledgeNote, str, int] | None:
         row: _DocumentRow | None = self.index._read_conn().execute(
             "SELECT * FROM note_documents WHERE path=?", (path,)).fetchone()
-        return _read_document(row) if row is not None else None
+        return self._read_document(row) if row is not None else None
 
     def get_many(self, note_ids: list[str]) -> dict[str, tuple[KnowledgeNote, str, int]]:
         if not note_ids:
@@ -83,34 +101,47 @@ class KnowledgeDocuments:
         rows: list[_DocumentRow] = self.index._read_conn().execute(
             "SELECT * FROM note_documents WHERE id IN (SELECT value FROM json_each(?))",
             (json.dumps(note_ids),)).fetchall()
-        found = {require_json_string(row["id"], "id"): _read_document(row) for row in rows}
+        found = {require_json_string(row["id"], "id"): self._read_document(row) for row in rows}
         unique_ids: dict[str, None] = dict.fromkeys(note_ids)
         return {identity: found[identity] for identity in unique_ids if identity in found}
 
     def all(self) -> list[tuple[KnowledgeNote, str, int]]:
         rows: list[_DocumentRow] = self.index._read_conn().execute("SELECT * FROM note_documents ORDER BY id").fetchall()
-        return [_read_document(row) for row in rows]
+        return [self._read_document(row) for row in rows]
 
     def write(self, note: KnowledgeNote, path: str, *, reason: str = "edit",
-              reference_revision: int | None = None) -> int:
+              reference_revision: int | None = None,
+              answer_reference: tuple[str, int] | None = None) -> int:
         text = note.to_markdown()
         with self.index.transaction() as conn:
             old: _DocumentRow | None = conn.execute(
                 "SELECT markdown,revision,path FROM note_documents WHERE id=?", (note.id,)).fetchone()
-            unchanged_text = old is not None and old["markdown"] == text
-            if old is not None and unchanged_text and old["path"] == path:
-                return require_json_integer(old["revision"], "revision")
+            old_revision = require_json_integer(old["revision"], "revision") if old is not None else None
+            reference_base = reference_revision if reference_revision is not None else old_revision
+            old_answer = self.answer_reference(note.id, old_revision) if old_revision is not None else None
+            previous_answer = old_answer if reference_base == old_revision else (
+                self.answer_reference(note.id, reference_base) if reference_base is not None else None)
+            if answer_reference is None and previous_answer is not None and previous_answer[2] == note.body:
+                answer_reference = previous_answer[:2]
+            stored_text = replace(note, body="").to_markdown() if answer_reference is not None else text
+            unchanged_text = old is not None and old["markdown"] == stored_text
+            same_answer = answer_reference == (old_answer[:2] if old_answer is not None else None)
+            if old is not None and old_revision is not None and unchanged_text and same_answer and old["path"] == path:
+                return old_revision
             version = self._next_revision(conn, note.id)
-            conn.execute("INSERT INTO note_revisions VALUES(?,?,?,?,?,?)", (note.id, version, text, path, now_iso(), reason))
+            conn.execute("INSERT INTO note_revisions VALUES(?,?,?,?,?,?)", (note.id, version, stored_text, path, now_iso(), reason))
             conn.execute("INSERT INTO note_documents VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
                          "path=excluded.path,revision=excluded.revision,markdown=excluded.markdown",
-                         (note.id, path, version, text))
-            if reference_revision is None and old is not None and unchanged_text:
+                         (note.id, path, version, stored_text))
+            if reference_revision is None and old is not None and unchanged_text and same_answer:
                 reference_revision = require_json_integer(old["revision"], "revision")
             if reference_revision is not None:
                 conn.execute("INSERT INTO note_knowledge_refs "
                              "SELECT note_id,?,target,revision FROM note_knowledge_refs WHERE note_id=? AND note_revision=?",
                              (version, note.id, reference_revision))
+            if answer_reference is not None:
+                conn.execute("INSERT OR IGNORE INTO note_knowledge_refs VALUES(?,?,?,?)",
+                             (note.id, version, *answer_reference))
             self.index.upsert(note, path=path, content_hash=hashlib.sha256(text.encode()).hexdigest()[:16])
             return version
 

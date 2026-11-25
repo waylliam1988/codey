@@ -13,7 +13,8 @@ from codey.durable import DurableSession, SQLiteDurableStore
 from codey.operations.browser.browser_copy import CopyTurn
 from codey.operations.kernel.kernel_context import KernelContext
 from codey.operations.kernel.kernel_driver import drive_kernel, drive_provider_request
-from codey.operations.kernel.kernel_protocol import ModelInputBinding, TurnSnapshot, refresh_snapshot_contract
+from codey.operations.kernel.turn_contract import ModelInputBinding, TurnSnapshot
+from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.kernel_contracts import (
     KernelExecutionDeps,
     KernelRunRequest,

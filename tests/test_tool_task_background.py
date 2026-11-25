@@ -27,7 +27,8 @@ from codey.durable.model import (
 )
 from codey.durable.tool_task import execution_effect_id, tool_task_id
 from codey.operations.kernel.kernel_execution import execute_turn
-from codey.operations.kernel.kernel_protocol import TurnSnapshot, normalize_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.kernel_receipts import restore_result_receipt
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_effects import KernelEffectSink
@@ -388,7 +389,7 @@ def test_executor_cannot_forge_acceptance(runtime: Runtime) -> None:
 
 
 def test_coding_context_distinguishes_failed_check_from_unrun_check(runtime: Runtime) -> None:
-    from codey.operations.project_prompt_context import prepare_coding_context
+    from codey.operations.project.project_prompt_context import prepare_coding_context
 
     (runtime.project / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
     result = runtime.execute(ToolCall("edit", {"path": "test_sample.py", "content": "def test_sample():\n    assert False\n"}))

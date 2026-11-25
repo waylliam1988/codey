@@ -14,6 +14,7 @@ from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_spe
 from codey.providers.text_tool_schema import text_tool_schema
 from codey.runtime.core.models import ToolPlan
 from codey.toolchain import tool_spec
+from codey.toolchain.spec_model import schema_for_spec
 from codey.toolchain.tool_prompt import json_contract_text
 from codey.types.json_value import (
     JsonObject,
@@ -101,7 +102,7 @@ def test_argument_repair_is_self_contained_and_uses_only_the_failing_frozen_tool
         assert prompt.count(captured.description) == 1
     from codey.toolchain.spec_model import thaw_schema_value
 
-    assert schema == thaw_schema_value(tool_spec._schema_for_spec(captured))
+    assert schema == thaw_schema_value(schema_for_spec(captured))
     assert schema["required"] == ["query"] and schema["additionalProperties"] is False
     assert "UNSENT_DESCRIPTION" not in prompt and "Current edit contract" not in prompt
     assert "catalog_digest" not in prompt and "summary string" not in prompt

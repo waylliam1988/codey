@@ -6,12 +6,12 @@ from typing import TYPE_CHECKING
 
 from codey.policies.output_requirement import guidance
 from codey.policies.task_policy import TaskPolicy
-from codey.research.answer_contract import whole_research_policy
 from codey.research.completion_guidance import render_completion_guidance
+from codey.research.task_mode import whole_research_policy
 
 if TYPE_CHECKING:
     from codey.knowledge.store import KnowledgeStore
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.operations.task_session import TaskSession
     from codey.research.answer_contract import AnswerScope
     from codey.research.ledger import ResearchLedger
@@ -34,7 +34,8 @@ def task_working_context(session: TaskSession, research_ledger: ResearchLedger |
     research_only = (session.task_kind in {"research", "evidence_followup"}
                      and not session.policy.allows("project.write"))
     parts = [] if research_only else [working_context(session, tool_names=tool_names)]
-    from codey.research.answer_contract import answer_scope, whole_research
+    from codey.research.answer_contract import answer_scope
+    from codey.research.task_mode import whole_research
 
     scope = research_scope or (answer_scope(session) if whole_research(session) else None)
     from codey.operations.source_gaps import source_gap_context, source_interaction_context

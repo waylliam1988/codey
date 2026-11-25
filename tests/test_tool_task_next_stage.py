@@ -37,9 +37,9 @@ def restore(runtime: Runtime, session: TaskSession | None = None) -> TaskSession
 
 def test_declared_verification_waits_for_same_diagnostic_cleanup(tmp_path: Path) -> None:
     from codey.operations.kernel.kernel_protocol import normalize_turn
+    from codey.operations.project.verification_workflow import completion_workflow, verification_workflow
     from codey.operations.tool_tasks import control_tool_task, wait_tool_task
     from codey.operations.turn_snapshot import build_turn_snapshot
-    from codey.operations.verification_workflow import completion_workflow, verification_workflow
     from codey.protocols.text_turn import decode_text_turn
     from codey.types.json_value import parse_json_object, require_json_string
 

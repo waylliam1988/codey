@@ -106,8 +106,8 @@ def replay(
 ) -> JsonObject:
     from codey.app.context import AppContext
     from codey.operations import project_adapter
-    from codey.operations.task_entry import run_task_submission
     from codey.operations.task_run import TaskRunDeps
+    from codey.operations.task_submission import run_task_submission
     from codey.providers.diagnostics import capture_provider_failure
     from codey.task.model import TaskSubmission
 

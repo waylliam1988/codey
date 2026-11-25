@@ -8,12 +8,15 @@ import pytest
 from codey.codemode.catalog import (
     MODEL_CATALOG_BUDGET_BYTES,
     build_catalog_snapshot,
+    catalog_describe,
+    catalog_search,
+    catalog_summary,
     render_declarations,
-    snapshot_catalog,
 )
 from codey.codemode.runtime import CodeModeHandle, CodeModeOutcome, CodeModeRequest, CodeModeSession, NodeWorkerRuntime
 from codey.codemode.types import CodeModeResult, ToolCatalogEntry
-from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
+from codey.operations.browser.catalog import snapshot_catalog
+from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.kernel_prompt import _text_request_prompt
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
@@ -51,12 +54,12 @@ def test_catalog_summary_is_derived_from_frozen_catalog() -> None:
     catalog = build_catalog_snapshot(tuple(
         ToolCatalogEntry(f"read_{index}", "Read file", namespace="project") for index in range(20)
     ))
-    summary = catalog.summary(budget=30)
+    summary = catalog_summary(catalog, budget=30)
     assert summary.total == 20 and summary.shown < summary.total
     assert summary.namespaces[0].name == "project" and summary.namespaces[0].count == 20
-    page = catalog.search("read", limit=2)
+    page = catalog_search(catalog, "read", limit=2)
     assert len(page.items) == 2 and page.remaining == 18 and page.next_offset == 2
-    assert catalog.describe(page.items[0].path) == page.items[0]
+    assert catalog_describe(catalog, page.items[0].path) == page.items[0]
 
 
 def test_model_catalog_budget_keeps_pinned_tools_and_discovery_retains_parameter_docs() -> None:
@@ -69,7 +72,7 @@ def test_model_catalog_budget_keeps_pinned_tools_and_discovery_retains_parameter
     assert len(prompt.encode("utf-8")) <= MODEL_CATALOG_BUDGET_BYTES
     assert "read_file(args:" in prompt and "project: 51 tools" in prompt
     omitted = next(entry for entry in entries if entry.name + "(args:" not in prompt)
-    item = catalog.describe("tools." + omitted.name)
+    item = catalog_describe(catalog, "tools." + omitted.name)
     assert item is not None and "Observed exact path" in item.description
     assert item.signature.startswith("tools." + omitted.name + "(args:")
 
@@ -86,14 +89,14 @@ def test_compact_snapshot_preserves_edit_overloads_and_full_discovery() -> None:
     restored = restore_snapshot(snapshot_description(compact))
     assert _text_request_prompt("", restored) == _text_request_prompt("", compact)
     assert snapshot_catalog(restored) == catalog
-    edit = catalog.describe("tools.edit")
+    edit = catalog_describe(catalog, "tools.edit")
     assert edit is not None and "changes: Record" in edit.signature and '"files":' in edit.signature
     minimal = render_declarations(catalog, detail_budget_bytes=0, outer_specs=full.model_specs,
                                   detail_names=("edit",))
     assert "PatchFileResult" not in minimal and "JsonEditValue" not in minimal
     assert "type JsonEditValue =" in edit.signature
     assert "patch?: PatchFileResult[]" in edit.signature and "type PatchFileResult =" in edit.signature
-    assert edit in catalog.search("edit").items
+    assert edit in catalog_search(catalog, "edit").items
 
 
 def test_session_start_returns_handle_and_wait_reports_events() -> None:

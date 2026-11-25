@@ -98,18 +98,21 @@ class KnowledgeStore:
         note: KnowledgeNote,
         *,
         changes: KnowledgeChanges | None = None,
+        answer_reference: tuple[str, int] | None = None,
     ) -> str:
         rel = self.rel(self.path_for(note))
         snapshot = changes.snapshot() if changes is not None else None
         try:
             with self.index.transaction() as conn:
                 previous = self.documents.get(note.id)
-                projection_refs = self._answer_projection_refs(note)
+                projection_refs: list[NoteKnowledgeReference] = (
+                    self._answer_projection_refs(note) if answer_reference is None else []
+                )
                 previous_text = previous[0].to_markdown() if previous else None
                 moved = previous is not None and previous[1] != rel
                 updated = previous[0].updated if previous else note.updated
                 same_text = replace(note, updated=updated).to_markdown() == previous_text
-                if not same_text or moved:
+                if not same_text or moved or answer_reference is not None:
                     if not same_text:
                         updated = now_iso()
                     persisted = replace(note, updated=updated)
@@ -120,7 +123,7 @@ class KnowledgeStore:
                             if moved:
                                 changes.capture_content(rel, None)
                             changes.capture_content(previous[1], previous_text, document_revision=previous[2])
-                    revision = self.documents.write(persisted, rel)
+                    revision = self.documents.write(persisted, rel, answer_reference=answer_reference)
                     if projection_refs:
                         conn.executemany("INSERT OR IGNORE INTO note_knowledge_refs VALUES(?,?,?,?)",
                             [(note.id, revision, row["target"], row["revision"]) for row in projection_refs])
@@ -195,8 +198,15 @@ class KnowledgeStore:
                 references = {row["target"]: row["revision"] for row in self.note_references(note.id)}
                 versions = self.commit_knowledge(commit_id, mutations, changes=changes, session_id=note.session_id,
                                                  project=note.project, shared_staged=shared_staged) if mutations else {}
+                if answers:
+                    prior_answer = self.documents.get(note.id)
+                    if prior_answer is not None:
+                        prior_binding = self.documents.answer_reference(note.id, prior_answer[2])
+                        if prior_binding is not None:
+                            references.pop(prior_binding[0], None)
                 references.update(versions)
-                rel = self.write_note(note, changes=changes)
+                binding = (answers[0].id, versions[answers[0].id]) if answers else None
+                rel = self.write_note(note, changes=changes, answer_reference=binding)
                 found = self.documents.get(note.id)
                 if found:
                     self.index._read_conn().executemany("INSERT OR IGNORE INTO note_knowledge_refs VALUES(?,?,?,?)",

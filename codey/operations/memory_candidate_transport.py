@@ -9,12 +9,12 @@ from codey.memory.candidates import CANDIDATE_FIELD, candidate_schema
 from codey.toolchain.tool_spec import freeze_spec_parameters
 
 if TYPE_CHECKING:
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.toolchain.tool_spec import ToolSpec
 
 
 def offer_memory_candidates(snapshot: TurnSnapshot) -> TurnSnapshot:
-    from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
+    from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 
     specs = tuple(memory_candidate_spec(spec) for spec in snapshot.frozen_specs)
     return refresh_snapshot_contract(replace(snapshot, frozen_specs=specs))

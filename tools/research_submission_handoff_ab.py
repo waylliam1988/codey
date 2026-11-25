@@ -9,10 +9,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from codey.app.headless_runner import HeadlessConnector, HeadlessRequest, HeadlessResult, run_headless
-from codey.codemode.catalog import build_codemode_catalog, render_declarations
 from codey.operations.browser.browser_completion import evaluate_research_sequence
 from codey.operations.kernel.kernel_context import KernelContext
-from codey.operations.kernel.kernel_protocol import TurnSnapshot
+from codey.operations.kernel.turn_contract import TurnSnapshot
+from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.policies.browser_requirement import BrowserResearchSequence
 from codey.policies.tool_requirement import parse_tool_success_check
 from codey.providers.base import ProviderToolResult
@@ -23,7 +23,6 @@ from codey.research.browser_result_evidence import complete_page_passages
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
-from codey.toolchain.tool_spec import json_contract_text
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tools import browser_production_live_gate as gate
 from tools.browser_outcome_ab import DELAYED_HTML
@@ -79,14 +78,10 @@ def narrow(snapshot: TurnSnapshot, step: Handoff) -> TurnSnapshot:
         return snapshot
     inventory = names + nested
     specs = tuple(spec for spec in snapshot.frozen_specs if spec.name in inventory)
-    if nested:
-        declarations = render_declarations(build_codemode_catalog(specs, allow_writes=False))
-        specs = tuple(replace(spec, declarations=declarations) if spec.name == "codemode" else spec for spec in specs)
-    return replace(snapshot, tool_names=names, nested_tool_names=nested, frozen_specs=specs,
+    return refresh_snapshot_contract(replace(snapshot, tool_names=names, nested_tool_names=nested, frozen_specs=specs,
         browser_references=None, browser_fill_text=None, browser_followups=False,
         task_navigation_url=None, task_source_url=None, browser_copy=None, input_binding=None,
-        contract_text=json_contract_text(tuple(spec for spec in specs if spec.name in names)),
-        custom_executors=tuple(row for row in snapshot.custom_executors if row[0] in inventory))
+        custom_executors=tuple(row for row in snapshot.custom_executors if row[0] in inventory)))
 
 
 @contextmanager

@@ -22,7 +22,8 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.automation.browser_contracts import RouteDecision as Route
 from codey.env_names import NATIVE_TOOLS_ENV
 from codey.operations import turn_snapshot
-from codey.operations.kernel.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
+from codey.operations.kernel.turn_contract import TurnSnapshot
+from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.turn_snapshot import KernelSessionView
 from codey.policies.tool_requirement import decode_answer

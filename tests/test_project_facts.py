@@ -4,6 +4,7 @@ import shutil
 import tempfile
 import unittest
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest import mock
 
@@ -81,6 +82,31 @@ class ProjectFactsTests(unittest.TestCase):
 
         self.assertEqual(len(facts.commands), MAX_VERIFIED_COMMANDS)
         self.assertEqual(facts.commands[-1].cwd, f"pkg{MAX_VERIFIED_COMMANDS + 1}")
+
+    def test_concurrent_success_receipts_keep_each_project_fact(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = ProjectFactsStore(root / "state")
+            project = root / "project"
+
+            def record_command() -> bool:
+                return store.record_success(project, ".", "python -m unittest")
+
+            def record_change() -> bool:
+                return store.record_successful_change(
+                    project, task="Verify the change", files=["tests/test_sample.py"],
+                    checks=[CheckEvidence("python -m unittest", ".")], receipt="completed",
+                )
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                command = pool.submit(record_command)
+                change = pool.submit(record_change)
+                self.assertTrue(command.result())
+                self.assertTrue(change.result())
+
+            facts = store.load(project)
+            self.assertEqual([item.command for item in facts.commands], ["python -m unittest"])
+            self.assertEqual([item.receipt for item in facts.successful_changes], ["completed"])
 
     def test_missing_successful_changes_field_keeps_existing_commands(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:

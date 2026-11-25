@@ -21,7 +21,7 @@ export default defineConfig({
         configFile: false, publicDir: false,
         build: {
           write: false, target: 'es2022', minify: true,
-          lib: { entry: 'src/desktop_splash.ts', name: 'CodeyStartup', formats: ['iife'] },
+          lib: { entry: 'src/app/desktop_splash.ts', name: 'CodeyStartup', formats: ['iife'] },
         },
       });
       for (const bundle of Array.isArray(result) ? result : [result]) {

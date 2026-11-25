@@ -13,7 +13,7 @@ from codey.types.json_value import JsonObject, JsonValue, decode_json_object, re
 if TYPE_CHECKING:
     import ast
 
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.operations.task_session import TaskSession
     from codey.providers.base import AssistantTurn
     from codey.runtime.core.models import ToolResult
@@ -216,7 +216,7 @@ def _compact_definition_spec(snapshot: TurnSnapshot, spec: ToolSpec, paths: list
                              symbols: tuple[str, ...]) -> TurnSnapshot:
     from dataclasses import replace
 
-    from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
+    from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
     from codey.toolchain.tool_spec import freeze_spec_parameters
 
     domains: dict[str, object] = {"path": {"type": "string", "enum": paths}}

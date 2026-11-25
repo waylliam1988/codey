@@ -26,11 +26,12 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from codey.research.citations import parse_citation_rows
 from codey.research.identity import sanitize_research_url_ref
 from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.proof_quality import ResearchProofReview, review_research_proof
-from codey.research.report_quality import parse_citation_rows, review_report_quality
+from codey.research.report_quality import review_report_quality
 from codey.research.source_document import SourceDocument
 from codey.utils.report_sections import parse_sections
 from tests.manual import source_connector_ab as connector

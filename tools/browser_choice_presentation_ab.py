@@ -25,7 +25,7 @@ from unittest.mock import patch
 from codey.operations.browser.browser_task_handoff import handoff_call
 from codey.operations.chat_citations import render_source_citations
 from codey.operations.kernel.kernel_context import KernelContext
-from codey.operations.kernel.kernel_protocol import TurnSnapshot
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.task_session import TaskSession
 from codey.policies.tool_requirement import decode_answer
 from codey.providers.base import ProviderToolDefinition

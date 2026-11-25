@@ -8,7 +8,7 @@ from codey.types.json_value import decode_json_object
 
 if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.operations.task_session import TaskSession
     from codey.research.ledger import ResearchLedger
     from codey.research.tools import ResearchTools

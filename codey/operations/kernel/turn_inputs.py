@@ -19,7 +19,7 @@ from codey.toolchain.tool_spec import validate_args_with_spec
 from codey.types.json_value import ToolArgs, canonical_json_object
 
 if TYPE_CHECKING:
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
 
 
 def lower_bound_inputs(

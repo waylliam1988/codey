@@ -17,8 +17,8 @@ from codey.operations.project_completion_context import (
     COMPLETION_REPAIR_FOLLOWUP,
     blocked_result,
 )
-from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
+from codey.operations.task_submission import run_task_submission
 from codey.reviews.core import ReviewResult
 from codey.reviews.identity import ReviewIdentity, capture_snapshot
 from codey.runtime.core.models import ToolCall

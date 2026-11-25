@@ -19,6 +19,7 @@ from codey.runtime.effects.effect_records import (
     compute_args_digest,
 )
 from codey.storage.managed_outputs import ManagedOutputStore
+from codey.toolchain.tool_names import runtime_tool_name
 from codey.types.json_value import (
     JsonObject,
     decode_json_object,
@@ -195,8 +196,7 @@ def restore_result_receipt(projection: RuntimeEffectProjection, *, store: Manage
 
 
 def _validate_call_name(data: JsonObject, tool_name: str) -> None:
-    from codey.operations.task_effects import _runtime_name
     if (type(data["schema_version"]) is not int or data["schema_version"] != 3
             or not isinstance(data["call_name"], str) or not data["call_name"]
-            or _runtime_name(data["call_name"]) != tool_name):
+            or runtime_tool_name(data["call_name"]) != tool_name):
         raise ValueError("tool result original call name differs from intent")

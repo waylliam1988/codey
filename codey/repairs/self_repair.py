@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 from codey.providers.diagnostics import (
     FAILURE_CONTROL_MISSING,
@@ -20,6 +20,9 @@ from codey.providers.supervisor import STATE_OPEN, ProviderHealth
 from codey.repairs.adapter_repair import AdapterRepairResult
 from codey.repairs.journal import RepairJournal
 from codey.repairs.self_repair_job import SelfRepairJob
+
+if TYPE_CHECKING:
+    from codey.app.provider_registry import ProviderRegistry
 
 STRUCTURAL_FAILURES = {
     FAILURE_CONTROL_MISSING,
@@ -155,7 +158,7 @@ class SelfRepairSupervisor:
 def run_self_repair_job(
     *,
     state_home: str | Path | None,
-    providers: Any,
+    providers: ProviderRegistry,
     job: SelfRepairJob,
 ) -> AdapterRepairResult:
     """Run one repair job with sibling helpers from the provider registry."""
@@ -164,6 +167,8 @@ def run_self_repair_job(
 
     if state_home is None:
         return AdapterRepairResult(False, job.provider_id, error="self-repair state is unavailable")
+    from codey.repairs.sandbox import repair_source_root
+
     return run_self_repair_worker(
         job,
         helper_ids=providers.self_repair_candidates(
@@ -171,7 +176,7 @@ def run_self_repair_job(
             ordered=provider_services.provider_failover_order(providers),
         ),
         state_home=state_home,
-        source_root=Path(__file__).resolve().parents[1],
+        source_root=repair_source_root(),
     )
 
 

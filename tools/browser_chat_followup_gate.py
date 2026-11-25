@@ -20,7 +20,6 @@ from contextvars import ContextVar
 from dataclasses import asdict, dataclass, replace
 from itertools import pairwise
 from pathlib import Path
-from typing import Protocol, runtime_checkable
 from unittest.mock import patch
 
 from codey.automation.browser_query import QueryObservationError
@@ -32,9 +31,10 @@ from codey.operations.browser.browser_copy import committed_children
 from codey.operations.browser.browser_text_report import BrowserMetadata, MetadataPending
 from codey.operations.browser.browser_waits import wait_plan as upload_wait_plan
 from codey.operations.browser.execution import BrowserExecutor
-from codey.operations.kernel import kernel_context, kernel_protocol
+from codey.operations.kernel import kernel_context, kernel_protocol, turn_presentation
 from codey.operations.kernel.kernel_context import KernelContext
-from codey.operations.kernel.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
+from codey.operations.kernel.turn_contract import TurnSnapshot
+from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.kernel_tool_args import _invalid_plan
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_execution import ExecutionDelegate
@@ -358,17 +358,10 @@ def guard_capture(browser: BrowserSession, baseline: JsonObject, *, wait_seconds
         cancellation.wait(0.1)
 
 
-@runtime_checkable
-class SnapshotSpecsDescriptor(Protocol):
-    def __get__(self, snapshot: TurnSnapshot, owner: type[TurnSnapshot] | None = None) -> tuple[ToolSpec, ...]: ...
-
-
 @contextmanager
 def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
     original_snapshot = KernelContext.request_snapshot
-    model_specs_property: object = TurnSnapshot.model_specs
-    assert isinstance(model_specs_property, SnapshotSpecsDescriptor)
-    original_specs: Callable[[TurnSnapshot], tuple[ToolSpec, ...]] = model_specs_property.__get__
+    original_specs = turn_presentation.model_tool_specs
     original_freeze = KernelContext.freeze
     original_execute = BrowserExecutor.execute_operation
     original_query_capture = BrowserSession.capture_query_result
@@ -567,7 +560,7 @@ def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
     # already enabled on ordinary Chat, so it must stay out of this experiment.
     with (patch.object(turn_surface, "offer_browser_tools", ab.retain_browser_surface),
           patch.object(turn_surface, "offer_browser_call", ab.retain_browser_surface),
-          patch.object(TurnSnapshot, "model_specs", property(model_specs)),
+          patch.object(turn_presentation, "model_tool_specs", model_specs),
           patch.object(provider_receipts, "snapshot_description", describe),
           patch.object(provider_receipts, "restore_snapshot", restore),
           patch.object(KernelContext, "request_snapshot", request_snapshot),

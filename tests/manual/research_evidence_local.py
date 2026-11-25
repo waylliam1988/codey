@@ -115,7 +115,7 @@ def main():
     from urllib.request import urlopen
 
     from codey.operations.kernel_facts import bind_source_identity, project_result_observation
-    from codey.operations.research_continuation import ResearchContinuation
+    from codey.operations.research.research_continuation import ResearchContinuation
     from codey.operations.task_execution import ExecutionDelegate
     from codey.research.task_requirements import coverage_requirements
     from codey.runtime.core.models import ToolCall

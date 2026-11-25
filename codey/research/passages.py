@@ -164,8 +164,7 @@ def describe_document_window(document: SourceDocument, text_hash: str, offset: i
 def describe_captured_window(observation: JsonObject, offset: int, limit: int, *,
                              coherent: bool = False) -> list[PassageDescriptor]:
     """Generate web, restored and stored-source windows from the same receipt."""
-    from codey.research.source_observation import source_observation
-    from codey.research.source_snapshots import snapshot_document
+    from codey.research.source_observation import snapshot_document, source_observation
 
     source, _text, _pages = source_observation(observation)
     return describe_document_window(snapshot_document(observation), source.text_hash, offset, limit, coherent=coherent)

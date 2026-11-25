@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -16,7 +16,7 @@ from codey.automation.browser_receipts import committed_results
 from codey.operations.browser.browser_upload import browser_opened
 from codey.operations.kernel import kernel_protocol
 from codey.operations.kernel.kernel_context import KernelContext
-from codey.operations.kernel.kernel_protocol import TurnSnapshot
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.research.execution import ResearchExecutor
 from codey.operations.task_execution import ExecutionDelegate
 from codey.policies.browser_requirement import PAGE_TRANSITIONS
@@ -134,7 +134,7 @@ def assessment_snapshot(snapshot: TurnSnapshot, evidence: Evidence) -> TurnSnaps
     return replace(snapshot, tool_names=("codemode",), nested_tool_names=(), frozen_specs=(spec,),
         browser_references=None, browser_fill_text=None, browser_followups=False,
         custom_executors=tuple(row for row in snapshot.custom_executors if row[0] == "codemode"),
-        contract_text=json_contract_text((assessment_spec(spec),)))
+        model_specs=(assessment_spec(spec),), contract_text=json_contract_text((assessment_spec(spec),)))
 
 
 def acquisition_snapshot(snapshot: TurnSnapshot) -> TurnSnapshot:
@@ -142,27 +142,14 @@ def acquisition_snapshot(snapshot: TurnSnapshot) -> TurnSnapshot:
     return replace(snapshot, tool_names=tuple(name for name in snapshot.tool_names if name != removed),
         frozen_specs=tuple(spec for spec in snapshot.frozen_specs if spec.name != removed),
         custom_executors=tuple(row for row in snapshot.custom_executors if row[0] != removed),
+        model_specs=tuple(spec for spec in snapshot.model_specs if spec.name != removed),
         contract_text=json_contract_text(tuple(spec for spec in snapshot.model_specs if spec.name != removed)))
 
 
 @contextmanager
 def experiment(directory: Path, arm: Arm) -> Generator[None, None, None]:
     original_freeze, normalize = KernelContext.freeze, kernel_protocol.normalize_turn
-    descriptor: object = vars(TurnSnapshot)["model_specs"]
-    assert isinstance(descriptor, property) and descriptor.fget is not None
-    original_specs: Callable[[TurnSnapshot], object] = descriptor.fget
     execute_browser, open_source = ExecutionDelegate._execute_browser, ResearchExecutor._execute_source_open
-
-    def specs(snapshot: TurnSnapshot) -> tuple[ToolSpec, ...]:
-        values = original_specs(snapshot)
-        if not isinstance(values, tuple):
-            raise TypeError("model specs must be a tuple")
-        result: list[ToolSpec] = []
-        for value in values:
-            if not isinstance(value, ToolSpec):
-                raise TypeError("invalid model tool spec")
-            result.append(assessment_spec(value) if value.description == ASSESS else value)
-        return tuple(result)
 
     def lower(reply: DecodedTextTurn | AssistantTurn, *, snapshot: TurnSnapshot) -> ToolPlan:
         if isinstance(reply, TextRequests) and len(reply.items) == 1:
@@ -249,7 +236,7 @@ def experiment(directory: Path, arm: Arm) -> Generator[None, None, None]:
             initial_source_batch=initial_source_batch, handoff=handoff)
 
     with (patch.object(ExecutionDelegate, "_execute_browser", read), patch.object(ResearchExecutor, "_execute_source_open", opened),
-          patch.object(TurnSnapshot, "model_specs", property(specs)), patch.object(kernel_protocol, "normalize_turn", lower),
+          patch.object(kernel_protocol, "normalize_turn", lower),
           patch.object(KernelContext, "freeze", freeze)):
         yield
 

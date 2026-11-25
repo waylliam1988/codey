@@ -12,6 +12,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from codey.research.citations import parse_citation_rows
 from codey.research.guards import status_token as _status_token
 from codey.research.identity import (
     path_ref,
@@ -19,13 +20,10 @@ from codey.research.identity import (
     sanitize_research_url_ref,
 )
 from codey.research.ledger import EvidenceItem, ResearchLedger, normalize_evidence_stance
-from codey.research.report_quality import (
-    ReportQualityReview,
-    citation_ref_items,
-    parse_citation_rows,
-)
+from codey.research.report_quality import ReportQualityReview
 from codey.research.source_document import OpenedSource
 from codey.research.urls import opened_url
+from codey.utils.citation_scanner import citation_ref_items
 from codey.utils.refs import (
     bounded_refs as _bounded_refs,
 )

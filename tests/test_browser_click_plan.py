@@ -7,11 +7,12 @@ from dataclasses import replace
 
 import pytest
 
-from codey.codemode.catalog import build_codemode_catalog, render_declarations, snapshot_catalog
+from codey.codemode.catalog import build_codemode_catalog, render_declarations
 from codey.codemode.host import CodeModeHost
 from codey.codemode.runtime import NodeWorkerRuntime
 from codey.codemode.types import ToolCatalogEntry
 from codey.operations.browser.browser_waits import observed_link_outcome, pending_link_click
+from codey.operations.browser.catalog import browser_catalog_specs, snapshot_catalog
 from codey.operations.browser.turn_surface import offer_browser_tools
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.kernel_prompt import _browser_followup_context, _browser_read_context
@@ -95,7 +96,8 @@ def test_unavailable_plan_rejects_before_click(failure: str) -> None:
     checks = (require_tool_success("browser_wait"),) if failure == "unknown_wait" else ()
     if failure == "read_denied":
         specs = [spec for spec in specs if spec.name != "browser_read"]
-    catalog = build_codemode_catalog(specs, browser_followup_checks=checks)
+    browser_specs, plans = browser_catalog_specs(tuple(specs), checks, observe_links=False)
+    catalog = build_codemode_catalog(browser_specs, click_followups=plans)
     args: JsonObject = {"ref": "observed", "purpose": "wrong" if failure == "purpose" else "result"}
     if failure == "extra":
         args["unexpected"] = True

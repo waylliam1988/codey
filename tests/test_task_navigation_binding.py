@@ -10,12 +10,14 @@ from pathlib import Path
 import pytest
 
 from codey.codemode import kernel as kernel_module
-from codey.codemode.catalog import render_declarations, snapshot_catalog
+from codey.codemode.catalog import render_declarations
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.replay import digest
+from codey.operations.browser.catalog import snapshot_catalog
 from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel.kernel_execution import execute_turn
-from codey.operations.kernel.kernel_protocol import TurnSnapshot, normalize_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.project.project_delivery import ProjectDeliveryLinks
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_handoff import task_handoff

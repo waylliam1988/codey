@@ -11,7 +11,7 @@ import pytest
 from codey.app.api import shell_approval_response
 from codey.app.context import AppContext
 from codey.app.task_services import build_task_deps
-from codey.operations.task_entry import run_task_submission
+from codey.operations.task_submission import run_task_submission
 from codey.providers import api_generation
 from codey.providers.token_accounting import ContextBudget
 from codey.storage.local_store import session_key

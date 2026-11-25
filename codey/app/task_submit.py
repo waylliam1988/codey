@@ -145,7 +145,7 @@ def run_task(
                 return
         try:
             from codey.app.task_services import build_task_deps
-            from codey.operations.task_entry import run_task_submission
+            from codey.operations.task_submission import run_task_submission
             from codey.workspace.changes import collect_changes as collect_review_changes
 
             def typed_review_changes(project: str | Path, tracker: ChangeTracker | None) -> dict[str, object]:

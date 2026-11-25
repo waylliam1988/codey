@@ -13,7 +13,6 @@ from codey.automation.browser_receipts import (
     committed_results,
     delivery,
 )
-from codey.codemode.catalog import snapshot_catalog
 from codey.codemode.json_edit import edit_guidance
 from codey.completion.contract import CHECK_NOT_APPLICABLE, CHECK_PASS
 from codey.operations.browser.browser_followups import (
@@ -29,10 +28,12 @@ from codey.operations.browser.browser_followups import (
 from codey.operations.browser.browser_next_step import BrowserNextStep, next_browser_step
 from codey.operations.browser.browser_references import BrowserReferences
 from codey.operations.browser.browser_text_report import MetadataPending, observe_metadata, report_scope
+from codey.operations.browser.catalog import snapshot_catalog
 from codey.operations.browser.turn_surface import offer_browser_call
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import tool_facts
-from codey.operations.kernel.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
+from codey.operations.kernel.turn_contract import TurnSnapshot
+from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import _task_navigation_url
 from codey.operations.work_status import WorkStatus, work_status
@@ -48,7 +49,8 @@ from codey.research.browser_result_evidence import complete_page_passages
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.web_intent import explicit_web_intent
-from codey.toolchain.tool_spec import _check_spec_value_against_schema, validate_args_with_spec
+from codey.toolchain.schema_validation import check_schema_value
+from codey.toolchain.tool_spec import validate_args_with_spec
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 
 
@@ -129,7 +131,7 @@ def handoff_call(session: TaskSession, snapshot: TurnSnapshot,
         entry = next(entry for entry in snapshot_catalog(snapshot).entries if entry.name == call.name)
         required = entry.parameters.get("required", ())
         missing = [name for name in required if isinstance(name, str) and name not in call.args] if isinstance(required, (list, tuple)) else []
-        error = _check_spec_value_against_schema(call.name, "args", entry.parameters, call.args, strict=True)
+        error = check_schema_value(call.name, "args", entry.parameters, call.args, strict=True)
         action = {"tool": "codemode", "args": args}
     if missing:
         return snapshot, None, (f"Use {call.name}; supply {', '.join(missing)} from the task or current page. "

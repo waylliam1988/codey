@@ -804,7 +804,7 @@ def test_file_handoff_delivers_read_before_edit(
 def test_project_done_refs_keeps_knowledge_versions_and_unknown_receipts(tmp_path: Path, edit_ok: bool) -> None:
     from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
     from codey.knowledge.store import KnowledgeStore
-    from codey.operations.research_completion_checks import knowledge_reference_checks
+    from codey.operations.research.research_completion_checks import knowledge_reference_checks
 
     store = KnowledgeStore(tmp_path / "knowledge")
     try:

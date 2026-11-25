@@ -55,6 +55,7 @@ from codey.app.conversation_routes import (
     retry_fork_response,
 )
 from codey.app.documents import document_response
+from codey.app.folder_picker import FolderPickerBusy, pick_folder
 from codey.app.history_routes import validate_runs_response
 from codey.app.http_plumbing import (
     WEB_DIR,
@@ -79,10 +80,12 @@ if TYPE_CHECKING:
     from codey.app.control_service import ControlService
     from codey.app.public_event_feed import PublicEventFeed
 
-FOLDER_DIALOG_LOCK = threading.Lock()
 SHELL_CONTINUATION_IDLE_TIMEOUT = task_submit.SHELL_CONTINUATION_IDLE_TIMEOUT
 MAX_POST_BODY_BYTES = 16 * 1024 * 1024
 POST_BODY_READ_TIMEOUT = 10.0
+HTTP_SOCKET_TIMEOUT = 15.0
+HTTP_CONNECTIONS = 32
+SSE_CONNECTIONS = 8
 
 
 def _event_commit_seq(event: object) -> int:
@@ -118,6 +121,8 @@ class CodeyHTTPServer(ThreadingHTTPServer):
     app_context: AppContext | None = None
 
     def __init__(self, server_address: tuple[str, int], request_handler_class: type[BaseHTTPRequestHandler]) -> None:
+        self._request_slots = threading.BoundedSemaphore(HTTP_CONNECTIONS)
+        self.event_slots = threading.BoundedSemaphore(SSE_CONNECTIONS)
         super().__init__(server_address, request_handler_class)
         try:
             validate_web_root()
@@ -130,6 +135,30 @@ class CodeyHTTPServer(ThreadingHTTPServer):
         self.lifecycle: Callable[[Actor, str, object], dict[str, object]] | None = None
         self.public_feed: PublicEventFeed | None = None
 
+    def process_request(self, request: socket | tuple[bytes, socket], client_address: object) -> None:
+        if not isinstance(request, socket):
+            raise TypeError("HTTP requires a stream socket")
+        if not self._request_slots.acquire(blocking=False):
+            try:
+                request.settimeout(0.1)
+                with contextlib.suppress(OSError):
+                    request.sendall(b"HTTP/1.0 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            finally:
+                self.shutdown_request(request)
+            return
+        try:
+            request.settimeout(HTTP_SOCKET_TIMEOUT)
+            super().process_request(request, client_address)
+        except BaseException:
+            self._request_slots.release()
+            raise
+
+    def process_request_thread(self, request: socket | tuple[bytes, socket], client_address: object) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._request_slots.release()
+
     def launch_url(self, base_url: str) -> str:
         return f"{base_url}#codey_bootstrap={self.operator_auth.issue_bootstrap()}"
 
@@ -140,48 +169,6 @@ class CodeyHTTPServer(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
-def pick_folder(mode: str = "open", initial: str | None = None) -> str | None:
-    """Open a native folder picker and return the selected absolute path.
-
-    Browsers cannot expose an arbitrary local folder path to JavaScript, so the
-    local server owns this action.  Tkinter ships with Python and gives us the
-    standard Windows folder dialog without adding dependencies.
-    """
-    import tkinter as tk
-    from tkinter import filedialog
-
-    title = "Select Existing Project Folder"
-    mustexist = True
-    if mode == "new":
-        title = "Create or Select Project Folder"
-        mustexist = False
-
-    initial_path = Path(initial).expanduser() if initial else Path.home()
-    if not initial_path.exists():
-        initial_path = Path.home()
-    initialdir = str(initial_path)
-    with FOLDER_DIALOG_LOCK:
-        root = tk.Tk()
-        root.withdraw()
-        try:
-            root.attributes("-topmost", True)
-            selected = filedialog.askdirectory(
-                parent=root,
-                title=title,
-                initialdir=initialdir,
-                mustexist=mustexist,
-            )
-        finally:
-            root.destroy()
-
-    if not selected:
-        return None
-    path = Path(selected).resolve()
-    if mode == "new":
-        path.mkdir(parents=True, exist_ok=True)
-    return str(path)
-
-
 def _pick_folder_response(_ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
     mode = str(body.get("mode") or "open").strip().lower()
     if mode not in {"open", "new"}:
@@ -189,6 +176,8 @@ def _pick_folder_response(_ctx: AppContext, body: dict[str, object]) -> tuple[in
     initial = str(body.get("initial") or "").strip() or None
     try:
         path = pick_folder(mode=mode, initial=initial)
+    except FolderPickerBusy:
+        return 409, {"error": "folder picker is busy"}
     except Exception as exc:
         return 500, {"error": str(exc)}
     if not path:
@@ -704,7 +693,14 @@ class Handler(BaseHTTPRequestHandler):
         feed: object = getattr(self.server, "public_feed", None)
         if not isinstance(feed, PublicEventFeed):
             raise RuntimeError("Public event feed is not attached")
-        stream(self, self._get_state(), feed)
+        slots = self._bound_server().event_slots
+        if not slots.acquire(blocking=False):
+            self._send_json(503, {"error": "event stream capacity reached"})
+            return
+        try:
+            stream(self, self._get_state(), feed)
+        finally:
+            slots.release()
 
     def _write_sse_event(self, event: dict[str, object], *, event_id: int | str = 0) -> bool:
         written: bool = write_sse_event(self, event, event_id=event_id)

@@ -12,7 +12,7 @@ import pytest
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.operations import turn_snapshot
 from codey.operations.generation_boundary import durable_generation_boundary_callback
-from codey.operations.kernel.kernel_protocol import TurnSnapshot
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.kernel_contracts import ToolExecutor
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.provider_session import adapt_provider

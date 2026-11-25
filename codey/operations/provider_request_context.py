@@ -20,7 +20,7 @@ from codey.types.protocol_window import ProtocolWindowRef
 from codey.workspace.context_admission import ContextCandidate
 
 if TYPE_CHECKING:
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
 
 
 @dataclass(frozen=True)

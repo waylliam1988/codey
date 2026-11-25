@@ -27,7 +27,7 @@ from codey.types.json_value import JsonObject, decode_json_object, require_json_
 if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
     from codey.operations.completion_context import CompletionContext
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.operations.research.execution import ResearchExecutor
     from codey.operations.task_session import TaskSession
     from codey.toolchain.tool_spec import ToolSpec
@@ -120,7 +120,7 @@ def _observed_document(session: TaskSession, browser: BrowserSession) -> JsonObj
 
 def offer_page_details(session: TaskSession, snapshot: TurnSnapshot,
                        browser: BrowserSession | None) -> tuple[TurnSnapshot, str]:
-    from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
+    from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 
     if (browser is None or not _can_inspect(session) or snapshot.research_scope is None
             or not {"browser_read", "browser_click"} <= set(snapshot.nested_tool_names)

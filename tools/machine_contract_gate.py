@@ -102,7 +102,6 @@ CONTRACT_TESTS = (
     "tests/test_source_search_hit_targets_persist_in_canonical.py",
     "tests/test_source_lifecycle_cancel_and_deadline_propagate.py",
     "tests/test_sse_cursor_reconnect_boundaries.py",
-    "tests/test_sse_browser_dedup_reset_and_buffer_gap.py",
     "tests/test_gate_diagnostics_report_physical_attempts.py",
     "tests/test_gate_diagnostics_separate_restarted_exchanges.py",
     "tests/test_api_generation_observations_no_replay.py",

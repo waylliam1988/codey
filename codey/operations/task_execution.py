@@ -18,16 +18,17 @@ from codey.operations.browser.browser_detail import read_browser_source
 from codey.operations.browser.execution import BrowserExecutor
 from codey.operations.project.execution import ProjectExecutor
 from codey.operations.research.execution import ResearchExecutor
-from codey.operations.research_resources import (
+from codey.operations.research.research_resources import (
     bind_browser_session as bind_browser_session,
 )
-from codey.operations.research_resources import (
+from codey.operations.research.research_resources import (
     build_research_tools as build_research_tools,
 )
-from codey.operations.research_resources import (
+from codey.operations.research.research_resources import (
     close_research_tools as close_research_tools,
 )
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.toolchain.tool_names import runtime_tool_name
 from codey.types.json_value import (
     JsonObject,
 )
@@ -253,9 +254,8 @@ class ExecutionDelegate:
         except Exception as exc:
             return ProjectPolicyCheck(True, f"policy unavailable: {exc}", False)
         try:
-            runtime_name = {"list_dir": "ls", "read_file": "read", "grep": "search",
-                            "find_references": "references", "semantic_definition": "read",
-                            "workspace_diff": "ls", "syntax_query": "read"}.get(call.name, call.name)
+            runtime_name = {"semantic_definition": "read", "workspace_diff": "ls", "syntax_query": "read"}.get(
+                call.name, runtime_tool_name(call.name))
             evaluated: tuple[ActionPolicyDecision | None, object] = evaluate_tool_call_policy_for(
                 ToolCall(runtime_name, dict(call.args or {}), call_id=call.call_id),
                 project=self.project_path,

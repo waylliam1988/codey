@@ -7,10 +7,9 @@
   "providers/controls.py": 1384,
   "providers/worker.py": 1031,
   "research/browser_search.py": 1039,
-  "research/object_model.py": 1014,
+  "research/object_model.py": 1012,
   "research/source_connectors.py": 1173,
   "runs/trace.py": 1524,
   "toolchain/runtime.py": 1479,
-  "toolchain/tool_spec.py": 1108,
   "workspace/changes.py": 1499
 }

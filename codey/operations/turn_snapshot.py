@@ -14,7 +14,8 @@ from codey.operations.browser.browser_upload import (
     upload_model_spec,
     upload_phase,
 )
-from codey.operations.kernel.kernel_protocol import ModelInputBinding, TurnSnapshot, refresh_snapshot_contract
+from codey.operations.kernel.turn_contract import ModelInputBinding, TurnSnapshot
+from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.project.edit_base import symbol_read_refs
 from codey.toolchain.tool_spec import freeze_spec_parameters, is_text_batch_tool
 
@@ -96,8 +97,8 @@ class KernelSessionView(Protocol):
 def controller_allowed_for_session(session: KernelSessionView) -> tuple[str, ...] | None:
     if session.task_kind == "research_review":
         raise ValueError("same-model research assessment execution has been retired")
-    from codey.research.answer_contract import whole_research
     from codey.research.questions import requires_question_ref
+    from codey.research.task_mode import whole_research
     from codey.research.tool_names import QUESTION_BOUND_TOOLS
     from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
 
@@ -255,7 +256,8 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     # (unlimited). Callers must treat the exception as a per-turn config
     # error and stop.
     from codey.policies.output_requirement import has_explanation
-    from codey.research.answer_contract import answer_scope, whole_research
+    from codey.research.answer_contract import answer_scope
+    from codey.research.task_mode import whole_research
 
     whole = whole_research(session)
     allowed = controller_allowed_for_session(session)
@@ -362,7 +364,7 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         }))
     return refresh_snapshot_contract(TurnSnapshot(
         allowed=allowed,
-        contract_text="",
+        model_specs=(), contract_text="",
         tool_names=names,
         policy=session.policy,
         frozen_specs=frozen,

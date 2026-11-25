@@ -78,9 +78,8 @@ def fitting_full_read(session: _PreviewSession, ledger: ResearchLedger, call: To
         render_passage_window,
         restore_passages,
     )
-    from codey.research.source_observation import source_observation
+    from codey.research.source_observation import snapshot_document, source_observation
     from codey.research.source_rendering import render_opened_source
-    from codey.research.source_snapshots import snapshot_document
 
     if not opened.ok or "limit" in call.args or call.args.get("pages") or not opened.read_passages:
         return opened

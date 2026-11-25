@@ -6,7 +6,14 @@ import re
 from dataclasses import Field, fields, is_dataclass
 from datetime import datetime
 
-from codey.research.source_document import OpenedSource, PublicationMetadata, SourceQuality, SourceReadScope
+from codey.research.source_document import (
+    OpenedSource,
+    PublicationMetadata,
+    SourceDocument,
+    SourcePage,
+    SourceQuality,
+    SourceReadScope,
+)
 from codey.research.urls import parsed_url
 from codey.types.json_value import (
     JsonObject,
@@ -142,3 +149,24 @@ def source_snapshot(source: OpenedSource, text: str, pages: dict[int, str]) -> J
     observation = canonical_json_object(payload)
     source_observation(observation)
     return observation
+
+
+class SourceSnapshotUnavailable(ValueError):
+    """The requested captured version or PDF page is absent; reacquisition is explicit."""
+
+
+def snapshot_document(observation: JsonObject, *, pages: str = "") -> SourceDocument:
+    source, text, page_map = source_observation(observation)
+    from codey.research.pdf_extract import parse_pages
+
+    selected = parse_pages(pages) if pages else source.pages_read
+    if pages:
+        if source.content_kind != "pdf" or any(number not in page_map for number in selected):
+            raise SourceSnapshotUnavailable("requested pages are not in the captured source; use open_url to acquire them")
+        text = "\n\n".join(f"[page {number}]\n{page_map[number]}" for number in selected)
+        page_map = {number: page_map[number] for number in selected}
+    return SourceDocument(requested_url=source.requested_url, final_url=source.final_url,
+        title=source.title, text=text, content_kind=source.content_kind, mime_type=source.mime_type,
+        truncated=source.truncated, page_count=source.page_count, pages_read=selected,
+        read_scope=source.read_scope, publication=source.publication, pdf_sha256=source.pdf_sha256,
+        page_texts=tuple(SourcePage(number=number, text=body) for number, body in page_map.items()))

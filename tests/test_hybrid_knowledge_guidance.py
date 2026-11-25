@@ -17,7 +17,10 @@ from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
-from codey.operations.research_completion_checks import knowledge_reference_checks, research_completion_feedback
+from codey.operations.research.research_completion_checks import (
+    knowledge_reference_checks,
+    research_completion_feedback,
+)
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot

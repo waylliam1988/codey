@@ -11,7 +11,7 @@ from codey.types.json_value import decode_json_object
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession
     from codey.operations.completion_context import CompletionContext
-    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.operations.kernel_contracts import KernelExecutionDeps
     from codey.operations.task_session import TaskSession
     from codey.runtime.core.models import ToolResult
@@ -30,9 +30,9 @@ def prepare_request_snapshot(
         snapshot = offer_memory_candidates(snapshot)
     browser = execution.browser_session
     from codey.operations.browser.browser_resources import resume_assistance_observation
+    from codey.operations.project.verification_workflow import verification_workflow
     from codey.operations.task_handoff import task_handoff
     from codey.operations.tool_task_delivery import active_tool_task_controls
-    from codey.operations.verification_workflow import verification_workflow
 
     question = decode_json_object(thaw_json(durable.task(run_id).state.get("question", {})))
     assistance = (resume_assistance_observation(browser, question.get("continuation", {}), session._memory_results)

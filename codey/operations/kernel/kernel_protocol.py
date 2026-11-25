@@ -10,10 +10,9 @@ from __future__ import annotations
 import json
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
-from codey.operations.browser.browser_copy import CopyTurn
-from codey.operations.browser.browser_references import BrowserReferences
+from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.kernel_contracts import ToolExecutor
 from codey.operations.kernel_tool_args import (
     _canonical_name,
@@ -32,7 +31,6 @@ from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.runtime.core.models import Control, ToolCall, ToolPlan
 from codey.toolchain.tool_spec import (
     ToolSpec,
-    freeze_spec_parameters,
     is_text_batch_tool,
 )
 from codey.types.json_value import JsonValue, ToolArgs, decode_json_object
@@ -41,122 +39,9 @@ from codey.types.protocol_window import ProtocolWindowRef
 MAX_NATIVE_CALLS_PER_TURN = 8
 
 if TYPE_CHECKING:
-    from codey.operations.project.project_instructions import ProjectInstructionBinding
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.protocols.json_repair import JsonTailClosure
-    from codey.research.answer_contract import AnswerScope
-
-
-@dataclass(frozen=True)
-class ModelInputBinding:
-    """The captured model input; conversion still targets the original executor."""
-
-    kind: Literal["upload", "browser_copy", "declared_fields"]
-    model_spec: ToolSpec
-    source_refs: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "model_spec", freeze_spec_parameters(self.model_spec))
-
-
-@dataclass(frozen=True)
-class TurnSnapshot:
-    """One authoritative per-round observation: policy ∩ current facts.
-
-    Built once at round start; any build failure raises and the kernel
-    terminates the turn as controller_failure (fail-closed), never a stale
-    fallback list. Carries the allowed tools, frozen tool definitions plus
-    both protocols' contracts for the round. The snapshot object贯穿发送、
-    解析与执行：注册表变化下一轮生效，本轮解析与执行共用同一冻结定义。
-    ``frozen_specs`` are nested-immutable (mapping proxies inside); the
-    ``custom_executors`` table freezes third-task bindings so a mid-turn
-    registry swap cannot reroute this turn's execution.
-    """
-
-    allowed: tuple[str, ...] | None
-    contract_text: str
-    tool_names: tuple[str, ...] = ()
-    policy: TaskPolicy | None = None
-    frozen_specs: tuple[ToolSpec, ...] = ()
-    custom_executors: tuple[tuple[str, ToolExecutor | None], ...] = ()
-    implementation_compatible: bool = True
-    nested_tool_names: tuple[str, ...] = ()
-    research_scope: AnswerScope | None = None
-    ignore_runtime_claims: bool = False
-    browser_copy: CopyTurn | None = None
-    input_binding: ModelInputBinding | None = None
-    task_navigation_url: str | None = None
-    task_source_url: str | None = None
-    browser_followups: bool = False
-    browser_fill_text: str | None = None
-    browser_references: BrowserReferences | None = None
-    project_instructions: tuple[ProjectInstructionBinding, ...] = ()
-    navigation_verifies: bool = False
-    data_file_reads: tuple[str, ...] | None = None
-    symbol_read_refs: tuple[tuple[str, str], ...] = ()
-    captured_model_specs: tuple[ToolSpec, ...] | None = None
-
-    @property
-    def navigation_observes(self) -> bool:
-        return self.browser_followups and "browser_snapshot" in self.nested_tool_names
-
-    @property
-    def inventory_names(self) -> tuple[str, ...]:
-        names: dict[str, None] = dict.fromkeys((*self.tool_names, *self.nested_tool_names))
-        return tuple(names)
-
-    @property
-    def has_project_tools(self) -> bool:
-        return "codemode" in self.tool_names and bool({"edit", "read_file"}.intersection(self.tool_names))
-
-    @property
-    def model_specs(self) -> tuple[ToolSpec, ...]:
-        if self.captured_model_specs is not None:
-            return self.captured_model_specs
-        from codey.operations.kernel.turn_presentation import model_tool_specs
-
-        return model_tool_specs(self)
-
-
-def render_snapshot_contract(snapshot: TurnSnapshot) -> str:
-    from codey.toolchain.tool_prompt import json_contract_text
-
-    text = json_contract_text(snapshot.model_specs)
-    if snapshot.browser_copy is not None and snapshot.browser_copy.phase == "question":
-        text += "\nAsk which webpage source to use. The observation has no unique supported data format."
-    return text
-
-
-def refresh_snapshot_contract(snapshot: TurnSnapshot, *, compact_catalog: bool = False,
-                              include_json_edit: bool = False) -> TurnSnapshot:
-    snapshot = replace(snapshot, captured_model_specs=None)
-    if snapshot.input_binding is not None and snapshot.input_binding.model_spec.name not in snapshot.tool_names:
-        snapshot = replace(snapshot, input_binding=None)
-    order = {name: index for index, name in enumerate(snapshot.inventory_names)}
-
-    def spec_order(spec: ToolSpec) -> int:
-        return order.get(spec.name, len(order))
-
-    def executor_order(item: tuple[str, ToolExecutor | None]) -> int:
-        return order.get(item[0], len(order))
-
-    snapshot = replace(snapshot,
-        frozen_specs=tuple(sorted(snapshot.frozen_specs, key=spec_order)),
-        custom_executors=tuple(sorted(snapshot.custom_executors, key=executor_order)))
-    if "codemode" in snapshot.tool_names and (
-            snapshot.input_binding is None or snapshot.input_binding.model_spec.name != "codemode"):
-        from codey.codemode.catalog import render_declarations, snapshot_catalog
-
-        specs = snapshot.model_specs
-        declarations = render_declarations(snapshot_catalog(snapshot),
-            outer_descriptions={spec.name: spec.description for spec in specs}, outer_specs=specs,
-            detail_budget_bytes=2_400 if compact_catalog else None, detail_names=("edit",),
-            include_json_edit=include_json_edit)
-        snapshot = replace(snapshot, frozen_specs=tuple(
-            replace(spec, declarations=declarations) if spec.name == "codemode" else spec for spec in snapshot.frozen_specs))
-    snapshot = replace(snapshot, captured_model_specs=snapshot.model_specs)
-    return replace(snapshot, contract_text=render_snapshot_contract(snapshot))
 
 
 @dataclass(frozen=True)
@@ -517,8 +402,8 @@ def normalize_turn(
         ignore_runtime_claims=snapshot.ignore_runtime_claims if snapshot is not None else False,
     )
     if snapshot is not None and any(call.name == "codemode" and not call.args.get("repair_of") for call in plan.calls):
-        from codey.codemode.catalog import snapshot_catalog
         from codey.codemode.shape_repair import preflight_plan
+        from codey.operations.browser.catalog import snapshot_catalog
 
         return preflight_plan(plan, snapshot_catalog(snapshot),
                               file_reads=snapshot.data_file_reads)
@@ -527,7 +412,6 @@ def normalize_turn(
 
 __all__ = [
     "MAX_NATIVE_CALLS_PER_TURN",
-    "TurnSnapshot",
     "frozen_custom_executor_map",
     "frozen_spec_map",
     "normalize_turn",

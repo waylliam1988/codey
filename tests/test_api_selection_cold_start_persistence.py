@@ -92,7 +92,7 @@ def test_shell_approval_keeps_zen_selection_without_local_specific_branch(tmp_pa
 
 def test_production_admission_restores_original_selection_after_settings_and_restart(tmp_path, monkeypatch):
     from codey.app.context import AppContext
-    from codey.operations.task_entry import _admit_api_selection
+    from codey.operations.task_submission import _admit_api_selection
 
     monkeypatch.setattr(local_config, "DEFAULT_STATE_HOME", tmp_path / "settings")
     config = local_config.LocalProviderConfig(base_url="http://localhost:9/v1", model="first", api_protocol="openai-responses", connection_revision="scope")

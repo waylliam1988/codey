@@ -13,7 +13,7 @@ from codey.operations.kernel_facts import project_execution_record
 from codey.operations.kernel_progress import KernelProgress
 from codey.operations.progress_comparison import ProjectCheckComparison
 from codey.operations.project.edit_base import compact_symbol_retry
-from codey.operations.project_check_handoff import project_check_handoff
+from codey.operations.project.project_check_handoff import project_check_handoff
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot
