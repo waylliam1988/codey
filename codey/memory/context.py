@@ -85,7 +85,7 @@ def retrieve_context(service: MemoryService | None, *, task: str, project: str, 
         cost = len(text) + (2 if sources else 0)
         if used + cost > budget:
             traces[item.item_id] = replace(trace, reason="over_budget", chars=len(text))
-            if cost <= budget:
+            if len(text) <= budget:
                 for previous in selected:
                     earlier = traces[previous.item_id]
                     traces[previous.item_id] = replace(earlier, displaced_item_ids=(*earlier.displaced_item_ids, item.item_id))

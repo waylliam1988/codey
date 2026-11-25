@@ -4729,10 +4729,11 @@
         "codey/memory/candidates.py"
       ],
       "id": "Q081",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 1
+      "status": "completed_unchanged",
+      "reviewed_files": ["codey/memory/candidates.py"],
+      "verified_files": ["codey/memory/candidates.py"],
+      "tests": ["tests/test_memory_completion.py", "tests/test_p1_p2_receipts.py", "tests/test_memory_extraction.py", "tests/test_memory_action_input.py", "tests/test_memory_summary_input.py"],
+      "result": "Fully reviewed candidate schema, field bounds and exact quote offsets. All 32 scoped tests and whole-file strict Any and Ruff passed. No source edit was needed."
     },
     {
       "responsibility": "codey/memory: context and checkpoint boundaries",
@@ -4740,10 +4741,12 @@
         "codey/memory/context.py"
       ],
       "id": "Q082",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 3
+      "status": "completed_changed",
+      "reviewed_files": ["codey/memory/context.py"],
+      "verified_files": ["codey/memory/context.py"],
+      "tests": ["tests/test_memory_context_displacement.py", "tests/test_memory_boundary.py", "tests/test_memory_adaptation_flow.py", "tests/test_memory_attempt_gate_lifecycle.py"],
+      "reviewed_support": ["tests/test_memory_context_displacement.py"],
+      "result": "Report displacement when a later candidate fits the full standalone budget. The original regression failed at the exact size boundary. All 44 scoped cases, whole-file strict Any and production gates passed."
     },
     {
       "responsibility": "codey/operations: package entry and composition",

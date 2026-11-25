@@ -2189,3 +2189,15 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 置信度先按原始数值比较范围，追踪分数复用有限浮点转换。收窄语言模式捕获组和槽位排序的类型，清除 6 条严格 Any 诊断。六份源码及回归的整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁均退出 0。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_memory_codec_numbers.py tests/test_memory_boundary.py tests/test_memory_integrity.py tests/test_memory_completion.py tests/test_memory_learning_targets.py tests/test_memory_lifecycle.py tests/test_memory_decision_ownership.py --tb=short`，114 passed、无失败或跳过、退出 0。原五文件基线 102 passed。覆盖已验证来源的槽位优先级、禁用宿主、控制、重放和预测复盘。
 - Q080 完成。累计完成 142/372 批，覆盖 237/1011 个生产文件，另有 15 批部分完成。下一批 Q081 检查候选事实的引用与验证。
+
+### Q081 Memory 候选引文和元数据
+
+- Q080 已提交 `f9fc61f7`。完整检查 `candidates.py` 的声明、字段解码、长度限制、来源区间及调用入口。唯一引文由宿主定位，显式区间按照现行调用合同核对原文。整文件严格 Any 和 Ruff 均退出 0。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_memory_completion.py::test_candidate_rejects_unbound_or_invalid_metadata tests/test_p1_p2_receipts.py::test_host_locates_candidate_quote tests/test_memory_extraction.py tests/test_memory_action_input.py tests/test_memory_summary_input.py --tb=short`，32 passed、无失败或跳过、退出 0。验证歧义、引文边界、无关元数据、文本提取及来源所有权。
+- Q081 完成，无源码变更。累计完成 143/372 批，覆盖 238/1011 个生产文件，另有 15 批部分完成。下一批 Q082 检查 Memory 上下文。
+
+### Q082 Memory 上下文准入与预算
+
+- 完整检查 `context.py`。挤占记录标识本可单独容纳、但因先前条目占用预算而被排除的记忆。用等于后一条内容长度的预算，旧实现把仅在并列时才存在的分隔符算入单独长度，遗漏挤占记录。在 `D:\codey` 执行 `python -m pytest -q tests/test_memory_context_displacement.py --tb=short`，1 failed、退出 1。
+- 挤占判定使用条目本身的长度。回归覆盖恰好可单独容纳和少一字符两种预算。`python -m pytest -q tests/test_memory_context_displacement.py tests/test_memory_boundary.py tests/test_memory_adaptation_flow.py tests/test_memory_attempt_gate_lifecycle.py --tb=short`，44 passed、无失败或跳过、退出 0。去掉新增回归的基线为 43 passed。
+- 源码与回归整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁通过。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。Q082 完成。累计完成 144/372 批，覆盖 239/1011 个生产文件，另有 15 批部分完成。下一批 Q083 核对 Operations 包入口。
