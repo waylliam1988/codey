@@ -4449,10 +4449,11 @@
         "codey/ghost/retrieval.py"
       ],
       "id": "Q067",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_changed",
+      "reviewed_files": ["codey/ghost/retrieval.py"],
+      "verified_files": ["codey/ghost/retrieval.py"],
+      "tests": ["tests/test_memory_integrity.py", "tests/test_memory_adaptation_flow.py", "tests/test_memory_lifecycle.py"],
+      "result": "Iterated typed regular-expression matches. Seven tokenization and 147 score comparisons matched the baseline. Ten scoped cases, strict Any and all production gates passed."
     },
     {
       "responsibility": "codey/ghost: completion review and edit validation",

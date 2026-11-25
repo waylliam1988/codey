@@ -5,10 +5,13 @@ from datetime import datetime
 
 from codey.memory.contracts import MemoryItem
 
+_TOKEN_PATTERN = re.compile(r"[a-z0-9_]+|[\u4e00-\u9fff]+")
+
 
 def tokens(text: str) -> frozenset[str]:
     result: set[str] = set()
-    for word in re.findall(r"[a-z0-9_]+|[\u4e00-\u9fff]+", text.casefold()):
+    for match in _TOKEN_PATTERN.finditer(text.casefold()):
+        word = match[0]
         if "\u4e00" <= word[0] <= "\u9fff":
             result.update(word[index:index + 2] for index in range(max(1, len(word) - 1)))
         else:

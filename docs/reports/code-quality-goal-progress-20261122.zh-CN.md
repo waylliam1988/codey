@@ -2019,3 +2019,9 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 上一轮 136 项同后端基线覆盖了本批所用的五组已有测试。最终执行 `python -m pytest -q tests/test_memory_completion.py tests/test_memory_boundary.py tests/test_memory_adaptation_flow.py tests/test_memory_maintenance_runtime.py tests/test_memory_learning_targets.py --tb=short`，74 passed、无失败或跳过、退出 0。覆盖零重试额度、保留基点事务故障、旧事件兼容、真实调度及适应工作流。
 - `python -m mypy codey/ghost/backend.py tests/test_memory_completion.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 和同两文件 Ruff 均退出 0。全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 `python -m tools.kernel_type_precision_gate` 均退出 0。
 - Q066D 完成。累计完成 118/362 批，完成批覆盖 204/1011 个生产文件，另有 14 批部分完成。下一批 Q067 为 Ghost 相关性排序。
+
+### Q067 Ghost 词法相关性排序
+
+- Q066D 已提交 `59fad266`。完整检查 `retrieval.py` 的单词与汉字二元组、查询覆盖率和时间衰减。正则匹配改用有类型的迭代器，清除 5 条来自 `findall` 返回类型的隐式 Any 诊断。通过 `python -` 从 `59fad266` 加载原实现作对照，7 组分词和 147 个评分结果完全一致，覆盖混合文字、空查询、等效时区、旧经历及未来时间。退出 0。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_memory_integrity.py::test_experience_window_does_not_forget_confirmed_memory tests/test_memory_integrity.py::test_confirmed_window_still_checks_expiry_and_scope tests/test_memory_adaptation_flow.py tests/test_memory_lifecycle.py::test_explain_reports_whole_item_budget_and_source_rejection --tb=short`，10 passed、无失败或跳过、退出 0。`python -m mypy codey/ghost/retrieval.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 和同文件 Ruff 均退出 0。全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 `python -m tools.kernel_type_precision_gate` 均退出 0。
+- Q067 完成。累计完成 119/362 批，完成批覆盖 205/1011 个生产文件，另有 14 批部分完成。下一批 Q068 检查延迟修复归因。
