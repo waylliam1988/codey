@@ -4630,10 +4630,10 @@
         "codey/launcher/__init__.py"
       ],
       "id": "Q075",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_unchanged",
+      "reviewed_files": ["codey/launcher/__init__.py"],
+      "verified_files": ["codey/launcher/__init__.py"],
+      "result": "The regular package has no eager imports. Fresh-process import and discovery of its five submodules passed. Whole-file strict Any and Ruff passed. Launcher behaviors remain in Q076 through Q078."
     },
     {
       "responsibility": "codey/launcher: publication and development gates",
@@ -4641,10 +4641,12 @@
         "codey/launcher/releases.py"
       ],
       "id": "Q076",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 5
+      "status": "completed_changed",
+      "reviewed_files": ["codey/launcher/releases.py"],
+      "verified_files": ["codey/launcher/releases.py"],
+      "tests": ["tests/test_release_activation_launch_failure.py", "tests/test_release_materialization.py", "tests/test_release_validation_cache.py", "tests/test_control_service_contract.py"],
+      "reviewed_support": ["tests/test_release_activation_launch_failure.py"],
+      "result": "Settle a failed coordinator launch as aborted in the existing activation journal and preserve exact-request replay. The launch failure regression failed before the fix. All 21 fixture-scoped cases, whole-file strict Any and production gates passed. No full checkout copy or live cutover was used."
     },
     {
       "responsibility": "codey/launcher: shared contracts and module services",

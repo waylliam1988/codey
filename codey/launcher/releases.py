@@ -404,10 +404,15 @@ def activate(service: _ActivationOwner, args: ActivateArgs) -> Activation:
             "admission_may_have_opened": False, "attempts": 0, "events": [],
         }
         write_json_atomic(path, dict(journal), mode=0o600)
-        with (home / "launcher" / (identity + ".log")).open("ab") as output:
-            subprocess.Popen([sys.executable, str(launcher), str(home), identity], cwd=home,
-                             stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
-                             creationflags=CREATE_NO_WINDOW)
+        try:
+            with (home / "launcher" / (identity + ".log")).open("ab") as output:
+                subprocess.Popen([sys.executable, str(launcher), str(home), identity], cwd=home,
+                                 stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
+                                 creationflags=CREATE_NO_WINDOW)
+        except OSError:
+            record: dict[str, object] = dict(journal)
+            runner.mark(home, record, "aborted", error="Release coordinator could not be started")
+            return {"upgrade_id": identity, "phase": "aborted"}
         return {"upgrade_id": identity, "phase": "accepted"}
 
 

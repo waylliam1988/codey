@@ -2142,3 +2142,16 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在各自的预算前去重，保留首现顺序和 CJK 二元词规则。两项原回归均通过。共享候选排序，收窄亲和提示及分词结果边界，两份源码清除 30 条严格 Any 诊断。整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁均通过。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_search_candidate_limits.py tests/test_knowledge_multilingual_recall.py tests/test_knowledge_recall_budget.py tests/test_research_topic_continuity.py tests/test_research_iteration_topic_continuity.py tests/test_fail_closed_boundary_sweep.py::OverflowSweepTests::test_research_interest_bounded_int_inf tests/test_fail_closed_boundary_sweep.py::OverflowSweepTests::test_research_interest_unit_float_huge tests/test_fail_closed_boundary_sweep.py::OverflowSweepTests::test_research_interest_hint_weight_huge tests/test_fail_closed_runtime_sweep.py::GhostKnowledgeSweepTests::test_research_interest_bool --tb=short`，36 passed、无失败或跳过、退出 0。多语种与主题延续四文件原基线 30 passed。
 - Q074 完成。累计完成 135/371 批，覆盖 224/1011 个生产文件，另有 15 批部分完成。下一批 Q075 核对 launcher 包入口和装配。
+
+### Q075 Launcher 包入口
+
+- Q074 已提交 `a0619880`。完整检查 `codey/launcher/__init__.py` 与 `pyproject.toml` 的包发现规则。入口只有模块文档。启动器子模块均可定位，父包导入时不装配生命周期服务。
+- 在 `D:\codey` 用一次 `python -c` 导入父包，检查 `sys.modules`，并用 `importlib.util.find_spec` 定位 `releases`、`runner`、`runtime`、`startup` 和 `validation_cache`。所有断言通过，退出 0。入口整文件严格 Any、Ruff 退出 0。其余启动与发布测试归属 Q076 至 Q078。
+- Q075 完成，无源码变更。累计完成 136/371 批，覆盖 225/1011 个生产文件，另有 15 批部分完成。下一批 Q076 检查发布准备与激活。
+
+### Q076 Launcher 发布准备与激活
+
+- 完整检查 `releases.py`。`docs/startup.md` 规定相同激活请求读取其原始日志。最小已验证候选的协调进程启动抛出 `FileNotFoundError` 时，旧入口抛错并让日志停在 `accepted`。在 `D:\codey` 执行 `python -m pytest -q tests/test_release_activation_launch_failure.py --tb=short`，1 failed、退出 1。启动失败现在复用日志写入逻辑，以 `aborted` 结束，重试返回同一状态且不重复启动。
+- `python -m pytest -q tests/test_release_activation_launch_failure.py tests/test_release_materialization.py tests/test_release_validation_cache.py tests/test_control_service_contract.py::test_release_dispatch_preserves_persistent_owner_fields --tb=short`，21 passed、无失败或跳过、退出 0。原组基线 20 passed。夹具使用临时目录中的小型候选和进程替身。真实服务切换留至 Q077/Q078 的不复制工作树验证范围。
+- 修改源码和回归的整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁均通过。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。
+- Q076 完成。累计完成 137/371 批，覆盖 226/1011 个生产文件，另有 15 批部分完成。下一批 Q077 审查协调器、启动计时和验证缓存。
