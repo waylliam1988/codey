@@ -4258,10 +4258,11 @@
       "responsibility": "Conversation mutations, branch lineage and queries",
       "files": ["codey/durable/conversation_operations.py", "codey/durable/conversation_ops.py", "codey/durable/conversation_queries.py"],
       "id": "Q057B",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/durable/test_conversation_mutation_line.py", "tests/durable/test_conversation_delete_commit.py", "tests/durable/test_fork_ancestry.py", "tests/durable/test_inbox_history_projection.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/conversation_operations.py", "codey/durable/conversation_ops.py", "codey/durable/conversation_queries.py"],
+      "verified_files": ["codey/durable/conversation_operations.py", "codey/durable/conversation_ops.py", "codey/durable/conversation_queries.py"],
+      "tests": ["tests/durable/test_conversation_mutation_line.py", "tests/durable/test_conversation_delete_commit.py", "tests/durable/test_fork_ancestry.py", "tests/durable/test_inbox_history_projection.py", "tests/durable/test_context_edit_folding.py", "tests/durable/test_context_edit_revision_fence.py", "tests/durable/test_provider_context_authority.py", "tests/durable/test_approval_continuation_admission.py", "tests/durable/test_time_travel.py", "tests/durable/test_session.py::test_conversation_snapshot_is_durable_metadata_and_not_context_message", "tests/durable/test_approval_records.py", "tests/durable/test_approval_suspension.py"],
+      "result": "Compared normalized handoff snapshots to retain idempotency for JSON arrays. 128 scoped tests, strict Any, Ruff and scoped Pyrefly passed. Whole-production Pyrefly reported one error in an unrelated concurrent change."
     },
     {
       "responsibility": "Durable session facade, mutation line and snapshot lifecycle",

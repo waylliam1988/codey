@@ -8,7 +8,7 @@ algorithms together so the task/effect coordinator remains small.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 
 from codey.durable import history_queries
@@ -27,7 +27,7 @@ from codey.durable.model import (
 from codey.durable.session_kernel import SessionKernel
 from codey.runtime.core.protocol_window import ANTHROPIC_BLOCKS, REPLAY_BINDING, RESPONSES_REASONING, ProtocolWindowRef
 from codey.types.json_value import decode_json_object
-from codey.utils.object_fields import object_fields
+from codey.utils.object_fields import mapping_fields, object_fields, sequence_items
 
 
 def entries(session: SessionKernel, conversation_id: str) -> tuple[EntryDraft, ...]:
@@ -53,7 +53,7 @@ def _resolve_response_entries(
                 or record.metadata.get("kind") != "provider_response"):
             raise ValueError("provider history reference ownership mismatch")
         envelope = read_response_artifact(record)
-        if (not isinstance(envelope, dict) or envelope.get("schema_version") != 1
+        if (not object_fields(envelope) or envelope.get("schema_version") != 1
                 or envelope.get("kind") != "provider_response"
                 or envelope.get("effect_id") != record.owner_effect_id):
             raise ValueError("invalid provider history response")
@@ -194,19 +194,18 @@ def append_tool_results(
     if not results:
         return ()
     path = context(session, conversation_id, leaf_id=head)
-    pending: dict[str, EntryDraft] = {}
+    pending: set[str] = set()
     for entry in path:
         if entry.kind == "tool_call":
-            payload = thaw_json(entry.payload)
-            calls = payload.get("tool_calls") if isinstance(payload, Mapping) else None
-            for call in calls or ():
-                if isinstance(call, Mapping) and isinstance(call.get("id"), str) and call["id"]:
-                    pending[str(call["id"])] = entry
+            calls = entry.payload.get("tool_calls")
+            if sequence_items(calls):
+                for call in calls:
+                    if mapping_fields(call) and isinstance(call_id := call.get("id"), str) and call_id:
+                        pending.add(call_id)
         elif entry.kind == "tool_result":
-            payload = thaw_json(entry.payload)
-            call_id = payload.get("call_id") if isinstance(payload, Mapping) else None
+            call_id = entry.payload.get("call_id")
             if isinstance(call_id, str) and call_id:
-                pending.pop(call_id, None)
+                pending.discard(call_id)
     entries: list[EntryDraft] = []
     seen: set[str] = set()
     parent = head
@@ -325,10 +324,8 @@ def context_at(
 def _apply_head_cut(path: tuple[EntryDraft, ...]) -> tuple[EntryDraft, ...]:
     """Apply the newest durable head marker to the visible context range."""
     for index in range(len(path) - 1, -1, -1):
-        payload = thaw_json(path[index].payload)
-        if not isinstance(payload, Mapping) or payload.get("head_marker") is not True:
-            continue
-        return path[index:]
+        if path[index].payload.get("head_marker") is True:
+            return path[index:]
     return path
 
 
@@ -381,43 +378,41 @@ def _include_committed_edits_before_cutoff(
     for entry in path[cutoff:]:
         if entry.kind != "context_edit":
             continue
-        payload = thaw_json(entry.payload)
-        if not isinstance(payload, Mapping):
-            continue
+        payload = entry.payload
         data = payload.get("data")
-        if not isinstance(data, Mapping):
+        if not mapping_fields(data):
             continue
         source_ids = data.get("source_entry_ids")
-        if not isinstance(source_ids, Sequence) or isinstance(source_ids, (str, bytes)):
+        if not sequence_items(source_ids):
             continue
         normalized = tuple(item for item in source_ids if isinstance(item, str) and item)
         if not normalized or len(normalized) != len(source_ids) or not set(normalized) <= available:
             continue
         selected.append(entry)
         edits = payload.get("edits", payload.get("context_edits"))
-        if not isinstance(edits, Sequence) or isinstance(edits, (str, bytes)):
+        if not sequence_items(edits):
             continue
         for raw_edit in edits:
-            if not isinstance(raw_edit, Mapping) or raw_edit.get("action") != "replace":
+            if not mapping_fields(raw_edit) or raw_edit.get("action") != "replace":
                 continue
             target = raw_edit.get("target")
             messages = raw_edit.get("messages")
-            if not isinstance(target, str) or not isinstance(messages, Sequence) or isinstance(messages, (str, bytes)):
+            if not isinstance(target, str) or not sequence_items(messages):
                 continue
             available.update(f"{target}:replacement:{index}" for index, message in enumerate(messages)
-                             if isinstance(message, Mapping))
+                             if mapping_fields(message))
     return tuple(selected)
 
 
 def save_context_snapshot(session: SessionKernel, conversation_id: str, payload: Mapping[str, object]) -> EntryDraft:
     latest = latest_context_snapshot(session, conversation_id)
-    if latest is not None and dict(latest.payload) == dict(payload):
-        return latest
     parent_id, revision = session.store.head(conversation_id)
     entry = EntryDraft(
         entry_id=f"entry-{uuid.uuid4().hex}", conversation_id=conversation_id,
         parent_id=parent_id, kind="context_snapshot", payload=payload,
     )
+    if latest is not None and latest.payload == entry.payload:
+        return latest
     result = session._commit(DurableMutation(conversation_id, revision, entries=(entry,)))
     return replace(entry, commit_seq=result.sequence)
 

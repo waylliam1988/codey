@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from codey.agents.handoff import ConversationSnapshot
 from codey.durable import (
     CommitResult,
     DurableMutation,
@@ -14,6 +15,30 @@ from codey.durable import (
     MemoryDurableStore,
     SQLiteDurableStore,
 )
+
+
+@pytest.mark.parametrize("backend", ["memory", "sqlite"])
+def test_repeated_handoff_snapshot_reuses_the_latest_entry(backend: str, tmp_path: Path) -> None:
+    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    session = DurableSession(store)
+    try:
+        session.create_conversation("conversation")
+        snapshot = ConversationSnapshot(mode="project", goal="ship it", changed_files=("app.py",))
+        original = session.save_context_snapshot("conversation", snapshot.to_payload())
+        sequence = session.commit_sequence()
+        head = session.head("conversation")
+
+        assert session.save_context_snapshot("conversation", snapshot.to_payload()) == original
+        assert session.commit_sequence() == sequence
+        assert session.head("conversation") == head
+
+        changed = ConversationSnapshot(mode="project", goal="ship it", changed_files=("app.py", "test_app.py"))
+        updated = session.save_context_snapshot("conversation", changed.to_payload())
+        assert updated.entry_id != original.entry_id
+        assert updated.parent_id == original.entry_id
+        assert session.commit_sequence() == sequence + 1
+    finally:
+        session.close()
 
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
