@@ -2,31 +2,43 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
+from pathlib import Path
 
 from codey.providers.api_provider import ApiProvider
+from codey.runtime.core.protocol_window import ProtocolWindowRef
+from codey.types.json_value import JsonObject
 
 
 class ScriptedLocal(ApiProvider):
-    def __init__(self, name, replies, timeline):
+    def __init__(self, name: str, replies: Iterable[JsonObject | Exception], timeline: list[tuple[str, str]]) -> None:
         super().__init__("http://localhost:5001/v1", "scripted-model")
         self.label = name
         self.replies = iter(replies)
         self.timeline = timeline
-        self.prompts = []
+        self.prompts: list[str] = []
         self.chats = 0
         self.closed = 0
 
-    def new_chat(self):
+    def _record_chat(self) -> None:
         self.chats += 1
         self.timeline.append((self.label, "new_chat"))
 
-    def reset_window(self, expected_ref=None):
-        """Record the durable protocol-window activation used by production."""
-        self.chats += 1
-        self.timeline.append((self.label, "new_chat"))
-        return super().reset_window(expected_ref=expected_ref)
+    def new_chat(self, timeout: float | None = None) -> None:
+        self._record_chat()
 
-    def send(self, text, timeout=None, **request_options):
+    def reset_window(self, expected_ref: ProtocolWindowRef | None = None) -> ProtocolWindowRef:
+        window = super().reset_window(expected_ref=expected_ref)
+        self._record_chat()
+        return window
+
+    def activate_durable_window(self, messages: list[dict[str, object]], *, source_entry_ids: tuple[str, ...],
+                                reason: str) -> ProtocolWindowRef:
+        window = super().activate_durable_window(messages, source_entry_ids=source_entry_ids, reason=reason)
+        self._record_chat()
+        return window
+
+    def send(self, text: str, timeout: float | None = None, **request_options: object) -> str:
         # ApiProvider receives request-scoped tool/context arguments. This
         # fixture scripts decisions; transport serialization is tested elsewhere.
         self.prompts.append(text)
@@ -36,11 +48,11 @@ class ScriptedLocal(ApiProvider):
             raise reply
         return json.dumps(reply)
 
-    def close(self):
+    def close(self) -> None:
         self.closed += 1
 
 
-def writer_turns(before, after):
+def writer_turns(before: str, after: str) -> list[JsonObject]:
     return [
         {"tool": "read_file", "args": {"path": "math_utils.py"}},
         {"tool": "edit", "args": {"path": "math_utils.py", "replacements": [{"old_string": before, "new_string": after}]}},
@@ -49,7 +61,7 @@ def writer_turns(before, after):
     ]
 
 
-def fixture_project(tmp_path):
+def fixture_project(tmp_path: Path) -> Path:
     project = tmp_path / "project"
     project.mkdir()
     (project / "math_utils.py").write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
