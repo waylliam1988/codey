@@ -1,7 +1,5 @@
 """Check the intervention itself before spending live-model requests."""
 
-import json
-
 import pytest
 
 from codey.knowledge.model import KnowledgeObject, KnowledgeVersion
@@ -16,7 +14,7 @@ from tests.manual.research_read_guidance_ab import (
 )
 
 
-def hits():
+def hits() -> list[KnowledgeHit]:
     return [KnowledgeHit(KnowledgeVersion(
         KnowledgeObject(f"claim-test-guidance-{i}", "claim", "content " * 100, "model_extraction"),
         1, "2026-11-03", "fixture"), "text match") for i in range(10)]
@@ -24,13 +22,20 @@ def hits():
 
 @pytest.mark.parametrize("budget", [1, 900, 1500, 2500, 4000, 6000])
 @pytest.mark.parametrize("answer_refs", [False, True])
-def test_short_headers_preserve_exact_admitted_rows(budget, answer_refs):
+def test_short_headers_preserve_exact_admitted_rows(budget: int, answer_refs: bool) -> None:
     before = render_recall(hits(), compact=True, max_chars=budget, include_answer_refs=answer_refs)
     after = rewrite_recall(before, short=True)
     assert rewrite_recall(after, short=False) == before
-    assert len(after) < len(before)
-    def rows(text):
-        return [json.loads(line) for line in text.splitlines() if line.startswith("{")]
+    if budget == 1:
+        assert after == before == ""
+    elif budget == 900 and answer_refs:
+        assert before.startswith("Saved knowledge locators. ")
+        assert after == before
+    else:
+        assert len(after) < len(before)
+
+    def rows(text: str) -> list[str]:
+        return [line for line in text.splitlines() if line.startswith("{")]
 
     assert rows(before) == rows(after)
     with treatment("compact"):
@@ -38,7 +43,7 @@ def test_short_headers_preserve_exact_admitted_rows(budget, answer_refs):
                                                include_answer_refs=answer_refs) == after
 
 
-def test_only_designated_guidance_changes_and_restores():
+def test_only_designated_guidance_changes_and_restores() -> None:
     original = knowledge_context.render_recall
     assert answer_contract.KNOWLEDGE_READ_GUIDANCE == LONG_READ
     whole_answer = answer_contract.ANSWER_GUIDANCE
@@ -54,7 +59,7 @@ def test_only_designated_guidance_changes_and_restores():
     assert answer_contract.KNOWLEDGE_READ_GUIDANCE == LONG_READ
 
 
-def test_unknown_or_wrong_phase_is_rejected():
+def test_unknown_or_wrong_phase_is_rejected() -> None:
     with pytest.raises(ValueError), treatment("unknown"):
         pass
     with pytest.raises(ValueError), treatment("production"):

@@ -13,15 +13,52 @@ import json
 import subprocess
 import sys
 import time
-from contextlib import ExitStack, contextmanager
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from pathlib import Path
+from typing import BinaryIO, Protocol
 from unittest.mock import patch
 from urllib.request import urlopen
 from uuid import uuid4
 
+from codey.knowledge.recall import KnowledgeHit
+from codey.types.json_value import (
+    JsonObject,
+    JsonValue,
+    decode_json_object,
+    decode_json_value,
+    require_json_integer,
+    require_json_string,
+    require_json_strings,
+)
 from tests.manual import research_branch_review as branch
 from tests.manual import research_framework_comparison as framework
-from tests.manual.research_experiment_identity import freeze_experiment
+from tests.manual.research_experiment_identity import freeze_experiment as freeze_identity
+
+
+class _InferenceProxyFactory(Protocol):
+    def __call__(self, wire: Path, seed: int, *, genkey: str, request_limit: int,
+                 identity_root: Path) -> AbstractContextManager[str]: ...
+
+
+class _Options(argparse.Namespace):
+    action: str
+    root: Path
+    directory: Path | None
+    base_url: str | None
+    case: str | None
+    seed: int | None
+    arm: str | None
+
+
+verify_branch: Callable[[Path], None] = branch.verify
+run_branch_worker: Callable[[Path, Path, str, str, int, str], None] = branch.worker
+backend_ready: Callable[[], object] = framework.backend_ready
+experiment_limits: Callable[[Path], dict[str, int]] = framework.experiment_limits
+inference_proxy: _InferenceProxyFactory = framework.InferenceProxy
+read_json: Callable[[Path], object] = framework.read_json
+write_json: Callable[[Path, JsonValue], None] = framework.write_json
+freeze_experiment: Callable[[Path], None] = freeze_identity
 
 ARMS = ("baseline", "compact", "long_control", "production")
 LONG_READ = (
@@ -55,11 +92,12 @@ LONG_LOCATOR = (
     "An old claim or answer never substitutes for reading its original evidence."
 )
 SHORT_LOCATOR = "Locator only: knowledge_read exact id/revision; read original source/evidence for [eN], not old claims/answers."
+LOCATORS_ONLY = "Saved knowledge locators. Recheck original evidence using knowledge_read with the exact id and revision."
 
 
-def rewrite_recall(text, *, short):
+def rewrite_recall(text: str, *, short: bool) -> str:
     """Replace only two whole header lines after the original row admission."""
-    if not text:
+    if not text or text.partition("\n")[0] == LOCATORS_ONLY:
         return text
     replacements = ((LONG_RECALL, SHORT_RECALL), (LONG_LOCATOR, SHORT_LOCATOR))
     lines = text.splitlines()
@@ -72,7 +110,7 @@ def rewrite_recall(text, *, short):
 
 
 @contextmanager
-def treatment(arm):
+def treatment(arm: str) -> Iterator[None]:
     from codey.operations import knowledge_context
     from codey.research import answer_contract
 
@@ -86,9 +124,10 @@ def treatment(arm):
             short = arm == "compact"
             original = knowledge_context.render_recall
 
-            def recalled(*args, **kwargs):
-                result = original(*args, **kwargs)
-                return rewrite_recall(result, short=short) if kwargs.get("compact") else result
+            def recalled(hits: list[KnowledgeHit], *, max_chars: int = 6000, include_answer_refs: bool = True,
+                         compact: bool = False) -> str:
+                result = original(hits, max_chars=max_chars, include_answer_refs=include_answer_refs, compact=compact)
+                return rewrite_recall(result, short=short) if compact else result
 
             stack.enter_context(patch.object(knowledge_context, "render_recall", recalled))
             stack.enter_context(patch.object(answer_contract, "KNOWLEDGE_READ_GUIDANCE",
@@ -96,21 +135,22 @@ def treatment(arm):
         yield
 
 
-def worker(root, directory, base_url, case, seed, arm):
+def worker(root: Path, directory: Path, base_url: str, case: str, seed: int, arm: str) -> None:
     with patch.object(branch, "ablation", treatment):
-        branch.worker(root, directory, base_url, case, seed, arm)
+        run_branch_worker(root, directory, base_url, case, seed, arm)
 
 
-def run_one(root, case, seed, arm):
-    branch.verify(root)
-    ready = framework.backend_ready()
+def run_one(root: Path, case: str, seed: int, arm: str) -> JsonObject:
+    assert __spec__ is not None
+    verify_branch(root)
+    ready = decode_json_value(backend_ready())
     name = f"{case}-{seed}-{arm}"
     directory = root / "runs" / name
-    limits = framework.experiment_limits(root)
+    limits = experiment_limits(root)
     started = time.monotonic()
     with (
-        patch.object(framework, "verify_experiment", branch.verify),
-        framework.InferenceProxy(root / "wire" / f"{name}.jsonl", seed,
+        patch.object(framework, "verify_experiment", verify_branch),
+        inference_proxy(root / "wire" / f"{name}.jsonl", seed,
             genkey="read-guidance-" + uuid4().hex, request_limit=limits["requests"], identity_root=root) as proxy,
         (root / "logs" / f"{name}.stdout").open("w", encoding="utf-8") as out,
         (root / "logs" / f"{name}.stderr").open("w", encoding="utf-8") as err,
@@ -125,17 +165,17 @@ def run_one(root, case, seed, arm):
             timed_out = True
             subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, check=False)
             process.communicate(timeout=15)
-    row = {"case": case, "seed": seed, "arm": arm, "process_exit_code": process.returncode,
+    row: JsonObject = {"case": case, "seed": seed, "arm": arm, "process_exit_code": process.returncode,
            "runner_timeout": timed_out, "elapsed_seconds": round(time.monotonic() - started, 2),
            "backend_before": ready, "semantic_grade": "pending_independent_review"}
     if (directory / "research-result.json").exists():
-        row["result"] = framework.read_json(directory / "research-result.json")
-    framework.write_json(root / "results" / f"{name}.json", row)
-    branch.verify(root)
+        row["result"] = decode_json_value(read_json(directory / "research-result.json"))
+    write_json(root / "results" / f"{name}.json", row)
+    verify_branch(root)
     return row
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("freeze", "run", "worker"))
     parser.add_argument("--root", type=Path, required=True)
@@ -144,51 +184,63 @@ def main():
     parser.add_argument("--case")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--arm", choices=ARMS)
-    args = parser.parse_args()
+    args = parser.parse_args(namespace=_Options())
     root = args.root.resolve()
     if args.action == "worker":
+        if args.directory is None or args.base_url is None or args.case is None or args.seed is None or args.arm is None:
+            parser.error("worker requires --directory, --base-url, --case, --seed and --arm")
         worker(root, args.directory, args.base_url, args.case, args.seed, args.arm)
         return
     if args.action == "freeze":
         for name in ("runs", "wire", "logs", "results"):
             (root / name).mkdir(exist_ok=True)
-        framework.backend_ready()
-        with urlopen(framework.UPSTREAM + "/v1/models", timeout=5) as response:
-            framework.write_json(root / "backend-model.json", json.load(response))
+        backend_ready()
+        upstream: str = framework.UPSTREAM
+        model_list: AbstractContextManager[BinaryIO] = urlopen(upstream + "/v1/models", timeout=5)
+        with model_list as response:
+            models: object = json.load(response)
+            write_json(root / "backend-model.json", decode_json_value(models))
         names = ["preregistration.json", "backend-model.json", "seed-identities.json", "clock-context.txt",
                  "limits.json", "fixtures.json", "material-channel.json"]
         for folder in ("warm-knowledge", "empty-knowledge", "inference-knowledge", "conflict-knowledge"):
             names.extend(path.relative_to(root).as_posix()
                          for path in sorted((root / folder).rglob("*")) if path.is_file())
-        framework.write_json(root / "frozen-inputs.json", {
+        write_json(root / "frozen-inputs.json", {
             name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in names})
         freeze_experiment(root)
-        branch.verify(root)
+        verify_branch(root)
         print("FROZEN", root, flush=True)
         return
-    branch.verify(root)
-    spec = framework.read_json(root / "preregistration.json")
+    verify_branch(root)
+    spec = decode_json_object(read_json(root / "preregistration.json"))
     matrix_path = root / "matrix.json"
-    rows = framework.read_json(matrix_path) if matrix_path.exists() else []
-    for index, item in enumerate(spec["matrix"]):
-        if args.case and args.case != item["case"]:
+    raw_rows: JsonValue = decode_json_value(read_json(matrix_path)) if matrix_path.exists() else []
+    matrix, seeds = spec["matrix"], spec["seeds"]
+    if not isinstance(raw_rows, list) or not isinstance(matrix, list) or not isinstance(seeds, list):
+        raise ValueError("Experiment matrix, seeds, and saved rows must be arrays")
+    rows = [decode_json_object(raw) for raw in raw_rows]
+    for index, raw_item in enumerate(matrix):
+        item = decode_json_object(raw_item)
+        case = require_json_string(item["case"], "case")
+        if args.case and args.case != case:
             continue
-        for seed in spec["seeds"]:
+        arms = require_json_strings(item["arms"], "arms")
+        for raw_seed in seeds:
+            seed = require_json_integer(raw_seed, "seed")
             if args.seed is not None and args.seed != seed:
                 continue
-            arms = item["arms"]
             shift = (index + seed) % len(arms)
             for arm in arms[shift:] + arms[:shift]:
                 if args.arm and args.arm != arm:
                     continue
-                if any((row["case"], row["seed"], row["arm"]) == (item["case"], seed, arm) for row in rows):
+                if any((row["case"], row["seed"], row["arm"]) == (case, seed, arm) for row in rows):
                     continue
-                print("START", item["case"], seed, arm, flush=True)
-                row = run_one(root, item["case"], seed, arm)
-                rows.append(row)
-                framework.write_json(matrix_path, rows)
-                print("END", item["case"], seed, arm, row.get("result"), flush=True)
-                framework.backend_ready()
+                print("START", case, seed, arm, flush=True)
+                result = run_one(root, case, seed, arm)
+                rows.append(result)
+                write_json(matrix_path, list[JsonValue](rows))
+                print("END", case, seed, arm, result.get("result"), flush=True)
+                backend_ready()
 
 
 if __name__ == "__main__":

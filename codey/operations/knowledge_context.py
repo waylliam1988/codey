@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codey.knowledge.recall import render_recall
+from codey.knowledge.recall import render_recall as render_recall
 from codey.types.json_value import decode_json_object, decode_json_value, require_json_integer, require_json_string
 
 if TYPE_CHECKING:

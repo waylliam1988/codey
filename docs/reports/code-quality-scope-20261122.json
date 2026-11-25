@@ -4845,11 +4845,13 @@
         "codey/operations/memory_routing.py"
       ],
       "id": "Q087",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "completed_changed",
+      "reviewed_files": ["codey/operations/chat_knowledge.py", "codey/operations/knowledge_context.py", "codey/operations/memory_candidate_transport.py", "codey/operations/memory_routing.py"],
+      "verified_files": ["codey/operations/chat_knowledge.py", "codey/operations/knowledge_context.py", "codey/operations/memory_candidate_transport.py", "codey/operations/memory_routing.py"],
       "candidate_test_count": 10,
-      "followups": ["Q071D expanded test_research_read_guidance_ab.py reproduces three failures with the original recall implementation from 8238b0f2. The experiment expects a strict text reduction at a one-character budget where both forms are empty, and its fixed header replacement rejects the 900-character locator fallback. Check the experiment fixture alongside knowledge context guidance." ]
+      "tests": ["tests/test_research_read_guidance_ab.py", "tests/test_long_term_knowledge.py", "tests/test_readonly_knowledge_background_guidance.py", "tests/test_hybrid_knowledge_guidance.py", "tests/test_memory_adaptation_flow.py", "tests/test_memory_feedback.py", "tests/test_memory_completion.py", "tests/test_research_prompt_followups_ab.py", "tests/test_research_convergence.py"],
+      "reviewed_support": ["tests/test_research_read_guidance_ab.py", "tests/manual/research_read_guidance_ab.py"],
+      "result": "Verified the four production files. The experiment now leaves empty and locator-only output intact and preserves the exact admitted row bytes when rewriting full guidance. Its typed driver retains alternate worker dispatch and matrix resume. All 118 unique targeted tests and production gates passed."
     },
     {
       "responsibility": "codey/operations: context and checkpoint boundaries",
