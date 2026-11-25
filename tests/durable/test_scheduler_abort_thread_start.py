@@ -3,12 +3,13 @@ from unittest.mock import patch
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore, TaskCheckpoint
+from codey.durable import DurableSession, TaskCheckpoint
 from codey.durable.scheduler import AbortInvocation, DurableTaskScheduler
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_failed_abort_thread_start_leaves_cancellation_retryable() -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.admit_input(
         conversation_id="conversation", request_id="request", task_id="task",
         text="work", provider_snapshot={},

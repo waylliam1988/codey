@@ -17,8 +17,7 @@ if TYPE_CHECKING:
 
 
 def clicked_link_origin(session: TaskSession | None, result_ref: str) -> JsonObject:
-    from codey.operations.browser_completion import committed_results
-    from codey.operations.browser_followups import delivery
+    from codey.automation.browser_receipts import committed_results, delivery
 
     if session is not None:
         clicks = dict(committed_results(session.executed, session._memory_results, frozenset({"browser_click"})))
@@ -30,7 +29,7 @@ def clicked_link_origin(session: TaskSession | None, result_ref: str) -> JsonObj
 
 def pending_link_click(session: TaskSession, ref: str, document: JsonObject | None) -> str:
     from codey.automation.browser_document import normalize_element_ref, same_document
-    from codey.operations.browser_completion import committed_results
+    from codey.automation.browser_receipts import committed_results
 
     waits = committed_results(session.executed, session._memory_results, frozenset({"browser_wait"}),
                               include_failed=frozenset({"browser_wait"}))
@@ -79,7 +78,8 @@ def _modal_ids(result: ToolResult) -> set[str] | None:
 def observed_link_outcome(session: TaskSession, click: str, document: JsonObject | None, *,
                           through: str | None = None) -> bool:
     from codey.automation.browser_document import same_document
-    from codey.operations.browser_completion import PAGE_EVIDENCE_INVALIDATORS, committed_results
+    from codey.automation.browser_receipts import committed_results
+    from codey.operations.browser_completion import PAGE_EVIDENCE_INVALIDATORS
 
     positions = {ref: index for index, ref in enumerate(session.executed)}
     action = session._memory_results.get(click)
@@ -113,7 +113,7 @@ def observed_link_outcome(session: TaskSession, click: str, document: JsonObject
 def _snapshot_baseline(session: TaskSession, result_ref: str) -> tuple[JsonObject, JsonObject]:
     """Read one original committed full-page observation, including after recovery."""
     from codey.automation.browser_document import same_document
-    from codey.operations.browser_completion import committed_results
+    from codey.automation.browser_receipts import committed_results
 
     snapshots = dict(committed_results(session.executed, session._memory_results, frozenset({"browser_snapshot"})))
     result = snapshots.get(result_ref)

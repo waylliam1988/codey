@@ -6,13 +6,14 @@ from pathlib import Path
 import pytest
 
 from codey.automation.browser_session import BrowserToolOutput
-from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.tool_task import ToolTaskInput
 from codey.operations.browser_resources import build_task_browser
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_protocol import TurnSnapshot, build_turn_snapshot, offer_browser_tools
 from codey.operations.tool_tasks import run_tool_task
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.core.tool_resources import tool_resources_for
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object, require_json_string
 from tests.test_browser_production_execution import (
     URL,
@@ -32,7 +33,7 @@ def test_owned_browser_wait_keeps_worker_available_and_original_binding(
 ) -> None:
     session, tools, browser = production_browser
     runtime = open_runtime(tmp_path)
-    build_task_browser("r", runtime.app.durable.tool_resources, tools, browser=browser)
+    build_task_browser("r", tool_resources_for(runtime.app.durable), tools, browser=browser)
     snapshot = offer_browser_tools(build_turn_snapshot(session, native=True), session)
     worker: threading.Thread | None = None
 
@@ -119,7 +120,7 @@ def test_browser_binding_cleanup_before_dispatch(
 ) -> None:
     session, tools, browser = production_browser
     runtime = open_runtime(tmp_path)
-    build_task_browser("r", runtime.app.durable.tool_resources, tools, browser=browser)
+    build_task_browser("r", tool_resources_for(runtime.app.durable), tools, browser=browser)
     try:
         if boundary != "missing_page":
             assert browser.navigate(URL).ok
@@ -160,7 +161,7 @@ def test_browser_binding_cleanup_before_dispatch(
                 assert browser._process._released
             else:
                 # Restart loses volatile handles; the worker must not create a replacement page.
-                runtime.app.durable.tool_resources.release_browser(ref)
+                tool_resources_for(runtime.app.durable).release_browser(ref)
                 child = runtime.app.durable.claim_task_checkpoint(ref)
                 before = browser.document_identity()
                 run_tool_task(runtime.app.durable, child, stores=runtime.app.task_submission_stores,

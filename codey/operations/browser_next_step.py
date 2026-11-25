@@ -6,20 +6,20 @@ from dataclasses import dataclass
 from typing import Literal
 
 from codey.automation.browser_document import same_document
+from codey.automation.browser_receipts import committed_results, delivery
 from codey.operations.browser_completion import (
     PAGE_ACTIONS,
     PAGE_EVIDENCE_INVALIDATORS,
     browser_click_stage,
-    committed_results,
-    complete_page_passages,
     ordered_browser_progress,
     page_effect_possible,
     post_wait_passages,
     wait_matched_on_page,
 )
-from codey.operations.browser_followups import UNCERTAIN, click_followup_plan, delivery, pending_click
+from codey.operations.browser_followups import UNCERTAIN, click_followup_plan, pending_click
 from codey.policies.browser_requirement import BrowserResearchSequence, parse_browser_requirement
 from codey.policies.tool_requirement import ToolSuccessRequirement, argument_digest, parse_tool_success_check
+from codey.research.browser_result_evidence import complete_page_passages
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, parse_json_object

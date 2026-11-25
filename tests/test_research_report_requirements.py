@@ -4,7 +4,6 @@ import copy
 
 import pytest
 
-from codey.research.finding_report import FindingReport, compile_finding_report
 from codey.research.task_requirements import (
     conclusion_characters,
     coverage_requirements,
@@ -13,7 +12,6 @@ from codey.research.task_requirements import (
     validate_report_requirements,
     validate_task_accounting,
 )
-from tests.test_research_findings import URL, answer_args, execute, setup
 
 
 def test_counting_and_length_repair_share_one_contract():
@@ -31,32 +29,6 @@ def test_counting_and_length_repair_share_one_contract():
     assert "does not require a new search or write" not in feedback
     assert "Preserve the submitted question answers" not in feedback
     assert issue.to_payload()["allowed_actions"] == list(issue.allowed_actions)
-
-
-@pytest.mark.usefixtures("public_source_dns")
-def test_archived_finding_count_matches_shared_compiler_structured_issue(tmp_path):
-    from tests.test_research_findings import selection_args
-
-    store, tools, session, delegate = setup(tmp_path)
-    try:
-        execute(delegate, tools, session, "open_url", {"url": URL})
-        claim = "同一时刻只有一个写者，读取和写入可以并发。"
-        result = execute(delegate, tools, session, "save_finding", {
-            "claim": claim, "passage_ref": next(iter(tools.ledger.read_passages))})
-        import json
-
-        saved = json.loads(result.model_text)
-        assert saved["conclusion_characters"] == conclusion_characters(claim)
-        session.task_text += " 给出约100字的中文研究结论。"
-        session.last_done_args = selection_args(saved["finding_ref"])
-        from codey.research.issues import ResearchIssue
-
-        with pytest.raises(ResearchIssue) as failure:
-            compile_finding_report(session.last_done_args, tools.ledger, store, task=session.task_text)
-        assert failure.value.code == "report_length"
-        assert f"q1/f1={saved['conclusion_characters']}" in str(failure.value)
-    finally:
-        store.close()
 
 
 def test_original_r6_keeps_offsets_and_moves_only_pure_format_to_report_checks():
@@ -111,27 +83,3 @@ def test_language_only_has_no_coverage_refs_but_still_has_a_report_check():
     validate_report_requirements("本轮只有一项观察，尚不能推广。", task)
     with pytest.raises(ValueError, match="primarily Chinese"):
         validate_report_requirements("English only", task)
-
-
-@pytest.mark.usefixtures("public_source_dns")
-def test_report_checks_canonical_conclusion_before_rendering_and_restores_original_payload(tmp_path):
-    store, tools, session, delegate = setup(tmp_path)
-    task = session.task_text + " 给出约100字的中文研究结论。"
-    try:
-        execute(delegate, tools, session, "open_url", {"url": URL})
-        execute(delegate, tools, session, "save_finding", {"claim": "Only one writer can write at a time.",
-            "passage_ref": next(iter(tools.ledger.read_passages))})
-        args = answer_args("f1")
-        row = args["report_sections"]["coverage"][0]
-        row["answer"] = "同一时刻只有一个写者。"
-        with pytest.raises(ValueError, match="Report format r2"):
-            compile_finding_report(args, tools.ledger, store, task=task)
-        assert store.index.count() == 1  # only the finding, no report note
-        row["answer"] = "中" * 80 + " [f1]"
-        compiled = compile_finding_report(args, tools.ledger, store, task=task)
-        assert compiled.coverage[0]["task_refs"] == ["r1"]
-        assert len(compiled.text) > 120  # sources and repeated views do not count
-        payload = compiled.to_payload()
-        assert FindingReport.from_payload(payload).to_payload() == payload
-    finally:
-        store.close()

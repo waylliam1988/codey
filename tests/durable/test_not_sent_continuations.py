@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import pytest
 
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.durable.checkpoint import checkpoint_entries, operation_from_checkpoint
 from codey.operations import completion_gate
 from codey.operations.kernel_driver import load_prepared_request
 from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact
@@ -17,13 +16,12 @@ from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolRe
 from codey.providers.error_classification import RequestPrepError
 from codey.runtime.core.models import ToolResult
 from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
-from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
 from codey.runtime.effects.effect_records import RuntimeEffectError
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
-from codey.runtime.log.session_projection import reduce_session
-from codey.runtime.log.session_view import load_session_view
+from codey.runtime.write.checkpoint import operation_from_checkpoint, view_from_checkpoint
 from codey.runtime.write.mutation_line import RuntimeMutationLine
-from codey.runtime.write.provider_effects import build_provider_begin_rows
+from codey.runtime.write.provider_effects import build_provider_begin_changes
+from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding
 from tests.durable.test_operation_control_actions import request_for
 from tests.durable.test_provider_response_receipts import runtime
 from tests.support.kernel_restart import SimulatedExit
@@ -355,8 +353,7 @@ def test_prepared_admission_requires_proof_for_the_same_original_batch(tmp_path,
         prepared = load_prepared_request(sink, ref)
         intent = prepared.intent
         task, effects = durable.task_facts("r")
-        entries = checkpoint_entries(task, effects, session_id="s")
-        view = load_session_view(entries, session_id="s", run_id="r")
+        view = view_from_checkpoint(task, effects, session_id="s")
         failed = next(effect for effect in view.effects if effect.intent.effect_id == effects[-1].effect_id)
         altered = {
             "unsettled": replace(failed, settlement=None),
@@ -368,7 +365,7 @@ def test_prepared_admission_requires_proof_for_the_same_original_batch(tmp_path,
         invalid_view = replace(view, effects=tuple(altered if effect == failed else effect for effect in view.effects))
         with pytest.raises((RuntimeEffectError, RuntimeOperationTransitionError),
                            match="prepared request|NOT_SENT|another delivery batch|provider send effect"):
-            build_provider_begin_rows(reduce_session(entries), invalid_view, session_id="s", run_id="r", intent=intent,
+            build_provider_begin_changes(invalid_view, session_id="s", run_id="r", intent=intent,
                 delivery_batch_id=intent.delivery_batch_id, expected_request_ref=ref,
                 expected_counters=prepared.expected_counters,
                 counters=prepared.counters)

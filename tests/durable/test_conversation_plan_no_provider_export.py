@@ -3,13 +3,14 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from codey.agents.handoff import ConversationContext
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession
 from codey.operations.conversation_plan import build_conversation_plan
 from codey.providers.api_provider import ApiProvider
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_fresh_recovery_never_reads_provider_work_state_export():
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.create_conversation("chat")
     durable.append_message("chat", "assistant_message", {"text": "canonical durable answer"})
     provider = ApiProvider("http://localhost:9/v1", "fixture")

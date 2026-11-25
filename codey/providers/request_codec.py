@@ -24,7 +24,6 @@ from codey.providers.requests import (
 from codey.providers.response_record import json_value
 from codey.providers.task_prompt import TaskPromptSpan
 from codey.providers.text_result_views import decode_text_result_spans
-from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.toolchain.tool_spec import _freeze_schema_value
 from codey.types.json_value import (
     JsonObject,
@@ -34,6 +33,7 @@ from codey.types.json_value import (
     require_json_integer,
     require_json_string,
 )
+from codey.types.protocol_window import ProtocolWindowRef
 from codey.types.tool_image import ToolImageRef
 
 _COMMON = frozenset({"timeout", "tool_call_observations", "tool_call_history_groups", "output_token_limit"})

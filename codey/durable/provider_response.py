@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Literal, TypeAlias, TypedDict
 
 from codey.durable.model import ArtifactRecord
-from codey.runtime.core.protocol_window import ANTHROPIC_BLOCKS, RESPONSES_REASONING
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string
+from codey.types.protocol_window import ANTHROPIC_BLOCKS, RESPONSES_REASONING
 
 
 class ProviderCallPayload(TypedDict):

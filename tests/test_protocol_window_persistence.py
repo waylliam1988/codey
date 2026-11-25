@@ -4,7 +4,7 @@ import pytest
 
 
 def test_window_ref_round_trips_without_secrets() -> None:
-    from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
+    from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding
 
     binding = ProviderBinding("local", "rev-1", "model", "openai-responses", "contract-1")
     ref = ProtocolWindowRef("session-1", binding, "window-1")
@@ -14,7 +14,7 @@ def test_window_ref_round_trips_without_secrets() -> None:
 
 
 def test_binding_mismatch_is_explicit() -> None:
-    from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding, WindowMismatch
+    from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding, WindowMismatch
 
     left = ProtocolWindowRef("s", ProviderBinding("local", "r1", "m1", "chat", "c1"), "w1")
     right = ProtocolWindowRef("s", ProviderBinding("local", "r2", "m1", "chat", "c1"), "w1")
@@ -24,7 +24,7 @@ def test_binding_mismatch_is_explicit() -> None:
 
 def test_protocol_ledger_keeps_window_id_across_reopen(tmp_path) -> None:
     from codey.providers.context_ledger import ContextLedger
-    from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
+    from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding
 
     binding = ProviderBinding("local", "r1", "m", "openai-responses", "c1")
     ref = ProtocolWindowRef("session-1", binding, "window-1")
@@ -93,7 +93,7 @@ def test_abort_does_not_erase_accepted_protocol_history(tmp_path) -> None:
 def test_bound_tool_delivery_rejects_wrong_window_before_transport(tmp_path, monkeypatch) -> None:
     from codey.providers.api_provider import ApiProvider
     from codey.providers.base import ProviderToolResult
-    from codey.runtime.core.protocol_window import ProtocolWindowRef
+    from codey.types.protocol_window import ProtocolWindowRef
 
     provider = ApiProvider("http://fixture/v1", "model", api_protocol="openai-responses")
     provider.bind_context("session-1")

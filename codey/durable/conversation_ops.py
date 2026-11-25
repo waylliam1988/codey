@@ -25,8 +25,8 @@ from codey.durable.model import (
     thaw_json,
 )
 from codey.durable.session_kernel import SessionKernel
-from codey.runtime.core.protocol_window import ANTHROPIC_BLOCKS, REPLAY_BINDING, RESPONSES_REASONING, ProtocolWindowRef
 from codey.types.json_value import decode_json_object
+from codey.types.protocol_window import ANTHROPIC_BLOCKS, REPLAY_BINDING, RESPONSES_REASONING, ProtocolWindowRef
 from codey.utils.object_fields import mapping_fields, object_fields, sequence_items
 
 

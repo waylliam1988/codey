@@ -5,17 +5,18 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.errors import CommitConflict
 from codey.durable.model import CommitResult, DurableMutation, EffectRecord, TaskCheckpoint
 from codey.runtime.effects.effect_records import RuntimeEffectIntent, compute_args_digest
 from codey.runtime.effects.replay_policy import ReplayClass
 from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent, DeliveryBatchItem, compute_batch_digest
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def _runtime(tmp_path: Path, backend: str) -> tuple[DurableSession, RuntimeMutationLine]:
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     durable = DurableSession(store)
     durable.admit_input(conversation_id="s", request_id="r", task_id="r", text="read code",
                         provider_snapshot={"provider_id": "local"})

@@ -86,9 +86,10 @@ def test_planning_reuses_entry_policy_and_full_run_identity():
 
 
 def test_planning_forwards_the_canonical_durable_recovery_source():
-    from codey.durable import DurableSession, MemoryDurableStore
+    from codey.durable import DurableSession
+    from tests.support.sqlite_store import TemporarySQLiteStore
 
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     try:
         durable.admit_input(conversation_id="s-plan", request_id="input-plan", task_id="r-plan",
                             text="plan this", provider_snapshot={})

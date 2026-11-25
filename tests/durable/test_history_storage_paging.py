@@ -7,12 +7,13 @@ from unittest.mock import Mock
 
 import pytest
 
-from codey.durable import DurableMutation, DurableSession, EntryDraft, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import DurableMutation, DurableSession, EntryDraft, SQLiteDurableStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.fixture(params=["memory", "sqlite"])
 def durable(request, tmp_path):
-    store = MemoryDurableStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "history.sqlite3")
+    store = TemporarySQLiteStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "history.sqlite3")
     session = DurableSession(store)
     session.create_conversation("chat")
     yield session
@@ -149,11 +150,11 @@ def test_page_after_editing_an_inherited_message_matches_the_context(durable):
 def test_artifacts_are_only_resolved_when_their_entry_is_in_the_page(tmp_path, sqlite):
     from pathlib import Path
 
-    from codey.durable.checkpoint import operation_from_checkpoint
     from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall
+    from codey.runtime.write.checkpoint import operation_from_checkpoint
     from tests.durable.test_provider_response_receipts import runtime
     from tests.support.provider_actions import ProviderActions
 

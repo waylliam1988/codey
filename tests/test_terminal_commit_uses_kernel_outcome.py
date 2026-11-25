@@ -4,17 +4,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore, SubmissionStatus
+from codey.durable import DurableSession, SQLiteDurableStore, SubmissionStatus
 from codey.operations.result import ModeOutcome
 from codey.operations.task_phases.settlement import _commit_durable_terminal
 from codey.runtime.observe.terminalizer import operation_outcome_from_task_done_event
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 @pytest.mark.parametrize("reason", ["max_turns", "protocol", "no_progress", "blocked", "done"])
 def test_terminal_checkpoint_and_submission_agree_with_kernel_outcome(tmp_path, backend, reason):
     path = tmp_path / "durable.sqlite3"
-    durable = DurableSession(MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(path))
+    durable = DurableSession(TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(path))
     try:
         durable.admit_input(conversation_id="s", request_id="q", task_id="r", text="inspect", provider_snapshot={})
         durable.start_task("r", state={})

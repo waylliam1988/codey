@@ -9,9 +9,9 @@ from codey.durable import DurableSession, SQLiteDurableStore
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.providers.token_accounting import ContextBudget
 from codey.runtime.core import cancellation
-from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import RuntimeEffectStore
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
+from codey.runtime.write.checkpoint import RuntimeOperationStore
 from codey.runtime.write.drive import peek_next_action
 from tests.support.workspace_conversation import short_test_state_home
 

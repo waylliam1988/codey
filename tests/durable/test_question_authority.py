@@ -5,8 +5,9 @@ from pathlib import Path
 import pytest
 
 from codey.app.context import AppContext
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession
 from codey.durable.questions import DurableUserQuestionStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 QUESTION = {"question": "选择范围？", "options": ["只读", "完整"]}
 
@@ -41,7 +42,7 @@ def test_app_questions_are_task_owned_and_survive_restart(tmp_path: Path) -> Non
 
 
 def test_question_request_requires_its_tasks_conversation() -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.create_conversation("other")
     session.admit_input(
         conversation_id="chat", request_id="request", task_id="run",

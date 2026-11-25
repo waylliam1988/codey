@@ -13,6 +13,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codey.automation.browser_receipts import operation_receipts
 from codey.operations.task_session import TaskSession
 from codey.policies.command_line import COMMAND_WORKDIR_DESCRIPTION
 from codey.providers.base import AssistantTurn, render_result_metadata
@@ -388,8 +389,8 @@ def _source_failure_context(result: ToolResult, session: TaskSession) -> str:
 
 
 def _child_failure_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool = True) -> str:
+    from codey.automation.browser_receipts import delivery
     from codey.operations.browser_copy import captured_data, committed_children, write_unconfirmed
-    from codey.operations.browser_followups import delivery
 
     references = result.canonical.get("child_effect_ids")
     failures: list[JsonObject] = []
@@ -429,8 +430,9 @@ def _child_failure_context(result: ToolResult, session: TaskSession, *, receipt_
 
 
 def _browser_followup_context(result: ToolResult, session: TaskSession) -> str:
+    from codey.automation.browser_receipts import delivery
     from codey.operations.browser_copy import committed_children
-    from codey.operations.browser_followups import PENDING, UNCERTAIN, delivery, pending_click
+    from codey.operations.browser_followups import PENDING, UNCERTAIN, pending_click
 
     refs = decode_json_value(result.canonical.get("child_effect_ids"))
     if not isinstance(refs, list):
@@ -635,7 +637,7 @@ def _format_results(results: list[ToolResult], session: TaskSession, *,
 
 
 def _pending_execution_guidance(session: TaskSession) -> str:
-    from codey.operations.browser_followups import query_document
+    from codey.automation.browser_receipts import query_document
     from codey.policies.tool_requirement import parse_tool_success_check
 
     pending: list[str] = []
@@ -659,31 +661,6 @@ def _pending_execution_guidance(session: TaskSession) -> str:
         sections.append("Outstanding declared executions (runtime receipts, not assistant narrative):\n"
                         + "\n".join(dict.fromkeys(pending)))
     return "\n".join(sections)
-
-
-def operation_receipts(session: TaskSession) -> list[JsonObject]:
-    """Bounded action status from settled receipts, never another state store.
-
-    Page observations are task progress, not research evidence. In particular,
-    omit DOM text, script output and filled values from this operational view.
-    """
-    from codey.toolchain.tool_spec import spec_for_tool
-
-    rows: list[JsonObject] = []
-    for identity, result in session._memory_results.items():
-        spec = spec_for_tool(result.call.name)
-        if identity not in session.executed or spec is None or spec.executor != "browser":
-            continue
-        value = result.canonical.get("value")
-        status: JsonObject = value if isinstance(value, dict) else dict[str, JsonValue]()
-        row: JsonObject = {"result_ref": identity, "tool": result.call.name, "ok": result.ok}
-        for key in ("action", "delivery", "page_id", "page_url", "generation", "reason",
-                    "matched", "effect_verified", "value_length", "name", "bytes", "sha256",
-                    "suggested_filename", "handle", "path"):
-            if key in status:
-                row[key] = status[key]
-        rows.append(row)
-    return rows[-12:]
 
 
 def working_context(session: TaskSession, *, tool_names: tuple[str, ...] | None = None) -> str:
@@ -750,7 +727,7 @@ def working_context(session: TaskSession, *, tool_names: tuple[str, ...] | None 
         finish_guidance = (pending + "\nResolve the outstanding evidence and executions before delivering the final answer. "
                            "This obligation list does not replace the task's prerequisites or ordering. "
                            "Obtain source evidence before copying its fields; verify requested changes after editing. ")
-    operations = operation_receipts(session)
+    operations = operation_receipts(session.executed, session._memory_results)
     return ("Current work observations (runtime records):\n" + json.dumps(dict[str, object](
         project=session.project, workspace_revision=session.workspace_revision,
         workspace_fingerprint=session.workspace_fingerprint, changed_files=list(session.edited_files),

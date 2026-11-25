@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 
-from codey.reviews.research_coverage import render_coverage
+from codey.utils.research_coverage import render_coverage
 
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$")
 _BOLD_LABEL_RE = re.compile(r"^\s*(?:\*\*|__)\s*(.+?)\s*(?:\*\*|__)\s*[:：]\s*(.*)$")

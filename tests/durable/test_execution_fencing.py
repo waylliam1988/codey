@@ -5,22 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import (
-    CommitConflict,
-    DurableSession,
-    EffectRecord,
-    MemoryDurableStore,
-    SessionFailedError,
-    SQLiteDurableStore,
-)
+from codey.durable import CommitConflict, DurableSession, EffectRecord, SessionFailedError, SQLiteDurableStore
 from codey.durable.model import DurableMutation, TaskStatus
 from codey.durable.scheduler import DurableTaskScheduler
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.fixture(params=["memory", "sqlite"])
 def sessions(request, tmp_path: Path):
     if request.param == "memory":
-        store = MemoryDurableStore()
+        store = TemporarySQLiteStore()
         first, second = DurableSession(store), DurableSession(store)
     else:
         path = tmp_path / "durable.sqlite3"

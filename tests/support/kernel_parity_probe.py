@@ -320,11 +320,12 @@ def research_loop(case, legacy):
                     result = runner.result
                     tools = runner.tools
                 else:
-                    from codey.durable import DurableSession, MemoryDurableStore
+                    from codey.durable import DurableSession
                     from codey.operations.research_iteration import run_research_iteration
                     from codey.runtime.write.mutation_line import RuntimeMutationLine
                     from codey.storage.managed_outputs import ManagedOutputStore
-                    durable = DurableSession(MemoryDurableStore())
+                    from tests.support.sqlite_store import TemporarySQLiteStore
+                    durable = DurableSession(TemporarySQLiteStore())
                     run_id = "parity-" + hashlib.sha256(case["id"].encode()).hexdigest()[:12]
                     durable.admit_input(conversation_id="s", request_id=run_id, task_id=run_id,
                         text="How is helium obtained?", provider_snapshot={})

@@ -13,7 +13,6 @@ from dataclasses import dataclass, replace
 from typing import Protocol
 
 from codey.knowledge.model import canonical_json
-from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.answer_fields import AnswerField, freeze_field, render_fields
 from codey.research.answer_values import (
@@ -39,7 +38,7 @@ from codey.types.json_value import (
 )
 from codey.utils.citation_scanner import mask_markdown_code
 
-ANSWER_SCOPE_VERSION = 8
+ANSWER_SCOPE_VERSION = 11
 ANSWER_CONTRACT_VERSION = 1
 MAX_ANSWER_CHARACTERS = 64000
 ANSWER_STATES = ("answered", "partial", "unresolved")
@@ -118,10 +117,7 @@ def whole_research(session: ResearchPolicyView) -> bool:
 
 
 def whole_research_policy(policy: TaskPolicy, *, task_kind: str) -> bool:
-    # New entries freeze the report obligation independently of their UI kind.
-    # Historical Research policies retain their original submission contract.
-    return ("research_submission" in policy.required_checks
-            or task_kind == "research" and policy.strict_research)
+    return policy.strict_research and task_kind != "evidence_followup"
 
 
 def digest(value: object) -> str:
@@ -133,7 +129,6 @@ class AnswerScope:
     task_digest: str
     aliases: tuple[tuple[str, str], ...]
     attempt_refs: tuple[str, ...]
-    schema_version: int = ANSWER_SCOPE_VERSION
     fields: tuple[AnswerField, ...] = ()
     declared_fields_ready: bool = True
     execution_summary: str = ""
@@ -142,41 +137,34 @@ class AnswerScope:
     primary_passages: tuple[str, ...] | None = None
 
     @property
+    def schema_version(self) -> int:
+        return ANSWER_SCOPE_VERSION
+
+    @property
     def passage_refs(self) -> tuple[str, ...]:
         return tuple(ref for _, ref in self.aliases)
 
     def to_payload(self) -> AnswerScopePayload:
-        payload = AnswerScopePayload(task_digest=self.task_digest, aliases=[list(row) for row in self.aliases],
-                                     attempt_refs=list(self.attempt_refs), schema_version=self.schema_version)
-        if self.schema_version >= 5:
-            payload["fields"] = [field.to_payload() for field in self.fields]
-        if self.schema_version >= 7:
-            payload["declared_fields_ready"] = self.declared_fields_ready
-        if self.schema_version >= 8:
-            payload["execution_summary"] = self.execution_summary
-            payload["execution_refs"] = list(self.execution_refs)
-        if self.schema_version >= 9:
-            payload["calculations"] = list(self.calculations)
-        if self.primary_passages is not None:
-            payload["primary_passages"] = list(self.primary_passages)
-        return payload
+        return AnswerScopePayload(
+            task_digest=self.task_digest,
+            aliases=[list(row) for row in self.aliases],
+            attempt_refs=list(self.attempt_refs),
+            schema_version=self.schema_version,
+            fields=[field.to_payload() for field in self.fields],
+            declared_fields_ready=self.declared_fields_ready,
+            execution_summary=self.execution_summary,
+            execution_refs=list(self.execution_refs),
+            calculations=list(self.calculations),
+            primary_passages=list(self.primary_passages) if self.primary_passages is not None else None,
+        )
 
     @classmethod
     def from_payload(cls, raw: object) -> AnswerScope:
         raw = decode_json_object(raw)
         version = raw.get("schema_version")
-        if type(version) is not int or version not in {4, 5, 6, 7, 8, 9, 10}:
+        if type(version) is not int or version != ANSWER_SCOPE_VERSION:
             raise ValueError("invalid whole-task research scope")
-        expected = {"task_digest", "aliases", "attempt_refs", "schema_version"} | ({"fields"} if version >= 5 else set())
-        if version >= 7:
-            expected.add("declared_fields_ready")
-        if version >= 8:
-            expected.update(("execution_summary", "execution_refs"))
-        if version >= 9:
-            expected.add("calculations")
-        if version >= 10:
-            expected.add("primary_passages")
-        if set(raw) != expected:
+        if set(raw) != AnswerScopePayload.__required_keys__:
             raise ValueError("invalid whole-task research scope")
         task_digest = require_json_string(raw.get("task_digest"), "task_digest")
         if re.fullmatch(r"[0-9a-f]{64}", task_digest) is None:
@@ -199,25 +187,25 @@ class AnswerScope:
                 or len({row[1] for row in bindings}) != len(bindings)
                 or any(not ref for ref in attempt_refs) or len(set(attempt_refs)) != len(attempt_refs)):
             raise ValueError("duplicate or invalid frozen research identity")
-        raw_fields = raw.get("fields", [])
+        raw_fields = raw["fields"]
         if not isinstance(raw_fields, list):
             raise ValueError("invalid frozen answer fields")
         fields = tuple(AnswerField.from_payload(row) for row in raw_fields)
         if len({field.pointer for field in fields}) != len(fields) or any(set(field.labels) - {label for label, _ in bindings} for field in fields):
             raise ValueError("duplicate or unread frozen answer field")
-        execution_refs = raw.get("execution_refs", [])
+        execution_refs = raw["execution_refs"]
         if not isinstance(execution_refs, list):
             raise ValueError("invalid frozen browser execution references")
-        summary = require_json_string(raw.get("execution_summary", ""), "execution_summary")
+        summary = require_json_string(raw["execution_summary"], "execution_summary")
         refs = tuple(require_json_string(ref, "execution ref") for ref in execution_refs)
         if len(set(refs)) != len(refs) or bool(refs) != bool(summary):
             raise ValueError("invalid frozen browser execution summary")
-        calculations = raw.get("calculations", [])
+        calculations = raw["calculations"]
         if not isinstance(calculations, list) or any(not isinstance(row, dict) for row in calculations):
             raise ValueError("invalid frozen calculations")
-        primary = _primary_refs(raw["primary_passages"], bindings) if version >= 10 else None
-        return cls(task_digest, tuple(bindings), attempt_refs, version, fields,
-                   require_json_boolean(raw.get("declared_fields_ready", True), "declared_fields_ready"), summary, refs,
+        primary = _primary_refs(raw["primary_passages"], bindings) if raw["primary_passages"] is not None else None
+        return cls(task_digest, tuple(bindings), attempt_refs, fields,
+                   require_json_boolean(raw["declared_fields_ready"], "declared_fields_ready"), summary, refs,
                    tuple(decode_json_object(row) for row in calculations), primary)
 
 
@@ -260,7 +248,7 @@ def answer_scope(session: AnswerSessionView) -> AnswerScope:
                 fields.append(freeze_field(rule, observation, results, aliases))
             if rule.file_path and not observation.evaluation.passed:
                 declared_fields_ready = False
-    from codey.operations.browser_result_evidence import action_summary
+    from codey.research.browser_result_evidence import action_summary
 
     summary, execution_refs = action_summary(session.executed, results)
     from codey.research.calculation import calculation_fields
@@ -269,8 +257,7 @@ def answer_scope(session: AnswerSessionView) -> AnswerScope:
     from codey.research.primary_sources import primary_passage_refs, requires_primary_sources
 
     primary = primary_passage_refs(results, (ref for _, ref in aliases)) if requires_primary_sources(session.task_text) else None
-    version = 10 if primary is not None else (9 if calculations else ANSWER_SCOPE_VERSION)
-    return AnswerScope(digest(session.task_text), aliases, tuple(attempts), schema_version=version,
+    return AnswerScope(digest(session.task_text), aliases, tuple(attempts),
                        fields=tuple(fields), declared_fields_ready=declared_fields_ready, execution_summary=summary,
                        execution_refs=execution_refs, calculations=calculations, primary_passages=primary)
 
@@ -298,13 +285,13 @@ def submit_answer(scope: AnswerScope, args: ToolArgs, *,
             or not isinstance(markdown_value, str)
             or not 12 <= len(markdown_value.strip()) <= MAX_ANSWER_CHARACTERS):
         raise ValueError("Submit markdown (12..64000 characters) and state=answered/partial/unresolved.")
-    if scope.schema_version >= 7 and state == "answered" and not scope.declared_fields_ready:
+    if state == "answered" and not scope.declared_fields_ready:
         raise ValueError("declared_fields_unavailable: the task-declared source fields are not established by formal reads. "
             "Complete the intended query and read its actual result before submitting answered. "
             "A partial/unresolved report must describe the real gap. Do not invent values or repeat an unchanged read.")
-    status = evidence_status_suffix(scope.schema_version, state)
+    status = evidence_status_suffix(scope.primary_passages is not None, state)
     authored = markdown_value.strip().removesuffix(status)
-    if scope.schema_version >= 10:
+    if scope.primary_passages is not None:
         terminal = mask_markdown_code(authored).splitlines()[-1].strip() if authored else ""
         if re.match(r"(?:[-*+] |[0-9]+[.)] )\*\*\S", terminal) and terminal.count("**") == 1:
             raise ValueError("report_tail_incomplete: the final list item has unclosed bold markup.")
@@ -321,8 +308,7 @@ def submit_answer(scope: AnswerScope, args: ToolArgs, *,
         markdown += "\n\n" + scope.execution_summary
     if len(markdown) + len(status) > MAX_ANSWER_CHARACTERS:
         raise ValueError("Expanded answer exceeds the Markdown size limit.")
-    if scope.schema_version >= 6:
-        _validate_report_tail(markdown)
+    _validate_report_tail(markdown)
     markdown += status
     citations = citation_occurrences(markdown)
     from codey.research.answer_fields import validate_fields
@@ -379,7 +365,7 @@ def validate_submission(raw: object, task: str) -> AnswerSubmission:
     return expected
 
 
-def submitted_answer(session: TaskSession) -> AnswerSubmission | None:
+def submitted_answer(session: AnswerSessionView) -> AnswerSubmission | None:
     selected = None
     for result in session._memory_results.values():
         if result.ok and result.call.name == "submit_research_answer" and "research_submission" in result.canonical:
@@ -419,7 +405,7 @@ def answer_spec(spec: ToolSpec, scope: AnswerScope) -> ToolSpec:
                     "in their cited passage. The application appends exact browser action counts and sequence from receipts. "
                     "Explain any unanswered requested point in place. state is your declaration, not semantic certification. "
                     + ("Do not end the report with an unescaped, unmatched inline-code backtick delimiter. "
-                       "Complete the report text before declaring its state. " if scope.schema_version >= 6 else "")
+                       "Complete the report text before declaring its state. ")
                     + ("The task-declared source fields are not yet established. Read the actual query result before "
                        "submitting answered; partial/unresolved must describe the real gap, never invented field values. "
                        if not scope.declared_fields_ready else "")

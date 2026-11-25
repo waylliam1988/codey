@@ -4,8 +4,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import replace
 
+from codey.automation.browser_receipts import committed_results
 from codey.knowledge.model import canonical_json
-from codey.operations.browser_completion import committed_results
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters

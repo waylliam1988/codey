@@ -13,7 +13,7 @@ from typing import Literal, Protocol, runtime_checkable
 
 from codey.operations import kernel_transport
 from codey.providers.compat_transport import provider_attribute, provider_window_ref
-from codey.runtime.core.protocol_window import ProtocolWindowRef
+from codey.types.protocol_window import ProtocolWindowRef
 
 TextToolFormat = Literal["plain", "json_schema"]
 ProviderWindowRef = ProtocolWindowRef

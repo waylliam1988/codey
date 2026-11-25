@@ -1,12 +1,13 @@
 import pytest
 
 from codey.codemode.replay import CodeModeReplayError, DurableCodeModeReplay
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession
 from codey.types.json_value import canonical_json_object
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_delivery_refuses_a_checkpoint_with_changed_replay_identity() -> None:
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     try:
         durable.admit_input(
             conversation_id="chat", request_id="request", task_id="task", text="run",
@@ -34,7 +35,7 @@ def test_delivery_refuses_a_checkpoint_with_changed_replay_identity() -> None:
 
 
 def test_delivery_refuses_admission_after_an_error_without_a_message() -> None:
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     try:
         durable.admit_input(
             conversation_id="chat", request_id="request", task_id="task", text="run",

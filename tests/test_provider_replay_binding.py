@@ -9,8 +9,8 @@ from codey.providers.api_codec import GenerationSettings
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition
 from codey.providers.replay import transform_replay_messages
-from codey.runtime.core.protocol_window import ANTHROPIC_BLOCKS, REPLAY_BINDING, RESPONSES_REASONING, ProviderBinding
 from codey.types.json_value import JsonObject
+from codey.types.protocol_window import ANTHROPIC_BLOCKS, REPLAY_BINDING, RESPONSES_REASONING, ProviderBinding
 
 
 def test_replay_reasoning_requires_original_connection_protocol_model_and_call_id() -> None:

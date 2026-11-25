@@ -9,10 +9,11 @@ from unittest import mock
 class WriterRequestForwardsWorkspaceRevisionStoreTests(unittest.TestCase):
     def test_writer_attempt_forwards_workspace_revision_store(self) -> None:
         from codey.agents.writer_failover import CheckpointView, WriterAttempt
-        from codey.durable import DurableSession, MemoryDurableStore
+        from codey.durable import DurableSession
         from codey.operations import project_writer_phase
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.run_result import RunResult
+        from tests.support.sqlite_store import TemporarySQLiteStore
 
         captured = []
         store = object()
@@ -36,7 +37,7 @@ class WriterRequestForwardsWorkspaceRevisionStoreTests(unittest.TestCase):
             project_text="project",
             entry_policy=TaskPolicy(grants=frozenset({"control", "project.write", "project.verify"})),
         )
-        durable = DurableSession(MemoryDurableStore())
+        durable = DurableSession(TemporarySQLiteStore())
         durable.admit_input(conversation_id="session-1", request_id="run-1", task_id="run-1",
                             text="write", provider_snapshot={"provider_id": "local"})
         ctx = SimpleNamespace(

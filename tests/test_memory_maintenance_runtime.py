@@ -14,7 +14,7 @@ from codey.app.context import AppContext
 from codey.app.knowledge_observation import observe_knowledge
 from codey.app.memory_maintenance import MemoryMaintenance
 from codey.app.memory_setup import build_memory, observe_terminal
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.scheduler import DurableTaskScheduler
 from codey.ghost.backend import GhostMemory
 from codey.knowledge.store import KnowledgeStore
@@ -22,6 +22,7 @@ from codey.memory.contracts import MemoryEvent
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import require_json_strings
 from codey.utils.object_fields import require_object_rows
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_idle_deadline_runs_without_a_pending_task_and_stops_on_close(tmp_path: Path) -> None:
@@ -75,7 +76,7 @@ def test_failed_terminal_projection_is_recovered_without_reopening_task(tmp_path
 
 @pytest.mark.parametrize("backend", ("memory", "sqlite"))
 def test_deleted_task_history_does_not_block_surviving_task_recovery(tmp_path: Path, backend: str) -> None:
-    store = SQLiteDurableStore(tmp_path / "durable.sqlite3") if backend == "sqlite" else MemoryDurableStore()
+    store = SQLiteDurableStore(tmp_path / "durable.sqlite3") if backend == "sqlite" else TemporarySQLiteStore()
     with closing(DurableSession(store)) as durable:
         memory = build_memory(tmp_path, durable, enabled=True)
         outputs = ManagedOutputStore(tmp_path)

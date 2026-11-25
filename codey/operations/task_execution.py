@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from codey.automation.browser_contracts import BrowserAction
 from codey.automation.browser_document import same_document
+from codey.automation.browser_receipts import delivery
 from codey.operations import browser_followups, browser_text_report, browser_upload
 from codey.operations.browser_detail import audit_browser_open, read_browser_source
 from codey.operations.research_resources import (
@@ -378,7 +379,7 @@ class ExecutionDelegate:
                     self.session._memory_results, document)) is not None
                     and not observed_link_outcome(self.session, pending[0], document)
                     and browser.matches_query_control(ref, decode_json_object(pending[1].audit["query_baseline"]))):
-                message = (browser_followups.UNCERTAIN if browser_followups.delivery(pending[1]) == "uncertain"
+                message = (browser_followups.UNCERTAIN if delivery(pending[1]) == "uncertain"
                            else browser_followups.PENDING)
                 return BrowserToolOutput(message, False, {"action": "click", "ref": ref, "delivery": "not_delivered"})
             return browser.click(ref, query=browser_followups.query_click.get(),
@@ -1053,7 +1054,7 @@ class ExecutionDelegate:
             resolution["research_review_exhausted"] = issue
             evidence_check = check_report_evidence(declared, tools.ledger.read_passages, claim_check_version=CLAIM_CHECK_VERSION)
         if self.session is not None:
-            from codey.operations.browser_result_evidence import validate_current_result
+            from codey.research.browser_result_evidence import validate_current_result
 
             validate_current_result(self.session.executed, self.session._memory_results,
                 declared["markdown"], declared["state"], self._research_scope.aliases)

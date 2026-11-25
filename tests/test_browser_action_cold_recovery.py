@@ -8,7 +8,6 @@ import sys
 from pathlib import Path
 
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.model import CommitResult, DurableMutation
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.kernel_contracts import (
@@ -25,6 +24,7 @@ from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.operation_payload import RuntimeOperationState
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import JsonObject, parse_json_object

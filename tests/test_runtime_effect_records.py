@@ -11,7 +11,6 @@ from codey.runtime.core.operation_payload import (
     LEAF_TOOL_DELIVERY_PENDING,
     LEAF_WRITER_RUNNING,
 )
-from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
@@ -26,32 +25,9 @@ from codey.runtime.effects.effect_records import (
     new_effect_id,
 )
 from codey.runtime.effects.replay_policy import ReplayClass
-from codey.runtime.log.entries import RuntimeLogEntry, RuntimeLogWriteError
-from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.log.session_view import load_session_view, pending_for
+from codey.runtime.write.checkpoint import RuntimeOperationStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
-
-
-def _commit_log_entry(
-    log: RuntimeSessionLog,
-    session_id: str,
-    *,
-    lane: str,
-    operation_id: str,
-    kind: str,
-    payload: dict[str, object],
-) -> None:
-    path = log.path_for(session_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    entry = RuntimeLogEntry(
-        session_id=session_id,
-        lane=lane,
-        operation_id=operation_id,
-        kind=kind,
-        payload=payload,
-    )
-    with path.open("ab") as handle:
-        handle.write(entry.to_json_line().encode("utf-8"))
 
 
 class RuntimeEffectRecordsTests(unittest.TestCase):
@@ -109,7 +85,7 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         self.assertEqual(pending.leaf, LEAF_PROVIDER_EFFECT_PENDING)
         derived = pending_for(
             load_session_view(
-                __import__("codey.durable.checkpoint", fromlist=["checkpoint_entries"]).checkpoint_entries(
+                __import__("tests.support.runtime_log_fixture", fromlist=["checkpoint_entries"]).checkpoint_entries(
                     self.durable.task(self.run_id), self.durable.effects(self.run_id), session_id=self.session_id,
                 ),
                 session_id=self.session_id,
@@ -275,37 +251,6 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
                 replay_args={"path": "foo.py"},
             )
 
-    def test_projection_rejects_duplicate_and_orphan_records(self) -> None:
-        self.skipTest("orphan runtime projection injection was removed with the JSONL fact source")
-        from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
-
-        lane = lane_for_run(self.run_id)
-        op_id = operation_id_for_run(self.run_id)
-        payload = {
-            "schema_version": 1,
-            "effect_kind": "runtime_effect",
-            "record_kind": "settlement",
-            "ref": "effect_settlement:eff-orphan",
-            "effect_id": "eff-orphan",
-            "effect_category": "tool_call",
-            "session_id": self.session_id,
-            "run_id": self.run_id,
-            "lane": lane,
-            "operation_id": op_id,
-            "status": "ok",
-            "sent_state": "settled",
-            "replay_class": "unsafe",
-        }
-        _commit_log_entry(
-            self.log,
-            self.session_id,
-            lane=lane,
-            operation_id=op_id,
-            kind="operation_effect",
-            payload=payload,
-        )
-        with self.assertRaises(RuntimeEffectError):
-            self.store.load_effects(self.session_id, self.run_id)
 
     def test_recovery_summary_counts_interrupted_and_replayed_effects(self) -> None:
         unsafe_id = new_effect_id(EFFECT_CATEGORY_TOOL_CALL, self.run_id)
@@ -421,17 +366,6 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         self.assertIn("Provider response was not confirmed", summary.explanation_lines)
         self.assertIn("Read action was recovered", summary.explanation_lines)
 
-    def test_forbidden_payload_fields_rejected_by_log(self) -> None:
-        self.skipTest("runtime JSONL payload validation is projection-only")
-        with self.assertRaises(RuntimeLogWriteError):
-            _commit_log_entry(
-                self.log,
-                self.session_id,
-                lane="task:default",
-                operation_id=f"run:{self.run_id}",
-                kind="operation_effect",
-                payload={"effect_kind": "runtime_effect", "raw_prompt": "hello secret"},
-            )
 
 
 if __name__ == "__main__":

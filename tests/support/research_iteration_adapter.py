@@ -147,7 +147,7 @@ class ResearchIteration:
                      task=str(question or ""), provider_id="local", max_turns=self.max_turns,
                      task_kind="research") as sink:
             state = mock.Mock(spec=TaskState, durable=sink.durable, memory=None)
-            deps = ResearchFlowDeps(state=state, knowledge_store=self.store, evidence_ledgers=None,
+            deps = ResearchFlowDeps(state=state, knowledge_store=self.store,
                 search_factory=lambda: self.search, managed_outputs=sink.managed_outputs,
                 runtime_mutations=sink.mutations)
             iteration = run_research_iteration(

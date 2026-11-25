@@ -41,13 +41,14 @@ def test_thinking_display_survives_restart_without_entering_model_context(tmp_pa
 
 
 def test_native_tool_context_projection_preserves_reasoning(tmp_path: Path) -> None:
-    from codey.durable import DurableSession, MemoryDurableStore
+    from codey.durable import DurableSession
+    from tests.support.sqlite_store import TemporarySQLiteStore
 
     reply = AssistantTurn(reasoning="Inspect first.", text="Opening the source.", tool_calls=(
         ProviderToolCall("one", "read_file", {"path": "app.py"}),))
     message = tool_call_message(encode_reply(reply))
     assert message.get("reasoning_content") == reply.reasoning
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     try:
         durable.create_conversation("s")
         durable.append_message("s", "tool_call", message)

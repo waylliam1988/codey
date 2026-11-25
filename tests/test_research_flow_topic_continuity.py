@@ -14,11 +14,8 @@ from codey.operations.research_flow import (
     ResearchFlowDeps,
     build_research_context,
     build_research_topic_continuity,
-    prior_claim_refs,
+    recent_claim_refs,
 )
-from codey.research.ledger import ResearchLedger
-from codey.research.object_model import build_research_record
-from codey.research.report_quality import review_report_quality
 from codey.task.model import TaskSubmission
 
 _QUESTION = "Should provider recovery be re-checked against fresh sources?"
@@ -26,7 +23,7 @@ _QUESTION = "Should provider recovery be re-checked against fresh sources?"
 
 def _deps(state: server.AppContext) -> ResearchFlowDeps:
     return ResearchFlowDeps(state=state, knowledge_store=state.knowledge_store,
-                            evidence_ledgers=state.evidence_ledgers, search_factory=object)
+                            search_factory=object)
 
 
 def _make_frame(project_text: str) -> RunFrame:
@@ -72,163 +69,21 @@ def _seed_open_question_note(store: KnowledgeStore, *, session_id: str) -> None:
 
 
 def _seed_prior_claim(state: server.AppContext, *, session_id: str, project: str) -> None:
-    url = "https://example.com/prior-claim"
-    claim = "Provider recovery depends on a warm browser session."
-    source_text = f"{claim} 2026 source note."
-    summary = (
-        "## 结论\n"
-        f"- {claim} [1]\n\n"
-        "## 关键证据\n"
-        f"- [1] The opened source says {claim}\n\n"
-        "## 反证与限制\n"
-        "- 未找到强反证；需要持续追踪新的证据。\n\n"
-        "## 来源质量\n"
-        "- [1] secondary · web · fresh · example.com\n\n"
-        "## 搜索覆盖\n"
-        "- query: provider recovery\n"
-        "- opened: Prior claim article\n"
-        "- skipped: none representative\n\n"
-        "## 来源\n"
-        f"[1] Prior claim article - {url}"
-    )
-    ledger = ResearchLedger()
-    ledger.record_search("provider recovery", [{
-        "title": "Prior claim article",
-        "url": url,
-        "snippet": claim,
-    }])
-    ledger.record_open(
-        requested_url=url,
-        final_url=url,
-        title="Prior claim article",
-        text=source_text,
-    )
-    prepared = ledger.prepare_evidence_items(
-        [{
-            "claim": claim,
-            "source_url": url,
-            "excerpt": claim,
-            "stance": "supports",
-        }],
-        fallback_sources=[url],
-        fallback_claim=claim,
-        fallback_body=source_text,
-        note_type="fact",
-    )
-    assert not prepared.error
-    ledger.add_evidence_items(list(prepared.items), note_id="prior-claim-note")
-    quality = review_report_quality(
-        summary,
-        ledger=ledger,
-        opened_sources=ledger.final_url_set(),
-        search_result_urls={url},
-    )
-    assert quality.ok
-    record = build_research_record(
-        question="Research provider recovery",
-        summary=summary,
-        ledger=ledger,
-        review=quality,
-        run_id="run-prior-claim",
-        session_id=session_id,
-        project=project,
-        synthesis_id="synthesis-prior-claim",
-        stop_reason="done",
-    )
-    assert state.evidence_ledgers is not None
-    state.evidence_ledgers.append_record(
-        record,
-        run_id="run-prior-claim",
-        session_id=session_id,
-        project=project,
-    )
-
-
+    _seed_prior_claim_overflow(state, session_id=session_id, project=project, count=1)
 
 
 def _seed_prior_claim_overflow(
-    state: server.AppContext,
-    *,
-    session_id: str,
-    project: str,
-    count: int,
+    state: server.AppContext, *, session_id: str, project: str, count: int,
 ) -> None:
-    """Seed one ledger record carrying `count` distinct evidence claims."""
-    url = "https://example.com/prior-claim-overflow"
-    sentences = [
-        f"Overflow claim number {index} needs a fresh source check."
-        for index in range(count)
-    ]
-    source_text = " ".join(sentences)
-    excerpt_lines = "\n".join(
-        f"- [1] {sentence}" for sentence in sentences
-    )
-    summary = (
-        "## 结论\n"
-        "- Overflow claims recorded. [1]\n\n"
-        "## 关键证据\n"
-        f"{excerpt_lines}\n\n"
-        "## 反证与限制\n"
-        "- 未找到强反证；需要持续追踪新的证据。\n\n"
-        "## 来源质量\n"
-        "- [1] secondary · web · fresh · example.com\n\n"
-        "## 搜索覆盖\n"
-        "- query: overflow\n"
-        "- opened: Overflow article\n"
-        "- skipped: none representative\n\n"
-        "## 来源\n"
-        f"[1] Overflow article - {url}"
-    )
-    ledger = ResearchLedger()
-    ledger.record_open(
-        requested_url=url,
-        final_url=url,
-        title="Overflow article",
-        text=source_text,
-    )
-    prepared = ledger.prepare_evidence_items(
-        [
-            {
-                "claim": sentence,
-                "source_url": url,
-                "excerpt": sentence,
-                "stance": "supports",
-            }
-            for sentence in sentences
-        ],
-        fallback_sources=[url],
-        fallback_claim=sentences[0],
-        fallback_body=source_text[:200],
-        note_type="fact",
-    )
-    assert not prepared.error and len(prepared.items) == count
-    ledger.add_evidence_items(list(prepared.items), note_id="overflow-note")
-    quality = review_report_quality(
-        summary,
-        ledger=ledger,
-        opened_sources=ledger.final_url_set(),
-        search_result_urls={url},
-    )
-    if not quality.ok:
-        raise AssertionError(quality.message)
-    record = build_research_record(
-        question="Research overflow",
-        summary=summary,
-        ledger=ledger,
-        review=quality,
-        run_id=f"run-{session_id}",
-        session_id=session_id,
-        project=project,
-        synthesis_id=f"synthesis-{session_id}",
-        stop_reason="done",
-    )
-    assert state.evidence_ledgers is not None
-    state.evidence_ledgers.append_record(
-        record,
-        run_id=f"run-{session_id}",
-        session_id=session_id,
-        project=project,
-    )
+    from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
+
+    store = state.knowledge_store
+    assert store is not None
+    claims = [KnowledgeMutation(KnowledgeObject(
+        id=f"claim-{session_id}-{index}", kind="claim", content=f"Prior claim {index}",
+        origin="user_statement", scope="session", scope_id=session_id,
+    ), 0) for index in range(count)]
+    store.commit_knowledge(f"prior-{session_id}", claims, project=project, session_id=session_id)
 
 
 def test_prior_claim_overflow_reports_truncated_honestly() -> None:
@@ -248,7 +103,7 @@ def test_prior_claim_overflow_reports_truncated_honestly() -> None:
         )
         deps = _deps(state)
 
-        refs = prior_claim_refs(state.evidence_ledgers, session_id="s1", project=project)
+        refs = recent_claim_refs(state.knowledge_store, session_id="s1", project=project)
         _text, payload = build_research_topic_continuity(
             deps,
             session_id="s1",

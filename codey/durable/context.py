@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
 from codey.durable.model import EntryDraft, thaw_json
-from codey.runtime.core.protocol_window import ANTHROPIC_BLOCKS, REPLAY_BINDING, RESPONSES_REASONING
+from codey.types.protocol_window import ANTHROPIC_BLOCKS, REPLAY_BINDING, RESPONSES_REASONING
 from codey.types.tool_image import TOOL_IMAGES_KEY
 from codey.utils.object_fields import mapping_fields, object_fields
 from codey.utils.text_budget import estimate_tokens

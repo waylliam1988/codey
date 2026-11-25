@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codey.operations.browser_completion import committed_results
+from codey.automation.browser_receipts import committed_results
 from codey.policies.output_requirement import is_output_check
 from codey.policies.requirement import RequirementEvaluation
 from codey.policies.tool_requirement import ToolObservation, ToolSuccessRequirement

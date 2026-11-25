@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from codey.durable import CommitConflict, DurableSession, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import CommitConflict, DurableSession, SQLiteDurableStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_delete_conversation_is_a_durable_commit(backend: str, tmp_path) -> None:
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     session = DurableSession(store)
     session.create_conversation("conversation")
     entry = session.append_message("conversation", "user_message", {"text": "delete me"})
@@ -26,7 +27,7 @@ def test_delete_conversation_is_a_durable_commit(backend: str, tmp_path) -> None
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_delete_conversation_rejects_fork_parent_without_mutating_source(backend: str, tmp_path) -> None:
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     session = DurableSession(store)
     session.create_conversation("root")
     entry = session.append_message("root", "user_message", {"text": "root"})
@@ -49,7 +50,7 @@ def test_delete_purges_private_timeline_preserves_other_chat_and_commit_cursors(
     from codey.durable import ArtifactRecord, DurableMutation, EffectRecord
 
     path = tmp_path / "durable.sqlite3"
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(path)
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(path)
     session = DurableSession(store)
     try:
         for scope in ("remove", "keep"):
@@ -99,7 +100,7 @@ def test_delete_purges_private_timeline_preserves_other_chat_and_commit_cursors(
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_parent_delete_conflict_keeps_timeline_and_fork_can_continue(backend, tmp_path):
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     session = DurableSession(store)
     try:
         session.admit_input(conversation_id="parent", request_id="r", task_id="r",

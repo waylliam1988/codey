@@ -5,13 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import CommitConflict, DurableSession, EffectRecord, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import CommitConflict, DurableSession, EffectRecord, SQLiteDurableStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_timeline_reconstructs_checkpoint_and_effects_at_the_same_commit(backend: str, tmp_path: Path) -> None:
     path = tmp_path / "durable.sqlite3"
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(path)
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(path)
     durable = DurableSession(store)
     admitted = durable.admit_input(conversation_id="c", request_id="request", task_id="task", text="read",
                                    provider_snapshot={"provider_id": "frozen"})

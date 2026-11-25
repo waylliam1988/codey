@@ -6,16 +6,17 @@ from unittest.mock import Mock
 import pytest
 
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession
 from codey.operations.conversation_plan import build_conversation_plan
 from codey.operations.conversation_window import activate_window
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition
 from codey.providers.token_accounting import RequestContextCount
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_repeated_prompt_text_does_not_erase_a_previous_user_input() -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.create_conversation("chat")
     session.append_message("chat", kind="user_message", payload={"text": "again"})
     provider = ApiProvider("http://localhost:9/v1", "fixture")
@@ -29,7 +30,7 @@ def test_repeated_prompt_text_does_not_erase_a_previous_user_input() -> None:
 
 
 def test_provider_context_stops_at_this_submission_before_later_queued_inputs() -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.admit_input(conversation_id="chat", request_id="first", task_id="first", text="prior",
                         provider_snapshot={"provider_id": "local"})
     session.complete_task("first", "prior answer", state={})
@@ -50,7 +51,7 @@ def test_provider_context_stops_at_this_submission_before_later_queued_inputs() 
 
 
 def test_pure_planning_defers_context_loading_until_window_activation() -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.create_conversation("chat")
     session.append_message("chat", "assistant_message", {"text": "durable previous answer"})
     provider = ApiProvider("http://localhost:9/v1", "fixture")
@@ -64,7 +65,7 @@ def test_pure_planning_defers_context_loading_until_window_activation() -> None:
 
 
 def test_browser_handoff_uses_durable_history_without_an_explicit_replay_loader() -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.create_conversation("chat")
     session.append_message("chat", "assistant_message", {"text": "canonical answer"})
     class BrowserHandoffProvider:
@@ -101,7 +102,7 @@ def test_cold_window_preserves_durable_handoff_facts_without_visible_messages() 
 def test_first_actual_request_replays_paired_tools_in_the_selected_protocol(monkeypatch, protocol) -> None:
     from codey.providers import api_transport
 
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.create_conversation("chat")
     session.append_message("chat", "user_message", {"text": "previous input"})
     session.append_message("chat", "tool_call", {"tool_calls": [

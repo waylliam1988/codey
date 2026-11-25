@@ -31,10 +31,10 @@ from codey.providers.compat_transport import bind_attempt_gate
 from codey.providers.text_result_views import TextResultSpan
 from codey.providers.transport import ProviderTransport
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.types.json_value import JsonObject
+from codey.types.protocol_window import ProtocolWindowRef
 from codey.workspace.coding_context import render_coding_context
 from codey.workspace.context_admission import ContextAdmissionError, ContextRejection, admit_context
 from codey.workspace.context_epoch import ContextEpoch, context_epoch_id

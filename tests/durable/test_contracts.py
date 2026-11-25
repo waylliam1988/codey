@@ -2,20 +2,13 @@ from __future__ import annotations
 
 from contextlib import closing
 
-from codey.durable import (
-    ApprovalPort,
-    DurableExecutionPort,
-    DurableSession,
-    EffectPort,
-    EntryDraft,
-    MemoryDurableStore,
-    TaskAdmissionPort,
-)
+from codey.durable import ApprovalPort, DurableExecutionPort, DurableSession, EffectPort, EntryDraft, TaskAdmissionPort
 from codey.durable.model import thaw_json
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_durable_session_exposes_the_stable_capability_contracts() -> None:
-    with closing(DurableSession(MemoryDurableStore())) as session:
+    with closing(DurableSession(TemporarySQLiteStore())) as session:
         assert isinstance(session, TaskAdmissionPort)
         assert isinstance(session, ApprovalPort)
         assert isinstance(session, EffectPort)

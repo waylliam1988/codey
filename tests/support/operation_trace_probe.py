@@ -8,15 +8,21 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
-from typing import Any
 
-from codey.durable import ApprovalRecord, ApprovalStatus, DurableSession, MemoryDurableStore
+from codey.agents.shell_approval import ShellApprovalRequest
+from codey.durable import ApprovalRecord, ApprovalStatus, DurableSession
 from codey.durable.model import thaw_json
-from codey.operations.generation_boundary import durable_generation_boundary_callback
+from codey.operations.generation_boundary import (
+    GenerationBoundaryRequest,
+    GenerationBoundaryResult,
+    durable_generation_boundary_callback,
+)
+from codey.operations.provider_session import adapt_provider
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_loop import (
     KernelExecutionDeps,
@@ -27,10 +33,13 @@ from codey.operations.task_loop import (
 )
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
-from codey.runtime.core.models import ToolResult
+from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult, TurnFinish
+from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.observe.events import RunEvent
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
+from codey.types.json_value import JsonObject
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 class ProcessInterrupted(BaseException):
@@ -40,7 +49,7 @@ class ProcessInterrupted(BaseException):
 @dataclass(frozen=True)
 class Step:
     name: str
-    args: dict[str, Any]
+    args: JsonObject
     finish: TurnFinish = TurnFinish.COMPLETE
 
 
@@ -55,7 +64,7 @@ SHELL = Step("shell", {"command": "echo trace-approval", "path": "."})
 class TraceProvider:
     name = "scripted"
 
-    def __init__(self, steps: list[Step], *, native: bool, trace: list[dict[str, Any]],
+    def __init__(self, steps: list[Step], *, native: bool, trace: list[dict[str, object]],
                  stop: Event, cancel_after_reply: bool = False, close_steps: int = 0) -> None:
         self.native_tools = native
         self.steps = iter(enumerate(steps, start=1))
@@ -64,7 +73,7 @@ class TraceProvider:
         self.cancel_after_reply = cancel_after_reply
         self.close_steps = close_steps
 
-    def _next(self, method: str, tools: Any, receipts: Any = ()) -> Any:
+    def _next(self, method: str, tools: Sequence[ProviderToolDefinition], receipts: Sequence[ProviderToolResult] = ()) -> AssistantTurn | str:
         index, step = next(self.steps)  # Exhaustion is a probe failure, never synthetic done.
         self.trace.append({"event": method, "reply": step.name or step.finish.value,
                            "tools": [tool.name for tool in tools],
@@ -80,15 +89,21 @@ class TraceProvider:
         return json.dumps({"tool": step.name, "args": step.args})
 
     def send(self, prompt: str) -> str:
-        return self._next("send", ())
+        result = self._next("send", ())
+        assert isinstance(result, str)
+        return result
 
-    def send_turn(self, prompt: str, tools: Any) -> AssistantTurn:
-        return self._next("send_turn", tools)
+    def send_turn(self, prompt: str, tools: Sequence[ProviderToolDefinition]) -> AssistantTurn:
+        result = self._next("send_turn", tools)
+        assert isinstance(result, AssistantTurn)
+        return result
 
-    def send_tool_results(self, results: Any, tools: Any) -> AssistantTurn:
-        return self._next("send_tool_results", tools, results)
+    def send_tool_results(self, results: Sequence[ProviderToolResult], tools: Sequence[ProviderToolDefinition]) -> AssistantTurn:
+        result = self._next("send_tool_results", tools, results)
+        assert isinstance(result, AssistantTurn)
+        return result
 
-    def acknowledge_tool_results(self, results: Any, declared_tools: Any) -> AssistantTurn:
+    def acknowledge_tool_results(self, results: Sequence[ProviderToolResult], declared_tools: Sequence[ProviderToolDefinition]) -> AssistantTurn:
         self.trace.append({"event": "acknowledge", "call_ids": [row.call_id for row in results],
                            "errors": [row.content.startswith("ERROR:") for row in results]})
         if self.close_steps:
@@ -104,17 +119,17 @@ def observe_trace(
     cancel_after_tool: bool = False, close_steps: int = 0, interrupt_at: str = "",
     shell_approval: bool = False, stagnant_turns: int | None = None,
     durable: DurableSession | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Return semantic observations plus measured commits/size/time.
 
     Faults are raised only at real provider, effect and boundary observations.
     A supplied SQLite session lets a child-process harness kill the worker at
-    the same boundaries; this unit probe uses the standard memory store.
+    the same boundaries; this unit probe uses an isolated production database.
     """
     owned = durable is None
     if durable is None:
-        durable = DurableSession(MemoryDurableStore())
-    trace: list[dict[str, Any]] = []
+        durable = DurableSession(TemporarySQLiteStore())
+    trace: list[dict[str, object]] = []
     stop = Event()
     durable.admit_input(conversation_id="trace-session", request_id="trace-request", task_id="trace-run",
                         text="inspect a.py", provider_snapshot={"provider_id": "scripted"})
@@ -141,20 +156,20 @@ def observe_trace(
         if interrupt_at == name:
             raise ProcessInterrupted(name)
 
-    def execute(call: Any) -> ToolResult:
+    def execute(call: ToolCall) -> ToolResult:
         trace.append({"event": "execute", "name": call.name, "call_id": call.call_id})
         checkpoint("tool_started")
         if cancel_after_tool:
             stop.set()
         return ToolResult(call, "a.py contents", ok=True)
 
-    def event(value: Any) -> None:
+    def event(value: RunEvent) -> None:
         if value.kind == "turn":
             checkpoint("response_returned")
         if value.kind == "user_question":
             trace.append({"event": "question", "id": value.metadata["id"]})
 
-    def at_boundary(request: Any) -> Any:
+    def at_boundary(request: GenerationBoundaryRequest) -> GenerationBoundaryResult:
         kind = request.kind
         trace.append({"event": "boundary", "kind": kind})
         checkpoint(f"before_{kind}")
@@ -162,7 +177,7 @@ def observe_trace(
         checkpoint(f"after_{kind}")
         return result
 
-    def approval(value: Any) -> None:
+    def approval(value: ShellApprovalRequest) -> None:
         from codey.providers.response_record import json_value
 
         ref = sink.managed_outputs.write_json_artifact(session_id="trace-session", run_id="trace-run",
@@ -177,7 +192,7 @@ def observe_trace(
     result = None
     with suppress(ProcessInterrupted):
         result = run_task_kernel(session, request=KernelRunRequest(
-            transport=KernelTransportDeps(provider=provider, run_id="trace-run",
+            transport=KernelTransportDeps(provider=adapt_provider(provider), run_id="trace-run",
                 provider_id="scripted", user_task="inspect a.py", stop_flag=stop, stagnant_turns=stagnant_turns),
             execution=KernelExecutionDeps(executors={"read_file": execute}, project_path=project),
             observation=KernelObservationDeps(intent_sink=sink, on_event=event, on_boundary=at_boundary,

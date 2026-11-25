@@ -44,7 +44,6 @@ from codey.protocols.text_turn import DecodedTextTurn, TextAnswer, TextError, Te
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
-from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.toolchain.tool_spec import (
     ToolSpec,
     freeze_spec_parameters,
@@ -52,6 +51,7 @@ from codey.toolchain.tool_spec import (
     validate_args_with_spec,
 )
 from codey.types.json_value import JsonValue, ToolArgs, canonical_json_object, decode_json_object
+from codey.types.protocol_window import ProtocolWindowRef
 
 MAX_NATIVE_CALLS_PER_TURN = 8
 InputContractVersion: TypeAlias = Literal[11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]

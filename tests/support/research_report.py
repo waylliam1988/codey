@@ -1,6 +1,6 @@
 """Canonical tool arguments for tests whose expected result is rendered Markdown."""
 
-from codey.reviews.report_sections import REQUIRED_SECTIONS, parse_sections
+from codey.utils.report_sections import REQUIRED_SECTIONS, parse_sections
 
 
 def report_args(markdown):

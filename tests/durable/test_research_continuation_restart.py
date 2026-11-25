@@ -16,12 +16,12 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
     from types import SimpleNamespace
 
     from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.durable.checkpoint import operation_from_checkpoint
     from codey.knowledge.store import KnowledgeStore
     from codey.operations.research_flow import ResearchFlowDeps, run_research_pipeline
     from codey.operations.task_entry import build_task_policy_for_entry
     from codey.policies.capabilities import BROWSER_CAPABILITIES
     from codey.research.context import ResearchContext
+    from codey.runtime.write.checkpoint import operation_from_checkpoint
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
 
@@ -107,7 +107,7 @@ def _run(root: Path, boundary: str = "", resume: bool = False, failure: Exceptio
                               denied_capabilities=tuple(BROWSER_CAPABILITIES))
     policy = build_task_policy_for_entry(request, "research")
     deps = ResearchFlowDeps(state=SimpleNamespace(durable=durable, memory=None), knowledge_store=store,
-        evidence_ledgers=None, search_factory=Search,
+        search_factory=Search,
         managed_outputs=ManagedOutputStore(root), runtime_mutations=line)
     frame = SimpleNamespace(provider=Provider(), provider_id="local", project_text="", trace=None,
         run_id="r", research_handoff="", entry_policy=policy, request=request)
@@ -124,11 +124,11 @@ def _settle_production_cancel(root, *, kind="research", publication_deps=True):
     from types import SimpleNamespace
 
     from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.durable.checkpoint import operation_from_checkpoint
     from codey.knowledge.store import KnowledgeStore
     from codey.operations.context import RunWork
     from codey.operations.task_phases.settlement import settle_cancelled_run
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
+    from codey.runtime.write.checkpoint import operation_from_checkpoint
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
 
@@ -167,7 +167,7 @@ def test_research_restart_preserves_original_reads_and_single_publication(tmp_pa
     child = subprocess.run([sys.executable, "-c", source, str(tmp_path), boundary], capture_output=True, timeout=50)
     assert child.returncode == 74, child.stderr.decode(errors="replace")
     first, state = _run(tmp_path, resume=True)
-    assert first.followup_rounds == 0 and not first.followup_applied
+    assert first.stop_reason == first.final_result.stop_reason
     assert first.final_result.stop_reason == "done" and first.final_result.completion_proof.satisfied
     before = (tmp_path / "observations.jsonl").read_bytes()
     notes = {str(path): path.read_bytes() for path in (tmp_path / "knowledge").rglob("*.md")}
@@ -341,9 +341,9 @@ def test_durable_cancellation_during_submission_never_returns_done(tmp_path):
 @pytest.mark.parametrize("not_sent", [True, False])
 def test_failed_submission_retains_original_turn_and_provider_diagnostic(tmp_path, not_sent):
     from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.durable.checkpoint import operation_from_checkpoint
     from codey.providers.error_classification import RequestPrepError
     from codey.research.pipeline import ResearchContinuationError
+    from codey.runtime.write.checkpoint import operation_from_checkpoint
 
     failure = RequestPrepError("submission preparation failed") if not_sent else OSError("submission outcome unknown")
     with pytest.raises(ResearchContinuationError, match="provider failed.*submission"):
@@ -365,7 +365,7 @@ def test_failed_submission_retains_original_turn_and_provider_diagnostic(tmp_pat
     assert [row["attempt"] for row in map(json.loads, before.splitlines()) if row["event"] == "request"] == [1, 1]
     if not_sent:
         result, _ = _run(tmp_path, resume=True)
-        assert result.followup_rounds == 0 and result.final_result.stop_reason == "done"
+        assert result.stop_reason == result.final_result.stop_reason == "done"
         observations = [json.loads(row) for row in (tmp_path / "observations.jsonl").read_bytes().splitlines()]
         assert sum(row["event"] == "fetch" for row in observations) == 1
         assert sum(row["event"] == "write" for row in observations) == 1

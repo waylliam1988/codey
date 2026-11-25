@@ -16,7 +16,7 @@ from codey.knowledge.store import KnowledgeStore
 from codey.operations.kernel_contracts import KernelResult
 from codey.operations.research_continuation import ResearchContinuation
 from codey.policies.task_policy import TaskPolicy
-from codey.research.finding_report import ResearchReport
+from codey.research.answer_report import AnswerReport
 from codey.research.ledger import ResearchLedger
 from codey.research.report_quality import ReportQualityReview
 from codey.research.report_values import has_project_delivery, report_delivery_matches
@@ -76,7 +76,7 @@ def _persist_synthesis(tools: ResearchTools, task: str, summary: str, *, session
                        project: str, run_id: str,
                        on_event: Callable[[RunEvent], None], open_questions: Iterable[object] = (),
                        policy: TaskPolicy | None, projection: str = "initial", knowledge_refs: Iterable[object] = (),
-                       finding_ids: tuple[str, ...] = (), question_coverage: Iterable[object] = (), accepted_report: ResearchReport | None = None,
+                       finding_ids: tuple[str, ...] = (), question_coverage: Iterable[object] = (), accepted_report: AnswerReport | None = None,
                        semantic_review: dict[str, object] | None = None, publisher: Callable[[dict[str, object]], str] | None = None) -> str:
     """Persist one synthesis note under the parent task policy (required).
 
@@ -121,21 +121,10 @@ def _persist_synthesis(tools: ResearchTools, task: str, summary: str, *, session
     from codey.research.synthesis import synthesis_title as _synthesis_title
     from codey.runtime.observe.events import RunEvent
 
-    # Only explicit selections are answer dependencies. Opening or saving a
-    # source does not make every finding a premise of this answer.
-    if accepted_report is not None:
-        if accepted_report.text != summary:
-            raise ValueError("archive text differs from accepted report")
-        finding_ids = accepted_report.finding_ids
-        knowledge_refs = list(accepted_report.knowledge_refs)
-        question_coverage = accepted_report.coverage
-        open_questions = accepted_report.open_questions
     note_ids = list(finding_ids)
-    selected_sources = ({row["url"] for row in accepted_report.source_versions} if accepted_report
-                        else _selected_note_sources(tools.store, note_ids))
+    selected_sources = _selected_note_sources(tools.store, note_ids)
     tags = ["research", *([f"session:{session_id}"] if session_id else [])]
-    if accepted_report is None:
-        tags.extend(_run_concept_tags(tools.store, note_ids))
+    tags.extend(_run_concept_tags(tools.store, note_ids))
     from codey.knowledge.answer_refs import answer_references, answer_scope
 
     references = list(answer_references(knowledge_refs, tools.store, project=project, session_id=session_id))
@@ -144,7 +133,7 @@ def _persist_synthesis(tools: ResearchTools, task: str, summary: str, *, session
         "references": [{"id": ref.target, "revision": ref.revision} for ref in references],
         "findings": list(finding_ids), "coverage": list(question_coverage), "open_questions": list(open_questions),
         "scope": [scope, scope_id], "session_id": session_id, "project": project, "sources": sorted(selected_sources),
-        "report": accepted_report.to_payload() if accepted_report is not None else None,
+        "report": None,
         "semantic_review": semantic_review}
     publication_digest = hashlib.sha256(canonical_json(publication_payload).encode()).hexdigest()
     previous = tools.store.repository.read(answer_id)
@@ -160,7 +149,7 @@ def _persist_synthesis(tools: ResearchTools, task: str, summary: str, *, session
     note_sources: list[str] = sorted(selected_sources)
     note = KnowledgeNote.create(
         type="synthesis", title=_synthesis_title(task),
-        body=summary if accepted_report else _synthesis_body(summary, tools.ledger), tags=tags,
+        body=_synthesis_body(summary, tools.ledger), tags=tags,
         sources=note_sources, session_id=session_id, project=project,
         open_questions=clean_open_questions(open_questions)[:4],
         id=note_id,
@@ -169,10 +158,10 @@ def _persist_synthesis(tools: ResearchTools, task: str, summary: str, *, session
     provenance: dict[str, object] = {"run_id": run_id, "session_id": session_id, "summary_digest": summary_digest,
                     "publication_digest": publication_digest, "publication_schema": 1,
                     "basis": "settled_kernel_projection", "projection": projection,
-                    "questions": list(accepted_report.questions if accepted_report else tools.ledger.questions),
+                    "questions": list(tools.ledger.questions),
                     "question_coverage": list(question_coverage),
                     "coverage_assessment": "model_reported_not_semantically_verified",
-                    "accepted_report": accepted_report.to_payload() if accepted_report is not None else None,
+                    "accepted_report": None,
                     "task": task, "project": project, "synthesis_id": note_id,
                     "semantic_review": semantic_review}
     answer = KnowledgeObject(answer_id, "answer", summary, "model_inference", title=note.title,
@@ -213,14 +202,13 @@ def _link_synthesis(tools: ResearchTools, note_id: str, note_ids: list[str], pol
                     break
 
 
-def _publication_proof(outcome: KernelResult, compiled: ResearchReport | None, history: ResearchContinuation, synthesis_id: str, publish: bool) -> CompletionProof | None:
+def _publication_proof(outcome: KernelResult, compiled: AnswerReport | None, history: ResearchContinuation, synthesis_id: str, publish: bool) -> CompletionProof | None:
     if compiled is None or not publish:
         return outcome.proof
     from codey.operations.research_publication import published_answer_version
-    from codey.research.answer_report import AnswerReport
     from codey.research.report_projection import published_completion
 
-    version = published_answer_version(history, synthesis_id) if isinstance(compiled, AnswerReport) else None
+    version = published_answer_version(history, synthesis_id)
     if outcome.proof is None:
         raise ValueError("published research report has no completion proof")
     position: RuntimeOperationState = history.state()
@@ -238,7 +226,7 @@ def _research_tools(deps: ResearchFlowDeps, search: object, session_id: str, pro
                          session_id=session_id, project=project)
 
 
-def _result_context(ledger: ResearchLedger, compiled: ResearchReport | None,
+def _result_context(ledger: ResearchLedger, compiled: AnswerReport | None,
                     quality: ReportQualityReview | None, include_coverage: bool,
                     ) -> tuple[dict[str, object], list[dict[str, object]]]:
     question_answers: list[object] = list(compiled.coverage) if include_coverage and compiled else []
@@ -360,7 +348,7 @@ def run_research_iteration(
             managed_outputs=deps.managed_outputs,
             durable=admitted,
         )
-    history = ResearchContinuation(deps.runtime_mutations, deps.managed_outputs,
+    history = ResearchContinuation(deps.runtime_mutations, deps.managed_outputs, durable=deps.state.durable,
                                    session_id=session_id, run_id=run_id)
     prerequisites = history.prerequisite_facts(before_attempt=writer_attempt, policy=policy)
     session.handoff += prerequisites.handoff

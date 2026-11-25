@@ -107,7 +107,7 @@ def research_submission_handoff(session: TaskSession, snapshot: TurnSnapshot, co
     rule = submission_sequence(session)
     url = rule.url if rule is not None else declared_workflow_url(session)
     if not url:
-        from codey.operations.browser_result_evidence import current_result_passages
+        from codey.research.browser_result_evidence import current_result_passages
 
         action, current_passages = current_result_passages(session.executed, session._memory_results)
         if action:

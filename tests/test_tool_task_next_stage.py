@@ -14,6 +14,7 @@ from codey.operations.tool_tasks import run_tool_task
 from codey.providers.requests import ProviderRequest
 from codey.providers.transport import ProviderTransport
 from codey.runtime.core.models import ToolCall
+from codey.runtime.core.tool_resources import tool_resources_for
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from tests.test_tool_task_background import Runtime, open_runtime
 
@@ -209,7 +210,7 @@ def test_durable_process_input_dedup_and_cleanup(tmp_path: Path, tty: bool, code
         deadline = time.monotonic() + 6
         while True:
             try:
-                runtime.app.durable.tool_resources.process(ref, child.attempt_token)
+                tool_resources_for(runtime.app.durable).process(ref, child.attempt_token)
                 break
             except ValueError:
                 assert time.monotonic() < deadline, runtime.app.durable.task(ref)
@@ -227,7 +228,7 @@ def test_durable_process_input_dedup_and_cleanup(tmp_path: Path, tty: bool, code
 
         if codemode:
             from codey.codemode.kernel import build_execute_turn_executor
-            from codey.durable.checkpoint import operation_from_checkpoint
+            from codey.runtime.write.checkpoint import operation_from_checkpoint
 
             first = ToolCall("codemode", {"code": "return unwrap(await tools.task_input(inputs));", "inputs": first.args})
             state = operation_from_checkpoint(runtime.app.durable.task("r"), "s")
@@ -263,7 +264,7 @@ def test_durable_process_input_dedup_and_cleanup(tmp_path: Path, tty: bool, code
             assert payload["streams_merged"] is True
         assert not runtime.execute(ToolCall("task_input", {"task_ref": ref, "data": "late"}), turn=4).ok
         with pytest.raises(ValueError, match="no longer available"):
-            runtime.app.durable.tool_resources.process(ref, child.attempt_token)
+            tool_resources_for(runtime.app.durable).process(ref, child.attempt_token)
     finally:
         if worker is not None and worker.is_alive():
             for child in runtime.app.durable.owned_tasks("r"):

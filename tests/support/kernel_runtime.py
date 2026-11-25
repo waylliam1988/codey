@@ -43,12 +43,13 @@ def approval_notifier(durable, outputs, session_id, run_id, callback):
 
 
 def run_task_kernel(session, *, request, session_id="test-session"):
-    from codey.durable import DurableSession, MemoryDurableStore
+    from codey.durable import DurableSession
     from codey.operations.generation_boundary import durable_generation_boundary_callback
     from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_loop import run_task_kernel as run
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
+    from tests.support.sqlite_store import TemporarySQLiteStore
 
     sink = request.execution.intent_sink
     if isinstance(sink, KernelEffectSink):
@@ -58,7 +59,7 @@ def run_task_kernel(session, *, request, session_id="test-session"):
                     session_id=sink.session_id, task_id=sink.run_id, sink=sink)))
         return run(session, request=request)
     with tempfile.TemporaryDirectory() as temporary:
-        durable = DurableSession(MemoryDurableStore())
+        durable = DurableSession(TemporarySQLiteStore())
         run_id = request.transport.run_id or "test-run"
         durable.admit_input(conversation_id=session_id, request_id="test-input", task_id=run_id,
                             text=str(request.transport.user_task or "test task"), provider_snapshot={})
@@ -101,15 +102,16 @@ def run_task_kernel(session, *, request, session_id="test-session"):
 
 def run_agent(request: AgentRequest) -> RunResult:
     """Explicitly provision durable dependencies for isolated adapter tests."""
-    from codey.durable import DurableSession, MemoryDurableStore
-    from codey.durable.checkpoint import operation_from_checkpoint
+    from codey.durable import DurableSession
     from codey.operations.project_adapter import run
+    from codey.runtime.write.checkpoint import operation_from_checkpoint
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
+    from tests.support.sqlite_store import TemporarySQLiteStore
 
     with tempfile.TemporaryDirectory() as temporary:
         owned = request.durable is None
-        durable = DurableSession(MemoryDurableStore()) if owned else request.durable
+        durable = DurableSession(TemporarySQLiteStore()) if owned else request.durable
         run_id, session_id = request.run_id or "test-run", request.session_id or "test-session"
         provider_id = request.provider_id or "test" if request.runtime_mutations is None else request.provider_id
         try:
@@ -141,16 +143,17 @@ def run_entry_kernel(frame, work, hooks, deps, **kwargs):
     """Provision fixtures explicitly, then enter the production operation."""
     from types import SimpleNamespace
 
-    from codey.durable import DurableSession, MemoryDurableStore
-    from codey.durable.checkpoint import operation_from_checkpoint
+    from codey.durable import DurableSession
     from codey.operations.task_entry import run_entry_kernel as run
+    from codey.runtime.write.checkpoint import operation_from_checkpoint
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
+    from tests.support.sqlite_store import TemporarySQLiteStore
 
     with tempfile.TemporaryDirectory() as temporary:
         state = deps.state
         owned = getattr(state, "durable", None) is None
-        durable = DurableSession(MemoryDurableStore()) if owned else state.durable
+        durable = DurableSession(TemporarySQLiteStore()) if owned else state.durable
         if owned:
             state.durable = durable
         outputs = getattr(deps, "managed_outputs", None) or getattr(state, "managed_outputs", None) or ManagedOutputStore(Path(temporary))
@@ -179,15 +182,16 @@ def run_research_iteration(deps, **kwargs):
     """Provision explicit isolated resources for research probes."""
     from types import SimpleNamespace
 
-    from codey.durable import DurableSession, MemoryDurableStore
+    from codey.durable import DurableSession
     from codey.operations.research_iteration import run_research_iteration as run
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
+    from tests.support.sqlite_store import TemporarySQLiteStore
 
     if getattr(deps.state, "durable", None) is not None:
         return run(deps, **kwargs)
     with tempfile.TemporaryDirectory() as temporary:
-        durable = DurableSession(MemoryDurableStore())
+        durable = DurableSession(TemporarySQLiteStore())
         run_id = kwargs["run_id"] or "research-run"
         session_id = kwargs["session_id"] or "research-session"
         kwargs.update(run_id=run_id, session_id=session_id)
@@ -209,13 +213,14 @@ def run_research_iteration(deps, **kwargs):
 
 def run_project_audit_advisor(*args, **kwargs):
     """Explicit store resources for isolated read-only advisor tests."""
-    from codey.durable import DurableSession, MemoryDurableStore
+    from codey.durable import DurableSession
     from codey.operations.project_audit_advisor import run_project_audit_advisor as run
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
+    from tests.support.sqlite_store import TemporarySQLiteStore
 
     with tempfile.TemporaryDirectory() as temporary:
-        durable = DurableSession(MemoryDurableStore())
+        durable = DurableSession(TemporarySQLiteStore())
         try:
             return run(*args, **kwargs, durable=durable, runtime_mutations=RuntimeMutationLine(durable=durable),
                        managed_outputs=ManagedOutputStore(Path(temporary)))

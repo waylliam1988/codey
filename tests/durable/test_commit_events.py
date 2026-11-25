@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import CommitConflict, DurableSession, EffectRecord, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import CommitConflict, DurableSession, EffectRecord, SQLiteDurableStore
 from codey.durable.model import (
     CommitRecord,
     CommitResult,
@@ -20,13 +20,14 @@ from codey.durable.model import (
     TaskCheckpoint,
 )
 from codey.utils.object_fields import require_object_rows
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.fixture(params=["memory", "sqlite"])
 def session(request: pytest.FixtureRequest, tmp_path: Path) -> DurableSession:
     backend: object = request.param
     assert backend in ("memory", "sqlite")
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     return DurableSession(store)
 
 
@@ -210,7 +211,7 @@ session.admit_input(conversation_id='conversation', request_id='request', task_i
 def test_sse_replays_every_page_and_suppresses_queued_duplicates() -> None:
     from tests.sse_http import capture_events
 
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.create_conversation("conversation")
     for index in range(520):
         durable.append_message("conversation", "user_message", {"text": str(index)})
@@ -227,7 +228,7 @@ def test_replay_keeps_its_initial_cutoff_while_new_commits_arrive(
 ) -> None:
     from codey.app.durable_events import replay_commits
 
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.create_conversation("chat")
     for text in ("a", "b"):
         durable.append_message("chat", "user_message", {"text": text})

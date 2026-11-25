@@ -6,13 +6,14 @@ import time
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore, TaskStatus
+from codey.durable import DurableSession, TaskStatus
 from codey.durable.scheduler import AbortInvocation, DurableTaskScheduler
 from codey.providers import api_generation
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_abort_runs_independent_handler_after_durable_mark_and_signal() -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.admit_input(
         conversation_id="conversation",
         request_id="request",

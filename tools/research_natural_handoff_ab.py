@@ -12,8 +12,8 @@ from unittest.mock import patch
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.automation.browser_contracts import RouteDecision as Route
+from codey.automation.browser_receipts import committed_results
 from codey.operations import kernel_protocol
-from codey.operations.browser_completion import committed_results, complete_page_passages
 from codey.operations.browser_upload import browser_opened
 from codey.operations.kernel_context import KernelContext
 from codey.operations.kernel_protocol import TurnSnapshot
@@ -24,6 +24,7 @@ from codey.protocols.text_turn import DecodedTextTurn, TextError, TextRequest, T
 from codey.providers.base import AssistantTurn, ProviderToolResult
 from codey.providers.text_result_views import TextResultSpan
 from codey.research.answer_contract import AnswerScope
+from codey.research.browser_result_evidence import complete_page_passages
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState

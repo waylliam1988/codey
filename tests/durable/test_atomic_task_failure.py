@@ -7,9 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import DurableSession, EffectRecord, MemoryDurableStore, SQLiteDurableStore, SubmissionStatus
+from codey.durable import DurableSession, EffectRecord, SQLiteDurableStore, SubmissionStatus
 from codey.durable.model import SubmissionUpdate
 from codey.utils.object_fields import require_object_rows
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def running_tools(session: DurableSession) -> None:
@@ -25,7 +26,7 @@ def running_tools(session: DurableSession) -> None:
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_failure_preserves_effects_and_commits_checkpoint_submission_once(backend: str, tmp_path: Path) -> None:
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     session = DurableSession(store)
     running_tools(session)
     before = session.commit_sequence()

@@ -12,9 +12,9 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
+from codey.automation.browser_receipts import committed_results
 from codey.automation.browser_session import BrowserSession, BrowserToolOutput
 from codey.operations import kernel_control, task_execution
-from codey.operations.browser_completion import committed_results
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import CompletionOutput, prepare_completion_output, tool_facts
 from codey.operations.task_session import TaskSession

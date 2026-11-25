@@ -596,8 +596,8 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             if base_state_store is not None:
                 repair_state_store = repair_context.readonly_state(base_state_store)
         def browser_stage() -> int:
+            from codey.automation.browser_receipts import query_document
             from codey.operations.browser_completion import browser_click_stage
-            from codey.operations.browser_followups import query_document
 
             browser = browser_session or (research_tools.browser_session if research_tools is not None else None)
             document = browser.document_identity() if browser is not None else query_document(session._memory_results)

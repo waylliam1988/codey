@@ -21,8 +21,8 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.research.proof_quality import ResearchProofReview, review_research_proof
-from codey.reviews.report_sections import parse_sections
 from codey.utils.refs import digest_json, digest_text, identifier, stable_ref
+from codey.utils.report_sections import parse_sections
 from tests.manual.ab_harness_common import timestamp, write_json_atomic
 
 PROBE = "research_claim_support_projection"

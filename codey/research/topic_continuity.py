@@ -1,24 +1,4 @@
-"""Bounded Ghost-to-Research topic continuity projection (Topic Planner v1).
-
-A pure read model over already-audited local facts: structured research
-interests, bounded Ghost continuity items, and prior evidence-ledger claim
-refs. It projects them into one short model-visible hint text plus
-digest-only metrics for the run trace.
-
-Hard boundaries (roadmap 0.4.12):
-
-- Continuity can relocate old refs and suggest what to re-check next.
-  It cannot create facts or evidence: no output type carries evidence
-  references, and every prior-claim ref is permanently stale.
-- It cannot execute anything: no provider, browser, search, store, tool,
-  or I/O of its own. It never imports the Ghost runtime; callers hand in
-  bounded payloads or item-like objects and the projection stays local.
-- Prompt framing must not leak internal vocabulary (Ghost, Work Queue,
-  Concept Graph); unsafe or secret-bearing texts are dropped, fail open.
-
-Topic Planner semantics: candidates only suggest what the next Research run
-may investigate. Nothing here starts a run, searches, fetches, or writes.
-"""
+"""Bounded topic hints from research interests and prior claim references."""
 
 from __future__ import annotations
 
@@ -26,7 +6,8 @@ import hashlib
 import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any
+
+from codey.utils.object_fields import mapping_fields
 
 TOPIC_CONTINUITY_SCHEMA_VERSION = 1
 _PROJECTION_KIND = "research_topic_continuity_projection"
@@ -42,18 +23,6 @@ MAX_TOPIC_WARNINGS = 12
 
 ITEM_KIND_OPEN_QUESTION = "open_question"
 ITEM_KIND_PRIOR_CLAIM = "prior_claim"
-ITEM_KIND_CORRECTION = "correction"
-ITEM_KIND_PREFERENCE = "preference"
-
-# Only these Ghost continuity kinds carry research-topic value; focus,
-# goal, and project lines stay in the chat-side context instead of leaking
-# into every research prompt.
-_GHOST_ITEM_KIND_MAP = {
-    "open_question": ITEM_KIND_OPEN_QUESTION,
-    "fresh_correction": ITEM_KIND_CORRECTION,
-    "recently_reinforced_preference": ITEM_KIND_PREFERENCE,
-}
-
 # Internal machinery names that must never reach model-visible continuity
 # text, mirroring the knowledge-layer filter conventions. "memory" is
 # deliberately absent: it is a common content word in research questions,
@@ -164,9 +133,8 @@ class TopicContinuityProjection:
 
 def project_topic_continuity(
     *,
-    interest_hints: Iterable[Any] = (),
-    continuity_hints: Iterable[Any] = (),
-    claim_refs: Iterable[Any] = (),
+    interest_hints: Iterable[Mapping[str, object]] = (),
+    claim_refs: Iterable[object] = (),
     budget_chars: int = DEFAULT_TOPIC_BUDGET_CHARS,
 ) -> TopicContinuityProjection:
     """Project bounded local hints into one admitted-or-empty continuity."""
@@ -174,7 +142,6 @@ def project_topic_continuity(
     items: list[TopicContinuityItem] = []
 
     interest_rows = tuple(interest_hints or ())
-    continuity_rows = tuple(continuity_hints or ())
     claim_rows = tuple(claim_refs or ())
 
     for hint in interest_rows:
@@ -184,22 +151,13 @@ def project_topic_continuity(
             continue
         items.append(item)
 
-    for hint in continuity_rows:
-        item = _item_from_continuity_hint(hint)
-        if item is not None:
-            items.append(item)
-
     claim_items, claim_input_count = _items_from_claim_refs(claim_rows)
     items.extend(claim_items)
 
     items = list(_dedupe_items(items))
     candidates = build_topic_candidates(items)
-    corrections = tuple(item for item in items if item.kind == ITEM_KIND_CORRECTION)
-    preferences = tuple(item for item in items if item.kind == ITEM_KIND_PREFERENCE)
     rendering = render_topic_continuity(
         candidates=candidates,
-        corrections=corrections,
-        preferences=preferences,
         claim_ref_count=len(claim_items),
         budget_chars=budget_chars,
     )
@@ -284,8 +242,6 @@ class TopicContinuityRendering:
 def render_topic_continuity(
     *,
     candidates: Iterable[TopicPlannerCandidate] = (),
-    corrections: Iterable[TopicContinuityItem] = (),
-    preferences: Iterable[TopicContinuityItem] = (),
     claim_ref_count: int = 0,
     budget_chars: int = DEFAULT_TOPIC_BUDGET_CHARS,
 ) -> TopicContinuityRendering:
@@ -300,20 +256,6 @@ def render_topic_continuity(
         sections.append((
             "Suggested next-research topics (questions, not answers):",
             [f"- {row.question}" for row in candidate_rows],
-        ))
-
-    correction_rows = [item for item in (corrections or ()) if item.text]
-    if correction_rows:
-        sections.append((
-            "Earlier corrections that may affect this topic; re-check before use:",
-            [f"- {item.text}" for item in correction_rows],
-        ))
-
-    preference_rows = [item for item in (preferences or ()) if item.text]
-    if preference_rows:
-        sections.append((
-            "Framing preferences (style only, not facts):",
-            [f"- {item.text}" for item in preference_rows],
         ))
 
     claims = max(0, (claim_ref_count or 0))
@@ -398,39 +340,21 @@ def _candidate_id(normalized_question: str) -> str:
     return f"topic_{digest}"
 
 
-def _item_from_interest_hint(hint: Any) -> TopicContinuityItem | None:
-    identifier = _clean_token(_field(hint, "id"), 120)
-    ref = _clean_token(_field(hint, "ref"), MAX_TOPIC_REF_CHARS) or (
+def _item_from_interest_hint(hint: Mapping[str, object]) -> TopicContinuityItem | None:
+    identifier = _clean_token(hint.get("id"), 120)
+    ref = _clean_token(hint.get("ref"), MAX_TOPIC_REF_CHARS) or (
         f"research_interest:{identifier}" if identifier else ""
     )
     return topic_item(
         kind=ITEM_KIND_OPEN_QUESTION,
         ref=ref,
-        text=_field(hint, "question"),
+        text=hint.get("question"),
         reason_codes=("interest_lead",),
     )
 
 
-def _item_from_continuity_hint(hint: Any) -> TopicContinuityItem | None:
-    mapped = _GHOST_ITEM_KIND_MAP.get(str(_field(hint, "kind") or ""))
-    if mapped is None:
-        return None
-    identifier = _clean_token(_field(hint, "id"), 120)
-    if not identifier:
-        return None
-    stale = mapped == ITEM_KIND_CORRECTION
-    codes = ("ghost_correction_needs_recheck",) if stale else ()
-    return topic_item(
-        kind=mapped,
-        ref=f"continuity:{identifier}",
-        text=_field(hint, "text"),
-        stale=stale,
-        reason_codes=codes,
-    )
-
-
 def _items_from_claim_refs(
-    claim_refs: Iterable[Any],
+    claim_refs: Iterable[object],
 ) -> tuple[tuple[TopicContinuityItem, ...], int]:
     """Project raw claim refs into permanently-stale prior-claim items.
 
@@ -441,7 +365,7 @@ def _items_from_claim_refs(
     input_count = 0
     for value in claim_refs or ():
         raw = value
-        if isinstance(raw, Mapping):
+        if mapping_fields(raw):
             raw = raw.get("ref") or raw.get("claim_ref") or ""
         text = str(raw or "").strip()
         if not text:
@@ -521,18 +445,10 @@ def _clean_token(value: object, limit: int) -> str:
     return text
 
 
-def _field(value: Any, key: str) -> Any:
-    if isinstance(value, Mapping):
-        return value.get(key)
-    return getattr(value, key, "")
-
-
 __all__ = [
     "CONTEXT_SOURCE_KEY",
     "DEFAULT_TOPIC_BUDGET_CHARS",
-    "ITEM_KIND_CORRECTION",
     "ITEM_KIND_OPEN_QUESTION",
-    "ITEM_KIND_PREFERENCE",
     "ITEM_KIND_PRIOR_CLAIM",
     "MAX_TOPIC_CANDIDATES",
     "MAX_TOPIC_CLAIM_REFS",

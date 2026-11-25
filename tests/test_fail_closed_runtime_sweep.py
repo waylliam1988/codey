@@ -73,15 +73,6 @@ class OverflowSweepTests(unittest.TestCase):
         self.assertNotIn(True, pages)
         self.assertEqual(tuple(pages), ())
 
-    def test_evidence_ledger_counts_no_crash(self):
-        from codey.research.evidence_ledger import EvidenceLedgerWriteResult
-        try:
-            payload = EvidenceLedgerWriteResult(counts={"sources": "oops"}).to_trace_payload()
-        except (ValueError, OverflowError, TypeError):
-            self.fail("counts crashed, should clamp to 0")
-            return
-        counts = payload.get("counts", {})
-        self.assertEqual(counts.get("sources"), 0)
 
     def test_tools_merge_relation_tags_skips_bad(self):
         from codey.research.tools import _merge_relation_tags
@@ -304,12 +295,6 @@ class _ExplodingInteger:
 
 
 class GhostKnowledgeSweepTests(unittest.TestCase):
-
-
-
-
-
-
 
 
     def test_concepts_bool_ascii(self):

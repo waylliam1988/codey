@@ -2,7 +2,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING
+
+from codey.types.json_value import JsonObject
+
+if TYPE_CHECKING:
+    from codey.completion.contract import CompletionProof
+    from codey.research.answer_report import AnswerReport
+    from codey.research.object_model import ResearchRecord
 
 
 @dataclass
@@ -12,11 +19,11 @@ class ResearchRunResult:
     stop_reason: str
     turns: int
     queries: list[str] = field(default_factory=list)
-    search_results: list[dict[str, Any]] = field(default_factory=list)
-    opened_sources: list[dict[str, Any]] = field(default_factory=list)
-    coverage: dict[str, Any] = field(default_factory=dict[str, Any])
-    citation_map: list[dict[str, Any]] = field(default_factory=list)
-    evidence_items: list[dict[str, Any]] = field(default_factory=list)
+    search_results: list[JsonObject] = field(default_factory=list)
+    opened_sources: list[JsonObject] = field(default_factory=list)
+    coverage: dict[str, object] = field(default_factory=dict[str, object])
+    citation_map: list[dict[str, object]] = field(default_factory=list)
+    evidence_items: list[JsonObject] = field(default_factory=list)
     counterpoints: list[str] = field(default_factory=list)
     quality_warnings: list[str] = field(default_factory=list)
     notes_created: list[str] = field(default_factory=list)
@@ -26,12 +33,12 @@ class ResearchRunResult:
     source_urls: list[str] = field(default_factory=list)
     synthesis_id: str = ""
     advisor_count: int = 0
-    research_record: Any | None = None
+    research_record: ResearchRecord | None = None
     max_turns_used: int = 14
     # 共同 gate 的权威证明：投影与外层不得丢弃后另造。
-    completion_proof: Any | None = None
-    accepted_report: Any | None = None
-    semantic_review: dict[str, Any] | None = None
+    completion_proof: CompletionProof | None = None
+    accepted_report: AnswerReport | None = None
+    semantic_review: dict[str, object] | None = None
 
     @property
     def receipt(self) -> str:

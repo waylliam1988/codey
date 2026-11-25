@@ -10,15 +10,16 @@ from threading import Barrier
 import pytest
 
 from codey.app.input_queue import DurableConversationInputQueue, InputItem
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.errors import CommitConflict
 from codey.utils.object_fields import mapping_fields
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.fixture(params=["memory", "sqlite"])
 def queue(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[DurableConversationInputQueue]:
     backend: object = request.param
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "state.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "state.sqlite3")
     session = DurableSession(store)
     session.admit_input(conversation_id="chat", request_id="active", task_id="active", text="current", provider_snapshot={})
     session.start_task("active", state={})

@@ -8,16 +8,21 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Protocol, runtime_checkable
 
 from codey.agents.request import RecoveredToolOutcome
 from codey.operations.recovery import durable_task_for
+from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     SETTLEMENT_STATUS_OK,
     RuntimeEffectProjection,
     RuntimeEffectStore,
 )
+from codey.storage.managed_outputs import ManagedOutputStore
+from codey.types.json_value import require_json_string
+from codey.utils.object_fields import sequence_items
+from codey.workspace.revision import WorkspaceRevisionStore
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +36,7 @@ class ReceiptFacts:
 
 
 def inspect_receipt_facts(
-    deps: Any,
+    deps: object,
     *,
     session_id: str,
     run_id: str,
@@ -50,10 +55,9 @@ def inspect_receipt_facts(
     )
     if durable is None:
         return ReceiptFacts(ok=False)
-    from codey.durable.checkpoint import checkpoint_entries
     from codey.runtime.core.operation_reducer import ACTION_FAIL_INVARIANT, next_runtime_action
     from codey.runtime.effects.effect_records import RuntimeEffectError
-    from codey.runtime.log.session_view import load_session_view
+    from codey.runtime.write.checkpoint import view_from_checkpoint
 
     # Loading restores observations only. The operation driver owns pending
     # execution, progress reduction, generation boundaries and redelivery.
@@ -67,8 +71,7 @@ def inspect_receipt_facts(
         store = RuntimeEffectStore(durable=durable)
     try:
         task, effects = durable.task_facts(run_id)
-        view = load_session_view(checkpoint_entries(task, effects, session_id=session_id),
-                                 session_id=session_id, run_id=run_id)
+        view = view_from_checkpoint(task, effects, session_id=session_id)
         if next_runtime_action(view).kind == ACTION_FAIL_INVARIANT:
             return ReceiptFacts(ok=False)
         facts = _settled_facts(
@@ -86,7 +89,7 @@ def inspect_receipt_facts(
 
 def _settled_facts(
     projections: tuple[RuntimeEffectProjection, ...], pending_rows: tuple[RecoveredToolOutcome, ...], *,
-    deps: Any, session_id: str, run_id: str, project: str, ignored_paths: tuple[str, ...],
+    deps: object, session_id: str, run_id: str, project: str, ignored_paths: tuple[str, ...],
     active_batch_id: str = "",
 ) -> tuple[RecoveredToolOutcome, ...]:
     pending_by_id = {row.effect_id: row for row in pending_rows}
@@ -116,23 +119,30 @@ def _settled_facts(
     return tuple(rows)
 
 
-def _runtime_effect_store(deps: Any) -> Any:
-    return getattr(deps, "runtime_effects", None)
+@runtime_checkable
+class _EffectReader(Protocol):
+    def load_effects(self, session_id: str, run_id: str) -> tuple[RuntimeEffectProjection, ...]: ...
 
 
-def _managed_output_store(deps: Any) -> Any:
-    store = getattr(deps, "managed_outputs", None)
-    if store is not None:
+def _runtime_effect_store(deps: object) -> _EffectReader | None:
+    store: object = getattr(deps, "runtime_effects", None)
+    return store if isinstance(store, _EffectReader) else None
+
+
+def _managed_output_store(deps: object) -> ManagedOutputStore | None:
+    store: object = getattr(deps, "managed_outputs", None)
+    if isinstance(store, ManagedOutputStore):
         return store
     state = getattr(deps, "state", None)
-    return getattr(state, "managed_outputs", None)
+    store = getattr(state, "managed_outputs", None)
+    return store if isinstance(store, ManagedOutputStore) else None
 
 
 def rebuild_settled_tool_result(
-    projection: Any, call: Any = None, *,
-    managed_store: Any = None, session_id: str = "", run_id: str = "",
-    project_path: Any = None, workspace_store: Any = None, ignored_paths: tuple[str, ...] = (),
-) -> Any | None:
+    projection: RuntimeEffectProjection, call: ToolCall | None = None, *,
+    managed_store: ManagedOutputStore | None = None, session_id: str = "", run_id: str = "",
+    project_path: Path | None = None, workspace_store: WorkspaceRevisionStore | None = None, ignored_paths: tuple[str, ...] = (),
+) -> ToolResult | None:
     """Restore the original observation; unavailable receipts fail closed."""
     from codey.operations.kernel_receipts import restore_result_receipt
 
@@ -149,8 +159,8 @@ def rebuild_settled_tool_result(
 
 
 def _redelivered_outcome(
-    projection: Any,
-    rebuilt: Any,
+    projection: RuntimeEffectProjection,
+    rebuilt: ToolResult,
     *,
     turn: int,
     tool_index: int,
@@ -162,19 +172,19 @@ def _redelivered_outcome(
     except Exception:
         return None
     try:
-        st = getattr(projection, "settlement", None)
-        ok = str(getattr(st, "status", "") or "") == SETTLEMENT_STATUS_OK
-        audit = dict(getattr(rebuilt, "audit", {}) or {})
-        exit_code = getattr(st, "exit_code", None)
+        st = projection.settlement
+        ok = st is not None and st.status == SETTLEMENT_STATUS_OK
+        audit = dict(rebuilt.audit)
+        exit_code = st.exit_code if st is not None else None
         exit_code = exit_code if type(exit_code) is int else None
         outcome = _Outcome(
-            str(getattr(rebuilt, "model_text", "") or ""),
+            rebuilt.model_text,
             ok,
             audit=audit,
             canonical=rebuilt.canonical,
             presentation=rebuilt.presentation,
             exit_code=exit_code,
-            truncated=bool(getattr(rebuilt, "truncated", False)),
+            truncated=rebuilt.truncated,
         )
         from codey.operations.kernel_provenance import _kernel_workspace_identity_of, _trusted_workspace_proof
 
@@ -192,7 +202,7 @@ def _redelivered_outcome(
         return None
 
 
-def delivered_from_frame(frame: Any, *, effect_scope: str = "") -> dict[str, Any]:
+def delivered_from_frame(frame: object, *, effect_scope: str = "") -> dict[str, ToolResult]:
     """Rebuild durable delivery map from recovered frame rows.
 
     Identity is run+turn+index, never tool name+args. Every row goes through
@@ -213,9 +223,13 @@ def delivered_from_frame(frame: Any, *, effect_scope: str = "") -> dict[str, Any
         from codey.operations.task_session import turn_effect_id
     except Exception as exc:
         raise RecoveryFailed(f"recovery rebuild unavailable: {exc}") from exc
-    delivered: dict[str, Any] = {}
+    delivered: dict[str, ToolResult] = {}
     seen: set[tuple[int, int]] = set()
-    for item in getattr(frame, "recovered_tool_outcomes", ()) or ():
+    rows: object = getattr(frame, "recovered_tool_outcomes", ()) or ()
+    if not sequence_items(rows):
+        raise RecoveryFailed("recovered rows must be a sequence")
+    run_id = require_json_string(getattr(frame, "run_id", ""), "run_id") if rows else ""
+    for item in rows:
         try:
             try:
                 turn = _strict_slot_index(getattr(item, "turn", None), field="turn")
@@ -229,7 +243,7 @@ def delivered_from_frame(frame: Any, *, effect_scope: str = "") -> dict[str, Any
             seen.add((turn, index))
             spec = spec_for_recovered_row(item)
             rebuilt = build_recovered_result(spec)
-            identity_ref = f"{frame.run_id}:{effect_scope}" if effect_scope else frame.run_id
+            identity_ref = f"{run_id}:{effect_scope}" if effect_scope else run_id
             identity = turn_effect_id(identity_ref, turn, index)
             if identity in delivered:
                 raise RecoveryFailed(f"duplicate recovered slot: turn={turn} index={index}")

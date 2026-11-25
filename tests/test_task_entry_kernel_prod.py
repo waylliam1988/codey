@@ -457,13 +457,14 @@ class DispatchSwitchTests(unittest.TestCase):
     def test_entry_policy_is_persisted_and_reused_for_recovery(self) -> None:
         import tempfile
 
-        from codey.durable import DurableSession, MemoryDurableStore
+        from codey.durable import DurableSession
         from codey.operations.recovery import policy_from_durable_task, record_entry_policy
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.write.mutation_line import RuntimeMutationLine
+        from tests.support.sqlite_store import TemporarySQLiteStore
 
         with tempfile.TemporaryDirectory():
-            durable = DurableSession(MemoryDurableStore())
+            durable = DurableSession(TemporarySQLiteStore())
             mutations = RuntimeMutationLine(durable=durable)
             durable.admit_input(
                 conversation_id="s-policy",

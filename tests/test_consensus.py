@@ -9,13 +9,14 @@ from unittest import mock
 
 from codey.agents import consensus
 from codey.agents.handoff import ConversationSnapshot
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession
 from codey.operations import project_audit_advisor
 from codey.policies.task_policy import TaskPolicy
 from codey.runs.trace import RunTraceStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import JsonObject, parse_json_object, require_json_strings
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 class AuditRuntime(TypedDict):
@@ -80,7 +81,7 @@ class ConsensusTests(unittest.TestCase):
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        durable = DurableSession(MemoryDurableStore())
+        durable = DurableSession(TemporarySQLiteStore())
         self.addCleanup(durable.close)
         self.audit_runtime: AuditRuntime = {
             "durable": durable, "runtime_mutations": RuntimeMutationLine(durable=durable),

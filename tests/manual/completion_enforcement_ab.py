@@ -371,7 +371,6 @@ def _build_runner(state: server.AppContext, *, scripted=None, observed: dict[str
         workspace_revisions=state.workspace_revisions,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
-        evidence_ledgers=state.evidence_ledgers,
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=lambda _p: True,

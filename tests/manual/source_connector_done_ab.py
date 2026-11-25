@@ -36,7 +36,7 @@ from codey.research.browser_search import BrowserSearchProvider
 from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.ledger import ResearchLedger
 from codey.research.proof_quality import review_research_proof
-from codey.reviews.report_sections import (
+from codey.utils.report_sections import (
     REQUIRED_SECTIONS,
     parse_sections,
     section_title,

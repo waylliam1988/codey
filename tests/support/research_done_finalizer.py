@@ -14,7 +14,6 @@ from codey.research import report_quality
 from codey.research.ledger import ResearchLedger, normalize_evidence_stance
 from codey.research.object_model import ResearchClaim, build_research_record
 from codey.research.urls import opened_url
-from codey.reviews.report_sections import REQUIRED_SECTIONS, parse_sections, section_title
 from codey.utils.citation_scanner import (
     citation_ref_items,
     normalize_citation_groups,
@@ -22,6 +21,7 @@ from codey.utils.citation_scanner import (
     source_id_refs,
 )
 from codey.utils.refs import clip
+from codey.utils.report_sections import REQUIRED_SECTIONS, parse_sections, section_title
 
 _PAGE_REF_SUFFIX = r"(?:\s+(?:p\.?|pp\.?|pages?|page)\s*\.?\s*\d+(?:\s*-\s*\d+)?)?"
 _NUMERIC_REF_RE = re.compile(rf"(?<![A-Za-z0-9_!])\[(\d+)({_PAGE_REF_SUFFIX})\]", re.IGNORECASE)

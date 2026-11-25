@@ -5,23 +5,36 @@ from __future__ import annotations
 import re
 import time
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import replace
 from typing import TYPE_CHECKING, Protocol
 
+from codey.automation.browser_receipts import operation_receipts
 from codey.knowledge.model import canonical_json
 from codey.providers.compat_transport import optional_callable, provider_attribute
-from codey.research.answer_contract import ANSWER_GUIDANCE, AnswerScope
+from codey.research.answer_contract import ANSWER_GUIDANCE, AnswerScope, AnswerSessionView
 from codey.research.context_view import read_evidence_projection
 from codey.research.passages import read_passage_refs
 from codey.research.questions import is_investigation_tool
+from codey.runtime.core.models import ToolResult
 from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object, parse_json_object
 from codey.utils.text_budget import estimate_tokens
 
 if TYPE_CHECKING:
-    from codey.operations.task_session import TaskSession
     from codey.research.ledger import ResearchLedger
     from codey.research.tools import ResearchToolOutput
     from codey.runtime.core.models import ToolCall
+
+
+class _ReadPreview(AnswerSessionView, Protocol):
+    _memory_results: dict[str, ToolResult]
+
+
+class _PreviewSession(Protocol):
+    @property
+    def projection_lock(self) -> AbstractContextManager[object]: ...
+
+    def clone_projection(self) -> _ReadPreview: ...
 
 
 class _TextCount(Protocol):
@@ -55,7 +68,7 @@ def work_view_limits(provider: object, *, fixed_context: str = "") -> tuple[Call
     return count, budget.input_limit if fixed_context else min(budget.window_tokens // 2, budget.input_limit)
 
 
-def fitting_full_read(session: TaskSession, ledger: ResearchLedger, call: ToolCall,
+def fitting_full_read(session: _PreviewSession, ledger: ResearchLedger, call: ToolCall,
                       opened: ResearchToolOutput, *, provider: object = None) -> ResearchToolOutput:
     """Preview the actual work view; extend a default HTML read only if all fits."""
     from codey.research.answer_contract import answer_scope
@@ -68,7 +81,6 @@ def fitting_full_read(session: TaskSession, ledger: ResearchLedger, call: ToolCa
     )
     from codey.research.source_rendering import render_opened_source
     from codey.research.source_snapshots import snapshot_document
-    from codey.runtime.core.models import ToolResult
 
     if not opened.ok or "limit" in call.args or call.args.get("pages") or not opened.read_passages:
         return opened
@@ -99,7 +111,7 @@ def fitting_full_read(session: TaskSession, ledger: ResearchLedger, call: ToolCa
     return replace(opened, model_text=body, read_passages=tuple(rows))
 
 
-def prior_knowledge(session: TaskSession, *, budget: int = 6000) -> list[JsonObject]:
+def prior_knowledge(session: AnswerSessionView, *, budget: int = 6000) -> list[JsonObject]:
     """Keep bounded, exact prior statements from settled reads, never live heads."""
     rows: list[JsonObject] = []
     seen: set[tuple[str, int]] = set()
@@ -136,13 +148,13 @@ def prior_knowledge(session: TaskSession, *, budget: int = 6000) -> list[JsonObj
     return list(reversed(rows))
 
 
-def investigation_history(session: TaskSession) -> list[JsonObject]:
+def investigation_history(session: AnswerSessionView) -> list[JsonObject]:
     """Reuse displayed reads and latest_error without losing settled receipts."""
     counts: dict[str, int] = {}
     rows: list[JsonObject] = []
     receipt_reads: set[str] = set()
     latest = list(session._memory_results.values())[-1:]
-    latest_ref = next(reversed(session._memory_results), "")
+    latest_ref = next(reversed(tuple(session._memory_results)), "")
     compact = bool(latest and latest[0].call.name == "knowledge_search"
                    and latest[0].canonical.get("knowledge_search_empty") is True)
     for identity, result in session._memory_results.items():
@@ -165,7 +177,7 @@ def investigation_history(session: TaskSession) -> list[JsonObject]:
     return [row for row in rows[-8:] if not compact or str(row["result_ref"]) not in receipt_reads]
 
 
-def answer_context(session: TaskSession, ledger: ResearchLedger | None, scope: AnswerScope, *,
+def answer_context(session: AnswerSessionView, ledger: ResearchLedger | None, scope: AnswerScope, *,
                    count_tokens: Callable[[str], int] = estimate_tokens, token_budget: int = 16384) -> str:
     """Keep fitting originals visible without revoking task-read citation authority."""
     if token_budget <= 0:
@@ -220,7 +232,7 @@ def _primary_excerpt_priority(task: str, ledger: ResearchLedger, refs: tuple[str
     return tuple(ref for _, _, ref in sorted(best.values())[:8])
 
 
-def _render_context(session: TaskSession, ledger: ResearchLedger | None, scope: AnswerScope,
+def _render_context(session: AnswerSessionView, ledger: ResearchLedger | None, scope: AnswerScope,
                     visible: tuple[tuple[str, str], ...]) -> str:
     """Display exact originals separately from the frozen task-read citation scope."""
     from codey.research.quote_slots import paragraph_quote_slots, requests_exact_quote
@@ -271,9 +283,7 @@ def _render_context(session: TaskSession, ledger: ResearchLedger | None, scope: 
                          "start": passage.start, "end": passage.end,
                          **({"knowledge_source": list(passage.source_version)} if passage.source_version else {})})
     latest = list(session._memory_results.values())[-1:]
-    from codey.operations.kernel_prompt import operation_receipts
-
-    operations = operation_receipts(session)
+    operations = operation_receipts(session.executed, session._memory_results)
     from codey.research.evidence_gaps import same_source_groups, suspected_source_pairs
 
     related_sources: list[list[str]] = same_source_groups(ledger.read_passages, scope.aliases) if ledger is not None else []

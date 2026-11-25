@@ -7,8 +7,8 @@ from codey.research.report_values import CitationBinding
 from codey.types.json_value import JsonObject
 
 
-def evidence_status_suffix(scope_version: int, state: str) -> str:
-    return "\n\n**Evidence status: " + state + ".**" if scope_version >= 10 and state != "answered" else ""
+def evidence_status_suffix(requires_primary: bool, state: str) -> str:
+    return "\n\n**Evidence status: " + state + ".**" if requires_primary and state != "answered" else ""
 
 
 class CitationOccurrence(TypedDict):
@@ -22,12 +22,12 @@ class AnswerScopePayload(TypedDict):
     aliases: list[list[str]]
     attempt_refs: list[str]
     schema_version: int
-    fields: NotRequired[list[JsonObject]]
-    declared_fields_ready: NotRequired[bool]
-    execution_summary: NotRequired[str]
-    execution_refs: NotRequired[list[str]]
-    calculations: NotRequired[list[JsonObject]]
-    primary_passages: NotRequired[list[str]]
+    fields: list[JsonObject]
+    declared_fields_ready: bool
+    execution_summary: str
+    execution_refs: list[str]
+    calculations: list[JsonObject]
+    primary_passages: list[str] | None
 
 
 class UnsignedAnswerSubmission(TypedDict):

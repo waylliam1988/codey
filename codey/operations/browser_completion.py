@@ -5,13 +5,12 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from codey.automation.browser_document import normalize_element_ref
+from codey.automation.browser_receipts import committed_results
 from codey.policies.browser_requirement import PAGE_TRANSITIONS, BrowserPageRounds, BrowserResearchSequence
 from codey.policies.requirement import RequirementEvaluation
-from codey.policies.tool_requirement import _browser_body
 from codey.research.answer_contract import AnswerScope
 from codey.research.answer_report import AnswerReport
-from codey.research.finding_report import ResearchReport
-from codey.research.ledger_receipts import source_observation
+from codey.research.browser_result_evidence import complete_page_passages
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
 from codey.types.json_value import JsonObject, decode_json_object
@@ -97,14 +96,6 @@ def _stage_click(result: ToolResult) -> bool:
                                                     and value.get("delivery") in {"delivered", "uncertain"})
 
 
-def committed_results(records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],
-                      names: frozenset[str], *, include_failed: frozenset[str] = frozenset()) -> list[tuple[str, ToolResult]]:
-    return [(ref, result) for ref, row in records.items() if row["name"] in names
-            and (row["ok"] or row["name"] in include_failed) and row.get("execution_disposition") != "denied_before_execution"
-            and (result := results.get(ref)) is not None and result.ok == row["ok"] and result.call.name == row["name"]
-            and result.call.call_id == row["call_id"]]
-
-
 def complete_snapshot_text(result: ToolResult) -> tuple[str, str] | None:
     """Read the full visible text independently of the control inventory limit."""
     if (result.ok and result.call.name == "browser_snapshot"
@@ -129,19 +120,6 @@ def wait_matched_on_page(result: ToolResult, url: str) -> bool:
         return False
     value = dict[str, object](observed)
     return value.get("matched") is True and value.get("page_url") == url
-
-
-def complete_page_passages(result: ToolResult, url: str) -> set[str]:
-    passages = result.canonical.get("read_passages")
-    if not isinstance(passages, list):
-        return set()
-    try:
-        source, _, _ = source_observation(result.canonical.get("research_observation"))
-        if source.final_url != url or not _browser_body(result):
-            return set()
-    except (KeyError, TypeError, ValueError):
-        return set()
-    return {ref for item in passages if isinstance(item, dict) and isinstance(ref := item.get("ref"), str)}
 
 
 def post_wait_passages(rule: BrowserResearchSequence, *, records: Mapping[str, ExecutionRecord],
@@ -190,7 +168,7 @@ def research_page_evidence(rule: BrowserResearchSequence, *, records: Mapping[st
 
 def evaluate_research_sequence(rule: BrowserResearchSequence, *, records: Mapping[str, ExecutionRecord],
                                results: Mapping[str, ToolResult], document: JsonObject | None,
-                               report: ResearchReport | None) -> RequirementEvaluation:
+                               report: AnswerReport | None) -> RequirementEvaluation:
     outcome, passages = research_page_evidence(rule, records=records, results=results, document=document)
     if not outcome.passed:
         return outcome

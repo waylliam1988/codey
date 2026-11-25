@@ -8,8 +8,8 @@ from typing import ClassVar, Literal, TypeAlias
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
 from codey.providers.task_prompt import TaskPromptSpan
 from codey.providers.text_result_views import TextResultSpan
-from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.types.json_value import JsonObject
+from codey.types.protocol_window import ProtocolWindowRef
 
 ProviderMethod: TypeAlias = Literal[
     "send", "send_turn", "send_tool_results", "acknowledge_tool_results",

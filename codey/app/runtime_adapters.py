@@ -11,9 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import RuntimeEffectStore
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
+from codey.runtime.write.checkpoint import RuntimeOperationStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 
 if TYPE_CHECKING:

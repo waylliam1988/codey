@@ -20,10 +20,12 @@ from __future__ import annotations
 import hashlib
 import uuid
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING
 
+from codey.durable.model import TaskCheckpoint, thaw_json
+from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.effects.keep_policies import (
     RECORD_KIND_ABANDONED,
@@ -32,6 +34,18 @@ from codey.runtime.effects.keep_policies import (
 )
 from codey.runtime.effects.replay_policy import is_replayable_safe_tool
 from codey.runtime.log.entries import RuntimeLogEntry
+from codey.types.json_value import (
+    JsonObject,
+    JsonValue,
+    canonical_json_object,
+    decode_json_object,
+    require_json_boolean,
+    require_json_string,
+    require_json_strings,
+)
+
+if TYPE_CHECKING:
+    from codey.durable.session import DurableSession
 
 SCHEMA_VERSION = 1
 EFFECT_KIND = "tool_result_delivery"
@@ -186,7 +200,7 @@ class DeliveryCommit:
     their provider ledger commit and later reconcile it with delivered rows.
     """
 
-    window_ref: Mapping[str, Any]
+    window_ref: Mapping[str, object]
     batch_id: str
     provider_effect_id: str
     results_digest: str
@@ -207,10 +221,10 @@ class DeliveryCommit:
             if value:
                 _require_bounded_str(value, name, MAX_DIGEST_CHARS)
 
-    def to_payload(self) -> dict[str, Any]:
+    def to_payload(self) -> JsonObject:
         self.validate()
         return {
-            "window_ref": dict(self.window_ref),
+            "window_ref": canonical_json_object(self.window_ref),
             "batch_id": self.batch_id,
             "provider_effect_id": self.provider_effect_id,
             "results_digest": self.results_digest,
@@ -221,23 +235,32 @@ class DeliveryCommit:
         }
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, Any]) -> DeliveryCommit:
+    def from_payload(cls, payload: Mapping[str, object]) -> DeliveryCommit:
         expected = {"window_ref", "batch_id", "provider_effect_id", "results_digest",
                     "invocation_kind", "reply_status", "input_digest", "output_digest"}
         if set(payload) != expected:
             raise ToolResultDeliveryError(f"delivery commit keys mismatch: {set(payload) ^ expected}")
-        value = cls(**{key: payload[key] for key in expected})
+        value = cls(
+            window_ref=decode_json_object(payload["window_ref"]),
+            batch_id=require_json_string(payload["batch_id"], "batch_id"),
+            provider_effect_id=require_json_string(payload["provider_effect_id"], "provider_effect_id"),
+            results_digest=require_json_string(payload["results_digest"], "results_digest"),
+            invocation_kind=require_json_string(payload["invocation_kind"], "invocation_kind"),
+            reply_status=require_json_string(payload["reply_status"], "reply_status"),
+            input_digest=require_json_string(payload["input_digest"], "input_digest"),
+            output_digest=require_json_string(payload["output_digest"], "output_digest"),
+        )
         value.validate()
         return value
 
 
-def _require_nonnegative_int(value: Any, name: str) -> int:
+def _require_nonnegative_int(value: object, name: str) -> int:
     if type(value) is not int or value < 0:
         raise ToolResultDeliveryError(f"{name} must be a non-negative int, got {value!r}")
     return value
 
 
-def _require_bounded_str(value: Any, name: str, max_chars: int) -> str:
+def _require_bounded_str(value: object, name: str, max_chars: int) -> str:
     if not isinstance(value, str) or type(value) is not str:
         raise ToolResultDeliveryError(f"{name} must be a str, got {type(value)}")
     val = value.strip()
@@ -265,7 +288,7 @@ class DeliveryBatchItem:
         if type(self.is_denied) is not bool:
             raise ToolResultDeliveryError(f"invalid is_denied: {self.is_denied!r}")
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> JsonObject:
         self.validate()
         return {
             "tool_index": self.tool_index,
@@ -276,18 +299,18 @@ class DeliveryBatchItem:
         }
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> DeliveryBatchItem:
+    def from_dict(cls, data: Mapping[str, object]) -> DeliveryBatchItem:
         if not isinstance(data, Mapping):
             raise ToolResultDeliveryError(f"invalid item payload type: {type(data)}")
         if set(data.keys()) != _ITEM_PAYLOAD_KEYS:
             diff = set(data.keys()) ^ _ITEM_PAYLOAD_KEYS
             raise ToolResultDeliveryError(f"item payload key mismatch: {diff}")
         item = cls(
-            tool_index=data["tool_index"],
-            tool_name=data["tool_name"],
-            ref=data["ref"],
-            replay_class=data["replay_class"],
-            is_denied=data["is_denied"],
+            tool_index=_require_nonnegative_int(data["tool_index"], "tool_index"),
+            tool_name=require_json_string(data["tool_name"], "tool_name"),
+            ref=require_json_string(data["ref"], "ref"),
+            replay_class=require_json_string(data["replay_class"], "replay_class"),
+            is_denied=require_json_boolean(data["is_denied"], "is_denied"),
         )
         item.validate()
         return item
@@ -310,14 +333,14 @@ def new_batch_id(run_id: str, turn: int) -> str:
     return f"deliv-{clean_run}-t{turn}-{token}"
 
 
-def _check_no_forbidden_keys(payload: dict[str, Any]) -> None:
+def _check_no_forbidden_keys(payload: JsonObject) -> None:
     for key in payload:
         if key.lower() in FORBIDDEN_RAW_KEYS:
             raise ToolResultDeliveryError(f"forbidden raw data key in payload: {key}")
 
 
 def _validate_delivery_record_envelope(
-    payload: dict[str, Any],
+    payload: JsonObject,
     expected_kind: str,
     allowed_keys: frozenset[str],
 ) -> None:
@@ -343,7 +366,7 @@ def _validate_delivery_record_envelope(
 
 def _validate_run_boundary(
     entry: RuntimeLogEntry,
-    payload: dict[str, Any],
+    payload: JsonObject,
     session_id: str,
     run_id: str,
 ) -> bool:
@@ -425,7 +448,7 @@ class DeliveryBatchIntent:
                 f"batch_digest mismatch: expected {expected_digest!r}, got {self.batch_digest!r}"
             )
 
-    def to_payload(self) -> dict[str, Any]:
+    def to_payload(self) -> JsonObject:
         self.validate()
         lane = self.lane or lane_for_run(self.run_id)
         operation_id = self.operation_id or operation_id_for_run(self.run_id)
@@ -547,7 +570,7 @@ def prepare_batch_intent(
     )
 
 
-def delivery_record_entry(payload: dict[str, Any]) -> dict[str, object]:
+def delivery_record_entry(payload: JsonObject) -> dict[str, object]:
     lane = _require_bounded_str(payload.get("lane"), "lane", MAX_REF_CHARS)
     operation_id = _require_bounded_str(
         payload.get("operation_id"),
@@ -562,20 +585,12 @@ def delivery_record_entry(payload: dict[str, Any]) -> dict[str, object]:
     }
 
 
-def batch_intent_entry(intent: DeliveryBatchIntent) -> dict[str, object]:
-    payload = intent.to_payload()
-    _validate_delivery_record_envelope(payload, RECORD_KIND_BATCH_INTENT, _INTENT_PAYLOAD_KEYS)
-    return delivery_record_entry(payload)
-
-
-def send_attempt_entry(
-    session_id: str,
-    run_id: str,
+def mark_send_attempt(
     *,
     batch_id: str,
     provider_effect_id: str,
     batches: tuple[DeliveryBatchProjection, ...],
-) -> dict[str, object] | None:
+) -> DeliveryBatchProjection | None:
     clean_batch_id = _require_bounded_str(batch_id, "batch_id", MAX_BATCH_ID_CHARS)
     clean_peid = _require_bounded_str(provider_effect_id, "provider_effect_id", MAX_EFFECT_ID_CHARS)
     projection = next((batch for batch in batches if batch.intent.batch_id == clean_batch_id), None)
@@ -587,31 +602,15 @@ def send_attempt_entry(
         return None
     if projection.active_attempts:
         raise ToolResultDeliveryError(f"batch already has a live send_attempt: {clean_batch_id!r}")
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "effect_kind": EFFECT_KIND,
-        "record_kind": RECORD_KIND_SEND_ATTEMPT,
-        "ref": f"delivery_attempt:{clean_batch_id}:{clean_peid}",
-        "batch_id": clean_batch_id,
-        "session_id": session_id,
-        "run_id": run_id,
-        "lane": lane_for_run(run_id),
-        "operation_id": operation_id_for_run(run_id),
-        "provider_effect_id": clean_peid,
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    _validate_delivery_record_envelope(payload, RECORD_KIND_SEND_ATTEMPT, _SEND_ATTEMPT_PAYLOAD_KEYS)
-    return delivery_record_entry(payload)
+    return replace(projection, send_attempts=(*projection.send_attempts, clean_peid))
 
 
-def send_superseded_entry(
-    session_id: str,
-    run_id: str,
+def mark_send_superseded(
     *,
     batch_id: str,
     provider_effect_id: str,
     batches: tuple[DeliveryBatchProjection, ...],
-) -> dict[str, object] | None:
+) -> DeliveryBatchProjection | None:
     """Void a prior send_attempt that deterministically sent nothing usable.
 
     Returns None when already voided (idempotent). Raises when the batch is
@@ -631,31 +630,15 @@ def send_superseded_entry(
         raise ToolResultDeliveryError(
             f"cannot record send_superseded without matching send_attempt: {clean_batch_id!r}"
         )
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "effect_kind": EFFECT_KIND,
-        "record_kind": RECORD_KIND_SEND_SUPERSEDED,
-        "ref": f"delivery_superseded:{clean_batch_id}:{clean_peid}",
-        "batch_id": clean_batch_id,
-        "session_id": session_id,
-        "run_id": run_id,
-        "lane": lane_for_run(run_id),
-        "operation_id": operation_id_for_run(run_id),
-        "provider_effect_id": clean_peid,
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    _validate_delivery_record_envelope(payload, RECORD_KIND_SEND_SUPERSEDED, _SEND_SUPERSEDED_PAYLOAD_KEYS)
-    return delivery_record_entry(payload)
+    return replace(projection, superseded_effect_ids=(*projection.superseded_effect_ids, clean_peid))
 
 
-def delivered_entry(
-    session_id: str,
-    run_id: str,
+def mark_delivered(
     *,
     batch_id: str,
     provider_effect_id: str,
     batches: tuple[DeliveryBatchProjection, ...],
-) -> dict[str, object] | None:
+) -> DeliveryBatchProjection | None:
     clean_batch_id = _require_bounded_str(batch_id, "batch_id", MAX_BATCH_ID_CHARS)
     clean_peid = _require_bounded_str(provider_effect_id, "provider_effect_id", MAX_EFFECT_ID_CHARS)
     projection = next((batch for batch in batches if batch.intent.batch_id == clean_batch_id), None)
@@ -671,33 +654,17 @@ def delivered_entry(
         raise ToolResultDeliveryError(
             f"cannot record delivered without matching live send_attempt: {clean_batch_id!r}"
         )
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "effect_kind": EFFECT_KIND,
-        "record_kind": RECORD_KIND_DELIVERED,
-        "ref": f"delivery_delivered:{clean_batch_id}:{clean_peid}",
-        "batch_id": clean_batch_id,
-        "session_id": session_id,
-        "run_id": run_id,
-        "lane": lane_for_run(run_id),
-        "operation_id": operation_id_for_run(run_id),
-        "provider_effect_id": clean_peid,
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    _validate_delivery_record_envelope(payload, RECORD_KIND_DELIVERED, _DELIVERED_PAYLOAD_KEYS)
-    return delivery_record_entry(payload)
+    return replace(projection, delivered_effect_ids=(clean_peid,), is_delivered=True)
 
 
-def recovered_entry(
-    session_id: str,
-    run_id: str,
+def mark_recovered(
     *,
     batch_id: str,
     recovered_effect_ids: Sequence[str],
     recovered_reads: int = 0,
     recovered_lookups: int = 0,
     batches: tuple[DeliveryBatchProjection, ...],
-) -> dict[str, object] | None:
+) -> DeliveryBatchProjection | None:
     clean_batch_id = _require_bounded_str(batch_id, "batch_id", MAX_BATCH_ID_CHARS)
     if not isinstance(recovered_effect_ids, (list, tuple)):
         raise ToolResultDeliveryError("recovered_effect_ids must be a sequence")
@@ -720,33 +687,16 @@ def recovered_entry(
         ):
             return None
         raise ToolResultDeliveryError(f"conflicting recovered record for batch {clean_batch_id!r}")
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "effect_kind": EFFECT_KIND,
-        "record_kind": RECORD_KIND_RECOVERED,
-        "ref": f"delivery_recovered:{clean_batch_id}",
-        "batch_id": clean_batch_id,
-        "session_id": session_id,
-        "run_id": run_id,
-        "lane": lane_for_run(run_id),
-        "operation_id": operation_id_for_run(run_id),
-        "recovered_effect_ids": clean_effect_ids,
-        "recovered_reads": rec_reads,
-        "recovered_lookups": rec_lookups,
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    _validate_delivery_record_envelope(payload, RECORD_KIND_RECOVERED, _RECOVERED_PAYLOAD_KEYS)
-    return delivery_record_entry(payload)
+    return replace(projection, is_recovered=True, recovered_effect_ids=tuple(clean_effect_ids),
+                   recovered_reads=rec_reads, recovered_lookups=rec_lookups)
 
 
-def abandoned_entry(
-    session_id: str,
-    run_id: str,
+def mark_abandoned(
     *,
     batch_id: str,
     reason: str,
     batches: tuple[DeliveryBatchProjection, ...],
-) -> dict[str, object] | None:
+) -> DeliveryBatchProjection | None:
     """Close an undelivered batch when writer/repair settles past it.
 
     Reconstruction may precede abandonment, but acknowledged delivery may
@@ -765,21 +715,7 @@ def abandoned_entry(
         if projection.abandoned_reason == clean_reason:
             return None
         raise ToolResultDeliveryError(f"conflicting abandoned record for batch {clean_batch_id!r}")
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "effect_kind": EFFECT_KIND,
-        "record_kind": RECORD_KIND_ABANDONED,
-        "ref": f"delivery_abandoned:{clean_batch_id}",
-        "batch_id": clean_batch_id,
-        "session_id": session_id,
-        "run_id": run_id,
-        "lane": lane_for_run(run_id),
-        "operation_id": operation_id_for_run(run_id),
-        "reason": clean_reason,
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    _validate_delivery_record_envelope(payload, RECORD_KIND_ABANDONED, _ABANDONED_PAYLOAD_KEYS)
-    return delivery_record_entry(payload)
+    return replace(projection, is_abandoned=True, abandoned_reason=clean_reason)
 
 
 def iter_delivery_records_from_entries(
@@ -787,14 +723,12 @@ def iter_delivery_records_from_entries(
     *,
     session_id: str,
     run_id: str,
-) -> Iterator[tuple[str, dict[str, Any]]]:
+) -> Iterator[tuple[str, JsonObject]]:
     """Iterate and strictly validate all delivery records for this run."""
     for entry in entries:
         if entry.kind != "operation_effect":
             continue
-        payload: object = entry.payload
-        if not isinstance(payload, dict):
-            continue
+        payload = canonical_json_object(entry.payload)
         if payload.get("effect_kind") != EFFECT_KIND:
             continue
 
@@ -802,7 +736,7 @@ def iter_delivery_records_from_entries(
             continue
 
         rkind = payload.get("record_kind")
-        if rkind not in RECORD_KINDS:
+        if not isinstance(rkind, str) or rkind not in RECORD_KINDS:
             raise ToolResultDeliveryError(f"unknown delivery record_kind: {rkind!r}")
 
         batch_id = payload.get("batch_id")
@@ -852,15 +786,15 @@ def batches_from_entries(
     send_attempts: dict[str, list[str]] = {}
     superseded: dict[str, list[str]] = {}
     delivered: dict[str, list[str]] = {}
-    recovered_facts: dict[str, dict[str, Any]] = {}
-    abandoned_facts: dict[str, dict[str, Any]] = {}
+    recovered_facts: dict[str, JsonObject] = {}
+    abandoned_facts: dict[str, JsonObject] = {}
 
     for rkind, payload in iter_delivery_records_from_entries(
         entries,
         session_id=session_id,
         run_id=run_id,
     ):
-        batch_id = payload["batch_id"]
+        batch_id = require_json_string(payload["batch_id"], "batch_id")
 
         if rkind == RECORD_KIND_BATCH_INTENT:
             _apply_batch_intent_record(
@@ -871,13 +805,13 @@ def batches_from_entries(
             )
 
         elif rkind == RECORD_KIND_SEND_ATTEMPT:
-            send_attempts.setdefault(batch_id, []).append(payload["provider_effect_id"])
+            send_attempts.setdefault(batch_id, []).append(require_json_string(payload["provider_effect_id"], "provider_effect_id"))
 
         elif rkind == RECORD_KIND_SEND_SUPERSEDED:
-            superseded.setdefault(batch_id, []).append(payload["provider_effect_id"])
+            superseded.setdefault(batch_id, []).append(require_json_string(payload["provider_effect_id"], "provider_effect_id"))
 
         elif rkind == RECORD_KIND_DELIVERED:
-            delivered.setdefault(batch_id, []).append(payload["provider_effect_id"])
+            delivered.setdefault(batch_id, []).append(require_json_string(payload["provider_effect_id"], "provider_effect_id"))
 
         elif rkind == RECORD_KIND_RECOVERED:
             _apply_recovered_record(
@@ -923,19 +857,13 @@ def batches_from_entries(
     )
 
 
-def _apply_batch_intent_record(
-    *,
-    payload: dict[str, Any],
-    batch_id: str,
-    intents: dict[str, DeliveryBatchIntent],
-    ordered_batch_ids: list[str],
-) -> None:
+def _batch_intent_from_payload(payload: JsonObject, batch_id: str) -> DeliveryBatchIntent:
     raw_items = payload.get("items")
     if not isinstance(raw_items, list) or not raw_items:
         raise ToolResultDeliveryError(
             f"batch_intent missing or invalid items in batch {batch_id!r}"
         )
-    items = tuple(DeliveryBatchItem.from_dict(it) for it in raw_items)
+    items = tuple(DeliveryBatchItem.from_dict(decode_json_object(it)) for it in raw_items)
     turn = _require_nonnegative_int(payload.get("turn"), "turn")
     intent = DeliveryBatchIntent(
         batch_id=batch_id,
@@ -949,6 +877,17 @@ def _apply_batch_intent_record(
         created_at=str(payload.get("created_at") or ""),
     )
     intent.validate()
+    return intent
+
+
+def _apply_batch_intent_record(
+    *,
+    payload: JsonObject,
+    batch_id: str,
+    intents: dict[str, DeliveryBatchIntent],
+    ordered_batch_ids: list[str],
+) -> None:
+    intent = _batch_intent_from_payload(payload, batch_id)
 
     if batch_id in intents:
         existing = intents[batch_id]
@@ -967,14 +906,14 @@ def _apply_batch_intent_record(
 
 def _apply_recovered_record(
     *,
-    payload: dict[str, Any],
+    payload: JsonObject,
     batch_id: str,
-    recovered_facts: dict[str, dict[str, Any]],
+    recovered_facts: dict[str, JsonObject],
 ) -> None:
     if batch_id in recovered_facts:
         existing = recovered_facts[batch_id]
         if (
-            list(existing.get("recovered_effect_ids", [])) != list(payload.get("recovered_effect_ids", []))
+            existing["recovered_effect_ids"] != payload["recovered_effect_ids"]
             or existing.get("recovered_reads") != payload.get("recovered_reads")
             or existing.get("recovered_lookups") != payload.get("recovered_lookups")
         ):
@@ -985,9 +924,9 @@ def _apply_recovered_record(
 
 def _apply_abandoned_record(
     *,
-    payload: dict[str, Any],
+    payload: JsonObject,
     batch_id: str,
-    abandoned_facts: dict[str, dict[str, Any]],
+    abandoned_facts: dict[str, JsonObject],
 ) -> None:
     if batch_id in abandoned_facts:
         existing = abandoned_facts[batch_id]
@@ -1003,8 +942,8 @@ def _check_delivery_orphans(
     send_attempts: dict[str, list[str]],
     superseded: dict[str, list[str]],
     delivered: dict[str, list[str]],
-    recovered_facts: dict[str, dict[str, Any]] | None = None,
-    abandoned_facts: dict[str, dict[str, Any]] | None = None,
+    recovered_facts: dict[str, JsonObject] | None = None,
+    abandoned_facts: dict[str, JsonObject] | None = None,
 ) -> None:
     known_intent_ids = set(intents.keys())
     orphan_attempts = set(send_attempts.keys()) - known_intent_ids
@@ -1080,8 +1019,8 @@ def _check_delivery_links(
 def _check_delivery_terminals(
     *,
     delivered: dict[str, list[str]],
-    recovered_facts: dict[str, dict[str, Any]],
-    abandoned_facts: dict[str, dict[str, Any]],
+    recovered_facts: dict[str, JsonObject],
+    abandoned_facts: dict[str, JsonObject],
 ) -> None:
     """Abandoned is exclusive with delivered.
 
@@ -1099,8 +1038,8 @@ def _build_delivery_projections(
     send_attempts: dict[str, list[str]],
     superseded: dict[str, list[str]],
     delivered: dict[str, list[str]],
-    recovered_facts: dict[str, dict[str, Any]],
-    abandoned_facts: dict[str, dict[str, Any]] | None = None,
+    recovered_facts: dict[str, JsonObject],
+    abandoned_facts: dict[str, JsonObject] | None = None,
 ) -> tuple[DeliveryBatchProjection, ...]:
     abandoned_facts = abandoned_facts or {}
     projections: list[DeliveryBatchProjection] = []
@@ -1119,9 +1058,9 @@ def _build_delivery_projections(
                 superseded_effect_ids=voided,
                 delivered_effect_ids=delivered_ids,
                 is_delivered=bool(delivered_ids),
-                recovered_effect_ids=tuple(rec.get("recovered_effect_ids", ())) if rec else (),
-                recovered_reads=int(rec.get("recovered_reads", 0)) if rec else 0,
-                recovered_lookups=int(rec.get("recovered_lookups", 0)) if rec else 0,
+                recovered_effect_ids=tuple(require_json_strings(rec["recovered_effect_ids"], "recovered_effect_ids")) if rec else (),
+                recovered_reads=_require_nonnegative_int(rec["recovered_reads"], "recovered_reads") if rec else 0,
+                recovered_lookups=_require_nonnegative_int(rec["recovered_lookups"], "recovered_lookups") if rec else 0,
                 is_recovered=rec is not None,
                 abandoned_reason=str(abd.get("reason") or "") if abd else "",
                 is_abandoned=abd is not None,
@@ -1131,83 +1070,78 @@ def _build_delivery_projections(
     return tuple(projections)
 
 
-class ToolResultDeliveryStore:
-    """Read projection for tool-result delivery receipts."""
+def delivery_batches_from_snapshot(value: object, *, session_id: str,
+                                   run_id: str) -> tuple[DeliveryBatchProjection, ...]:
+    if not isinstance(value, list):
+        raise ToolResultDeliveryError("invalid delivery checkpoint")
+    snapshots: list[object] = value
+    batches: dict[str, DeliveryBatchProjection] = {}
+    for snapshot in snapshots:
+        batch = _batch_from_snapshot(decode_json_object(snapshot), session_id, run_id)
+        if batch.intent.batch_id in batches:
+            raise ToolResultDeliveryError("duplicate delivery batch in checkpoint")
+        batches[batch.intent.batch_id] = batch
+    return tuple(batches.values())
 
-    def __init__(self, *, durable: Any) -> None:
-        if durable is None:
-            raise ValueError("a delivery store requires durable storage")
+
+def _batch_from_snapshot(snapshot: JsonObject, session_id: str, run_id: str) -> DeliveryBatchProjection:
+    payload = decode_json_object(snapshot["intent"])
+    _validate_delivery_record_envelope(payload, RECORD_KIND_BATCH_INTENT, _INTENT_PAYLOAD_KEYS)
+    batch_id = _require_bounded_str(payload["batch_id"], "batch_id", MAX_BATCH_ID_CHARS)
+    intent = _batch_intent_from_payload(payload, batch_id)
+    if (intent.session_id != session_id or intent.run_id != run_id
+            or intent.lane != lane_for_run(run_id) or intent.operation_id != operation_id_for_run(run_id)):
+        raise ToolResultDeliveryError("delivery checkpoint boundary mismatch")
+    attempts, superseded, delivered = (_snapshot_effect_ids(snapshot[field], field)
+        for field in ("send_attempts", "superseded_effect_ids", "delivered_effect_ids"))
+    _check_delivery_links(send_attempts={batch_id: list(attempts)}, superseded={batch_id: list(superseded)},
+                          delivered={batch_id: list(delivered)} if delivered else {})
+    is_recovered = require_json_boolean(snapshot["is_recovered"], "is_recovered")
+    is_abandoned = require_json_boolean(snapshot["is_abandoned"], "is_abandoned")
+    reason = require_json_string(snapshot["abandoned_reason"], "abandoned_reason")
+    if is_abandoned and (delivered or reason not in ABANDONED_REASONS):
+        raise ToolResultDeliveryError("invalid abandoned delivery checkpoint")
+    return DeliveryBatchProjection(
+        intent, attempts, superseded, delivered, bool(delivered),
+        _snapshot_effect_ids(snapshot["recovered_effect_ids"], "recovered_effect_ids"),
+        _require_nonnegative_int(snapshot["recovered_reads"], "recovered_reads"),
+        _require_nonnegative_int(snapshot["recovered_lookups"], "recovered_lookups"),
+        is_recovered, reason, is_abandoned,
+    )
+
+
+def _snapshot_effect_ids(value: JsonValue, field: str) -> tuple[str, ...]:
+    return tuple(_require_bounded_str(identity, field, MAX_EFFECT_ID_CHARS)
+                 for identity in require_json_strings(value, field))
+
+
+def delivery_from_checkpoint(task: TaskCheckpoint, *, session_id: str) -> tuple[DeliveryBatchProjection, ...]:
+    if task.conversation_id != session_id:
+        raise RuntimeOperationTransitionError("checkpoint conversation boundary mismatch")
+    return delivery_batches_from_snapshot(thaw_json(task.state.get("delivery_batches", ())),
+                                          session_id=session_id, run_id=task.task_id)
+
+
+class ToolResultDeliveryStore:
+    """Read the delivery batches of the durable task."""
+
+    def __init__(self, *, durable: DurableSession) -> None:
         self.durable = durable
 
-    def _entries(self, session_id: str, run_id: str) -> tuple[RuntimeLogEntry, ...]:
-        from codey.durable.checkpoint import checkpoint_entries
-
+    def load_batches(self, session_id: str, run_id: str) -> tuple[DeliveryBatchProjection, ...]:
         try:
-            task, effects = self.durable.task_facts(run_id)
+            task = self.durable.task(run_id)
         except KeyError:
             return ()
-        return checkpoint_entries(task, effects, session_id=session_id)
+        return delivery_from_checkpoint(task, session_id=session_id)
 
-    def _iter_validated_delivery_records(
-        self,
-        session_id: str,
-        run_id: str,
-    ) -> Iterator[tuple[str, dict[str, Any]]]:
-        """Iterate and strictly validate all delivery records for this run."""
-        yield from iter_delivery_records_from_entries(
-            self._entries(session_id, run_id),
-            session_id=session_id,
-            run_id=run_id,
+    def load_recovered_facts(self, session_id: str, run_id: str) -> tuple[DeliveryRecoveredFact, ...]:
+        return tuple(
+            DeliveryRecoveredFact(batch.intent.batch_id, session_id, run_id,
+                batch.intent.lane, batch.intent.operation_id, batch.recovered_effect_ids,
+                batch.recovered_reads, batch.recovered_lookups, batch.intent.created_at)
+            for batch in self.load_batches(session_id, run_id) if batch.is_recovered
         )
-
-    def load_batches(
-        self,
-        session_id: str,
-        run_id: str,
-    ) -> tuple[DeliveryBatchProjection, ...]:
-        return batches_from_entries(
-            self._entries(session_id, run_id),
-            session_id=session_id,
-            run_id=run_id,
-        )
-
-    def load_recovered_facts(
-        self,
-        session_id: str,
-        run_id: str,
-    ) -> tuple[DeliveryRecoveredFact, ...]:
-        """Load durable recovered facts directly from session log, coalescing by batch_id."""
-        facts_by_batch: dict[str, DeliveryRecoveredFact] = {}
-        for rkind, payload in self._iter_validated_delivery_records(session_id, run_id):
-            if rkind != RECORD_KIND_RECOVERED:
-                continue
-            batch_id = payload["batch_id"]
-            rec_reads = payload["recovered_reads"]
-            rec_lookups = payload["recovered_lookups"]
-            effect_ids = payload["recovered_effect_ids"]
-
-            fact = DeliveryRecoveredFact(
-                batch_id=batch_id,
-                session_id=str(payload.get("session_id") or ""),
-                run_id=str(payload.get("run_id") or ""),
-                lane=str(payload.get("lane") or ""),
-                operation_id=str(payload.get("operation_id") or ""),
-                recovered_effect_ids=tuple(str(e) for e in effect_ids),
-                recovered_reads=rec_reads,
-                recovered_lookups=rec_lookups,
-                created_at=str(payload.get("created_at") or ""),
-            )
-            if batch_id in facts_by_batch:
-                existing = facts_by_batch[batch_id]
-                if (
-                    existing.recovered_effect_ids != fact.recovered_effect_ids
-                    or existing.recovered_reads != fact.recovered_reads
-                    or existing.recovered_lookups != fact.recovered_lookups
-                ):
-                    raise ToolResultDeliveryError(f"conflicting recovered facts for batch {batch_id!r}")
-            else:
-                facts_by_batch[batch_id] = fact
-        return tuple(facts_by_batch.values())
 
     def undelivered_replayable_batches(
         self,
@@ -1236,17 +1170,11 @@ __all__ = [
     "DeliveryRecoveredFact",
     "ToolResultDeliveryError",
     "ToolResultDeliveryStore",
-    "abandoned_entry",
-    "batch_intent_entry",
     "batches_from_entries",
     "compute_batch_digest",
-    "delivered_entry",
     "delivery_record_entry",
     "iter_delivery_records_from_entries",
     "keep_delivery_entry_for_compaction",
     "new_batch_id",
     "prepare_batch_intent",
-    "recovered_entry",
-    "send_attempt_entry",
-    "send_superseded_entry",
 ]

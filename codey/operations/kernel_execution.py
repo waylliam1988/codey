@@ -53,6 +53,7 @@ from codey.operations.kernel_tool_args import _validate_tool_args
 from codey.operations.task_session import TaskSession, effect_coordinates, turn_effect_id
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.core.tool_resources import tool_resources_for
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string
 
@@ -394,8 +395,8 @@ def execute_turn(
     """
 
     frozen_specs = frozen_spec_map(snapshot)
+    from codey.automation.browser_receipts import query_document
     from codey.operations.browser_completion import browser_click_stage
-    from codey.operations.browser_followups import query_document
     from codey.operations.browser_waits import complete_wait_args
 
     normalized: list[ToolCall] = []
@@ -957,7 +958,7 @@ def _admit_background(context: ToolExecutionContext, identity: str, call: ToolCa
                     require_json_string(call.args.get("condition"), "condition"))
                 if not same_document(document, resource_binding["browser_document"]):
                     raise ValueError("text_changed requires the original snapshot document")
-            context.durable.tool_resources.bind_browser(tool_task_id(identity), browser, resource_binding)
+            tool_resources_for(context.durable).bind_browser(tool_task_id(identity), browser, resource_binding)
         except ValueError as exc:
             return _error_result(call, str(exc))
     elif spec.executor != "project" or context.project_path is None:
@@ -969,7 +970,7 @@ def _admit_background(context: ToolExecutionContext, identity: str, call: ToolCa
             defer_result=defer_result, resource_binding=resource_binding)
     except Exception:
         if resource_binding is not None and isinstance(context.durable, DurableSession):
-            context.durable.tool_resources.release_browser(tool_task_id(identity))
+            tool_resources_for(context.durable).release_browser(tool_task_id(identity))
         raise
     if defer_result:
         from codey.operations.tool_tasks import COMMAND_YIELD_MS, automatic_command_result

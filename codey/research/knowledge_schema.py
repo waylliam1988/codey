@@ -3,8 +3,8 @@
 from collections.abc import Mapping
 
 from codey.knowledge.model import CONDITION_STATES, KINDS, ORIGINS, SCOPES, STATUSES
-from codey.reviews.research_coverage import QUESTION_STATES
 from codey.types.json_value import JsonObject, canonical_json_object
+from codey.utils.research_coverage import QUESTION_STATES
 
 
 def text_schema(minimum: int = 1, maximum: int = 4000) -> JsonObject:

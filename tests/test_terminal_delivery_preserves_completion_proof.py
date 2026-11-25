@@ -37,7 +37,7 @@ def test_unknown_done_delivery_retains_proof_and_separate_delivery_status(monkey
 
 def test_final_delivery_and_proof_reference_survive_formal_log_restart(tmp_path):
     from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.runtime.core.operation_state import RuntimeOperationStore
+    from codey.runtime.write.checkpoint import RuntimeOperationStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
     durable = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))

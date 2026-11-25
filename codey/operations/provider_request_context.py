@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 from codey.memory.codec import trace_from_payload
 from codey.memory.contracts import MemoryTrace
-from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.types.json_value import (
     JsonObject,
     decode_json_object,
@@ -17,6 +16,7 @@ from codey.types.json_value import (
     require_json_string,
     require_json_strings,
 )
+from codey.types.protocol_window import ProtocolWindowRef
 from codey.workspace.context_admission import ContextCandidate
 
 if TYPE_CHECKING:

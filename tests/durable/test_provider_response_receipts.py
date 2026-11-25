@@ -8,8 +8,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
-from codey.durable.checkpoint import operation_from_checkpoint
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.errors import CommitConflict
 from codey.operations.provider_receipts import RESPONSE_KIND, read_provider_artifact
 from codey.operations.task_effects import KernelEffectSink
@@ -17,14 +16,16 @@ from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.providers.response_record import decode_reply, encode_reply
 from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 from codey.runtime.core.operation_reducer import ACTION_INTERPRET_PROVIDER_RESPONSE, ACTION_SETTLE_PROVIDER_UNKNOWN
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.runtime.write.drive import peek_next_action
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
 from tests.support.provider_actions import ProviderActions
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def runtime(tmp_path, *, sqlite=False, task_kind="chat", turn_budget=4):
-    durable = DurableSession(SQLiteDurableStore(tmp_path / "runtime.sqlite") if sqlite else MemoryDurableStore())
+    durable = DurableSession(SQLiteDurableStore(tmp_path / "runtime.sqlite") if sqlite else TemporarySQLiteStore())
     durable.admit_input(conversation_id="s", request_id="input", task_id="r", text="inspect", provider_snapshot={})
     durable.claim_task("r")
     durable.start_task("r", state=dict(durable.task("r").state))

@@ -8,8 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
-from codey.durable.checkpoint import operation_from_checkpoint
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.model import CommitResult, DurableMutation
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.provider_session import adapt_provider
@@ -28,8 +27,10 @@ from codey.providers.base import AssistantTurn, TurnFinish
 from codey.providers.error_classification import OutputLengthError
 from codey.providers.requests import ProviderRequest
 from codey.providers.transport import ProviderTransport
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @dataclass(frozen=True)
@@ -40,7 +41,7 @@ class Runtime:
 
 @pytest.fixture()
 def runtime(tmp_path: Path) -> Iterator[Runtime]:
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(conversation_id="s", request_id="input", task_id="r", text="Check the task", provider_snapshot={})
     durable.claim_task("r")
     durable.start_task("r", state={})

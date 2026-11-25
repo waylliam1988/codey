@@ -30,7 +30,6 @@ from codey.research.report_quality import (
     parse_citation_rows,
 )
 from codey.research.urls import opened_url
-from codey.reviews.report_sections import parse_sections
 from codey.utils.refs import (
     bounded_refs as _bounded_refs,
 )
@@ -60,6 +59,7 @@ from codey.utils.refs import (
 from codey.utils.refs import (
     stable_ref as _stable_ref,
 )
+from codey.utils.report_sections import parse_sections
 
 MAX_RECORD_SOURCES = 24
 MAX_RECORD_EVIDENCE = 48

@@ -72,12 +72,3 @@ def test_payloads_are_fixed_open_for_non_open_inputs() -> None:
             "target_ref": "claim:" + "b" * 16,
         }])
         assert payload["status"] == "open", status
-
-
-def test_blocking_ignores_status_via_mocks() -> None:
-    from codey.research.contract import blocking_finding_refs
-
-    expected = ("review_finding:" + "b" * 16,)
-    for status in ("open", "addressed", "confirmed", "rejected", "model_fixed"):
-        assert blocking_finding_refs([_mock_finding(status)]) == expected, status
-    assert blocking_finding_refs([_mock_finding("open", severity="warning")]) == ()

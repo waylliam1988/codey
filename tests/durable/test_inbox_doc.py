@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore, SubmissionPlacement
+from codey.durable import DurableSession, SQLiteDurableStore, SubmissionPlacement
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_inbox_doc_snapshot_and_history_are_reconstructible_from_durable_commits() -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     try:
         session.admit_input(
             conversation_id="chat", request_id="active", task_id="active",

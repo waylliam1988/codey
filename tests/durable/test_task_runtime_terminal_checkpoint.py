@@ -2,10 +2,11 @@
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession
 from codey.runtime.core.outcome import OperationOutcome
 from codey.runtime.write.task_runtime import TaskRuntime
 from codey.task.model import TaskSubmission
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.mark.parametrize("outcome,expected", [
@@ -13,7 +14,7 @@ from codey.task.model import TaskSubmission
     (OperationOutcome.completed(summary="done"), "completed"),
 ])
 def test_executor_terminal_settles_task(outcome, expected):
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.admit_input(conversation_id="c", request_id="input", task_id="t", text="work", provider_snapshot={})
     session.claim_task("t")
     session.start_task("t", state=dict(session.task("t").state))
@@ -24,7 +25,7 @@ def test_executor_terminal_settles_task(outcome, expected):
 
 
 def test_selection_failure_before_execution_also_settles_the_admitted_task():
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.admit_input(conversation_id="c", request_id="r", task_id="t", text="work", provider_snapshot={})
     session.claim_task("t")
     session.start_task("t", state=dict(session.task("t").state))

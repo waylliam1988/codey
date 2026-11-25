@@ -16,7 +16,6 @@ from codey.durable.errors import (
     SessionSealedError,
 )
 from codey.durable.inbox import InboxDoc, InboxHistoryEvent, InboxItem
-from codey.durable.memory import MemoryDurableStore
 from codey.durable.model import (
     TASK_CHECKPOINT_SCHEMA_VERSION,
     ApprovalRecord,
@@ -65,7 +64,6 @@ __all__ = [
     "IdempotencyConflict",
     "SessionSealedError",
     "SessionFailedError",
-    "MemoryDurableStore",
     "SQLiteDurableStore",
     "SubmissionDraft",
     "SubmissionPlacement",

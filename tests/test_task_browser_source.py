@@ -11,6 +11,7 @@ from codey.research import source_download
 from codey.research.browser_search import SearchUnavailableError
 from codey.research.source_acquisition import acquisition_observation
 from codey.research.task_browser_source import TaskBrowserSource
+from codey.runtime.core.tool_resources import tool_resources_for
 from tests.support.task_browser import browser_for
 
 
@@ -38,7 +39,7 @@ def test_source_only_authorization_borrows_the_task_worker_without_exposing_acti
             context = KernelContext(session, KernelRunRequest(
                 transport=KernelTransportDeps(adapt_provider(Provider()), run_id=sink.run_id),
                 execution=KernelExecutionDeps(intent_sink=sink, browser_session=browser, research_tools=tools)))
-            assert context.durable.tool_resources.task_browser(sink.run_id) is browser
+            assert tool_resources_for(context.durable).task_browser(sink.run_id) is browser
             assert isinstance(source.browser_source, TaskBrowserSource) and source.browser_source.browser is browser
             assert "browser_click" not in build_turn_snapshot(session).inventory_names
     finally:

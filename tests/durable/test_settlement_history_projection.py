@@ -5,14 +5,15 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import DurableSession, EffectRecord, MemoryDurableStore, SQLiteDurableStore, TaskCheckpoint
+from codey.durable import DurableSession, EffectRecord, SQLiteDurableStore, TaskCheckpoint
 from codey.durable.model import DurableMutation
 from codey.durable.timeline import TaskSettlementHistory, execution_payload, settlement_histories
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_projection_ignores_empty_workflows_and_excludes_later_changes(backend: str, tmp_path: Path) -> None:
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     durable = DurableSession(store)
     try:
         admitted = durable.admit_input(conversation_id="c", request_id="r", task_id="t", text="go", provider_snapshot={})

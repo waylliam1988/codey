@@ -145,8 +145,8 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     from codey.operations.browser_followups import DIRECT_TOOLS
 
     hints = [_quote_guidance(session, snapshot)]
-    from codey.operations.browser_result_evidence import action_summary
     from codey.operations.project_delivery import live_record_subject_call, project_delivery_context
+    from codey.research.browser_result_evidence import action_summary
 
     if delivery := project_delivery_context(session, context.browser_document, links):
         hints.append("User-requested delivery and current evidence:\n" + canonical_json(delivery))

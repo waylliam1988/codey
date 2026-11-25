@@ -8,8 +8,8 @@ from typing import Protocol
 
 from codey.durable.model import thaw_json
 from codey.providers.compat_transport import declared_callable
-from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.core.window_action import OpenWindow, ReuseWindow, WindowAction, WindowOpenReason
+from codey.types.protocol_window import ProtocolWindowRef
 from codey.utils.object_fields import object_fields
 
 

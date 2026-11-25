@@ -4,7 +4,7 @@ import pytest
 
 from codey.durable.context import ContextSnapshot
 from codey.operations.conversation_window import OpenWindow, WindowActivationError, WindowOpenReason, activate_window
-from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
+from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding
 
 
 @pytest.mark.parametrize("method", ["new_chat", "reset_window"])
@@ -51,7 +51,7 @@ def test_legacy_reset_passes_the_context_and_entry_ids_after_success() -> None:
 
 def test_window_actions_have_explicit_reuse_or_open_semantics() -> None:
     from codey.operations.conversation_window import OpenWindow, ReuseWindow, WindowOpenReason
-    from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
+    from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding
 
     ref = ProtocolWindowRef("s", ProviderBinding("local", "r", "m", "chat", "c"), "w")
     assert ReuseWindow(ref).ref == ref

@@ -17,9 +17,10 @@ def _durable_task(
     policy: TaskPolicy | None = None,
     state: dict[str, object] | None = None,
 ):
-    from codey.durable import DurableSession, MemoryDurableStore
+    from codey.durable import DurableSession
+    from tests.support.sqlite_store import TemporarySQLiteStore
 
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(
         conversation_id=session_id,
         request_id=run_id,
@@ -201,8 +202,8 @@ def test_resume_before_first_settlement_keeps_original_policy_or_blocks(tmp_path
     from codey.operations.context import RunWork
     from codey.operations.result import ModeOutcome
     from codey.operations.task_phases.dispatch import dispatch_run_mode
-    from codey.runtime.core.operation_state import RuntimeOperationStore
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
+    from codey.runtime.write.checkpoint import RuntimeOperationStore
     from codey.task.model import TaskSubmission
 
     project, state, logdir = _dirs(tmp_path)

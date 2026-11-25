@@ -1,7 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from codey.durable import DurableSession, EffectRecord, MemoryDurableStore
+from codey.durable import DurableSession, EffectRecord
 from codey.durable.model import thaw_json
 from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.effects.effect_records import (
@@ -13,10 +13,11 @@ from codey.runtime.effects.effect_records import (
 from codey.runtime.effects.replay_policy import ReplayClass
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from tests.support.receipt_fixtures import inspect_receipt_facts
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_missing_operation_preserves_unconfirmed_provider_facts() -> None:
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(
         conversation_id="conversation-1",
         request_id="request-1",
@@ -62,7 +63,7 @@ def test_missing_operation_preserves_unconfirmed_provider_facts() -> None:
 
 
 def test_missing_operation_does_not_hide_an_already_unknown_provider_outcome() -> None:
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(
         conversation_id="conversation-1",
         request_id="request-1",
@@ -126,7 +127,7 @@ def test_missing_operation_does_not_hide_an_already_unknown_provider_outcome() -
 
 
 def test_missing_operation_does_not_synthesize_an_unsafe_tool_outcome(tmp_path: Path) -> None:
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(
         conversation_id="conversation-1", request_id="request-1", task_id="task-1",
         text="edit a file", provider_snapshot={"provider_id": "local"},
@@ -165,7 +166,7 @@ def test_missing_operation_does_not_synthesize_an_unsafe_tool_outcome(tmp_path: 
 def test_task_policy_is_recovered_from_checkpoint_and_cannot_be_replaced() -> None:
     from codey.durable.errors import CommitConflict
 
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(
         conversation_id="conversation-1", request_id="request-1", task_id="task-1",
         text="write", provider_snapshot={"provider_id": "local"},
@@ -185,7 +186,7 @@ def test_task_policy_is_recovered_from_checkpoint_and_cannot_be_replaced() -> No
 
 
 def test_production_recovery_requires_an_admitted_durable_task(tmp_path: Path) -> None:
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     mutations = RuntimeMutationLine(durable=durable)
     result = inspect_receipt_facts(
         SimpleNamespace(
@@ -202,7 +203,7 @@ def test_production_recovery_requires_an_admitted_durable_task(tmp_path: Path) -
 
 
 def test_recovery_never_uses_runtime_projection_as_authority(tmp_path: Path) -> None:
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(
         conversation_id="conversation-1", request_id="request-1", task_id="task-1",
         text="continue", provider_snapshot={"provider_id": "local"},
@@ -230,7 +231,7 @@ def test_recovery_never_uses_runtime_projection_as_authority(tmp_path: Path) -> 
 
 
 def test_pending_durable_tool_intent_cannot_be_overruled_by_idle_runtime_log(tmp_path: Path) -> None:
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(
         conversation_id="conversation-1", request_id="request-1", task_id="task-1",
         text="read a file", provider_snapshot={"provider_id": "local"},
@@ -267,7 +268,7 @@ def test_safe_tool_requires_operation_and_delivery_facts_before_replay(tmp_path:
     project = tmp_path / "project"
     project.mkdir()
     (project / "a.txt").write_text("durable read", encoding="utf-8")
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(
         conversation_id="conversation-1", request_id="request-1", task_id="task-1",
         text="read a file", provider_snapshot={"provider_id": "local"},
@@ -312,7 +313,7 @@ def test_safe_tool_recovery_blocks_an_intent_unbound_to_the_operation(tmp_path: 
     project = tmp_path / "project"
     project.mkdir()
     (project / "a.txt").write_text("projection repair", encoding="utf-8")
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(
         conversation_id="conversation-1", request_id="task-1", task_id="task-1",
         text="read a file", provider_snapshot={"provider_id": "local"},
@@ -373,7 +374,7 @@ def test_safe_tool_recovery_reuses_existing_runtime_intent_and_batch(tmp_path: P
     project = tmp_path / "project"
     project.mkdir()
     (project / "a.txt").write_text("already projected", encoding="utf-8")
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(
         conversation_id="conversation-1", request_id="task-1", task_id="task-1",
         text="read a file", provider_snapshot={"provider_id": "local"},
@@ -435,7 +436,7 @@ def test_mixed_unknown_effects_preserve_the_unsettled_member_without_replay(
     project = tmp_path / "project"
     project.mkdir()
     (project / "a.txt").write_text("safe read", encoding="utf-8")
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(
         conversation_id="conversation-1", request_id="task-1", task_id="task-1",
         text="mixed batch", provider_snapshot={"provider_id": "local"},

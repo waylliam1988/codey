@@ -8,6 +8,7 @@ from typing import TypeAlias
 import pytest
 
 from codey.automation.browser_contracts import RouteDecision as Route
+from codey.automation.browser_receipts import operation_receipts
 from codey.automation.browser_session import BrowserSession
 from codey.operations.kernel_facts import bind_source_identity, project_execution_record, project_result_observation
 from codey.operations.kernel_protocol import build_turn_snapshot
@@ -265,10 +266,10 @@ def test_codemode_browser_children_use_kernel_receipts_and_original_answer_scope
     assert isinstance(children, list)
     assert "read_passages" not in result.canonical  # The parent references, never rewrites, child evidence.
 
-    from codey.operations.kernel_prompt import operation_receipts, working_context
+    from codey.operations.kernel_prompt import working_context
     from codey.research.answer_context import answer_context
 
-    receipts = operation_receipts(session)
+    receipts = operation_receipts(session.executed, session._memory_results)
     automatic_read = ["browser_read"] if kind == "research" else []
     assert [row["tool"] for row in receipts] == [
         "browser_navigate", "browser_snapshot", "browser_fill", *automatic_read, "browser_snapshot",
@@ -287,8 +288,9 @@ def test_codemode_browser_children_use_kernel_receipts_and_original_answer_scope
         assert "operation_receipts" in view and "browser_fill" in view
         assert "not citation evidence" in view
     # Reconstruction uses settled receipts, not a separate browser checkpoint.
-    assert operation_receipts(session.clone_projection()) == receipts
+    clone = session.clone_projection()
+    assert operation_receipts(clone.executed, clone._memory_results) == receipts
     staged = ToolResult(ok=True, model_text="not yet settled", call=ToolCall("browser_fill", {"value": "secret"}),
                         canonical={"value": {"delivery": "verified"}})
     session._memory_results["uncommitted"] = staged
-    assert operation_receipts(session) == receipts
+    assert operation_receipts(session.executed, session._memory_results) == receipts

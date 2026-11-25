@@ -140,7 +140,6 @@ def test_pipeline_forwards_continuity_payload_without_pre_recording() -> None:
         context=context,
         run_iteration=run_iteration,
         search_factory=_NullSearch,
-        policy=_continuity_allow_policy(),
     ).run()
 
     assert output.final_result is not None
@@ -170,10 +169,9 @@ def test_pipeline_skips_trace_row_when_nothing_admitted() -> None:
         context=context,
         run_iteration=run_iteration,
         search_factory=_NullSearch,
-        policy=_continuity_allow_policy(),
     ).run()
 
-    assert output.planner_stop_reason == "external_followup_retired"
+    assert output.stop_reason == output.final_result.stop_reason
     assert trace.topic_payloads == []
 
 

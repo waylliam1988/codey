@@ -27,7 +27,6 @@ from codey.providers.base import ChatProvider
 from codey.providers.compat_transport import require_callable
 from codey.providers.diagnostics import ProviderFailure
 from codey.providers.transport import ProviderTransport
-from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.reviews.core import ReviewResult
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.trace import RunTraceRecorder, RunTraceStore
@@ -123,7 +122,6 @@ class TaskRunDeps:
     work_checkpoints: WorkCheckpointStore | None = None
     run_ledgers: RunLedgerStore | None = None
     run_traces: RunTraceStore | None = None
-    evidence_ledgers: EvidenceLedgerStore | None = None
     managed_outputs: ManagedOutputStore | None = None
     execution_outputs: ExecutionOutputStore | None = None
     knowledge_store: KnowledgeStore | None = None
@@ -171,7 +169,6 @@ class TaskRunDeps:
             work_checkpoints=stores.work_checkpoints,
             run_ledgers=stores.run_ledgers,
             run_traces=stores.run_traces,
-            evidence_ledgers=stores.evidence_ledgers,
             managed_outputs=stores.managed_outputs,
             execution_outputs=stores.execution_outputs,
             knowledge_store=stores.knowledge_store,

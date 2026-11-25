@@ -1,41 +1,17 @@
 """One reference namespace, explicit question gaps, and replayable plan receipts."""
 
-import copy
 import json
 
-import jsonschema
 import pytest
 
 from codey.knowledge.archive import stable_identity
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
 from codey.operations.kernel_facts import project_result_observation
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
-from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.protocols.text_turn import decode_text_turn
-from codey.research.finding_report import compile_finding_report
 from codey.research.ledger import ResearchLedger
 from codey.research.questions import question_plan, validate_question_coverage
-from codey.research.tool_contract import validate_tool_args
-from codey.reviews.research_coverage import coverage_rows
-from tests.test_research_findings import URL, execute, report_args, setup
-
-
-def test_frozen_report_example_is_accepted_by_its_schema_parser_and_coverage():
-    from codey.research.report_proposal import parse_report_proposal
-    from codey.types.json_value import canonical_json_object
-
-    session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read"}), strict_research=True), task_kind="chat")
-    snapshot = build_turn_snapshot(session)
-    done = next(spec for spec in snapshot.frozen_specs if spec.name == "done")
-    example = json.loads(done.json_examples[0])
-    jsonschema.validate(example["args"], canonical_json_object({"type": "object", "properties": dict(done.parameters), "required": list(done.required), "additionalProperties": False}))
-    coverage_rows(list(parse_report_proposal(example["args"]).coverage))
-    assert set(example["args"]) == {"report_sections"}
-    assert not normalize_turn(decode_text_turn(done.json_examples[0]), snapshot=snapshot).protocol_error
-    # The ordinary done contract deliberately rejects report-only selections.
-    assert not validate_tool_args("done", example["args"]).ok
+from tests.test_research_findings import URL, execute, setup
 
 
 def test_question_identity_is_append_only_and_plan_receipt_restores_both_projections(tmp_path):
@@ -77,121 +53,6 @@ def test_each_gap_requires_its_own_selected_real_investigation_record():
         validate_question_coverage([first, {**searched, "investigations": []}], ledger)
     with pytest.raises(ValueError, match="unknown finding"):
         validate_question_coverage([{**first, "state": "partial", "findings": ["f99"]}, second], ledger)
-
-
-def test_missing_evidence_is_a_research_completion_defect_not_a_json_repair():
-    from codey.research.report_proposal import parse_report_proposal
-
-    state = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read"}), strict_research=True), task_kind="chat")
-    snapshot = build_turn_snapshot(state)
-    done = next(spec for spec in snapshot.model_specs if spec.name == "done")
-    selections = json.loads(done.json_examples[0])["args"]
-    selections["report_sections"]["coverage"][0]["findings"] = []
-    plan = normalize_turn(decode_text_turn(json.dumps({"tool": "done", "args": selections})), snapshot=snapshot)
-    assert not plan.protocol_error and plan.control is not None
-    ledger = ResearchLedger()
-    ledger.questions = ("What must be answered?",)
-    with pytest.raises(ValueError, match="Changing evidence_found to partial alone") as failure:
-        validate_question_coverage(list(parse_report_proposal(selections).coverage), ledger)
-    assert "q1" in str(failure.value) and "Next action: investigate" in str(failure.value)
-    assert "not_investigated" in str(failure.value) and "unanswered_after_search" in str(failure.value)
-    # An honestly stated gap is admissible; it is not certified as an answer.
-    selections["report_sections"]["coverage"][0]["state"] = "not_investigated"
-    assert validate_question_coverage(list(parse_report_proposal(selections).coverage), ledger)
-
-
-@pytest.mark.usefixtures("public_source_dns")
-def test_recalled_claim_pins_old_version_without_new_fetch_or_duplicate_archive(tmp_path):
-    store, tools, session, delegate = setup(tmp_path)
-    try:
-        execute(delegate, tools, session, "open_url", {"url": URL})
-        saved = execute(delegate, tools, session, "save_finding", {"claim": "Only one writer can write at a time.",
-            "source_ref": "s1", "passage_ref": next(iter(tools.ledger.read_passages))})
-        label = json.loads(saved.model_text)["finding_ref"]
-        claim_id = stable_identity("claim", tools.ledger.references[label].note_id, "Only one writer can write at a time.")
-        # A new invocation has no opened webpages or newly saved findings.
-        tools.ledger = ResearchLedger()
-        tools.ledger.questions = ("What limits writer concurrency?",)
-        tools.session_id = "second"
-        session = TaskSession(session.policy)
-        delegate = ExecutionDelegate(session=session, research_tools=tools)
-        read = execute(delegate, tools, session, "knowledge_read", {"id": claim_id, "revision": 1})
-        assert read.ok
-        adopted = json.loads(read.model_text)["finding_ref"]
-        assert adopted == "f1"
-        assert not tools.ledger.opened_sources and not tools.ledger.evidence_items
-        compiled = compile_finding_report(report_args(adopted), tools.ledger, store, session_id="second")
-        assert compiled.knowledge_refs == ({"id": claim_id, "revision": 1},)
-        assert "本轮未重新获取" in compiled.text
-        assert compiled.reference_metadata[adopted]["interpretation_review"] == "unreviewed"
-        assert not tools.ledger.opened_sources
-        from codey.operations.completion_gate import evaluate
-        from codey.policies.task_policy import STRICT_RESEARCH_REQUIRED_CHECKS
-
-        check_session = TaskSession(TaskPolicy(session.policy.grants, strict_research=True,
-            required_checks=STRICT_RESEARCH_REQUIRED_CHECKS), task_kind="research", task_text="Explain writer concurrency.")
-        check_session.last_done_args = report_args(adopted)
-        verdict = evaluate(check_session, "", context={"research_ledger": tools.ledger, "knowledge_store": store,
-                                                      "knowledge_session_id": tools.session_id})
-        assert not verdict.complete and "has not been submitted" in verdict.followup
-        restored = ResearchLedger()
-        project_result_observation(TaskSession(session.policy), read.call, read, ok=True, research_ledger=restored)
-        assert restored.references == tools.ledger.references
-        # A later update must not silently change the already bound reference.
-        old = store.repository.read(claim_id)
-        from dataclasses import replace
-        store.commit_knowledge("revise-claim", [KnowledgeMutation(replace(old.value, content="Updated statement"), 1)])
-        again = compile_finding_report(report_args(adopted), tools.ledger, store, session_id="second")
-        assert again.knowledge_refs[0]["revision"] == 1
-    finally:
-        store.close()
-
-
-@pytest.mark.usefixtures("public_source_dns")
-def test_inference_pins_premises_keeps_candidate_identity_and_replays(tmp_path):
-    store, tools, session, delegate = setup(tmp_path)
-    try:
-        execute(delegate, tools, session, "open_url", {"url": URL})
-        saved = execute(delegate, tools, session, "save_finding", {"claim": "Only one writer can write at a time.",
-            "source_ref": "s1", "passage_ref": next(iter(tools.ledger.read_passages))})
-        first = json.loads(saved.model_text)["finding_ref"]
-        args = {"statement": "Serializing application writes may reduce writer contention; this needs a workload test.",
-                "premise_refs": [first], "limitations": "No direct experiment with the application workload."}
-        saved_inference = execute(delegate, tools, session, "save_inference", args)
-        assert saved_inference.ok, saved_inference.model_text
-        second = json.loads(saved_inference.model_text)["finding_ref"]
-        assert (first, second) == ("f1", "f2")
-        binding = tools.ledger.references[second]
-        version = store.repository.read(binding.object_id, binding.revision)
-        assert version.value.kind == "inference" and version.value.status == "candidate"
-        assert version.interpretation_review == "unreviewed"
-        assert all(ref.relation == "depends_on" for ref in version.value.references)
-        replay = execute(delegate, tools, session, "save_inference", args)
-        assert replay.ok and json.loads(replay.model_text)["finding_ref"] == second
-        assert store.repository.read(binding.object_id).revision == 1
-        report = report_args(second)
-        report["summary"] = args["statement"] + " [f2]"
-        report["report_sections"]["evidence"] = ["Direct premise: Only one writer can write at a time. [f1]",
-                                                  args["statement"] + " [f2]"]
-        compiled = compile_finding_report(report, tools.ledger, store, session_id=tools.session_id)
-        assert "候选推论 f2，未审查" in compiled.text
-        assert compiled.reference_metadata[second]["kind"] == "inference"
-        assert not any(item.claim == args["statement"] for item in tools.ledger.evidence_items)
-        from codey.operations.completion_gate import evaluate
-        from codey.policies.task_policy import STRICT_RESEARCH_REQUIRED_CHECKS
-
-        check_session = TaskSession(TaskPolicy(session.policy.grants, strict_research=True,
-            required_checks=STRICT_RESEARCH_REQUIRED_CHECKS), task_kind="research", task_text="Explain writer concurrency.")
-        check_session.last_done_args = report
-        verdict = evaluate(check_session, "", context={"research_ledger": tools.ledger, "knowledge_store": store,
-                                                      "knowledge_session_id": tools.session_id})
-        assert not verdict.complete and "has not been submitted" in verdict.followup
-        forged = copy.deepcopy(saved_inference)
-        forged.canonical["research_reference_bindings"]["f1"] = binding.to_dict()
-        with pytest.raises(ValueError, match="conflicting"):
-            project_result_observation(session, forged.call, forged, ok=True, research_ledger=tools.ledger)
-    finally:
-        store.close()
 
 
 def test_old_answers_private_and_truncated_objects_cannot_be_promoted_to_reference(tmp_path):

@@ -9,7 +9,7 @@ import pytest
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.providers.token_accounting import ContextBudget
-from codey.runtime.core.operation_state import RuntimeOperationStore
+from codey.runtime.write.checkpoint import RuntimeOperationStore
 from tests.support.workspace_conversation import short_test_state_home
 
 pytestmark = pytest.mark.usefixtures("scripted_local_api_connection")

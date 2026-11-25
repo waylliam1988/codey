@@ -9,16 +9,17 @@ from pathlib import Path
 
 from codey.agents.request import AgentRequest
 from codey.agents.shell_approval import ShellApprovalRequest
-from codey.durable import ApprovalRecord, ApprovalStatus, DurableSession, MemoryDurableStore
-from codey.durable.checkpoint import operation_from_checkpoint
+from codey.durable import ApprovalRecord, ApprovalStatus, DurableSession
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.kernel_contracts import KernelResult, KernelRunRequest
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
 from codey.providers.response_record import json_value
 from codey.runtime.core.run_result import RunResult
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def approval_notifier(durable: DurableSession, outputs: ManagedOutputStore, session_id: str, run_id: str,
@@ -58,7 +59,7 @@ def admit(durable: DurableSession, *, run_id: str, session_id: str, task: str, p
 def runtime(*, session_id: str = 'test-session', run_id: str = 'test-run', task: str = 'test task',
             provider_id: str = 'test', max_turns: int = 4, task_kind: str = 'project') -> Generator[KernelEffectSink, None, None]:
     with tempfile.TemporaryDirectory() as temporary:
-        durable = DurableSession(MemoryDurableStore())
+        durable = DurableSession(TemporarySQLiteStore())
         try:
             mutations = admit(durable, run_id=run_id, session_id=session_id, task=task, provider_id=provider_id,
                               max_turns=max_turns, task_kind=task_kind)
@@ -95,7 +96,7 @@ def run_agent(request: AgentRequest) -> RunResult:
 
     with tempfile.TemporaryDirectory() as temporary:
         owned = request.durable is None
-        durable = request.durable or DurableSession(MemoryDurableStore())
+        durable = request.durable or DurableSession(TemporarySQLiteStore())
         session_id, run_id = request.session_id or 'test-session', request.run_id or 'test-run'
         provider_id = request.provider_id or 'test'
         try:

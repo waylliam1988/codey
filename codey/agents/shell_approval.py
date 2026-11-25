@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from codey.policies.command_line import ShellSpec, resolve_shell
 from codey.policies.shell_analysis import ShellAnalysis, analyze_shell, bound_analysis
 from codey.runtime.core.models import ToolCall
-from codey.runtime.core.protocol_window import ProtocolWindowRef
+from codey.types.protocol_window import ProtocolWindowRef
 
 MAX_DEFERRED_TOOL_CALLS = 8
 MAX_DEFERRED_TEXT_CHARS = 240

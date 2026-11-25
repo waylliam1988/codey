@@ -63,9 +63,10 @@ def test_durable_codemode_state_survives_close_and_reopen(tmp_path: Path) -> Non
 
 def test_durable_codemode_state_rejects_oversized_values() -> None:
     from codey.codemode.state import DurableCodeModeState
-    from codey.durable import DurableSession, MemoryDurableStore
+    from codey.durable import DurableSession
+    from tests.support.sqlite_store import TemporarySQLiteStore
 
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(
         conversation_id="chat", request_id="request", task_id="task", text="run",
         provider_snapshot={"provider_id": "test"},
@@ -76,9 +77,10 @@ def test_durable_codemode_state_rejects_oversized_values() -> None:
 
 def test_durable_codemode_state_rejects_duplicate_encoded_fields() -> None:
     from codey.codemode.state import DurableCodeModeState
-    from codey.durable import DurableSession, MemoryDurableStore
+    from codey.durable import DurableSession
+    from tests.support.sqlite_store import TemporarySQLiteStore
 
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     try:
         durable.admit_input(
             conversation_id="chat", request_id="request", task_id="task", text="run",

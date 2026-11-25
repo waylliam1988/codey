@@ -222,3 +222,27 @@ def test_confirmed_project_slot_shadows_user_default_only_where_applicable(tmp_p
             assert retrieve_context(state.memory, task=instruction, project=other, session_id="new-chat").items[0].value == "rust"
         assert memory_action(state, {**base, "action": "revoke", "item_id": project_id, "request_id": "revoke"})[0] == 200
         assert context(project)[0] == ("rust",)
+
+
+
+@pytest.mark.parametrize("directive", [
+    "For this reply, use Go for the code example.",
+    "Use Go for the example in this answer only.",
+    "本轮请使用 Go 给出代码示例。",
+])
+def test_temporary_code_language_understands_scoped_directives(directive: str) -> None:
+    from codey.memory.slots import temporary_slot_override
+
+    selected = temporary_slot_override(directive)
+    assert selected is not None and selected.value == "go"
+
+
+@pytest.mark.parametrize("directive", [
+    'Quote "For this reply, use Go for the code example".',
+    "For this reply, do not use Go for the code example.",
+    "Use Go for code examples forever.",
+])
+def test_temporary_code_language_ignores_data_denials_and_unscoped_text(directive: str) -> None:
+    from codey.memory.slots import temporary_slot_override
+
+    assert temporary_slot_override(directive) is None

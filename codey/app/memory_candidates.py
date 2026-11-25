@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.model import thaw_json
 from codey.durable.session import DurableSession
 from codey.memory.candidates import CANDIDATE_FIELD, candidate_from_payload
@@ -13,6 +12,7 @@ from codey.operations.provider_receipts import REQUEST_KIND, RESPONSE_KIND, read
 from codey.protocols.text_turn import TextRequests, decode_text_turn
 from codey.providers.base import AssistantTurn
 from codey.providers.response_record import decode_reply
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 

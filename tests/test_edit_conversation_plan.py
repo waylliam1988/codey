@@ -1,14 +1,15 @@
 from types import SimpleNamespace
 
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession
 from codey.operations.conversation_plan import build_conversation_plan
 from codey.operations.conversation_window import OpenWindow, WindowOpenReason, activate_window
-from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
+from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_edit_activates_existing_window_boundary_with_only_retained_prefix():
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     for name in ("prefix", "removed"):
         durable.admit_input(conversation_id="chat", request_id=name, task_id=name, text=name, provider_snapshot={})
         durable.complete_task(name, f"answer:{name}", state={})

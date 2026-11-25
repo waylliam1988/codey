@@ -6,7 +6,9 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from codey.research.pipeline import ResearchPipeline
+from codey.research.context import ResearchContext
+from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
+from codey.research.run_result import ResearchRunResult
 from tests.app_state import make_app_state
 
 
@@ -20,13 +22,14 @@ def _allow_policy():
 
 class ResearchChangesSessionTests(unittest.TestCase):
     def test_pipeline_sink_receives_explicit_session_id(self) -> None:
-        received: list[tuple] = []
+        received: list[tuple[str, object, str]] = []
         sentinel = object()
+        result = ResearchRunResult("research", "result", "done", 1)
+        writer = mock.Mock(return_value=ResearchIterationRun(result, SimpleNamespace(changes=sentinel)))
         pipeline = ResearchPipeline(
-            context=SimpleNamespace(run_id="run-1", session_id="session-9"),
-            run_iteration=mock.Mock(),
+            context=ResearchContext(question="research", run_id="run-1", session_id="session-9", max_turns=1),
+            run_iteration=writer,
             search_factory=lambda: None,
-            policy=_allow_policy(),
             research_changes_sink=(
                 lambda run_id, changes, session_id="": received.append(
                     (run_id, changes, session_id)
@@ -34,7 +37,8 @@ class ResearchChangesSessionTests(unittest.TestCase):
             ),
         )
 
-        pipeline._record_research_changes(SimpleNamespace(changes=sentinel))
+        assert pipeline.run().final_result == result
+        writer.assert_called_once()
 
         self.assertEqual(len(received), 1)
         run_id, changes, session_id = received[0]

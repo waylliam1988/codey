@@ -66,9 +66,9 @@ def test_invalid_report_fields_rejected_identically(mutation):
 
 def test_text_declarations_expose_the_frozen_nested_constraints():
     from codey.research.tool_contract import done_spec_for_purpose
-    from codey.reviews.research_coverage import QUESTION_STATES
     from codey.toolchain.tool_prompt import json_contract_text
     from codey.toolchain.tool_spec import spec_for_tool
+    from codey.utils.research_coverage import QUESTION_STATES
 
     spec = done_spec_for_purpose(spec_for_tool("done"), "report")
     contract = json_contract_text((spec,))

@@ -10,7 +10,8 @@ from codey.app.active_provider_registry import ActiveProviderRegistry
 from codey.app.run_registry import RunRegistry
 from codey.app.task_runtime import TaskRuntimeCoordinator
 from codey.app.task_submit import _claim_admitted_task
-from codey.durable import CommitConflict, DurableSession, MemoryDurableStore
+from codey.durable import CommitConflict, DurableSession
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.fixture
@@ -19,7 +20,7 @@ def admission():
     woken = Mock()
     runtime = TaskRuntimeCoordinator(registry, ActiveProviderRegistry(), threading.Lock(), threading.Lock(),
                                      wake_input=woken)
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     run = runtime.reserve_run(session_id="chat", project=None, task="work", provider_id="local", run_id="task")
     durable.admit_input(conversation_id="chat", request_id="task", task_id="task", text="work", provider_snapshot={})
     state = SimpleNamespace(durable=durable, task_runtime=runtime, release_run=runtime.release_run)

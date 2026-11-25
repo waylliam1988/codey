@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import (
     EvidenceLocator,
@@ -102,42 +100,23 @@ def _record(
     )
 
 
-def _ledger_payload(record: ResearchRecord, *, project: Path | None = None) -> dict[str, object]:
-    with tempfile.TemporaryDirectory() as td:
-        store = EvidenceLedgerStore(Path(td) / "state")
-        result = store.append_record(
-            record,
-            run_id="run-proof",
-            session_id="session-proof",
-            project=project,
-        )
-        assert result.ok
-        snapshot = store.load(session_id="session-proof", project=project)
-        assert snapshot.available
-        return dict(snapshot.payload)
-
-
 def test_answered_cited_supported_record_gets_stable_research_proof() -> None:
     record = _record()
-    ledger = _ledger_payload(record)
 
     first = review_research_proof(
         record,
         question="Research helium supply",
-        evidence_ledger=ledger,
-        require_ledger_record=True,
+        require_ledger_record=False,
     )
     second = review_research_proof(
         record,
         question="Research helium supply",
-        evidence_ledger=ledger,
-        require_ledger_record=True,
+        require_ledger_record=False,
     )
     different_question = review_research_proof(
         record,
         question="Find helium supply",
-        evidence_ledger=ledger,
-        require_ledger_record=True,
+        require_ledger_record=False,
     )
 
     assert first.ok is True
@@ -164,13 +143,11 @@ def test_unmatched_cited_claim_is_not_supported_and_emits_planner_signal() -> No
         )
     )
     record = _record(question="Research helium price outlook", summary=summary)
-    ledger = _ledger_payload(record)
 
     review = review_research_proof(
         record,
         question="Research helium price outlook",
-        evidence_ledger=ledger,
-        require_ledger_record=True,
+        require_ledger_record=False,
     )
 
     assert review.ok is False
@@ -229,13 +206,11 @@ def test_refuting_relation_does_not_support_conclusion_claim() -> None:
         session_id="session-proof",
         stop_reason="done",
     )
-    ledger = _ledger_payload(record)
 
     review = review_research_proof(
         record,
         question="Research helium supply",
-        evidence_ledger=ledger,
-        require_ledger_record=True,
+        require_ledger_record=False,
     )
 
     assert review.ok is False
@@ -245,7 +220,6 @@ def test_refuting_relation_does_not_support_conclusion_claim() -> None:
 
 def test_support_relation_must_target_claim_evidence_ref_and_evidence_backed_status() -> None:
     record = _record()
-    ledger = _ledger_payload(record)
     conclusion = next(claim for claim in record.claims if claim.claim_section == "conclusion")
     malformed_claim = replace(conclusion, evidence_refs=(), status="unsupported")
     malformed = replace(
@@ -257,7 +231,6 @@ def test_support_relation_must_target_claim_evidence_ref_and_evidence_backed_sta
     review = review_research_proof(
         malformed,
         question="Research helium supply",
-        evidence_ledger=ledger,
         require_ledger_record=False,
     )
 
@@ -320,21 +293,6 @@ def test_uncited_factual_counter_is_not_an_incomplete_search_declaration() -> No
     assert "must cite counter-evidence" in review.message
 
 
-def test_missing_ledger_record_blocks_queue_proof() -> None:
-    record = _record()
-
-    review = review_research_proof(
-        record,
-        question="Research helium supply",
-        evidence_ledger=None,
-        require_ledger_record=True,
-    )
-
-    assert review.ok is False
-    assert review.ledger_record_verified is False
-    assert "missing_evidence_ledger_record" in review.missing_evidence
-
-
 def test_planner_signals_do_not_echo_raw_url_path_or_secret_terms() -> None:
     record = _record(
         question=(
@@ -342,7 +300,6 @@ def test_planner_signals_do_not_echo_raw_url_path_or_secret_terms() -> None:
             "https://example.com/items?token=SECRET and E:/secret/project"
         )
     )
-    ledger = _ledger_payload(record)
 
     review = review_research_proof(
         record,
@@ -350,8 +307,7 @@ def test_planner_signals_do_not_echo_raw_url_path_or_secret_terms() -> None:
             "Research SECRET_TOKEN_ABCDEFGHIJKLMNOPQRSTUVWX and "
             "https://example.com/items?token=SECRET and E:/secret/project"
         ),
-        evidence_ledger=ledger,
-        require_ledger_record=True,
+        require_ledger_record=False,
     )
     serialized = json.dumps(review.to_payload(), ensure_ascii=False)
 
@@ -362,13 +318,11 @@ def test_planner_signals_do_not_echo_raw_url_path_or_secret_terms() -> None:
 
 def test_planner_signals_keep_secreted_science_terms() -> None:
     record = _record(question="secreted insulin secretion pathway")
-    ledger = _ledger_payload(record)
 
     review = review_research_proof(
         record,
         question="secreted insulin secretion pathway",
-        evidence_ledger=ledger,
-        require_ledger_record=True,
+        require_ledger_record=False,
     )
     serialized = json.dumps(review.to_payload(), ensure_ascii=False)
 

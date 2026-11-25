@@ -7,6 +7,7 @@ from threading import Event
 from typing import Protocol
 
 from codey.knowledge.changes import KnowledgeChanges
+from codey.knowledge.recall import KnowledgeAccess, KnowledgeRecall
 from codey.knowledge.research_interest import (
     build_research_interest_candidates,
     candidate_to_topic_hint,
@@ -17,9 +18,7 @@ from codey.operations.result import ModeOutcome
 from codey.operations.task_state import TaskState, stop_flag_for
 from codey.policies.permissions import allows_context_source, profile_for_name
 from codey.policies.task_policy import TaskPolicy
-from codey.research.audit_projection import project_audit_diagnostics
 from codey.research.context import ResearchContext, RunTraceResearchSink
-from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
 from codey.research.pipeline import (
     ResearchIterationRun,
     ResearchPipeline,
@@ -42,8 +41,6 @@ from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
-from codey.utils.object_fields import mapping_fields
-from codey.utils.refs import coerce_int
 
 
 class ResearchPipelineRunner(Protocol):
@@ -52,7 +49,7 @@ class ResearchPipelineRunner(Protocol):
 
 
 class ClaimRefLoader(Protocol):
-    def __call__(self, *, session_id: str, project: str) -> tuple[dict[str, object], ...]: ...
+    def __call__(self, *, session_id: str, project: str) -> tuple[str, ...]: ...
 
 
 class TopicContinuityBuilder(Protocol):
@@ -78,7 +75,6 @@ class ResearchIterationRunner(Protocol):
 class ResearchFlowDeps:
     state: TaskState
     knowledge_store: KnowledgeStore | None
-    evidence_ledgers: EvidenceLedgerStore | None
     search_factory: Callable[[], object]
     managed_outputs: ManagedOutputStore | None = None
     runtime_mutations: RuntimeMutationLine | None = None
@@ -207,11 +203,10 @@ def build_research_topic_continuity(
             )
         ]
         claim_ref_loader = prior_claim_refs or (
-            partial(deps_prior_claim_refs, deps=deps)
+            partial(recent_claim_refs, deps.knowledge_store)
         )
         projection = project_topic_continuity(
             interest_hints=interest_hints,
-            continuity_hints=(),
             claim_refs=claim_ref_loader(session_id=session_id, project=project),
         )
     except cancellation.TaskCancelled:
@@ -230,53 +225,11 @@ def build_research_topic_continuity(
     return projection.prompt_text, payload
 
 
-def deps_prior_claim_refs(
-    *,
-    deps: ResearchFlowDeps | None = None,
-    session_id: str,
-    project: str,
-) -> tuple[dict[str, object], ...]:
-    ledgers = deps.evidence_ledgers if deps is not None else None
-    return prior_claim_refs(ledgers, session_id=session_id, project=project)
-
-
-def prior_claim_refs(
-    evidence_ledgers: EvidenceLedgerStore | None,
-    *,
-    session_id: str,
-    project: str,
-) -> tuple[dict[str, object], ...]:
-    """Bounded claim refs from the durable evidence ledger; refs only."""
-
-    if evidence_ledgers is None:
+def recent_claim_refs(store: KnowledgeStore | None, *, session_id: str, project: str) -> tuple[str, ...]:
+    if store is None:
         return ()
-    try:
-        snapshot = evidence_ledgers.load(session_id=session_id, project=project)
-    except Exception:
-        return ()
-    payload = snapshot.payload
-    if not snapshot.available:
-        return ()
-    refs: list[dict[str, object]] = []
-    records = payload.get("records")
-    if not isinstance(records, (list, tuple)):
-        return ()
-    for record in records[-4:]:
-        if not mapping_fields(record):
-            continue
-        claim_refs = record.get("claim_refs")
-        if not isinstance(claim_refs, (list, tuple)):
-            continue
-        for claim_ref in claim_refs:
-            text = str(claim_ref or "").strip()
-            if not text:
-                continue
-            refs.append({"ref": f"prior_claim:{text}"})
-            if len(refs) > MAX_TOPIC_CLAIM_REFS:
-                break
-        if len(refs) > MAX_TOPIC_CLAIM_REFS:
-            break
-    return tuple(refs)
+    access = KnowledgeAccess(project, session_id, store.owner_id)
+    return KnowledgeRecall(store.repository).recent_claim_refs(access=access, limit=MAX_TOPIC_CLAIM_REFS + 1)
 
 
 def build_research_context(
@@ -326,7 +279,6 @@ def run_research_pipeline(
     proof_question: str = "",
     run_iteration: ResearchIterationRunner | None = None,
     build_context: ResearchContextBuilder | None = None,
-    record_ledger_write: Callable[[RunHooks, EvidenceLedgerWriteResult], None] | None = None,
 ) -> ResearchPipelineResult:
     request = frame.request
     if frame.provider is None:
@@ -371,7 +323,6 @@ def run_research_pipeline(
     context_builder = build_context or (
         partial(build_research_context, deps)
     )
-    ledger_sink = record_ledger_write or record_evidence_ledger_write
 
     pipeline = ResearchPipeline(
         context=context_builder(
@@ -381,30 +332,9 @@ def run_research_pipeline(
         ),
         run_iteration=iteration,
         search_factory=deps.search_factory,
-        evidence_ledgers=deps.evidence_ledgers,
-        ledger_event_sink=lambda result: ledger_sink(hooks, result),
         research_changes_sink=changes_sink,
-        policy=getattr(frame, "entry_policy", None),
     )
     return pipeline.run()
-
-
-def record_evidence_ledger_write(
-    hooks: RunHooks,
-    result: EvidenceLedgerWriteResult,
-) -> None:
-    payload = result.to_trace_payload()
-    hooks.append_ledger(
-        lambda ledger: ledger.append(
-            "evidence_ledger_write",
-            ok=payload.get("ok"),
-            skipped=payload.get("skipped"),
-            reason_code=payload.get("reason_code"),
-            ledger_ref=payload.get("ledger_ref"),
-            record_id=payload.get("record_id"),
-            counts=payload.get("counts"),
-        )
-    )
 
 
 def research_payload(
@@ -433,20 +363,10 @@ def research_payload(
     if result.completion_proof is not None:
         payload["completion_proof"] = result.completion_proof.to_payload()
     if pipeline_result is not None:
-        metadata = pipeline_result.to_payload()
-        if isinstance(metadata, dict):
-            payload.update({
-                "audit_diagnostics": project_audit_diagnostics(metadata.get("audit_diagnostics")),
-                "followup_applied": bool(metadata.get("followup_applied")),
-                "followup_rounds": max(0, min(3, coerce_int(metadata.get("followup_rounds") or 0))),
-                "pipeline_stop_reason": str(metadata.get("stop_reason") or ""),
-                "planner_stop_reason": str(metadata.get("planner_stop_reason") or ""),
-                "fresh_source_count": max(0, coerce_int(metadata.get("fresh_source_count") or 0)),
-                "new_evidence_count": max(0, coerce_int(metadata.get("new_evidence_count") or 0)),
-                "final_evidence_count": max(0, coerce_int(metadata.get("final_evidence_count") or 0)),
-                "attempted_fresh_source_count": max(0, coerce_int(metadata.get("attempted_fresh_source_count") or 0)),
-                "attempted_new_evidence_count": max(0, coerce_int(metadata.get("attempted_new_evidence_count") or 0)),
-            })
+        payload.update({
+            "pipeline_stop_reason": pipeline_result.stop_reason,
+            "final_evidence_count": pipeline_result.final_evidence_count,
+        })
     if restoreable is not None:
         payload["restoreable"] = restoreable
     return payload
@@ -499,9 +419,7 @@ __all__ = [
     "ResearchFlowDeps",
     "build_research_context",
     "build_research_topic_continuity",
-    "deps_prior_claim_refs",
-    "prior_claim_refs",
-    "record_evidence_ledger_write",
+    "recent_claim_refs",
     "record_research_plan_trace",
     "record_research_proof_review_trace",
     "research_payload",

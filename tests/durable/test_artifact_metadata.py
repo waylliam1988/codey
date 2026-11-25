@@ -10,10 +10,10 @@ from codey.durable import (
     DurableMutation,
     DurableSession,
     EffectRecord,
-    MemoryDurableStore,
     SQLiteDurableStore,
 )
 from codey.storage.managed_outputs import ManagedOutputStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def artifact(*, handle: str = "artifact-1", task_id: str | None = "t", effect_id: str | None = None) -> ArtifactRecord:
@@ -30,7 +30,7 @@ def artifact(*, handle: str = "artifact-1", task_id: str | None = "t", effect_id
 
 
 def _session(backend: str, tmp_path: Path) -> DurableSession:
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     session = DurableSession(store)
     session.admit_input(conversation_id="c", request_id="r", task_id="t", text="run", provider_snapshot={})
     session.start_task("t", state={})

@@ -1,6 +1,6 @@
 """Structural contract the task spine needs from application state.
 
-``TaskRunDeps.state`` used to be ``Any``, which hid the real coupling between
+``TaskRunDeps.state`` used to be untyped, which hid the real coupling between
 ``operations/`` and ``AppContext``: every ``state.handle_*`` addition
 silently widened what the spine could touch. This ``Protocol`` lists exactly
 the members the spine (plus ``task_submit`` and the app service modules) may
@@ -39,7 +39,6 @@ if TYPE_CHECKING:
     from codey.memory.service import MemoryService
     from codey.providers.base import ChatProvider
     from codey.repairs.self_repair import SelfRepairSupervisor
-    from codey.research.evidence_ledger import EvidenceLedgerStore
     from codey.runs.ledger import RunLedgerStore
     from codey.runs.trace import RunTraceStore
     from codey.runs.work_checkpoint import WorkCheckpointStore
@@ -61,7 +60,6 @@ class TaskSubmissionStores:
     workspace_revisions: WorkspaceRevisionStore
     run_ledgers: RunLedgerStore | None
     run_traces: RunTraceStore | None
-    evidence_ledgers: EvidenceLedgerStore | None
     managed_outputs: ManagedOutputStore | None
     knowledge_store: KnowledgeStore | None
     runtime_mutations: RuntimeMutationLine

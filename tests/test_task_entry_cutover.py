@@ -1102,9 +1102,9 @@ def test_default_writer_records_effects_in_existing_runtime(tmp_path: Path) -> N
 def test_writer_recovery_delivers_previous_tool_result_without_rerunning(tmp_path: Path) -> None:
     from dataclasses import replace
 
-    from codey.durable.checkpoint import operation_from_checkpoint
     from codey.durable.model import CommitResult, DurableMutation
     from codey.operations.task_session import TaskSession
+    from codey.runtime.write.checkpoint import operation_from_checkpoint
     from tests.support.kernel_fixture import run_task_kernel
 
     class SimulatedExit(BaseException):
@@ -1507,7 +1507,7 @@ def test_default_research_iteration_uses_shared_turn_kernel(tmp_path: Path) -> N
     tools = ResearchTools(search=None, store=None, changes=None)
     state = AppContext(tmp_path / "state", start_scheduler=False, memory_enabled=False)
     admit(state.durable, run_id="r", session_id="s", task="research question", provider_id="deepseek", max_turns=1, task_kind="research")
-    deps = ResearchFlowDeps(state, None, None, lambda: None, managed_outputs=state.managed_outputs, runtime_mutations=state.runtime_mutations)
+    deps = ResearchFlowDeps(state, None, lambda: None, managed_outputs=state.managed_outputs, runtime_mutations=state.runtime_mutations)
     provider = adapt_provider(EmptyProvider())
     with patch("codey.operations.task_loop.run_task_kernel", return_value=KernelResult(
         False, "unfinished", 1, "max_turns",
@@ -1563,7 +1563,7 @@ def test_web_only_research_iteration_finishes_with_opened_evidence(tmp_path: Pat
     state = AppContext(tmp_path / "state", start_scheduler=False, memory_enabled=False)
     admit(state.durable, run_id="run-1", session_id="s", task="pipeline question", provider_id="deepseek", max_turns=3, task_kind="research")
     iteration = run_research_iteration(
-        ResearchFlowDeps(state, store, None, Search, runtime_mutations=state.runtime_mutations, managed_outputs=state.managed_outputs),
+        ResearchFlowDeps(state, store, Search, runtime_mutations=state.runtime_mutations, managed_outputs=state.managed_outputs),
         provider=adapt_provider(Provider()), session_id="s",
         project="", task="pipeline question", max_turns=3,
         on_event=lambda _event: None, stop_flag=None, provider_id="deepseek",
@@ -1627,7 +1627,7 @@ def test_default_research_iteration_records_effects_in_same_runtime(tmp_path: Pa
 
     store = KnowledgeStore(tmp_path / "knowledge")
     iteration = run_research_iteration(
-        ResearchFlowDeps(state, store, None, Search, runtime_mutations=line, managed_outputs=state.managed_outputs),
+        ResearchFlowDeps(state, store, Search, runtime_mutations=line, managed_outputs=state.managed_outputs),
         provider=adapt_provider(Provider()), session_id="s", project="", task="q", max_turns=2,
         on_event=lambda _event: None, stop_flag=None, provider_id="deepseek",
         run_id="r", chat_handoff="", trace_recorder=None, task_policy=build_task_policy(

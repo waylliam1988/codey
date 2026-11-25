@@ -17,12 +17,12 @@ from codey.knowledge.answer_refs import KnowledgeReferenceError, answer_referenc
 from codey.knowledge.model import KnowledgeReference, canonical_json
 from codey.operations.completion_context import CompletionContext
 from codey.operations.task_session import TaskSession
-from codey.research.finding_report import ResearchReport, compile_finding_report
+from codey.research.answer_report import AnswerReport, compile_answer_report
 from codey.toolchain.tool_spec import SOURCE_TOOL_NAMES
 from codey.types.json_value import JsonValue
 
 
-def prepare_research_completion(session: TaskSession, text: str, context: object) -> tuple[str, ResearchReport | None]:
+def prepare_research_completion(session: TaskSession, text: str, context: object) -> tuple[str, AnswerReport | None]:
     """Derive this gate call's report without replacing the original proposal."""
     context = CompletionContext.from_value(context)
     if not session.policy.strict_research or session.task_kind == "evidence_followup":
@@ -31,31 +31,14 @@ def prepare_research_completion(session: TaskSession, text: str, context: object
     store = context.knowledge_store
     if ledger is None or store is None:
         raise ValueError("strict report preparation requires its research ledger and knowledge store")
-    from codey.research.answer_contract import whole_research
+    from codey.operations.task_handoff import report_completes_task
 
-    if whole_research(session):
-        from codey.research.answer_report import compile_answer_report
-
-        answer = compile_answer_report(session, ledger, store,
-            project=str(context.knowledge_project or ""),
-            session_id=str(context.knowledge_session_id or ""))
-        from codey.operations.task_handoff import report_completes_task
-
-        final_text = answer.text
-        if not report_completes_task(session) and text.strip() and text.strip() != answer.text.strip():
-            final_text = text.rstrip() + "\n\n" + answer.text
-        return final_text, answer
-    try:
-        report = compile_finding_report(session.last_done_args, ledger, store,
-            project=str(context.knowledge_project or ""),
-            session_id=str(context.knowledge_session_id or ""), task=session.task_text)
-    except ValueError as exc:
-        from codey.research.issues import ResearchIssue
-
-        if isinstance(exc, ResearchIssue):
-            raise
-        raise ValueError(f"Report reference fields: {exc}") from exc
-    return report.text, report
+    answer = compile_answer_report(session, ledger, store,
+        project=str(context.knowledge_project or ""), session_id=str(context.knowledge_session_id or ""))
+    final_text = answer.text
+    if not report_completes_task(session) and text.strip() and text.strip() != answer.text.strip():
+        final_text = text.rstrip() + "\n\n" + answer.text
+    return final_text, answer
 
 
 def _hybrid_knowledge_refs(session: TaskSession, raw: JsonValue) -> JsonValue:
@@ -107,7 +90,7 @@ def knowledge_reference_checks(session: TaskSession, context: object = None) -> 
 
 
 def _knowledge_reference_feedback(session: TaskSession, context: CompletionContext) -> str:
-    from codey.operations.browser_completion import committed_results
+    from codey.automation.browser_receipts import committed_results
     from codey.operations.chat_knowledge import read_knowledge_versions
 
     try:
@@ -141,7 +124,7 @@ def _knowledge_reference_feedback(session: TaskSession, context: CompletionConte
 
 
 def source_requirement_checks(session: TaskSession, context: object = None, *,
-                              report: ResearchReport | None = None) -> list[CompletionCheck]:
+                              report: AnswerReport | None = None) -> list[CompletionCheck]:
     """普通联网任务的来源要求：只检查任务要求的来源是否实际打开。"""
     context = CompletionContext.from_value(context)
     from codey.operations.source_gaps import source_read_required, task_source_coverage
@@ -185,7 +168,7 @@ def investigation_attempt_checks(session: TaskSession) -> list[CompletionCheck]:
                             "" if attempted else "research_investigation_not_attempted")]
 
 
-def citation_requirement_checks(session: TaskSession, text: str, context: object, *, report: ResearchReport | None = None) -> list[CompletionCheck]:
+def citation_requirement_checks(session: TaskSession, text: str, context: object, *, report: AnswerReport | None = None) -> list[CompletionCheck]:
     context = CompletionContext.from_value(context)
     policy = session.policy
     required = "research_citations" in policy.required_checks
@@ -222,7 +205,7 @@ def _missing_ledger_rows() -> list[CompletionCheck]:
 
 
 def strict_research_checks(session: TaskSession, done_text: str, context: object = None, *,
-                           report: ResearchReport | None = None) -> list[CompletionCheck]:
+                           report: AnswerReport | None = None) -> list[CompletionCheck]:
     """严格 Research 专属：证据归档、报告与研究质量（普通任务不调用）。
 
     Strict Research always requires a valid evidence ledger. A missing
@@ -258,35 +241,18 @@ def research_completion_feedback(session: TaskSession, text: str, context: objec
     return ""
 
 
-def _ledger_checks(session: TaskSession, done_text: str, compiled: ResearchReport | None) -> list[CompletionCheck]:
+def _ledger_checks(session: TaskSession, done_text: str, compiled: AnswerReport | None) -> list[CompletionCheck]:
     from codey.operations.task_handoff import report_completes_task
     from codey.research.answer_report import DELIVERY_CHECKS, AnswerReport
     from codey.research.report_values import report_delivery_matches
 
-    if isinstance(compiled, AnswerReport):
-        AnswerReport.from_payload(compiled.to_payload())
-        intact = report_delivery_matches(done_text, compiled.text, combined=not report_completes_task(session))
-        if not intact:
-            return [CompletionCheck("research_report_sections", CHECK_FAIL, "answer_text_changed")]
-        return [CompletionCheck(check, CHECK_PASS, "whole_answer_delivery_not_semantic_verification")
-                for check in DELIVERY_CHECKS]
-    if compiled is None or not report_delivery_matches(done_text, compiled.text, combined=not report_completes_task(session)):
+    if compiled is None:
         return [CompletionCheck("research_report_sections", CHECK_FAIL, "structured_report_missing")]
-    # These checks confirm structure and exact evidence chains, not semantics.
-    # Historical evidence does not become a fresh source-open execution receipt.
-    rows = [CompletionCheck(check, CHECK_PASS) for check in (
-        "research_sources_opened", "research_evidence_saved", "research_report_sections",
-        "research_claim_bindings", "research_question_coverage")]
-    from codey.research.task_requirements import validate_task_accounting
-
-    try:
-        validate_task_accounting(list(compiled.coverage), session.task_text)
-    except ValueError:
-        rows.append(CompletionCheck("research_task_accounting", CHECK_FAIL, "task_accounting_missing"))
-    else:
-        rows.append(CompletionCheck("research_task_accounting", CHECK_PASS, "model_reported_not_semantically_verified"))
-    return rows
-
+    AnswerReport.from_payload(compiled.to_payload())
+    if not report_delivery_matches(done_text, compiled.text, combined=not report_completes_task(session)):
+        return [CompletionCheck("research_report_sections", CHECK_FAIL, "answer_text_changed")]
+    return [CompletionCheck(check, CHECK_PASS, "whole_answer_delivery_not_semantic_verification")
+            for check in DELIVERY_CHECKS]
 
 
 __all__ = ["source_requirement_checks", "strict_research_checks"]

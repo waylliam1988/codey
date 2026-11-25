@@ -1,22 +1,18 @@
 """Exercise inventory findings through real scripted production research paths."""
 
 import sys
-from dataclasses import replace
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from codey.research import pipeline
-from tests.manual.research_process_review import ablation
-from tests.test_research_deterministic_completion import _run
 from tests.test_research_whole_kernel import run_whole
 
 
 @pytest.mark.usefixtures("public_source_dns")
-@pytest.mark.parametrize("whole", [False, True])
-def test_both_compilers_publish_without_importing_old_text_finalizer(tmp_path, monkeypatch, whole):
+def test_whole_answer_publishes_without_the_retired_text_finalizer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "codey.research.done_finalizer", None)
-    result = run_whole(tmp_path, native=True) if whole else _run(tmp_path, native=True)
+    result = run_whole(tmp_path, native=True)
     assert result.stop_reason == "done", result.summary
     assert result.synthesis_id and result.completion_proof.satisfied
 
@@ -28,53 +24,6 @@ def test_domain_method_hints_are_bypassed_by_whole_answer_scope(tmp_path):
     with patch.object(methods, "research_method_guidance", side_effect=AssertionError("legacy method hints called")):
         result = run_whole(tmp_path, native=True)
     assert result.stop_reason == "done"
-
-
-@pytest.mark.usefixtures("public_source_dns")
-@pytest.mark.parametrize("whole", [False, True])
-def test_accepted_publication_reuses_the_audit(tmp_path, whole):
-    original = pipeline.review_research_proof
-    observations = []
-
-    def review(*args, **kwargs):
-        value = original(*args, **kwargs)
-        observations.append((args, kwargs, value))
-        return value
-
-    with patch.object(pipeline, "review_research_proof", review):
-        result = run_whole(tmp_path, native=True) if whole else _run(tmp_path, native=True)
-    assert result.stop_reason == "done", result.summary
-    assert len(observations) == 1
-
-
-@pytest.mark.usefixtures("public_source_dns")
-def test_removing_post_publication_review_loses_diagnostics_while_delivery_survives(tmp_path):
-    class Trace:
-        def __init__(self):
-            self.rows = []
-
-        def __getattr__(self, name):
-            return lambda *args, **kwargs: self.rows.append((name, args, kwargs))
-
-    before, after = Trace(), Trace()
-    original_init = pipeline.ResearchPipeline.__init__
-
-    def run(trace, directory, arm):
-        def init(self, **kwargs):
-            kwargs["context"] = replace(kwargs["context"], trace=trace)
-            original_init(self, **kwargs)
-
-        with patch.object(pipeline.ResearchPipeline, "__init__", init), ablation(arm):
-            return run_whole(directory, native=True)
-
-    baseline = run(before, tmp_path / "before", "baseline")
-    candidate = run(after, tmp_path / "after", "no_proof_audit")
-    assert baseline.summary == candidate.summary
-    assert baseline.stop_reason == candidate.stop_reason == "done"
-    assert any(name == "record_proof_review" and args[0] is not None for name, args, _ in before.rows)
-    assert not any(name == "record_proof_review" and args[0] is not None for name, args, _ in after.rows)
-    assert any(name == "record_research_brief_projection" for name, _, _ in before.rows)
-    assert not any(name == "record_research_brief_projection" for name, _, _ in after.rows)
 
 
 @pytest.mark.usefixtures("public_source_dns")

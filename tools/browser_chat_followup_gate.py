@@ -28,7 +28,6 @@ from codey.automation.browser_session import BrowserSession
 from codey.codemode.kernel import CodeModeKernelExecutor
 from codey.operations import completion_gate, kernel_context, kernel_protocol, provider_receipts
 from codey.operations.browser_copy import committed_children
-from codey.operations.browser_result_evidence import _confirmed_region_passages
 from codey.operations.browser_text_report import BrowserMetadata, MetadataPending
 from codey.operations.browser_waits import wait_plan as upload_wait_plan
 from codey.operations.kernel_context import KernelContext
@@ -45,6 +44,7 @@ from codey.providers.base import AssistantTurn, ProviderToolResult
 from codey.providers.text_result_views import TextResultSpan
 from codey.research import provenance
 from codey.research.answer_contract import AnswerScope
+from codey.research.browser_result_evidence import _confirmed_region_passages
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import restore_ledger_observation
 from codey.research.passages import read_passage_refs
@@ -489,7 +489,7 @@ def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
         baseline = decode_json_object(click.audit["query_baseline"])
         expected_waits = upload_wait_plan(session.policy.required_checks).waits
         if expected_waits:
-            from codey.operations.browser_completion import committed_results
+            from codey.automation.browser_receipts import committed_results
 
             # All required waits must have settled after this click, on its document.
             ids = tuple(session._memory_results)

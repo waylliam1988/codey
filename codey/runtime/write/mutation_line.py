@@ -14,8 +14,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from codey.durable.contracts import RuntimeCheckpointPort
     from codey.durable.model import ArtifactRecord, SubmissionRecord, TaskCheckpoint
-    from codey.runtime.log.entries import RuntimeLogEntry
-    from codey.runtime.log.session_projection import RuntimeProjection, RuntimeRows, RuntimeRowsBuilder
 
 from codey.runtime.core.operation_payload import (
     LEAF_TERMINAL,
@@ -56,11 +54,6 @@ from codey.runtime.core.operation_state import (
 )
 from codey.runtime.core.operation_state import (
     new_operation_state,
-    operation_is_open,
-    operation_state_entry,
-    operation_state_from_entries,
-    outcome_for_terminal,
-    start_entries,
 )
 from codey.runtime.core.progress import ProgressSnapshot
 from codey.runtime.effects.effect_records import (
@@ -70,19 +63,20 @@ from codey.runtime.effects.effect_records import (
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
 )
-from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent, abandoned_entry
-from codey.runtime.log.session_view import load_session_view
-from codey.runtime.write.delivery_recovery import build_delivery_recovered_rows
+from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent, mark_abandoned
+from codey.runtime.log.session_view import SessionView, require_open_view
+from codey.runtime.write.checkpoint import RuntimeChange, RuntimeChanges, RuntimeChangesBuilder
+from codey.runtime.write.delivery_recovery import build_delivery_recovered_changes
 from codey.runtime.write.provider_effects import (
     ProviderAdmission,
-    build_provider_begin_rows,
-    build_provider_prepare_rows,
-    build_provider_settle_rows,
+    build_provider_begin_changes,
+    build_provider_prepare_changes,
+    build_provider_settle_changes,
 )
 from codey.runtime.write.tool_batches import (
     ToolBatchCommit,
-    build_tool_batch_rows,
-    build_tool_settle_rows,
+    build_tool_batch_changes,
+    build_tool_settle_changes,
 )
 
 
@@ -101,8 +95,7 @@ class RuntimeMutationLine:
     ) -> None:
         from codey.runtime.core.operation_state import advance_execution
 
-        def mutation(projection: RuntimeProjection, entries: tuple[RuntimeLogEntry, ...]) -> RuntimeRows:
-            view = load_session_view(entries, session_id=session_id, run_id=run_id)
+        def mutation(view: SessionView) -> RuntimeChanges:
             current = view.state
             if current is None:
                 raise RuntimeEffectError("execution requires an admitted operation")
@@ -113,15 +106,15 @@ class RuntimeMutationLine:
                 return ()
             if current != expected:
                 raise RuntimeEffectError("execution action has a stale operation identity")
-            operation_is_open(projection, current)
-            return (operation_state_entry(proposed),)
+            require_open_view(view)
+            return (proposed,)
 
         self._mutate(session_id, run_id, mutation, artifacts=(*audit_artifacts, *((artifact,) if artifact is not None else ())))
 
-    def _mutate(self, session_id: str, run_id: str, mutation: RuntimeRowsBuilder, *,
+    def _mutate(self, session_id: str, run_id: str, mutation: RuntimeChangesBuilder, *,
                 messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
                 artifacts: tuple[ArtifactRecord, ...] = ()) -> None:
-        from codey.durable.checkpoint import mutate_checkpoint
+        from codey.runtime.write.checkpoint import mutate_checkpoint
         mutate_checkpoint(
             self.durable, session_id, run_id, mutation, messages=messages, artifacts=artifacts,
         )
@@ -130,14 +123,14 @@ class RuntimeMutationLine:
                                    intent: RuntimeEffectIntent | None = None,
                                    settlement: RuntimeEffectSettlement | None = None,
                                    artifact: ArtifactRecord | None = None) -> None:
-        from codey.runtime.write.research_publication import publication_rows
+        from codey.runtime.write.research_publication import publication_changes
 
-        def mutation(projection: RuntimeProjection, entries: tuple[RuntimeLogEntry, ...]) -> RuntimeRows:
+        def mutation(view: SessionView) -> RuntimeChanges:
             if intent is not None and self.durable.task(run_id).state.get("cancel_requested"):
                 from codey.runtime.core.cancellation import TaskCancelled
 
                 raise TaskCancelled("research publication cancelled before admission")
-            return publication_rows(projection, entries, session_id=session_id, run_id=run_id, expected=expected,
+            return publication_changes(view, session_id=session_id, run_id=run_id, expected=expected,
                                     intent=intent, settlement=settlement, artifact=artifact)
 
         self._mutate(session_id, run_id, mutation, artifacts=(artifact,) if artifact is not None else ())
@@ -169,17 +162,13 @@ class RuntimeMutationLine:
     ) -> RuntimeOperationState | None:
         accepted: RuntimeOperationState | None = None
 
-        def mutation(projection: RuntimeProjection, entries: tuple[RuntimeLogEntry, ...]) -> RuntimeRows:
+        def mutation(view: SessionView) -> RuntimeChanges:
             nonlocal accepted
-            existing = operation_state_from_entries(
-                entries,
-                session_id=session_id,
-                run_id=run_id,
-            )
+            existing = view.state
             if existing is not None:
                 if model_selection is not None and existing.model_selection != model_selection:
                     raise RuntimeOperationTransitionError("admitted API selection is immutable")
-                operation_is_open(projection, existing)
+                require_open_view(view)
                 accepted = existing
                 return ()
             state = new_operation_state(
@@ -193,7 +182,7 @@ class RuntimeMutationLine:
                 model_selection=model_selection,
             )
             accepted = state
-            return start_entries(projection, state)
+            return (state,)
 
         self._mutate(session_id, run_id, mutation)
         return accepted
@@ -208,41 +197,33 @@ class RuntimeMutationLine:
     ) -> RuntimeOperationState | None:
         committed: RuntimeOperationState | None = None
 
-        def mutation(projection: RuntimeProjection, entries: tuple[RuntimeLogEntry, ...]) -> RuntimeRows:
+        def mutation(view: SessionView) -> RuntimeChanges:
             nonlocal committed
-            view = load_session_view(entries, session_id=session_id, run_id=run_id)
             current = view.state
             if current is None:
                 raise RuntimeOperationTransitionError("operation state is missing")
             prepared = prepare_operation_settlement(view) if abandoned_reason else None
-            op = projection.operations.get(current.operation_id)
-            if op is not None and op.status != "open":
-                if current.leaf == LEAF_TERMINAL:
-                    next_state = transition(current)
-                    if next_state == current:
-                        committed = current
-                        return ()
-                    raise RuntimeOperationTransitionError("terminal operation is immutable")
-                raise RuntimeOperationTransitionError("operation already settled")
-            operation_is_open(projection, current)
-            rows: list[dict[str, object]] = []
+            if current.leaf == LEAF_TERMINAL:
+                if transition(current) == current:
+                    committed = current
+                    return ()
+                raise RuntimeOperationTransitionError("terminal operation is immutable")
+            changes: list[RuntimeChange] = []
             if prepared is not None:
                 for batch_id in prepared.abandoned_batch_ids:
-                    entry = abandoned_entry(session_id, run_id, batch_id=batch_id,
+                    entry = mark_abandoned(batch_id=batch_id,
                                             reason=abandoned_reason, batches=view.batches)
                     if entry is not None:
-                        rows.append(entry)
+                        changes.append(entry)
                 if prepared.abandoned_batch_ids and current.leaf == "tool_delivery_pending":
                     current = state_mark_tool_delivery_settled(current)
             next_state = transition(current)
-            if next_state == current and not rows:
+            if next_state == current and not changes:
                 committed = current
                 return ()
-            rows.append(operation_state_entry(next_state))
-            if next_state.leaf == LEAF_TERMINAL:
-                rows.append(_operation_settled_entry(next_state))
+            changes.append(next_state)
             committed = next_state
-            return tuple(rows)
+            return tuple(changes)
 
         self._mutate(session_id, run_id, mutation)
         return committed
@@ -282,8 +263,7 @@ class RuntimeMutationLine:
         This is data attached to the existing operation position. Only the
         operation's writer_attempt identifies the active invocation.
         """
-        def mutation(projection: RuntimeProjection, entries: tuple[RuntimeLogEntry, ...]) -> RuntimeRows:
-            view = load_session_view(entries, session_id=session_id, run_id=run_id)
+        def mutation(view: SessionView) -> RuntimeChanges:
             state = expected
             if writer_attempt is not None:
                 state = state_mark_writer_running(state, provider_id=state.provider_id, writer_attempt=writer_attempt)
@@ -293,17 +273,17 @@ class RuntimeMutationLine:
                 return ()
             if view.state != expected or expected.task_kind != "research":
                 raise RuntimeOperationTransitionError("research continuation has a stale operation identity")
-            operation_is_open(projection, expected)
+            require_open_view(view)
             if artifact.owner_task_id != run_id or artifact.owner_effect_id is not None:
                 raise RuntimeOperationTransitionError("research continuation belongs to another task")
             if expected.leaf != "kernel_settled":
                 raise RuntimeOperationTransitionError("research continuation requires a settled invocation")
             settlement = prepare_operation_settlement(view)
-            rows = [abandoned_entry(session_id, run_id, batch_id=batch_id,
+            changes = [mark_abandoned(batch_id=batch_id,
                 reason="writer_settled", batches=view.batches)
                 for batch_id in settlement.abandoned_batch_ids]
-            return (*tuple(row for row in rows if row is not None),
-                    operation_state_entry(proposed))
+            return (*tuple(row for row in changes if row is not None),
+                    proposed)
 
         self._mutate(session_id, run_id, mutation, artifacts=(*artifacts, artifact))
 
@@ -469,9 +449,8 @@ class RuntimeMutationLine:
                 or artifact.metadata.get("kind") != "provider_request"):
             raise RuntimeEffectError("prepared provider request requires a task-owned artifact")
 
-        def mutation(projection: RuntimeProjection, entries: tuple[RuntimeLogEntry, ...]) -> RuntimeRows:
-            view = load_session_view(entries, session_id=session_id, run_id=run_id)
-            return build_provider_prepare_rows(projection, view, expected=expected,
+        def mutation(view: SessionView) -> RuntimeChanges:
+            return build_provider_prepare_changes(view, expected=expected,
                                                 request_ref=artifact.handle, turn=turn, logical_turn=logical_turn)
 
         self._mutate(session_id, run_id, mutation, artifacts=(artifact,))
@@ -513,11 +492,9 @@ class RuntimeMutationLine:
     ) -> ProviderAdmission:
         committed: ProviderAdmission | None = None
 
-        def mutation(projection: RuntimeProjection, entries: tuple[RuntimeLogEntry, ...]) -> RuntimeRows:
+        def mutation(view: SessionView) -> RuntimeChanges:
             nonlocal committed
-            view = load_session_view(entries, session_id=session_id, run_id=run_id)
-            rows, prepared = build_provider_begin_rows(
-                projection,
+            changes, prepared = build_provider_begin_changes(
                 view,
                 session_id=session_id,
                 run_id=run_id,
@@ -529,8 +506,8 @@ class RuntimeMutationLine:
                 expected_counters=expected_counters,
                 expected_request_ref=expected_request_ref,
             )
-            committed = ProviderAdmission(prepared, bool(rows))
-            return rows
+            committed = ProviderAdmission(prepared, bool(changes))
+            return changes
 
         self._mutate(session_id, run_id, mutation, artifacts=artifacts)
         if committed is None:
@@ -541,9 +518,9 @@ class RuntimeMutationLine:
         self, session_id: str, run_id: str, *, batch_id: str,
         expected: ProgressSnapshot, observed: ProgressSnapshot,
     ) -> None:
-        def mutation(projection: RuntimeProjection, entries: tuple[RuntimeLogEntry, ...]) -> RuntimeRows:
-            view = load_session_view(entries, session_id=session_id, run_id=run_id)
-            return record_progress_observation(view, batch_id=batch_id, expected=expected, observed=observed)
+        def mutation(view: SessionView) -> RuntimeChanges:
+            state = record_progress_observation(view, batch_id=batch_id, expected=expected, observed=observed)
+            return (state,) if state is not None else ()
 
         self._mutate(session_id, run_id, mutation)
 
@@ -552,13 +529,11 @@ class RuntimeMutationLine:
         messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
     ) -> None:
         """Admit a received body without settling input/history generation boundaries."""
-        from codey.runtime.core.operation_state import mark_provider_response_ready, operation_state_entry
+        from codey.runtime.core.operation_state import mark_provider_response_ready
         from codey.runtime.effects.effect_records import find_effect
-        from codey.runtime.log.session_view import require_open_view
 
-        def mutation(projection: RuntimeProjection, entries: tuple[RuntimeLogEntry, ...]) -> RuntimeRows:
-            view = load_session_view(entries, session_id=session_id, run_id=run_id)
-            state = require_open_view(projection, view)
+        def mutation(view: SessionView) -> RuntimeChanges:
+            state = require_open_view(view)
             effect = find_effect(view.effects, effect_id)
             if (effect.intent.effect_category != "provider_send" or effect.settlement is not None
                     or artifact.owner_task_id != run_id or artifact.owner_effect_id != effect_id
@@ -568,7 +543,7 @@ class RuntimeMutationLine:
                 return ()
             if state.turn != effect.intent.turn:
                 raise RuntimeEffectError("provider response does not match its operation turn")
-            return (operation_state_entry(mark_provider_response_ready(state, response_ref=artifact.handle)),)
+            return (mark_provider_response_ready(state, response_ref=artifact.handle),)
 
         self._mutate(session_id, run_id, mutation, artifacts=(artifact,), messages=messages)
 
@@ -609,16 +584,15 @@ class RuntimeMutationLine:
         from codey.runtime.core.operation_payload import LEAF_KERNEL_SETTLED, LEAF_REPAIR_RUNNING, LEAF_WRITER_RUNNING
         from codey.runtime.core.operation_state import advance_execution
 
-        def mutation(projection: RuntimeProjection, entries: tuple[RuntimeLogEntry, ...]) -> RuntimeRows:
-            view = load_session_view(entries, session_id=session_id, run_id=run_id)
+        def mutation(view: SessionView) -> RuntimeChanges:
             if view.state != expected:
                 raise RuntimeEffectError("kernel final boundary has a stale operation identity")
-            rows: tuple[dict[str, object], ...] = ()
+            changes: RuntimeChanges = ()
             state = expected
             if settlement is not None:
-                rows, _ = build_provider_settle_rows(projection, view, session_id=session_id,
+                changes, _ = build_provider_settle_changes(view, session_id=session_id,
                                                      run_id=run_id, settlement=settlement)
-            return (*rows, operation_state_entry(advance_execution(state, LEAF_KERNEL_SETTLED)))
+            return (*changes, advance_execution(state, LEAF_KERNEL_SETTLED))
 
         def placed_transition(state: RuntimeOperationState, selected: tuple[SubmissionRecord, ...]) -> RuntimeOperationState:
             if boundary != "final" or not selected:
@@ -628,7 +602,7 @@ class RuntimeMutationLine:
             return advance_execution(state, LEAF_REPAIR_RUNNING if state.driver == "repair" else LEAF_WRITER_RUNNING)
 
         placed: list[SubmissionRecord] = []
-        from codey.durable.checkpoint import mutate_checkpoint
+        from codey.runtime.write.checkpoint import mutate_checkpoint
         mutate_checkpoint(self.durable, session_id, run_id, mutation,
             generation_boundary=boundary, boundary_result=placed, boundary_transition=placed_transition)
         return tuple(placed)
@@ -645,20 +619,18 @@ class RuntimeMutationLine:
         committed: RuntimeEffectSettlement | None = None
         placed: list[SubmissionRecord] = []
 
-        def mutation(projection: RuntimeProjection, entries: tuple[RuntimeLogEntry, ...]) -> RuntimeRows:
+        def mutation(view: SessionView) -> RuntimeChanges:
             nonlocal committed
-            view = load_session_view(entries, session_id=session_id, run_id=run_id)
-            rows, prepared = build_provider_settle_rows(
-                projection,
+            changes, prepared = build_provider_settle_changes(
                 view,
                 session_id=session_id,
                 run_id=run_id,
                 settlement=settlement,
             )
             committed = prepared
-            return rows
+            return changes
 
-        from codey.durable.checkpoint import mutate_checkpoint
+        from codey.runtime.write.checkpoint import mutate_checkpoint
         mutate_checkpoint(
             self.durable, session_id, run_id, mutation, messages=messages,
             generation_boundary=generation_boundary, boundary_result=placed,
@@ -680,11 +652,9 @@ class RuntimeMutationLine:
         batch_intents = tuple(intents)
         committed: ToolBatchCommit | None = None
 
-        def mutation(projection: RuntimeProjection, entries: tuple[RuntimeLogEntry, ...]) -> RuntimeRows:
+        def mutation(view: SessionView) -> RuntimeChanges:
             nonlocal committed
-            view = load_session_view(entries, session_id=session_id, run_id=run_id)
-            rows, batch_commit = build_tool_batch_rows(
-                projection,
+            changes, batch_commit = build_tool_batch_changes(
                 view,
                 session_id=session_id,
                 run_id=run_id,
@@ -693,7 +663,7 @@ class RuntimeMutationLine:
                 driver=driver,
             )
             committed = batch_commit
-            return rows
+            return changes
 
         self._mutate(session_id, run_id, mutation)
         if committed is None:
@@ -712,20 +682,18 @@ class RuntimeMutationLine:
     ) -> RuntimeEffectSettlement:
         committed: RuntimeEffectSettlement | None = None
 
-        def mutation(projection: RuntimeProjection, entries: tuple[RuntimeLogEntry, ...]) -> RuntimeRows:
+        def mutation(view: SessionView) -> RuntimeChanges:
             nonlocal committed
-            view = load_session_view(entries, session_id=session_id, run_id=run_id)
-            rows, prepared = build_tool_settle_rows(
-                projection,
+            changes, prepared = build_tool_settle_changes(
                 view,
                 session_id=session_id,
                 run_id=run_id,
                 settlement=settlement,
             )
             committed = prepared
-            return rows
+            return changes
 
-        from codey.durable.checkpoint import mutate_checkpoint
+        from codey.runtime.write.checkpoint import mutate_checkpoint
 
         mutate_checkpoint(self.durable, session_id, run_id, mutation, messages=messages, artifacts=artifacts,
                           task_updates=(admitted_task,) if admitted_task is not None else ())
@@ -785,10 +753,8 @@ class RuntimeMutationLine:
     ) -> None:
         recovered_ids = tuple(recovered_effect_ids)
 
-        def mutation(projection: RuntimeProjection, entries: tuple[RuntimeLogEntry, ...]) -> RuntimeRows:
-            view = load_session_view(entries, session_id=session_id, run_id=run_id)
-            return build_delivery_recovered_rows(
-                projection,
+        def mutation(view: SessionView) -> RuntimeChanges:
+            return build_delivery_recovered_changes(
                 view,
                 session_id=session_id,
                 run_id=run_id,
@@ -808,27 +774,16 @@ class RuntimeMutationLine:
         batch_id: str,
         provider_effect_id: str,
     ) -> None:
-        def mutation(projection: RuntimeProjection, entries: tuple[RuntimeLogEntry, ...]) -> RuntimeRows:
-            view = load_session_view(entries, session_id=session_id, run_id=run_id)
-            from codey.runtime.write.provider_effects import build_delivery_delivered_rows
+        def mutation(view: SessionView) -> RuntimeChanges:
+            from codey.runtime.write.provider_effects import build_delivery_delivered_changes
 
-            rows = build_delivery_delivered_rows(
-                projection, view, session_id=session_id, run_id=run_id,
+            changes = build_delivery_delivered_changes(
+                view, session_id=session_id, run_id=run_id,
                 batch_id=batch_id, provider_effect_id=provider_effect_id,
             )
-            return rows
+            return changes
 
         self._mutate(session_id, run_id, mutation)
-
-
-def _operation_settled_entry(state: RuntimeOperationState) -> dict[str, object]:
-    payload: object = outcome_for_terminal(state).to_payload()
-    return {
-        "lane": state.lane,
-        "operation_id": state.operation_id,
-        "kind": "operation_settled",
-        "payload": payload,
-    }
 
 
 def _replace_task_policy(state: RuntimeOperationState, policy: dict[str, object]) -> RuntimeOperationState:

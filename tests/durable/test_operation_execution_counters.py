@@ -10,7 +10,6 @@ from typing import Protocol
 import pytest
 
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.model import CommitResult, DurableMutation
 from codey.operations.kernel_contracts import KernelResult
 from codey.operations.kernel_progress import KernelProgress
@@ -27,6 +26,7 @@ from codey.runtime.core.operation_payload import (
 )
 from codey.runtime.core.progress import ProgressSnapshot
 from codey.runtime.effects.effect_records import RuntimeEffectError, RuntimeEffectIntent
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
 from tests.durable.test_provider_response_receipts import runtime as receipt_runtime
@@ -263,7 +263,7 @@ def test_operation_counter_codec_rejects_corruption(tmp_path: Path, changes: dic
         durable.close()
 
 
-def test_legacy_active_operation_cannot_silently_receive_new_budgets(tmp_path: Path) -> None:
+def test_retired_operation_schema_cannot_silently_receive_new_budgets(tmp_path: Path) -> None:
     durable, _, _, _ = runtime(tmp_path)
     try:
         task = durable.task("r")
@@ -273,14 +273,11 @@ def test_legacy_active_operation_cannot_silently_receive_new_budgets(tmp_path: P
         payload["schema_version"] = 2
         payload.pop("counters")
         legacy = replace(task, state={**task.state, "operation": payload})
-        with pytest.raises(RuntimeOperationTransitionError, match="cannot reset budgets"):
+        with pytest.raises(RuntimeOperationTransitionError, match="invalid durable operation checkpoint"):
             operation_from_checkpoint(legacy, "s")
         payload["leaf"] = "accepted"
         legacy = replace(task, state={**task.state, "operation": payload})
-        admitted = operation_from_checkpoint(legacy, "s")
-        assert admitted is not None
-        assert admitted.counters == RuntimeExecutionCounters()
-        migrated = replace(task, state={**task.state, "operation": admitted.to_payload()})
-        assert operation_from_checkpoint(migrated, "s") == admitted
+        with pytest.raises(RuntimeOperationTransitionError, match="invalid durable operation checkpoint"):
+            operation_from_checkpoint(legacy, "s")
     finally:
         durable.close()

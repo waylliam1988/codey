@@ -12,7 +12,6 @@ import threading
 from contextlib import closing, contextmanager
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -355,39 +354,3 @@ def test_post_run_audit_removal_keeps_original_kernel_result(tmp_path):
     record("post_run_proof_projection", {"turns": 2, "publications": 1}, {"turns": 2, "publications": 1},
            boundary="original_kernel_then_pipeline_projection",
            limitation="Identical scripted writer output; diagnostic trace loss is separate from answer quality.")
-
-
-@pytest.mark.usefixtures("public_source_dns")
-def test_state_field_removal_changes_open_question_completion(tmp_path):
-    from codey.research.completion_gate import ResearchCompletionGate
-    from tests.manual.research_process_review import ablation
-
-    task = "Explain the writer limit."
-    decisions = []
-    for arm in ("baseline", "no_state_field"):
-        calls = []
-
-        def factory(provider, calls=calls, arm=arm):
-            def send(prompt):
-                calls.append(prompt)
-                args = {"markdown": "Only one writer can write at a time [e1]."}
-                if arm == "baseline":
-                    args["state"] = "answered"
-                return json.dumps({"tool": "open_url", "args": {"url": URL}} if len(calls) == 1 else
-                                  {"tool": "submit_research_answer", "args": args})
-            provider.send = send
-            return provider
-
-        with ablation(arm):
-            result = _run(tmp_path / arm, native=True, task=task,
-                          required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS, provider_factory=factory)
-        assert result.stop_reason == "done" and result.turns == 2
-        decision = ResearchCompletionGate().evaluate(
-            item=SimpleNamespace(kind="open_question", title=task, started_run_id="r"),
-            event={"run_id": "r", "stop_reason": "done"}, research_result=result, session_id="s", task=task)
-        decisions.append((result.accepted_report.state, result.accepted_report.open_questions, decision.block))
-    assert decisions[0] == ("answered", (), False)
-    assert decisions[1] == ("partial", (task,), True)
-    record("declared_state_completion", {"state": "answered", "question_closed": True},
-           {"state": "partial", "question_closed": False}, boundary="original_submission_publication_and_completion_gate",
-           limitation="Same scripted correct body; model declarations still do not certify semantic correctness.")

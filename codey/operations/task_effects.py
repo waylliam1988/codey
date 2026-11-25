@@ -12,10 +12,10 @@ if TYPE_CHECKING:
     from codey.durable.session import DurableSession
     from codey.operations.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
     from codey.operations.task_session import TaskSession
-    from codey.runtime.core.protocol_window import ProtocolWindowRef
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
     from codey.toolchain.tool_spec import ToolSpec
+    from codey.types.protocol_window import ProtocolWindowRef
     from codey.workspace.context_admission import ContextCandidate
 
 from codey.memory.contracts import MemoryTrace
@@ -218,7 +218,7 @@ class KernelEffectSink:
             tool_task_notifications, memory_traces)
 
     def counters(self) -> RuntimeExecutionCounters:
-        from codey.durable.checkpoint import operation_from_checkpoint
+        from codey.runtime.write.checkpoint import operation_from_checkpoint
 
         state = operation_from_checkpoint(self.durable.task(self.run_id), self.session_id)
         if state is None:

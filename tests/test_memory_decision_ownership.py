@@ -9,11 +9,12 @@ from typing import Literal
 import pytest
 
 from codey.app.memory_candidates import accepted_completion, accepted_done_decision
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.model import EffectRecord
 from codey.operations.kernel_contracts import DoneDecision, KernelResult
 from codey.runtime.core.operation_payload import RuntimeOperationState
 from codey.storage.managed_outputs import ManagedOutputStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 NOW = "2026-11-24T00:00:00Z"
 
@@ -22,7 +23,7 @@ NOW = "2026-11-24T00:00:00Z"
 def storage(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[tuple[DurableSession, ManagedOutputStore]]:
     backend: object = request.param
     assert backend in ("memory", "sqlite")
-    store = SQLiteDurableStore(tmp_path / "durable.sqlite3") if backend == "sqlite" else MemoryDurableStore()
+    store = SQLiteDurableStore(tmp_path / "durable.sqlite3") if backend == "sqlite" else TemporarySQLiteStore()
     durable = DurableSession(store)
     try:
         yield durable, ManagedOutputStore(tmp_path)

@@ -1,11 +1,16 @@
 from __future__ import annotations
 
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore, TaskStatus
+from pathlib import Path
+
+import pytest
+
+from codey.durable import DurableSession, SQLiteDurableStore, TaskStatus
 from codey.durable.scheduler import DurableTaskScheduler
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_scheduler_finalization_reconciles_only_durable_candidates(monkeypatch) -> None:
-    store = MemoryDurableStore()
+    store = TemporarySQLiteStore()
     session = DurableSession(store)
     session.admit_input(
         conversation_id="conversation", request_id="parent-request", task_id="parent",
@@ -31,7 +36,7 @@ def test_scheduler_finalization_reconciles_only_durable_candidates(monkeypatch) 
     session.close()
 
 
-def test_finalization_queue_is_durable_and_scheduler_does_not_derive_it_from_tasks(tmp_path) -> None:
+def test_finalization_queue_is_durable_and_scheduler_does_not_derive_it_from_tasks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "durable.sqlite3"
     session = DurableSession(SQLiteDurableStore(path))
     session.admit_input(
@@ -53,7 +58,7 @@ def test_finalization_queue_is_durable_and_scheduler_does_not_derive_it_from_tas
         def forbidden_tasks():
             raise AssertionError("finalization recovery must not scan every task")
 
-        restarted.store.tasks = forbidden_tasks  # type: ignore[method-assign]
+        monkeypatch.setattr(restarted.store, "tasks", forbidden_tasks)
         scheduler = DurableTaskScheduler(restarted, lambda _task: True)
         scheduler._reconcile()
         assert restarted.store.finalization_queue() == ("parent",)

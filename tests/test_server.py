@@ -189,14 +189,14 @@ class _DeclaredChatProvider:
     location = "https://chat.deepseek.com/"
 
     def __init__(self) -> None:
-        from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
+        from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding
         self.send = mock.Mock()
         self.new_chat = mock.Mock()
         self._binding = ProviderBinding("deepseek", "fixture", "fixture", "chat", "fixture")
         self.window_ref = ProtocolWindowRef.new("fixture", self._binding)
 
     def reset_window(self, expected_ref=None):
-        from codey.runtime.core.protocol_window import ProtocolWindowRef
+        from codey.types.protocol_window import ProtocolWindowRef
         self.window_ref = ProtocolWindowRef.new(self.window_ref.session_id, self._binding)
         return self.window_ref
 
@@ -2891,7 +2891,7 @@ class RunSnapshotTests(unittest.TestCase):
 
 
     def test_state_owns_runtime_operation_store_and_forget_deletes_it(self) -> None:
-        from codey.runtime.core.operation_state import RuntimeOperationStore
+        from codey.runtime.write.checkpoint import RuntimeOperationStore
 
         with tempfile.TemporaryDirectory() as td:
             state = server.AppContext(td)
@@ -3486,7 +3486,7 @@ class RunSnapshotTests(unittest.TestCase):
             self.assertEqual(state.run_registry.last_stop_reason(), "")
 
     def test_state_without_state_home_still_uses_ephemeral_runtime_store(self) -> None:
-        from codey.runtime.core.operation_state import RuntimeOperationStore
+        from codey.runtime.write.checkpoint import RuntimeOperationStore
 
         state = server.AppContext()
         self.assertIsInstance(state.runtime_operations, RuntimeOperationStore)

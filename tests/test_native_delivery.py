@@ -23,7 +23,6 @@ from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_spe
 from codey.providers.error_classification import ContextOverflowError
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
-from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
 from tests.support.kernel_runtime import (
@@ -79,8 +78,9 @@ def _native_session(tmp_path: Path, *, max_turns: int = 5) -> TaskSession:
 
 
 def _effect_harness(tmp_path: Path, session_id: str, run_id: str):
-    from codey.durable import DurableSession, MemoryDurableStore
-    durable = DurableSession(MemoryDurableStore())
+    from codey.durable import DurableSession
+    from tests.support.sqlite_store import TemporarySQLiteStore
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
                         text="native", provider_snapshot={"provider_id": "local"})
     durable.start_task(run_id, state={})
@@ -351,8 +351,8 @@ def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> Non
 
 def test_recovered_native_delivery_marks_delivered(tmp_path: Path) -> None:
     """Recovered results are delivered natively before new model calls."""
-    from codey.durable.checkpoint import operation_from_checkpoint
     from codey.operations.generation_boundary import durable_generation_boundary_callback
+    from codey.runtime.write.checkpoint import operation_from_checkpoint
 
     class Crash(BaseException):
         pass
@@ -622,61 +622,6 @@ def test_local_malformed_tool_calls_fail_closed(monkeypatch) -> None:
     assert all("tool_calls" not in m for m in provider._messages)
 
 
-def _commit_entries(log: RuntimeSessionLog, session_id: str, entries) -> None:
-    from codey.runtime.log.entries import RuntimeLogEntry
-
-    path = log.path_for(session_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("ab") as handle:
-        for entry in entries:
-            row = RuntimeLogEntry(
-                session_id=session_id,
-                lane=entry.get("lane"),
-                operation_id=entry.get("operation_id"),
-                kind=entry.get("kind"),
-                payload=entry.get("payload"),
-            )
-            handle.write(row.to_json_line().encode("utf-8"))
-
-
-def _delivery_harness(tmp_path: Path):
-    from codey.runtime.effects.tool_result_delivery import (
-        DeliveryBatchIntent,
-        DeliveryBatchItem,
-        compute_batch_digest,
-    )
-
-    session_id, run_id = "sess-void-1", "run-void-1"
-    from codey.durable import DurableSession, MemoryDurableStore
-    durable = DurableSession(MemoryDurableStore())
-    durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
-                        text="delivery", provider_snapshot={"provider_id": "local"})
-    durable.start_task(run_id, state={})
-    durable.advance_task(task_id=run_id, phase="running", state={})
-    durable.advance_task(task_id=run_id, phase="running", state={})
-    line = RuntimeMutationLine(durable=durable)
-    line.accept_operation(
-        session_id=session_id, run_id=run_id, project=str(tmp_path),
-        provider_id="local", turn_budget=10, max_repair_rounds=1, task_kind="project",
-    )
-    line.mark_writer_running(session_id, run_id, provider_id="local")
-    items = (DeliveryBatchItem(tool_index=0, tool_name="read", ref="r0", replay_class="safe", is_denied=False),)
-    intent = DeliveryBatchIntent(
-        batch_id="batch-void-1", session_id=session_id, run_id=run_id, turn=1,
-        items=items, batch_digest=compute_batch_digest(items),
-    )
-
-    line.begin_tool_batch(session_id, run_id, intents=(), delivery_intent=intent)
-    return durable, session_id, run_id
-
-
-def test_supersede_entry_projection_semantics(tmp_path: Path) -> None:
-    import pytest
-
-    # The former body injected JSONL records into a removed fact source.
-    pytest.skip("projection-only delivery record injection was removed with the JSONL fact source")
-
-
 def _proof_harness(tmp_path: Path, tag: str):
     from codey.runtime.effects.tool_result_delivery import (
         DeliveryBatchIntent,
@@ -685,8 +630,9 @@ def _proof_harness(tmp_path: Path, tag: str):
     )
 
     session_id, run_id = f"sess-proof-{tag}", f"run-proof-{tag}"
-    from codey.durable import DurableSession, MemoryDurableStore
-    durable = DurableSession(MemoryDurableStore())
+    from codey.durable import DurableSession
+    from tests.support.sqlite_store import TemporarySQLiteStore
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
                         text="proof", provider_snapshot={"provider_id": "local"})
     durable.start_task(run_id, state={})
@@ -779,25 +725,6 @@ def test_builder_supersede_requires_not_sent_proof(tmp_path: Path) -> None:
     assert proven.is_delivered
     assert batches["b-unproven"].active_attempts == ("e1",)
     assert batches["b-unproven"].is_delivered is False
-
-
-def test_voided_only_batch_stays_recoverable(tmp_path: Path) -> None:
-    import pytest
-    pytest.skip("projection-only delivery record injection was removed with the JSONL fact source")
-    from codey.runtime.effects.tool_result_delivery import send_attempt_entry, send_superseded_entry
-
-    log, session_id, run_id = _delivery_harness(tmp_path)
-    store = ToolResultDeliveryStore(durable=log)
-    attempt = send_attempt_entry(session_id, run_id, batch_id="batch-void-1", provider_effect_id="e1",
-                                 batches=store.load_batches(session_id, run_id))
-    _commit_entries(log, session_id, (attempt,))
-    voided = send_superseded_entry(session_id, run_id, batch_id="batch-void-1", provider_effect_id="e1",
-                                   batches=store.load_batches(session_id, run_id))
-    _commit_entries(log, session_id, (voided,))
-    batch = store.load_batches(session_id, run_id)[0]
-    assert batch.active_attempts == ()
-    assert batch.is_delivered is False
-    assert batch.can_recover_before_provider_send is True
 
 
 def test_large_receipt_store_failure_never_creates_an_inline_success() -> None:

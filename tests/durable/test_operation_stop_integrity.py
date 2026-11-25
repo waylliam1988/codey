@@ -4,20 +4,22 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
-from codey.durable.checkpoint import checkpoint_entries, operation_from_checkpoint
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.errors import CommitConflict
 from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 from codey.runtime.core.operation_state import mark_terminal
 from codey.runtime.effects.effect_records import RuntimeEffectIntent, RuntimeEffectSettlement
 from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent, DeliveryBatchItem, compute_batch_digest
 from codey.runtime.log.session_view import load_session_view
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from tests.support.runtime_log_fixture import checkpoint_entries
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.fixture(params=["memory", "sqlite"])
 def runtime(request, tmp_path: Path):
-    store = MemoryDurableStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "runtime.sqlite")
+    store = TemporarySQLiteStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "runtime.sqlite")
     durable = DurableSession(store)
     durable.admit_input(conversation_id="s", request_id="input", task_id="r", text="inspect", provider_snapshot={})
     durable.start_task("r", state={})

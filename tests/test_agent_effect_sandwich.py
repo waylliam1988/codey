@@ -17,14 +17,13 @@ from codey.agents.tool_execution import (
 from codey.agents.tools import AgentToolFns
 from codey.app import server
 from codey.app import task_submit as task_submit
-from codey.durable import DurableSession, EffectRecord, MemoryDurableStore
+from codey.durable import DurableSession, EffectRecord
 from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
 from codey.operations.task_run import start_run_operation as _start_run_operation
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall
 from codey.runtime.core.operation_state import (
-    RuntimeOperationStore,
     lane_for_run,
     operation_id_for_run,
 )
@@ -46,35 +45,13 @@ from codey.runtime.effects.tool_result_delivery import (
     compute_batch_digest,
     new_batch_id,
 )
-from codey.runtime.log.entries import RuntimeLogEntry
-from codey.runtime.log.session_log import RuntimeSessionLog
+from codey.runtime.write.checkpoint import RuntimeOperationStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.task.model import TaskSubmission
 from codey.toolchain.runtime import ToolOutcome
 from tests.support.receipt_fixtures import inspect_receipt_facts
-
-
-def _commit_log_entry(
-    log: RuntimeSessionLog,
-    session_id: str,
-    *,
-    lane: str,
-    operation_id: str,
-    kind: str,
-    payload: dict[str, object],
-) -> None:
-    path = log.path_for(session_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    entry = RuntimeLogEntry(
-        session_id=session_id,
-        lane=lane,
-        operation_id=operation_id,
-        kind=kind,
-        payload=payload,
-    )
-    with path.open("ab") as handle:
-        handle.write(entry.to_json_line().encode("utf-8"))
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def _admit_durable_tool_recovery(
@@ -135,7 +112,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.outputs = ManagedOutputStore(self.project_dir / "outputs")
         self.session_id = "sess-sandwich-1"
         self.run_id = "run-sandwich-1"
-        self.durable = DurableSession(MemoryDurableStore())
+        self.durable = DurableSession(TemporarySQLiteStore())
         self.durable.admit_input(
             conversation_id=self.session_id,
             request_id=self.run_id,
@@ -147,7 +124,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
         self.durable.start_task(self.run_id, state={"task_kind": "project"})
         self.durable.advance_task(task_id=self.run_id, phase="running", state={"task_kind": "project"})
         self.durable.advance_task(task_id=self.run_id, phase="running", state={"task_kind": "project"})
-        self.log = RuntimeSessionLog(self.project_dir / "state")
         self.operations = RuntimeOperationStore(durable=self.durable)
         self.effects = RuntimeEffectStore(durable=self.durable)
         self.delivery = ToolResultDeliveryStore(durable=self.durable)
@@ -460,7 +436,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
             workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
-            evidence_ledgers=state.evidence_ledgers,
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             runtime_mutations=state.runtime_mutations,
@@ -615,7 +590,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
             workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
-            evidence_ledgers=state.evidence_ledgers,
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             runtime_mutations=state.runtime_mutations,
@@ -747,7 +721,6 @@ class AgentEffectSandwichTests(unittest.TestCase):
             workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
-            evidence_ledgers=state.evidence_ledgers,
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             runtime_mutations=state.runtime_mutations,

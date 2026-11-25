@@ -1,4 +1,4 @@
-"""Real log+receipt recovery via the formal entry path.
+"""Real SQLite receipt recovery via the formal entry path.
 
 Layout per case (cold start, no compat):
   tmp/project/  project files
@@ -6,7 +6,7 @@ Layout per case (cold start, no compat):
   tmp/log/      session log
 
 Flow:
-  open RuntimeSessionLog + ManagedOutputStore + WorkspaceRevisionStore +
+  open SQLiteDurableStore + ManagedOutputStore + WorkspaceRevisionStore +
   KernelEffectSink -> execute_turn edit + run(s) -> record counts/revision/
   fingerprint/call ids -> reopen all stores (restart) ->
   inspect_receipt_facts -> formal kernel_session_recovery.restore_task_session into a
@@ -69,12 +69,10 @@ def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, proje
     from codey.operations.task_effects import KernelEffectSink
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
     from codey.workspace.revision import WorkspaceRevisionStore
 
-    log = RuntimeSessionLog(logdir)
     state.mkdir(parents=True, exist_ok=True)
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
     mutations = RuntimeMutationLine(durable=durable)
@@ -112,7 +110,7 @@ def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, proje
         managed_outputs=managed,
         workspace_revisions=rev_store,
     )
-    return log, mutations, managed, rev_store, deps, sink
+    return mutations, managed, rev_store, deps, sink
 
 
 def _new_session(project: Path):
@@ -135,7 +133,7 @@ def _settle_edit_then_runs(project, state, logdir, session_id, run_id, run_audit
     from codey.runtime.core.models import ToolCall, ToolResult
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
 
-    _, _, managed, rev_store, _, sink = _open_runtime(logdir, state, session_id, run_id, project)
+    _, managed, rev_store, _, sink = _open_runtime(logdir, state, session_id, run_id, project)
     (project / "a.py").write_text("x = 1\n", encoding="utf-8")
     session = _new_session(project)
     base = rev_store.current_state(str(project), ignored_paths=())
@@ -392,7 +390,7 @@ def test_multi_turn_recovery_keeps_more_than_twenty_observations(monkeypatch):
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project, state, logdir = _dirs(Path(td))
         (project / "a.py").write_text("x = 1\n", encoding="utf-8")
-        _, _, _, store, _, sink = _open_runtime(logdir, state, "s-many", "r-many", project)
+        _, _, store, _, sink = _open_runtime(logdir, state, "s-many", "r-many", project)
         session = _new_session(project)
         base = store.current_state(str(project), ignored_paths=())
         session.set_workspace_state(base.revision, base.fingerprint)

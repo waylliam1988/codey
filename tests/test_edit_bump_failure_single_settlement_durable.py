@@ -25,18 +25,19 @@ def _policy():
 
 class EditBumpFailureSingleSettlementDurableTests(unittest.TestCase):
     def test_bump_failure_with_durable_sink_does_not_raise_double_settle(self) -> None:
-        from codey.durable import DurableSession, MemoryDurableStore
+        from codey.durable import DurableSession
         from codey.operations import kernel_execution as ke
         from codey.operations.task_effects import KernelEffectSink
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.runtime.write.mutation_line import RuntimeMutationLine
+        from tests.support.sqlite_store import TemporarySQLiteStore
 
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory():
             project = Path(td)
             (project / "a.py").write_text("x=1\n", encoding="utf-8")
             session_id, run_id = "sess-bump-durable-1", "run-bump-durable-1"
-            durable = DurableSession(MemoryDurableStore())
+            durable = DurableSession(TemporarySQLiteStore())
             durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
                                 text="edit", provider_snapshot={"provider_id": "local"})
             durable.start_task(run_id, state={})
@@ -91,19 +92,20 @@ class EditBumpFailureSingleSettlementDurableTests(unittest.TestCase):
             self.assertEqual(session.verifications, [])
 
     def test_bump_failure_single_settlement_row_in_ledger(self) -> None:
-        from codey.durable import DurableSession, MemoryDurableStore
+        from codey.durable import DurableSession
         from codey.operations import kernel_execution as ke
         from codey.operations.task_effects import KernelEffectSink
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.runtime.effects.effect_records import RuntimeEffectStore
         from codey.runtime.write.mutation_line import RuntimeMutationLine
+        from tests.support.sqlite_store import TemporarySQLiteStore
 
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory():
             project = Path(td)
             (project / "a.py").write_text("x=1\n", encoding="utf-8")
             session_id, run_id = "sess-bump-durable-2", "run-bump-durable-2"
-            durable = DurableSession(MemoryDurableStore())
+            durable = DurableSession(TemporarySQLiteStore())
             durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
                                 text="edit", provider_snapshot={"provider_id": "local"})
             durable.start_task(run_id, state={})

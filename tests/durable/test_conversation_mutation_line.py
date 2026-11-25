@@ -7,20 +7,13 @@ from types import TracebackType
 import pytest
 
 from codey.agents.handoff import ConversationSnapshot
-from codey.durable import (
-    CommitResult,
-    DurableMutation,
-    DurableSession,
-    DurableStore,
-    EntryDraft,
-    MemoryDurableStore,
-    SQLiteDurableStore,
-)
+from codey.durable import CommitResult, DurableMutation, DurableSession, DurableStore, EntryDraft, SQLiteDurableStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_repeated_handoff_snapshot_reuses_the_latest_entry(backend: str, tmp_path: Path) -> None:
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     session = DurableSession(store)
     try:
         session.create_conversation("conversation")
@@ -44,7 +37,7 @@ def test_repeated_handoff_snapshot_reuses_the_latest_entry(backend: str, tmp_pat
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_create_conversation_is_a_durable_commit(backend: str, tmp_path: Path) -> None:
-    store: DurableStore = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store: DurableStore = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     observed: list[tuple[CommitResult, DurableMutation]] = []
     session = DurableSession(store, on_commit=lambda result, mutation: observed.append((result, mutation)))
 
@@ -60,7 +53,7 @@ def test_create_conversation_is_a_durable_commit(backend: str, tmp_path: Path) -
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_fork_is_published_as_the_child_creation_commit(backend: str, tmp_path: Path) -> None:
-    store: DurableStore = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store: DurableStore = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     observed: list[tuple[CommitResult, DurableMutation]] = []
     session = DurableSession(store, on_commit=lambda result, mutation: observed.append((result, mutation)))
     session.create_conversation("root")
@@ -81,7 +74,7 @@ def test_fork_is_published_as_the_child_creation_commit(backend: str, tmp_path: 
 
 
 def test_memory_history_snapshot_is_pinned_on_the_session_line(monkeypatch: pytest.MonkeyPatch) -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.create_conversation("conversation")
     first = session.append_message("conversation", "user_message", {"text": "before lock"})
     awaiting_admission = threading.Event()
@@ -125,7 +118,7 @@ def test_memory_history_snapshot_is_pinned_on_the_session_line(monkeypatch: pyte
 
 
 def test_history_window_holds_the_session_line_only_for_admission(monkeypatch: pytest.MonkeyPatch) -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.create_conversation("conversation")
     entry = session.append_message("conversation", "user_message", {"text": "hello"})
 
@@ -133,17 +126,18 @@ def test_history_window_holds_the_session_line_only_for_admission(monkeypatch: p
     release_store_entries = threading.Event()
     completed = threading.Event()
     errors: list[BaseException] = []
-    from codey.durable.history import HistoryEntry, MemoryHistoryReader
+    from codey.durable.history import HistoryEntry
+    from codey.durable.sqlite_history import SQLiteHistoryReader
 
-    original_entries = MemoryHistoryReader.select_entries
+    original_entries = SQLiteHistoryReader.select_entries
 
-    def blocked_entries(reader: MemoryHistoryReader, selected: tuple[HistoryEntry, ...]) -> tuple[EntryDraft, ...]:
+    def blocked_entries(reader: SQLiteHistoryReader, selected: tuple[HistoryEntry, ...]) -> tuple[EntryDraft, ...]:
         store_entries_entered.set()
         if not release_store_entries.wait(5):
             raise AssertionError("test did not release the store read")
         return original_entries(reader, selected)
 
-    monkeypatch.setattr(MemoryHistoryReader, "select_entries", blocked_entries)
+    monkeypatch.setattr(SQLiteHistoryReader, "select_entries", blocked_entries)
 
     def read_window() -> None:
         try:

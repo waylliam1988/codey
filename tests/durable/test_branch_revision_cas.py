@@ -4,12 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import CommitConflict, DurableSession, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import CommitConflict, DurableSession, SQLiteDurableStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_branch_requires_the_revision_captured_by_the_writer(backend: str, tmp_path: Path) -> None:
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     first = DurableSession(store)
     second = DurableSession(store)
     first.create_conversation("conversation")
@@ -24,7 +25,7 @@ def test_branch_requires_the_revision_captured_by_the_writer(backend: str, tmp_p
 
 @pytest.mark.parametrize("invalid_revision", [True, 1.0])
 def test_message_edit_requires_an_integer_revision(invalid_revision: object) -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     try:
         session.create_conversation("conversation")
         entry = session.append_message("conversation", "user_message", {"text": "one"})
@@ -48,7 +49,7 @@ def test_message_edit_requires_an_integer_revision(invalid_revision: object) -> 
 
 def test_branch_commit_is_published_with_the_new_head_and_revision() -> None:
     published: list[object] = []
-    session = DurableSession(MemoryDurableStore(), on_commit=lambda result, _mutation: published.append(result))
+    session = DurableSession(TemporarySQLiteStore(), on_commit=lambda result, _mutation: published.append(result))
     session.create_conversation("conversation")
     entry = session.append_message("conversation", "user_message", {"text": "one"})
     _head, revision = session.head("conversation")

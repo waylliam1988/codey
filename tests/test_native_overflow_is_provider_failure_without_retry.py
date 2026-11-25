@@ -141,8 +141,9 @@ def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> Non
         return TaskPolicy(grants=frozenset({"project.read", "control"}))
 
     session_id, run_id = "sess-native-lock-1", "run-native-lock-1"
-    from codey.durable import DurableSession, MemoryDurableStore
-    durable = DurableSession(MemoryDurableStore())
+    from codey.durable import DurableSession
+    from tests.support.sqlite_store import TemporarySQLiteStore
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
                         text="read", provider_snapshot={"provider_id": "local"})
     durable.start_task(run_id, state={})

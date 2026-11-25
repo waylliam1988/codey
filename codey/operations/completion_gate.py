@@ -49,7 +49,7 @@ from codey.operations.task_session import TaskSession
 from codey.policies.browser_requirement import BrowserPageRounds, is_browser_requirement, parse_browser_requirement
 from codey.policies.requirement import RequirementEvaluation
 from codey.policies.tool_requirement import MAX_REQUIRED_TOOLS, ToolObservation
-from codey.research.finding_report import ResearchReport
+from codey.research.answer_report import AnswerReport
 from codey.research.issues import ResearchIssuePayload
 from codey.research.passages import ReadPassage
 from codey.utils.refs import stable_ref
@@ -101,7 +101,7 @@ def _session_profile(session: TaskSession) -> str:
     return session.task_kind.strip().lower() or "project"
 
 
-def _proof_evidence_refs(session: TaskSession, context: CompletionContext, report: ResearchReport | None = None) -> tuple[str, ...]:
+def _proof_evidence_refs(session: TaskSession, context: CompletionContext, report: AnswerReport | None = None) -> tuple[str, ...]:
     """最终收据绑定的实际任务引用：run 身份 + 结果收据引用（refs only）。
 
     edit 引用携带工作区 revision，verification 引用携带 workspace 身份，
@@ -180,7 +180,7 @@ class GateVerdict:
     final_text: str = ""
     error_source: str = ""
     error_type: str = ""
-    research_report: ResearchReport | None = None
+    research_report: AnswerReport | None = None
     research_issue: ResearchIssuePayload | None = None
     blocked: bool = False
 
@@ -403,7 +403,7 @@ class _RequiredChecks:
 
 def _required_tool_checks(
     session: TaskSession, final_text: str, context: CompletionContext,
-    observations: Mapping[str, ToolObservation] | None, report: ResearchReport | None,
+    observations: Mapping[str, ToolObservation] | None, report: AnswerReport | None,
 ) -> _RequiredChecks:
     """Explicit entry requirements consume the committed execution projection.
 
@@ -496,7 +496,8 @@ def _proof_capacity_verdict(checks: list[CompletionCheck], *, publication: bool)
 
 def _browser_completion_block(session: TaskSession, text: str, context: CompletionContext,
                               metadata: BrowserMetadata | MetadataPending | None = None) -> GateVerdict | None:
-    from codey.operations.browser_followups import PENDING, UNCERTAIN, delivery, pending_click
+    from codey.automation.browser_receipts import delivery
+    from codey.operations.browser_followups import PENDING, UNCERTAIN, pending_click
     from codey.operations.browser_text_report import observe_metadata, report_scope
     from codey.operations.browser_upload import bound_upload_explanation, upload_completion_scope, upload_evidence
     from codey.operations.source_gaps import source_read_required, task_source_coverage

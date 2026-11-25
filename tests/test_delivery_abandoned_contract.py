@@ -9,7 +9,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession
 from codey.runtime.core.operation_payload import LEAF_WRITER_SETTLED, RuntimeOperationTransitionError
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
@@ -28,6 +28,7 @@ from codey.runtime.effects.tool_result_delivery import (
     new_batch_id,
 )
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 class DeliveryAbandonedContractTests(unittest.TestCase):
@@ -35,7 +36,7 @@ class DeliveryAbandonedContractTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         sid, rid = "s-abandon", "r-abandon-1"
-        durable = DurableSession(MemoryDurableStore())
+        durable = DurableSession(TemporarySQLiteStore())
         durable.admit_input(conversation_id=sid, request_id=rid, task_id=rid,
                             text="abandon", provider_snapshot={"provider_id": "mock"})
         durable.start_task(rid, state={})

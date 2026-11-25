@@ -58,7 +58,7 @@ def test_accepted_answer_restart_never_recompiles_or_republishes(tmp_path, monke
               "run_whole(Path(sys.argv[1]), boundary=sys.argv[2])")
     child = subprocess.run([sys.executable, "-c", source, str(tmp_path), boundary], capture_output=True, timeout=60)
     assert child.returncode == 74, child.stderr.decode(errors="replace")
-    monkeypatch.setattr("codey.research.answer_report.compile_answer_report",
+    monkeypatch.setattr("codey.operations.research_completion_checks.compile_answer_report",
                         lambda *a, **k: pytest.fail("accepted answer was recompiled"))
     result = run_whole(tmp_path, resume=True)
     assert result.stop_reason == "done" and result.accepted_report.markdown in result.summary
@@ -68,7 +68,7 @@ def test_accepted_answer_restart_never_recompiles_or_republishes(tmp_path, monke
 
 
 def test_evidence_followup_never_compiles_a_parent_report(tmp_path, monkeypatch):
-    monkeypatch.setattr("codey.operations.research_completion_checks.compile_finding_report",
+    monkeypatch.setattr("codey.operations.research_completion_checks.compile_answer_report",
                        lambda *a, **k: pytest.fail("evidence phase compiled a report"))
     session = TaskSession(TaskPolicy(frozenset({"control"})), task_kind="evidence_followup")
     verdict = completion_gate.evaluate(session, "Acquisition failed; the evidence gap remains.")

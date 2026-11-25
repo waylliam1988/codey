@@ -25,11 +25,11 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
     import os
 
     from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.durable.checkpoint import operation_from_checkpoint
     from codey.knowledge.store import KnowledgeStore
     from codey.operations.research_flow import ResearchFlowDeps, run_research_pipeline
     from codey.policies.task_policy import TaskPolicy
     from codey.research.context import ResearchContext
+    from codey.runtime.write.checkpoint import operation_from_checkpoint
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
 
@@ -136,7 +136,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
         durable.subscribe_commits(committed)
     policy = TaskPolicy(frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}), strict_research=True,
                         required_checks=required_checks)
-    deps = ResearchFlowDeps(state=SimpleNamespace(durable=durable, memory=None), knowledge_store=store, evidence_ledgers=None,
+    deps = ResearchFlowDeps(state=SimpleNamespace(durable=durable, memory=None), knowledge_store=store,
         search_factory=Search,
         managed_outputs=ManagedOutputStore(root), runtime_mutations=line)
     frame = SimpleNamespace(provider=provider_factory(Provider()) if provider_factory else Provider(),

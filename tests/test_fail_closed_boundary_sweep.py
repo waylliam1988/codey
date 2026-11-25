@@ -174,13 +174,6 @@ class SchemaStrictTests(unittest.TestCase):
                 self.assertIs(type(loaded), int)
                 self.assertEqual(loaded, 1)
 
-    def test_evidence_ledger_rejects_bool_float_version(self):
-        from codey.research.evidence_ledger import EVIDENCE_LEDGER_KIND, _valid_ledger_payload
-        base = {"kind": EVIDENCE_LEDGER_KIND, "records": [], "sources": {},
-                "evidence": {}, "claims": {}, "assumptions": {}, "relations": {}}
-        self.assertFalse(_valid_ledger_payload({**base, "schema_version": True}))
-        self.assertFalse(_valid_ledger_payload({**base, "schema_version": 1.0}))
-        self.assertTrue(_valid_ledger_payload({**base, "schema_version": 1}))
 
     def testbounded_receipt_only_v1(self):
         from codey.app.event_payloads import bounded_receipt
@@ -337,17 +330,6 @@ class LedgerEventGuardTests(unittest.TestCase):
         payload = run_event_ui_payload("r", "s", ev)
         self.assertIsInstance(payload, dict)
 
-    def test_session_log_mutate_bad_row_is_write_error(self):
-        import tempfile
-
-        from codey.runtime.log import entries as log_entries
-        from codey.runtime.log.session_log import RuntimeSessionLog
-        with tempfile.TemporaryDirectory() as td:
-            log = RuntimeSessionLog(td)
-            with self.assertRaises(log_entries.RuntimeLogWriteError):
-                log.mutate("s1", lambda proj, ents: [None])
-            with self.assertRaises(log_entries.RuntimeLogWriteError):
-                log.mutate("s1", lambda proj, ents: [123])
 
 
 if __name__ == "__main__":

@@ -18,12 +18,13 @@ from pathlib import Path
 
 class DurableSinkSingleSettlementFailClosedTests(unittest.TestCase):
     def _sink(self, tmp: Path, session_id: str, run_id: str):
-        from codey.durable import DurableSession, MemoryDurableStore
+        from codey.durable import DurableSession
         from codey.operations.task_effects import KernelEffectSink
         from codey.runtime.core.models import ToolCall
         from codey.runtime.write.mutation_line import RuntimeMutationLine
+        from tests.support.sqlite_store import TemporarySQLiteStore
 
-        durable = DurableSession(MemoryDurableStore())
+        durable = DurableSession(TemporarySQLiteStore())
         durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
                             text="read", provider_snapshot={"provider_id": "local"})
         durable.start_task(run_id, state={})
@@ -59,7 +60,7 @@ class DurableSinkSingleSettlementFailClosedTests(unittest.TestCase):
             self.assertIn("already settled", str(cm.exception))
 
     def test_execute_turn_with_durable_sink_settles_once(self) -> None:
-        from codey.durable import DurableSession, MemoryDurableStore
+        from codey.durable import DurableSession
         from codey.operations.kernel_execution import execute_turn
         from codey.operations.task_effects import KernelEffectSink
         from codey.operations.task_session import TaskSession, turn_effect_id
@@ -67,12 +68,13 @@ class DurableSinkSingleSettlementFailClosedTests(unittest.TestCase):
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.runtime.effects.effect_records import RuntimeEffectStore
         from codey.runtime.write.mutation_line import RuntimeMutationLine
+        from tests.support.sqlite_store import TemporarySQLiteStore
 
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
             (tmp / "a.py").write_text("hello\n", encoding="utf-8")
             session_id, run_id = "sess-durable-2", "run-durable-2"
-            durable = DurableSession(MemoryDurableStore())
+            durable = DurableSession(TemporarySQLiteStore())
             durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
                                 text="read", provider_snapshot={"provider_id": "local"})
             durable.start_task(run_id, state={})

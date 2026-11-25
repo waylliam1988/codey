@@ -10,7 +10,6 @@ import pytest
 
 from codey.automation.browser_session import BrowserSession, BrowserToolOutput
 from codey.codemode.kernel import build_execute_turn_executor
-from codey.durable.checkpoint import operation_from_checkpoint
 from codey.knowledge.model import canonical_json
 from codey.operations import browser_waits
 from codey.operations.browser_resources import build_task_browser
@@ -35,6 +34,8 @@ from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.tools import ResearchTools
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.core.tool_resources import tool_resources_for
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object, require_json_string
 from tests.support.task_browser import install
 from tests.test_browser_context_delivery import URL
@@ -384,7 +385,7 @@ def test_background_text_wait_restores_the_original_snapshot_after_cache_loss(
 ) -> None:
     session, tools, browser = production_browser
     runtime = open_runtime(tmp_path)
-    build_task_browser("r", runtime.app.durable.tool_resources, tools, browser=browser)
+    build_task_browser("r", tool_resources_for(runtime.app.durable), tools, browser=browser)
     worker: threading.Thread | None = None
     snapshot = offer_browser_tools(build_turn_snapshot(session, native=True), session)
 

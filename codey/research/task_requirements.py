@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import NotRequired, TypedDict
 
-if TYPE_CHECKING:
-    from codey.research.report_proposal import CharacterContribution
-
-from codey.reviews.research_coverage import CoverageRow
+from codey.utils.research_coverage import CoverageRow
 
 _BOUNDARY = re.compile(r"[\n,;!?\u3002\uff0c\uff1b\uff01\uff1f]+|\.(?=\s|$)")
 _LEGACY_SENTENCE_BOUNDARY = re.compile(r"[\n!?\u3002\uff01\uff1f]+|\.(?=\s|$)")
@@ -25,9 +22,35 @@ _CHINESE_REPORT = re.compile(
 _CHINESE_LANGUAGE = re.compile(r"(?:请)?(?:使用|用|以)中文(?:回答|作答|撰写|输出)")
 
 
-def text_units(text: str, *, sentences: bool = False, legacy_sentence_boundaries: bool = False) -> list[dict[str, Any]]:
+class TextUnit(TypedDict):
+    unit: int
+    start: int
+    end: int
+    text: str
+
+
+class TaskRequirement(TypedDict):
+    task_ref: str
+    start: int
+    end: int
+    text: str
+
+
+class ReportConstraints(TypedDict):
+    scope: str
+    counting: str
+    language: NotRequired[str]
+    min_characters: NotRequired[int]
+    max_characters: NotRequired[int]
+
+
+class ReportRequirement(TaskRequirement):
+    constraints: ReportConstraints
+
+
+def text_units(text: str, *, sentences: bool = False, legacy_sentence_boundaries: bool = False) -> list[TextUnit]:
     """Retain original offsets, punctuation and whitespace without semantic inference."""
-    rows: list[dict[str, Any]] = []
+    rows: list[TextUnit] = []
     start = 0
     boundary = _SENTENCE_BOUNDARY if sentences else _BOUNDARY
     if sentences and legacy_sentence_boundaries:
@@ -42,20 +65,20 @@ def text_units(text: str, *, sentences: bool = False, legacy_sentence_boundaries
     return rows
 
 
-def task_requirements(task: str) -> list[dict[str, Any]]:
+def task_requirements(task: str) -> list[TaskRequirement]:
     """Freeze every nonblank span; text segmentation is not semantic interpretation."""
-    return [{"task_ref": f"r{row['unit']}", **{key: row[key] for key in ("start", "end", "text")}}
+    return [{"task_ref": f"r{row['unit']}", "start": row["start"], "end": row["end"], "text": row["text"]}
             for row in text_units(task)]
 
 
-def report_requirements(task: str) -> list[dict[str, Any]]:
+def report_requirements(task: str) -> list[ReportRequirement]:
     """Recognize only standalone, explicit output requirements; retain provenance.
 
     Approximate Chinese lengths count non-whitespace conclusion characters,
     excluding citations, with an inclusive 20% tolerance. Language is a bounded
     script check (Han characters must outnumber Latin letters), not semantics.
     """
-    result = []
+    result: list[ReportRequirement] = []
     for row in task_requirements(task):
         text = row["text"].strip().rstrip("，,；;。.!！?？").strip()
         compact = re.sub(r"\s+", "", text)
@@ -63,23 +86,24 @@ def report_requirements(task: str) -> list[dict[str, Any]]:
         language_only = _CHINESE_LANGUAGE.fullmatch(compact)
         if match is None and language_only is None:
             continue
-        constraints: dict[str, Any] = {"scope": "conclusion", "counting": "non_whitespace_without_citations"}
+        constraints: ReportConstraints = {"scope": "conclusion", "counting": "non_whitespace_without_citations"}
         if language_only or (match and match["language"]):
             constraints["language"] = "zh"
         if match and match["count"]:
             count = int(match["count"])
-            constraints.update(min_characters=(count * 4 + 4) // 5, max_characters=count * 6 // 5)
+            constraints["min_characters"] = (count * 4 + 4) // 5
+            constraints["max_characters"] = count * 6 // 5
         # A bare 'give a report' is a known output shape, not a research topic.
         result.append({**row, "constraints": constraints})
     return result
 
 
-def coverage_requirements(task: str) -> list[dict[str, Any]]:
+def coverage_requirements(task: str) -> list[TaskRequirement]:
     format_refs = {row["task_ref"] for row in report_requirements(task)}
     return [row for row in task_requirements(task) if row["task_ref"] not in format_refs]
 
 
-def task_requirement_context(task: str) -> dict[str, Any]:
+def task_requirement_context(task: str) -> dict[str, object]:
     return {"coverage_task_refs": coverage_requirements(task),
             "report_requirements_checked_by_application": report_requirements(task)}
 
@@ -91,6 +115,12 @@ def conclusion_text(conclusion: str) -> str:
 
 def conclusion_characters(conclusion: str) -> int:
     return sum(not char.isspace() for char in conclusion_text(conclusion))
+
+
+class CharacterContribution(TypedDict):
+    question_ref: str
+    ref: str
+    characters: int
 
 
 def validate_report_requirements(conclusion: str, task: str, *, from_findings: bool = False,

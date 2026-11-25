@@ -21,7 +21,7 @@ from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.providers.compat_transport import execute_compat_request, provider_attribute
 from codey.providers.requests import ProviderRequestOptions, SendTextRequest
 from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget, ReportedUsage, RequestContextCount
-from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
+from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding
 
 
 def test_wrappers_have_no_open_attribute_surface():

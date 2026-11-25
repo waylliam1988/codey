@@ -6,7 +6,6 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from codey.research.evidence_ledger import EvidenceLedgerWriteResult
 from codey.research.proof_quality import ResearchProofReview, proof_review_trace_payload
 from codey.research.query_planner import ResearchPlan, research_plan_trace_payload
 from codey.research.review_finding import (
@@ -29,8 +28,6 @@ class ResearchTraceSink(Protocol):
     def record_plan(self, plan: ResearchPlan | Mapping[str, object] | None) -> None:
         ...
 
-    def record_evidence_ledger_write(self, result: EvidenceLedgerWriteResult | object | None) -> None:
-        ...
 
     def record_review_findings(self, findings: Iterable[object] | None) -> None:
         ...
@@ -58,8 +55,6 @@ class NullResearchTraceSink:
     def record_plan(self, plan: ResearchPlan | Mapping[str, object] | None) -> None:
         del plan
 
-    def record_evidence_ledger_write(self, result: EvidenceLedgerWriteResult | object | None) -> None:
-        del result
 
     def record_review_findings(self, findings: Iterable[object] | None) -> None:
         del findings
@@ -128,13 +123,6 @@ class RunTraceResearchSink:
         self._sink.call("record_research_plan", research_plan_trace_payload(plan))
         self._sink.call("flush")
 
-    def record_evidence_ledger_write(self, result: EvidenceLedgerWriteResult | object | None) -> None:
-        if result is None:
-            return
-        to_trace_payload = getattr(result, "to_trace_payload", None)
-        if not callable(to_trace_payload):
-            return
-        self._sink.call("record_evidence_ledger_write", to_trace_payload())
 
     def record_review_findings(self, findings: Iterable[object] | None) -> None:
         payloads = review_finding_trace_payloads(findings or ())

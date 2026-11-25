@@ -15,10 +15,10 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
+from codey.automation.browser_receipts import delivery
 from codey.codemode.host import CodeModeHost
 from codey.codemode.identity import rpc_child_index
 from codey.operations import browser_task_handoff as handoff
-from codey.operations.browser_followups import delivery
 from codey.operations.browser_task_handoff import handoff_call, query_result_handoff
 from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel_context import KernelContext

@@ -12,7 +12,6 @@ from codey.types.json_value import require_json_integer
 if TYPE_CHECKING:
     from codey.operations.task_effects import KernelEffectSink
 
-from codey.durable.checkpoint import operation_from_checkpoint
 from codey.operations.provider_receipts import REQUEST_KIND, write_provider_artifact
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters
 from codey.runtime.effects.effect_records import (
@@ -25,6 +24,7 @@ from codey.runtime.effects.effect_records import (
 )
 from codey.runtime.effects.replay_policy import ReplayClass
 from codey.runtime.log.session_view import driver_for_state
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 
 
 def prepare_provider_request(

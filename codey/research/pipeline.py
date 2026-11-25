@@ -3,25 +3,13 @@
 from __future__ import annotations
 
 import contextlib
-import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Protocol, TypeVar
+from typing import Protocol
 
-from codey.research.audit_result import MAX_AUDIT_DIAGNOSTICS, AuditDiagnostic, AuditOutcome, AuditPhase, AuditStatus
-from codey.research.brief_projection import ResearchBriefProjection, project_research_brief
 from codey.research.context import ResearchContext
-from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
-from codey.research.evidence_runtime import snapshot_from_research_record
-from codey.research.proof_quality import ResearchProofReview, review_research_proof
-from codey.research.query_planner import ResearchPlan, build_research_plan
-from codey.research.review_finding import findings_from_proof_review, planner_gaps_from_findings
 from codey.research.run_result import ResearchRunResult
-from codey.research.source_trust import project_source_set
 from codey.research.tools import ResearchTools
-
-logger = logging.getLogger(__name__)
-T = TypeVar("T")
 
 
 class ResearchContinuationError(RuntimeError):
@@ -51,54 +39,25 @@ class ResearchIterationRunner(Protocol):
 @dataclass(frozen=True)
 class ResearchPipelineResult:
     final_result: ResearchRunResult
-    followup_applied: bool = False
-    followup_rounds: int = 0
     stop_reason: str = ""
-    planner_stop_reason: str = ""
-    fresh_source_count: int = 0
-    new_evidence_count: int = 0
     final_evidence_count: int = 0
-    attempted_fresh_source_count: int = 0
-    attempted_new_evidence_count: int = 0
-    audit_diagnostics: tuple[AuditDiagnostic, ...] = ()
 
     def to_payload(self) -> dict[str, object]:
-        return {
-            "audit_diagnostics": [item.to_payload() for item in self.audit_diagnostics[:MAX_AUDIT_DIAGNOSTICS]],
-            "followup_applied": self.followup_applied,
-            "followup_rounds": max(0, min(3, (self.followup_rounds or 0))),
-            "stop_reason": (self.stop_reason or ""),
-            "planner_stop_reason": (self.planner_stop_reason or ""),
-            "fresh_source_count": max(0, (self.fresh_source_count or 0)),
-            "new_evidence_count": max(0, (self.new_evidence_count or 0)),
-            "final_evidence_count": max(0, (self.final_evidence_count or 0)),
-            "attempted_fresh_source_count": max(0, (self.attempted_fresh_source_count or 0)),
-            "attempted_new_evidence_count": max(0, (self.attempted_new_evidence_count or 0)),
-        }
+        return {"stop_reason": self.stop_reason, "final_evidence_count": self.final_evidence_count}
 
 
 class ResearchPipeline:
     def __init__(
-        self,
-        *,
-        context: ResearchContext,
-        run_iteration: ResearchIterationRunner,
-        search_factory: Callable[[], object],
-        evidence_ledgers: EvidenceLedgerStore | None = None,
-        ledger_event_sink: Callable[[EvidenceLedgerWriteResult], None] | None = None,
-        research_changes_sink: Callable[..., None] | None = None,
-        policy: object,
+        self, *, context: ResearchContext,
+        run_iteration: ResearchIterationRunner, search_factory: Callable[[], object],
+        research_changes_sink: Callable[[str, object, str], None] | None = None,
     ) -> None:
         self.context = context
         self.run_iteration = run_iteration
         self.search_factory = search_factory
-        self.evidence_ledgers = evidence_ledgers
-        self.ledger_event_sink = ledger_event_sink
         self.research_changes_sink = research_changes_sink
-        self.policy = policy
 
     def run(self) -> ResearchPipelineResult:
-        diagnostics: list[AuditDiagnostic] = []
         search = self.search_factory()
         try:
             run = self.run_iteration(
@@ -109,251 +68,19 @@ class ResearchPipeline:
                 topic_continuity_context=self.context.topic_continuity_context,
                 topic_continuity_payload=self.context.topic_continuity_payload,
             )
-            audit = self._review(run.result, require_ledger_record=False, phase="initial", diagnostics=diagnostics)
-            plan = self._plan(audit.value)
-            self.context.trace.record_plan(plan)
-            return self._finalize_pipeline_result(
-                run.result, run.tools,
-                diagnostics=diagnostics,
-                accepted_audit=(audit, plan) if run.result.accepted_report is not None else None,
-            )
+            result = run.result
+            self.context.trace.record_result(result)
+            if self.research_changes_sink is not None and run.tools is not None and self.context.run_id:
+                self.research_changes_sink(self.context.run_id, run.tools.changes, self.context.session_id)
+            output = ResearchPipelineResult(result, result.stop_reason,
+                len(result.accepted_report.evidence_bindings) if result.accepted_report is not None else 0)
+            self.context.trace.record_pipeline_result(output)
+            return output
         finally:
             close = getattr(search, "close", None)
             if callable(close):
                 with contextlib.suppress(Exception):
                     close()
-
-    def _finalize_pipeline_result(
-        self, result: ResearchRunResult, tools: ResearchTools | None,
-        *,
-        diagnostics: list[AuditDiagnostic],
-        accepted_audit: tuple[AuditOutcome[ResearchProofReview], ResearchPlan] | None = None,
-    ) -> ResearchPipelineResult:
-        ledger_result = self._append_final_record(result)
-        self.context.trace.record_evidence_ledger_write(ledger_result)
-        if self.ledger_event_sink is not None and ledger_result is not None:
-            self.ledger_event_sink(ledger_result)
-        self.context.trace.record_result(result)
-        if accepted_audit is not None and result.accepted_report is not None:
-            # Accepted-report auditing does not read the ledger. Reuse even a
-            # failed review outcome, including the original execution diagnostic.
-            audit, plan = accepted_audit
-        else:
-            # Legacy records can acquire ledger evidence during finalization.
-            audit = self._review(
-                result, require_ledger_record=self.evidence_ledgers is not None and result.accepted_report is None,
-                phase="final", diagnostics=diagnostics,
-            )
-            plan = self._plan(audit.value)
-        review = audit.value
-        self.context.trace.record_proof_review(review)
-        self._record_final_findings(result, review, diagnostics=diagnostics)
-        self.context.trace.record_plan(plan)
-        self._record_research_changes(tools)
-        # Preserve the UI/trace payload shape. Acquisition belongs to the writer;
-        # these historical outer-followup counters are zero for new research.
-        output = ResearchPipelineResult(
-            final_result=result,
-            audit_diagnostics=tuple(diagnostics),
-            stop_reason=result.stop_reason,
-            planner_stop_reason=("strict_writer_owns_followup" if getattr(self.policy, "strict_research", False)
-                                 else "external_followup_retired"),
-            final_evidence_count=len(getattr(result.research_record, "evidence", ())) if result.research_record else 0,
-        )
-        self.context.trace.record_pipeline_result(output)
-        return output
-
-    def _review(
-        self,
-        result: ResearchRunResult,
-        *,
-        require_ledger_record: bool,
-        phase: AuditPhase,
-        diagnostics: list[AuditDiagnostic],
-    ) -> AuditOutcome[ResearchProofReview]:
-        record = getattr(result, "research_record", None)
-        if record is None:
-            diagnostic = AuditDiagnostic("proof_review", "skipped", phase, "missing_research_record")
-            diagnostics.append(diagnostic)
-            return AuditOutcome(diagnostic)
-        ledger_payload = None
-        if require_ledger_record:
-            ledger = self._load_ledger(phase=phase)
-            diagnostics.append(ledger.diagnostic)
-            ledger_payload = ledger.value
-        try:
-            review: object = review_research_proof(
-                record,
-                question=(
-                    self.context.effective_proof_question
-                    or str(getattr(result, "question", "") or "").strip()
-                    or self.context.question
-                ),
-                evidence_ledger=ledger_payload,
-                require_ledger_record=require_ledger_record,
-            )
-        except Exception as exc:
-            logger.exception("Research proof review failed (phase=%s)", phase)
-            diagnostic = AuditDiagnostic("proof_review", "error", phase, "proof_review_failed", type(exc).__name__)
-            diagnostics.append(diagnostic)
-            return AuditOutcome(diagnostic)
-        if not isinstance(review, ResearchProofReview):
-            logger.error("Research proof review returned an invalid result (phase=%s)", phase)
-            diagnostic = AuditDiagnostic("proof_review", "error", phase, "invalid_proof_review_result")
-            diagnostics.append(diagnostic)
-            return AuditOutcome(diagnostic)
-        diagnostic = AuditDiagnostic("proof_review", "ok", phase)
-        diagnostics.append(diagnostic)
-        return AuditOutcome(diagnostic, review)
-
-    def _plan(self, review: ResearchProofReview | None) -> ResearchPlan:
-        return build_research_plan(
-            review,
-            question=self.context.effective_proof_question or self.context.question,
-            max_queries=3,
-            max_sources=6,
-        )
-
-    def _record_final_findings(
-        self,
-        result: ResearchRunResult,
-        review: ResearchProofReview | None,
-        *,
-        diagnostics: list[AuditDiagnostic],
-    ) -> None:
-        """Independent audit projections; none of these diagnostics drive search."""
-        record = getattr(result, "research_record", None)
-        if record is None:
-            for stage in ("snapshot", "findings", "planner_gaps", "source_trust", "brief"):
-                _skip_audit_stage(stage, "missing_research_record", diagnostics)
-            return
-        if review is None:
-            _skip_audit_stage("snapshot", "proof_review_unavailable", diagnostics)
-            snapshot = None
-        else:
-            snapshot = _run_audit_projection(
-                "snapshot", lambda: snapshot_from_research_record(record, proof_review=review),
-                diagnostics=diagnostics,
-            )
-        if snapshot is None:
-            _skip_audit_stage("findings", "snapshot_unavailable", diagnostics)
-            findings = None
-        else:
-            findings = _run_audit_projection(
-                "findings", lambda: findings_from_proof_review(review, snapshot),
-                record=self.context.trace.record_review_findings, diagnostics=diagnostics,
-            )
-        if findings is None:
-            _skip_audit_stage("planner_gaps", "findings_unavailable", diagnostics)
-        else:
-            _run_audit_projection(
-                "planner_gaps", lambda: planner_gaps_from_findings(findings),
-                record=self.context.trace.record_planner_gaps, diagnostics=diagnostics,
-            )
-        _run_audit_projection(
-            "source_trust", lambda: project_source_set(getattr(record, "sources", ()) or ()),
-            record=self.context.trace.record_research_source_trust, diagnostics=diagnostics,
-        )
-        if snapshot is None:
-            _skip_audit_stage("brief", "snapshot_unavailable", diagnostics)
-        elif findings is None:
-            _skip_audit_stage("brief", "findings_unavailable", diagnostics)
-        else:
-            def record_brief(brief: ResearchBriefProjection) -> None:
-                self.context.trace.record_research_brief_projection(brief.to_payload())
-
-            _run_audit_projection(
-                "brief", lambda: project_research_brief(record, snapshot=snapshot, findings=findings),
-                record=record_brief,
-                diagnostics=diagnostics,
-            )
-
-    def _append_final_record(self, result: ResearchRunResult) -> EvidenceLedgerWriteResult | None:
-        if result.accepted_report is not None and result.stop_reason != "done":
-            return None
-        if self.evidence_ledgers is None:
-            return None
-        record = getattr(result, "research_record", None)
-        if record is None:
-            return None
-        try:
-            if result.accepted_report is not None:
-                return self.evidence_ledgers.append_accepted_report(
-                    result.accepted_report.to_payload(), question=self.context.question,
-                    run_id=self.context.run_id, session_id=self.context.session_id,
-                    project=self.context.project, synthesis_id=result.synthesis_id)
-            return self.evidence_ledgers.append_record(
-                record,
-                run_id=self.context.run_id,
-                session_id=self.context.session_id,
-                project=self.context.project,
-            )
-        except Exception:
-            logger.exception("Research evidence ledger write failed")
-            return EvidenceLedgerWriteResult(
-                skipped=True,
-                reason_code="write_failed",
-                record_id=getattr(record, "record_id", ""),
-            )
-
-    def _load_ledger(self, *, phase: AuditPhase) -> AuditOutcome[Mapping[str, object]]:
-        if self.evidence_ledgers is None:
-            return AuditOutcome(AuditDiagnostic("ledger_read", "skipped", phase, "ledger_not_configured"))
-        try:
-            snapshot = self.evidence_ledgers.load(
-                session_id=self.context.session_id,
-                project=self.context.project,
-            )
-        except Exception as exc:
-            logger.exception("Research evidence ledger read failed (phase=%s)", phase)
-            return AuditOutcome(AuditDiagnostic(
-                "ledger_read", "error", phase, "ledger_read_failed", type(exc).__name__,
-            ))
-        if snapshot.available:
-            return AuditOutcome(AuditDiagnostic("ledger_read", "ok", phase), snapshot.payload)
-        reason = snapshot.reason_code or "ledger_unavailable"
-        status: AuditStatus = "skipped" if reason == "missing_ledger" else "error"
-        if status == "error":
-            logger.error("Research evidence ledger unavailable (phase=%s, reason=%s)", phase, reason)
-        return AuditOutcome(AuditDiagnostic("ledger_read", status, phase, reason))
-
-    def _record_research_changes(self, tools: ResearchTools | None) -> None:
-        if self.research_changes_sink is None or not self.context.run_id:
-            return
-        if tools is None:
-            return
-        self.research_changes_sink(
-            self.context.run_id, tools.changes, self.context.session_id
-        )
-
-
-def _skip_audit_stage(stage: str, reason: str, diagnostics: list[AuditDiagnostic]) -> None:
-    diagnostics.append(AuditDiagnostic(stage, "skipped", "final", reason))
-
-
-def _run_audit_projection(
-    stage: str,
-    project: Callable[[], T | None],
-    *,
-    diagnostics: list[AuditDiagnostic],
-    record: Callable[[T], None] | None = None,
-) -> T | None:
-    """Isolate one read model, including its trace conversion and recording."""
-    try:
-        value = project()
-        if value is None:
-            _skip_audit_stage(stage, f"{stage}_unavailable", diagnostics)
-            return None
-        if record is not None:
-            record(value)
-    except Exception as exc:
-        logger.exception("Research audit projection failed (stage=%s)", stage)
-        diagnostics.append(AuditDiagnostic(
-            stage, "error", "final", f"{stage}_projection_failed", type(exc).__name__,
-        ))
-        return None
-    diagnostics.append(AuditDiagnostic(stage, "ok", "final"))
-    return value
 
 
 __all__ = [

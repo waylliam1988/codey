@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession
 from codey.operations import kernel_prompt
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.task_effects import KernelEffectSink
@@ -28,6 +28,7 @@ from codey.providers.transport import ProviderTransport
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import decode_json_object, parse_json_object
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def _guidance(policy: TaskPolicy) -> str:
@@ -80,7 +81,7 @@ def test_shared_kernel_sends_arbitrary_task_guidance_in_both_protocols(
 
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})),
                           task_kind="third_task", max_turns=1)
-    with closing(DurableSession(MemoryDurableStore())) as durable:
+    with closing(DurableSession(TemporarySQLiteStore())) as durable:
         durable.admit_input(conversation_id="s", request_id="input", task_id="r", text="test task", provider_snapshot={})
         durable.claim_task("r")
         durable.start_task("r", state={})

@@ -6,8 +6,8 @@ import re
 from collections.abc import Mapping, Sequence
 
 from codey.providers.error_classification import RequestPrepError
-from codey.runtime.core.protocol_window import ANTHROPIC_BLOCKS, REPLAY_BINDING, RESPONSES_REASONING, ProviderBinding
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_string
+from codey.types.protocol_window import ANTHROPIC_BLOCKS, REPLAY_BINDING, RESPONSES_REASONING, ProviderBinding
 from codey.types.tool_image import TOOL_IMAGES_KEY
 
 _PORTABLE_ID = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")

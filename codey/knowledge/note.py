@@ -12,13 +12,13 @@ import math
 import re
 import uuid
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from typing import Self, SupportsFloat, SupportsIndex, TypedDict, Unpack
 
 from codey.knowledge.concept_schema import ConceptRelation, clean_relations
 from codey.policies.prompt_safety import is_prompt_visible_text_safe
-from codey.types.json_value import JsonObject
+from codey.types.json_value import JsonObject, decode_json_object, require_json_string, require_json_strings
 
 NOTE_TYPES = (
     "source",
@@ -133,6 +133,41 @@ class KnowledgeNote:
     @classmethod
     def create(cls, *, type: str, title: str, body: str, id: str | None = None, **kwargs: Unpack[_NoteOptions]) -> Self:
         return cls(id=id or make_id(title), type=type, title=title, body=body, **kwargs)
+
+    @classmethod
+    def from_payload(cls, value: object) -> KnowledgeNote:
+        """Decode a frozen document body with its exact stored field values."""
+        raw = decode_json_object(value)
+        if set(raw) != {item.name for item in fields(cls)}:
+            raise ValueError("invalid knowledge document payload")
+        relations, dropped = clean_relations(raw["relations"])
+        confidence = raw["confidence"]
+        if dropped or (confidence is not None and (isinstance(confidence, bool) or not isinstance(confidence, (float, int)))):
+            raise ValueError("invalid knowledge document relations or confidence")
+        retrieved_at = raw["retrieved_at"]
+        valid_until = raw["valid_until"]
+        note = cls(
+            id=require_json_string(raw["id"], "id"),
+            type=require_json_string(raw["type"], "type"),
+            title=require_json_string(raw["title"], "title"),
+            body=require_json_string(raw["body"], "body"),
+            tags=require_json_strings(raw["tags"], "tags"),
+            sources=require_json_strings(raw["sources"], "sources"),
+            aliases=require_json_strings(raw["aliases"], "aliases"),
+            relations=relations,
+            open_questions=require_json_strings(raw["open_questions"], "open_questions"),
+            confidence=confidence,
+            status=require_json_string(raw["status"], "status"),
+            session_id=require_json_string(raw["session_id"], "session_id"),
+            project=require_json_string(raw["project"], "project"),
+            retrieved_at=require_json_string(retrieved_at, "retrieved_at") if retrieved_at is not None else None,
+            valid_until=require_json_string(valid_until, "valid_until") if valid_until is not None else None,
+            created=require_json_string(raw["created"], "created"),
+            updated=require_json_string(raw["updated"], "updated"),
+        )
+        if asdict(note) != raw:
+            raise ValueError("knowledge document differs from frozen payload")
+        return note
 
     @property
     def folder(self) -> str:

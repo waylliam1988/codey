@@ -315,7 +315,7 @@ def test_research_entry_publishes_only_report_and_preserves_project_delivery(tmp
                                                  max_repair_rounds=0, task_kind="research")
         state.runtime_mutations.mark_writer_running("s", "r", provider_id="fixture")
         provider = Provider()
-        deps = ResearchFlowDeps(state, store, None, Source, managed_outputs=state.managed_outputs,
+        deps = ResearchFlowDeps(state, store, Source, managed_outputs=state.managed_outputs,
                                 runtime_mutations=state.runtime_mutations)
         result = run_research_iteration(deps, provider=provider, session_id="s", project=str(project), task=task,
             max_turns=8, on_event=lambda _event: None, stop_flag=None, provider_id="fixture", run_id="r",

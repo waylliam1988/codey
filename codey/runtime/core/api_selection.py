@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, fields
 
-from codey.runtime.core.protocol_window import API_PROTOCOLS
 from codey.runtime.core.reasoning import REASONING_EFFORTS
 from codey.types.json_value import (
     decode_json_object,
@@ -11,6 +10,7 @@ from codey.types.json_value import (
     require_json_integer,
     require_json_string,
 )
+from codey.types.protocol_window import API_PROTOCOLS
 
 
 @dataclass(frozen=True)

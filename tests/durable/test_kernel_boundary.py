@@ -12,8 +12,9 @@ class HostLayersForbidden(importlib.abc.MetaPathFinder):
         if fullname.startswith(('codey.app', 'codey.agents', 'codey.providers', 'codey.runtime', 'codey.ghost', 'codey.research')):
             raise AssertionError('durable kernel imports host layer: ' + fullname)
 sys.meta_path.insert(0, HostLayersForbidden())
-from codey.durable import DurableSession, MemoryDurableStore
-session = DurableSession(MemoryDurableStore())
+from codey.durable import DurableSession
+from tests.support.sqlite_store import TemporarySQLiteStore
+session = DurableSession(TemporarySQLiteStore())
 session.admit_input(conversation_id='c', request_id='r', task_id='t', text='input', provider_snapshot={})
 assert session.context_snapshot('c', token_budget=100).messages[0]['content'] == 'input'
 session.close()

@@ -10,7 +10,6 @@ from typing import Literal
 import pytest
 
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.durable.checkpoint import operation_from_checkpoint
 from codey.operations import kernel_protocol
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.kernel_contracts import ToolExecutor
@@ -35,6 +34,7 @@ from codey.research.passages import describe_captured_window
 from codey.research.tools import ResearchTools
 from codey.runtime.core.execution_receipt import ExecutionReceipt, execution_receipt
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.toolchain.tool_spec import ToolSpec

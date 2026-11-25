@@ -161,9 +161,9 @@ def _seal_cancel_before_runtime(deps: TaskRunDeps, run_id: str, event: dict[str,
 
 
 def _settle_research_publications(deps: TaskRunDeps, session_id: str, run_id: str) -> None:
-    from codey.durable.checkpoint import operation_from_checkpoint
     from codey.operations.research_continuation import ResearchContinuation
     from codey.operations.research_publication import settle_cancelled_publications
+    from codey.runtime.write.checkpoint import operation_from_checkpoint
     from codey.runtime.write.research_publication import PUBLICATION_TOOL
 
     mutations = getattr(deps, "runtime_mutations", None)
@@ -178,7 +178,7 @@ def _settle_research_publications(deps: TaskRunDeps, session_id: str, run_id: st
     if not any(effect.intent.get("tool_name") == PUBLICATION_TOOL and effect.settlement is None
                for effect in mutations.durable.effects(run_id)):
         return
-    history = ResearchContinuation(mutations, getattr(deps, "managed_outputs", None),
+    history = ResearchContinuation(mutations, deps.managed_outputs, durable=deps.state.durable,
                                    session_id=session_id, run_id=run_id)
     settle_cancelled_publications(history, getattr(deps, "knowledge_store", None))
 

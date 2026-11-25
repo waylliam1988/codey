@@ -32,7 +32,7 @@ from codey.research.object_model import build_research_record
 from codey.research.proof_quality import ResearchProofReview, review_research_proof
 from codey.research.report_quality import parse_citation_rows, review_report_quality
 from codey.research.source_document import SourceDocument
-from codey.reviews.report_sections import parse_sections
+from codey.utils.report_sections import parse_sections
 from tests.manual import source_connector_ab as connector
 from tests.support.research_done_finalizer import finalize_done_answer
 

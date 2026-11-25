@@ -3,7 +3,7 @@
 import pytest
 
 from codey.agents.shell_approval import ShellApprovalRequest, build_shell_approval_pending
-from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
+from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding
 from codey.utils.object_fields import object_fields
 
 _IDENTITY_KEYS = frozenset({"call_id", "call_id_invalid", "turn", "tool_index", "window_ref"})

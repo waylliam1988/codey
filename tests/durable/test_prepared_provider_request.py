@@ -4,13 +4,13 @@ from __future__ import annotations
 import subprocess
 import sys
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
 from codey.durable import DurableSession, SQLiteDurableStore, SubmissionPlacement
-from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.errors import CommitConflict
 from codey.operations.kernel_driver import drive_provider_request, load_prepared_request
 from codey.operations.kernel_errors import RecoveryFailed
@@ -25,11 +25,12 @@ from codey.runtime.core.operation_reducer import (
     ACTION_SETTLE_PROVIDER_UNKNOWN,
     ACTION_SUBMIT_PROVIDER_REQUEST,
 )
-from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
 from codey.runtime.effects.effect_records import RuntimeEffectError, RuntimeEffectIntent
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.runtime.write.drive import peek_next_action
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
+from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding
 from tests.durable.test_provider_response_receipts import runtime
 from tests.support.provider_actions import ProviderActions
 from tests.support.provider_actions import prepare_legacy_request as prepare_provider_request
@@ -215,16 +216,16 @@ def test_internal_previous_generation_boundary_does_not_place_user_input(tmp_pat
         durable.close()
 
 
-def test_schema_three_migration_preserves_budgets_and_position(tmp_path):
+def test_retired_operation_schema_three_rejects_at_checkpoint(tmp_path: Path) -> None:
     durable, _, _, sink = runtime(tmp_path)
     try:
         ProviderActions(Mock(send=Mock(return_value="original")), sink).send("original")
         task = durable.task("r")
         original = operation_from_checkpoint(task, "s")
+        assert original is not None
         payload = {**original.to_payload(), "schema_version": 3}
-        migrated = operation_from_checkpoint(replace(task, state={**task.state, "operation": payload}), "s")
-        assert migrated == original
-        assert operation_from_checkpoint(replace(task, state={**task.state, "operation": migrated.to_payload()}), "s") == original
+        with pytest.raises(RuntimeOperationTransitionError, match="invalid durable operation checkpoint"):
+            operation_from_checkpoint(replace(task, state={**task.state, "operation": payload}), "s")
     finally:
         durable.close()
 

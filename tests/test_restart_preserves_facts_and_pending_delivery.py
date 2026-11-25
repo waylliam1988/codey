@@ -22,7 +22,7 @@ def _send_results(provider, sink):
     from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
     from codey.runtime.core.operation_payload import LEAF_WRITER_RUNNING
-    from codey.runtime.core.operation_state import RuntimeOperationStore
+    from codey.runtime.write.checkpoint import RuntimeOperationStore
 
     session = TaskSession(policy=_policy_for_project(), task_kind="project")
     sink.bind_request(build_turn_snapshot(session), logical_turn=1)
@@ -207,7 +207,7 @@ def test_crash_after_entry_sink_initialization_keeps_delivery_pending(tmp_path):
 def test_provider_change_after_acknowledged_delivery_can_resume(tmp_path):
     from codey.operations.task_entry import _entry_provider_sink
     from codey.runtime.core.operation_payload import LEAF_WRITER_RUNNING
-    from codey.runtime.core.operation_state import RuntimeOperationStore
+    from codey.runtime.write.checkpoint import RuntimeOperationStore
 
     project, state, logdir = _dirs(tmp_path)
     _settle_edit_then_runs(project, state, logdir, "s", "r", [{"exit_code": 0}])

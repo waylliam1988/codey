@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from codey.reviews.report_sections import (
+from codey.utils.report_sections import (
     is_boundary_line,
     parse_sections,
 )

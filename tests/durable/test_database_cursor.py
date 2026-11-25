@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import DurableSession, SQLiteDurableStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_database_identity_survives_reopen_and_separates_independent_databases(tmp_path: Path) -> None:
@@ -69,7 +70,7 @@ def test_history_and_replayed_events_use_the_persisted_database_identity(tmp_pat
 def test_sse_reconciles_database_reset_or_cursor_ahead_without_skipping_commits(scope: str | None, after: int) -> None:
     from tests.sse_http import capture_events
 
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.create_conversation("chat")
     for text in ("a", "b"):
         session.append_message("chat", "user_message", {"text": text})

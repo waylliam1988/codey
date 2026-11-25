@@ -6,8 +6,8 @@ import re
 from collections.abc import Mapping
 
 from codey.automation.browser_document import same_document
-from codey.operations.browser_completion import committed_results, complete_page_passages
-from codey.operations.browser_followups import delivery, query_document
+from codey.automation.browser_receipts import committed_results, delivery, query_document
+from codey.policies.tool_requirement import _browser_body
 from codey.research.ledger_receipts import source_observation
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
@@ -53,6 +53,19 @@ def action_summary(records: Mapping[str, ExecutionRecord], results: Mapping[str,
         fence = "`" * (1 + max((len(match[0]) for match in re.finditer(r"`+", detail)), default=0))
         lines.append(f"{index}. {fence} {detail} {fence}")
     return "\n".join(lines), tuple(ref for ref, _row in actions)
+
+
+def complete_page_passages(result: ToolResult, url: str) -> set[str]:
+    passages = result.canonical.get("read_passages")
+    if not isinstance(passages, list):
+        return set()
+    try:
+        source, _, _ = source_observation(result.canonical.get("research_observation"))
+        if source.final_url != url or not _browser_body(result):
+            return set()
+    except (KeyError, TypeError, ValueError):
+        return set()
+    return {ref for item in passages if isinstance(item, dict) and isinstance(ref := item.get("ref"), str)}
 
 
 def current_result_passages(records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult]) -> tuple[str, frozenset[str]]:

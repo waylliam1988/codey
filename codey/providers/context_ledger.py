@@ -11,11 +11,11 @@ import hashlib
 import json
 import time
 from pathlib import Path
-from typing import Any
 
-from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import read_json_strict, session_key, write_json_atomic
+from codey.types.protocol_window import ProtocolWindowRef
+from codey.utils.object_fields import object_fields, require_object_rows
 
 MAX_SEGMENT_BYTES = 16 * 1024 * 1024
 
@@ -32,11 +32,11 @@ class ContextLedger:
         self.window_ref = window_ref
         self.sequence = 0
         self.chain = ""
-        self.view: list[dict[str, Any]] = []
-        self._records: list[dict[str, Any]] = []
+        self.view: list[dict[str, object]] = []
+        self._records: list[dict[str, object]] = []
         if root is not None and (root / "head.json").exists():
             head = read_json_strict(root / "head.json", max_bytes=MAX_SEGMENT_BYTES)
-            if not isinstance(head, dict) or head.get("schema_version") != 1 or head.get("identity") != identity:
+            if not object_fields(head) or head.get("schema_version") != 1 or head.get("identity") != identity:
                 raise ValueError("context ledger identity mismatch")
             expected_session = identity.removeprefix("protocol:") if identity.startswith("protocol:") else ""
             if expected_session and head.get("session_id") != expected_session:
@@ -49,7 +49,7 @@ class ContextLedger:
                 raise ValueError("invalid context journal sequence")
             for index in range(1, sequence + 1):
                 row = read_json_strict(root / f"{index:012d}.json", max_bytes=MAX_SEGMENT_BYTES)
-                if (not isinstance(row, dict) or row.get("schema_version") != 1
+                if (not object_fields(row) or row.get("schema_version") != 1
                         or row.get("previous") != self.chain or row.get("sequence") != index):
                     raise ValueError("context journal chain/digest mismatch")
                 self.chain = digest(row)
@@ -65,7 +65,7 @@ class ContextLedger:
             view = head["view"]
             if not isinstance(view, list):
                 raise ValueError("context ledger view must be a list")
-            self.view = view
+            self.view = require_object_rows(view)
 
     @classmethod
     def for_session(cls, home: Path, session_id: str, identity: str) -> ContextLedger:
@@ -84,32 +84,32 @@ class ContextLedger:
             window_ref=ref,
         )
 
-    def events(self) -> list[dict[str, Any]]:
-        return copy.deepcopy([item for row in self._records for item in row.get("events", [])])
+    def events(self) -> list[dict[str, object]]:
+        return copy.deepcopy([item for row in self._records for item in require_object_rows(row.get("events", []))])
 
     @property
     def revision(self) -> int:
         """The durable view revision used by exchange compare-and-commit."""
         return self.sequence
 
-    def restore(self, expected_ref: ProtocolWindowRef | None = None) -> list[dict[str, Any]]:
+    def restore(self, expected_ref: ProtocolWindowRef | None = None) -> list[dict[str, object]]:
         """Return the committed view only when the requested window matches."""
         if expected_ref is not None and self.window_ref != expected_ref:
-            from codey.runtime.core.protocol_window import WindowMismatch
+            from codey.types.protocol_window import WindowMismatch
 
             raise WindowMismatch("context ledger window reference does not match")
         return copy.deepcopy(self.view)
 
-    def commit(self, view: list[dict[str, Any]], *, events: list[dict[str, Any]] | None = None,
-               checkpoint: dict[str, Any] | None = None, window_ref: ProtocolWindowRef | None = None,
-               allow_window_change: bool = False, delivery_commit: dict[str, Any] | None = None,
+    def commit(self, view: list[dict[str, object]], *, events: list[dict[str, object]] | None = None,
+               checkpoint: dict[str, object] | None = None, window_ref: ProtocolWindowRef | None = None,
+               allow_window_change: bool = False, delivery_commit: dict[str, object] | None = None,
                window_open_reason: str = "") -> None:
         previous_ref = self.window_ref
         if (window_ref is not None and self.window_ref is not None
                 and self.window_ref != window_ref and not allow_window_change):
             raise ValueError("context ledger window mismatch")
         effective_ref = window_ref or self.window_ref
-        row = copy.deepcopy({"sequence": self.sequence + 1, "previous": self.chain,
+        row: dict[str, object] = copy.deepcopy({"sequence": self.sequence + 1, "previous": self.chain,
                              "events": events or [], "checkpoint": checkpoint,
                              # Keep an immutable accepted-view witness in
                              # each journal row.  A model switch may replace
@@ -133,12 +133,12 @@ class ContextLedger:
                     head_path = self.root / "head.json"
                     if head_path.exists():
                         head = read_json_strict(head_path, max_bytes=MAX_SEGMENT_BYTES)
-                        if not isinstance(head, dict) or head.get("sequence") != self.sequence or head.get("chain") != self.chain:
+                        if not object_fields(head) or head.get("sequence") != self.sequence or head.get("chain") != self.chain:
                             raise ValueError("context journal changed in another writer")
                     elif self.sequence:
                         raise ValueError("context journal head disappeared")
                     write_json_atomic(self.root / f"{self.sequence + 1:012d}.json", row, max_bytes=MAX_SEGMENT_BYTES)
-                    head_payload: dict[str, Any] = {"schema_version": 1, "identity": self.identity,
+                    head_payload: dict[str, object] = {"schema_version": 1, "identity": self.identity,
                                       "session_id": effective_ref.session_id if effective_ref is not None else self.identity.removeprefix("protocol:"),
                                       "sequence": self.sequence + 1,
                                       "chain": chain, "view": view, "view_digest": digest(view)}
@@ -157,20 +157,20 @@ class ContextLedger:
     def commit_exchange(
         self,
         expected_ref: ProtocolWindowRef,
-        view: list[dict[str, Any]],
+        view: list[dict[str, object]],
         *,
         expected_revision: int | None = None,
-        events: list[dict[str, Any]] | None = None,
-        checkpoints: list[dict[str, Any]] | None = None,
-        delivery_commit: dict[str, Any] | None = None,
+        events: list[dict[str, object]] | None = None,
+        checkpoints: list[dict[str, object]] | None = None,
+        delivery_commit: dict[str, object] | None = None,
     ) -> None:
         if self.window_ref != expected_ref:
-            from codey.runtime.core.protocol_window import WindowMismatch
+            from codey.types.protocol_window import WindowMismatch
 
             raise WindowMismatch("context ledger window reference does not match")
         if expected_revision is not None and expected_revision != self.revision:
             raise ValueError("context ledger revision mismatch")
-        checkpoint = {"kind": "transaction", "segments": checkpoints} if checkpoints else None
+        checkpoint: dict[str, object] | None = {"kind": "transaction", "segments": checkpoints} if checkpoints else None
         self.commit(view, events=events, checkpoint=checkpoint,
                     window_ref=expected_ref, delivery_commit=delivery_commit)
 
@@ -178,15 +178,15 @@ class ContextLedger:
         self,
         window_ref: ProtocolWindowRef,
         *,
-        seed: list[dict[str, Any]] | None = None,
-        events: list[dict[str, Any]] | None = None,
+        seed: list[dict[str, object]] | None = None,
+        events: list[dict[str, object]] | None = None,
         expected_ref: ProtocolWindowRef | None = None,
         expected_revision: int | None = None,
         reset_permit: bool = False,
         reason: str = "",
     ) -> None:
         if expected_ref is not None and self.window_ref != expected_ref:
-            from codey.runtime.core.protocol_window import WindowMismatch
+            from codey.types.protocol_window import WindowMismatch
 
             raise WindowMismatch("context ledger window reference does not match")
         if expected_revision is not None and expected_revision != self.revision:
@@ -197,18 +197,18 @@ class ContextLedger:
                     allow_window_change=reset_permit or self.window_ref is None,
                     window_open_reason=reason)
 
-    def delivery_commits(self) -> tuple[dict[str, Any], ...]:
-        return tuple(copy.deepcopy(row["delivery_commit"]) for row in self._records
-                     if isinstance(row.get("delivery_commit"), dict))
+    def delivery_commits(self) -> tuple[dict[str, object], ...]:
+        return tuple(copy.deepcopy(commit) for row in self._records
+                     if object_fields(commit := row.get("delivery_commit")))
 
-    def delivery_commit_for(self, batch_id: str) -> dict[str, Any] | None:
+    def delivery_commit_for(self, batch_id: str) -> dict[str, object] | None:
         """Return the accepted witness for one batch, if any."""
         for commit in reversed(self.delivery_commits()):
             if commit.get("batch_id") == batch_id:
                 return commit
         return None
 
-    def unreconciled_delivery_commits(self, delivered_batch_ids: set[str]) -> tuple[dict[str, Any], ...]:
+    def unreconciled_delivery_commits(self, delivered_batch_ids: set[str]) -> tuple[dict[str, object], ...]:
         """List committed witnesses whose runtime delivery receipt is absent.
 
         Reconciliation callers use these witnesses to append a local
@@ -221,26 +221,26 @@ class ContextLedger:
         )
 
     def checkpoint_digests(self) -> frozenset[str]:
-        return frozenset(checkpoint["item_digest"] for checkpoint in self.checkpoints()
-                         if checkpoint.get("item_digest"))
+        return frozenset(value for checkpoint in self.checkpoints()
+                         if isinstance(value := checkpoint.get("item_digest"), str) and value)
 
-    def checkpoints(self) -> list[dict[str, Any]]:
-        output: list[dict[str, Any]] = []
+    def checkpoints(self) -> list[dict[str, object]]:
+        output: list[dict[str, object]] = []
         for row in self._records:
             checkpoint = row.get("checkpoint")
-            if checkpoint is not None:
-                output.extend(checkpoint["segments"] if checkpoint.get("kind") == "transaction" else [checkpoint])
+            if object_fields(checkpoint):
+                output.extend(require_object_rows(checkpoint["segments"]) if checkpoint.get("kind") == "transaction" else [checkpoint])
         return output
 
-    def original_source(self, items: list[dict[str, Any]], *,
-                        checkpoints: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    def original_source(self, items: list[dict[str, object]], *,
+                        checkpoints: list[dict[str, object]] | None = None) -> list[dict[str, object]]:
         """Expand prior checkpoints from their sources, never summarize a summary."""
-        sources: dict[str, list[tuple[int, list[dict[str, Any]]]]] = {}
+        sources: dict[str, list[tuple[int, list[dict[str, object]]]]] = {}
         lineage = self.checkpoints() + (checkpoints or [])
         for index, checkpoint in enumerate(lineage):
-            if checkpoint and checkpoint.get("item_digest"):
-                sources.setdefault(checkpoint["item_digest"], []).append((index, checkpoint["source"]))
-        output: list[dict[str, Any]] = []
+            if isinstance(identity := checkpoint.get("item_digest"), str) and identity:
+                sources.setdefault(identity, []).append((index, require_object_rows(checkpoint["source"])))
+        output: list[dict[str, object]] = []
         pending = [(item, len(lineage)) for item in reversed(items)]
         while pending:
             item, before = pending.pop()
@@ -256,35 +256,27 @@ class ContextLedger:
 
     def portable_state(self) -> str:
         """Read verified semantic checkpoints from this session's primary ledger."""
-        populated: list[ContextLedger] = [
-            ledger for ledger in (self,)
-            if ledger.view or ledger.events()
-            or any(isinstance(row.get("view"), list) and row.get("view") for row in ledger._records)
-        ]
-        if not populated:
-            return ""
-        latest = max(populated, key=lambda ledger: ledger._records[-1].get("created_at", 0))
         parts: list[str] = []
-        checkpoints = latest.checkpoint_digests()
+        checkpoints = self.checkpoint_digests()
         # A model switch intentionally starts an empty protocol view while
         # retaining accepted events in the journal.  Portable work state must
         # read those accepted facts instead of treating the new empty view as
         # an empty task.
-        source_view = latest.view
+        source_view = self.view
         if not source_view:
-            for row in reversed(latest._records):
+            for row in reversed(self._records):
                 candidate = row.get("view")
                 if isinstance(candidate, list) and candidate:
-                    source_view = candidate
+                    source_view = require_object_rows(candidate)
                     break
-        source_view = source_view or latest.events()
+        source_view = source_view or self.events()
         retained = [item for index, item in enumerate(source_view)
                     if index >= len(source_view) - 12 or digest(item) in checkpoints]
         for item in retained:
             role = item.get("role", item.get("type", "record"))
             value = item.get("content", item.get("output", ""))
             if isinstance(value, list):
-                value = "\n".join(str(part.get("text", "")) for part in value if isinstance(part, dict) and part.get("type") in {"output_text", "text"})
+                value = "\n".join(str(part.get("text", "")) for part in value if object_fields(part) and part.get("type") in {"output_text", "text"})
             if isinstance(value, str) and value:
                 parts.append(f"{role}: {value}")
             if item.get("type") == "function_call":

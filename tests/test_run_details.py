@@ -6,19 +6,18 @@ import unittest
 from pathlib import Path
 
 from codey.completion.edit_integrity import observe_edit_integrity
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession
 from codey.runs.details import load_run_details, unavailable_summary
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.receipt import build_task_receipt
 from codey.runs.trace import MAX_TRACE_BYTES, SCHEMA_VERSION, RunTraceStore
-from codey.runtime.core.operation_state import (
-    RuntimeOperationStore,
-)
+from codey.runtime.write.checkpoint import RuntimeOperationStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def _runtime(session_id: str, run_id: str) -> tuple[DurableSession, RuntimeMutationLine]:
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(
         conversation_id=session_id,
         request_id=f"request-{run_id}",

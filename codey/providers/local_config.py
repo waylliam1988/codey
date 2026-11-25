@@ -255,7 +255,7 @@ def config_from_dict(raw: object) -> LocalProviderConfig:
         raise ValueError(f"unsupported local config schema_version: {schema_version!r}")
     mode = parse_native_tools_mode(raw.get("native_tools_mode")) or NATIVE_TOOLS_AUTO
     protocol = raw.get("api_protocol", "openai-completions")
-    from codey.runtime.core.protocol_window import API_PROTOCOLS
+    from codey.types.protocol_window import API_PROTOCOLS
 
     if protocol not in API_PROTOCOLS:
         raise ValueError("unsupported API protocol")
@@ -362,7 +362,7 @@ def parse_local_config_update(
     if not isinstance(body, Mapping):
         return None, "request body must be an object"
     protocol = body.get("api_protocol", previous.api_protocol)
-    from codey.runtime.core.protocol_window import API_PROTOCOLS
+    from codey.types.protocol_window import API_PROTOCOLS
 
     if not isinstance(protocol, str) or protocol not in API_PROTOCOLS:
         return None, "unsupported API protocol"

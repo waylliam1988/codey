@@ -6,23 +6,17 @@ from pathlib import Path
 import pytest
 
 from codey.app.context import AppContext
-from codey.durable import (
-    DurableSession,
-    MemoryDurableStore,
-    SQLiteDurableStore,
-    SubmissionPlacement,
-    SubmissionStatus,
-    TaskStatus,
-)
+from codey.durable import DurableSession, SQLiteDurableStore, SubmissionPlacement, SubmissionStatus, TaskStatus
 from codey.durable.model import thaw_json
 from codey.durable.scheduler import DurableTaskScheduler
 from codey.runtime.core.api_selection import ApiRunSelection
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.fixture(params=["memory", "sqlite"])
 def session(request: pytest.FixtureRequest, tmp_path: Path) -> DurableSession:
     store = (
-        MemoryDurableStore()
+        TemporarySQLiteStore()
         if request.param == "memory"
         else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     )
@@ -111,7 +105,7 @@ def test_busy_input_is_admitted_queued_without_history_entry(tmp_path: Path) -> 
 
 
 def test_scheduler_places_queued_input_only_after_active_task_settles() -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.admit_input(
         conversation_id="chat", request_id="active", task_id="active",
         text="current", provider_snapshot={},
@@ -151,7 +145,7 @@ def test_scheduler_places_queued_input_only_after_active_task_settles() -> None:
 
 
 def test_scheduler_uses_one_at_a_time_follow_up_boundary_by_default() -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.admit_input(
         conversation_id="chat", request_id="active", task_id="active",
         text="current", provider_snapshot={},
@@ -180,7 +174,7 @@ def test_scheduler_uses_one_at_a_time_follow_up_boundary_by_default() -> None:
 
 
 def test_scheduler_can_place_all_follow_ups_at_one_boundary() -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.admit_input(
         conversation_id="chat", request_id="active", task_id="active",
         text="current", provider_snapshot={},
@@ -339,7 +333,7 @@ def test_display_only_write_is_done_without_task_and_excluded_from_context(
 
 
 def test_queued_display_only_write_places_without_creating_a_task() -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     result = session.admit_write(
         conversation_id="chat",
         request_id="notice-queued",
@@ -362,7 +356,7 @@ def test_queued_display_only_write_places_without_creating_a_task() -> None:
 
 
 def test_display_only_write_can_land_while_a_task_is_active() -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.admit_input(
         conversation_id="chat",
         request_id="active",

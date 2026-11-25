@@ -10,9 +10,14 @@ from typing import Protocol
 
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS
-from codey.research.answer_contract import ANSWER_STATES, citation_occurrences, digest, validate_submission
+from codey.research.answer_contract import (
+    ANSWER_STATES,
+    AnswerSessionView,
+    citation_occurrences,
+    digest,
+    validate_submission,
+)
 from codey.research.knowledge_update_types import KnowledgeBatch, KnowledgeUpdate, MutationPayload
 from codey.research.knowledge_updates import compile_updates, evidence_labels, normalize_updates
 from codey.research.ledger import ResearchLedger
@@ -30,7 +35,6 @@ from codey.research.report_values import (
     version_reference,
 )
 from codey.research.staging import StagedKnowledgeStore
-from codey.reviews.research_coverage import CoverageRow
 from codey.types.json_value import (
     JsonObject,
     canonical_json_object,
@@ -38,6 +42,7 @@ from codey.types.json_value import (
     encode_transport_value,
     require_json_string,
 )
+from codey.utils.research_coverage import CoverageRow
 
 REPORT_SCHEMA = "research_answer_v1"
 KNOWLEDGE_REPORT_SCHEMA = "research_answer_v2"
@@ -189,7 +194,7 @@ def render_answer(markdown: str, sources: Sequence[SourceVersion], evidence: Seq
     return markdown + "\n\n## 引用来源\n" + "\n".join(rows)
 
 
-def compile_answer_report(session: TaskSession, ledger: ResearchLedger, store: KnowledgeStore | StagedKnowledgeStore, *, project: str, session_id: str) -> AnswerReport:
+def compile_answer_report(session: AnswerSessionView, ledger: ResearchLedger, store: KnowledgeStore | StagedKnowledgeStore, *, project: str, session_id: str) -> AnswerReport:
     from codey.research.answer_archive import prepare_evidence, prepared_scope
 
     found = [(ref, result) for ref, result in session._memory_results.items()
@@ -198,8 +203,8 @@ def compile_answer_report(session: TaskSession, ledger: ResearchLedger, store: K
         raise ValueError("whole research answer has not been submitted")
     receipt, result = found[-1]
     submission = validate_submission(result.canonical["research_submission"], session.task_text)
-    from codey.operations.browser_result_evidence import action_summary, validate_current_result
     from codey.research.answer_contract import AnswerScope
+    from codey.research.browser_result_evidence import action_summary, validate_current_result
 
     original_scope = AnswerScope.from_payload(submission["scope"])
     if original_scope.calculations:
@@ -209,7 +214,7 @@ def compile_answer_report(session: TaskSession, ledger: ResearchLedger, store: K
         actual_fields = tuple(row for row in calculation_fields(session) if str(row["result_ref"]) in original_refs)
         if actual_fields != original_scope.calculations:
             raise ValueError("calculation fields differ from their original receipts")
-    if original_scope.schema_version >= 8 and original_scope.execution_refs:
+    if original_scope.execution_refs:
         summary, _refs = action_summary(session.executed, session._memory_results, original_scope.execution_refs)
         if summary != original_scope.execution_summary:
             raise ValueError("browser execution summary differs from its original receipts")
@@ -224,7 +229,7 @@ def compile_answer_report(session: TaskSession, ledger: ResearchLedger, store: K
     proposed = submit_answer(original_scope, result.call.args, passages=ledger.read_passages)
     if "research_evidence_check" in result.canonical:
         from codey.research.report_evidence import (
-            CLAIM_CHECK_VERSIONS,
+            CLAIM_CHECK_VERSION,
             check_report_evidence,
             exhausted_review_answer,
             review_submission_issues,
@@ -232,7 +237,7 @@ def compile_answer_report(session: TaskSession, ledger: ResearchLedger, store: K
 
         checked = decode_json_object(result.canonical["research_evidence_check"])
         version = checked.get("claim_check_version")
-        if "claim_check_version" in checked and (type(version) is not int or version not in CLAIM_CHECK_VERSIONS):
+        if "claim_check_version" in checked and (type(version) is not int or version != CLAIM_CHECK_VERSION):
             raise ValueError("unsupported research claim check version")
         if "research_review_exhausted" in result.canonical:
             original_check = check_report_evidence(proposed, ledger.read_passages,

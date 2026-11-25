@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession
 from codey.durable.errors import SessionFailedError, SessionSealedError
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def _session() -> DurableSession:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.admit_input(
         conversation_id="conversation",
         request_id="request",

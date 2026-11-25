@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import cast
 
 from codey.providers.attempt_gate import AttemptGateCallback, AttemptGateView
 from codey.providers.base import ProviderToolDefinition
@@ -18,8 +17,8 @@ from codey.providers.requests import (
     SendTurnRequest,
 )
 from codey.providers.transport import ProviderTransport
-from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.types.json_value import decode_json_object, require_json_string
+from codey.types.protocol_window import ProtocolWindowRef
 
 
 def unwrap_provider(provider: object) -> object:
@@ -109,18 +108,18 @@ def declared_callable(provider: object, name: str, *, forwarding_owner: type[obj
                 if owner is forwarding_owner:
                     break
                 value = getattr(provider, name, None)
-                return cast(Callable[..., object], value) if callable(value) else None
+                return value if callable(value) else None
         provider = attributes.get("provider")
     return None
 
 
 def require_callable(provider: object, name: str) -> Callable[..., object]:
-    method = getattr(provider, name, None)
+    method: object = getattr(provider, name, None)
     if not callable(method):
         raise TypeError(f"provider does not support {name}")
     # callable() establishes this deliberately open third-party call boundary.
     # Request fields and method selection are validated before invocation.
-    return cast(Callable[..., object], method)
+    return method
 
 
 def execute_compat_request(provider: object, request: ProviderRequest) -> object:

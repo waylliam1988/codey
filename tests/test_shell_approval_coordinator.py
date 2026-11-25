@@ -12,9 +12,10 @@ from codey.app.approval_registry import ApprovalRegistry
 from codey.app.run_registry import RunRegistry
 from codey.app.shell_approval_coordinator import ShellApprovalCoordinator
 from codey.app.shell_approval_durable import ApprovalFactDurable
-from codey.durable import ApprovalStatus, DurableSession, MemoryDurableStore
+from codey.durable import ApprovalStatus, DurableSession
 from codey.runtime.effects.shell_approval_records import ShellApprovalRecordStore
 from codey.storage.managed_outputs import ManagedOutputStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @dataclass
@@ -33,7 +34,7 @@ class ApprovalResources:
 def test_approval_decisions_need_only_declared_resources(
     tmp_path: Path, action: Literal["deny", "deny_locked", "expire"],
 ) -> None:
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     resources = ApprovalResources(durable, ShellApprovalRecordStore(tmp_path))
     coordinator = ShellApprovalCoordinator(resources)
     try:

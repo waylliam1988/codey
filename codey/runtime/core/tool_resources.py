@@ -5,6 +5,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+from weakref import WeakKeyDictionary
 
 from codey.durable.model import TASK_TERMINAL_STATUSES, CommitResult, DurableMutation
 from codey.runtime.core import cancellation
@@ -13,6 +14,7 @@ from codey.types.json_value import JsonObject
 
 if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
+    from codey.durable.session import DurableSession
 
 
 @dataclass(frozen=True)
@@ -117,3 +119,20 @@ class ToolResources:
                     browser.close()
                 finally:
                     browser.release()
+
+
+
+_resources_lock = threading.Lock()
+_resources: WeakKeyDictionary[DurableSession, ToolResources] = WeakKeyDictionary()
+
+
+def tool_resources_for(session: DurableSession) -> ToolResources:
+    """Bind runtime resources once to the durable session's existing lifecycle."""
+    with session.control_line(), _resources_lock:
+        resources = _resources.get(session)
+        if resources is None:
+            resources = ToolResources()
+            session.subscribe_close(resources.close)
+            session.subscribe_commits(resources.observe_commit)
+            _resources[session] = resources
+        return resources

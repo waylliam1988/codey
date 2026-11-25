@@ -33,9 +33,9 @@ from codey.providers.response_record import decode_reply, encode_reply, json_val
 from codey.providers.text_result_views import TextResultSpan
 from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget
 from codey.providers.transport import ProviderTransport
-from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 from codey.types.json_value import JsonObject
+from codey.types.protocol_window import ProtocolWindowRef
 
 
 class ConversationRecorder(Protocol):

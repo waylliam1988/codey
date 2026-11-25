@@ -5,12 +5,13 @@ from pathlib import Path
 import pytest
 
 from codey.automation.browser_contracts import RouteDecision as Route
+from codey.automation.browser_receipts import operation_receipts
 from codey.automation.browser_routes import route_policy
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.operations.execution_claims import validate_execution_claims
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.kernel_prompt import _result_context, operation_receipts
+from codey.operations.kernel_prompt import _result_context
 from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_execution import ExecutionDelegate
 from codey.runtime.core.models import ToolCall
@@ -60,7 +61,7 @@ def test_upload_only_accepts_verified_user_selected_attachment_bytes(
     validate_output("browser_upload", tool_specs()["browser_upload"].output_schema, value)
     session._memory_results["upload"] = result
     project_execution_record(session, "upload", result.call, result, ok=True)
-    assert operation_receipts(session)[-1]["sha256"] == value["sha256"]
+    assert operation_receipts(session.executed, session._memory_results)[-1]["sha256"] == value["sha256"]
     session.last_done_args = {"execution_claims": [{"result_ref": "upload", "status": "success",
                                                    "exit_code_scope": "process"}]}
     with pytest.raises(ValueError, match=r"Eligible shell/process receipts: \[\]"):

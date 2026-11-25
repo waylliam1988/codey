@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
-import importlib
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING
 
 from codey.runtime.core.operation import OperationContext, OperationIntent
 from codey.runtime.core.operation_payload import LEAF_TERMINAL
 from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.core.outcome import OperationOutcome
 from codey.runtime.core.ports import TaskExecutor, TaskPreparer, TaskStartFailureHandler
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.task.kind import resolve_task_kind
 from codey.task.model import TaskSubmission
+
+if TYPE_CHECKING:
+    from codey.durable.session import DurableSession
 
 
 @dataclass
@@ -46,7 +49,7 @@ class TaskRuntime:
         *,
         prepare: TaskPreparer | None = None,
         on_unstarted_failure: TaskStartFailureHandler | None = None,
-        durable: Any,
+        durable: DurableSession,
     ) -> None:
         self.executor = executor
         self.prepare = prepare
@@ -132,18 +135,16 @@ class TaskRuntime:
         # The inner task flow usually settles the operation first; this is a
         # backstop for executors that return without a terminal. Settle errors
         # propagate -- only an already-terminal operation is a clean no-op.
-        if self.durable is not None:
-            try:
-                task = self.durable.task(request.run_id)
-            except KeyError as exc:
-                raise RuntimeError("durable task is missing for production submission") from exc
-            if task.phase in {"completed", "failed", "cancelled"}:
-                return
-            checkpoint = importlib.import_module("codey.durable.checkpoint")
-            operation = checkpoint.operation_from_checkpoint(task, request.session_id)
-            if operation is not None and operation.leaf == LEAF_TERMINAL:
-                self._settle_task(request, outcome)
-                return
+        try:
+            task = self.durable.task(request.run_id)
+        except KeyError as exc:
+            raise RuntimeError("durable task is missing for production submission") from exc
+        if task.phase in {"completed", "failed", "cancelled"}:
+            return
+        operation = operation_from_checkpoint(task, request.session_id)
+        if operation is not None and operation.leaf == LEAF_TERMINAL:
+            self._settle_task(request, outcome)
+            return
         settled = self.mutations.mark_terminal(
             request.session_id,
             request.run_id,

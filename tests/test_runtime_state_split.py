@@ -185,39 +185,18 @@ class BatchesFromEntriesParityTests(unittest.TestCase):
         self.assertFalse(batches[0].is_delivered)
 
     def test_attempt_then_delivered_lifecycle(self) -> None:
-        from codey.runtime.effects.tool_result_delivery import delivered_entry, send_attempt_entry
+        from codey.runtime.effects.tool_result_delivery import mark_delivered, mark_send_attempt
 
         lane, op = self._lane_op()
-        intent_entry = _entry(lane=lane, operation_id=op, kind="operation_effect", payload=_intent_payload())
-        entries = (intent_entry,)
-        first = batches_from_entries(entries, session_id=_SESSION, run_id=_RUN)
-        attempt = send_attempt_entry(
-            _SESSION, _RUN, batch_id="batch-b5-1", provider_effect_id="pe-1", batches=first
-        )
+        intent = _entry(lane=lane, operation_id=op, kind="operation_effect", payload=_intent_payload())
+        first = batches_from_entries((intent,), session_id=_SESSION, run_id=_RUN)
+        attempt = mark_send_attempt(batch_id="batch-b5-1", provider_effect_id="pe-1", batches=first)
         assert attempt is not None
-        attempt_entry = _entry(
-            lane=str(attempt["lane"]),
-            operation_id=str(attempt["operation_id"]),
-            kind="operation_effect",
-            payload=dict(attempt["payload"]),
-        )
-        second = batches_from_entries(entries + (attempt_entry,), session_id=_SESSION, run_id=_RUN)
-        self.assertEqual(second[0].send_attempts, ("pe-1",))
-        delivered = delivered_entry(
-            _SESSION, _RUN, batch_id="batch-b5-1", provider_effect_id="pe-1", batches=second
-        )
+        self.assertEqual(attempt.send_attempts, ("pe-1",))
+        delivered = mark_delivered(batch_id="batch-b5-1", provider_effect_id="pe-1", batches=(attempt,))
         assert delivered is not None
-        delivered_entry_row = _entry(
-            lane=str(delivered["lane"]),
-            operation_id=str(delivered["operation_id"]),
-            kind="operation_effect",
-            payload=dict(delivered["payload"]),
-        )
-        final = batches_from_entries(
-            entries + (attempt_entry, delivered_entry_row), session_id=_SESSION, run_id=_RUN
-        )
-        self.assertTrue(final[0].is_delivered)
-        self.assertEqual(final[0].delivered_effect_ids, ("pe-1",))
+        self.assertTrue(delivered.is_delivered)
+        self.assertEqual(delivered.delivered_effect_ids, ("pe-1",))
 
     def test_orphan_attempt_rejected(self) -> None:
         lane, op = self._lane_op()

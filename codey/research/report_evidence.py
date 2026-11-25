@@ -17,17 +17,14 @@ _CITATION_TAIL = re.compile(r"[\s*_，,。.：:;；()（）!?！？]*\Z")
 _CITATION_PREFIX = re.compile(r"[ \t*_：:]*")
 _NUMBER = r"[0-9]+(?:[.,][0-9]+)?"
 _UNITS = r"%|°[CF]|µg|μg|mg|kg|g|ml|mL|L|km|cm|mm|m|ms|s|h|克|公斤|小时|分钟|天|人"
-_QUANTITY = re.compile(rf"(?<![\w.])([+-]?{_NUMBER})\s*({_UNITS})(?![A-Za-z])")
+_QUANTITY = re.compile(rf"(?<![A-Za-z0-9_.])([+-]?{_NUMBER})\s*({_UNITS})(?![A-Za-z])")
 _LEGACY_QUANTITY = re.compile(rf"(?<![\w.])({_NUMBER})\s*({_UNITS})(?![A-Za-z])")
 _SUM_OR_DIFFERENCE = re.compile(r"\(\s*(?P<left>[^()\n]{1,32}?)\s*(?P<operator>[+−-])\s*(?P<right>[^()\n]{1,32})\s*\)")
 _WORD = re.compile(r"[^\W\d_]{4,}")
 _COMMON_WORDS = frozenset({"about", "average", "according", "approximately", "between", "reported", "showed", "observed", "results", "study", "source", "that", "this", "with", "from", "were"})
-CLAIM_CHECK_VERSION = 4
-CLAIM_CHECK_VERSIONS = frozenset({1, 2, 3, CLAIM_CHECK_VERSION})
+CLAIM_CHECK_VERSION = 5
 _CLAIM_BREAK = re.compile(r"(?<=[.!?])\s+|[;；。！？\n]+|(?:,\s*)?\b(?:but|whereas|however)\b|，(?:但|然而)", re.I)
 _CLAIM_LEADING = re.compile(r"\s*(?:[-*+] |\d+[.)] )?[*_]*")
-_GROUP_LABEL = re.compile(r"\b(group|arm|cohort)\s+([a-z0-9]+)\b|(?<![a-z0-9])([a-z0-9]+)\s*[组組]", re.I)
-_RESPONSE_RATE = re.compile(r"(?:\bresponse\s+rate\b\s*(?:(?:was|is|of)\s+)?|(?:响应|響應|应答|應答)率\s*(?:为|為)?\s*)", re.I)
 _EQUIVALENT_UNITS = {"克": "g", "公斤": "kg", "小时": "h", "μg": "µg"}
 _REVIEW_UNITS = {**_EQUIVALENT_UNITS, "ml": "mL"}
 
@@ -120,12 +117,10 @@ def _claim_parts(markdown: str, start: int, stop: int) -> Iterator[tuple[int, st
         start = resume
 
 
-def _claim_segments(markdown: str, start: int, stop: int, cited: Mapping[str, ReadPassage],
-                    version: int) -> list[JsonValue]:
+def _claim_segments(markdown: str, start: int, stop: int, cited: Mapping[str, ReadPassage]) -> list[JsonValue]:
     segments: list[JsonValue] = []
     for offset, text in _claim_parts(markdown, start, stop):
-        if (_QUANTITY.search(text) or len(_terms(text)) >= 3 or len(text) >= 30
-                or version >= 2 and _RESPONSE_RATE.search(text)):
+        if _QUANTITY.search(text) or len(_terms(text)) >= 3 or len(text) >= 30:
             segments.append(_claim_segment(text, offset, cited))
     return segments
 
@@ -148,10 +143,9 @@ def _claim_segment(body: str, start: int, cited: Mapping[str, ReadPassage]) -> J
 
 def check_report_evidence(submission: AnswerSubmission, passages: Mapping[str, ReadPassage], *,
                           verify_calculations: bool = True, claim_check_version: int | None = None) -> JsonObject:
-    if claim_check_version is not None and (type(claim_check_version) is not int or claim_check_version not in CLAIM_CHECK_VERSIONS):
+    if claim_check_version is not None and (type(claim_check_version) is not int or claim_check_version != CLAIM_CHECK_VERSION):
         raise ValueError("unsupported research claim check version")
-    version = claim_check_version or 0
-    status = evidence_status_suffix(submission["scope"]["schema_version"], submission["state"])
+    status = evidence_status_suffix(submission["scope"]["primary_passages"] is not None, submission["state"])
     markdown = mask_markdown_code(submission["markdown"].removesuffix(status))
     browser = bool(submission["scope"].get("execution_refs"))
     validated: list[JsonValue] = []
@@ -170,7 +164,7 @@ def check_report_evidence(submission: AnswerSubmission, passages: Mapping[str, R
         line_start = markdown.rfind("\n", 0, start) + 1
         clause_start = max(clause_stop, line_start)
         if claim_checks is not None:
-            claim_checks.extend(_claim_segments(markdown, clause_stop, clause_start, {}, version))
+            claim_checks.extend(_claim_segments(markdown, clause_stop, clause_start, {}))
         clause = markdown[clause_start:start]
         clause_stop = stop
         quotes = [quote for quote in _DIRECT_QUOTE.finditer(clause) if _CITATION_TAIL.fullmatch(clause[quote.end():])]
@@ -200,9 +194,9 @@ def check_report_evidence(submission: AnswerSubmission, passages: Mapping[str, R
                     if verify_calculations else set())
         unverified.extend(_quantities(clause, cited, verified, legacy=not verify_calculations))
         if claim_checks is not None:
-            claim_checks.extend(_claim_segments(markdown, clause_start, start, cited, version))
+            claim_checks.extend(_claim_segments(markdown, clause_start, start, cited))
     if claim_checks is not None:
-        claim_checks.extend(_claim_segments(markdown, clause_stop, len(markdown), {}, version))
+        claim_checks.extend(_claim_segments(markdown, clause_stop, len(markdown), {}))
     selected = tuple(dict.fromkeys((row["label"], row["passage_ref"]) for row in submission["citations"]))
     for label, ref in selected:
         passage = passages.get(ref)
@@ -233,9 +227,6 @@ def review_submission_issues(submission: AnswerSubmission, evidence_check: JsonO
     if not isinstance(checks, list):
         return []
     markdown = submission["markdown"]
-    version = evidence_check.get("claim_check_version")
-    normalized_support = isinstance(version, int) and version >= 3
-    units = _REVIEW_UNITS if isinstance(version, int) and version >= 4 else _EQUIVALENT_UNITS
     labels = {row["passage_ref"]: row["label"] for row in submission["citations"]}
     issues: list[JsonObject] = []
     for raw in checks:
@@ -246,73 +237,33 @@ def review_submission_issues(submission: AnswerSubmission, evidence_check: JsonO
             continue
         claim = markdown[start:stop]
         normalized = " ".join(claim.split())
-        if len(normalized) > 500 or not _QUANTITY.search(_RESPONSE_RATE.sub(" response rate ", normalized)):
+        if len(normalized) > 500 or not _QUANTITY.search(normalized):
             continue
         originals = [(ref, body, " ".join(body.split()))
                      for ref in refs if isinstance(ref, str) and (passage := passages.get(ref)) is not None
                      for _, body in _claim_parts(passage.excerpt, 0, len(passage.excerpt))]
-        if any(original.casefold() == normalized.casefold() or
-               normalized_support and _quantity_supports(normalized, original, units) for _, _, original in originals):
+        reported = _normalized_quantity_claim(normalized)
+        if reported is None:
             continue
-        for ref, body, original in originals:
-            kind = _quantity_conflict(normalized, original, units)
-            if kind:
-                issues.append({"kind": kind, "report_start": start, "report_end": stop, "claim": claim,
-                               "passage_ref": ref, "label": labels.get(ref, ref), "original": body})
-                break
+        template, quantity, unit = reported
+        aligned = [(ref, body, item[1]) for ref, body, original in originals
+                   if (item := _normalized_quantity_claim(original)) is not None
+                   and (item[0], item[2]) == (template, unit)]
+        if aligned and all(number != quantity for _, _, number in aligned):
+            ref, body, _ = aligned[0]
+            issues.append({"kind": "quantity_conflict", "report_start": start, "report_end": stop, "claim": claim,
+                           "passage_ref": ref, "label": labels.get(ref, ref), "original": body})
     return issues
 
 
-def _quantity_conflict(claim: str, original: str, units: Mapping[str, str]) -> str:
-    reported = tuple(_QUANTITY.finditer(_RESPONSE_RATE.sub(" response rate ", claim)))
-    sourced = tuple(_QUANTITY.finditer(_RESPONSE_RATE.sub(" response rate ", original)))
-    if len(reported) != 1 or len(sourced) != 1:
-        return ""
-    left, right = reported[0], sourced[0]
-    left_unit = units.get(left[2], left[2])
-    right_unit = units.get(right[2], right[2])
-    # Commas are ambiguous across locales. Leave their interpretation to the writer.
-    if "," in left[1] or "," in right[1]:
-        return ""
-    if (Decimal(left[1]), left_unit) != (Decimal(right[1]), right_unit):
-        if _QUANTITY.sub("<quantity>", claim).casefold() == _QUANTITY.sub("<quantity>", original).casefold():
-            return "quantity_conflict"
-    else:
-        subject, source_subject = _GROUP_LABEL.search(claim), _GROUP_LABEL.search(original)
-        if (subject is not None and source_subject is not None
-                and (subject[2] or subject[3]).casefold() != (source_subject[2] or source_subject[3]).casefold()
-                and _group_claim_template(claim) == _group_claim_template(original)):
-            return "group_conflict"
-    return ""
-
-
-def _quantity_supports(claim: str, original: str, units: Mapping[str, str]) -> bool:
-    basis = _normalized_quantity_claim(claim, units)
-    return basis is not None and basis == _normalized_quantity_claim(original, units)
-
-
-def _normalized_quantity_claim(text: str, units: Mapping[str, str]) -> tuple[str, Decimal, str] | None:
-    normalized = _RESPONSE_RATE.sub(" <response_rate> ", text)
-    matches = tuple(_QUANTITY.finditer(normalized))
+def _normalized_quantity_claim(text: str) -> tuple[str, Decimal, str] | None:
+    matches = tuple(_QUANTITY.finditer(text))
     if len(matches) != 1 or "," in matches[0][1]:
         return None
     quantity = matches[0]
-
-    def group(match: re.Match[str]) -> str:
-        return f"<{match[1] or 'group'}:{match[2] or match[3]}>"
-
-    template = _GROUP_LABEL.sub(group, _QUANTITY.sub("<quantity>", normalized))
-    return (" ".join(template.split()).replace("> <", "><").casefold(),
-            Decimal(quantity[1]), units.get(quantity[2], quantity[2]))
-
-
-def _group_claim_template(text: str) -> str:
-    def placeholder(match: re.Match[str]) -> str:
-        return "<" + (match[1] or "group").casefold() + ">"
-
-    masked = _GROUP_LABEL.sub(placeholder, text)
-    # Align an explicitly recognized metric while keeping all other wording.
-    return re.sub(r"\s+", "", _RESPONSE_RATE.sub("<response_rate>", masked)).casefold()
+    # Keep the entity, metric and conditions verbatim before comparing values.
+    template = " ".join(_QUANTITY.sub(" <quantity> ", text).casefold().split())
+    return template, Decimal(quantity[1]), _REVIEW_UNITS.get(quantity[2], quantity[2])
 
 
 def research_review_key(issue: JsonObject) -> str:

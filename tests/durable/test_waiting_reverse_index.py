@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore, TaskStatus
+from codey.durable import DurableSession, SQLiteDurableStore, TaskStatus
 from codey.durable.scheduler import DurableTaskScheduler
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_task_settlement_wakes_all_waiters_through_scheduler_notify(tmp_path) -> None:
@@ -74,7 +75,7 @@ def test_waiting_reverse_index_is_durable_and_survives_reopen(tmp_path) -> None:
 
 
 def test_memory_waiting_reverse_index_updates_with_checkpoint() -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     for task_id in ("child", "waiter"):
         session.admit_input(
             conversation_id="conversation",

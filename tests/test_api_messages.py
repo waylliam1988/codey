@@ -14,8 +14,8 @@ from codey.providers.api_transport import GenerationUnknownError
 from codey.providers.base import ProviderToolDefinition, TurnFinish
 from codey.providers.error_classification import OutputLengthError
 from codey.providers.local_usage import parse_messages_usage
-from codey.runtime.core.protocol_window import ANTHROPIC_BLOCKS
 from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.protocol_window import ANTHROPIC_BLOCKS
 
 
 def test_messages_places_tool_results_before_text_and_respects_thinking_constraints() -> None:

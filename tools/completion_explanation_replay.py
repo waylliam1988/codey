@@ -7,7 +7,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from codey.operations.browser_followups import query_document
+from codey.automation.browser_receipts import query_document
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import evaluate
 from codey.operations.completion_output import prepare_completion_output

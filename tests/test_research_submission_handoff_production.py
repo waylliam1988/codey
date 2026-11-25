@@ -222,7 +222,7 @@ def test_new_claim_checks_only_cover_the_matching_part_and_cited_version() -> No
                 "This conclusion applies to all previous versions.")
     submission = submit_answer(scope, {"state": "answered", "markdown": markdown})
     legacy = check_report_evidence(submission, passages)
-    report = check_report_evidence(submission, passages, claim_check_version=1)
+    report = check_report_evidence(submission, passages, claim_check_version=CLAIM_CHECK_VERSION)
     assert legacy == {key: report[key] for key in legacy}
     checks = report["claim_checks"]
     assert isinstance(checks, list)
@@ -238,21 +238,21 @@ def test_new_claim_checks_only_cover_the_matching_part_and_cited_version() -> No
 
 
 @pytest.mark.parametrize(("original", "claim", "problem"), [
-    ("A 组响应率 24%。", "B 组响应率 24%", "group_conflict"),
-    ("Group A response rate was 24%.", "B组响应率为24%", "group_conflict"),
+    ("A 组响应率 24%。", "B 组响应率 24%", ""),
+    ("Group A response rate was 24%.", "B组响应率为24%", ""),
     ("Group A response rate was 24%.", "A组响应率为24%", ""),
     ("A组响应率24%。B组响应率24%。", "B 组响应率为 24%", ""),
-    ("A组响应率24%。B组响应率24%。", "C 组响应率为 24%", "group_conflict"),
+    ("A组响应率24%。B组响应率24%。", "C 组响应率为 24%", ""),
     ("Group A shipped 24 kg. Group A shipped 24 g.", "Group A shipped 24.0 克", ""),
     ("A 组响应率 24%。", "A 组响应率 42%", "quantity_conflict"),
-    ("Group A shipped 24 g.", "Group A shipped 24 kg", "quantity_conflict"),
+    ("Group A shipped 24 g.", "Group A shipped 24 kg", ""),
     ("Group A shipped 24 g.", "Group A shipped 24.0 g", ""),
     ("Group A shipped 24 g.", "A 组发货 24 克", ""),
     ("Group A shipped 24 g.", "Group A's shipment weighed 24 g", ""),
     ("Group A shipped 24 g.", "Group A shipped 24 g", ""),
     ("Group A received 24 ml.", "Group A received 24 mL", ""),
     ("Group A received 24 ml.", "Group A received 42 mL", "quantity_conflict"),
-    ("Group A received 24 ml.", "Group B received 24 mL", "group_conflict"),
+    ("Group A received 24 ml.", "Group B received 24 mL", ""),
 ])
 def test_review_flags_only_aligned_quantitative_conflicts(original: str, claim: str, problem: str) -> None:
     url = "https://example.com/official"
@@ -278,20 +278,20 @@ def test_quantitative_citation_conflict_returns_to_current_writer(tmp_path: Path
 
     def replies() -> Iterator[JsonObject]:
         assert "Group A shipped 24 g" in json.dumps(requests(directory)[-1]["messages"])
-        yield {"tool": "submit_research_answer", "args": {"markdown": "Group B shipped 24 g [e1].", "state": "answered"}}
+        yield {"tool": "submit_research_answer", "args": {"markdown": "Group A shipped 42 g [e1].", "state": "answered"}}
         feedback = json.dumps(requests(directory)[-1]["messages"])
-        assert "The draft says 'Group B shipped 24 g'" in feedback and "Its cited [e1] says 'Group A shipped 24 g'" in feedback
+        assert "The draft says 'Group A shipped 42 g'" in feedback and "Its cited [e1] says 'Group A shipped 24 g'" in feedback
         yield {"tool": "submit_research_answer", "args": {"markdown": "Group A shipped 24 g [e1].", "state": "answered"}}
 
     install_http(monkeypatch, replies(), native=False)
     result = gate.run_case(directory, "research", Target("http://scripted.test/v1", "fixture", 123, 20),
         strict_research=True, declare_required_tools=False, source_pages={url: f"<article>{original}</article>"},
-        task_transform=lambda _: f"Read the official shipping report at {url}. Report which group shipped 24 g and cite the report.")
+        task_transform=lambda _: f"Read the official shipping report at {url}. Report the weight shipped by Group A and cite the report.")
     assert result["stop_reason"] == "done"
     receipts = tool_receipts(directory / "state")
     submissions = [row.result for row in receipts if row.result.call.name == "submit_research_answer"]
     assert [row.ok for row in submissions] == [False, True]
-    assert decode_json_object(submissions[0].canonical["research_submission_issue"])["kind"] == "group_conflict"
+    assert decode_json_object(submissions[0].canonical["research_submission_issue"])["kind"] == "quantity_conflict"
     assert sum(row.result.call.name == "open_url" for row in receipts) == 1
 
 
@@ -300,14 +300,14 @@ def test_repeated_citation_conflict_publishes_one_unresolved_answer(tmp_path: Pa
     directory = tmp_path / "run"
     url = "https://example.com/atlas/shipping-results"
     proposal: JsonObject = {"tool": "submit_research_answer",
-        "args": {"markdown": "Group B shipped 24 g [e1].", "state": "answered"}}
+        "args": {"markdown": "Group A shipped 42 g [e1].", "state": "answered"}}
     install_http(monkeypatch, iter((proposal, proposal, proposal)), native=False)
     result = gate.run_case(directory, "research", Target("http://scripted.test/v1", "fixture", 123, 20),
         strict_research=True, declare_required_tools=False, source_pages={url: "<article>Group A shipped 24 g.</article>"},
-        task_transform=lambda _: f"Read the official shipping report at {url}. Report which group shipped 24 g and cite the report.")
+        task_transform=lambda _: f"Read the official shipping report at {url}. Report the weight shipped by Group A and cite the report.")
     assert result["stop_reason"] == "done"
     receipts = tool_receipts(directory / "state")
     submissions = [row.result for row in receipts if row.result.call.name == "submit_research_answer"]
     assert [row.ok for row in submissions] == [False, False, True]
     delivered = decode_json_object(submissions[-1].canonical["research_submission"])
-    assert delivered["state"] == "unresolved" and "Group B shipped" not in str(delivered["markdown"])
+    assert delivered["state"] == "unresolved" and "42 g" not in str(delivered["markdown"])

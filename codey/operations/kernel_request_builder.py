@@ -26,7 +26,7 @@ from codey.workspace.context_selection import ContextSpan, replace_context_text,
 
 if TYPE_CHECKING:
     from codey.operations.kernel_contracts import StopSignal
-    from codey.runtime.core.protocol_window import ProtocolWindowRef
+    from codey.types.protocol_window import ProtocolWindowRef
 
 _DEFAULT_EXECUTION = KernelExecutionDeps()
 _DEFAULT_OBSERVATION = KernelObservationDeps()

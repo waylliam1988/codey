@@ -8,11 +8,10 @@ ledger; UI events and run traces are observation only.
 from __future__ import annotations
 
 import hashlib
-import importlib
 from collections.abc import Iterable
 from dataclasses import replace
 from datetime import UTC, datetime
-from typing import Any, Protocol, cast
+from typing import TypedDict, Unpack
 
 from codey.runtime.core.operation_payload import (
     _BLOCKABLE_PROOF_STATUSES,
@@ -180,29 +179,6 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
         LEAF_WRITER_SETTLED,
     }),
 }
-
-
-class RuntimeOperationStore:
-    """Read projection for one run's durable operation state."""
-
-    def __init__(self, *, durable: Any) -> None:
-        if durable is None:
-            raise ValueError("an operation store requires durable storage")
-        self.durable = durable
-
-    def load(self, session_id: str, run_id: str) -> RuntimeOperationState | None:
-        try:
-            task = self.durable.task(run_id)
-        except KeyError:
-            return None
-        checkpoint = cast(_CheckpointAdapter, importlib.import_module("codey.durable.checkpoint"))
-        return checkpoint.operation_from_checkpoint(task, session_id)
-
-
-class _CheckpointAdapter(Protocol):
-    def operation_from_checkpoint(
-        self, task: object, session_id: str,
-    ) -> RuntimeOperationState | None: ...
 
 
 def operation_id_for_run(run_id: str) -> str:
@@ -464,7 +440,7 @@ def advance_execution(
     work_ref: str | None = None, counters: RuntimeExecutionCounters | None = None,
 ) -> RuntimeOperationState:
     """Advance the existing execution position with typed, reference-only data."""
-    updates: dict[str, object] = {}
+    updates: _TransitionFields = {}
     if logical_turn is not None:
         updates["logical_turn"] = _count(logical_turn, "logical_turn")
     if work_ref is not None:
@@ -472,8 +448,9 @@ def advance_execution(
     if counters is not None:
         updates["counters"] = RuntimeExecutionCounters.from_payload(counters.to_payload())
     if leaf in _PENDING_LEAVES:
-        updates.update(driver=state.driver or (DRIVER_REPAIR if _is_repair_leaf(state.leaf, state.driver) else DRIVER_WRITER),
-                       turn=state.turn, tool_index=0)
+        updates["driver"] = state.driver or (DRIVER_REPAIR if _is_repair_leaf(state.leaf, state.driver) else DRIVER_WRITER)
+        updates["turn"] = state.turn
+        updates["tool_index"] = 0
     return _transition(state, leaf, **updates)
 
 
@@ -748,10 +725,33 @@ def outcome_for_terminal(state: RuntimeOperationState) -> OperationOutcome:
     )
 
 
+class _TransitionFields(TypedDict, total=False):
+    provider_id: str
+    writer_attempt: int
+    turns_used: int
+    counters: RuntimeExecutionCounters
+    logical_turn: int
+    stop_reason: str
+    work_ref: str
+    request_ref: str
+    response_ref: str
+    candidate_validation_attempted: bool
+    driver: str
+    turn: int
+    tool_index: int
+    completion_proof_ref: str
+    completion_proof_status: str
+    repair_context_ref: str
+    repair_rounds: int
+    blocked_reason: str
+    terminal: RuntimeOperationTerminal
+    final_delivery: str
+
+
 def _transition(
     state: RuntimeOperationState,
     next_leaf: str,
-    **updates: object,
+    **updates: Unpack[_TransitionFields],
 ) -> RuntimeOperationState:
     if next_leaf not in _ALLOWED_TRANSITIONS.get(state.leaf, frozenset()):
         raise RuntimeOperationTransitionError(f"illegal transition {state.leaf} -> {next_leaf}")
@@ -767,7 +767,7 @@ def _transition(
         updates.setdefault("driver", "")
         updates.setdefault("turn", 0)
         updates.setdefault("tool_index", 0)
-    return replace(state, leaf=next_leaf, updated_at=_now(), **updates)  # type: ignore[arg-type]
+    return replace(state, leaf=next_leaf, updated_at=_now(), **updates)
 
 
 def _repair_candidate_proof(state: RuntimeOperationState) -> bool:
@@ -801,7 +801,6 @@ def _canonical_id(value: object) -> str:
 
 __all__ = [
     "completion_proof_satisfied",
-    "RuntimeOperationStore",
     "lane_for_run",
     "mark_completion_blocked",
     "mark_completion_proof_recorded",

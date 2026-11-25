@@ -46,24 +46,6 @@ def test_no_unreachable_finding_statuses_or_provenance_fields() -> None:
     assert "STATUS_OPEN" in rf.__all__
 
 
-def test_all_critical_findings_block_regardless_of_status() -> None:
-    from codey.research.contract import blocking_finding_refs
-
-    blocked_open = blocking_finding_refs([_critical_finding("open")])
-    assert blocked_open == ("review_finding:" + "b" * 16,)
-    # Same critical finding hand-marked addressed/confirmed/rejected must
-    # still block: there is no lifecycle that can clear a critical finding.
-    for status in ("addressed", "confirmed", "rejected"):
-        assert blocking_finding_refs([_critical_finding(status)]) == blocked_open, status
-    warning = SimpleNamespace(
-        finding_id="review_finding:" + "c" * 16,
-        kind="unsupported_claim",
-        severity="warning",
-        status="open",
-    )
-    assert blocking_finding_refs([warning]) == ()
-
-
 def test_failed_analysis_support_mapping_is_gone() -> None:
     import codey.research.review_finding as rf
     from codey.research.review_finding import planner_gaps_from_findings

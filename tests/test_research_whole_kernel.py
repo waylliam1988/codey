@@ -11,7 +11,6 @@ import pytest
 from codey.knowledge.store import KnowledgeStore
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, build_task_policy
 from codey.research.answer_report import AnswerReport
-from codey.research.completion_gate import ResearchCompletionGate
 from codey.research.report_projection import validate_accepted_projection
 from tests.test_research_deterministic_completion import _run
 from tests.test_research_findings import URL
@@ -75,11 +74,7 @@ def test_read_submit_publish_and_resume_without_extra_model_or_claims(tmp_path, 
     finally:
         store.close()
     if scenario == "gap":
-        gate = ResearchCompletionGate()
-        item = SimpleNamespace(kind="open_question", title=TASK, started_run_id="r")
-        decision = gate.evaluate(item=item, event={"run_id": "r", "stop_reason": "done"},
-                                 research_result=result, session_id="s", task=TASK)
-        assert decision.block and decision.blocked_reason == "research_delivered_question_unresolved"
+        assert result.accepted_report.state == "unresolved"
 
 
 @pytest.mark.parametrize("boundary", ["provider_request_ready", "provider_response_ready", "tool_effect_pending",

@@ -20,7 +20,7 @@ def test_provider_context_is_bound_to_the_durable_runtime_window():
 
 def test_session_and_protocol_ledger_factories_share_identity(tmp_path):
     from codey.providers.context_ledger import ContextLedger
-    from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
+    from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding
 
     session_id = "chat-factory"
     first = ContextLedger.for_session(tmp_path, session_id, "model")

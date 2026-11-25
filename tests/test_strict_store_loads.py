@@ -9,7 +9,6 @@ from pathlib import Path
 from codey.providers import controls as provider_controls
 from codey.providers import revival as provider_revival
 from codey.repairs import adapter_overrides
-from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.runs import work_checkpoint as work_checkpoint_module
 from codey.storage.ui_state_store import UiStateStore
 from codey.workspace.facts import ProjectFactsStore
@@ -51,18 +50,6 @@ class StrictStoreLoadTests(unittest.TestCase):
             self.assertIsNone(store.load("session-1"))
             self.assertTrue(path.with_name(path.name + ".corrupt").exists())
 
-    def test_evidence_ledger_keeps_rotation_strategy_for_corrupt_payload(self) -> None:
-        # Deliberate exception: the evidence ledger stays on the lenient read
-        # so append_record can rotate a corrupt active file into an
-        # `-unavailable-` archive (that rotation is its backup strategy).
-        with tempfile.TemporaryDirectory() as td:
-            store = EvidenceLedgerStore(td)
-            path = Path(td) / "ledger.json"
-            _corrupt(path)
-
-            self.assertIsNone(store._load_payload(path))
-            self.assertFalse(path.with_name(path.name + ".corrupt").exists())
-            self.assertTrue(path.exists())
 
     def test_revival_store_rebuilds_from_backup(self) -> None:
         with tempfile.TemporaryDirectory() as td:

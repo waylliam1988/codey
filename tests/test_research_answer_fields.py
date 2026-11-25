@@ -524,10 +524,11 @@ def test_unrelated_source_tool_without_a_source_receipt_cannot_break_field_selec
     assert answer_scope(session).fields[0].value == '173'
 
 
-def test_original_scope_payload_and_new_frozen_snapshot_restore_without_upgrading() -> None:
+def test_frozen_snapshot_restores_only_with_current_scope() -> None:
     old: JsonObject = {'task_digest': 'a' * 64, 'aliases': [['e1', 'p' + 'b' * 12]],
                        'attempt_refs': ['original'], 'schema_version': 4}
-    assert AnswerScope.from_payload(old).to_payload() == old
+    with pytest.raises(ValueError, match="invalid whole-task research scope"):
+        AnswerScope.from_payload(old)
     session = session_for()
     read(session, 'Value: 173 units.')
     snapshot = build_turn_snapshot(session)

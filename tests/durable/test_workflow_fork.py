@@ -2,12 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import CommitConflict, DurableSession, EffectRecord, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import CommitConflict, DurableSession, EffectRecord, SQLiteDurableStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_workflow_fork_admits_a_new_task_at_the_historical_cap(backend: str, tmp_path: Path) -> None:
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     session = DurableSession(store)
     try:
         first = session.admit_input(conversation_id="source", request_id="one", task_id="old", text="original",

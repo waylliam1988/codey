@@ -10,12 +10,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
-def _new_log(tmp: Path, session_id: str, run_id: str):
+def _new_runtime(tmp: Path, session_id: str, run_id: str):
     from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
-    log = RuntimeSessionLog(tmp / "sesslog")
     durable = DurableSession(SQLiteDurableStore(tmp / "state" / "durable.sqlite3"))
     durable.admit_input(
         conversation_id=session_id, request_id=f"request-{run_id}", task_id=run_id,
@@ -25,7 +23,7 @@ def _new_log(tmp: Path, session_id: str, run_id: str):
     durable.start_task(run_id, state={"task_kind": "project"})
     durable.advance_task(task_id=run_id, phase="running", state={"task_kind": "project"})
     durable.advance_task(task_id=run_id, phase="running", state={"task_kind": "project"})
-    return log, RuntimeMutationLine(durable=durable), durable
+    return RuntimeMutationLine(durable=durable), durable
 
 
 def _accept_and_mark(mutations, session_id: str, run_id: str, project: str):
@@ -46,7 +44,7 @@ def _settle_batch(tmp: Path, session_id: str, run_id: str, *, long_text: str = "
     from codey.runtime.core.models import ToolCall, ToolResult
     from codey.storage.managed_outputs import ManagedOutputStore
 
-    log, mutations, durable = _new_log(tmp, session_id, run_id)
+    mutations, durable = _new_runtime(tmp, session_id, run_id)
     _accept_and_mark(mutations, session_id, run_id, str(tmp))
     state_home = tmp / "state"
     state_home.mkdir(parents=True, exist_ok=True)

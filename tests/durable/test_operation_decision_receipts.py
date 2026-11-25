@@ -3,12 +3,12 @@ from dataclasses import replace
 
 import pytest
 
-from codey.durable.checkpoint import operation_from_checkpoint
 from codey.operations.kernel_control import validate_decision
 from codey.operations.task_loop import run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from tests.durable.test_operation_control_actions import request_for
 from tests.durable.test_provider_response_receipts import runtime
 from tests.support.kernel_restart import SimulatedExit

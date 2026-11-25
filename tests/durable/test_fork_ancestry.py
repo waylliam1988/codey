@@ -5,12 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore, SubmissionPlacement
+from codey.durable import DurableSession, SQLiteDurableStore, SubmissionPlacement
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.fixture(params=["memory", "sqlite"])
 def session(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[DurableSession]:
-    store = MemoryDurableStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     durable = DurableSession(store)
     durable.create_conversation("root")
     try:

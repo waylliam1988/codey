@@ -3,19 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import (
-    CommitConflict,
-    DurableMutation,
-    DurableSession,
-    MemoryDurableStore,
-    SQLiteDurableStore,
-    SubmissionStatus,
-)
+from codey.durable import CommitConflict, DurableMutation, DurableSession, SQLiteDurableStore, SubmissionStatus
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.fixture(params=["memory", "sqlite"])
 def session(request: pytest.FixtureRequest, tmp_path: Path):
-    store = MemoryDurableStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     durable = DurableSession(store)
     durable.admit_input(conversation_id="chat", request_id="request", task_id="task", text="inspect",
                         provider_snapshot={"provider_id": "local"})

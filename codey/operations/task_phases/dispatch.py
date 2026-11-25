@@ -34,7 +34,6 @@ from codey.operations.provider_session import bind_api_usage
 from codey.operations.recovery import durable_task_for, policy_from_durable_task, record_entry_policy
 from codey.operations.research_flow import (
     ResearchFlowDeps,
-    record_evidence_ledger_write,
     run_research_mode,
     run_research_pipeline,
 )
@@ -179,7 +178,6 @@ def _research_deps(deps: TaskRunDeps) -> ResearchFlowDeps:
     return ResearchFlowDeps(
         state=deps.state,
         knowledge_store=deps.knowledge_store,
-        evidence_ledgers=deps.evidence_ledgers,
         search_factory=deps.search_factory or default_research_search_provider,
         managed_outputs=deps.managed_outputs,
         runtime_mutations=deps.runtime_mutations,
@@ -297,10 +295,7 @@ def dispatch_run_mode(
             research_deps,
             active_frame,
             active_hooks,
-            run_pipeline=partial(
-                run_research_pipeline, research_deps,
-                record_ledger_write=record_evidence_ledger_write,
-            ),
+            run_pipeline=partial(run_research_pipeline, research_deps),
         )
 
     def _run_planning_op(active_frame: RunFrame, active_work: RunWork, *,

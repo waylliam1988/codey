@@ -122,7 +122,7 @@ def test_reviewer_selection_survives_restart_and_cannot_be_rebound(tmp_path):
 
     from codey.durable import DurableSession, SQLiteDurableStore
     from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
-    from codey.runtime.core.operation_state import RuntimeOperationStore
+    from codey.runtime.write.checkpoint import RuntimeOperationStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
 
     selection = ApiRunSelection("zen", "revision", "reviewer", "openai-completions", True)

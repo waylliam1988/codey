@@ -3,14 +3,15 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import CommitConflict, DurableSession, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import CommitConflict, DurableSession, SQLiteDurableStore
 from codey.durable.errors import IdempotencyConflict
 from codey.durable.model import DurableMutation, EntryDraft
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.fixture(params=["memory", "sqlite"])
 def durable(request, tmp_path: Path):
-    store = MemoryDurableStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "edit.db")
+    store = TemporarySQLiteStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "edit.db")
     session = DurableSession(store)
     yield session
     session.close()

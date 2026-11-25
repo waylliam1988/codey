@@ -9,17 +9,18 @@ from types import SimpleNamespace
 import pytest
 
 from codey.agents.handoff import ConversationContext
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.operations.conversation_plan import build_conversation_plan
 from codey.operations.conversation_window import activate_window
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition
 from codey.providers.token_accounting import RequestContextCount
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.fixture(params=["memory", "sqlite"])
 def session(request, tmp_path):
-    durable = DurableSession(MemoryDurableStore() if request.param == "memory"
+    durable = DurableSession(TemporarySQLiteStore() if request.param == "memory"
                              else SQLiteDurableStore(tmp_path / "durable.sqlite3"))
     durable.create_conversation("chat")
     try:

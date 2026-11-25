@@ -12,7 +12,6 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
 from unittest import mock
 
 from codey.agents.request import AgentRequest
@@ -42,9 +41,10 @@ from codey.runtime.core.operation_payload import (
     LEAF_WRITER_SETTLED,
     RuntimeOperationTransitionError,
 )
-from codey.runtime.core.operation_state import RuntimeOperationStore, completion_proof_satisfied, outcome_for_terminal
+from codey.runtime.core.operation_state import completion_proof_satisfied, outcome_for_terminal
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent
+from codey.runtime.write.checkpoint import RuntimeOperationStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.task.model import TaskSubmission
 from codey.toolchain.runtime import ToolOutcome
@@ -89,7 +89,7 @@ class ObservingWriter:
     """Scripted writer that inspects the operation state mid-run."""
 
     def __init__(self, *steps: object) -> None:
-        self.calls: list[dict[str, Any]] = []
+        self.calls: list[dict[str, object]] = []
         self.observed_phases: list[str | None] = []
         self.steps = list(steps)
 
@@ -161,7 +161,6 @@ def _runner(
         workspace_revisions=state.workspace_revisions,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
-        evidence_ledgers=state.evidence_ledgers,
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=lambda _project: True,

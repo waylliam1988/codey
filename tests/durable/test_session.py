@@ -6,15 +6,17 @@ import pytest
 
 from codey.durable import (
     CommitConflict,
+    CommitResult,
+    DurableMutation,
     DurableSession,
     EffectRecord,
-    MemoryDurableStore,
     SQLiteDurableStore,
     SubmissionStatus,
     TaskCheckpoint,
     TaskStatus,
 )
 from codey.durable.errors import SessionSealedError
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_admit_input_commits_submission_task_and_user_entry(tmp_path: Path) -> None:
@@ -42,7 +44,7 @@ def test_admit_input_commits_submission_task_and_user_entry(tmp_path: Path) -> N
 
 
 def test_admit_input_works_with_memory_backend() -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     result = session.admit_input(
         conversation_id="conversation-1",
         request_id="request-1",
@@ -68,7 +70,7 @@ def test_fail_task_preserves_pending_effects_when_stopping_scheduler(
     backend: str, tmp_path: Path
 ) -> None:
     store = (
-        MemoryDurableStore()
+        TemporarySQLiteStore()
         if backend == "memory"
         else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     )
@@ -116,7 +118,7 @@ def test_fail_task_preserves_pending_effects_when_stopping_scheduler(
 def test_cancel_task_preserves_pending_effects_and_cancels_submission_atomically(
     backend: str, tmp_path: Path
 ) -> None:
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     session = DurableSession(store)
     session.admit_input(
         conversation_id="conversation-1", request_id="request-1", task_id="task-1",
@@ -319,7 +321,7 @@ def test_effect_intent_and_settlement_are_durable_and_cas_checked(tmp_path: Path
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_effect_batch_and_task_checkpoint_share_one_commit(backend: str, tmp_path: Path) -> None:
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "batch.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "batch.sqlite3")
     session = DurableSession(store)
     session.admit_input(
         conversation_id="conversation-1", request_id="request-1", task_id="task-1",
@@ -439,7 +441,7 @@ def test_reviewer_selection_is_durable_and_immutable(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_same_arguments_across_turns_are_distinct_effects(backend: str, tmp_path: Path) -> None:
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     session = DurableSession(store)
     session.admit_input(
         conversation_id="conversation-1", request_id="request-1", task_id="task-1",
@@ -484,10 +486,10 @@ def test_branch_moves_head_without_deleting_history(tmp_path: Path) -> None:
 
 
 def test_storage_failure_seals_session_until_reopened() -> None:
-    class FailingStore(MemoryDurableStore):
+    class FailingStore(TemporarySQLiteStore):
         fail_writes = False
 
-        def commit(self, mutation):  # type: ignore[no-untyped-def]
+        def commit(self, mutation: DurableMutation) -> CommitResult:
             if self.fail_writes:
                 raise OSError("injected storage failure")
             return super().commit(mutation)

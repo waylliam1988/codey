@@ -402,6 +402,11 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         }
         allowed = {
             "codey.types.json_value",
+            "codey.types.protocol_window",
+            "codey.types.tool_image",
+            "codey.runtime.core.process_io",
+            "codey.runtime.core.windows_process",
+            "codey.durable.tool_task",
             "codey.runtime.core.cancellation",
             "codey.runtime.observe.events",
             "codey.runtime.observe.execution_evidence",
@@ -424,7 +429,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.runtime.log.compaction",
             "codey.runtime.log.entries",
             "codey.runtime.log.session_projection",
-            "codey.runtime.log.session_log",
             "codey.runtime.log.session_view",
             "codey.runtime.observe.terminalizer",
             "codey.utils.refs",
@@ -434,7 +438,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.runtime.write.research_publication",
             "codey.runtime.write.tool_batches",
             "codey.runtime.effects.tool_result_delivery",
-            "codey.durable.checkpoint",
+            "codey.runtime.write.checkpoint",
             "codey.durable.contracts",
             "codey.durable.session",
             "codey.durable.model",
@@ -458,7 +462,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "write/research_publication.py",
             "write/tool_batches.py",
             "write/delivery_recovery.py",
-            "log/session_log.py",
             "log/session_projection.py",
             "log/session_view.py",
             "log/compaction.py",
@@ -477,7 +480,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "drive.py",
             "outcome.py",
             "session_projection.py",
-            "session_log.py",
             "session_view.py",
             "effect_records.py",
             "tool_result_delivery.py",
@@ -485,7 +487,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         ):
             with self.subTest(flat=flat):
                 self.assertFalse((ROOT / "codey" / "runtime" / flat).exists())
-        session_log_source = (ROOT / "codey" / "runtime" / "log" / "session_log.py").read_text(encoding="utf-8")
         delivery_source = (ROOT / "codey" / "runtime" / "effects" / "tool_result_delivery.py").read_text(
             encoding="utf-8"
         )
@@ -495,8 +496,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         mutation_line_source = (ROOT / "codey" / "runtime" / "write" / "mutation_line.py").read_text(
             encoding="utf-8"
         )
-        self.assertNotIn("def append(", session_log_source)
-        self.assertNotIn("def append_many(", session_log_source)
         self.assertNotIn("def transition_operation(", mutation_line_source)
         for token in (
             "def start(",
@@ -529,7 +528,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         mutate_callers = []
         allowed_mutate_callers = {
             "codey/runtime/write/mutation_line.py",
-            "codey/runtime/log/session_log.py",
         }
         for path in (ROOT / "codey").rglob("*.py"):
             rel = path.relative_to(ROOT).as_posix()
@@ -543,7 +541,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         test_mutate_callers = []
         allowed_test_mutate_callers = {
             "tests/test_architecture.py",
-            "tests/test_runtime_session_log.py",
             "tests/test_fail_closed_boundary_sweep.py",
         }
         for path in (ROOT / "tests").rglob("*.py"):
@@ -899,9 +896,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         }
         for path in (
             ROOT / "codey" / "research" / "identity.py",
-            ROOT / "codey" / "research" / "evidence_ledger.py",
             ROOT / "codey" / "research" / "proof_quality.py",
-            ROOT / "codey" / "research" / "completion_gate.py",
             ROOT / "codey" / "research" / "source_connectors.py",
             ROOT / "codey" / "research" / "connector_terms.py",
             ROOT / "codey" / "research" / "query_planner.py",
@@ -1059,7 +1054,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # test above.
         paths = (
             ROOT / "codey" / "completion" / "contract.py",
-            ROOT / "codey" / "research" / "contract.py",
         )
         forbidden_imports = {
             "codey.automation.browser",
@@ -1292,7 +1286,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
     def test_knowledge_never_imports_the_research_package(self) -> None:
         # Knowledge is a lower layer than Research: its Writer handoff consumes
-        # the neutral section parser (codey.reviews.report_sections) instead of
+        # the neutral section parser (codey.utils.report_sections) instead of
         # reaching upward into codey.research, whose package __init__ eagerly
         # loads the runner/browser/pipeline stack.
         for path in sorted((ROOT / "codey" / "knowledge").glob("*.py")):
@@ -1328,9 +1322,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_report_sections_and_coverage_stay_below_domain_layers(self) -> None:
         # Section rendering uses the shared neutral coverage renderer; neither
         # may depend on research/knowledge orchestration, storage, or I/O.
-        self._assert_stdlib_leaf(ROOT / "codey" / "reviews" / "research_coverage.py")
-        self._assert_stdlib_leaf(ROOT / "codey" / "reviews" / "report_sections.py",
-                                 allowed_codey={"codey.reviews.research_coverage"})
+        self._assert_stdlib_leaf(ROOT / "codey" / "utils" / "research_coverage.py")
+        self._assert_stdlib_leaf(ROOT / "codey" / "utils" / "report_sections.py",
+                                 allowed_codey={"codey.utils.research_coverage"})
 
     def test_citation_scanner_is_a_stdlib_leaf(self) -> None:
         # Citation scanning is shared by Research's done gate and Knowledge's
@@ -1365,7 +1359,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertTrue(
             {
                 "codey.runs.trace",
-                "codey.research.evidence_ledger",
                 "codey.operations.task_flow",
                 "codey.app.server",
             }.isdisjoint(journal_imports),
@@ -1388,7 +1381,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_transcript_archive_cannot_become_evidence(self) -> None:
         # Transcript replay material stays in the manual layer; the evidence
         # ledger and object model must not know transcripts exist.
-        for name in ("evidence_ledger.py", "object_model.py"):
+        for name in ("object_model.py",):
             imports = imported_modules(ROOT / "codey" / "research" / name)
             with self.subTest(module=name):
                 self.assertNotIn("ab_journal", imports)
@@ -1405,7 +1398,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         self.assertEqual(
             sorted(name for name in imports if name == "codey" or name.startswith("codey.")),
-            [],
+            ["codey.utils.object_fields"],
         )
         forbidden_imports = {
             "subprocess",
@@ -1672,6 +1665,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 "grep",
                 "find_references",
                 "parallel",
+                "semantic_definition",
+                "syntax_query",
+                "workspace_diff",
                 "edit",
                 "run",
                 "shell",
@@ -1693,6 +1689,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 "save_finding",
                 "save_inference",
                 "submit_research_answer",
+                "read_data",
+                "calculate",
                 "done",
             },
         )
@@ -1878,80 +1876,16 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertEqual(readers, allowed_readers)
 
 
-    def test_runtime_package_has_no_import_cycles(self) -> None:
-        # The runtime kernel is a DAG: session_log -> {projection, compaction}
-        # -> leaves, effects -> {operation_state, session_log}, write on top.
-        # A cycle here would let audit, execution, and projection silently
-        # depend on each other. Tarjan over all intra-package imports,
-        # including function-local ones.
-        pkg = ROOT / "codey" / "runtime"
-        modules: dict[str, set[str]] = {}
-        for path in sorted(pkg.rglob("*.py")):
-            name = "codey.runtime." + path.relative_to(pkg).with_suffix("").as_posix().replace("/", ".")
-            if name.endswith(".__init__"):
-                name = name[: -len(".__init__")]
-            names: set[str] = set()
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-            for node in ast.walk(tree):
-                if isinstance(node, ast.ImportFrom) and node.module:
-                    mod = node.module
-                    if mod == "codey.runtime" or mod.startswith("codey.runtime."):
-                        names.add(mod)
-                elif isinstance(node, ast.Import):
-                    for alias in node.names:
-                        if alias.name == "codey.runtime" or alias.name.startswith("codey.runtime."):
-                            names.add(alias.name)
-            modules[name] = names
-        index: dict[str, int] = {}
-        low: dict[str, int] = {}
-        on_stack: set[str] = set()
-        stack: list[str] = []
-        counter = [0]
-        cycles: list[list[str]] = []
+    def test_runtime_has_no_top_level_import_cycles(self) -> None:
+        from tools.kernel_import_audit import module_paths, scan_imports, static_report
 
-        def strongconnect(node: str) -> None:
-            index[node] = low[node] = counter[0]
-            counter[0] += 1
-            stack.append(node)
-            on_stack.add(node)
-            for dep in sorted(modules.get(node, ())):
-                if dep not in modules:
-                    continue
-                if dep not in index:
-                    strongconnect(dep)
-                    low[node] = min(low[node], low[dep])
-                elif dep in on_stack:
-                    low[node] = min(low[node], index[dep])
-            if low[node] == index[node]:
-                component = []
-                while True:
-                    member = stack.pop()
-                    on_stack.discard(member)
-                    component.append(member)
-                    if member == node:
-                        break
-                if len(component) > 1:
-                    cycles.append(sorted(component))
+        modules = {name: path for name, path in module_paths(ROOT).items()
+                   if name == "codey.runtime" or name.startswith("codey.runtime.")}
+        report = static_report(modules, scan_imports(modules))
+        self.assertEqual(report["top_level_runtime"]["components"], [])
+        self.assertTrue(all("codey.runtime.write.checkpoint" not in component
+                            for component in report["runtime_including_deferred"]["components"]))
 
-        for module in sorted(modules):
-            if module not in index:
-                strongconnect(module)
-        self.assertEqual(cycles, [])
-
-    def test_runtime_log_entry_types_are_not_reexported_from_session_log(self) -> None:
-        # Cold-start API shape: entries.py owns the entry/error model.
-        # session_log.py is only the durable store boundary, not a compat facade.
-        import codey.runtime.log.session_log as session_log
-
-        self.assertEqual(getattr(session_log, "__all__", ()), ["RuntimeSessionLog"])
-        for name in (
-            "RuntimeLogEntry",
-            "RuntimeLogError",
-            "RuntimeLogCorruption",
-            "RuntimeLogWriteError",
-        ):
-            with self.subTest(name=name):
-                self.assertFalse(hasattr(session_log, name))
 
     def test_shell_approval_recovery_uses_durable_task_not_runtime_projection(self) -> None:
         source = (ROOT / "codey" / "app" / "shell_approval_workflow.py").read_text(

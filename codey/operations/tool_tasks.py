@@ -28,6 +28,7 @@ from codey.runtime.core.execution_receipt import execution_receipt
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.process_io import ProcessOptions
 from codey.runtime.core.tool_dispatch import ToolDispatch
+from codey.runtime.core.tool_resources import tool_resources_for
 from codey.runtime.effects.effect_records import (
     RuntimeEffectIntent,
     RuntimeEffectProjection,
@@ -233,7 +234,7 @@ def run_tool_task(durable: DurableSession, captured: TaskCheckpoint, *, stores: 
             durable.fail_task(task_id, f"{type(exc).__name__}: {exc}",
                 state={"tool_worker_active": False, "cleanup_unknown": uncertain})
         finally:
-            durable.tool_resources.release_browser(task_id)
+            tool_resources_for(durable).release_browser(task_id)
 
 
 def _resume_tool_task(durable: DurableSession, captured: TaskCheckpoint, *, stores: TaskSubmissionStores,
@@ -295,7 +296,7 @@ def _run_admitted_operation(durable: DurableSession, child: TaskCheckpoint, requ
                 tty=require_json_boolean(request.args.get("tty", False), "tty"),
                 cols=require_json_integer(request.args.get("cols", 100), "cols"),
                 rows=require_json_integer(request.args.get("rows", 30), "rows")),
-            on_process_started=lambda endpoint: durable.tool_resources.register_process(task_id, child.attempt_token, endpoint))
+            on_process_started=lambda endpoint: tool_resources_for(durable).register_process(task_id, child.attempt_token, endpoint))
         return raw if isinstance(raw, ToolOutcome) else project_run_command_result(root, raw)
 
     session = TaskSession(snapshot.policy, project=request.project)
@@ -314,7 +315,7 @@ def _run_admitted_operation(durable: DurableSession, child: TaskCheckpoint, requ
     if spec.executor == "browser":
         if request.resource_binding is None:
             raise ValueError("background browser operation has no original binding")
-        browser = durable.tool_resources.browser(task_id, request.resource_binding)
+        browser = tool_resources_for(durable).browser(task_id, request.resource_binding)
         document = decode_json_object(request.resource_binding["browser_document"])
     elif spec.executor != "project" or project is None:
         raise ValueError("background command requires a project")
@@ -448,7 +449,7 @@ def _control_process(call: ToolCall, durable: DurableSession, child: TaskCheckpo
         raise ValueError("process control requires the original execution capability")
     if child.status in TASK_TERMINAL_STATUSES or child.state.get("cancel_requested"):
         raise ValueError("process task is stopped or cancelling")
-    process = durable.tool_resources.process(child.task_id, child.attempt_token)
+    process = tool_resources_for(durable).process(child.task_id, child.attempt_token)
 
     def valid() -> bool:
         current = durable.task(child.task_id)

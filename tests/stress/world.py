@@ -25,7 +25,6 @@ from codey.durable import DurableSession, SQLiteDurableStore
 from codey.ghost.backend import GhostMemory
 from codey.memory.contracts import MemoryEvent, MemoryHost
 from codey.repairs.journal import RepairJournal
-from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
@@ -42,6 +41,7 @@ from codey.runtime.effects.tool_result_delivery import (
     compute_batch_digest,
 )
 from codey.runtime.log.entries import RuntimeLogEntry
+from codey.runtime.write.checkpoint import RuntimeOperationStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.types.json_value import JsonObject, decode_json_object, decode_json_value, require_json_string
 from tests.stress.faults import FaultController
@@ -344,7 +344,7 @@ class StressWorld:
     VOLATILE_PAYLOAD_KEYS = frozenset({"created_at", "started_at", "updated_at"})
 
     def canonical(self) -> dict[str, object]:
-        from codey.durable.checkpoint import checkpoint_entries
+        from tests.support.runtime_log_fixture import checkpoint_entries
 
         rows: list[dict[str, object]] = []
         batch_aliases: dict[str, str] = {}

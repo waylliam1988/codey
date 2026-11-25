@@ -20,7 +20,7 @@ SCOPES = {
     "including_type_checking": {"top_level", "deferred", "type_checking"},
 }
 FOCUS = (
-    "codey.durable.checkpoint",
+    "codey.runtime.write.checkpoint",
     "codey.operations.kernel_context",
     "codey.toolchain.tool_spec",
 )

@@ -1,17 +1,21 @@
 """One stable rule block and one current, bounded research view."""
 
-from typing import TYPE_CHECKING, Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from codey.policies.task_policy import TaskPolicy
 from codey.research.context_view import build_research_context_view
 
 if TYPE_CHECKING:
-    from codey.operations.task_session import TaskSession
+    from codey.knowledge.store import KnowledgeStore
+    from codey.research.answer_contract import ResearchPolicyView
     from codey.research.ledger import ResearchLedger
+    from codey.research.staging import StagedKnowledgeStore
 
 
-def render_research_observations(session: "TaskSession", ledger: "ResearchLedger | None" = None,
-                                 store: Any = None, *, session_id: str = "") -> str:
+def render_research_observations(session: ResearchPolicyView, ledger: ResearchLedger | None = None,
+                                 store: KnowledgeStore | StagedKnowledgeStore | None = None, *, session_id: str = "") -> str:
     view = build_research_context_view(session, ledger, store, session_id=session_id)
     instruction = ("Evidence acquisition only: done.summary briefly states new findings and specific remaining gaps."
                    if session.task_kind == "evidence_followup" else

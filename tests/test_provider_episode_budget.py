@@ -25,7 +25,7 @@ def test_real_advisor_send_never_rounds_above_total_budget(tmp_path):
                                    "send_tool_results_bound", "acknowledge_tool_results_bound"])
 def test_each_protocol_uses_elapsed_budget_and_shorter_request_timeout(method):
     from codey.providers.base import ProviderToolResult
-    from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
+    from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding
 
     provider = Mock(spec=[method])
     if method == "send":

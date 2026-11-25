@@ -242,7 +242,7 @@ def test_domain_budget_survives_process_exit_on_rejection_and_request_admission(
     import sys
 
     from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.durable.checkpoint import operation_from_checkpoint
+    from codey.runtime.write.checkpoint import operation_from_checkpoint
 
     source = ("from pathlib import Path; import sys; "
               "from tests.test_kernel_rejected_completion_progress import run_domain_repair_probe; "

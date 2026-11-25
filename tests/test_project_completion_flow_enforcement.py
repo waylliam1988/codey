@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
-from typing import Any
 from unittest import mock
 
 from codey.agents.request import AgentRequest
@@ -73,7 +72,7 @@ class ScriptedWriter:
 
     def __init__(self, *steps: tuple[list[RunEvent], RunResult]) -> None:
         self.steps = list(steps)
-        self.calls: list[dict[str, Any]] = []
+        self.calls: list[dict[str, object]] = []
 
     def __call__(self, request: AgentRequest) -> RunResult:
         self.calls.append({"task": request.task, "request": request})
@@ -149,7 +148,6 @@ def _runner(state: server.AppContext, writer: ScriptedWriter, *, review=None) ->
         workspace_revisions=state.workspace_revisions,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
-        evidence_ledgers=state.evidence_ledgers,
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=lambda _project: True,
@@ -317,7 +315,6 @@ def test_repair_round_refreshes_verification_candidates_for_final_proof() -> Non
             workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
-            evidence_ledgers=state.evidence_ledgers,
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _p: True,
@@ -464,7 +461,6 @@ def test_claim_only_pass_cannot_become_a_verified_receipt() -> None:
             workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
-            evidence_ledgers=state.evidence_ledgers,
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _p: True,
@@ -568,7 +564,6 @@ def test_unavailable_changes_with_observed_edits_stay_in_enforcement_scope() -> 
             workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
-            evidence_ledgers=state.evidence_ledgers,
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _p: True,
@@ -613,7 +608,6 @@ def test_measured_net_empty_diff_keeps_reverted_runs_out_of_scope() -> None:
             workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
-            evidence_ledgers=state.evidence_ledgers,
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _p: True,
@@ -660,7 +654,6 @@ def test_docs_only_change_keeps_limited_done() -> None:
             workspace_revisions=state.workspace_revisions,
             run_ledgers=state.run_ledgers,
             run_traces=state.run_traces,
-            evidence_ledgers=state.evidence_ledgers,
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _p: True,

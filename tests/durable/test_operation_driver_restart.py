@@ -15,13 +15,13 @@ def _run(root: Path, boundary: str = "", resume: bool = False, source_offset: in
     import os
 
     from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.durable.checkpoint import operation_from_checkpoint
     from codey.operations.generation_boundary import durable_generation_boundary_callback
     from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from codey.runtime.core.models import ToolResult
+    from codey.runtime.write.checkpoint import operation_from_checkpoint
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
     from tests.support.kernel_runtime import (

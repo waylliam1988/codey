@@ -115,7 +115,6 @@ def test_kernel_and_evidence_boundaries_are_clean() -> None:
         "codey/operations/task_loop.py",
         "codey/operations/project_writer_phase.py",
         "codey/operations/project_completion_enforcement.py",
-        "codey/research/evidence_ledger.py",
         "codey/runs/trace.py",
         follow_imports="silent",
     )

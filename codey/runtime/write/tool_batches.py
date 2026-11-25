@@ -1,8 +1,8 @@
 """Pure tool-batch write builders.
 
 Each builder reads one SessionView plus its arguments and returns the
-bounded rows to commit. Builders never touch the session lock; the
-mutation line commits their rows atomically.
+typed changes to commit. Builders never touch the session lock; the
+mutation line commits them atomically.
 """
 
 from __future__ import annotations
@@ -15,13 +15,10 @@ from codey.runtime.core.operation_state import (
     mark_tool_delivery_pending,
     mark_tool_effect_pending,
     mark_tool_effect_settled,
-    operation_state_entry,
 )
 from codey.runtime.effects.effect_records import (
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
-    effect_intent_entry,
-    effect_settlement_entry,
     find_effect,
     prepare_intent,
     prepare_settlement,
@@ -29,16 +26,16 @@ from codey.runtime.effects.effect_records import (
 )
 from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
-    batch_intent_entry,
+    DeliveryBatchProjection,
     prepare_batch_intent,
 )
-from codey.runtime.log.session_projection import RuntimeProjection
 from codey.runtime.log.session_view import (
     SessionView,
     driver_for_state,
     pending_for,
     require_open_view,
 )
+from codey.runtime.write.checkpoint import RuntimeChange, RuntimeChanges
 
 
 @dataclass(frozen=True)
@@ -48,8 +45,7 @@ class ToolBatchCommit:
     driver: str
 
 
-def build_tool_batch_rows(
-    projection: RuntimeProjection,
+def build_tool_batch_changes(
     view: SessionView,
     *,
     session_id: str,
@@ -57,8 +53,8 @@ def build_tool_batch_rows(
     intents: Iterable[RuntimeEffectIntent],
     delivery_intent: DeliveryBatchIntent | None,
     driver: str = "",
-) -> tuple[tuple[dict[str, object], ...], ToolBatchCommit]:
-    state = require_open_view(projection, view)
+) -> tuple[RuntimeChanges, ToolBatchCommit]:
+    state = require_open_view(view)
     effect_driver = driver_for_state(state, explicit=driver)
     existing_effects = view.effects
     prepared_intents = tuple(
@@ -66,6 +62,7 @@ def build_tool_batch_rows(
     )
     for intent in prepared_intents:
         require_new_effect_id(existing_effects, intent.effect_id)
+    changes: list[RuntimeChange] = list(prepared_intents)
     if delivery_intent is None:
         if not prepared_intents:
             raise RuntimeOperationTransitionError("nested batch requires effect intents")
@@ -74,10 +71,8 @@ def build_tool_batch_rows(
             if (parent.settlement is not None or parent.intent.tool_name != "codemode"
                     or parent.intent.turn != intent.turn):
                 raise RuntimeOperationTransitionError("nested effect requires its pending CodeMode parent")
-        rows = [effect_intent_entry(intent) for intent in prepared_intents]
-        rows.append(operation_state_entry(mark_tool_effect_pending(
-            state, driver=effect_driver, turn=prepared_intents[0].turn)))
-        return tuple(rows), ToolBatchCommit("", tuple(i.effect_id for i in prepared_intents), effect_driver)
+        changes.append(mark_tool_effect_pending(state, driver=effect_driver, turn=prepared_intents[0].turn))
+        return tuple(changes), ToolBatchCommit("", tuple(i.effect_id for i in prepared_intents), effect_driver)
     prepared_delivery = prepare_batch_intent(session_id, run_id, delivery_intent)
     batches = view.batches
     existing_batch = next(
@@ -88,9 +83,8 @@ def build_tool_batch_rows(
         ),
         None,
     )
-    rows = [effect_intent_entry(intent) for intent in prepared_intents]
     if existing_batch is None:
-        rows.append(batch_intent_entry(prepared_delivery))
+        changes.append(DeliveryBatchProjection(prepared_delivery))
     elif (
         existing_batch.intent.turn != prepared_delivery.turn
         or existing_batch.intent.items != prepared_delivery.items
@@ -111,44 +105,41 @@ def build_tool_batch_rows(
             driver=effect_driver,
             turn=prepared_delivery.turn,
         )
-    rows.append(operation_state_entry(next_state))
+    changes.append(next_state)
     batch_commit = ToolBatchCommit(
         batch_id=prepared_delivery.batch_id,
         effect_ids=effect_ids,
         driver=effect_driver,
     )
-    return tuple(rows), batch_commit
+    return tuple(changes), batch_commit
 
 
-def build_tool_settle_rows(
-    projection: RuntimeProjection,
+def build_tool_settle_changes(
     view: SessionView,
     *,
     session_id: str,
     run_id: str,
     settlement: RuntimeEffectSettlement,
-) -> tuple[tuple[dict[str, object], ...], RuntimeEffectSettlement]:
-    state = require_open_view(projection, view)
+) -> tuple[RuntimeChanges, RuntimeEffectSettlement]:
+    state = require_open_view(view)
     effects = view.effects
     matching = find_effect(effects, settlement.effect_id)
     prepared = prepare_settlement(session_id, run_id, settlement, effects)
     if matching.settlement is not None:
         return (), prepared
-    rows = [effect_settlement_entry(prepared)]
+    changes: list[RuntimeChange] = [prepared]
     pending = pending_for(view)
     if prepared.effect_id not in pending.effect_ids:
         raise RuntimeOperationTransitionError("effect is not pending on operation state")
     remaining = tuple(effect_id for effect_id in pending.effect_ids if effect_id != prepared.effect_id)
-    rows.append(
-        operation_state_entry(
-            mark_tool_effect_settled(state, has_remaining=bool(remaining))
-        )
+    changes.append(
+        mark_tool_effect_settled(state, has_remaining=bool(remaining))
     )
-    return tuple(rows), prepared
+    return tuple(changes), prepared
 
 
 __all__ = [
     "ToolBatchCommit",
-    "build_tool_batch_rows",
-    "build_tool_settle_rows",
+    "build_tool_batch_changes",
+    "build_tool_settle_changes",
 ]

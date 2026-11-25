@@ -7,9 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.errors import SchedulerOwnershipError
 from codey.durable.process import process_is_alive
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.mark.parametrize("pid", [None, True, False, 0, -1, "123"])
@@ -48,7 +49,7 @@ def test_exited_process_with_still_active_exit_code_is_not_alive() -> None:
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_second_scheduler_cannot_kill_the_live_owner(tmp_path: Path, backend: str) -> None:
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     session = DurableSession(store)
     try:
         store.acquire_scheduler_owner("first", os.getpid())

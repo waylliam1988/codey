@@ -40,8 +40,8 @@ from codey.providers.context_ledger import ContextLedger
 from codey.providers.display_stream import DisplayStream
 from codey.providers.request_metrics import RequestSection, first_changed_section, request_shape
 from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget, RequestContextCount
-from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
 from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding
 
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from codey.operations.kernel_capabilities import KernelCapabilityView
-from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
+from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding
 
 
 def _window(identity: str) -> ProtocolWindowRef:

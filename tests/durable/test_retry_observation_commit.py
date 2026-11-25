@@ -11,7 +11,6 @@ from pathlib import Path
 import pytest
 
 from codey.durable import DurableSession
-from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.model import CommitResult, DurableMutation, thaw_json
 from codey.operations.kernel_context import KernelContext
 from codey.operations.kernel_contracts import KernelResult, KernelRunRequest
@@ -26,6 +25,7 @@ from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDe
 from codey.providers.requests import SendTextRequest
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
 from codey.runtime.core.progress import ProgressSnapshot
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.types.json_value import JsonObject, decode_json_object
 from tests.durable.test_operation_control_actions import request_for as probe_request

@@ -25,7 +25,7 @@ from codey.app import api as app_api
 from codey.app.context import AppContext
 from codey.app.event_bus import EventBus, EventSubscriber, SsePayload
 from codey.app.headless_runner import HeadlessAppContext
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession
 from codey.providers.catalog import DEFAULT_PROVIDER_ID, PROVIDER_LABELS
 from codey.providers.worker import (
     WORKER_LINE_MAX_CHARS,
@@ -36,11 +36,12 @@ from codey.providers.worker import (
     _WorkerSession,
 )
 from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
-from codey.runtime.core.operation_state import RuntimeOperationStore
+from codey.runtime.write.checkpoint import RuntimeOperationStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.runtime.write.task_runtime import TaskRuntime, _turn_budget
 from codey.task.model import TaskSubmission
 from tests.support.research_controller import ResearchController
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def _submission(*, max_turns: int = 3) -> TaskSubmission:
@@ -60,7 +61,7 @@ class TurnBudgetTests(unittest.TestCase):
 class SettlePropagationTests(unittest.TestCase):
     def test_settle_failure_is_not_swallowed(self) -> None:
         with tempfile.TemporaryDirectory():
-            durable = DurableSession(MemoryDurableStore())
+            durable = DurableSession(TemporarySQLiteStore())
             request = _submission()
             durable.admit_input(
                 conversation_id=request.session_id,
@@ -91,7 +92,7 @@ class SettlePropagationTests(unittest.TestCase):
         from codey.runtime.core.outcome import OperationOutcome
 
         with tempfile.TemporaryDirectory():
-            durable = DurableSession(MemoryDurableStore())
+            durable = DurableSession(TemporarySQLiteStore())
             request = _submission()
             durable.admit_input(conversation_id=request.session_id, request_id=request.run_id,
                                 task_id=request.run_id, text=request.task,
@@ -123,13 +124,13 @@ class SettlePropagationTests(unittest.TestCase):
 class OperationStoreLoadTests(unittest.TestCase):
     def test_load_returns_none_when_log_missing(self) -> None:
         with tempfile.TemporaryDirectory():
-            durable = DurableSession(MemoryDurableStore())
+            durable = DurableSession(TemporarySQLiteStore())
             store = RuntimeOperationStore(durable=durable)
             self.assertIsNone(store.load("nope", "run-9"))
 
     def test_load_returns_state_for_healthy_log(self) -> None:
         with tempfile.TemporaryDirectory():
-            durable = DurableSession(MemoryDurableStore())
+            durable = DurableSession(TemporarySQLiteStore())
             durable.admit_input(conversation_id="s1", request_id="request-1", task_id="run-1",
                                 text="do it", provider_snapshot={"provider_id": "qwen"})
             durable.start_task("run-1", state={})

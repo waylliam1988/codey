@@ -9,19 +9,34 @@ This module has no execution loop, effect store, or provider adapter.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, fields, replace
-from typing import TYPE_CHECKING, Any, Literal
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Literal, TypedDict
 
-from codey.durable.checkpoint import operation_from_checkpoint
-from codey.durable.model import thaw_json
+from codey.durable.model import ArtifactRecord, thaw_json
+from codey.knowledge.changes import KnowledgeChanges
 from codey.operations.kernel_contracts import KernelResult, KernelRunRequest, result_from_payload
 from codey.providers.response_record import json_value
 from codey.research.pipeline import ResearchContinuationError
 from codey.runtime.effects.effect_records import compute_args_digest
+from codey.runtime.write.checkpoint import operation_from_checkpoint
+from codey.types.json_value import (
+    JsonObject,
+    decode_json_object,
+    require_json_integer,
+    require_json_string,
+    require_json_strings,
+)
+from codey.utils.object_fields import require_object_fields
 
 if TYPE_CHECKING:
+    from codey.durable.session import DurableSession
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+    from codey.research.staging import StagedKnowledgeStore
+    from codey.research.tools import ResearchTools
+    from codey.runtime.core.operation_payload import RuntimeOperationState
+    from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from codey.storage.managed_outputs import ManagedOutputStore
 
 
 @dataclass(frozen=True)
@@ -31,7 +46,7 @@ class ResearchInvocation:
     plan_ref: str = ""
 
 
-def restore_note_proposals(tools: Any, canonical: Mapping[str, object]) -> None:
+def restore_note_proposals(tools: ResearchTools, canonical: Mapping[str, object]) -> None:
     """Rebuild note metadata and in-memory proposals from the original receipt.
 
     Restoring a tool result never writes the vault. Only the existing staged
@@ -45,82 +60,106 @@ def restore_note_proposals(tools: Any, canonical: Mapping[str, object]) -> None:
         raise ResearchContinuationError("invalid knowledge link count")
     if links:
         tools.links_created += links
-    payload = canonical.get("knowledge_notes")
-    if payload is None:
+    raw_notes = canonical.get("knowledge_notes")
+    if raw_notes is None:
         return
-    if not isinstance(payload, dict) or set(payload) != {"created", "updated", "proposals"}:
+    payload = decode_json_object(raw_notes)
+    if set(payload) != {"created", "updated", "proposals"}:
         raise ResearchContinuationError("invalid knowledge proposal receipt")
-    for key, target in (("created", tools.created_ids), ("updated", tools.updated_ids)):
-        values = payload[key]
-        if not isinstance(values, list) or any(type(item) is not str or not item for item in values):
+    created = require_json_strings(payload["created"], "created")
+    updated = require_json_strings(payload["updated"], "updated")
+    for values, target in ((created, tools.created_ids), (updated, tools.updated_ids)):
+        if any(not item for item in values):
             raise ResearchContinuationError("invalid knowledge note identity")
         target.extend(item for item in values if item not in target)
     proposals = payload["proposals"]
-    if not isinstance(proposals, list) or (proposals and not isinstance(tools.store, StagedKnowledgeStore)):
-        raise ResearchContinuationError("knowledge proposals require their original staging store")
-    bases = canonical.get("knowledge_bases", {})
-    affected = {*payload["created"], *payload["updated"]}
-    if (not isinstance(bases, dict) or set(bases) - affected
-            or any(value is not None and not isinstance(value, str) for value in bases.values())):
+    if not isinstance(proposals, list):
+        raise ResearchContinuationError("invalid staged note proposals")
+    bases = decode_json_object(canonical.get("knowledge_bases", {}))
+    affected = {*created, *updated}
+    if set(bases) - affected or any(value is not None and not isinstance(value, str) for value in bases.values()):
         raise ResearchContinuationError("invalid staged document base")
+    batches = decode_json_object(canonical.get("knowledge_batches", {}))
+    if not proposals and not batches:
+        return
+    store = tools.store
+    if not isinstance(store, StagedKnowledgeStore):
+        raise ResearchContinuationError("knowledge proposals require their original staging store")
     for raw in proposals:
-        if not isinstance(raw, dict) or set(raw) != {field.name for field in fields(KnowledgeNote)}:
-            raise ResearchContinuationError("invalid staged note proposal")
-        note = KnowledgeNote(**raw)
-        if json_value(note) != raw or note.id not in affected:
+        note = KnowledgeNote.from_payload(raw)
+        if note.id not in affected:
             raise ResearchContinuationError("staged proposal changed its original identity or content")
-        existing = tools.store._staged_notes.get(note.id)
-        if existing is not None and existing != note and note.id not in payload["updated"]:
+        existing = store._staged_notes.get(note.id)
+        if existing is not None and existing != note and note.id not in updated:
             raise ResearchContinuationError("conflicting staged note proposal")
-        committed = tools.store._parent.read_note(note.id)
-        if (committed is not None and note.id not in bases and note.id not in payload["updated"]
+        committed = store._parent.read_note(note.id)
+        if (committed is not None and note.id not in bases and note.id not in updated
                 and replace(committed, updated=note.updated).to_markdown() != note.to_markdown()):
             raise ResearchContinuationError("committed note differs from its original proposal")
         if note.id in bases:
-            if note.id in tools.store._staged_bases and tools.store._staged_bases[note.id] != bases[note.id]:
+            base = bases[note.id]
+            if base is not None and not isinstance(base, str):
+                raise ResearchContinuationError("invalid staged document base")
+            if note.id in store._staged_bases and store._staged_bases[note.id] != base:
                 raise ResearchContinuationError("staged document changed its original base")
-            tools.store._staged_bases[note.id] = bases[note.id]
-        tools.store.write_note(note, changes=tools.changes)
-    batches = canonical.get("knowledge_batches", {})
-    if not isinstance(batches, dict):
-        raise ResearchContinuationError("invalid knowledge batches")
+            store._staged_bases[note.id] = base
+        store.write_note(note, changes=tools.changes if isinstance(tools.changes, KnowledgeChanges) else None)
+    _restore_knowledge_batches(store, batches, affected)
+
+
+def _restore_knowledge_batches(store: StagedKnowledgeStore, batches: JsonObject, affected: set[str]) -> None:
     from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
 
-    for identity, batch in batches.items():
-        if (identity not in {*payload["created"], *payload["updated"]} or not isinstance(batch, dict)
-                or set(batch) != {"commit_id", "mutations"}):
+    for identity, raw_batch in batches.items():
+        batch = decode_json_object(raw_batch)
+        if identity not in affected or set(batch) != {"commit_id", "mutations"}:
             raise ResearchContinuationError("invalid knowledge batch proposal")
-        tools.store._staged_knowledge[identity] = (batch["commit_id"], [
-            KnowledgeMutation(KnowledgeObject.from_dict(row["value"]), row["expected_revision"])
-            for row in batch["mutations"]
-        ])
+        rows = batch["mutations"]
+        if not isinstance(rows, list):
+            raise ResearchContinuationError("invalid knowledge batch mutations")
+        mutations: list[KnowledgeMutation] = []
+        for raw in rows:
+            row = decode_json_object(raw)
+            rev = row["expected_revision"]
+            expected = require_json_integer(rev, "expected revision")
+            mutations.append(KnowledgeMutation(KnowledgeObject.from_dict(decode_json_object(row["value"])), expected))
+        store._staged_knowledge[identity] = (require_json_string(batch["commit_id"], "commit id"), mutations)
+
+
+class _ContinuationIndex(TypedDict):
+    schema_version: int
+    kind: str
+    results: dict[str, str]
+    materials: dict[str, str]
+    invocations: dict[str, JsonObject]
 
 
 class ResearchContinuation:
-    def __init__(self, mutations: Any, outputs: Any, *, session_id: str, run_id: str) -> None:
+    def __init__(self, mutations: RuntimeMutationLine | None, outputs: ManagedOutputStore | None, *,
+                 durable: DurableSession, session_id: str, run_id: str) -> None:
         if mutations is None or outputs is None:
             raise ResearchContinuationError("research continuation requires durable mutations and managed outputs")
         self.mutations, self.outputs = mutations, outputs
-        self.durable = mutations.durable
+        self.durable = durable
         self.session_id, self.run_id = session_id, run_id
 
-    def state(self) -> Any:
+    def state(self) -> RuntimeOperationState:
         state = operation_from_checkpoint(self.durable.task(self.run_id), self.session_id)
         if state is None or state.task_kind != "research":
             raise ResearchContinuationError("research continuation has no admitted research operation")
         return state
 
-    def read(self, reference: str, kind: str) -> dict[str, Any]:
+    def read(self, reference: str, kind: str) -> JsonObject:
         try:
             artifact = self.durable.artifact(reference)
-            raw = thaw_json(artifact.metadata.get("ref"))
+            raw = require_object_fields(thaw_json(artifact.metadata.get("ref")))
             if (artifact.owner_task_id != self.run_id or artifact.owner_effect_id is not None
-                    or artifact.metadata.get("kind") != kind or not isinstance(raw, dict)
+                    or artifact.metadata.get("kind") != kind
                     or raw.get("handle") != reference or raw.get("sha256") != artifact.sha256
                     or raw.get("session_id") != self.session_id or raw.get("run_id") != self.run_id):
                 raise ValueError("continuation artifact ownership mismatch")
-            payload = self.outputs.read_json_artifact(raw)
-            if (not isinstance(payload, dict) or type(payload.get("schema_version")) is not int
+            payload = decode_json_object(self.outputs.read_json_artifact(raw))
+            if (type(payload.get("schema_version")) is not int
                     or payload["schema_version"] != (2 if kind == "research_continuation" else 1)
                     or payload.get("kind") != kind):
                 raise ValueError("invalid continuation artifact")
@@ -128,29 +167,37 @@ class ResearchContinuation:
         except Exception as exc:
             raise ResearchContinuationError(f"research continuation cannot be read: {exc}") from exc
 
-    def index(self, state: Any) -> dict[str, Any]:
+    def index(self, state: RuntimeOperationState) -> _ContinuationIndex:
         if not state.continuation_ref:
             if state.writer_attempt > 1:
                 raise ResearchContinuationError("active research followup has no original continuation")
             return {"schema_version": 2, "kind": "research_continuation", "results": {}, "materials": {}, "invocations": {}}
         payload = self.read(state.continuation_ref, "research_continuation")
-        if (set(payload) != {"schema_version", "kind", "results", "materials", "invocations"}
-                or not isinstance(payload["results"], dict) or not isinstance(payload["materials"], dict)
-                or not isinstance(payload["invocations"], dict) or len(payload["invocations"]) > 16
-                or len(payload["results"]) > 16 or len(payload["materials"]) > 3):
+        if set(payload) != _ContinuationIndex.__required_keys__:
             raise ResearchContinuationError("invalid bounded research continuation")
-        for name, maximum in (("results", 16), ("materials", 3)):
-            if any(key not in {str(number) for number in range(1, maximum + 1)}
-                   or not isinstance(value, str) or not value
-                   for key, value in payload[name].items()):
-                raise ResearchContinuationError("invalid research continuation reference")
-        return payload
+        results = self._index_refs(decode_json_object(payload["results"]), 16)
+        materials = self._index_refs(decode_json_object(payload["materials"]), 3)
+        invocations = decode_json_object(payload["invocations"])
+        if len(invocations) > 16:
+            raise ResearchContinuationError("invalid bounded research continuation")
+        return {"schema_version": 2, "kind": "research_continuation", "results": results, "materials": materials,
+                "invocations": {key: decode_json_object(value) for key, value in invocations.items()}}
 
-    def bind_invocation(self, state: Any, index: dict[str, Any], invocation: ResearchInvocation,
-                        session: Any, request: KernelRunRequest) -> None:
+    @staticmethod
+    def _index_refs(rows: JsonObject, maximum: int) -> dict[str, str]:
+        keys = {str(number) for number in range(1, maximum + 1)}
+        result: dict[str, str] = {}
+        for key, value in rows.items():
+            if key not in keys or not isinstance(value, str) or not value:
+                raise ResearchContinuationError("invalid research continuation reference")
+            result[key] = value
+        return result
+
+    def bind_invocation(self, state: RuntimeOperationState, index: _ContinuationIndex, invocation: ResearchInvocation,
+                        session: TaskSession, request: KernelRunRequest) -> None:
         """Freeze domain intent using the original continuation commit."""
         key = str(invocation.attempt)
-        description = {"purpose": invocation.purpose, "plan_ref": invocation.plan_ref,
+        description: JsonObject = {"purpose": invocation.purpose, "plan_ref": invocation.plan_ref,
             "input_digest": compute_args_digest(json_value({"task": session.task_text, "handoff": session.handoff,
                 "scope": request.transport.effect_scope, "guidance": request.task_guidance,
                 "policy": session.policy.to_payload(), "max_turns": session.max_turns}))}
@@ -164,7 +211,7 @@ class ResearchContinuation:
         index["invocations"][key] = {**description, "input_refs": [state.work_ref,
             *([invocation.plan_ref] if invocation.plan_ref else [])]}
 
-    def artifact(self, payload: dict[str, Any]) -> Any:
+    def artifact(self, payload: _ContinuationIndex) -> ArtifactRecord:
         ref = self.outputs.write_json_artifact(session_id=self.session_id, run_id=self.run_id, payload=payload)
         return self.outputs.json_artifact_record(ref, owner_task_id=self.run_id, owner_effect_id=None,
                                                  metadata={"kind": payload["kind"]})
@@ -192,7 +239,7 @@ class ResearchContinuation:
             return facts
         index = self.index(self.state())
         attempts = [int(key) for key in index["results"] if int(key) < before_attempt
-                    and (key == "1" or index["invocations"].get(key, {}).get("purpose") == "synthesize")]
+                    and (key == "1" or index["invocations"].get(key, JsonObject()).get("purpose") == "synthesize")]
         effects = RuntimeEffectStore(durable=self.durable).load_effects(self.session_id, self.run_id)
         owned = {effect.intent.effect_id for effect in effects
                  if effect.intent.run_id == self.run_id and effect.intent.session_id == self.session_id
@@ -224,7 +271,7 @@ class ResearchContinuation:
                     for ref, result in facts._memory_results.items()]))
         return facts
 
-    def commit(self, state: Any, index: dict[str, Any], *, attempt: int | None = None) -> None:
+    def commit(self, state: RuntimeOperationState, index: _ContinuationIndex, *, attempt: int | None = None) -> None:
         if state.leaf != "kernel_settled" or not state.work_ref:
             raise ResearchContinuationError("research successor requires its settled predecessor")
         key = str(state.writer_attempt)
@@ -238,7 +285,7 @@ class ResearchContinuation:
         except Exception as exc:
             raise ResearchContinuationError(f"research continuation was not committed: {exc}") from exc
 
-    def kernel(self, session: Any, request: KernelRunRequest, *, invocation: ResearchInvocation) -> KernelResult:
+    def kernel(self, session: TaskSession, request: KernelRunRequest, *, invocation: ResearchInvocation) -> KernelResult:
         """Restore a completed output or enter the sole driver for active work."""
         from codey.operations.kernel_context import KernelContext
         from codey.operations.task_loop import run_task_kernel
@@ -267,7 +314,7 @@ class ResearchContinuation:
 
 
     @staticmethod
-    def project_urls(tools: Any) -> None:
+    def project_urls(tools: ResearchTools) -> None:
         tools.sources_read.update(tools.ledger.final_url_set())
         tools.sources_read.update(source.requested_url for source in tools.ledger.opened_sources)
         tools.search_result_urls.update(hit.url for search in tools.ledger.searches for hit in search.results)

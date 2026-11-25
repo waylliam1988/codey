@@ -57,6 +57,17 @@ class KnowledgeRecall:
     def __init__(self, repository: KnowledgeRepository) -> None:
         self.repository = repository
 
+    def recent_claim_refs(self, *, access: KnowledgeAccess, limit: int) -> tuple[str, ...]:
+        scope, arguments = access.sql()
+        rows: list[_KnowledgeRow] = self.repository.index._read_conn().execute(
+            "SELECT v.id,v.revision FROM knowledge_versions v JOIN knowledge_heads h "
+            "ON v.id=h.id AND v.revision=h.revision "
+            f"WHERE v.kind='claim' AND v.status NOT IN ('withdrawn','superseded') AND {scope} "
+            "ORDER BY v.recorded_at DESC,v.id LIMIT ?", (*arguments, limit),
+        ).fetchall()
+        return tuple(f"{require_json_string(row[0], 'knowledge id')}@{require_json_integer(row[1], 'revision')}"
+                     for row in rows)
+
     def search(self, query: str, *, access: KnowledgeAccess | None = None,
                limit: int = 8, depth: int = 1, exclude_kinds: tuple[str, ...] = (),
                exclude_ids: tuple[str, ...] = ()) -> list[KnowledgeHit]:

@@ -6,8 +6,8 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from codey.providers.api_provider import ApiProvider
-from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.types.json_value import JsonObject
+from codey.types.protocol_window import ProtocolWindowRef
 
 
 class ScriptedLocal(ApiProvider):

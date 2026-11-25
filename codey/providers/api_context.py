@@ -17,7 +17,7 @@ from codey.providers.context_checkpoint import (
 )
 from codey.providers.context_ledger import digest
 from codey.providers.token_accounting import RequestContextCount
-from codey.runtime.core.protocol_window import ProtocolWindowRef
+from codey.types.protocol_window import ProtocolWindowRef
 
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession

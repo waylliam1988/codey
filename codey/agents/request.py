@@ -14,9 +14,9 @@ from codey.agents.tools import AgentToolFns
 from codey.completion.verification_policy import VerificationCandidate
 from codey.providers.base import ChatProvider
 from codey.runtime.core.models import ToolCall
-from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.observe.events import RunEvent, print_run_event
 from codey.toolchain.runtime import ToolOutcome
+from codey.types.protocol_window import ProtocolWindowRef
 
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession

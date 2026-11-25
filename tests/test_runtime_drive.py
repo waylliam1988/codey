@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession
 from codey.runtime.core.operation_payload import DRIVER_WRITER
 from codey.runtime.core.operation_reducer import (
     ACTION_CONTINUE,
@@ -24,11 +24,12 @@ from codey.runtime.effects.tool_result_delivery import (
 )
 from codey.runtime.write.drive import peek_next_action
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 class RuntimeDriveTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.durable = DurableSession(MemoryDurableStore())
+        self.durable = DurableSession(TemporarySQLiteStore())
         self.line = RuntimeMutationLine(durable=self.durable)
         self.delivery = ToolResultDeliveryStore(durable=self.durable)
         self.session_id = "sess-drive"

@@ -33,7 +33,7 @@ from codey.app.durable_services import DurableAppServices
 from codey.app.event_bus import EventBus, EventSubscriber
 from codey.app.event_payloads import SCHEMA_VERSION
 from codey.app.knowledge_indexer import KnowledgeIndexer
-from codey.app.lifecycle import AppLifecycle, ResourceSlot, release_optional_resource
+from codey.app.lifecycle import AppLifecycle, ResourceSlot
 from codey.app.memory_maintenance import MemoryMaintenance
 from codey.app.memory_setup import build_memory, observe_terminal
 from codey.app.provider_registry import ProviderRegistry
@@ -53,7 +53,6 @@ from codey.durable.model import (
 from codey.knowledge.store import KnowledgeStore
 from codey.memory.contracts import DeleteScopeRequest
 from codey.operations.task_state import TaskSubmissionStores
-from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.trace import RunTraceStore
 from codey.runs.work_checkpoint import WorkCheckpointStore
@@ -197,7 +196,6 @@ class AppContext:
 
         self.command_permissions = CommandPermissionStore(runtime_state_home)
         self.shell_approval_records = ShellApprovalRecordStore(runtime_state_home)
-        self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
         self.shell_approval_coordinator = ShellApprovalCoordinator(self)
         # Rebuild the UI projection for untouched approvals before the first
@@ -266,8 +264,6 @@ class AppContext:
             cleanup=(
                 lambda: self.workspace_leases.close(),
                 ResourceSlot(knowledge_for_close, lambda store: store.close(), clear_knowledge).close,
-                ResourceSlot(lambda: self.evidence_ledgers, release_optional_resource,
-                             lambda _store: setattr(self, 'evidence_ledgers', None)).close,
                 ResourceSlot(lambda: self.execution_outputs, lambda store: store.close()).close,
                 ResourceSlot(lambda: self._durable_services, lambda services: services.close()).close,
                 ResourceSlot(lambda: self._ephemeral_runtime_home, lambda temporary: temporary.cleanup(),
@@ -371,7 +367,6 @@ class AppContext:
             workspace_revisions=self.workspace_revisions,
             run_ledgers=self.run_ledgers,
             run_traces=self.run_traces,
-            evidence_ledgers=self.evidence_ledgers,
             managed_outputs=self.managed_outputs,
             execution_outputs=self.execution_outputs,
             knowledge_store=self.knowledge_store,

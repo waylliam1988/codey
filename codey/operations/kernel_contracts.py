@@ -29,11 +29,11 @@ if TYPE_CHECKING:
     from codey.completion.contract import CompletionProof
     from codey.operations.completion_context import CompletionContextInput
     from codey.operations.task_effects import KernelEffectSink
-    from codey.research.finding_report import ResearchReport
+    from codey.research.answer_report import AnswerReport
     from codey.research.tools import ResearchTools
     from codey.runs.trace import RunTraceRecorder
-    from codey.runtime.core.protocol_window import ProtocolWindowRef
     from codey.runtime.observe.events import RunEvent
+    from codey.types.protocol_window import ProtocolWindowRef
     from codey.workspace.revision import WorkspaceRevisionStore
 
 
@@ -64,7 +64,7 @@ class KernelResult:
     stop_reason: str
     proof: CompletionProof | None = None
     delivery: DeliveryStatus = "not_required"
-    research_report: ResearchReport | None = None
+    research_report: AnswerReport | None = None
 
     def to_payload(self) -> KernelResultPayload:
         return {"schema_version": 2, "completed": self.completed, "summary": self.summary,
@@ -103,10 +103,10 @@ def result_from_payload(payload: object) -> KernelResult:
     proof = _proof_from_payload(dict[str, object](decode_json_object(raw_proof))) if raw_proof is not None else None
     if raw_proof is not None and proof is None:
         raise ValueError("invalid persisted completion proof")
-    from codey.research.finding_report import FindingReport
+    from codey.research.answer_report import AnswerReport
 
     report = payload["research_report"]
-    compiled = FindingReport.from_payload(report) if report is not None else None
+    compiled = AnswerReport.from_payload(report) if report is not None else None
     if compiled is not None:
         from codey.research.report_values import has_project_delivery, report_delivery_matches
 

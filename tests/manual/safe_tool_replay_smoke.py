@@ -209,7 +209,7 @@ def run_same_run_self_test() -> bool:
             run_id,
             provider_id=provider.name,
         )
-        from codey.durable.checkpoint import operation_from_checkpoint
+        from codey.runtime.write.checkpoint import operation_from_checkpoint
         from codey.storage.managed_outputs import ManagedOutputStore
 
         outputs = ManagedOutputStore(state_home)
@@ -302,7 +302,7 @@ def _run_live_resume_case(
             provider_id=provider_id,
         )
 
-        from codey.durable.checkpoint import operation_from_checkpoint
+        from codey.runtime.write.checkpoint import operation_from_checkpoint
         from codey.storage.managed_outputs import ManagedOutputStore
 
         outputs = ManagedOutputStore(state_home)

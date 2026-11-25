@@ -321,7 +321,7 @@ def test_require_supersedable_has_no_delivery_batch() -> None:
     params = inspect.signature(pe._require_supersedable_not_sent).parameters
     assert "delivery_batch_id" not in params
     # outer builder still needs the batch id
-    assert "delivery_batch_id" in inspect.signature(pe.build_provider_begin_rows).parameters
+    assert "delivery_batch_id" in inspect.signature(pe.build_provider_begin_changes).parameters
 
 
 def test_review_relation_rows_has_no_assumptions() -> None:

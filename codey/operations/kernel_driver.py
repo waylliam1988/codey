@@ -12,7 +12,6 @@ from collections.abc import Callable
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from codey.durable.checkpoint import checkpoint_entries
 from codey.durable.model import thaw_json
 from codey.operations.kernel_context import KernelContext
 from codey.operations.kernel_contracts import KernelDecision, KernelResult, KernelRunRequest, result_from_payload
@@ -21,6 +20,7 @@ from codey.operations.prepared_provider_request import PreparedProviderRequest
 from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact
 from codey.operations.provider_request_context import ProviderRequestContext
 from codey.providers.transport import ProviderTransport
+from codey.runtime.write.checkpoint import view_from_checkpoint
 from codey.types.json_value import decode_json_object, require_json_string
 
 if TYPE_CHECKING:
@@ -41,7 +41,6 @@ from codey.runtime.core.operation_reducer import (
     ACTION_SUBMIT_PROVIDER_REQUEST,
     RuntimeAction,
 )
-from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     SENT_STATE_MAYBE_SENT,
@@ -53,8 +52,9 @@ from codey.runtime.effects.effect_records import (
     RuntimeEffectStore,
     compute_args_digest,
 )
-from codey.runtime.log.session_view import SessionView, load_session_view, not_sent_continuation_effect
+from codey.runtime.log.session_view import SessionView, not_sent_continuation_effect
 from codey.runtime.write.drive import peek_next_action
+from codey.types.protocol_window import ProtocolWindowRef
 
 
 def decode_provider_invocation(payload: object) -> ProviderRequest:
@@ -104,8 +104,7 @@ def restore_provider_window(sink: KernelEffectSink, provider: ProviderTransport,
         return response_context
     elif state.leaf in {LEAF_CONTROL_READY, LEAF_TOOL_DELIVERY_PENDING}:
         task, effects = sink.durable.task_facts(sink.run_id)
-        view = load_session_view(checkpoint_entries(task, effects, session_id=sink.session_id),
-                                 session_id=sink.session_id, run_id=sink.run_id)
+        view = view_from_checkpoint(task, effects, session_id=sink.session_id)
         effect = not_sent_continuation_effect(view)
         payload = read_provider_artifact(sink.managed_outputs, request_artifact_for_effect(sink.durable, effect),
             kind=REQUEST_KIND, session_id=sink.session_id, run_id=sink.run_id, effect_id=effect.intent.effect_id)

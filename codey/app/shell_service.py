@@ -102,8 +102,8 @@ def shell_result_row(
     from codey.agents.shell_approval import valid_shell_call_id
     from codey.runtime.core.execution_receipt import ExecutionReceipt
     from codey.runtime.core.models import ToolCall
-    from codey.runtime.core.protocol_window import ProtocolWindowRef
     from codey.toolchain.runtime import ToolOutcome
+    from codey.types.protocol_window import ProtocolWindowRef
 
     raw_call_id = pending.get("call_id", "")
     call_id = raw_call_id if isinstance(raw_call_id, str) else ""

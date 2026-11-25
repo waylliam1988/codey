@@ -280,7 +280,7 @@ def run_shell_case(case: str, target: GateTarget, directory: Path) -> dict[str, 
         # provider window remains an execution handle, while tool results are
         # recovered from the same SQLite admission used after a restart.
         from codey.durable.model import thaw_json
-        from codey.runtime.core.protocol_window import ProtocolWindowRef
+        from codey.types.protocol_window import ProtocolWindowRef
 
         ref = ProtocolWindowRef.from_payload(original_window)
         if state.durable.task(_string(approval.get("continuation_run_id", ""))).conversation_id != ref.session_id:

@@ -33,7 +33,6 @@ from codey.runtime.core.operation_payload import (
     RuntimeOperationState,
     RuntimeOperationTransitionError,
 )
-from codey.runtime.core.operation_state import operation_state_entry
 from codey.runtime.core.progress import ProgressSnapshot
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
@@ -126,7 +125,7 @@ def _progress_reference_valid(view: SessionView) -> bool:
 
 def record_progress_observation(
     view: SessionView, *, batch_id: str, expected: ProgressSnapshot, observed: ProgressSnapshot,
-) -> tuple[dict[str, object], ...]:
+) -> RuntimeOperationState | None:
     """Accept a bounded reduction of one complete original result batch."""
     state = view.state
     if state is None or state.leaf == LEAF_TERMINAL:
@@ -135,7 +134,7 @@ def record_progress_observation(
     if current.last_batch_id == batch_id:
         if current != observed:
             raise RuntimeOperationTransitionError("batch progress is immutable")
-        return ()
+        return None
     if (current != expected or observed.last_batch_id != batch_id or not batch_id
             or not current.recovery_progress_turn <= observed.recovery_progress_turn <= state.turn):
         raise RuntimeOperationTransitionError("progress observation has stale counters or identity")
@@ -145,7 +144,7 @@ def record_progress_observation(
             or any(_external_outcome_unknown(effect) for effect in view.effects)):
         raise RuntimeOperationTransitionError("progress requires the current complete result batch")
     counters = replace(state.counters, progress=ProgressSnapshot.from_payload(observed.to_payload()))
-    return (operation_state_entry(replace(state, counters=counters)),)
+    return replace(state, counters=counters)
 
 
 def prepare_operation_settlement(view: SessionView) -> OperationSettlement:

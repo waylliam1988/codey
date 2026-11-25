@@ -11,7 +11,7 @@ from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
 from codey.providers.requests import ProviderRequest
 from codey.providers.transport import ProviderTransport
-from codey.runtime.core.protocol_window import ProtocolWindowRef
+from codey.types.protocol_window import ProtocolWindowRef
 
 PROTOCOLS = ("openai-completions", "openai-responses")
 TOOLS = [ProviderToolDefinition("done", "Finish the task.", {"type": "object"})]

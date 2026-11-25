@@ -12,10 +12,11 @@ from subprocess import TimeoutExpired
 from time import monotonic
 from unittest.mock import patch
 
+from codey.automation.browser_receipts import committed_results
 from codey.automation.browser_session import BrowserSession
 from codey.completion.contract import CHECK_FAIL, CHECK_PASS, CompletionCheck
 from codey.operations import completion_gate, task_execution
-from codey.operations.browser_completion import _snapshot_ref, committed_results
+from codey.operations.browser_completion import _snapshot_ref
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import tool_facts
 from codey.operations.task_execution import ExecutionDelegate
@@ -23,7 +24,7 @@ from codey.operations.task_session import TaskSession
 from codey.policies.browser_requirement import PAGE_TRANSITIONS, browser_receipt_tools
 from codey.policies.requirement import RequirementEvaluation
 from codey.policies.tool_requirement import ToolObservation, _browser_body
-from codey.research.finding_report import ResearchReport
+from codey.research.answer_report import AnswerReport
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
@@ -123,7 +124,7 @@ def readiness_candidate(directory: Path, *, enabled: bool) -> Iterator[None]:
 
     def required_checks(session: TaskSession, final_text: str, context: CompletionContext,
                         observations: Mapping[str, ToolObservation] | None,
-                        report: ResearchReport | None) -> completion_gate._RequiredChecks:
+                        report: AnswerReport | None) -> completion_gate._RequiredChecks:
         baseline = checks(session, final_text, context, observations, report)
         outcome = post_load_read(session, context)
         append_json(directory / "evidence.jsonl", {"passed": outcome.passed, "refs": list(outcome.evidence_refs)})

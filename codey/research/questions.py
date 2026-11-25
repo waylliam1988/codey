@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 from codey.policies.task_policy import TaskPolicy
-from codey.reviews.research_coverage import CoverageRow, coverage_rows
 from codey.types.json_value import ToolArgs
+from codey.utils.research_coverage import CoverageRow, coverage_rows
 
 if TYPE_CHECKING:
     from codey.research.ledger import ResearchLedger

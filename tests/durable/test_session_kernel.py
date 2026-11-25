@@ -4,13 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from codey.durable import (
-    DurableSession,
-    MemoryDurableStore,
-    SessionFailedError,
-    SessionSealedError,
-)
+from codey.durable import DurableSession, SessionFailedError, SessionSealedError
 from codey.durable.model import CommitResult, DurableMutation
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def _domain_operation(session: DurableSession, domain: str) -> object:
@@ -26,7 +22,7 @@ def _domain_operation(session: DurableSession, domain: str) -> object:
 
 
 def _seeded_session() -> DurableSession:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     session.admit_input(
         conversation_id="chat", request_id="request", task_id="task",
         text="work", provider_snapshot={},

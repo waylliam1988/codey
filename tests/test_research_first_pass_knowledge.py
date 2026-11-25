@@ -15,7 +15,6 @@ from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS
 from codey.research.answer_archive import publication_command
 from codey.research.answer_contract import AnswerScope, submit_answer, validate_submission
 from codey.research.answer_report import AnswerReport, compile_answer_report
-from codey.research.finding_report import FindingReport
 from tests.test_research_deterministic_completion import _run
 from tests.test_research_findings import URL, execute, setup
 from tests.test_research_whole_answer import record_submission
@@ -45,7 +44,7 @@ def test_new_evidence_and_explicit_candidates_publish_atomically_and_rollback(tm
         record_submission(session, answer_args())
         report = compile_answer_report(session, tools.ledger, store, project="", session_id="first")
         assert report.to_payload()["schema"] == "research_answer_v2"
-        assert FindingReport.from_payload(report.to_payload()) == report
+        assert AnswerReport.from_payload(report.to_payload()) == report
         assert store.index._read_conn().execute("SELECT COUNT(*) FROM knowledge_versions").fetchone()[0] == 0
         command = publication_command(report, task=session.task_text, run_id="first", projection="p",
                                       note_id="first-note", session_id="first", project="", store=store)

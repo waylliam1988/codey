@@ -14,9 +14,9 @@ from codey.app.event_payloads import machine_event_payload
 from codey.app.headless_runner import HeadlessAppContext, HeadlessRequest, run_headless
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.runtime.core.models import ToolCall
-from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import MAX_EVENT_TEXT_CHARS, RunEvent
+from codey.runtime.write.checkpoint import RuntimeOperationStore
 from codey.toolchain.runtime import ToolOutcome
 
 

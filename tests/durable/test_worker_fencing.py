@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession
 from codey.durable.errors import CommitConflict
 from codey.durable.model import EffectRecord
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def _admitted(session: DurableSession) -> None:
@@ -19,7 +20,7 @@ def _admitted(session: DurableSession) -> None:
 
 
 def test_old_worker_cannot_settle_after_restart_reclaims_attempt() -> None:
-    store = MemoryDurableStore()
+    store = TemporarySQLiteStore()
     old_worker = DurableSession(store)
     _admitted(old_worker)
     old_attempt = old_worker.task("task").attempt_token

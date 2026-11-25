@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from codey.automation.browser_document import document_changed, same_document
+from codey.automation.browser_receipts import delivery, query_document
 from codey.operations.browser_waits import BrowserWaitPlan, wait_plan
 from codey.policies.browser_requirement import BrowserPageRounds, BrowserResearchSequence, parse_browser_requirement
 from codey.policies.tool_requirement import parse_tool_success_check
@@ -240,21 +241,6 @@ def fill_args(args: JsonObject, original: str | None) -> JsonObject:
     if args["source"] != TEXT_SOURCE or original is None:
         raise ValueError("The original fill text is not available in this turn.")
     return {**{key: value for key, value in args.items() if key != "source"}, "value": original}
-
-
-def delivery(result: ToolResult) -> object:
-    value = result.canonical.get("value")
-    return value.get("delivery") if isinstance(value, dict) else None
-
-
-def query_document(results: Mapping[str, ToolResult], document: JsonObject | None = None) -> JsonObject | None:
-    if document is not None:
-        return document
-    for receipt in reversed(tuple(results.values())):
-        observed = receipt.audit.get("browser_document")
-        if isinstance(observed, dict):
-            return decode_json_object(observed)
-    return None
 
 
 def interrupted_query(result: ToolResult, document: JsonObject | None) -> bool:

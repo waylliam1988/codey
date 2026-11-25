@@ -7,20 +7,15 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
 from codey.automation.browser_document import same_document
+from codey.automation.browser_receipts import committed_results, delivery
 from codey.codemode.catalog import snapshot_catalog
 from codey.codemode.json_edit import edit_guidance
 from codey.completion.contract import CHECK_NOT_APPLICABLE, CHECK_PASS
-from codey.operations.browser_completion import (
-    PAGE_EVIDENCE_INVALIDATORS,
-    browser_click_stage,
-    committed_results,
-    complete_page_passages,
-)
+from codey.operations.browser_completion import PAGE_EVIDENCE_INVALIDATORS, browser_click_stage
 from codey.operations.browser_followups import (
     DIRECT_TOOLS,
     click_followup_plan,
     codemode_only,
-    delivery,
     interrupted_query,
     pending_click,
     prior_single_click,
@@ -48,6 +43,7 @@ from codey.policies.tool_requirement import (
     argument_digest,
     parse_tool_success_check,
 )
+from codey.research.browser_result_evidence import complete_page_passages
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.web_intent import explicit_web_intent

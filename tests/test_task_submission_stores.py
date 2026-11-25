@@ -30,7 +30,6 @@ def _stores() -> TaskSubmissionStores:
         workspace_revisions=object(),
         run_ledgers=object(),
         run_traces=object(),
-        evidence_ledgers=object(),
         managed_outputs=object(),
         knowledge_store=object(),
         runtime_mutations=object(),

@@ -5,8 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import DurableSession, DurableTaskScheduler, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import DurableSession, DurableTaskScheduler, SQLiteDurableStore
 from codey.durable.errors import SchedulerOwnershipError
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_only_one_scheduler_owner_can_run_for_a_database(tmp_path: Path) -> None:
@@ -60,7 +61,7 @@ def test_dead_scheduler_owner_can_be_reclaimed(tmp_path: Path) -> None:
 
 def test_memory_store_applies_the_same_scheduler_owner_contract() -> None:
     pytest.skip("covered by durable service fencing contract; ownership unit fixture is isolated from production scheduler path")
-    store = MemoryDurableStore()
+    store = TemporarySQLiteStore()
     store.acquire_scheduler_owner("first", os.getpid())
     with pytest.raises(SchedulerOwnershipError):
         store.acquire_scheduler_owner("second", 1)

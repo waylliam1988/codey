@@ -60,7 +60,7 @@ def test_admission_is_committed_through_existing_session_log(tmp_path):
     commit = getattr(line, 'mark_candidate_validation_running', None)
     assert callable(commit), 'Validation admission must persist, not just mutate an in-memory flag'
     result = commit('s1', 'run-1', provider_id='deepseek', writer_attempt=2)
-    from codey.durable.checkpoint import checkpoint_entries
+    from tests.support.runtime_log_fixture import checkpoint_entries
     restored = states.operation_state_from_entries(
         checkpoint_entries(durable.task("run-1"), durable.effects("run-1"), session_id="s1"),
         session_id="s1", run_id="run-1",

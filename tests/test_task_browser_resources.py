@@ -14,7 +14,7 @@ from codey.operations.task_session import TaskSession
 from codey.research.task_browser_source import TaskBrowserSource
 from codey.research.tools import ResearchTools
 from codey.research.web_sources import WebSourceProvider
-from codey.runtime.core.tool_resources import ToolResources
+from codey.runtime.core.tool_resources import ToolResources, tool_resources_for
 from codey.types.json_value import JsonObject
 from tests.test_browser_context_delivery import URL
 from tests.test_browser_context_delivery import production_browser as production_browser
@@ -63,9 +63,9 @@ def test_durable_wait_keeps_parent_and_cancellation_releases_it(tmp_path: Path) 
         durable.claim_task("parent")
         durable.start_task("parent", state={})
         browser = LeaseBrowser()
-        assert durable.tool_resources.acquire_task_browser("parent", lambda: browser) is browser
+        assert tool_resources_for(durable).acquire_task_browser("parent", lambda: browser) is browser
         durable.wait_task("parent", state={})
-        assert durable.tool_resources.task_browser("parent") is browser
+        assert tool_resources_for(durable).task_browser("parent") is browser
         assert browser.releases == 0
         durable.cancel_task("parent")
         assert browser.releases == 1 and browser.closes == 1

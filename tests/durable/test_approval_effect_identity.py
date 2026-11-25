@@ -3,19 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import (
-    ApprovalRecord,
-    ApprovalStatus,
-    DurableSession,
-    EffectRecord,
-    MemoryDurableStore,
-    SQLiteDurableStore,
-)
+from codey.durable import ApprovalRecord, ApprovalStatus, DurableSession, EffectRecord, SQLiteDurableStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_settlement_uses_the_claimed_effect_identity(backend: str, tmp_path: Path) -> None:
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     session = DurableSession(store)
     try:
         session.admit_input(

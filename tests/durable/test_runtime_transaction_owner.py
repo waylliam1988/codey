@@ -182,7 +182,7 @@ def test_settled_recovery_reads_receipt_from_durable_without_runtime_projection(
 def test_entry_policy_is_one_commit_and_has_one_stored_owner(tmp_path):
     from codey.operations.recovery import record_entry_policy
     from codey.policies.task_policy import TaskPolicy
-    from codey.runtime.core.operation_state import RuntimeOperationStore
+    from codey.runtime.write.checkpoint import RuntimeOperationStore
 
     durable, line = _runtime(tmp_path)
     policy = TaskPolicy(frozenset({"control", "project.read"}))

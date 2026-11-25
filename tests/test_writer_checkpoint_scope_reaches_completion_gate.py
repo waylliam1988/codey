@@ -28,7 +28,8 @@ def test_checkpoint_scope_is_combined_with_new_attempt_edits():
 
 @pytest.mark.parametrize("verify,expected", [(True, "done"), (False, "max_turns")])
 def test_checkpoint_edit_scope_reaches_real_writer_gate_without_reediting(tmp_path, monkeypatch, verify, expected):
-    from codey.durable import DurableSession, MemoryDurableStore
+    from codey.durable import DurableSession
+    from tests.support.sqlite_store import TemporarySQLiteStore
     project = tmp_path / "project"
     project.mkdir()
     (project / "app.py").write_text("value = 2\n", encoding="utf-8")
@@ -45,7 +46,7 @@ def test_checkpoint_edit_scope_reaches_real_writer_gate_without_reediting(tmp_pa
     monkeypatch.setattr(provider, "_generate", lambda *a, **k: next(bodies))
     monkeypatch.setattr("codey.operations.kernel_transport.provider_uses_native", lambda *a, **k: True)
     policy = TaskPolicy(grants=frozenset({"control", "project.read", "project.write", "project.verify"}))
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.admit_input(conversation_id="s", request_id="resume", task_id="resume",
                         text="Finish the interrupted value fix", provider_snapshot={"provider_id": "local"})
     ctx = ProjectRun(

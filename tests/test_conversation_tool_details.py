@@ -1,12 +1,13 @@
 import pytest
 
 from codey.app.event_payloads import browser_event_payload, machine_event_payload
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession
 from codey.runtime.core.models import ToolCall
 from codey.runtime.observe.events import RunEvent, run_event_ui_payload
 from codey.toolchain.runtime import ToolOutcome
 from codey.utils.object_fields import require_object_fields, require_object_rows
 from tests.sse_http import capture_events
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_tool_summary_does_not_destroy_retained_multiline_details() -> None:
@@ -44,7 +45,7 @@ def test_http_sse_preserves_expanded_file_content_and_preview(replay: bool) -> N
     replay_events: tuple[dict[str, object], ...] = (
         {"type": "info", "text": "earlier event"}, payload,
     ) if replay else ()
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     try:
         raw_events: object = capture_events(session,
             "/api/events?last_event_id=1" if replay else "/api/events",

@@ -39,8 +39,6 @@ def test_production_code_does_not_import_runtime_jsonl_adapter() -> None:
     root = Path(__file__).parents[2] / "codey"
     offenders: list[str] = []
     for path in root.rglob("*.py"):
-        if path.as_posix().endswith("runtime/log/session_log.py"):
-            continue
         source = path.read_text(encoding="utf-8")
         if "codey.runtime.log.session_log" in source or "RuntimeSessionLog" in source:
             offenders.append(path.relative_to(root).as_posix())

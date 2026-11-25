@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from codey.automation.browser_detail import observe_details, read_detail
 from codey.automation.browser_document import same_document
 from codey.automation.browser_query import QueryObservationError
+from codey.automation.browser_receipts import delivery
 from codey.operations import browser_followups
 from codey.operations.browser_upload import audit_upload_open, browser_delivered_source, matches_document
 from codey.research.source_reading import render_source_read
@@ -218,7 +219,7 @@ def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, ca
             page = browser.capture()
         else:
             query_ref, click = pending
-            if browser_followups.delivery(click) == "uncertain":
+            if delivery(click) == "uncertain":
                 raise RuntimeError(browser_followups.UNCERTAIN)
             baseline = decode_json_object(click.audit["query_baseline"])
             raw_document = baseline.get("document")

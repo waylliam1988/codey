@@ -4,16 +4,12 @@ import json
 
 from codey.research.topic_continuity import (
     CONTEXT_SOURCE_KEY,
-    ITEM_KIND_CORRECTION,
     ITEM_KIND_OPEN_QUESTION,
-    ITEM_KIND_PREFERENCE,
     ITEM_KIND_PRIOR_CLAIM,
     MAX_TOPIC_CANDIDATES,
     MAX_TOPIC_CLAIM_REFS,
     PROMPT_SOURCE_REF,
-    TopicContinuityItem,
     TopicPlannerCandidate,
-    build_topic_candidates,
     project_topic_continuity,
     render_topic_continuity,
     topic_item,
@@ -68,35 +64,6 @@ def test_interest_hint_becomes_open_question_item_and_candidate() -> None:
     assert len(projection.candidates) == 1
 
 
-def test_ghost_continuity_hints_map_to_bounded_kinds() -> None:
-    projection = project_topic_continuity(
-        continuity_hints=(
-            {"id": "cont_oq", "kind": "open_question", "text": "Is X still true?", "weight": 0.3},
-            {
-                "id": "cont_corr",
-                "kind": "fresh_correction",
-                "text": "Earlier answer corrected",
-                "weight": 0.4,
-            },
-            {
-                "id": "cont_pref",
-                "kind": "recently_reinforced_preference",
-                "text": "Prefer concise summaries",
-                "weight": 0.2,
-            },
-            # Chat-side kinds must not leak into research prompts.
-            {"id": "cont_focus", "kind": "recent_focus", "text": "Recent focus", "weight": 0.9},
-            {"id": "cont_goal", "kind": "long_term_goal", "text": "Long goal", "weight": 0.9},
-        ),
-    )
-
-    kinds = sorted(item.kind for item in projection.items)
-    assert kinds == ["correction", "open_question", "preference"]
-    corrections = [item for item in projection.items if item.kind == ITEM_KIND_CORRECTION]
-    assert corrections[0].stale is True
-    assert "needs_recheck" in corrections[0].reason_codes[0]
-
-
 def test_prior_claim_refs_are_always_stale_and_never_evidence() -> None:
     projection = project_topic_continuity(
         claim_refs=({"ref": "prior_claim:abc"}, "def"),
@@ -132,9 +99,9 @@ def test_projection_payload_is_digest_only() -> None:
 
 def test_merge_free_duplicate_questions_unify_refs_and_flag_risk() -> None:
     projection = project_topic_continuity(
-        interest_hints=(_interest_hint("Is helium supply still constrained?"),),
-        continuity_hints=(
-            {"id": "cont_oq", "kind": "open_question", "text": "Is helium supply still constrained?"},
+        interest_hints=(
+            _interest_hint("Is helium supply still constrained?"),
+            _interest_hint("Is helium supply still constrained?", ref="research_interest:ric_2"),
         ),
     )
 
@@ -146,7 +113,7 @@ def test_merge_free_duplicate_questions_unify_refs_and_flag_risk() -> None:
     assert len(projection.candidates) == 1
     assert set(projection.candidates[0].source_refs) == {
         "research_interest:ric_1",
-        "continuity:cont_oq",
+        "research_interest:ric_2",
     }
     assert projection.candidates[0].risk_codes == ("repeated_open_question",)
 
@@ -177,9 +144,6 @@ def test_framing_vocabulary_never_contains_internal_names() -> None:
     # legitimately carry common words.
     projection = project_topic_continuity(
         interest_hints=(_interest_hint("Does the 2026 supply claim still hold?"),),
-        continuity_hints=(
-            {"id": "p", "kind": "recently_reinforced_preference", "text": "Be concise"},
-        ),
         claim_refs=("old",),
     )
     lowered = projection.prompt_text.casefold()
@@ -290,9 +254,6 @@ def test_projection_invariant_refs_only_relocate_history() -> None:
     """Continuity may relocate old refs; it can never mint evidence rows."""
     projection = project_topic_continuity(
         interest_hints=(_interest_hint("Re-check the 2025 war-helium link."),),
-        continuity_hints=(
-            {"id": "c1", "kind": "fresh_correction", "text": "Corrected earlier"},
-        ),
         claim_refs=("old-claim",),
     )
 
@@ -307,37 +268,3 @@ def test_projection_invariant_refs_only_relocate_history() -> None:
     lowered = projection.prompt_text.casefold()
     assert not any(term in lowered for term in _BANNED_FRAMING_TERMS)
     assert PROMPT_SOURCE_REF == "local_context:research_topic_continuity"
-
-
-def test_standalone_items_render_through_shared_path() -> None:
-    correction = TopicContinuityItem(
-        kind=ITEM_KIND_CORRECTION,
-        text="Fixed stale figure",
-        refs=("continuity:c1",),
-        stale=True,
-        reason_codes=("needs_recheck",),
-    )
-    candidates = build_topic_candidates((
-        TopicContinuityItem(kind=ITEM_KIND_OPEN_QUESTION, text="Still true?", refs=("note:1",)),
-        correction,
-    ))
-
-    assert len(candidates) == 1
-    rendering = render_topic_continuity(
-        candidates=candidates,
-        corrections=(correction,),
-        preferences=(
-            TopicContinuityItem(
-                kind=ITEM_KIND_PREFERENCE,
-                text="Short answers",
-                refs=("continuity:p1",),
-            ),
-        ),
-        claim_ref_count=3,
-    )
-
-    assert "Suggested next-research topics" in rendering.text
-    assert "Still true?" in rendering.text
-    assert "Fixed stale figure" in rendering.text
-    assert "Short answers" in rendering.text
-    assert "3 prior claim(s)" in rendering.text

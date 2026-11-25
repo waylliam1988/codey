@@ -7,8 +7,8 @@ import pytest
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.providers import local_config
 from codey.runtime.core.api_selection import ApiRunSelection
-from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.core.outcome import OperationOutcome
+from codey.runtime.write.checkpoint import RuntimeOperationStore
 from codey.runtime.write.task_runtime import TaskRuntime
 from codey.task.model import TaskSubmission
 

@@ -10,10 +10,10 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.app.task_services import build_task_deps
 from codey.app.task_submit import dispatch_durable_task
 from codey.durable import CommitConflict, DurableSession, SQLiteDurableStore, TaskStatus
-from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.model import DurableMutation
 from codey.durable.questions import DurableUserQuestionStore
 from codey.durable.scheduler import DurableTaskScheduler
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from tests.test_headless_real_kernel_lifecycle import ScriptedProvider
 
 pytestmark = pytest.mark.usefixtures("scripted_local_api_connection", "no_external_advisor_models")

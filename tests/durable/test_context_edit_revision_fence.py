@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import pytest
 
-from codey.durable import CommitConflict, DurableSession, IdempotencyConflict, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import CommitConflict, DurableSession, IdempotencyConflict, SQLiteDurableStore
 from codey.durable.model import SubmissionPlacement
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.fixture(params=["memory", "sqlite"])
 def session(request, tmp_path):
-    store = MemoryDurableStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     durable = DurableSession(store)
     durable.create_conversation("chat")
     original = durable.append_message("chat", "user_message", {"text": "early fact " * 1000})

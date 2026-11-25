@@ -53,7 +53,7 @@ class Runtime:
 
     def execute(self, call: ToolCall, *, turn: int = 0) -> ToolResult:
         if turn:
-            from codey.durable.checkpoint import operation_from_checkpoint
+            from codey.runtime.write.checkpoint import operation_from_checkpoint
 
             state = operation_from_checkpoint(self.app.durable.task("r"), "s")
             assert state is not None

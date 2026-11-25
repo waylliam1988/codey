@@ -6,6 +6,8 @@ This supports induction inside that finite abstraction only. Durable crash
 traces are checked separately in test_recovery_trace_invariants.py.
 """
 from collections import deque
+from collections.abc import Callable
+from functools import partial
 from itertools import product
 
 from codey.operations.kernel_protocol import build_turn_snapshot
@@ -16,35 +18,25 @@ from codey.providers.base import tools_from_specs
 from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
+    DeliveryBatchProjection,
     ToolResultDeliveryError,
-    abandoned_entry,
-    batch_intent_entry,
-    batches_from_entries,
     compute_batch_digest,
-    delivered_entry,
-    recovered_entry,
-    send_attempt_entry,
-    send_superseded_entry,
+    mark_abandoned,
+    mark_delivered,
+    mark_recovered,
+    mark_send_attempt,
+    mark_send_superseded,
 )
-from codey.runtime.log.entries import RuntimeLogEntry
 
 
-def _log_row(entry):
-    return RuntimeLogEntry(session_id="s", lane=entry["lane"], operation_id=entry["operation_id"],
-                           kind=entry["kind"], payload=entry["payload"])
-
-
-def test_delivery_graph_fixed_point_preserves_safety():
+def test_delivery_graph_fixed_point_preserves_safety() -> None:
     items = (DeliveryBatchItem(0, "read", "effect", "safe"),)
     intent = DeliveryBatchIntent("batch", "s", "r", 1, items, compute_batch_digest(items))
-    initial = (_log_row(batch_intent_entry(intent)),)
-    queue = deque([initial])
-    seen = set()
+    queue = deque([DeliveryBatchProjection(intent)])
+    seen: set[DeliveryBatchProjection] = set()
     checked_edges = 0
     while queue:
-        rows = queue.popleft()
-        batches = batches_from_entries(rows, session_id="s", run_id="r")
-        state = batches[0]
+        state = queue.popleft()
         if state in seen:
             continue
         seen.add(state)
@@ -56,27 +48,34 @@ def test_delivery_graph_fixed_point_preserves_safety():
         assert state.intent.tool_refs == ("effect",)
         assert state.is_terminal is (state.is_delivered or state.is_abandoned)
         assert state.can_recover_before_provider_send is (not state.is_terminal and not state.active_attempts)
-        actions = [
-            (recovered_entry, {"recovered_effect_ids": ["effect"], "recovered_reads": 1}),
-            (abandoned_entry, {"reason": "writer_settled"}),
-        ]
-        actions.extend((fn, {"provider_effect_id": identity})
-                       for fn in (send_attempt_entry, send_superseded_entry, delivered_entry)
-                       for identity in ("p1", "p2"))
-        for fn, args in actions:
-            try:
-                entry = fn("s", "r", batch_id="batch", batches=batches, **args)
-            except ToolResultDeliveryError:
-                continue  # An explicitly refused transition has no effects.
+        def successors(state: DeliveryBatchProjection) -> tuple[DeliveryBatchProjection | None, ...]:
+            def attempt(action: Callable[[], DeliveryBatchProjection | None]) -> DeliveryBatchProjection | None:
+                try:
+                    return action()
+                except ToolResultDeliveryError:
+                    return None
+
+            batches = (state,)
+            actions = [
+                attempt(lambda: mark_recovered(batch_id="batch", batches=batches,
+                    recovered_effect_ids=("effect",), recovered_reads=1)),
+                attempt(lambda: mark_abandoned(batch_id="batch", batches=batches, reason="writer_settled")),
+            ]
+            for mark in (mark_send_attempt, mark_send_superseded, mark_delivered):
+                for identity in ("p1", "p2"):
+                    actions.append(attempt(partial(mark, batch_id="batch", batches=batches, provider_effect_id=identity)))
+            return tuple(actions)
+
+        for next_state in successors(state):
+            if next_state is None:
+                continue
             checked_edges += 1
-            following = rows if entry is None else (*rows, _log_row(entry))
-            next_state = batches_from_entries(following, session_id="s", run_id="r")[0]
             if state.is_terminal:
                 assert next_state.is_terminal
                 assert next_state.is_delivered == state.is_delivered
                 assert next_state.is_abandoned == state.is_abandoned
             if next_state not in seen:
-                queue.append(following)
+                queue.append(next_state)
     # Coverage guards: the traversal includes recovery, retries and both ends.
     assert any(s.is_recovered and not s.is_terminal for s in seen)
     assert any(s.is_recovered and s.is_delivered for s in seen)
@@ -85,7 +84,7 @@ def test_delivery_graph_fixed_point_preserves_safety():
     print(f"delivery fixed point: {len(seen)} states, {checked_edges} accepted edges")
 
 
-def test_every_capability_subset_has_same_json_native_boundary_and_exact_roundtrip():
+def test_every_capability_subset_has_same_json_native_boundary_and_exact_roundtrip() -> None:
     vocabulary = tuple(sorted(KNOWN_TASK_GRANTS))
     for bits in product((False, True), repeat=len(vocabulary)):
         grants = frozenset(grant for grant, included in zip(vocabulary, bits, strict=True) if included)

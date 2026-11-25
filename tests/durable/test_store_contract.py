@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import operator
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
@@ -14,13 +15,13 @@ from codey.durable import (
     DurableSession,
     EffectRecord,
     EntryDraft,
-    MemoryDurableStore,
     SQLiteDurableStore,
     SubmissionDraft,
     SubmissionStatus,
     SubmissionUpdate,
     TaskCheckpoint,
 )
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 class DurableStore(Protocol):
@@ -46,10 +47,8 @@ class DurableStore(Protocol):
 StoreFactory = Callable[[Path], DurableStore]
 
 
-@pytest.fixture(params=["memory", "sqlite"])
-def store_factory(request: pytest.FixtureRequest) -> StoreFactory:
-    if request.param == "memory":
-        return lambda _root: MemoryDurableStore()
+@pytest.fixture
+def store_factory() -> StoreFactory:
     return lambda root: SQLiteDurableStore(root / "durable.sqlite3")
 
 
@@ -71,7 +70,7 @@ def test_append_commits_entry_and_head_as_one_revision(
     store.close()
 
 
-def test_memory_entry_payload_is_an_immutable_snapshot(tmp_path: Path) -> None:
+def test_durable_entry_payload_is_an_immutable_snapshot(tmp_path: Path) -> None:
     payload: dict[str, object] = {"text": "hello", "parts": [{"kind": "text", "value": "original"}]}
     entry = EntryDraft("entry-1", "conversation-1", None, "user_message", payload)
     payload["text"] = "changed"
@@ -79,7 +78,7 @@ def test_memory_entry_payload_is_an_immutable_snapshot(tmp_path: Path) -> None:
     assert isinstance(nested, list)
     nested[0]["value"] = "changed"
 
-    store = MemoryDurableStore()
+    store = TemporarySQLiteStore()
     store.create_conversation("conversation-1")
     store.append(entry, expected_revision=0)
 
@@ -87,7 +86,7 @@ def test_memory_entry_payload_is_an_immutable_snapshot(tmp_path: Path) -> None:
     assert saved.payload["text"] == "hello"
     assert saved.payload["parts"] == ({"kind": "text", "value": "original"},)
     with pytest.raises(TypeError):
-        saved.payload["text"] = "mutated"  # type: ignore[index]
+        operator.setitem(saved.payload, "text", "mutated")
 
 
 def test_conversation_creation_is_idempotent_but_rejects_ancestry_reuse(
@@ -242,8 +241,8 @@ def test_commit_rejects_reused_request_with_changed_fingerprint(
         store.close()
 
 
-def test_memory_task_and_effect_payloads_are_immutable_snapshots() -> None:
-    store = MemoryDurableStore()
+def test_durable_task_and_effect_payloads_are_immutable_snapshots() -> None:
+    store = TemporarySQLiteStore()
     store.create_conversation("conversation-1")
     entry = EntryDraft("entry-1", "conversation-1", None, "user_message", {"text": "before"})
     store.commit(
@@ -278,9 +277,9 @@ def test_memory_task_and_effect_payloads_are_immutable_snapshots() -> None:
     assert task.state["steps"] == ({"name": "before"},)
     assert effect.intent["argv"] == ("echo", "before")
     with pytest.raises(TypeError):
-        task.state["new"] = True  # type: ignore[index]
+        operator.setitem(task.state, "new", True)
     with pytest.raises(TypeError):
-        effect.intent["new"] = True  # type: ignore[index]
+        operator.setitem(effect.intent, "new", True)
 
 
 def test_task_identity_and_provider_snapshot_are_immutable(

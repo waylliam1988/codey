@@ -5,28 +5,27 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from typing import Any
 
 from codey.research.counter_status import counter_investigation_incomplete
 from codey.research.ledger import ResearchLedger
 from codey.research.provenance import provenance_problem
 from codey.research.urls import opened_url
-from codey.reviews.report_sections import (
-    heading_key as _heading_key,
-)
-from codey.reviews.report_sections import (
-    missing_required_sections as _missing_required_sections,
-)
-from codey.reviews.report_sections import (
-    parse_sections,
-    section_title,
-)
 from codey.utils.citation_scanner import (
     CitationRef,
     citation_ref_items,
     citation_refs,
     source_id_ref_items,
     source_id_refs,
+)
+from codey.utils.report_sections import (
+    heading_key as _heading_key,
+)
+from codey.utils.report_sections import (
+    missing_required_sections as _missing_required_sections,
+)
+from codey.utils.report_sections import (
+    parse_sections,
+    section_title,
 )
 
 _SOURCE_LINE_RE = re.compile(
@@ -58,10 +57,10 @@ class Citation:
     number: int
     title: str
     url: str
-    quality: dict[str, Any] = field(default_factory=dict[str, Any])
+    quality: Mapping[str, object] = field(default_factory=dict[str, object])
     pages: tuple[int, ...] = ()
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "number": self.number,
             "title": self.title,
@@ -80,7 +79,7 @@ class ReportQualityReview:
     counterpoints: tuple[str, ...] = ()
     sections: Mapping[str, str] = field(default_factory=dict)
 
-    def citation_payload(self) -> list[dict[str, Any]]:
+    def citation_payload(self) -> list[dict[str, object]]:
         return [item.to_dict() for item in self.citation_map]
 
 

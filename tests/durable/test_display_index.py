@@ -13,17 +13,18 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import DurableMutation, DurableSession, EntryDraft, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import DurableMutation, DurableSession, EntryDraft, SQLiteDurableStore
 from codey.durable.errors import SchemaVersionError, SessionSealedError
 from codey.durable.history import HistoryEntry, history_path
 from codey.durable.history_index import NodeBatch, insert, size, window
 from codey.durable.model import TaskCheckpoint
 from codey.durable.sqlite_history import SQLiteHistoryReader
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.fixture(params=["memory", "sqlite"])
 def session(request: pytest.FixtureRequest, tmp_path: Path) -> Generator[DurableSession]:
-    store = MemoryDurableStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "history.sqlite")
+    store = TemporarySQLiteStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "history.sqlite")
     durable = DurableSession(store)
     durable.create_conversation("chat")
     try:
@@ -33,7 +34,7 @@ def session(request: pytest.FixtureRequest, tmp_path: Path) -> Generator[Durable
 
 
 def test_persistent_tree_balances_both_directions_and_preserves_old_roots() -> None:
-    batch = NodeBatch(MemoryDurableStore())
+    batch = NodeBatch(TemporarySQLiteStore())
     keys = list(range(300))
     random.Random(19).shuffle(keys)
     root: str | None = None

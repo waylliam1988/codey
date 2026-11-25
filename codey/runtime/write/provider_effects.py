@@ -1,8 +1,8 @@
 """Pure provider-effect write builders.
 
 Each builder reads one SessionView plus its arguments and returns the
-bounded rows to commit. Builders never touch the session lock; the
-mutation line commits their rows atomically.
+typed changes to commit. Builders never touch the session lock; the
+mutation line commits them atomically.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from codey.runtime.core.operation_state import (
     mark_provider_effect_pending,
     mark_provider_effect_settled,
     mark_provider_request_ready,
-    operation_state_entry,
 )
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
@@ -30,24 +29,22 @@ from codey.runtime.effects.effect_records import (
     RuntimeEffectError,
     RuntimeEffectIntent,
     RuntimeEffectSettlement,
-    effect_intent_entry,
-    effect_settlement_entry,
     find_effect,
     prepare_intent,
     prepare_settlement,
     require_new_effect_id,
 )
 from codey.runtime.effects.tool_result_delivery import (
-    delivered_entry,
-    send_attempt_entry,
-    send_superseded_entry,
+    mark_delivered,
+    mark_send_attempt,
+    mark_send_superseded,
 )
-from codey.runtime.log.session_projection import RuntimeProjection
 from codey.runtime.log.session_view import (
     SessionView,
     driver_for_state,
     require_open_view,
 )
+from codey.runtime.write.checkpoint import RuntimeChange, RuntimeChanges
 
 
 @dataclass(frozen=True)
@@ -56,11 +53,11 @@ class ProviderAdmission:
     newly_admitted: bool
 
 
-def build_provider_prepare_rows(
-    projection: RuntimeProjection, view: SessionView, *, expected: RuntimeOperationState,
+def build_provider_prepare_changes(
+    view: SessionView, *, expected: RuntimeOperationState,
     request_ref: str, turn: int, logical_turn: int | None = None,
-) -> tuple[dict[str, object], ...]:
-    state = require_open_view(projection, view)
+) -> RuntimeChanges:
+    state = require_open_view(view)
     if state.leaf == LEAF_PROVIDER_REQUEST_READY and state.request_ref == request_ref:
         return ()
     if state != expected:
@@ -81,7 +78,7 @@ def build_provider_prepare_rows(
         effect.settlement is None and effect.intent.effect_category == EFFECT_CATEGORY_PROVIDER_SEND
         for effect in view.effects) else "",
         logical_turn=state.logical_turn if logical_turn is None else logical_turn)
-    return (operation_state_entry(prepared),)
+    return (prepared,)
 
 
 def _require_supersedable_not_sent(
@@ -117,8 +114,7 @@ def _require_supersedable_not_sent(
         )
 
 
-def build_provider_begin_rows(
-    projection: RuntimeProjection,
+def build_provider_begin_changes(
     view: SessionView,
     *,
     session_id: str,
@@ -130,8 +126,8 @@ def build_provider_begin_rows(
     counters: RuntimeExecutionCounters | None = None,
     expected_counters: RuntimeExecutionCounters | None = None,
     expected_request_ref: str = "",
-) -> tuple[tuple[dict[str, object], ...], RuntimeEffectIntent]:
-    state = require_open_view(projection, view)
+) -> tuple[RuntimeChanges, RuntimeEffectIntent]:
+    state = require_open_view(view)
     prepared = prepare_intent(session_id, run_id, intent)
     if expected_request_ref:
         if prepared.request_ref != expected_request_ref:
@@ -151,13 +147,11 @@ def build_provider_begin_rows(
             raise RuntimeEffectError("provider request counters changed before admission")
         state = replace(state, counters=admit_request_counters(state.counters, counters))
     if delivery_batch_id and prepared.delivery_batch_id != delivery_batch_id:
-        from dataclasses import replace as _replace
-
-        prepared = _replace(prepared, delivery_batch_id=delivery_batch_id)
+        prepared = replace(prepared, delivery_batch_id=delivery_batch_id)
     require_new_effect_id(view.effects, prepared.effect_id)
     effect_driver = driver_for_state(state, explicit=driver)
     batches = view.batches
-    rows = [effect_intent_entry(prepared)]
+    changes: list[RuntimeChange] = [prepared]
     if delivery_batch_id:
         if expected_request_ref and not supersede_effect_id:
             batch = next((batch for batch in batches if batch.intent.batch_id == delivery_batch_id), None)
@@ -169,63 +163,45 @@ def build_provider_begin_rows(
             _require_supersedable_not_sent(view, supersede_effect_id)
             if find_effect(view.effects, supersede_effect_id).intent.delivery_batch_id != delivery_batch_id:
                 raise RuntimeEffectError("superseded provider effect belongs to another delivery batch")
-            voided = send_superseded_entry(
-                session_id,
-                run_id,
-                batch_id=delivery_batch_id,
+            voided = mark_send_superseded(batch_id=delivery_batch_id,
                 provider_effect_id=supersede_effect_id,
                 batches=batches,
             )
             if voided is not None:
-                rows.append(voided)
-            from dataclasses import replace as _replace
-
-            batches = tuple(
-                _replace(
-                    batch,
-                    superseded_effect_ids=(*batch.superseded_effect_ids, supersede_effect_id),
+                batches = tuple(
+                    voided if batch.intent.batch_id == delivery_batch_id else batch for batch in batches
                 )
-                if batch.intent.batch_id == delivery_batch_id
-                else batch
-                for batch in batches
-            )
-        attempt = send_attempt_entry(
-            session_id,
-            run_id,
-            batch_id=delivery_batch_id,
+        attempt = mark_send_attempt(batch_id=delivery_batch_id,
             provider_effect_id=prepared.effect_id,
             batches=batches,
         )
         if attempt is not None:
-            rows.append(attempt)
-    rows.append(
-        operation_state_entry(
-            mark_provider_effect_pending(
-                state,
-                driver=effect_driver,
-                provider_id=prepared.provider_id,
-                turn=prepared.turn,
-            )
+            changes.append(attempt)
+    changes.append(
+        mark_provider_effect_pending(
+            state,
+            driver=effect_driver,
+            provider_id=prepared.provider_id,
+            turn=prepared.turn,
         )
     )
-    return tuple(rows), prepared
+    return tuple(changes), prepared
 
 
-def build_provider_settle_rows(
-    projection: RuntimeProjection,
+def build_provider_settle_changes(
     view: SessionView,
     *,
     session_id: str,
     run_id: str,
     settlement: RuntimeEffectSettlement,
-) -> tuple[tuple[dict[str, object], ...], RuntimeEffectSettlement]:
-    state = require_open_view(projection, view)
+) -> tuple[RuntimeChanges, RuntimeEffectSettlement]:
+    state = require_open_view(view)
     effects = view.effects
     matching = find_effect(effects, settlement.effect_id)
     prepared = prepare_settlement(session_id, run_id, settlement, effects)
     if matching.settlement is not None:
         return (), prepared
-    rows = [effect_settlement_entry(prepared)]
+    changes: list[RuntimeChange] = [prepared]
     # The provider intent owns the delivery batch it was attempting to
     # acknowledge.  At a generation boundary the current operation leaf may
     # already point at the next tool batch, so deriving this from
@@ -246,47 +222,40 @@ def build_provider_settle_rows(
         and prepared.effect_id in pending_batch.active_attempts
     ):
         batches = view.batches
-        delivered = delivered_entry(
-            session_id,
-            run_id,
-            batch_id=delivery_batch_id,
+        delivered = mark_delivered(batch_id=delivery_batch_id,
             provider_effect_id=prepared.effect_id,
             batches=batches,
         )
         if delivered is not None:
-            rows.append(delivered)
-    rows.append(
-        operation_state_entry(
-            mark_provider_effect_settled(state, delivery_turn=(
-                pending_batch.intent.turn if pending_batch is not None and not pending_batch.is_terminal
-                and prepared.effect_id in pending_batch.active_attempts
-                and prepared.status == SETTLEMENT_STATUS_ERROR and prepared.sent_state == SENT_STATE_NOT_SENT
-                else None))
-        )
+            changes.append(delivered)
+    changes.append(
+        mark_provider_effect_settled(state, delivery_turn=(
+            pending_batch.intent.turn if pending_batch is not None and not pending_batch.is_terminal
+            and prepared.effect_id in pending_batch.active_attempts
+            and prepared.status == SETTLEMENT_STATUS_ERROR and prepared.sent_state == SENT_STATE_NOT_SENT
+            else None))
     )
-    return tuple(rows), prepared
+    return tuple(changes), prepared
 
 
-def build_delivery_delivered_rows(
-    projection: RuntimeProjection,
+def build_delivery_delivered_changes(
     view: SessionView,
     *,
     session_id: str,
     run_id: str,
     batch_id: str,
     provider_effect_id: str,
-) -> tuple[dict[str, object], ...]:
+) -> RuntimeChanges:
     """Record a provider ledger witness as a local delivery receipt."""
     batches = view.batches
-    entry = delivered_entry(
-        session_id, run_id, batch_id=batch_id,
+    entry = mark_delivered(batch_id=batch_id,
         provider_effect_id=provider_effect_id, batches=batches,
     )
     return (entry,) if entry is not None else ()
 
 
 __all__ = [
-    "build_provider_begin_rows",
-    "build_provider_settle_rows",
-    "build_delivery_delivered_rows",
+    "build_provider_begin_changes",
+    "build_provider_settle_changes",
+    "build_delivery_delivered_changes",
 ]

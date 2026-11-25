@@ -4,13 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import DurableSession, SQLiteDurableStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_owner_reverse_index_survives_restart(backend: str, tmp_path: Path) -> None:
     path = tmp_path / "durable.sqlite3"
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(path)
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(path)
     session = DurableSession(store)
     session.admit_input(
         conversation_id="conversation", request_id="parent-request", task_id="parent",

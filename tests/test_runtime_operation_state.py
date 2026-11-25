@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from codey.durable import DurableSession, MemoryDurableStore
-from codey.durable.checkpoint import checkpoint_entries
+from codey.durable import DurableSession
 from codey.runtime.core.operation_payload import (
     DRIVER_REPAIR,
     DRIVER_WRITER,
@@ -55,6 +54,8 @@ from codey.runtime.core.operation_state import (
 from codey.runtime.log.entries import RuntimeLogEntry
 from codey.runtime.log.session_projection import reduce_session
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from tests.support.runtime_log_fixture import checkpoint_entries
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 PROOF_OK = "completion_proof:0123456789abcdef"
 PROOF_FAIL = "completion_proof:fedcba9876543210"
@@ -82,7 +83,7 @@ def _state(leaf: str, **overrides: object) -> RuntimeOperationState:
 
 class RuntimeOperationStateTests(unittest.TestCase):
     def _runtime(self):
-        durable = DurableSession(MemoryDurableStore())
+        durable = DurableSession(TemporarySQLiteStore())
         durable.admit_input(
             conversation_id="s1", request_id="request-1", task_id="run-1",
             text="runtime test", provider_snapshot={"provider_id": "deepseek"},

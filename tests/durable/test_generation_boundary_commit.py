@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore, SubmissionPlacement
+from codey.durable import DurableSession, SubmissionPlacement
 from codey.utils.object_fields import require_object_rows
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def _session() -> tuple[DurableSession, str]:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     queued = session.admit_input(
         conversation_id="chat",
         request_id="active",

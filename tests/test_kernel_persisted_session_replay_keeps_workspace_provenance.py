@@ -39,12 +39,10 @@ def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, proje
     from codey.operations.task_effects import KernelEffectSink
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
-    from codey.runtime.log.session_log import RuntimeSessionLog
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
     from codey.workspace.revision import WorkspaceRevisionStore
 
-    log = RuntimeSessionLog(logdir)
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
     durable.admit_input(
         conversation_id=session_id, request_id=f"request-{run_id}", task_id=run_id,
@@ -74,7 +72,7 @@ def _open_runtime(logdir: Path, state: Path, session_id: str, run_id: str, proje
         managed_outputs=managed,
         workspace_revisions=rev_store,
     )
-    return log, mutations, managed, rev_store, deps, sink
+    return mutations, managed, rev_store, deps, sink
 
 
 def _new_session(project: Path):
@@ -144,7 +142,7 @@ class PersistedSessionReplayKeepsWorkspaceProvenanceTests(unittest.TestCase):
             project, state, logdir = _dirs(tmp)
             session_id = "s-persist-1"
             run_id = "r-persist-1"
-            _, _, _, rev_store, _, sink = _open_runtime(logdir, state, session_id, run_id, project)
+            _, _, rev_store, _, sink = _open_runtime(logdir, state, session_id, run_id, project)
             (project / "a.py").write_text("x=1\n", encoding="utf-8")
             session = _new_session(project)
             base = rev_store.current_state(str(project), ignored_paths=())

@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
+from codey.research.answer_contract import AnswerSessionView
 from codey.research.ledger_receipts import source_observation
 from codey.research.passages import read_passage_refs
 from codey.research.source_trust import primary_source_url
@@ -13,7 +14,6 @@ from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.instruction_text import instruction_text
 
 if TYPE_CHECKING:
-    from codey.operations.task_session import TaskSession
     from codey.research.ledger import ResearchLedger
 
 _REQUIRED = re.compile(
@@ -48,7 +48,12 @@ def primary_passage_refs(results: Mapping[str, ToolResult], offered: Iterable[st
     return tuple(ref for ref in offered if ref in qualified)
 
 
-def primary_acquisition(session: TaskSession, ledger: ResearchLedger, *,
+class PrimaryAcquisitionView(AnswerSessionView, Protocol):
+    @property
+    def search_results(self) -> Mapping[str, str]: ...
+
+
+def primary_acquisition(session: PrimaryAcquisitionView, ledger: ResearchLedger, *,
                         missing_primary: bool, may_search: bool, may_open: bool) -> ToolCall | None:
     from codey.research.questions import requires_question_ref
 

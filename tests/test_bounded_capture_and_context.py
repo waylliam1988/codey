@@ -622,18 +622,19 @@ class LocalPrepareRequestTests(unittest.TestCase):
     def test_prep_failure_settles_not_sent_without_rollover(self) -> None:
         import tempfile
 
-        from codey.durable import DurableSession, MemoryDurableStore
+        from codey.durable import DurableSession
         from codey.operations.task_effects import KernelEffectSink
         from codey.providers import error_classification as errors
         from codey.runtime.effects.effect_records import SENT_STATE_NOT_SENT, RuntimeEffectStore
         from codey.runtime.write.mutation_line import RuntimeMutationLine
         from tests.support.provider_actions import ProviderActions
+        from tests.support.sqlite_store import TemporarySQLiteStore
 
         exc = errors.RequestPrepError("local context compaction failed: boom")
         # A prep failure is not a context overflow: no rollover retry.
         self.assertNotIsInstance(exc, errors.ContextOverflowError)
         with tempfile.TemporaryDirectory() as td:
-            durable = DurableSession(MemoryDurableStore())
+            durable = DurableSession(TemporarySQLiteStore())
             durable.admit_input(conversation_id="s", request_id="r", task_id="r", text="hello",
                                 provider_snapshot={"provider_id": "local"})
             durable.start_task("r", state={})

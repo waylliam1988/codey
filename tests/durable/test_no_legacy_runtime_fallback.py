@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 
 from codey.app.conversation_runtime import ConversationRuntime
-from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import RuntimeEffectStore
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
+from codey.runtime.write.checkpoint import RuntimeOperationStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.runtime.write.task_runtime import TaskRuntime
 

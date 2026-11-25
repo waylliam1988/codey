@@ -84,7 +84,7 @@ def test_research_iteration_supplies_guidance_through_actual_shared_kernel(tmp_p
         mutations = admit(state.durable, run_id="r", session_id="s", task="research question",
                           provider_id="deepseek", max_turns=1, task_kind="research")
         tools = ResearchTools(search=None, store=state.knowledge_store, changes=None)
-        deps = ResearchFlowDeps(state, state.knowledge_store, None, lambda: None,
+        deps = ResearchFlowDeps(state, state.knowledge_store, lambda: None,
                                 state.managed_outputs, mutations)
         result = run_research_iteration(deps,
             provider=provider, session_id="s", project="", task="research question", max_turns=1,

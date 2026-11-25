@@ -1,6 +1,5 @@
 """Question ownership follows the original execution receipts through recovery."""
 
-import copy
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -15,11 +14,8 @@ from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
-from codey.research.finding_report import compile_finding_report
-from codey.research.ledger import ResearchLedger
-from codey.research.questions import INVESTIGATION_TOOLS, validate_question_coverage
+from codey.research.questions import INVESTIGATION_TOOLS
 from codey.research.tools import ResearchTools
-from codey.reviews.research_coverage import CoverageRow
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object, parse_json_object
 
@@ -63,74 +59,6 @@ def report_args(ref: str) -> JsonObject:
         "evidence": [f"Only one writer can write at a time. [{ref}]"], "counter": ["本轮尚未调查反证，仍有证据缺口。"],
         "coverage": [{"question_ref": "q1", "state": "partial", "answer": "Writer concurrency answered; version boundaries remain unknown.",
             "findings": [ref], "investigations": [], "task_refs": ["r1"]}]}}
-
-
-@pytest.mark.usefixtures("public_source_dns")
-def test_passage_reuse_preserves_acquisition_and_adoption_ownership_on_recovery(tmp_path: Path) -> None:
-    store, tools, session, delegate = setup(tmp_path)
-    try:
-        plan = execute(delegate, tools, session, "research_plan", {
-            "questions": ["What limits writer concurrency?", "What limits checkpoint progress?"]})
-        opened = execute(delegate, tools, session, "open_url", {"url": URL, "question_ref": "q1"})
-        passage = next(iter(tools.ledger.read_passages))
-        finding_args = {"claim": "Only one writer can write at a time.", "source_ref": "s1", "passage_ref": passage}
-        saved = execute(delegate, tools, session, "save_finding", {**finding_args, "question_ref": "q1"})
-        assert saved.ok
-        before = store.index.count()
-        reused = execute(delegate, tools, session, "save_finding", {
-            "claim": finding_args["claim"], "passage_ref": passage, "question_ref": "q2"})
-        assert reused.ok and parse_json_object(reused.model_text)["finding_ref"] == "f2"
-        assert store.index.count() == before
-        assert len(tools.ledger.investigations) == 1
-        assert tools.ledger.investigations["a1"]["question_ref"] == "q1"
-        coverage: list[CoverageRow] = [{"question_ref": "q1", "state": "partial", "answer": "Writer concurrency answered; version boundaries remain unknown.",
-            "findings": ["f1"], "investigations": [], "task_refs": ["r1"]},
-            {"question_ref": "q2", "state": "not_investigated", "answer": "Not investigated.", "findings": [], "investigations": []}]
-        coverage[0]["investigations"] = ["a1"]
-        assert validate_question_coverage(coverage, tools.ledger)
-        corrupt = copy.deepcopy(coverage)
-        corrupt[0]["investigations"] = []
-        corrupt[1]["state"] = "unanswered_after_search"
-        corrupt[1]["investigations"] = ["a1"]
-        with pytest.raises(ValueError, match="belongs to another question"):
-            validate_question_coverage(corrupt, tools.ledger)
-        corrupt[1]["state"] = "partial"
-        corrupt[1]["findings"] = ["f1"]
-        corrupt[1]["investigations"] = []
-        with pytest.raises(ValueError, match="finding f1 belongs to another question"):
-            validate_question_coverage(corrupt, tools.ledger)
-        recovered, restored_session = ResearchLedger(), TaskSession(session.policy)
-        for result in (plan, opened, saved, reused):
-            project_result_observation(restored_session, result.call, result, ok=True, research_ledger=recovered)
-        assert recovered.investigations == tools.ledger.investigations
-        assert recovered.references == tools.ledger.references
-        assert recovered.investigations["a1"]["passage_refs"] == [passage]
-        assert validate_question_coverage(coverage, recovered)
-        # An explicit read for q2 creates a second adoption, not a second knowledge write.
-        read = execute(delegate, tools, session, "knowledge_read", {"id": "f1", "question_ref": "q2"})
-        assert read.ok and parse_json_object(read.model_text)["finding_ref"] == "f2"
-        assert tools.ledger.references["f2"].object_id == tools.ledger.references["f1"].object_id
-        assert tools.ledger.references["f2"].acquisition == "current_run"
-        assert tools.ledger.references["f2"].note_id == tools.ledger.references["f1"].note_id
-        assert tools.ledger.references["f2"].passage_ref == passage
-        version = store.repository.read(tools.ledger.references["f1"].object_id)
-        assert version is not None and version.revision == 1
-        inference: JsonObject = {"statement": "A second writer must wait for the first writer.",
-                     "premise_refs": ["f1"], "limitations": "A candidate scheduling inference.", "question_ref": "q2"}
-        refused = execute(delegate, tools, session, "save_inference", inference)
-        assert not refused.ok and "premise belongs to another question" in refused.model_text
-        saved_inference = execute(delegate, tools, session, "save_inference", {**inference, "premise_refs": ["f2"]})
-        assert saved_inference.ok and tools.ledger.references["f3"].question_ref == "q2"
-        proposal = report_args("f1")
-        sections = decode_json_object(proposal["report_sections"])
-        sections["coverage"] = canonical_json_object({"coverage": coverage})["coverage"]
-        proposal["report_sections"] = sections
-        compiled = compile_finding_report(proposal, tools.ledger, store)
-        assert compiled.reference_metadata["f1"]["question_ref"] == "q1"
-        assert {ref for row in compiled.coverage for ref in row["investigations"]} == {"a1"}
-        assert len(tools.ledger.investigations) > 1
-    finally:
-        store.close()
 
 
 def test_source_search_alias_preserves_question_and_enforces_its_frozen_requirement() -> None:
@@ -203,26 +131,5 @@ def test_strict_snapshot_requires_question_on_all_investigation_and_adoption_too
         result = execute_turn(session, [ToolCall(name, arguments)], snapshot=snapshot)[0]
         assert not result.ok and "question_ref" in result.model_text
         assert not session._memory_results
-    finally:
-        store.close()
-
-
-@pytest.mark.usefixtures("public_source_dns")
-def test_source_quality_has_only_pinned_metadata_and_never_infers_latest_from_fetch_time(tmp_path: Path) -> None:
-    store, tools, session, delegate = setup(tmp_path)
-    try:
-        execute(delegate, tools, session, "open_url", {"url": URL})
-        execute(delegate, tools, session, "save_finding", {"claim": "Only one writer can write at a time.",
-            "source_ref": "s1", "passage_ref": next(iter(tools.ledger.read_passages))})
-        args = report_args("f1")
-        compiled = compile_finding_report(args, tools.ledger, store)
-        assert '"release_version":"unknown"' in compiled.text
-        assert '"publication_date":"unknown"' in compiled.text
-        assert not any("source_quality" in row["path"] for row in compiled.paragraph_bindings)
-        sections = decode_json_object(args["report_sections"])
-        sections["source_quality"] = ["All sources are the current stable release."]
-        args["report_sections"] = sections
-        with pytest.raises(ValueError, match="source quality is generated"):
-            compile_finding_report(args, tools.ledger, store)
     finally:
         store.close()

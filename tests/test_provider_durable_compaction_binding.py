@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from codey.durable import CommitConflict, DurableSession, MemoryDurableStore
+from codey.durable import CommitConflict, DurableSession
 from codey.durable.model import EntryDraft
 from codey.providers import api_context
 from codey.providers.api_provider import ApiProvider
 from codey.providers.context_checkpoint import ContextRange
 from codey.providers.context_ledger import digest
 from codey.providers.token_accounting import RequestContextCount
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def _count_history(payload: dict[str, object], *, deadline: float) -> RequestContextCount:
@@ -18,7 +19,7 @@ def _count_history(payload: dict[str, object], *, deadline: float) -> RequestCon
 
 
 def _provider_with_source() -> tuple[DurableSession, ApiProvider, EntryDraft, EntryDraft]:
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.create_conversation("chat")
     first = durable.append_message("chat", "user_message", {"text": "early fact"})
     second = durable.append_message("chat", "assistant_message", {"text": "old answer"})
@@ -76,7 +77,7 @@ def test_compaction_source_change_refuses_the_durable_edit_and_keeps_provider_vi
 
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
 def test_durable_sources_follow_semantic_messages_when_codec_expands_tool_calls(protocol: str) -> None:
-    durable = DurableSession(MemoryDurableStore())
+    durable = DurableSession(TemporarySQLiteStore())
     durable.create_conversation("chat")
     provider = ApiProvider("http://localhost:9/v1", "fixture", api_protocol=protocol)
     try:

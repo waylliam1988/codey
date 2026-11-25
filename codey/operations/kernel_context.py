@@ -10,7 +10,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Protocol
 
-from codey.durable.checkpoint import checkpoint_entries
 from codey.durable.model import ArtifactRecord, thaw_json
 from codey.knowledge.model import canonical_json
 from codey.operations import kernel_actions as wiring
@@ -52,13 +51,14 @@ from codey.runtime.core import operation_payload
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
 from codey.runtime.core.operation_reducer import RuntimeAction, RuntimeDecisionInputs
+from codey.runtime.core.tool_resources import tool_resources_for
 from codey.runtime.effects.effect_records import RuntimeEffectProjection
 from codey.runtime.log.session_view import (
     SessionView,
     driver_for_state,
-    load_session_view,
     not_sent_continuation_effect,
 )
+from codey.runtime.write.checkpoint import view_from_checkpoint
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string
 from codey.workspace.coding_context import render_coding_context
 from codey.workspace.context_admission import admit_context
@@ -132,7 +132,7 @@ class KernelContext:
 
         if ((session.policy.allows("web.read") and self.execution.research_tools is not None)
                 or any(spec.executor == "browser" and session.policy.allows(spec.grant) for spec in tool_specs().values())):
-            browser = build_task_browser(self.sink.run_id, self.durable.tool_resources,
+            browser = build_task_browser(self.sink.run_id, tool_resources_for(self.durable),
                                          self.execution.research_tools, browser=self.execution.browser_session)
             self.execution = replace(self.execution, browser_session=browser)
             restore_browser_progress(browser, durable=self.durable, store=self.sink.managed_outputs, run_id=self.sink.run_id)
@@ -175,8 +175,7 @@ class KernelContext:
 
     def load_view(self) -> SessionView:
         task, effects = self.durable.task_facts(self.sink.run_id)
-        return load_session_view(checkpoint_entries(task, effects, session_id=self.sink.session_id),
-                                 session_id=self.sink.session_id, run_id=self.sink.run_id)
+        return view_from_checkpoint(task, effects, session_id=self.sink.session_id)
 
     def cancelled(self) -> bool:
         task = self.durable.task(self.sink.run_id)
@@ -371,7 +370,9 @@ class KernelContext:
                 assert staged_ledger is not None
                 ledger.commit_projection(staged_ledger)
                 from codey.operations.research_continuation import restore_note_proposals
-                restore_note_proposals(self.execution.research_tools, result.canonical)
+                tools = self.execution.research_tools
+                if tools is not None:
+                    restore_note_proposals(tools, result.canonical)
             self.session.commit_projection(staged)
         rebuild_verifications(self.session, durable=self.durable, owner_task_id=self.sink.run_id,
             store=self.sink.managed_outputs, project_path=self.execution.project_path,

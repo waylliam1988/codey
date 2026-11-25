@@ -5,19 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import (
-    ApprovalRecord,
-    ApprovalStatus,
-    DurableSession,
-    MemoryDurableStore,
-    SQLiteDurableStore,
-    TaskStatus,
-)
+from codey.durable import ApprovalRecord, ApprovalStatus, DurableSession, SQLiteDurableStore, TaskStatus
 from codey.durable.model import EffectRecord
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def _waiting_approval(path: Path, backend: str, *, approved: bool, park: bool) -> DurableSession:
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(path)
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(path)
     session = DurableSession(store)
     session.admit_input(conversation_id="c", request_id="r", task_id="t", text="Inspect the command result.",
                         provider_snapshot={"provider_id": "original"}, task_state={"task_policy": {"shell": "ask"}})

@@ -15,6 +15,7 @@ from codey.research.pipeline import ResearchContinuationError
 from codey.research.tools import ResearchTools
 from codey.runtime.core.operation_payload import RuntimeOperationState
 from codey.runtime.core.operation_state import new_operation_state
+from codey.runtime.write.mutation_line import RuntimeMutationLine
 
 
 def test_restored_note_commit_is_idempotent_and_conflict_preserves_vault(tmp_path, monkeypatch):
@@ -87,19 +88,18 @@ def test_continuation_artifact_version_requires_an_integer(schema):
             "handle": reference, "sha256": digest, "session_id": "s", "run_id": "r"}})
     durable = SimpleNamespace(artifact=lambda _: artifact)
     outputs = SimpleNamespace(read_json_artifact=lambda _: {"schema_version": schema, "kind": "research_continuation"})
-    continuation = ResearchContinuation(SimpleNamespace(durable=durable), outputs, session_id="s", run_id="r")
+    continuation = ResearchContinuation(RuntimeMutationLine(durable=durable), outputs, durable=durable, session_id="s", run_id="r")
     with pytest.raises(ResearchContinuationError, match="invalid continuation artifact"):
         continuation.read(reference, "research_continuation")
 
 
-def test_schema_five_migration_is_idempotent_and_preserves_position():
-    from codey.durable.checkpoint import operation_from_checkpoint
+def test_schema_five_is_rejected_at_the_checkpoint() -> None:
+    from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
+    from codey.runtime.write.checkpoint import operation_from_checkpoint
 
     state = new_operation_state(session_id="s", run_id="r", project="", provider_id="local",
                                 turn_budget=4, max_repair_rounds=0, task_kind="research")
     payload = {**state.to_payload(), "schema_version": 5}
     task = SimpleNamespace(conversation_id="s", task_id="r", state={"operation": payload})
-    restored = operation_from_checkpoint(task, "s")
-    assert restored == state
-    task.state["operation"] = restored.to_payload()
-    assert operation_from_checkpoint(task, "s") == restored
+    with pytest.raises(RuntimeOperationTransitionError, match="invalid durable operation checkpoint"):
+        operation_from_checkpoint(task, "s")

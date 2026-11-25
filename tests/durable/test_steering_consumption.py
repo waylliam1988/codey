@@ -7,14 +7,15 @@ from pathlib import Path
 import pytest
 
 from codey.app.input_queue import DurableConversationInputQueue
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore, SubmissionStatus
+from codey.durable import DurableSession, SQLiteDurableStore, SubmissionStatus
 from codey.durable.model import CommitResult, DurableMutation, SubmissionPlacement, TaskStatus
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.fixture(params=['memory', 'sqlite'])
 def session(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[DurableSession]:
     backend: object = request.param
-    session = DurableSession(MemoryDurableStore() if backend == 'memory' else SQLiteDurableStore(tmp_path / 'durable.sqlite3'))
+    session = DurableSession(TemporarySQLiteStore() if backend == 'memory' else SQLiteDurableStore(tmp_path / 'durable.sqlite3'))
     session.admit_input(conversation_id='chat', request_id='active', task_id='active', text='current', provider_snapshot={})
     session.start_task('active', state={})
     yield session

@@ -10,9 +10,10 @@ from pathlib import Path
 import pytest
 
 from codey.app.shell_approval_durable import record_fact
-from codey.durable import CommitConflict, DurableSession, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import CommitConflict, DurableSession, SQLiteDurableStore
 from codey.runtime.effects.shell_approval_records import ShellApprovalFact, ShellApprovalRecordStore
 from codey.storage.managed_outputs import ManagedOutputStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @dataclass(frozen=True)
@@ -25,7 +26,7 @@ class FactContext:
 def requested_approval(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[tuple[FactContext, ShellApprovalFact]]:
     backend: object = request.param
     assert backend in ("memory", "sqlite")
-    store = SQLiteDurableStore(tmp_path / "durable.sqlite3") if backend == "sqlite" else MemoryDurableStore()
+    store = SQLiteDurableStore(tmp_path / "durable.sqlite3") if backend == "sqlite" else TemporarySQLiteStore()
     with closing(DurableSession(store)) as durable:
         for task_id, session_id in (("owner", "chat"), ("same-session", "chat"), ("other-session", "other")):
             durable.admit_input(conversation_id=session_id, request_id=task_id, task_id=task_id, text="Run command",

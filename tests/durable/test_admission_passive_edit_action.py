@@ -1,10 +1,11 @@
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore
+from codey.durable import DurableSession
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 def test_passive_write_rejects_non_string_edit_action_before_admission() -> None:
-    session = DurableSession(MemoryDurableStore())
+    session = DurableSession(TemporarySQLiteStore())
     try:
         sequence = session.commit_sequence()
 

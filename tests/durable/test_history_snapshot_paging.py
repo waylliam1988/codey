@@ -1,12 +1,13 @@
 """Older pages remain pinned while the live task appends to the same branch."""
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
+from codey.durable import DurableSession, SQLiteDurableStore
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 @pytest.fixture(params=['memory', 'sqlite'])
 def session(request, tmp_path):
-    session = DurableSession(MemoryDurableStore() if request.param == 'memory' else SQLiteDurableStore(tmp_path / 'state.sqlite3'))
+    session = DurableSession(TemporarySQLiteStore() if request.param == 'memory' else SQLiteDurableStore(tmp_path / 'state.sqlite3'))
     session.create_conversation('chat')
     for index in range(10):
         session.append_message('chat', 'user_message', {'text': f'old {index}'})

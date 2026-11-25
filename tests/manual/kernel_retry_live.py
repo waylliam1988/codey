@@ -13,13 +13,13 @@ from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 
-from codey.durable.checkpoint import operation_from_checkpoint
 from codey.operations.kernel_driver import load_prepared_request
 from codey.operations.task_loop import run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.local_config import LocalContextBudget, LocalProviderConfig
 from codey.providers.local_connection import connect_local
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from tests.durable.test_operation_control_actions import request_for
 from tests.durable.test_provider_response_receipts import runtime
 from tests.durable.test_retry_observation_commit import reopen_retry

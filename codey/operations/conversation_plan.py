@@ -18,10 +18,10 @@ from codey.operations.task_state import TaskState
 from codey.providers.compat_transport import declared_callable, optional_callable
 from codey.providers.token_accounting import ContextBudget
 from codey.runtime.core.cancellation import TaskCancelled
-from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
 from codey.runtime.observe.prompt_envelope import record_provider_send_prompt
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.task.kind import conversation_mode
+from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding
 
 
 @dataclass(frozen=True)

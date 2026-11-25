@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from codey.durable.context import ContextSnapshot
-from codey.runtime.core.protocol_window import ProtocolWindowRef
+from codey.types.protocol_window import ProtocolWindowRef
 
 
 class WindowOpenReason(StrEnum):

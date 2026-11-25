@@ -3,12 +3,12 @@ from contextlib import contextmanager
 from dataclasses import replace
 from types import SimpleNamespace
 
-from codey.durable.checkpoint import operation_from_checkpoint
 from codey.operations.task_loop import run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.core.models import ToolResult
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from tests.durable.test_operation_control_actions import request_for
 from tests.durable.test_provider_response_receipts import runtime
 

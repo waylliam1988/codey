@@ -9,7 +9,6 @@ import pytest
 
 from codey.knowledge.model import canonical_json
 from codey.research.answer_contract import (
-    ANSWER_SCOPE_VERSION,
     AnswerScope,
     digest,
     submit_answer,
@@ -32,8 +31,8 @@ from tools.completion_explanation_ab import Target
 TASK = "Report the original inspected record."
 
 
-def scope(version: int = ANSWER_SCOPE_VERSION) -> AnswerScope:
-    return AnswerScope(digest(TASK), (("e1", "p" + "b" * 12),), ("original-read",), version)
+def scope() -> AnswerScope:
+    return AnswerScope(digest(TASK), (("e1", "p" + "b" * 12),), ("original-read",))
 
 
 @pytest.mark.parametrize("tail", ["`", "``", "\\\\`", "`\n", "`` \n"])
@@ -54,26 +53,21 @@ def test_complete_code_literal_escapes_and_plain_prose_are_preserved(tail: str) 
     assert validate_submission(submission, TASK) == submission
 
 
-@pytest.mark.parametrize("version", [4, 5])
-def test_original_frozen_reports_are_not_rewritten_or_retroactively_rejected(version: int) -> None:
-    original = scope(version)
-    payload = parse_json_object(canonical_json(original.to_payload()))
-    assert AnswerScope.from_payload(payload) == original
-    historical = submit_answer(original, {"markdown": "Historical record [e1].\nOriginal unfinished text `", "state": "answered"})
-    assert validate_submission(parse_json_object(canonical_json(historical)), TASK) == historical
-    assert historical["markdown"].endswith("text `")
+@pytest.mark.parametrize("version", [4, 5, 6, 7, 8, 9, 10])
+def test_retired_scope_versions_are_rejected(version: int) -> None:
+    payload = parse_json_object(canonical_json(scope().to_payload()))
+    payload["schema_version"] = version
+    with pytest.raises(ValueError, match="invalid whole-task research scope"):
+        AnswerScope.from_payload(payload)
 
 
-def test_legacy_field_scope_keeps_its_rendering_and_cannot_be_selected_by_new_input() -> None:
-    old = replace(scope(5), fields=(AnswerField("/code", "Record code", "QUARTZ_851", ("e1",), "", False),))
+def test_field_scope_still_requires_a_complete_report() -> None:
+    frozen = replace(scope(), fields=(AnswerField("/code", "Record code", "QUARTZ_851", ("e1",), "", False),))
     args: JsonObject = {"markdown": "Recorded original source.\n{{field:/code}}\nUnfinished literal `", "state": "answered"}
-    historical = submit_answer(old, args)
-    assert "QUARTZ_851" in historical["markdown"]
-    assert validate_submission(parse_json_object(canonical_json(historical)), TASK) == historical
     with pytest.raises(ValueError, match="report_tail_incomplete"):
-        submit_answer(replace(old, schema_version=ANSWER_SCOPE_VERSION), args)
+        submit_answer(frozen, args)
     with pytest.raises(ValueError, match="Submit markdown"):
-        submit_answer(scope(), {**args, "scope": parse_json_object(canonical_json(old.to_payload()))})
+        submit_answer(scope(), {**args, "scope": parse_json_object(canonical_json(frozen.to_payload()))})
 
 
 def test_layout_checks_handle_escaped_backslashes_without_changing_historical_offsets() -> None:

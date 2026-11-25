@@ -20,12 +20,13 @@ from codey.runtime.core.operation_payload import (
     LEAF_REPAIR_CONTEXT_ADMITTED,
     LEAF_REPAIR_RUNNING,
     LEAF_REPAIR_SETTLED,
+    LEAF_TERMINAL,
     LEAF_TOOL_DELIVERY_PENDING,
     LEAF_TOOL_EFFECT_PENDING,
     RuntimeOperationState,
     RuntimeOperationTransitionError,
 )
-from codey.runtime.core.operation_state import operation_is_open, operation_state_from_entries
+from codey.runtime.core.operation_state import operation_state_from_entries
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
@@ -36,7 +37,6 @@ from codey.runtime.effects.effect_records import (
 )
 from codey.runtime.effects.tool_result_delivery import DeliveryBatchProjection, batches_from_entries
 from codey.runtime.log.entries import RuntimeLogEntry
-from codey.runtime.log.session_projection import RuntimeProjection
 
 
 @dataclass(frozen=True)
@@ -145,10 +145,11 @@ def pending_for(view: SessionView) -> PendingRuntimeFacts:
     return PendingRuntimeFacts()
 
 
-def require_open_view(projection: RuntimeProjection, view: SessionView) -> RuntimeOperationState:
+def require_open_view(view: SessionView) -> RuntimeOperationState:
     if view.state is None:
         raise RuntimeOperationTransitionError("operation state is missing")
-    operation_is_open(projection, view.state)
+    if view.state.leaf == LEAF_TERMINAL:
+        raise RuntimeOperationTransitionError("task operation is not open")
     return view.state
 
 

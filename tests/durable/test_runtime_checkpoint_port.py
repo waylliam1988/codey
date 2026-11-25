@@ -5,8 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import DurableSession, MemoryDurableStore, SQLiteDurableStore
-from codey.durable.checkpoint import operation_from_checkpoint
+from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.contracts import RuntimeCheckpointPort
 from codey.durable.model import (
     ArtifactRecord,
@@ -21,7 +20,9 @@ from codey.runtime.core.cancellation import TaskCancelled
 from codey.runtime.core.operation_payload import LEAF_CLOSING, LEAF_WRITER_RUNNING
 from codey.runtime.effects.effect_records import RuntimeEffectIntent
 from codey.runtime.effects.replay_policy import ReplayClass
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+from tests.support.sqlite_store import TemporarySQLiteStore
 
 
 class CheckpointDelegate:
@@ -69,7 +70,7 @@ class CheckpointDelegate:
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 def test_runtime_uses_only_checkpoint_port_capabilities(tmp_path: Path, backend: str) -> None:
-    store = MemoryDurableStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
+    store = TemporarySQLiteStore() if backend == "memory" else SQLiteDurableStore(tmp_path / "durable.sqlite3")
     session = DurableSession(store)
     session.admit_input(conversation_id="s", request_id="r", task_id="r", text="inspect code",
                         provider_snapshot={"provider_id": "local"})

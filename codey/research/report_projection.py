@@ -7,13 +7,10 @@ from codey.completion.contract import (
     build_completion_contract,
     project_completion_proof,
 )
-from codey.research.answer_report import AnswerReport
-from codey.research.finding_report import FindingReport, ResearchReport
+from codey.research.answer_report import DELIVERY_CHECKS, AnswerReport
 from codey.research.identity import project_ref, sanitize_research_url_ref
 from codey.research.object_model import (
     EvidenceLocator,
-    ResearchAssumption,
-    ResearchClaim,
     ResearchEvidence,
     ResearchQuestion,
     ResearchRecord,
@@ -27,16 +24,14 @@ from codey.utils.refs import digest_json, digest_text, stable_ref
 PUBLICATION_CHECK = CompletionCheck("research_publication", CHECK_PASS, "settled_publication")
 
 
-def published_completion(proof: CompletionProof, compiled: ResearchReport, *,
+def published_completion(proof: CompletionProof, compiled: AnswerReport, *,
                          synthesis_id: str, result_ref: str, answer_version: tuple[str, int] | None = None) -> CompletionProof:
     """Bind deterministic writer checks to its settled publication, never a model verdict."""
     if not isinstance(proof, CompletionProof) or not proof.satisfied or not synthesis_id or not result_ref:
         raise ValueError("research publication requires its completed writer and original result")
-    from codey.research.answer_report import AnswerReport
-
-    if isinstance(compiled, AnswerReport) and answer_version is None:
+    if answer_version is None:
         raise ValueError("whole-answer publication requires its settled knowledge version")
-    answer_refs = (stable_ref("knowledge_answer", *answer_version),) if answer_version else ()
+    answer_refs = (stable_ref("knowledge_answer", *answer_version),)
     contract = build_completion_contract(domain=proof.domain, subject_ref=proof.subject_ref,
         checks=(*proof.checks, PUBLICATION_CHECK),
         evidence_refs=(stable_ref("research_publication", synthesis_id), *answer_refs, *proof.evidence_refs),
@@ -50,32 +45,20 @@ def published_completion(proof: CompletionProof, compiled: ResearchReport, *,
 
 
 def validate_accepted_projection(result: ResearchRunResult, *, run_id: str, session_id: str, project: str) -> None:
-    raw_compiled: object = result.accepted_report
-    if not isinstance(raw_compiled, (FindingReport, AnswerReport)):
-        raise ValueError("accepted projection requires a compiled report")
-    compiled = raw_compiled
-    FindingReport.from_payload(compiled.to_payload())
-    from codey.research.answer_report import DELIVERY_CHECKS
-    from codey.research.task_requirements import validate_task_accounting
+    from codey.knowledge.archive import stable_identity
 
+    compiled = result.accepted_report
     if not isinstance(compiled, AnswerReport):
-        validate_task_accounting(list(compiled.coverage), result.question)
-    elif compiled.questions != (result.question,):
+        raise ValueError("accepted projection requires a compiled report")
+    AnswerReport.from_payload(compiled.to_payload())
+    if compiled.questions != (result.question,):
         raise ValueError("whole answer belongs to another task")
-    raw_proof: object = result.completion_proof
+    raw_proof = result.completion_proof
     proof = raw_proof if isinstance(raw_proof, CompletionProof) else None
-    required = {"research_citations", "research_sources_opened", "research_evidence_saved",
-                "research_report_sections", "research_claim_bindings", "research_question_coverage",
-                "research_task_accounting", "research_publication"}
-    if isinstance(compiled, AnswerReport):
-        from codey.knowledge.archive import stable_identity
-
-        required = {*DELIVERY_CHECKS, "research_publication"}
-        # New whole answers publish once per ordinary run; edits use explicit
-        # knowledge revisions, never reinterpret this original frozen command.
-        answer_ref = stable_ref("knowledge_answer", stable_identity("answer", run_id, "initial"), 1)
-        if proof is None or answer_ref not in proof.evidence_refs:
-            raise ValueError("whole-answer proof lost its exact published version")
+    required = {*DELIVERY_CHECKS, "research_publication"}
+    answer_ref = stable_ref("knowledge_answer", stable_identity("answer", run_id, "initial"), 1)
+    if proof is None or answer_ref not in proof.evidence_refs:
+        raise ValueError("whole-answer proof lost its exact published version")
     if (not report_delivery_matches(result.summary, compiled.text, combined=has_project_delivery(proof))
             or result.stop_reason != "done"
             or not isinstance(proof, CompletionProof) or not proof.satisfied
@@ -97,54 +80,7 @@ def validate_accepted_projection(result: ResearchRunResult, *, run_id: str, sess
         raise ValueError("research history differs from its original compilation")
 
 
-def project_accepted_report(compiled: ResearchReport, *, question: str, run_id: str, session_id: str,
-                            project: str, synthesis_id: str) -> ResearchRecord:
-    from codey.research.answer_report import AnswerReport
-
-    if isinstance(compiled, AnswerReport):
-        return project_whole_answer(compiled, question=question, run_id=run_id, session_id=session_id,
-                                    project=project, synthesis_id=synthesis_id)
-    source_ids = {(row["id"], row["revision"]): stable_ref("source", row["id"], row["revision"])
-                  for row in compiled.source_versions}
-    sources = tuple(ResearchSource(source_ids[(row["id"], row["revision"])],
-        requested_url_ref=sanitize_research_url_ref(row["url"]), final_url_ref=sanitize_research_url_ref(row["url"]),
-        title_digest=digest_text(row["title"]), content_hash=row["content_hash"],
-        retrieved_at=row["retrieved_at"], quality=row["quality"]) for row in compiled.source_versions)
-    evidence = {}
-    for row in compiled.evidence_bindings:
-        identity = stable_ref("evidence", row["evidence_id"], row["evidence_revision"])
-        sid = source_ids[(row["source_id"], row["source_revision"])]
-        evidence[identity] = ResearchEvidence(identity, sid, row["excerpt_digest"], row["excerpt"],
-            EvidenceLocator("knowledge_version", sid, page=row["page"], locator=row["locator"]),
-            stance={"supported_by": "supports", "limited_by": "limits", "refuted_by": "contradicts"}[row["relation"]])
-    claims = []
-    assumptions = []
-    for paragraph in compiled.paragraph_bindings:
-        if not paragraph["refs"]:
-            continue  # A declared gap is not a claim of contrary evidence.
-        identity = stable_ref("claim", compiled.proposal_digest, paragraph["path"])
-        inference = "inference" in paragraph["kinds"]
-        selected = [ev for ev in compiled.evidence_bindings if ev["label"] in paragraph["refs"]]
-        # Premise evidence never becomes direct evidence for a candidate inference.
-        refs = () if inference else tuple(dict.fromkeys(stable_ref("evidence", ev["evidence_id"], ev["evidence_revision"])
-                                                       for ev in selected))
-        assumption_refs: tuple[str, ...] = ()
-        if inference:
-            aid = stable_ref("assumption", identity)
-            assumptions.append(ResearchAssumption(aid, paragraph["text"], "candidate_inference_unreviewed", identity))
-            assumption_refs = (aid,)
-        claims.append(ResearchClaim(identity, paragraph["text"], "conclusion" if paragraph["path"] == "summary" else
-            paragraph["path"].split(".")[1].split("[")[0], evidence_refs=refs, assumption_refs=assumption_refs,
-            status="assumption" if inference else "evidence_backed"))
-    status = "answered" if all(row["state"] == "evidence_found" for row in compiled.coverage) else "partial"
-    digest = digest_json(compiled.to_payload())
-    return ResearchRecord(stable_ref("research_record", digest), digest,
-        ResearchQuestion(stable_ref("question", question), digest_text(question), len(question)), status,
-        sources=sources, evidence=tuple(evidence.values()), claims=tuple(claims), assumptions=tuple(assumptions),
-        run_id=run_id, session_id=session_id, project_ref=project_ref(project), synthesis_id=synthesis_id, stop_reason="done")
-
-
-def project_whole_answer(compiled: AnswerReport, *, question: str, run_id: str, session_id: str,
+def project_accepted_report(compiled: AnswerReport, *, question: str, run_id: str, session_id: str,
                          project: str, synthesis_id: str) -> ResearchRecord:
     # Material saved only for an explicit knowledge update is not a body citation.
     labels = {row["label"] for row in compiled.citation_bindings}
