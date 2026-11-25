@@ -4245,22 +4245,32 @@
       "result": "Closed multi-result tool groups before budget accounting and typed checkpoint migration and effect projection boundaries. 120 scoped tests passed, 3 existing skips. Native coding context integration stalled on the committed baseline too; fixture scheduling follow-up belongs to Q095."
     },
     {
-      "responsibility": "codey/durable: conversation and input lifecycle",
-      "files": [
-        "codey/durable/conversation_operations.py",
-        "codey/durable/conversation_ops.py",
-        "codey/durable/conversation_queries.py",
-        "codey/durable/history_queries.py",
-        "codey/durable/session_kernel.py",
-        "codey/durable/session.py",
-        "codey/durable/history.py",
-        "codey/durable/history_index.py"
-      ],
+      "responsibility": "Durable history index, snapshot reader and page queries",
+      "files": ["codey/durable/history_index.py", "codey/durable/history.py", "codey/durable/history_queries.py"],
       "id": "Q057",
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/history_index.py", "codey/durable/history.py", "codey/durable/history_queries.py"],
+      "verified_files": ["codey/durable/history_index.py", "codey/durable/history.py", "codey/durable/history_queries.py"],
+      "tests": ["tests/durable/test_history_storage_paging.py", "tests/durable/test_history_snapshot_paging.py", "tests/durable/test_fork_ancestry.py", "tests/durable/test_display_index.py"],
+      "result": "Typed cursor fields and visible-run input deduplication. Verified identical cursor bytes against the committed implementation, 43 scoped tests and all type gates."
+    },
+    {
+      "responsibility": "Conversation mutations, branch lineage and queries",
+      "files": ["codey/durable/conversation_operations.py", "codey/durable/conversation_ops.py", "codey/durable/conversation_queries.py"],
+      "id": "Q057B",
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 0
+      "tests": ["tests/durable/test_conversation_mutation_line.py", "tests/durable/test_conversation_delete_commit.py", "tests/durable/test_fork_ancestry.py", "tests/durable/test_inbox_history_projection.py"]
+    },
+    {
+      "responsibility": "Durable session facade, mutation line and snapshot lifecycle",
+      "files": ["codey/durable/session_kernel.py", "codey/durable/session.py"],
+      "id": "Q057C",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/durable/test_session_kernel.py", "tests/durable/test_session.py", "tests/durable/test_session_lifecycle_contract.py"]
     },
     {
       "responsibility": "codey/durable: conversation and input lifecycle",

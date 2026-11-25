@@ -1900,3 +1900,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 额外运行上组及 `tests/test_native_coding_context_after_edits.py` 时，2 分钟栈报告显示在 `evaluate_completion → wait_tool_task` 等待，主动终止后进程退出 1，无完整计数。通过 `python -` 从 `7d3bb375` 在内存重载两份源并复跑该文件的 `test_native_receipts_include_refreshed_coding_context_after_creation[False-False]`。同一等待点的工具子任务为 pending 且 attempt token 为空，只有测试线程与观察计时线程，主动中断后退出 1，0 项完成。独立 fixture 只创建 MemoryDurableStore，没有启动工具任务 worker。四个原生编辑续跑变体留给 Q095 的 fixture 调度验证。
 - `python -m mypy codey/durable/checkpoint.py codey/durable/context.py tests/durable/test_context.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 退出 0，检查点源原有 13 条、上下文测试原有 11 条诊断均消除。同三文件 Ruff、全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q056 完成。累计完成 102/356 批，完成批覆盖 177/1009 个生产文件，另有 16 批部分完成。下一批 Q057 为会话与输入生命周期。
+
+### Q057 历史索引、快照读取与分页
+
+- Q056 已提交 `91570361`。将会话与输入生命周期原八文件按职责拆为 Q057 历史索引与分页、Q057B 会话读写与分支、Q057C 事务及公开会话入口。全部原路径仍归属队列，新增两个批次。
+- 完整检查 `history_index.py`、`history.py` 和 `history_queries.py`。保留路径扫描参考实现验证 AVL 索引、显示过滤和快照。分页游标使用有类型的字段序列，解码后的 JSON 数组逐字段校验。可见任务查询保留输入去重顺序。直接通过 `python -` 加载 `91570361` 版游标函数，确认消息和导航游标的签名及编码逐字节一致，且旧游标能在新实现解码。首次探针遗漏创建会话，因夹具准备失败退出 1。补齐会话创建后退出 0。
+- `D:\codey` 的两个修改前定向组分别为 25 和 18 passed。最终执行 `python -m pytest -q tests/durable/test_history_storage_paging.py tests/durable/test_history_snapshot_paging.py tests/durable/test_fork_ancestry.py tests/durable/test_display_index.py --tb=short`，43 passed、无失败或跳过、退出 0，含路径改写、重启游标、继承分支、读写并发和索引读取规模。
+- `python -m mypy codey/durable/history_index.py codey/durable/history.py codey/durable/history_queries.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 从 2 条诊断降至 0。同三文件 Ruff、全生产 mypy 763 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q057 完成。累计完成 103/358 批，完成批覆盖 180/1009 个生产文件，另有 16 批部分完成。下一批 Q057B 为会话读写、分支和收件箱视图。

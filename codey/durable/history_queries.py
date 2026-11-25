@@ -7,7 +7,6 @@ import hashlib
 import hmac
 import json
 from dataclasses import dataclass
-from typing import cast
 
 from codey.durable.history import HistoryReader
 from codey.durable.history_index import find, locate, size, window
@@ -25,8 +24,9 @@ class PagePosition:
 
 def _cursor(reader: HistoryReader, database_id: str, conversation_id: str, kind: str,
             position: PagePosition) -> str:
-    raw = json.dumps([database_id, conversation_id, kind, position.generation, position.anchor,
-                      position.revision, position.boundary], separators=(",", ":")).encode()
+    fields = (database_id, conversation_id, kind, position.generation, position.anchor,
+              position.revision, position.boundary)
+    raw = json.dumps(fields, separators=(",", ":")).encode()
     payload = base64.urlsafe_b64encode(raw).decode().rstrip("=")
     return payload + "." + hmac.new(reader.cursor_key(), raw, hashlib.sha256).hexdigest()
 
@@ -46,7 +46,7 @@ def _position(reader: HistoryReader, database_id: str, conversation_id: str, kin
         decoded: object = json.loads(raw)
         if not isinstance(decoded, list) or len(decoded) != 7:
             raise ValueError
-        fields = cast(list[object], decoded)
+        fields: list[object] = decoded
         epoch, scope, query, pinned_generation, pinned_anchor, pinned_revision, boundary = fields
         if (epoch != database_id or scope != conversation_id or query != kind
                 or type(pinned_generation) is not int or type(pinned_revision) is not int
@@ -140,6 +140,7 @@ def validate_runs(session: SessionKernel, conversation_id: str, run_ids: list[st
                   generation: int) -> dict[str, object]:
     if len(run_ids) > 200 or any(not run or len(run) > 256 for run in run_ids):
         raise ValueError("expected at most 200 task identities")
+    unique_runs = {run: None for run in run_ids}
     with session.history_read(conversation_id) as reader:
         anchor, revision, current_generation = reader.display_head(conversation_id)
         if epoch != session.database_id or generation != current_generation:
@@ -148,4 +149,4 @@ def validate_runs(session: SessionKernel, conversation_id: str, run_ids: list[st
         return {**_envelope(session.database_id, conversation_id,
                             PagePosition(anchor, revision, current_generation, 0)),
                 "runs": [{"run_id": run, "visible": find(reader, version.runs, run) is not None}
-                         for run in dict.fromkeys(run_ids)]}
+                         for run in unique_runs]}
