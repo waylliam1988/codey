@@ -4598,15 +4598,17 @@
       "result": "Validate both the full conclusion and its displayed excerpt so clipping cannot hide an unknown citation. The regression failed on the old implementation. All 82 scoped cases and 2 subtests, whole-file strict Any and production gates passed."
     },
     {
-      "responsibility": "codey/knowledge: provider connection and selection",
+      "responsibility": "Knowledge object, reference and version contracts",
       "files": [
         "codey/knowledge/model.py"
       ],
       "id": "Q073",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 40
+      "status": "completed_changed",
+      "reviewed_files": ["codey/knowledge/model.py"],
+      "verified_files": ["codey/knowledge/model.py"],
+      "tests": ["tests/test_knowledge_model_decode.py", "tests/test_knowledge_repository.py", "tests/test_long_term_knowledge.py", "tests/test_knowledge_interpretation_identity.py", "tests/test_knowledge_answer_scope.py", "tests/test_persistent_research_lifecycle.py", "tests/test_knowledge_compensation_refs.py", "tests/test_research_historical_claim_read.py", "tests/test_research_long_term_loop.py"],
+      "reviewed_support": ["tests/test_knowledge_model_decode.py"],
+      "result": "Reject malformed alias containers and decode the object contract with explicit field types. Typed metadata readers and tool previews clear strict Any in all changed files. Direct verification passed 43 cases. Expanded verification passed 65 and reproduced two baseline failures routed to Q098 and Q155."
     },
     {
       "responsibility": "codey/knowledge: source acquisition and discovery",
@@ -5778,7 +5780,8 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 153
+      "candidate_test_count": 153,
+      "followups": ["Q073 narrowed the knowledge read payload and removed strict Any diagnostics in tools.py. Its remaining behavior review belongs here."]
     },
     {
       "responsibility": "codey/research: shared contracts and module services",
@@ -5792,7 +5795,8 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 26
+      "candidate_test_count": 26,
+      "followups": ["Q073 expanded verification: the text parameter of test_cold_history_claim_to_material_to_whole_publication asserts the entire first prompt has no fN, but the save_inference tool contract includes that literal. The same failure occurs with all three Q073 production files loaded from e0da11dd. Confirm the intended boundary between summary locators and the tool glossary."]
     },
     {
       "responsibility": "codey/research: answer and report projection",
@@ -6040,7 +6044,8 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 3
+      "candidate_test_count": 3,
+      "followups": ["Q073 verified the typed provenance and page boundaries in knowledge_materials.py and pinned material read cases. Review remaining Q170 production files and caller interactions at batch entry."]
     },
     {
       "responsibility": "codey/research: provider connection and selection",

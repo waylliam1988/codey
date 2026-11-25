@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import asdict
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from codey.knowledge.model import KnowledgeVersion
@@ -15,6 +15,28 @@ from codey.types.json_value import require_json_integer, require_json_string
 
 if TYPE_CHECKING:
     from codey.research.tools import ResearchToolOutput, ResearchTools
+
+
+def _source_quality(value: object) -> SourceQuality:
+    if not isinstance(value, dict):
+        raise ValueError("source quality must be an object")
+    quality: Mapping[object, object] = value
+    return SourceQuality(**{require_json_string(key, "quality key"): require_json_string(item, "source quality")
+                            for key, item in quality.items()})
+
+
+def _page_texts(value: object) -> dict[int, str]:
+    if not isinstance(value, (list, tuple)):
+        raise ValueError("stored pages must be an array")
+    pages: Sequence[object] = value
+    result: dict[int, str] = {}
+    for page in pages:
+        if not isinstance(page, dict):
+            raise ValueError("stored page must be an object")
+        row: Mapping[str, object] = page
+        number = require_json_integer(row["number"], "page number")
+        result[number] = require_json_string(row["text"], "page text")
+    return result
 
 
 def read_material(tools: ResearchTools, version: KnowledgeVersion, *, offset: int = 0, limit: int = 6000) -> ResearchToolOutput:
@@ -39,12 +61,13 @@ def read_material(tools: ResearchTools, version: KnowledgeVersion, *, offset: in
     version = source_version
     source_value = version.value
     text, provenance = source_value.content, source_value.provenance
+    url = require_json_string(provenance["url"], "source URL")
     source = OpenedSource(
-        requested_url=provenance["url"], final_url=provenance["url"], title=source_value.title,
-        retrieved_at=provenance.get("retrieved_at") or version.recorded_at,
+        requested_url=url, final_url=url, title=source_value.title,
+        retrieved_at=require_json_string(provenance.get("retrieved_at") or version.recorded_at, "retrieved_at"),
         text_hash=hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:16],
-        quality=SourceQuality(**provenance.get("quality", {})),
-        content_kind=provenance.get("content_kind", "html"),
+        quality=_source_quality(provenance.get("quality", {})),
+        content_kind=require_json_string(provenance.get("content_kind", "html"), "content kind"),
         truncated=bool(provenance.get("truncated", False)))
     pages = provenance.get("pages", [])
     rows: list[PassageDescriptor]
@@ -65,9 +88,7 @@ def read_material(tools: ResearchTools, version: KnowledgeVersion, *, offset: in
         if type(offset) is not int or type(limit) is not int or not 0 <= offset < len(text) or not 500 <= limit <= 12000:
             raise ValueError("source read needs offset within the stored text and limit between 500 and 12000")
         rows = []
-    observation = source_snapshot(source, text,
-        {require_json_integer(page["number"], "page number"): require_json_string(page["text"], "page text")
-         for page in pages})
+    observation = source_snapshot(source, text, _page_texts(pages))
     if evidence is None:
         rows = describe_captured_window(observation, offset, limit, coherent=True)
     if not rows:
@@ -80,7 +101,7 @@ def read_material(tools: ResearchTools, version: KnowledgeVersion, *, offset: in
     body = {"id": value.id, "revision": evidence.revision if evidence else version.revision,
             "kind": value.kind, "source_version": [source_value.id, version.revision],
             "available_length": len(text), "next_offset": rows[-1]["end"],
-            "references": [asdict(ref) for ref in value.references],
+            "references": [ref.to_dict() for ref in value.references],
             "passages": [{**row, "text": text[row["start"]:row["end"]]} for row in rows]}
     from codey.knowledge.model import canonical_json
 

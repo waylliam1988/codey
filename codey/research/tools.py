@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import contextlib
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
@@ -37,6 +37,10 @@ from codey.research.url_selection import source_candidate_skip_reason
 from codey.types.json_value import JsonObject, ToolArgs, canonical_json_object, decode_json_object
 
 _CITED_TYPES = {"fact", "conclusion", "decision", "implementation", "verification", "synthesis", "project_note"}
+
+
+class _DiagnosticRecord(Protocol):
+    def __call__(self, area: str, action: str, error: object, /, *, url: str, model: object) -> object: ...
 
 
 def _base_changes(changes: KnowledgeChanges | StagedKnowledgeChanges | None) -> KnowledgeChanges | None:
@@ -116,8 +120,10 @@ class ResearchTools:
         self.sources_read.update(staged.sources_read)
         self.search_result_urls.update(staged.search_result_urls)
         self.grounded_ids.update(staged.grounded_ids)
-        self.created_ids = list(dict.fromkeys(self.created_ids + staged.created_ids))
-        self.updated_ids = list(dict.fromkeys(self.updated_ids + staged.updated_ids))
+        created: dict[str, None] = dict.fromkeys(self.created_ids + staged.created_ids)
+        updated: dict[str, None] = dict.fromkeys(self.updated_ids + staged.updated_ids)
+        self.created_ids = list(created)
+        self.updated_ids = list(updated)
         if staged.synthesis_id:
             self.synthesis_id = staged.synthesis_id
         self.links_created = max(self.links_created, staged.links_created)
@@ -186,8 +192,8 @@ class ResearchTools:
         document = snapshot_document(selected)
         source, _text, _page_map = source_observation(observation)
         restore_ledger_observation(self.ledger, selected)
-        outcome = OpenedSource(status="ok", document=document, observation=selected,
-            read_urls=tuple(dict.fromkeys((source.requested_url, source.final_url))))
+        read_urls: dict[str, None] = dict.fromkeys((source.requested_url, source.final_url))
+        outcome = OpenedSource(status="ok", document=document, observation=selected, read_urls=tuple(read_urls))
         self.sources_read.update(outcome.read_urls)
         return render_source_read(outcome, self.ledger, offset=offset, limit=limit, coherent=self.coherent_passages)
 
@@ -251,13 +257,15 @@ class ResearchTools:
             elif version.value.kind in {"claim", "inference", "observation"} and payload["content_complete"]:
                 from codey.research.references import bind_version
 
-                payload["finding_ref"] = bind_version(self.ledger, version, question_ref=question_ref,
+                finding_ref = bind_version(self.ledger, version, question_ref=question_ref,
                     **({"acquisition": binding.acquisition, "note_id": binding.note_id,
                         "passage_ref": binding.passage_ref} if binding else {}))
+                payload["finding_ref"] = finding_ref
                 from codey.research.evidence_view import reference_evidence_preview
 
-                payload.update(reference_evidence_preview(self.ledger, self.store, payload["finding_ref"],
-                    project=self.project, session_id=self.session_id))
+                preview: Mapping[str, object] = reference_evidence_preview(self.ledger, self.store, finding_ref,
+                    project=self.project, session_id=self.session_id)
+                payload.update(preview)
                 payload["adoption"] = "Cite this fN only if adopted. It stays pinned and unreviewed; old answers are not evidence."
             return ResearchToolOutput(canonical_json(payload), ok=True, knowledge_read_versions=read_versions)
         note = self.store.read_note((note_id or "").strip(), **({"revision": revision} if revision is not None else {}))
@@ -509,9 +517,11 @@ class ResearchTools:
     def _record_failure(self, area: str, action: str, error: object, *, url: str = "") -> None:
         if self.diagnostics is not None:
             with contextlib.suppress(Exception):
-                recorder = getattr(self.diagnostics, "record", None)
+                recorder: object = getattr(self.diagnostics, "record", None)
                 if callable(recorder):
-                    recorder(area, action, error, url=url, model=getattr(self.search, "name", ""))
+                    record: _DiagnosticRecord = recorder
+                    model: object = getattr(self.search, "name", "")
+                    record(area, action, error, url=url, model=model)
 
     def _provenance_problem(self, note_type: str, sources: list[str]) -> str | None:
         if not sources:
@@ -601,10 +611,11 @@ def _prepare_write_sources(
     # evidence items. This copies explicit locators, never invents evidence.
     evidence = args.get("evidence")
     if "sources" not in args and existing_note is None and isinstance(evidence, list):
-        sources = list(dict.fromkeys(
+        evidence_urls: dict[str, None] = dict.fromkeys(
             url.strip() for item in evidence if isinstance(item, dict)
             and isinstance((url := item.get("source_url")), str) and url.strip()
-        ))
+        )
+        sources = list(evidence_urls)
     validating_sources = not updating or "sources" in args
     if note_type == "source":
         problem = (

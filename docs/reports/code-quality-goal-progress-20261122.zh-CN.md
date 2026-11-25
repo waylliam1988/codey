@@ -2127,3 +2127,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 校验完整候选行，并要求展示片段仍带可用引用。回归中只引用 `[1]` 的长行仍列为关键结论，混合引用落到限制项。源码原已通过整文件严格 Any，改后与回归一同通过。Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁均通过。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_brief_citations.py tests/test_knowledge.py tests/test_architecture.py::ArchitectureBoundaryTests::test_source_trust_and_brief_projection_stay_projection_only tests/test_architecture.py::ArchitectureBoundaryTests::test_knowledge_brief_import_does_not_load_research_runtime tests/test_project_task_context.py tests/test_research_to_code_ab.py --tb=short`，82 passed、2 subtests passed、无失败或跳过、退出 0。去掉回归文件的修改前基线为 81 passed、2 subtests passed。
 - Q072G 完成。累计完成 133/371 批，覆盖 221/1011 个生产文件，另有 15 批部分完成。下一批 Q073 审查 Knowledge 对象和版本模型。
+
+### Q073 Knowledge 对象、引用及版本模型
+
+- Q072G 已提交 `e0da11dd`。完整检查 `model.py`。`research/knowledge_schema.py` 的提交合同要求 `aliases` 为字符串数组。通过 `KnowledgeCommitRequest.decode` 传入字符串、空字符串和对象，旧实现均接纳并转换。执行 `python -m pytest -q tests/test_knowledge_model_decode.py --tb=short`，3 failed、1 passed、退出 1。改后拒绝这三种值，正常数组及顺序保留。
+- 对模型字段、条件与固定引用显式解码，保留有效 JSON 的字段和值。共享固定引用的序列化。将原来源元数据的 Any 收窄到只读对象映射，更新 `knowledge_materials.py` 的类型边界和 `tools.py` 的预览、诊断调用。三份源码及回归通过整文件严格 Any，模型原 23 条诊断清除。全生产 mypy 765 文件、Ruff、ty 和 kernel 精度门禁退出 0。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。Q154、Q170 保留所属区域的完整审查。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_model_decode.py tests/test_knowledge_repository.py tests/test_long_term_knowledge.py tests/test_knowledge_interpretation_identity.py tests/test_knowledge_answer_scope.py tests/test_persistent_research_lifecycle.py tests/test_knowledge_compensation_refs.py tests/test_research_historical_claim_read.py::test_cold_history_claim_to_material_to_whole_publication[True] tests/test_research_long_term_loop.py::test_historical_source_reads_are_bounded_and_offsets_keep_original_versions --tb=short`，43 passed、无失败或跳过、退出 0。原四文件基线 16 passed。
+- 扩大历史读取与长期研究两个测试文件为全文件后，最终 65 passed、2 failed、退出 1。使用 `git show e0da11dd:<path>` 载入三份原源码后重跑两个失败节点及两个恢复参数，3 passed、2 failed、退出 1，失败相同。文本参数的夹具禁止提示出现 `fN`，但首轮工具说明已含合法 `fN` 字面量，待 Q155 核对。Q098 已记录另一项在协议归一化阶段的失败。首次扩大验证另有两个恢复参数失败，当时源码在跨进程测试运行中改变，运行时标识会对全部生产 Python 文件哈希。固定源码后两个参数均通过。
+- Q073 完成。累计完成 134/371 批，覆盖 222/1011 个生产文件，另有 15 批部分完成。下一批 Q074 审查知识检索用的主题信号和索引文本。
