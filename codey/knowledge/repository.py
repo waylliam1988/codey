@@ -30,12 +30,16 @@ class _KnowledgeObjectReader(Protocol):
 _object_reader: _KnowledgeObjectReader = KnowledgeObject
 
 
-def _stored_object(row: _RepositoryRow) -> KnowledgeObject:
-    raw: object = json.loads(require_json_string(row["payload"], "knowledge payload"))
+def decode_knowledge_object(payload: str) -> KnowledgeObject:
+    raw: object = json.loads(payload)
     if not isinstance(raw, dict):
         raise ValueError("knowledge payload must be a JSON object")
     document: dict[str, object] = raw
     return _object_reader.from_dict(document)
+
+
+def _stored_object(row: _RepositoryRow) -> KnowledgeObject:
+    return decode_knowledge_object(require_json_string(row["payload"], "knowledge payload"))
 
 # Relation direction is explicit: a claim is supported_by evidence, an evidence
 # fragment is from_source a source version. Co-occurrence is not a fact relation.

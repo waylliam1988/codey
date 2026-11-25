@@ -114,9 +114,12 @@ class KnowledgeStore:
                         updated = now_iso()
                     persisted = replace(note, updated=updated)
                     if changes is not None:
-                        changes.capture_content(rel, None if moved else previous_text)
-                        if previous is not None and moved:
-                            changes.capture_content(previous[1], previous_text)
+                        if previous is None:
+                            changes.capture_content(rel, None)
+                        else:
+                            if moved:
+                                changes.capture_content(rel, None)
+                            changes.capture_content(previous[1], previous_text, document_revision=previous[2])
                     revision = self.documents.write(persisted, rel)
                     if projection_refs:
                         conn.executemany("INSERT OR IGNORE INTO note_knowledge_refs VALUES(?,?,?,?)",

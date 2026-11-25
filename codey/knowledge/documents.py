@@ -91,7 +91,8 @@ class KnowledgeDocuments:
         rows: list[_DocumentRow] = self.index._read_conn().execute("SELECT * FROM note_documents ORDER BY id").fetchall()
         return [_read_document(row) for row in rows]
 
-    def write(self, note: KnowledgeNote, path: str, *, reason: str = "edit") -> int:
+    def write(self, note: KnowledgeNote, path: str, *, reason: str = "edit",
+              reference_revision: int | None = None) -> int:
         text = note.to_markdown()
         with self.index.transaction() as conn:
             old: _DocumentRow | None = conn.execute(
@@ -104,10 +105,12 @@ class KnowledgeDocuments:
             conn.execute("INSERT INTO note_documents VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
                          "path=excluded.path,revision=excluded.revision,markdown=excluded.markdown",
                          (note.id, path, version, text))
-            if old is not None and unchanged_text:
+            if reference_revision is None and old is not None and unchanged_text:
+                reference_revision = require_json_integer(old["revision"], "revision")
+            if reference_revision is not None:
                 conn.execute("INSERT INTO note_knowledge_refs "
                              "SELECT note_id,?,target,revision FROM note_knowledge_refs WHERE note_id=? AND note_revision=?",
-                             (version, note.id, require_json_integer(old["revision"], "revision")))
+                             (version, note.id, reference_revision))
             self.index.upsert(note, path=path, content_hash=hashlib.sha256(text.encode()).hexdigest()[:16])
             return version
 

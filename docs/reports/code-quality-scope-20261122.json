@@ -4578,8 +4578,10 @@
     },
     {
       "id": "Q072E", "responsibility": "Knowledge changes and compensating writes", "files": ["codey/knowledge/changes.py"],
-      "status": "not_started", "reviewed_files": [], "verified_files": [],
-      "tests": ["tests/test_knowledge.py", "tests/test_knowledge_sqlite_authority.py", "tests/test_persistent_research_lifecycle.py"]
+      "status": "completed_changed", "reviewed_files": ["codey/knowledge/changes.py"], "verified_files": ["codey/knowledge/changes.py"],
+      "tests": ["tests/test_knowledge_compensation_refs.py", "tests/test_knowledge.py", "tests/test_knowledge_sqlite_authority.py", "tests/test_knowledge_document_path.py", "tests/test_knowledge_answer_scope.py", "tests/test_knowledge_repository.py", "tests/test_knowledge_repository_purge_receipts.py", "tests/test_persistent_research_lifecycle.py", "tests/test_long_term_knowledge.py"],
+      "reviewed_support": ["tests/test_knowledge_compensation_refs.py"],
+      "result": "Compensation retains the original document revision's fixed knowledge references and keeps published answer text read-only. The reproducer failed on the original implementation. Shared object decoding and commit digest remove duplicate logic. Revalidated the modified documents, store, and repository boundaries. All 62 scoped cases and production gates passed."
     },
     {
       "id": "Q072F", "responsibility": "Knowledge evidence and version graphs", "files": ["codey/knowledge/graph.py", "codey/knowledge/version_graph.py"],

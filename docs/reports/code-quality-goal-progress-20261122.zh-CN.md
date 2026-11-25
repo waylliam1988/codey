@@ -2105,3 +2105,11 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 收窄 SQLite 行、对象来源及笔记引用的类型，合并已发布答案的判定，批量查询清除对象所关联的笔记。源码与回归整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁退出 0。Pyrefly 0 errors（35 suppressed、168 warnings 未展示）。有类型的引用结果使 `version_graph.py` 的四处转换成为冗余警告，交由 Q072F 随该文件检查处理。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_document_path.py tests/test_knowledge.py tests/test_knowledge_sqlite_authority.py tests/test_knowledge_note_import.py tests/test_knowledge_answer_scope.py tests/test_persistent_research_lifecycle.py::test_explicit_commit_undo_and_session_graph tests/test_persistent_research_lifecycle.py::test_purge_removes_dependent_documents_exports_and_prevents_replay tests/test_persistent_research_lifecycle.py::test_shared_staged_excerpts_keep_stances_and_exact_source_text tests/test_research_process_fault_review.py::test_atomic_publication_fault --tb=short`，59 passed、无失败或跳过、退出 0。补偿及版本图的其余用例留在各自批次。
 - Q072D 完成。累计完成 130/371 批，覆盖 217/1011 个生产文件，另有 15 批部分完成。下一批 Q072E 审查 Knowledge 撤销与补偿写入。
+
+### Q072E Knowledge 撤销与补偿写入
+
+- Q072D 已提交 `29b80f45`。完整检查 `changes.py`。`docs/persistent-research.md` 规定研究报告和证据图引用同一知识版本。编辑已发布报告的标题后撤销，旧实现恢复 Markdown，却将固定引用丢在历史版本中。执行 `python -m pytest -q tests/test_knowledge_compensation_refs.py --tb=short`，修改前 `note_references` 返回空列表，1 failed、退出 1。
+- 首次记录文档原文时一并记录版本，补偿版本复用文档层的引用复制。回归验证答案更新到 v2 后，报告撤销仍固定引用 v1，保留三个文档版本，且正文仍受已发布答案的只读约束。复用仓库 JSON 解码和批次摘要，清除 `changes.py` 6 条严格 Any 诊断。已完成批次的三个依赖文件按本次实际修改重验。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_compensation_refs.py tests/test_knowledge.py tests/test_knowledge_sqlite_authority.py tests/test_knowledge_document_path.py tests/test_knowledge_answer_scope.py tests/test_knowledge_repository.py tests/test_knowledge_repository_purge_receipts.py tests/test_persistent_research_lifecycle.py::test_explicit_commit_undo_and_session_graph tests/test_persistent_research_lifecycle.py::test_purge_removes_dependent_documents_exports_and_prevents_replay tests/test_long_term_knowledge.py::test_candidate_note_is_preserved_as_uncertain_and_undo_withdraws --tb=short`，62 passed、无失败或跳过、退出 0。原基线四个目标为 52 passed。
+- 五份修改文件的整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁均通过。Pyrefly 0 errors（35 suppressed、168 warnings 未展示）。初次验证定位到索引重建仍使用旧解码入口，复用同一个行解码器后门禁通过。
+- Q072E 完成。累计完成 131/371 批，覆盖 218/1011 个生产文件，另有 15 批部分完成。下一批 Q072F 审查证据与版本图。
