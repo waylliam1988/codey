@@ -5,20 +5,21 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import re
-from collections.abc import Iterator
-from dataclasses import dataclass
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Protocol, TypedDict
 from uuid import uuid4
 
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.documents import KnowledgeDocuments
 from codey.knowledge.index import KnowledgeIndex
-from codey.knowledge.model import KnowledgeMutation, canonical_json
+from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, canonical_json
 from codey.knowledge.note import LINK_KINDS, KnowledgeNote, is_safe_id, now_iso, wikilink
 from codey.knowledge.recall import KnowledgeAccess, KnowledgeHit, KnowledgeRecall
 from codey.knowledge.repository import KnowledgeRepository
 from codey.storage.atomic_io import write_text_atomic
+from codey.types.json_value import JsonObject, require_json_integer, require_json_string
 
 RELATED_HEADING = "## Related"
 
@@ -37,6 +38,20 @@ class NoteDocumentMetadata(TypedDict):
     content_hash: str
 
 
+class NoteKnowledgeReference(TypedDict):
+    target: str
+    revision: int
+
+
+class _StoreRow(Protocol):
+    def __getitem__(self, key: str | int, /) -> object: ...
+
+
+def _is_published_answer(value: KnowledgeObject) -> bool:
+    provenance: Mapping[str, object] = value.provenance
+    return value.kind == "answer" and provenance.get("basis") == "settled_whole_answer_submission"
+
+
 class KnowledgeStore:
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root).expanduser().resolve()
@@ -46,7 +61,8 @@ class KnowledgeStore:
         self.repository = KnowledgeRepository(self.index)
         with self.index.transaction() as conn:
             conn.execute("INSERT OR IGNORE INTO knowledge_meta VALUES('owner_id',?)", ("owner-" + uuid4().hex,))
-            self.owner_id = str(conn.execute("SELECT value FROM knowledge_meta WHERE key='owner_id'").fetchone()[0])
+            owner: _StoreRow = conn.execute("SELECT value FROM knowledge_meta WHERE key='owner_id'").fetchone()
+            self.owner_id = require_json_string(owner[0], "knowledge owner ID")
         self._import_legacy_once()
 
     def path_for(self, note: KnowledgeNote) -> Path:
@@ -70,7 +86,7 @@ class KnowledgeStore:
                                                        limit=limit, depth=depth, exclude_kinds=exclude_kinds,
                                                        exclude_ids=exclude_ids)
 
-    def search_notes(self, query: str, *, project: str = "", session_id: str = "") -> list[dict[str, Any]]:
+    def search_notes(self, query: str, *, project: str = "", session_id: str = "") -> list[JsonObject]:
         rows = self.index.search(query, limit=32)
         return [row for row in rows if (
             row.get("project") == project if row.get("project") else
@@ -84,37 +100,44 @@ class KnowledgeStore:
         changes: KnowledgeChanges | None = None,
     ) -> str:
         rel = self.rel(self.path_for(note))
-        previous = self.documents.get(note.id)
-        projection_refs = self._answer_projection_refs(note)
-        if previous is not None:
-            from dataclasses import replace
-
-            if replace(note, updated=previous[0].updated).to_markdown() == previous[0].to_markdown():
-                note.updated = previous[0].updated
-                return rel
-        note.updated = now_iso()
-        with self.index.transaction():
-            if changes is not None:
-                changes.capture_content(rel, previous[0].to_markdown() if previous else None)
-                if previous and previous[1] != rel:
-                    changes.capture_content(previous[1], previous[0].to_markdown())
-            revision = self.documents.write(note, rel)
-            if projection_refs:
-                self.index._read_conn().executemany("INSERT OR IGNORE INTO note_knowledge_refs VALUES(?,?,?,?)",
-                    [(note.id, revision, row["target"], row["revision"]) for row in projection_refs])
-            self._index_body_links(note)
-            if changes is not None:
-                changes.record_content(rel, note.to_markdown())
-                if previous and previous[1] != rel:
-                    changes.record_content(previous[1], None)
+        snapshot = changes.snapshot() if changes is not None else None
+        try:
+            with self.index.transaction() as conn:
+                previous = self.documents.get(note.id)
+                projection_refs = self._answer_projection_refs(note)
+                previous_text = previous[0].to_markdown() if previous else None
+                moved = previous is not None and previous[1] != rel
+                updated = previous[0].updated if previous else note.updated
+                same_text = replace(note, updated=updated).to_markdown() == previous_text
+                if not same_text or moved:
+                    if not same_text:
+                        updated = now_iso()
+                    persisted = replace(note, updated=updated)
+                    if changes is not None:
+                        changes.capture_content(rel, None if moved else previous_text)
+                        if previous is not None and moved:
+                            changes.capture_content(previous[1], previous_text)
+                    revision = self.documents.write(persisted, rel)
+                    if projection_refs:
+                        conn.executemany("INSERT OR IGNORE INTO note_knowledge_refs VALUES(?,?,?,?)",
+                            [(note.id, revision, row["target"], row["revision"]) for row in projection_refs])
+                    self._index_body_links(persisted)
+                    if changes is not None:
+                        changes.record_content(rel, persisted.to_markdown())
+                        if previous is not None and moved:
+                            changes.record_content(previous[1], None)
+        except BaseException:
+            if changes is not None and snapshot is not None:
+                changes.restore_snapshot(snapshot)
+            raise
+        note.updated = updated
         return rel
 
-    def _answer_projection_refs(self, note: KnowledgeNote) -> list[dict[str, Any]]:
+    def _answer_projection_refs(self, note: KnowledgeNote) -> list[NoteKnowledgeReference]:
         references = self.note_references(note.id)
         answers = [version.value for row in references
                    if (version := self.repository.read(row["target"], row["revision"])) is not None
-                   and version.value.kind == "answer"
-                   and version.value.provenance.get("basis") == "settled_whole_answer_submission"]
+                   and _is_published_answer(version.value)]
         if not answers:
             return []
         if len(answers) != 1 or answers[0].content != note.body:
@@ -158,15 +181,15 @@ class KnowledgeStore:
 
     def publish_note(self, note: KnowledgeNote, commit_id: str, mutations: list[KnowledgeMutation],
                      *, changes: KnowledgeChanges | None = None, shared_staged: bool = False) -> str:
-        answers = [row.value for row in mutations if row.value.kind == "answer"
-                   and row.value.provenance.get("basis") == "settled_whole_answer_submission"]
-        if answers and (len(answers) != 1 or answers[0].content != note.body
-                        or answers[0].provenance.get("synthesis_id") != note.id):
-            raise ValueError("answer publication must project its one exact knowledge answer")
+        answers = [row.value for row in mutations if _is_published_answer(row.value)]
+        if answers:
+            provenance: Mapping[str, object] = answers[0].provenance
+            if len(answers) != 1 or answers[0].content != note.body or provenance.get("synthesis_id") != note.id:
+                raise ValueError("answer publication must project its one exact knowledge answer")
         snapshot = changes.snapshot() if changes is not None else None
         try:
             with self.index.transaction():
-                references = {str(row["target"]): int(row["revision"]) for row in self.note_references(note.id)}
+                references = {row["target"]: row["revision"] for row in self.note_references(note.id)}
                 versions = self.commit_knowledge(commit_id, mutations, changes=changes, session_id=note.session_id,
                                                  project=note.project, shared_staged=shared_staged) if mutations else {}
                 references.update(versions)
@@ -191,24 +214,32 @@ class KnowledgeStore:
                 if changes is not None:
                     for mutation in mutations:
                         previous = self.repository.read(mutation.value.id, mutation.expected_revision) if mutation.expected_revision else None
-                        changes.capture_content(f"_knowledge/{mutation.value.id}.json", canonical_json(previous.value.to_dict()) if previous else None)
+                        previous_text = None
+                        if previous is not None:
+                            previous_payload: object = previous.value.to_dict()
+                            previous_text = canonical_json(previous_payload)
+                        changes.capture_content(f"_knowledge/{mutation.value.id}.json", previous_text)
                 versions = self.repository.commit(commit_id, mutations, shared_staged=shared_staged)
                 conn.execute("INSERT OR IGNORE INTO knowledge_commit_context VALUES(?,?,?)", (commit_id, session_id, project))
                 if changes is not None:
                     for mutation in mutations:
-                        changes.record_content(f"_knowledge/{mutation.value.id}.json", canonical_json(mutation.value.to_dict()))
+                        payload: object = mutation.value.to_dict()
+                        changes.record_content(f"_knowledge/{mutation.value.id}.json", canonical_json(payload))
                 return versions
         except BaseException:
             if changes is not None and snapshot is not None:
                 changes.restore_snapshot(snapshot)
             raise
 
-    def note_references(self, note_id: str, revision: int | None = None) -> list[dict[str, Any]]:
+    def note_references(self, note_id: str, revision: int | None = None) -> list[NoteKnowledgeReference]:
         found = self.documents.get(note_id, revision)
         if not found:
             return []
-        return [dict(row) for row in self.index._read_conn().execute(
-            "SELECT target,revision FROM note_knowledge_refs WHERE note_id=? AND note_revision=?", (note_id, found[2]))]
+        rows: list[_StoreRow] = self.index._read_conn().execute(
+            "SELECT target,revision FROM note_knowledge_refs WHERE note_id=? AND note_revision=?", (note_id, found[2])
+        ).fetchall()
+        return [NoteKnowledgeReference(target=require_json_string(row["target"], "knowledge target"),
+                                       revision=require_json_integer(row["revision"], "knowledge revision")) for row in rows]
 
     def read_note(self, note_id: str, *, revision: int | None = None) -> KnowledgeNote | None:
         found = self.documents.get(note_id, revision)
@@ -298,8 +329,11 @@ class KnowledgeStore:
         """
         with self.index.transaction() as conn:
             removed = self.repository.purge(identities)
-            notes = {str(row[0]) for identity in removed for row in conn.execute(
-                "SELECT DISTINCT note_id FROM note_knowledge_refs WHERE target=?", (identity,))}
+            rows: list[_StoreRow] = conn.execute(
+                "SELECT DISTINCT note_id FROM note_knowledge_refs WHERE target IN (SELECT value FROM json_each(?))",
+                (canonical_json(sorted(removed)),),
+            ).fetchall()
+            notes = {require_json_string(row[0], "linked note id") for row in rows}
             for note_id in notes:
                 self.delete_note(note_id, purge=True)
             for identity in removed:
