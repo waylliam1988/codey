@@ -25,6 +25,7 @@ from codey.types.json_value import (
     require_json_string,
     require_json_strings,
 )
+from codey.utils.refs import coerce_float
 
 
 def timestamp(value: str) -> datetime:
@@ -60,7 +61,7 @@ def item_from_payload(value: object) -> MemoryItem:
         raise ValueError("unknown memory kind")
     confidence = row.get("confidence")
     if confidence is not None and (isinstance(confidence, bool) or not isinstance(confidence, (int, float))
-                                   or not math.isfinite(confidence) or not 0 <= confidence <= 1):
+                                   or not 0 <= confidence <= 1):
         raise ValueError("confidence must be a finite number between zero and one")
     result = MemoryItem(
         require_json_string(row.get("item_id"), "item_id"), kind,
@@ -141,11 +142,14 @@ def trace_for_item(item: MemoryItem, reason: str, score: float = 0.0, rank: int 
 
 def trace_from_payload(value: object) -> MemoryTrace:
     row = decode_json_object(value)
-    score = row.get("score")
-    if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score):
+    raw_score = row.get("score")
+    if isinstance(raw_score, bool) or not isinstance(raw_score, (int, float)):
+        raise ValueError("memory trace score must be finite")
+    score = coerce_float(raw_score, default=math.nan)
+    if not math.isfinite(score):
         raise ValueError("memory trace score must be finite")
     return MemoryTrace(require_json_string(row.get("item_id"), "item_id"),
-        require_json_string(row.get("reason"), "reason"), float(score),
+        require_json_string(row.get("reason"), "reason"), score,
         require_json_integer(row.get("rank"), "rank"), require_json_integer(row.get("chars"), "chars"),
         require_json_string(row.get("scope"), "scope"),
         tuple(require_json_strings(row.get("source_refs"), "source_refs")),

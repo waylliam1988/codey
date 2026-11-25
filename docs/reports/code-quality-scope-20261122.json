@@ -4699,10 +4699,11 @@
         "codey/memory/__init__.py"
       ],
       "id": "Q079",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_unchanged",
+      "reviewed_files": ["codey/memory/__init__.py"],
+      "verified_files": ["codey/memory/__init__.py"],
+      "tests": ["tests/test_architecture.py"],
+      "result": "The package root imports without loading child modules or Ghost. All eight direct submodules are discoverable. Both architecture checks and 14 subtests passed. Whole-file strict Any and Ruff passed."
     },
     {
       "responsibility": "codey/memory: shared contracts and module services",
@@ -4715,10 +4716,12 @@
         "codey/memory/null.py"
       ],
       "id": "Q080",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 9
+      "status": "completed_changed",
+      "reviewed_files": ["codey/memory/calibration.py", "codey/memory/codec.py", "codey/memory/contracts.py", "codey/memory/service.py", "codey/memory/slots.py", "codey/memory/null.py"],
+      "verified_files": ["codey/memory/calibration.py", "codey/memory/codec.py", "codey/memory/contracts.py", "codey/memory/service.py", "codey/memory/slots.py", "codey/memory/null.py"],
+      "tests": ["tests/test_memory_codec_numbers.py", "tests/test_memory_boundary.py", "tests/test_memory_integrity.py", "tests/test_memory_completion.py", "tests/test_memory_learning_targets.py", "tests/test_memory_lifecycle.py", "tests/test_memory_decision_ownership.py"],
+      "reviewed_support": ["tests/test_memory_codec_numbers.py"],
+      "result": "Reject oversized numeric confidence and score input with the documented validation error. Four original cases failed. All 114 scoped cases, whole-file strict Any and production gates passed."
     },
     {
       "responsibility": "codey/memory: completion review and edit validation",

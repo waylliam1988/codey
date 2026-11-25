@@ -2176,3 +2176,16 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 工作区原清单列出 900 项，实际应为 905 项，缺少 52 项并引用 47 项已移除的资产。`tests/test_runtime_publication.py` 与下列两个工作区清单节点的原组合是 9 passed、2 failed、退出 1，两处失败均在清单比对。按 `docs/startup.md` 执行 `python -m tools.publish_runtime`，本地重新生成 `codey/runtime.json`。字段元数据保持相同，905 项路径全部受 Git 跟踪。两个原失败节点通过。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_runtime_descriptor_schema.py tests/test_runtime_publication.py tests/test_task_contract_boundaries.py::test_checkout_inventory_includes_chat_contract_module tests/test_browser_experiment_boundary.py::test_runtime_inventory_excludes_browser_candidates tests/test_control_service_startup.py::test_source_materialization_does_not_require_tools_on_import_path tests/test_control_service_startup.py::test_checkout_materialization_republishes_and_retries_once --tb=short`，18 passed、无失败或跳过、退出 0。整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁均通过。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。完整工作树物化测试未执行，覆盖使用工作区只读核对与临时最小夹具。
 - Q078 完成。累计完成 140/372 批，覆盖 230/1011 个生产文件，另有 15 批部分完成。下一批 Q079 检查 Memory 包入口。
+
+### Q079 Memory 包入口
+
+- Q078 已提交 `0dad0717`。完整检查 `codey/memory/__init__.py`。在 `D:\codey` 用 `python -c` 于新进程导入父包，并用 `importlib.util.find_spec` 定位八个直接子模块。`sys.modules` 确认父包和定位操作均未加载子模块或 Ghost，退出 0。
+- `python -m pytest -q tests/test_architecture.py::ArchitectureBoundaryTests::test_memory_has_no_execution_or_research_authority tests/test_architecture.py::ArchitectureBoundaryTests::test_ghost_runtime_has_no_provider_browser_tool_or_research_dependency --tb=short`，2 passed、14 subtests passed、退出 0。入口整文件严格 Any、Ruff 均通过。功能测试由后续 Memory 批次覆盖。
+- Q079 完成，无源码变更。累计完成 141/372 批，覆盖 231/1011 个生产文件，另有 15 批部分完成。下一批 Q080 检查 Memory 合同、编解码及宿主策略。
+
+### Q080 Memory 合同、编解码与宿主策略
+
+- 完整检查 `calibration.py`、`codec.py`、`contracts.py`、`service.py`、`slots.py` 和 `null.py`。置信度应在零和一之间，追踪分数应可表示为有限浮点数。正负 401 位整数触发两条规则时，原代码在范围校验前抛 `OverflowError`。在 `D:\codey` 执行 `python -m pytest -q tests/test_memory_codec_numbers.py --tb=short`，4 failed、2 passed、退出 1。修复后六例通过，覆盖普通整数及布尔值。
+- 置信度先按原始数值比较范围，追踪分数复用有限浮点转换。收窄语言模式捕获组和槽位排序的类型，清除 6 条严格 Any 诊断。六份源码及回归的整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁均退出 0。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_memory_codec_numbers.py tests/test_memory_boundary.py tests/test_memory_integrity.py tests/test_memory_completion.py tests/test_memory_learning_targets.py tests/test_memory_lifecycle.py tests/test_memory_decision_ownership.py --tb=short`，114 passed、无失败或跳过、退出 0。原五文件基线 102 passed。覆盖已验证来源的槽位优先级、禁用宿主、控制、重放和预测复盘。
+- Q080 完成。累计完成 142/372 批，覆盖 237/1011 个生产文件，另有 15 批部分完成。下一批 Q081 检查候选事实的引用与验证。

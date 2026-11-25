@@ -40,7 +40,8 @@ def _example_language(text: str, pattern: re.Pattern[str]) -> MemorySlotOverride
     matched = pattern.match(instruction_text(text))
     if matched is None:
         return None
-    value = next(group.casefold() for group in matched.groups() if group is not None)
+    groups: tuple[object, ...] = matched.groups()
+    value = next(group.casefold() for group in groups if isinstance(group, str))
     return MemorySlotOverride(_CODE_LANGUAGE, value) if value in SLOTS[_CODE_LANGUAGE].values else None
 
 

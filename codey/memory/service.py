@@ -54,7 +54,10 @@ def valid_at(value: str, as_of: str) -> bool:
 def _preferred_slots(items: tuple[MemoryItem, ...], scopes: tuple[str, ...]) -> dict[str, str]:
     # Compare only source-validated items. An unavailable project preference
     # must not suppress a valid user default.
-    scoped = sorted(items, key=lambda item: (item.scope == "user", scopes.index(item.scope)))
+    def scope_rank(item: MemoryItem) -> tuple[bool, int]:
+        return (item.scope == "user", scopes.index(item.scope))
+
+    scoped = sorted(items, key=scope_rank)
     preferred: dict[str, str] = {}
     for item in scoped:
         if item.kind == "preference" and item.slot:
