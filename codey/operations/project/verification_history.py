@@ -14,7 +14,7 @@ from codey.workspace.revision import WorkspaceRevisionStore
 
 
 def settled_projections(durable: DurableSession, owner_task_id: str) -> tuple[RuntimeEffectProjection, ...]:
-    from codey.operations.tool_task_reads import owned_tool_task
+    from codey.operations.tool_tasks.reads import owned_tool_task
 
     rows: list[RuntimeEffectProjection] = []
     for effect in durable.settled_effects(owner_task_id):
@@ -34,7 +34,7 @@ def rebuild_verifications(session: TaskSession, *, durable: DurableSession, owne
                           workspace_store: WorkspaceRevisionStore | None = None,
                           ignored_paths: tuple[str, ...] = ()) -> None:
     """Replace only the derived verification view, preserving every unrelated fact."""
-    from codey.operations.tool_task_reads import owned_tool_task, tool_execution_result
+    from codey.operations.tool_tasks.reads import owned_tool_task, tool_execution_result
 
     scratch = TaskSession(session.policy, task_kind=session.task_kind, project=session.project)
     for effect in settled_projections(durable, owner_task_id):

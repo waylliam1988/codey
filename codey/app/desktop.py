@@ -23,13 +23,7 @@ def open_desktop(home: Path, *, port: int = 5173) -> None:
         _set_taskbar_identity()
         import webview
         startup = DesktopStartup(home, port, trace)
-        def choose_folder(initial: str) -> str | None:
-            if window is None:
-                return None
-            selected = window.create_file_dialog(webview.FileDialog.FOLDER, directory=initial)
-            return selected[0] if selected else None
-
-        bridge = StartupBridge(startup, choose_folder)
+        bridge = StartupBridge(startup)
         window = webview.create_window("Codey", html=startup_document(), js_api=bridge,
                                        width=1380, height=900, text_select=True)
         if window is None:

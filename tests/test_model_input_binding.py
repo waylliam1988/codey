@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from codey.codemode.kernel import build_execute_turn_executor
+from codey.operations.browser import browser_upload
 from codey.operations.browser.browser_copy import CAPTURE, CopyTurn
-from codey.operations.kernel import turn_inputs
 from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel.turn_contract import TurnSnapshot
@@ -165,7 +165,7 @@ def test_fixed_template_syntax_failure_uses_the_model_contract(
     def broken_template(_args: JsonObject, _checks: tuple[str, ...] = ()) -> JsonObject:
         return {"code": "return (", "inputs": {}}
 
-    monkeypatch.setattr(turn_inputs, "lower_upload_action", broken_template)
+    monkeypatch.setattr(browser_upload, "lower_upload_action", broken_template)
     plan = normalize_turn(AssistantTurn(tool_calls=(
         ProviderToolCall("original", "codemode", {"upload": {"action": "observe"}}),
     )), snapshot=snapshot)
@@ -193,15 +193,15 @@ def test_old_request_snapshots_are_rejected(version: int) -> None:
 
 def test_copy_observation_is_detached_and_readonly_between_uses() -> None:
     snapshot = copy_snapshot()
-    assert snapshot.browser_copy is not None
-    original = snapshot.browser_copy.payload()
+    assert snapshot.browser.copy is not None
+    original = snapshot.browser.copy.payload()
     copy = CopyTurn.restore(original)
     original["data"] = {"tables": list[JsonValue](), "records": list[JsonValue]()}
     exposed = copy.data
     assert exposed is not None
     exposed["records"] = list[JsonValue]()
     assert copy.data != exposed
-    assert copy == snapshot.browser_copy
+    assert copy == snapshot.browser.copy
 
 
 def test_restored_binding_cannot_change_authorization() -> None:

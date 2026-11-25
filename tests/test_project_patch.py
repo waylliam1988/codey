@@ -161,7 +161,8 @@ def test_directory_rule_versions_survive_snapshot_restore_and_detect_change_or_d
     bindings, text = instruction_handoff(tmp_path, ("package/file.py",), {})
     assert "applies under package" in text
     session = TaskSession(TaskPolicy(frozenset({"control", "project.write"})), project=str(tmp_path))
-    original = replace(build_turn_snapshot(session), project_instructions=bindings)
+    snapshot = build_turn_snapshot(session)
+    original = replace(snapshot, project=replace(snapshot.project, instructions=bindings))
     assert restore_snapshot(snapshot_description(original)) == original
     assert changed_instruction_target(tmp_path, "package/file.py", bindings) is None
     assert changed_instruction_target(tmp_path, "another/file.py", bindings) is None

@@ -42,6 +42,7 @@ from codey.workspace.change_brief import (
     project_audit_change_brief,
 )
 from codey.workspace.config import ProjectConfigLoadResult
+from codey.workspace.facts import ProjectFactSource
 
 __all__ = [
     "record_project_memory",
@@ -198,12 +199,14 @@ def _persist_verified_project_facts(ctx: ProjectRun) -> bool:
             and ctx.work.work_checkpoint is not None
             else ctx.request.task
         )
+        ledger = ctx.work.ledger
+        source = ProjectFactSource(ledger.session_id, ledger.run_id) if ledger is not None else None
         succeeded = project_facts.record_successful_change(
             ctx.project,
             task=fact_task,
             files=ctx.files,
             checks=ctx.work.evidence.successful_checks,
-            receipt=ctx.receipt.display.summary,
+            source=source,
         )
     except (OSError, ValueError):
         return False

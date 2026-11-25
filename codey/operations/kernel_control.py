@@ -94,9 +94,9 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
     context.restore_facts()
     from codey.durable.model import TASK_TERMINAL_STATUSES
     from codey.operations.project.verification_workflow import completion_workflow
-    from codey.operations.tool_task_delivery import notified_tool_tasks
-    from codey.operations.tool_task_reads import terminal_tool_task_observations
-    from codey.operations.tool_tasks import wait_tool_task
+    from codey.operations.tool_tasks.delivery import notified_tool_tasks
+    from codey.operations.tool_tasks.execution import wait_tool_task
+    from codey.operations.tool_tasks.reads import terminal_tool_task_observations
 
     plan = context.plan(state)
     if plan.control is not None and plan.control.kind == "done":
@@ -242,7 +242,7 @@ def _retry_snapshot(context: KernelContext, received: ReceivedProviderTurn, *, t
                  else compact_symbol_retry(snapshot, received.reply, session=context.session))
         if (target := bound_symbol_retry(retry)) is not None:
             path, symbol = target
-            ref = dict(retry.symbol_read_refs).get(path, "")
+            ref = dict(retry.project.symbol_reads).get(path, "")
             project = context.execution.project_path
             if project is not None and (source := symbol_retry_source(context.session, project, path, symbol, ref)):
                 return retry, f"Current definition:\n{source}"
@@ -276,7 +276,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
     decision = context.decision(state)
     received = context.response(state)
     ids = _ids(received.reply)
-    if (decision["purpose"] == "done" and received.snapshot.research_scope is not None
+    if (decision["purpose"] == "done" and received.snapshot.research.scope is not None
             and any(call.name == "submit_research_answer" for call in context.plan(state).calls)):
         # Closure delivers the original submission receipt. There is no
         # synthetic model done call and no substituted tool-success message.
@@ -321,7 +321,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         observations = "" if context.request_scoped_observations else task_working_context(
             context.session, research.ledger if research is not None else None,
                 research.store if research is not None else None,
-                research.session_id if research is not None else "", research_scope=snapshot.research_scope,
+                research.session_id if research is not None else "", research_scope=snapshot.research.scope,
                 tool_names=snapshot.tool_names)
         retry_prompt, task_span = _retry_prompt(context, snapshot, decision, text_reply=messages is None)
         prompt = "\n\n".join(part for part in (observations, retry_prompt) if part)

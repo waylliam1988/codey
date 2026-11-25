@@ -35,8 +35,8 @@ def test_choices_are_whole_observed_combinations_and_shared_across_surfaces(name
         "contexts": [{"id": "one", "label": "region one"}, {"id": "two", "label": "region two"}]}
     references = BrowserReferences.observe("receipt-" + uuid4().hex, observation, DOCUMENT)
     session = session_with_snapshot()
-    frozen = refresh_snapshot_contract(replace(offer_browser_tools(build_turn_snapshot(session), session),
-                                              browser_references=references))
+    offered = offer_browser_tools(build_turn_snapshot(session), session)
+    frozen = refresh_snapshot_contract(replace(offered, browser=replace(offered.browser, references=references)))
     restored = restore_snapshot(snapshot_description(frozen))
     assert restored == frozen
     outer = next(spec for spec in restored.model_specs if spec.name == "browser_fill")
@@ -113,8 +113,8 @@ def test_original_whole_display_row_is_rejected_then_current_choice_fills_once(
     name = "input-" + uuid4().hex
     install(browser, '<input aria-label="' + name + '">')
     frozen = observed_snapshot(session, browser)
-    assert frozen.browser_references is not None
-    original = frozen.browser_references.controls[0].ref
+    assert frozen.browser.references is not None
+    original = frozen.browser.references.controls[0].ref
     bad = f'[{original}] textbox "{name}"'
     bad_args: JsonObject = {"ref": bad, "value": "chosen"}
     rejected = program(session, tools, frozen, "return unwrap(await tools.browser_fill(" + json.dumps(bad_args) + "));")
@@ -122,7 +122,7 @@ def test_original_whole_display_row_is_rejected_then_current_choice_fills_once(
     failed = next(row for row in session._memory_results.values() if row.call.name == "browser_fill")
     assert decode_json_object(failed.canonical["value"])["reason"] == "invalid_ref_format"
     assert failed.call.args["ref"] == bad
-    assert browser.generation == frozen.browser_references.generation
+    assert browser.generation == frozen.browser.references.generation
     selector: JsonObject = {"role": "textbox", "name": name}
     restored = restore_snapshot(snapshot_description(frozen))
     completed = program(session, tools, restored, "return unwrap(await tools.browser_fill({ref:"
@@ -180,8 +180,8 @@ def test_formal_failure_reasons_distinguish_evidence_without_delivering(
     assert delegate.execute(ToolCall("browser_navigate", {"url": URL}))[1]
     install(browser, '<input aria-label="field"' + (' disabled' if case == "disabled" else '') + '>')
     frozen = observed_snapshot(session, browser)
-    assert frozen.browser_references is not None
-    ref = "unobserved-" + uuid4().hex if case == "unknown" else frozen.browser_references.controls[0].ref
+    assert frozen.browser.references is not None
+    ref = "unobserved-" + uuid4().hex if case == "unknown" else frozen.browser.references.controls[0].ref
     if case == "stale":
         install(browser, '<input aria-label="field">')
     result = program(session, tools, frozen, "return unwrap(await tools.browser_fill({ref:"

@@ -72,7 +72,7 @@ def test_navigation_does_not_request_an_unauthorized_observation() -> None:
 def test_explicit_url_navigation_observes_without_a_unique_task_source(native: bool) -> None:
     session = TaskSession(TaskPolicy(GRANTS), task_kind="chat", task_text="Inspect another authorized page.")
     snapshot = offer_browser_call(build_turn_snapshot(session), session, "browser_navigate")
-    assert snapshot.task_navigation_url is None
+    assert snapshot.browser.navigation_url is None
     snapshot = restore_snapshot(snapshot_description(snapshot))
     reply = (AssistantTurn(tool_calls=(ProviderToolCall("navigate", "browser_navigate", {"url": URL}),))
              if native else decode_text_turn(canonical_json({"tool": "browser_navigate", "args": {"url": URL}})))
@@ -151,13 +151,13 @@ def test_observed_disabled_state_matches_native_fieldset_and_legend_semantics(
     body = f'<legend>{control}</legend>' if state == "legend" else f'<legend>Record group</legend>{control}'
     install(browser, f"<fieldset {fieldset}>{body}</fieldset>")
     snapshot = observed_snapshot(session, browser)
-    assert snapshot.browser_references is not None
-    record, = [row for row in snapshot.browser_references.controls if row.name == "Record"]
+    assert snapshot.browser.references is not None
+    record, = [row for row in snapshot.browser.references.controls if row.name == "Record"]
     disabled = state in {"fieldset", "own"}
     assert record.disabled is disabled
     if disabled:
         with pytest.raises(ValueError, match="disabled"):
-            snapshot.browser_references.resolve({"role": "textbox", "name": "Record"})
+            snapshot.browser.references.resolve({"role": "textbox", "name": "Record"})
     result = program(session, tools, snapshot,
         "return unwrap(await tools.browser_fill({ref:" + canonical_json(record.ref) + ",value:'A-19'}));")
     assert result.ok is not disabled, result.model_text
@@ -211,8 +211,8 @@ def test_routed_navigation_preserves_effect_and_exposes_fresh_controls(
             recovered = execute(current, {"tool": "browser_snapshot", "args": {}}, 2)
             assert recovered.ok, recovered.model_text
         current, hint = task_handoff(session, build_turn_snapshot(session), CompletionContext(), with_browser)
-        assert current.browser_references is not None
-        assert current.browser_references.resolve({"role": "button", "name": "Begin"})
+        assert current.browser.references is not None
+        assert current.browser.references.resolve({"role": "button", "name": "Begin"})
         assert FINAL in hint and "current" in hint.lower()
         assert "Waiting for actions." in hint
         clicked = execute(current, {"tool": "browser_click", "args": {
@@ -221,7 +221,7 @@ def test_routed_navigation_preserves_effect_and_exposes_fresh_controls(
         assert with_browser.wait("selector", "button[data-stage=ready]", 5000).ok
         assert execute(current, {"tool": "browser_snapshot", "args": {}}, 4).ok
         current, _hint = task_handoff(session, build_turn_snapshot(session), CompletionContext(), with_browser)
-        assert current.browser_references is not None
+        assert current.browser.references is not None
         assert execute(current, {"tool": "browser_click", "args": {
             "ref": {"role": "button", "name": "Continue"}, "purpose": "controls"}}, 5).ok
         assert with_browser.evaluate("window.clicks").observation["value"] == 2

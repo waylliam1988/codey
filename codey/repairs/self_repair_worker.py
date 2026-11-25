@@ -15,16 +15,18 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
 from codey.automation.browser import DEFAULT_PORT
 from codey.providers import controls as provider_controls
 from codey.providers import flow as provider_flow
+from codey.providers.base import ChatProvider
 from codey.providers.diagnostics import sanitize_failure_facts
 from codey.providers.registry import PROVIDER_TYPES, PROVIDER_WORKER_PORT_OFFSETS
 from codey.repairs.adapter_repair import AdapterRepairResult, run_adapter_repair, run_worker_canary
 from codey.repairs.self_repair_job import SelfRepairJob
 from codey.runtime.core import cancellation
+from codey.types.json_value import JsonObject
+from codey.utils.object_fields import object_fields
 
 DEFAULT_REPAIR_TIMEOUT = 900.0
 DEFAULT_MODEL_TIMEOUT = 300.0
@@ -164,7 +166,7 @@ def _failure_facts_from_json(value: str) -> dict[str, object]:
     return sanitize_failure_facts(decoded)
 
 
-def connect_repair_helper(provider_id: str, *, state_home: str | Path) -> Any:
+def connect_repair_helper(provider_id: str, *, state_home: str | Path) -> ChatProvider:
     """Open a fresh helper tab in an isolated self-repair profile.
 
     The helper must never attach to the user's default browser profile from
@@ -175,8 +177,6 @@ def connect_repair_helper(provider_id: str, *, state_home: str | Path) -> Any:
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported repair helper provider: {provider_id}")
-    if normalized == "local":
-        return provider_type.connect()
     return provider_type.connect(
         port=DEFAULT_PORT + 200 + PROVIDER_WORKER_PORT_OFFSETS.get(normalized, 100),
         profile=Path(state_home) / "self-repair" / normalized,
@@ -192,23 +192,26 @@ def _parse_worker_result(provider_id: str, stdout: str, stderr: str, returncode:
     lines = [line for line in text.splitlines() if line.strip()]
     if lines:
         try:
-            payload = json.loads(lines[-1])
+            payload: object = json.loads(lines[-1])
         except json.JSONDecodeError:
             payload = None
-        if isinstance(payload, dict):
-            return AdapterRepairResult(
-                ok=bool(payload.get("ok")),
-                provider_id=str(payload.get("provider_id") or provider_id),
-                generation=max(0, int(payload.get("generation") or 0)),
-                error=str(payload.get("error") or ""),
-                changed_files=tuple(str(item) for item in payload.get("changed_files") or ()),
-            )
+        if object_fields(payload):
+            ok, provider = payload.get("ok"), payload.get("provider_id")
+            generation, error = payload.get("generation"), payload.get("error")
+            files = payload.get("changed_files")
+            if (isinstance(ok, bool) and provider == provider_id and isinstance(generation, int)
+                    and not isinstance(generation, bool) and generation >= 0 and isinstance(error, str)
+                    and isinstance(files, list)):
+                values: list[object] = files
+                if all(isinstance(item, str) for item in values):
+                    return AdapterRepairResult(ok, provider_id, generation, error,
+                                               tuple(item for item in values if isinstance(item, str)))
     output = ((stderr or "") + "\n" + (stdout or "")).strip()[:MAX_WORKER_OUTPUT]
     error = output or f"self-repair worker exited with code {returncode}"
     return AdapterRepairResult(False, provider_id, error=error)
 
 
-def _result_payload(result: AdapterRepairResult) -> dict[str, Any]:
+def _result_payload(result: AdapterRepairResult) -> JsonObject:
     return {
         "ok": result.ok,
         "provider_id": result.provider_id,

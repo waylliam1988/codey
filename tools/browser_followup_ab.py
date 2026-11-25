@@ -107,7 +107,7 @@ def followup(call: ToolCall, snapshot: TurnSnapshot, variant: Variant) -> str:
     name = ("browser_snapshot" if call.name == "browser_fill" and variant.fill_observe else
             "browser_read" if call.name == "browser_click" and variant.click_readback else "")
     specs = {spec.name: spec for spec in snapshot.frozen_specs}
-    if (not name or snapshot.input_binding is not None or snapshot.browser_copy is not None
+    if (not name or snapshot.input_binding is not None or snapshot.browser.copy is not None
             or "codemode" not in snapshot.tool_names or call.name not in snapshot.tool_names
             or call.name not in snapshot.nested_tool_names or name not in snapshot.nested_tool_names
             or snapshot.policy is None or name not in specs

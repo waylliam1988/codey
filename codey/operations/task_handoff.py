@@ -26,8 +26,8 @@ _SOURCE_DIRECT = frozenset({"open_url", "web_search", "source_search"})
 
 def _project_surface(session: TaskSession, snapshot: TurnSnapshot) -> bool:
     return bool(session.project and snapshot.has_project_tools
-                and not session.policy.strict_research and snapshot.research_scope is None
-                and snapshot.input_binding is None and snapshot.browser_copy is None)
+                and not session.policy.strict_research and snapshot.research.scope is None
+                and snapshot.input_binding is None and snapshot.browser.copy is None)
 
 
 def _project_catalog(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
@@ -35,7 +35,7 @@ def _project_catalog(session: TaskSession, snapshot: TurnSnapshot, context: Comp
     from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 
     compact = (_project_surface(session, snapshot) and context.browser_document is None
-               and not intent.browser_navigation_requested and not snapshot.browser_followups)
+               and not intent.browser_navigation_requested and not snapshot.browser.followups)
     json_edit = compact and (".json" in session.task_text.casefold()
                              or any(path.casefold().endswith(".json") for path in session.read_files))
     return refresh_snapshot_contract(snapshot, compact_catalog=compact, include_json_edit=json_edit)
@@ -54,7 +54,7 @@ def _select_outer_tools(session: TaskSession, snapshot: TurnSnapshot, context: C
                      or any(parse_browser_requirement(check) is not None for check in session.policy.required_checks))
     if _project_surface(session, snapshot) and not browser_steps and session.model_tool_names is None:
         preferred = _PROJECT_DIRECT | task_controls | set(required)
-        if intent.requested or snapshot.task_source_url:
+        if intent.requested or snapshot.browser.source_url:
             preferred |= _SOURCE_DIRECT
         names = tuple(name for name in snapshot.tool_names
                       if name in preferred or name not in snapshot.nested_tool_names)
@@ -120,19 +120,21 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     links = observed_delivery_links(session)
     if (links.specification and session.policy.allows("web.read") and "open_url" in snapshot.inventory_names
             and (snapshot.input_binding is None or snapshot.input_binding.kind == "declared_fields")
-            and snapshot.browser_copy is None):
-        snapshot = replace(snapshot, task_source_url=links.specification,
-                           task_navigation_url=snapshot.task_navigation_url or links.application or links.specification)
+            and snapshot.browser.copy is None):
+        snapshot = replace(snapshot, browser=replace(
+            snapshot.browser, source_url=links.specification,
+            navigation_url=snapshot.browser.navigation_url or links.application or links.specification,
+        ))
     ready_for_page = bool(links.application and session.edited_files and (session.verification_forbidden or any(
         row.check_id == "relevant_verification" and row.status in {"pass", "not_applicable"}
         for row in project_evidence_checks(session, context))))
-    if ready_for_page and "browser_navigate" in snapshot.nested_tool_names and snapshot.browser_copy is None:
-        snapshot = replace(snapshot, task_navigation_url=links.application)
+    if ready_for_page and "browser_navigate" in snapshot.nested_tool_names and snapshot.browser.copy is None:
+        snapshot = replace(snapshot, browser=replace(snapshot.browser, navigation_url=links.application))
     snapshot = _select_outer_tools(session, snapshot, context, intent, ready_for_page=ready_for_page,
                                    task_controls=task_controls)
-    if (ready_for_page and snapshot.task_navigation_url == links.application and snapshot.navigation_observes
+    if (ready_for_page and snapshot.browser.navigation_url == links.application and snapshot.navigation_observes
             and "browser_navigate" in snapshot.tool_names and "browser_read" in snapshot.nested_tool_names):
-        snapshot = replace(snapshot, navigation_verifies=True)
+        snapshot = replace(snapshot, browser=replace(snapshot.browser, navigation_verifies=True))
     snapshot = bind_browser_references(session, snapshot, context, generation)
     from codey.operations.browser.browser_followups import DIRECT_TOOLS
 
@@ -158,7 +160,7 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
         plan = resolve_verification_requirement(session, context, scope)
         if isinstance(plan, VerificationPlan):
             hints.append(verification_plan_feedback(session, context, plan).strip())
-    if subject := live_record_subject_call(session, snapshot.browser_references, context.browser_document):
+    if subject := live_record_subject_call(session, snapshot.browser.references, context.browser_document):
         snapshot, call, _ = handoff_call(session, snapshot, subject)
         if call is not None:
             hints.append("The current page has one eligible input for the user's record subject. "
@@ -179,7 +181,7 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
                 "then decide whether source access is needed. "
                 "The outstanding source requirements below describe later evidence obligations; "
                 "they are not an instruction to navigate before that prerequisite.")
-    if snapshot.browser_followups and set(DIRECT_TOOLS) <= set(snapshot.tool_names):
+    if snapshot.browser.followups and set(DIRECT_TOOLS) <= set(snapshot.tool_names):
         hints.append("For browser steps, prefer the offered direct browser tools. "
                      "Use CodeMode for operations that need programming or composition.")
     snapshot, hint = browser_task_handoff_for_step(session, snapshot, context, generation, step=next_step,
@@ -193,7 +195,7 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     hints.append(hint)
     snapshot, hint = offer_page_details(session, snapshot, browser)
     hints.append(hint)
-    if snapshot.task_source_url == links.specification and delivery.get("record_specification") == {"state": "unread"}:
+    if snapshot.browser.source_url == links.specification and delivery.get("record_specification") == {"state": "unread"}:
         from codey.codemode.navigation import TASK_TARGET
 
         snapshot, read_specification, _ = handoff_call(session, snapshot, ToolCall("open_url", {"target": TASK_TARGET}))

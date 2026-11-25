@@ -15,7 +15,7 @@ from playwright.sync_api import Page, expect, sync_playwright
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from codey.app import provider_services, sibling_probe
+from codey.app import folder_picker, provider_services, sibling_probe
 from codey.app import server as codey_server
 from codey.providers import controls as provider_controls
 from codey.runtime.core import cancellation
@@ -461,7 +461,7 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
     original_connect_existing_provider = provider_services.connect_existing_provider
     original_connect_fresh_provider_tab = provider_services.connect_fresh_provider_tab
     original_provider_tab_availability = provider_services.provider_tab_availability
-    original_pick_folder = codey_server.pick_folder
+    original_pick_folder = folder_picker._run_dialog
     writer = ScriptedWriter()
     httpd: codey_server.CodeyHTTPServer | None = None
     try:
@@ -479,7 +479,7 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
             "glm": True,
         }
         provider_services.connect_existing_provider = lambda provider_id: ScriptedReviewer()
-        codey_server.pick_folder = lambda mode="open", initial=None: str(project)
+        folder_picker._run_dialog = lambda _mode, _initial: folder_picker.folder_selection(str(project))
 
         httpd = codey_server.CodeyHTTPServer(("127.0.0.1", 0), codey_server.Handler)
         from codey.app.public_event_feed import PublicEventFeed
@@ -536,7 +536,7 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
         provider_services.connect_fresh_provider_tab = original_connect_fresh_provider_tab
         provider_services.provider_tab_availability = original_provider_tab_availability
         provider_services.connect_existing_provider = original_connect_existing_provider
-        codey_server.pick_folder = original_pick_folder
+        folder_picker._run_dialog = original_pick_folder
         provider_controls.set_teach_handler(None)
         shutil.rmtree(temp_root, ignore_errors=True)
 

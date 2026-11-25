@@ -53,7 +53,7 @@ def test_explicit_reference_requests_freeze_the_original_source_without_forcing_
     assert not intent.browser_navigation_requested
     session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "browser.observe", "browser.interact"})),
                           task_text=task, required_source_urls=intent.urls)
-    assert restore_snapshot(snapshot_description(build_turn_snapshot(session))).task_navigation_url == URL
+    assert restore_snapshot(snapshot_description(build_turn_snapshot(session))).browser.navigation_url == URL
 
 
 @pytest.mark.parametrize("task", [f"额外参考链接：{URL}", f"请不要参考 {URL}", f"Do not consult {URL}",
@@ -177,7 +177,8 @@ def test_natural_observation_recovery_does_not_require_a_declared_tool_sequence(
                           ok=state == "filled")
         session._memory_results[identity] = replace(session._memory_results[identity],
             canonical={"value": {"delivery": "verified" if state == "filled" else "uncertain"}})
-    snapshot = replace(offer_browser_tools(build_turn_snapshot(session), session), browser_references=refs)
+    offered = offer_browser_tools(build_turn_snapshot(session), session)
+    snapshot = replace(offered, browser=replace(offered.browser, references=refs))
     before = dict(session.executed)
     context = CompletionContext(browser_document={**document, "loader_id": "other"}
                                 if state == "other_document" else document)
@@ -225,7 +226,7 @@ def test_source_only_task_binds_exact_url_and_preserves_read_options(native: boo
 
     session.required_source_urls = frozenset({source_url_key(URL)})
     snapshot = restore_snapshot(snapshot_description(build_turn_snapshot(session)))
-    assert snapshot.task_navigation_url == URL
+    assert snapshot.browser.navigation_url == URL
     args: JsonObject = {"target": "task", "offset": 83, "limit": 107}
     proposal = (AssistantTurn(tool_calls=(ProviderToolCall("source", "open_url", args),)) if native
                 else decode_text_turn(canonical_json({"tool": "open_url", "args": args})))
@@ -251,7 +252,7 @@ def test_source_only_task_binds_exact_url_and_preserves_read_options(native: boo
         return ToolResult(call, "Read exact source", ok=True)
     host = CodeModeHost(execution_id="source-binding", catalog=tuple(
         entry for entry in snapshot_catalog(snapshot).entries if entry.name == "open_url"),
-                        execute=execute, task_navigation_url=snapshot.task_navigation_url)
+                        execute=execute, task_navigation_url=snapshot.browser.navigation_url)
     host.invoke("open_url", dict[str, object](args))
     assert calls[-1].args == plan.calls[0].args
     host.invoke("open_url", {"url": "https://example.org/another-authorized-source"})

@@ -11,7 +11,7 @@ import logging
 import tempfile
 import threading
 from collections import OrderedDict
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -378,23 +378,9 @@ class AppContext:
         return self.build_task_submission_stores()
 
     @property
-
-    def self_repair(self) -> SelfRepairSupervisor:
-        from codey.repairs.adapter_repair import AdapterRepairResult
-        from codey.repairs.self_repair import SelfRepairSupervisor, run_self_repair_job
-        from codey.repairs.self_repair_job import SelfRepairJob
-
+    def self_repair(self) -> SelfRepairSupervisor | None:
+        # Production installs no candidate runner until candidate execution is isolated.
         with self.lock:
-            if self._self_repair is None:
-                repair_runner: Callable[[SelfRepairJob], AdapterRepairResult] | None = None
-                if self.state_home is not None and self.state_home == DEFAULT_STATE_HOME:
-                    def repair_runner(job: SelfRepairJob) -> AdapterRepairResult:
-                        return run_self_repair_job(
-                            state_home=self.state_home,
-                            providers=self.providers,
-                            job=job,
-                        )
-                self._self_repair = SelfRepairSupervisor(self.state_home, runner=repair_runner)
             return self._self_repair
 
     @self_repair.setter

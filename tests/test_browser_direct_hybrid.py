@@ -64,11 +64,11 @@ def test_hybrid_shortcuts_preserve_existing_boundaries(guard: str) -> None:
     offered = offer_browser_tools(snapshot, session)
     if guard in {"research", "project", "strict"}:
         assert set(DIRECT_TOOLS) <= set(offered.tool_names)
-        assert offered.browser_followups
+        assert offered.browser.followups
     elif guard == "codemode":
         assert offered.tool_names == snapshot.tool_names
         assert offered.nested_tool_names == snapshot.nested_tool_names
-        assert offered.browser_followups
+        assert offered.browser.followups
         assert not set(DIRECT_TOOLS) & set(offered.tool_names)
     elif guard == "denied":
         assert "browser_read" not in offered.inventory_names
@@ -91,7 +91,7 @@ def test_ordinary_wait_entry_needs_no_checklist_and_preserves_authorization(guar
     if guard == "allowed":
         snapshot = replace(snapshot, allowed=("codemode", "done", *DIRECT_TOOLS))
     offered = offer_browser_tools(snapshot, session)
-    assert offered.browser_followups and set(DIRECT_TOOLS) <= set(offered.tool_names)
+    assert offered.browser.followups and set(DIRECT_TOOLS) <= set(offered.tool_names)
     assert ("browser_wait" in offered.tool_names) is (guard == "none")
     assert restore_snapshot(snapshot_description(offered)) == offered
 

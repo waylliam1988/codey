@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+
+from playwright.sync_api import Page
 
 from codey.automation.browser import (
     DEFAULT_PORT,
@@ -48,11 +48,10 @@ from codey.providers.web_provider import (
     MimoWebProvider,
     QwenWebProvider,
     StepFunWebProvider,
+    WebChatProvider,
 )
-from codey.providers.worker import WorkerChatProvider
-from codey.repairs.adapter_overrides import load_enabled_override
 
-PROVIDER_TYPES: dict[str, Any] = {
+PROVIDER_TYPES: dict[str, type[WebChatProvider]] = {
     "deepseek": DeepSeekWebProvider,
     "mimo": MimoWebProvider,
     "stepfun": StepFunWebProvider,
@@ -63,7 +62,7 @@ PROVIDER_TYPES: dict[str, Any] = {
 
 @dataclass
 class _BorrowedSession:
-    page: Any
+    page: Page
 
     def close(self) -> None:
         """The owning provider connection keeps this Playwright context alive."""
@@ -109,23 +108,15 @@ def connect_provider(
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported provider: {provider_id}")
-    if open_if_missing and os.environ.get(WORKER_CHILD_ENV) != "1":
-        override = load_enabled_override(normalized)
-        if override is not None:
-            return WorkerChatProvider(
-                normalized,
-                override,
-                port=port + PROVIDER_WORKER_PORT_OFFSETS.get(normalized, 100),
-            )
-    return cast(ChatProvider, provider_type.connect(
+    return provider_type.connect(
         port=port,
         profile=profile,
         open_if_missing=open_if_missing,
         bring_to_front=bring_to_front,
-    ))
+    )
 
 
-def borrow_open_provider(provider_id: str, owner_page: Any) -> ChatProvider | None:
+def borrow_open_provider(provider_id: str, owner_page: object) -> ChatProvider | None:
     """Wrap an already-open sibling tab without creating another CDP connection."""
     from codey.automation.browser import _url_host_matches
 
@@ -133,13 +124,13 @@ def borrow_open_provider(provider_id: str, owner_page: Any) -> ChatProvider | No
     if normalized in API_CONNECTIONS:
         return None
     marker = PROVIDER_URL_CONTAINS.get(normalized)
-    if not marker:
+    if not marker or not isinstance(owner_page, Page):
         return None
     try:
         pages = tuple(owner_page.context.pages)
     except Exception:
         return None
-    def _matches(candidate: Any) -> bool:
+    def _matches(candidate: Page) -> bool:
         if candidate is owner_page:
             return False
         try:
@@ -154,10 +145,6 @@ def borrow_open_provider(provider_id: str, owner_page: Any) -> ChatProvider | No
     if page is None:
         return None
     session = _BorrowedSession(page)
-    if normalized in API_CONNECTIONS:
-        from codey.providers.api_connections import capture_selection, open_selection
-
-        return open_selection(capture_selection(normalized))
     provider_type = PROVIDER_TYPES.get(normalized)
     return provider_type(session) if provider_type is not None else None
 
@@ -192,18 +179,10 @@ def connect_fresh_provider_tab(
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported provider: {provider_id}")
-    if os.environ.get(WORKER_CHILD_ENV) != "1":
-        override = load_enabled_override(normalized)
-        if override is not None:
-            return WorkerChatProvider(
-                normalized,
-                override,
-                port=port + PROVIDER_WORKER_PORT_OFFSETS.get(normalized, 100),
-            )
-    return cast(ChatProvider, provider_type.connect(
+    return provider_type.connect(
         port=port,
         profile=profile,
         open_if_missing=True,
         bring_to_front=False,
         fresh_tab=True,
-    ))
+    )

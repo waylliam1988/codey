@@ -15,7 +15,7 @@ from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.kernel_provenance import _kernel_workspace_identity_of
 from codey.operations.task_session import TaskSession
-from codey.operations.tool_task_reads import owned_tool_task, tool_execution_result
+from codey.operations.tool_tasks.reads import owned_tool_task, tool_execution_result
 from codey.runtime.core.execution_receipt import execution_receipt
 from codey.storage.execution_output_store import ExecutionOutputStore
 from codey.storage.managed_outputs import ManagedOutputStore

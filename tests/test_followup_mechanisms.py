@@ -50,7 +50,7 @@ def test_browser_flow_uses_bound_url_and_validates_every_step_before_dispatch() 
 
     entries = snapshot_catalog(snapshot).entries
     host = CodeModeHost(execution_id="flow", catalog=entries, execute=execute, allow_writes=True,
-                        task_navigation_url=snapshot.task_navigation_url)
+                        task_navigation_url=snapshot.browser.navigation_url)
     navigation = {"tool": "browser_navigate", "args": {"target": "task"}}
     with pytest.raises(ValueError):
         host.invoke("browser_snapshot", {"flow": [navigation, {"tool": "browser_click", "args": {"ref": "mock"}}]})

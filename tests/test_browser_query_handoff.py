@@ -52,7 +52,7 @@ def test_handoff_admits_the_actual_composed_interface(via: str) -> None:
     snapshot = offer_browser_tools(build_turn_snapshot(session), session)
     # CodeMode-only tasks preserve their original atomic click interface.
     if via == "codemode":
-        snapshot = replace(snapshot, browser_followups=True)
+        snapshot = replace(snapshot, browser=replace(snapshot.browser, followups=True))
     offered, action, error = handoff_call(session, snapshot, ToolCall("browser_click", {"ref": "current-one", "purpose": "result"}))
     assert not error and action is not None
     assert action["tool"] == ("browser_click" if via == "direct" else "codemode")

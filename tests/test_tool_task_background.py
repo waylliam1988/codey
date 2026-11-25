@@ -33,8 +33,8 @@ from codey.operations.kernel_receipts import restore_result_receipt
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession, turn_effect_id
-from codey.operations.tool_task_delivery import active_tool_task_controls
-from codey.operations.tool_tasks import control_tool_task, run_tool_task, wait_tool_task
+from codey.operations.tool_tasks.delivery import active_tool_task_controls
+from codey.operations.tool_tasks.execution import control_tool_task, run_tool_task, wait_tool_task
 from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
@@ -502,7 +502,7 @@ def test_process_restart_never_repeats_an_uncertain_or_settled_execution(tmp_pat
         else:
             assert (project / "counter.txt").read_text() == "1"
             if boundary == "auto_admission":
-                from codey.operations.tool_tasks import recover_command_admission
+                from codey.operations.tool_tasks.execution import recover_command_admission
 
                 origin = turn_effect_id("r", 0, 0)
                 assert app.durable.effect(origin).settlement is None

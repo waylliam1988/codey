@@ -36,9 +36,9 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
 
     if snapshot.policy is None:
         raise ValueError("prepared turn has no authorization policy")
-    whole = isinstance(snapshot.research_scope, AnswerScope)
+    whole = isinstance(snapshot.research.scope, AnswerScope)
     guidance = [task_guidance] if task_guidance else []
-    if snapshot.browser_copy is None and ".json" in user_task.casefold() and {"edit", "read_file"} <= set(snapshot.nested_tool_names):
+    if snapshot.browser.copy is None and ".json" in user_task.casefold() and {"edit", "read_file"} <= set(snapshot.nested_tool_names):
         edit = next(spec for spec in snapshot.frozen_specs if spec.name == "edit")
         guidance.append(edit_guidance(edit.required, dict(edit.parameters)))
     if (metadata := report_scope(session)) is not None:
@@ -52,7 +52,7 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
                         "has succeeded, use that page for a fresh snapshot. Select the attachment once, then verify the page response."
                         + (" The runtime reports the exact file facts from the selection receipt. "
                            "In done.summary, report completion without copying the filename or SHA256." if plain_report else ""))
-    if snapshot.policy.strict_research and snapshot.research_scope is None:
+    if snapshot.policy.strict_research and snapshot.research.scope is None:
         from codey.research.methods import research_method_guidance
 
         guidance.append(research_method_guidance(user_task, evidence_only=session.task_kind == "evidence_followup"))

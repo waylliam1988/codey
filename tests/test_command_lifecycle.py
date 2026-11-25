@@ -18,7 +18,7 @@ from codey.operations.kernel_contracts import (
 )
 from codey.operations.provider_session import adapt_provider
 from codey.operations.task_loop import run_task_kernel
-from codey.operations.tool_task_delivery import notified_tool_tasks, pending_tool_task_notifications
+from codey.operations.tool_tasks.delivery import notified_tool_tasks, pending_tool_task_notifications
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import decode_json_object, require_json_string
@@ -76,7 +76,7 @@ def test_read_caller_receipt_reaches_original_owned_command_output(runtime: Runt
 def test_long_command_returns_same_task_and_never_starts_twice(
     runtime: Runtime, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from codey.operations import tool_tasks
+    from codey.operations.tool_tasks import execution as tool_tasks
 
     monkeypatch.setattr(tool_tasks, "COMMAND_YIELD_MS", 10)
     (runtime.project / "test_sample.py").write_text(
@@ -141,7 +141,7 @@ class CompletionProvider:
 def test_final_result_is_delivered_once_without_model_polling(
     runtime: Runtime, monkeypatch: pytest.MonkeyPatch, native: bool, nested: bool, yield_early: bool,
 ) -> None:
-    from codey.operations import tool_tasks
+    from codey.operations.tool_tasks import execution as tool_tasks
 
     monkeypatch.setattr(tool_tasks, "COMMAND_YIELD_MS", 1 if yield_early else 10000)
     (runtime.project / "test_sample.py").write_text(
@@ -171,10 +171,10 @@ def test_final_result_is_delivered_once_without_model_polling(
 def test_reserved_caller_recovers_same_execution_after_lost_acknowledgement(
     runtime: Runtime, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from codey.operations import tool_tasks
     from codey.operations.kernel.kernel_context import KernelContext
     from codey.operations.kernel.kernel_driver import _recover_interrupted_effects
     from codey.operations.task_session import TaskSession, turn_effect_id
+    from codey.operations.tool_tasks import execution as tool_tasks
     from codey.runtime.core.operation_reducer import ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS, RuntimeAction
 
     (runtime.project / "test_sample.py").write_text(
@@ -211,8 +211,8 @@ def test_reserved_caller_recovers_same_execution_after_lost_acknowledgement(
 
 
 def test_large_escaped_output_is_bounded_and_deliverable(runtime: Runtime) -> None:
-    from codey.operations.tool_task_delivery import NOTIFICATION_MAX_CHARS
-    from codey.operations.tool_tasks import wait_tool_task
+    from codey.operations.tool_tasks.delivery import NOTIFICATION_MAX_CHARS
+    from codey.operations.tool_tasks.execution import wait_tool_task
 
     (runtime.project / "test_sample.py").write_text(
         "def test_noisy():\n    print('\\x01' * 30000)\n    assert False\n", encoding="utf-8")
@@ -233,7 +233,7 @@ def test_large_escaped_output_is_bounded_and_deliverable(runtime: Runtime) -> No
 def test_automatic_terminal_outcomes(
     runtime: Runtime, monkeypatch: pytest.MonkeyPatch, status: str, code: int | None, expected: str,
 ) -> None:
-    from codey.operations import tool_tasks
+    from codey.operations.tool_tasks import execution as tool_tasks
     from codey.runtime.core.execution_receipt import ExecutionReceipt
     from codey.toolchain.runtime import ToolOutcome
 
@@ -263,7 +263,7 @@ def test_automatic_terminal_outcomes(
 def test_notification_failure_distinguishes_unsent_from_uncertain_delivery(
     runtime: Runtime, monkeypatch: pytest.MonkeyPatch, not_sent: bool, native: bool,
 ) -> None:
-    from codey.operations import tool_tasks
+    from codey.operations.tool_tasks import execution as tool_tasks
     from codey.providers.error_classification import RequestPrepError
 
     class FailingProvider(CompletionProvider):

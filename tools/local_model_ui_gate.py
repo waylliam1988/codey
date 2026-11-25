@@ -37,7 +37,7 @@ if __package__ in (None, ""):
 
 from playwright.sync_api import Page, expect, sync_playwright
 
-from codey.app import provider_services, sibling_probe
+from codey.app import folder_picker, provider_services, sibling_probe
 from codey.app import server as codey_server
 from codey.app.context import AppContext
 from codey.env_names import (
@@ -541,7 +541,7 @@ def run_local_model_ui_gate(
     history_path = artifact_dir / "local-model-provider-history.jsonl"
     project = temp_root / "project"
     project.mkdir()
-    original_pick_folder = codey_server.pick_folder
+    original_pick_folder = folder_picker._run_dialog
     httpd: codey_server.CodeyHTTPServer | None = None
     page_errors: list[str] = []
     try:
@@ -551,7 +551,7 @@ def run_local_model_ui_gate(
         provider_controls.set_teach_handler(
             functools.partial(sibling_probe.handle_control_teach, state)
         )
-        codey_server.pick_folder = lambda mode="open", initial=None: str(project)
+        folder_picker._run_dialog = lambda _mode, _initial: folder_picker.folder_selection(str(project))
         provider_services.reset_provider_availability_cache()
         httpd = codey_server.CodeyHTTPServer(("127.0.0.1", 0), codey_server.Handler)
         from codey.app.public_event_feed import PublicEventFeed
@@ -617,7 +617,7 @@ def run_local_model_ui_gate(
             unobserve()
             feed.close()
         provider_controls.set_teach_handler(None)
-        codey_server.pick_folder = original_pick_folder
+        folder_picker._run_dialog = original_pick_folder
         provider_services.reset_provider_availability_cache()
         # Keep failed runs for model/UI diagnosis. Successful runs are cleaned
         # after copying the durable state into the artifact directory.

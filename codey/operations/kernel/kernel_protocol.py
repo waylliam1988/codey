@@ -343,7 +343,7 @@ def _validate_control_plan(
     if (snapshot is not None and bound_symbol_retry(snapshot) is not None
             and items.control is not None and not items.protocol_error):
         return _invalid_plan("The bound edit requires a complete Python definition.", tool="edit")
-    if (snapshot is not None and snapshot.browser_copy is not None and items.control is not None
+    if (snapshot is not None and snapshot.browser.copy is not None and items.control is not None
             and items.control.kind == "done" and "done" not in snapshot.tool_names):
         return _invalid_plan("Finish the browser copy before reporting completion.", tool="done")
     done_spec = frozen.get("done") if frozen is not None else None
@@ -380,7 +380,8 @@ def normalize_turn(
             return _invalid_plan(f"invalid tool snapshot: {exc}")
     else:
         allowed = None if controller_allowed is None else {(n or "").strip().lower() for n in controller_allowed}
-    from codey.operations.kernel.turn_inputs import bound_symbol_source, lower_bound_inputs
+    from codey.operations.kernel.turn_inputs import lower_bound_inputs
+    from codey.operations.project.model_inputs import bound_symbol_source
 
     source = bound_symbol_source(reply, snapshot) if snapshot is not None else ""
     items: list[tuple[str, ToolArgs, str]] | ToolPlan
@@ -389,7 +390,7 @@ def normalize_turn(
         if items.protocol_error and (closed := _try_close_done(reply, snapshot)) is not None:
             return closed
         return _validate_control_plan(items, snapshot, frozen)
-    if snapshot is not None and snapshot.browser_copy is not None and len(items) != 1:
+    if snapshot is not None and snapshot.browser.copy is not None and len(items) != 1:
         return _invalid_plan("Submit one browser copy action per turn.")
     if snapshot is not None:
         lowered = lower_bound_inputs(items, snapshot)
@@ -406,7 +407,7 @@ def normalize_turn(
         from codey.operations.browser.catalog import snapshot_catalog
 
         return preflight_plan(plan, snapshot_catalog(snapshot),
-                              file_reads=snapshot.data_file_reads)
+                              file_reads=snapshot.research.data_file_reads)
     return plan
 
 

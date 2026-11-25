@@ -99,8 +99,8 @@ def _text_request_prompt(prompt: str, snapshot: TurnSnapshot, *, schema_constrai
                 "The host applies it to the observed file and preserves all surrounding code.\n\n" + prompt)
     contract = snapshot.contract_text
     if (schema_constrained and snapshot.has_project_tools
-            and snapshot.input_binding is None and snapshot.browser_copy is None
-            and not snapshot.browser_followups and snapshot.research_scope is None):
+            and snapshot.input_binding is None and snapshot.browser.copy is None
+            and not snapshot.browser.followups and snapshot.research.scope is None):
         from codey.toolchain.tool_prompt import json_contract_text
 
         contract = json_contract_text(snapshot.model_specs, schema_constrained=True)
@@ -226,7 +226,7 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
     error = (plan.protocol_error or "invalid tool call").strip()
     spec = next((item for item in snapshot.model_specs if item.name == plan.protocol_tool_name), None)
     done = next((item for item in snapshot.model_specs if item.name == "done"), None)
-    missing_submission = (native and isinstance(snapshot.research_scope, AnswerScope)
+    missing_submission = (native and isinstance(snapshot.research.scope, AnswerScope)
         and isinstance(reply, AssistantTurn) and reply.finish is TurnFinish.COMPLETE
         and not reply.tool_calls and bool(reply.text.strip()) and not reply.raw.get("text_protocol")
         and bool(plan.protocol_error))
@@ -239,7 +239,7 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
                 " Every text value, including enum choices, must be a quoted string; "
                 "do not emit bare words such as state:reported. Use booleans only for boolean parameters."
             )
-        if snapshot.research_scope is not None:
+        if snapshot.research.scope is not None:
             instruction += " Submit the answer with submit_research_answer using the frozen contract."
         elif spec is not None and spec.name == "done":
             instruction += " " + _done_guidance(done, native=True)
@@ -252,7 +252,7 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
                         "its value or adding another key. Blank property names are not placeholders. "
                         "If that value belongs in a declared field, use that field's actual name. "
                         "Preserve valid source excerpts and other valid values; the rejected key must change.")
-    if spec is not None and spec.name == "submit_research_answer" and snapshot.research_scope is not None:
+    if spec is not None and spec.name == "submit_research_answer" and snapshot.research.scope is not None:
         # Cross-field forms cannot be conveyed by 'required: state' alone.
         # Reuse the actual frozen contract instead of inventing a repair mode.
         instruction += " " + spec.description
@@ -283,7 +283,7 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
         repair = ("Do not resend this unavailable tool or use another tool to bypass its restriction. "
                   "Choose an available action that can satisfy the task, ask for missing information, "
                   "or explain the limitation in the requested answer format.")
-    elif snapshot.research_scope is None and spec is not None and spec.name != "done":
+    elif snapshot.research.scope is None and spec is not None and spec.name != "done":
         repair = ("Reconsider whether this action is needed for the user's task. If unnecessary, choose another "
                   "available action or finish through the declared completion contract. "
                   f"If still needed, correct the rejected call. {ARGUMENT_CONTENT_GUIDANCE} Keep other valid fields.")

@@ -49,7 +49,7 @@ def test_every_research_entry_exposes_complete_delivery_and_authorized_tools(tmp
     try:
         session.policy = TaskPolicy(session.policy.grants, strict_research=True, required_checks=checks)
         snapshot = build_turn_snapshot(session, native=native)
-        assert isinstance(snapshot.research_scope, AnswerScope)
+        assert isinstance(snapshot.research.scope, AnswerScope)
         assert {"knowledge_commit", "knowledge_write", "save_finding", "save_inference"} <= set(snapshot.tool_names)
         assert "submit_research_answer" in snapshot.tool_names and "done" in snapshot.tool_names
         spec = next(spec for spec in snapshot.model_specs if spec.name == "submit_research_answer")
@@ -70,7 +70,7 @@ def test_invalid_auxiliary_action_never_writes_or_registers_plan(tmp_path: Path,
     try:
         session.policy = TaskPolicy(session.policy.grants, strict_research=True)
         delegate = ExecutionDelegate(session=session, research_tools=tools,
-            research_scope=build_turn_snapshot(session).research_scope)
+            research_scope=build_turn_snapshot(session).research.scope)
         questions, count = tools.ledger.questions, store.index.count()
         result, ok, _ = delegate.research_executor._execute_research(ToolCall(tool, {}))
         assert not ok and not result.ok
@@ -118,7 +118,7 @@ def test_complete_answer_submission_never_leaks_into_other_task_contracts(tmp_pa
         session.opened_sources = {"https://example.com/study"}
         session.evidence = [{"source": "https://example.com/study", "quote": "saved prior finding"}]
         snapshot = build_turn_snapshot(session)
-        assert snapshot.research_scope is None
+        assert snapshot.research.scope is None
         assert "submit_research_answer" not in snapshot.tool_names
     finally:
         store.close()

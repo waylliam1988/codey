@@ -55,7 +55,8 @@ def observation() -> BrowserReferences:
 
 def test_cards_keep_all_contexts_without_selecting_a_business_target() -> None:
     session = observed_session()
-    snapshot = replace(build_turn_snapshot(session), browser_references=observation(), browser_followups=True)
+    snapshot = build_turn_snapshot(session)
+    snapshot = replace(snapshot, browser=replace(snapshot.browser, references=observation(), followups=True))
     before = snapshot
     text = experiment.cards(session, snapshot)
     assert "Current" in text and "Archive" in text
@@ -74,7 +75,8 @@ def test_cards_keep_all_contexts_without_selecting_a_business_target() -> None:
 
 def test_cards_do_not_offer_denied_interaction() -> None:
     session = observed_session(fill=False)
-    snapshot = replace(build_turn_snapshot(session), browser_references=observation())
+    snapshot = build_turn_snapshot(session)
+    snapshot = replace(snapshot, browser=replace(snapshot.browser, references=observation()))
     text = experiment.cards(session, snapshot)
     assert '"operation": "browser_fill"' not in text
     assert '"operation": "browser_click"' not in text

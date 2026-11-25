@@ -52,7 +52,7 @@ def prepare_operation(
                 return _error_result(call, violation)
             if source_basis is not None:
                 file_basis = project_file_basis(session, project_path, target, call.args)
-            changed = changed_instruction_target(project_path, target, snapshot.project_instructions)
+            changed = changed_instruction_target(project_path, target, snapshot.project.instructions)
         except (OSError, ValueError) as exc:
             return _error_result(call, str(exc))
         if changed is not None:

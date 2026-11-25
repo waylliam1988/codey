@@ -132,7 +132,7 @@ def assessment_snapshot(snapshot: TurnSnapshot, evidence: Evidence) -> TurnSnaps
     spec = next(spec for spec in snapshot.frozen_specs if spec.name == "codemode")
     spec = replace(spec, description=ASSESS, declarations=json.dumps({"key": evidence.key, "labels": list(evidence.texts)}))
     return replace(snapshot, tool_names=("codemode",), nested_tool_names=(), frozen_specs=(spec,),
-        browser_references=None, browser_fill_text=None, browser_followups=False,
+        browser=replace(snapshot.browser, references=None, fill_text=None, followups=False),
         custom_executors=tuple(row for row in snapshot.custom_executors if row[0] == "codemode"),
         model_specs=(assessment_spec(spec),), contract_text=json_contract_text((assessment_spec(spec),)))
 
@@ -187,7 +187,7 @@ def experiment(directory: Path, arm: Arm) -> Generator[None, None, None]:
                counters: RuntimeExecutionCounters | None = None, text_result_spans: tuple[TextResultSpan, ...] = (),
                coding_context_prepared: bool = False, initial_source_batch: bool = False,
                handoff: str | None = None) -> None:
-        scope = snapshot.research_scope
+        scope = snapshot.research.scope
         if isinstance(scope, AnswerScope) and not acknowledge:
             tools = context.execution.research_tools
             browser = tools.browser_session if tools is not None else None

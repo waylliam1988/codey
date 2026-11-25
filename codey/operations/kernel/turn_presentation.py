@@ -22,31 +22,52 @@ def model_tool_specs(snapshot: TurnSnapshot) -> tuple[ToolSpec, ...]:
     binding = snapshot.input_binding
     specs = tuple(binding.model_spec if binding is not None and spec.name == binding.model_spec.name else spec
                   for spec in snapshot.frozen_specs if spec.name in snapshot.tool_names)
-    specs = tuple(reference_spec(spec, snapshot.browser_references) for spec in specs)
+    specs = tuple(reference_spec(spec, snapshot.browser.references) for spec in specs)
     specs = tuple(verification_model_spec(spec) if spec.name == "run" else spec for spec in specs)
-    if snapshot.task_source_url is not None:
+    if snapshot.browser.source_url is not None:
         from codey.codemode.navigation import TASK_SOURCE_TOOLS, task_source_spec
 
         specs = tuple(task_source_spec(spec) if spec.name in TASK_SOURCE_TOOLS else spec for spec in specs)
-    if not snapshot.browser_followups:
+    if not snapshot.browser.followups:
         return specs
-    if snapshot.task_navigation_url is not None:
+    if snapshot.browser.navigation_url is not None:
         from codey.codemode.navigation import task_navigation_spec
 
         specs = tuple(task_navigation_spec(spec) if spec.name == "browser_navigate" else spec for spec in specs)
     plans = browser_followups.click_plans(snapshot.policy.required_checks if snapshot.policy else (),
                                           set(snapshot.nested_tool_names))
     purposes = tuple(purpose for purpose in browser_followups.PURPOSES if purpose in plans)
-    return tuple(browser_followups.model_spec(spec, snapshot.browser_fill_text, click_purposes=purposes,
+    return tuple(browser_followups.model_spec(spec, snapshot.browser.fill_text, click_purposes=purposes,
                  navigation_observes=snapshot.navigation_observes,
-                 navigation_verifies=snapshot.navigation_verifies) for spec in specs)
+                 navigation_verifies=snapshot.browser.navigation_verifies) for spec in specs)
 
 
 def render_snapshot_contract(snapshot: TurnSnapshot) -> str:
     text = json_contract_text(snapshot.model_specs)
-    if snapshot.browser_copy is not None and snapshot.browser_copy.phase == "question":
+    if snapshot.browser.copy is not None and snapshot.browser.copy.phase == "question":
         text += "\nAsk which webpage source to use. The observation has no unique supported data format."
     return text
+
+
+def validate_browser_declarations(snapshot: TurnSnapshot) -> None:
+    if not snapshot.implementation_compatible:
+        return
+    reference_tools = {spec.name for spec in snapshot.frozen_specs
+                       if spec.executor == "browser" and "ref" in dict(spec.parameters)}
+    if not reference_tools:
+        return
+    expected = tuple(spec for spec in model_tool_specs(snapshot) if spec.name in reference_tools)
+    captured = tuple(spec for spec in snapshot.model_specs if spec.name in reference_tools)
+    if captured != expected:
+        raise ValueError("captured contract text differs from its browser input binding")
+    if not reference_tools.intersection(snapshot.nested_tool_names):
+        return
+    binding = snapshot.input_binding
+    codemode = next((spec for spec in snapshot.model_specs if spec.name == "codemode"), None)
+    if codemode is not None and (binding is None or binding.model_spec.name != "codemode"):
+        digest = snapshot_catalog(snapshot).digest
+        if f"// catalog_digest={digest}" not in codemode.declarations.splitlines():
+            raise ValueError("captured contract text differs from its browser catalog")
 
 
 def refresh_snapshot_contract(snapshot: TurnSnapshot, *, compact_catalog: bool = False,

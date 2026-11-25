@@ -1,42 +1,108 @@
-"""Own the native folder dialog used by standalone browser clients."""
+"""Own the native directory dialog and its result for standalone browsers."""
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 import threading
-from concurrent.futures import Future
 from pathlib import Path
+from uuid import uuid4
 
-_active = threading.Lock()
+from codey.runtime.core import cancellation
+from codey.types.json_value import parse_json_object
+
+FOLDER_PICKER_PATH = "/api/pick_folder"
+_RECENT_RESULTS = 32
 
 
-class FolderPickerBusy(RuntimeError):
-    """A browser-owned native dialog is already open."""
+def initial_directory(initial: str) -> str:
+    path = Path(initial).expanduser() if initial else Path.home()
+    return str(path if path.is_dir() else Path.home())
 
 
-def pick_folder(mode: str = "open", initial: str | None = None) -> str | None:
-    if not _active.acquire(blocking=False):
-        raise FolderPickerBusy
-    result: Future[str | None] = Future()
+def folder_selection(path: str | None) -> dict[str, object]:
+    if path is None:
+        return {"ok": False, "cancelled": True}
+    return {"ok": True, "path": path, "name": Path(path).name or path}
 
-    def choose() -> None:
-        try:
-            result.set_result(_choose_folder(mode, initial))
-        except BaseException as exc:
-            result.set_exception(exc)
 
+class FolderPicker:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._active: str | None = None
+        self._results: dict[str, dict[str, object]] = {}
+        self._worker: threading.Thread | None = None
+        self._closed = threading.Event()
+
+    def start(self, body: dict[str, object]) -> tuple[int, dict[str, object]]:
+        mode = body.get("mode", "open")
+        initial = body.get("initial", "")
+        if mode not in ("open", "new") or not isinstance(mode, str) or not isinstance(initial, str):
+            return 400, {"error": "invalid folder picker options"}
+        with self._lock:
+            if self._closed.is_set():
+                return 503, {"error": "folder picker is closed"}
+            if self._active is not None:
+                return 409, {"error": "folder picker is busy"}
+            identity = uuid4().hex
+            worker = threading.Thread(target=self._run, args=(identity, mode, initial),
+                                      name="codey-folder-picker", daemon=True)
+            self._active = identity
+            try:
+                worker.start()
+            except RuntimeError:
+                self._active = None
+                raise
+            self._worker = worker
+            return 202, {"id": identity}
+
+    def status(self, identity: str) -> tuple[int, dict[str, object]]:
+        with self._lock:
+            if self._active == identity:
+                return 202, {"id": identity}
+            if (result := self._results.get(identity)) is not None:
+                return 200, result
+            return 404, {"error": "folder selection expired"}
+
+    def _run(self, identity: str, mode: str, initial: str) -> None:
+        result = run_folder_dialog(mode, initial, self._closed)
+        with self._lock:
+            self._results[identity] = result
+            if len(self._results) > _RECENT_RESULTS:
+                self._results.pop(next(iter(self._results)))
+            self._active = None
+
+    def close(self) -> None:
+        with self._lock:
+            self._closed.set()
+            worker = self._worker
+        if worker is not None:
+            worker.join(timeout=2)
+
+
+def run_folder_dialog(mode: str, initial: str, stop: threading.Event) -> dict[str, object]:
     try:
-        threading.Thread(target=choose, name="codey-folder-picker", daemon=True).start()
-        return result.result()
-    finally:
-        _active.release()
+        with cancellation.scope(stop):
+            return _run_dialog(mode, initial)
+    except (OSError, ValueError, subprocess.SubprocessError, cancellation.TaskCancelled,
+            cancellation.ProcessOutputReadError, cancellation.PipeDrainTimeout) as exc:
+        return {"error": str(exc) or "folder picker failed"}
 
 
-def _choose_folder(mode: str, initial: str | None) -> str | None:
+def _run_dialog(mode: str, initial: str) -> dict[str, object]:
+    result = cancellation.run_process(
+        [sys.executable, "-X", "utf8", "-m", "codey.app.folder_picker", mode, initial],
+        cwd=Path.cwd(), timeout=600, capture_limit_bytes=128 * 1024,
+    )
+    if result.returncode != 0 or result.stdout_truncated:
+        raise ValueError(result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "folder picker failed")
+    return dict(parse_json_object(result.stdout))
+
+
+def _choose_folder(mode: str, initial: str) -> str | None:
     import tkinter as tk
     from tkinter import filedialog
 
-    initial_path = Path(initial).expanduser() if initial else Path.home()
-    if not initial_path.is_dir():
-        initial_path = Path.home()
     create = mode == "new"
     root = tk.Tk()
     try:
@@ -45,7 +111,7 @@ def _choose_folder(mode: str, initial: str | None) -> str | None:
         selected: object = filedialog.askdirectory(
             parent=root,
             title="Create or Select Project Folder" if create else "Select Existing Project Folder",
-            initialdir=str(initial_path),
+            initialdir=initial_directory(initial),
             mustexist=not create,
         )
     finally:
@@ -58,3 +124,7 @@ def _choose_folder(mode: str, initial: str | None) -> str | None:
     if create:
         path.mkdir(parents=True, exist_ok=True)
     return str(path)
+
+
+if __name__ == "__main__":
+    print(json.dumps(folder_selection(_choose_folder(sys.argv[1], sys.argv[2]))))

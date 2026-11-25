@@ -1,5 +1,5 @@
 import { fetchChangeFile, fetchChanges, fetchRunChanges, restoreChanges } from '../api/changes';
-import { chooseProjectFolder } from './project_folder';
+import { createProjectFolderPicker } from './project_folder';
 import { requestResponse } from '../api/transport';
 import { ChangesDrawer } from '../workspace/changes_drawer';
 import { Composer } from '../conversation/composer';
@@ -12,6 +12,7 @@ import { ProviderUI } from '../providers/provider_ui';
 import { Render } from '../render/render';
 import { Requests } from '../runs/requests';
 import { ResearchDrawer } from '../research/research_drawer';
+import { createResearchPanel } from '../research/research_panel';
 import { ResearchRuns } from '../research/research_runs';
 import { RunDetails } from '../runs/run_details';
 import { Sse } from '../sse';
@@ -44,7 +45,7 @@ import { createSidebar } from '../conversation/sidebar';
 import { type UserQuestion, UserQuestions } from '../runs/user_questions';
 import { mountCharacterPond } from './character_pond';
 import { decodeServerEvent, isRecord, type ServerEvent } from '../domain/protocol';
-import type { Message, Project, ResearchPayload, RunState, Session } from '../types/domain';
+import type { Message, Project, RunState, Session } from '../types/domain';
 
 type RenameCommit = (value: string | undefined) => void;
 interface StatusAction {
@@ -119,7 +120,7 @@ export function mountApp(): void {
     }
   });
   workspace.register('research', 'Research', $('research-drawer'), (target) => {
-    const runId = target.runId || currentResearchRun(sessionState.activeId)?.runId;
+    const runId = target.runId || researchPanel.currentResearchRun(sessionState.activeId)?.runId;
     if (runId) ResearchDrawer.open(sessionState.activeId, runId);
     else {
       $('research-body').textContent = 'No research recorded for this conversation.';
@@ -375,7 +376,7 @@ export function mountApp(): void {
     const proj = p ? p.name : 'Choose folder';
     const disabled =
       runProjection.primaryRun?.sessionId === sessionState.activeId || Composer.isSending(sessionState.activeId);
-    const folderDisabled = disabled || !!p || projectPickerBusy;
+    const folderDisabled = disabled || !!p || projectFolderPicker.busy();
     const researchActive = !!(s && s.research);
     const pieces = [
       `<button class="ctx-token ctx-folder" id="ctx-folder" ${folderDisabled ? 'disabled' : ''}${p ? ` title="${escapeHtml(p.path)}"` : ''}>${escapeHtml(proj)}</button>`,
@@ -580,51 +581,24 @@ export function mountApp(): void {
   async function deleteProject(id: string): Promise<void> {
     return sessionState.deleteProject(id);
   }
-  function ensureProject(path: string, name: string) {
-    return sessionState.ensureProject(path, name);
-  }
-  let projectPickerBusy = false;
-  async function pickProjectPath(mode = 'open', initial = '') {
-    if (projectPickerBusy) return null;
-    projectPickerBusy = true;
-    $('btn-add-project').disabled = true;
-    updateComposerContext();
-    try {
-      const data = await chooseProjectFolder(mode, initial);
-      if (isRecord(data) && typeof data.error === 'string') setStatus(data.error, 'err');
-      if (!isRecord(data) || data.ok !== true || typeof data.path !== 'string' || !data.path) return null;
-      return { path: data.path, name: typeof data.name === 'string' ? data.name : undefined };
-    } finally {
-      projectPickerBusy = false;
-      $('btn-add-project').disabled = false;
+  const projectFolderPicker = createProjectFolderPicker({
+    onBusy: (busy) => {
+      $('btn-add-project').disabled = busy;
       updateComposerContext();
-    }
-  }
-  function attachSessionToProject(projectId: string | null, sessionId: string = sessionState.activeId) {
-    return sessionState.attachSessionToProject(projectId, sessionId);
-  }
-  async function pickProject() {
-    const s = activeSession();
-    const shouldAttach = !!s && !sessionProject(s);
-    const data = await pickProjectPath(shouldAttach ? 'new' : 'open', currentProjectPath());
-    if (!data) return;
-    if (typeof data.path !== 'string') return;
-    const p = ensureProject(data.path, typeof data.name === 'string' ? data.name : data.path);
-    if (shouldAttach) attachSessionToProject(p.id, s.id);
-    else newSession(p.id);
-  }
-
-  async function attachCurrentChatToPickedProject() {
-    if (runProjection.size) return;
-    const sid = sessionState.activeId;
-    const s = sessionState.sessions.find((x) => x.id === sid);
-    if (!s || sessionProject(s)) return;
-    const data = await pickProjectPath('new', currentProjectPath());
-    if (!data) return;
-    if (typeof data.path !== 'string') return;
-    const p = ensureProject(data.path, typeof data.name === 'string' ? data.name : data.path);
-    if (!attachSessionToProject(p.id, sid)) return;
-  }
+    },
+    onError: (message) => setStatus(message, 'err'),
+    initialPath: currentProjectPath,
+    activeSessionId: () => sessionState.activeId,
+    canAttach: (id) => {
+      const session = sessionState.sessions.find((item) => item.id === id);
+      return session !== undefined && !sessionProject(session);
+    },
+    hasRunningTask: () => runProjection.size > 0,
+    ensureProject: (path, name) => sessionState.ensureProject(path, name),
+    attachSession: (projectId, sessionId) => sessionState.attachSessionToProject(projectId, sessionId),
+    newSession,
+  });
+  const { pickProject, attachCurrentChatToPickedProject } = projectFolderPicker;
 
   function pushMsgToSession(sid: string, m: Message) {
     return sessionState.pushMessage(sid, m);
@@ -694,6 +668,18 @@ export function mountApp(): void {
   });
 
   // ============================ SSE event ingestion ============================
+  const researchPanel = createResearchPanel({
+    workspace,
+    element: $,
+    activeId: () => sessionState.activeId,
+    sessions: () => sessionState.sessions,
+    receiptSummary,
+    persistActive,
+    persistActiveNow,
+    openDocument,
+    copyText,
+    addToSession,
+  });
   const runEvents = new RunEventCoordinator({
     state: sessionState,
     ui: UiState,
@@ -716,8 +702,8 @@ export function mountApp(): void {
     syncResearchUseProjectButton,
     refreshProviderStatus,
     applyProviderStatus,
-    recordResearchRun,
-    markResearchRestoreAvailability,
+    recordResearchRun: researchPanel.recordResearchRun,
+    markResearchRestoreAvailability: researchPanel.markResearchRestoreAvailability,
     receiptSummary,
     receiptChangedCount,
     maybeAddChangesSummary,
@@ -761,57 +747,6 @@ export function mountApp(): void {
 
   function handleServerEvent(data: ServerEvent, lifecycleSource: 'event' | 'snapshot' = 'event') {
     return runEvents.handleServerEvent(data, lifecycleSource);
-  }
-
-  let researchDrawerTab = 'evidence';
-  let researchGraphDepth = 1;
-  let researchNoteFocusId = '';
-
-  function recordResearchRun(sessionId: string, runId: string, research: ResearchPayload, receipt: unknown) {
-    const item = ResearchRuns.record(sessionId, runId, research, receipt);
-    if (!item) return null;
-    researchDrawerTab = 'evidence';
-    researchNoteFocusId = '';
-    ResearchDrawer.invalidateNoteCache(ResearchDrawer.noteIdsForRun(item));
-    return item;
-  }
-
-  function currentResearchRun(sessionId = sessionState.activeId) {
-    return ResearchRuns.current(sessionId);
-  }
-
-  async function restoreResearchRun() {
-    const restore = $('research-restore');
-    if (restore) restore.disabled = true;
-    const ownerSessionId = sessionState.activeId;
-    try {
-      const result = await ResearchRuns.restore(ownerSessionId);
-      if (!result) return;
-      const subtitle = sessionState.activeId === ownerSessionId ? $('research-subtitle') : null;
-      if (subtitle) subtitle.textContent = String(result.message || '');
-      if (result.run) {
-        ResearchDrawer.invalidateNoteCache(ResearchDrawer.noteIdsForRun(result.run));
-      }
-      if (result.ok) {
-        addToSession(result.ownerSessionId, {
-          type: 'done',
-          text: `Research restored: ${result.restored.length} files`,
-          eventKey: `research-restore:${String(result.run.runId || '')}`,
-        });
-      }
-      if (sessionState.activeId === result.ownerSessionId) ResearchDrawer.render(sessionState.activeId);
-    } finally {
-      const current = currentResearchRun();
-      if (restore) restore.disabled = !current || !current.restoreable;
-    }
-  }
-
-  function markResearchRestoreAvailability(runIds: unknown) {
-    const changed = ResearchRuns.markRestoreAvailability(runIds);
-    const drawer = $('research-drawer');
-    if (changed && drawer && drawer.classList.contains('open')) {
-      ResearchDrawer.render(sessionState.activeId);
-    }
   }
 
   function projectTaskStates(tasks: HistoryTask[], owners: Map<string, string>, historySessionId?: string): void {
@@ -982,7 +917,7 @@ export function mountApp(): void {
   const researchClose = $('research-close');
   if (researchClose) researchClose.onclick = () => ResearchDrawer.close();
   const researchRestore = $('research-restore');
-  if (researchRestore) researchRestore.onclick = restoreResearchRun;
+  if (researchRestore) researchRestore.onclick = researchPanel.restoreResearchRun;
   function syncResearchUseProjectButton() {
     const btn = $('research-use-project');
     if (!btn) return;
@@ -1030,39 +965,7 @@ export function mountApp(): void {
     await ProviderUI.adoptCatalog();
     DEFAULT_PROVIDER = UiState.DEFAULT_PROVIDER;
     bindUiStatePagehide(Composer.captureDraft);
-    ResearchRuns.init({
-      getActiveId: () => sessionState.activeId,
-      getSessions: () => sessionState.sessions,
-      activeSession,
-      receiptSummary,
-      persistActive,
-      persistActiveNow,
-    });
-    ResearchDrawer.init({
-      targetResearch: (runId) => workspace.target('research', { runId }),
-      openDocument,
-      $,
-      getActiveId: () => sessionState.activeId,
-      getSessionTitle: (id: string) => (sessionState.sessions.find((s) => s.id === id) || {}).title || 'Chat',
-      getCurrentRun: (id: string, runId: string) =>
-        ResearchRuns.forRun(id, runId) as import('../research/research_drawer').ResearchRunView | null,
-      getResearchGraphDepth: () => Number(workspace.getTarget('research').depth) || 1,
-      setResearchGraphDepth: (value: number) => {
-        researchGraphDepth = value;
-        workspace.target('research', { depth: String(value) });
-      },
-      getResearchNoteFocusId: () => workspace.getTarget('research').note || '',
-      setResearchNoteFocusId: (value: string) => {
-        researchNoteFocusId = value;
-        workspace.target('research', { note: value });
-      },
-      getResearchDrawerTab: () => workspace.getTarget('research').tab || 'evidence',
-      setResearchDrawerTab: (value: string) => {
-        researchDrawerTab = value;
-        workspace.target('research', { tab: value });
-      },
-      copyText,
-    });
+    researchPanel.init();
     ChangesDrawer.init({
       workspace,
       $,
@@ -1154,7 +1057,7 @@ export function mountApp(): void {
       syncProviderUI,
       switchSession,
       openLocalProviderConfig,
-      projectPickerBusy: () => projectPickerBusy,
+      projectPickerBusy: projectFolderPicker.busy,
       attachCurrentChatToPickedProject,
       observeQueuedInput,
     });

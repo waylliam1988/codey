@@ -143,8 +143,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         edges = {
             "operations/kernel_receipts.py": {"codey.operations.task_effects"},
             "operations/kernel/kernel_protocol.py": {"codey.operations.kernel.turn_presentation"},
-            "operations/tool_operation.py": {"codey.operations.kernel.kernel_execution", "codey.operations.tool_tasks"},
-            "operations/tool_task_reads.py": {"codey.operations.tool_tasks"},
+            "operations/tool_operation.py": {"codey.operations.kernel.kernel_execution", "codey.operations.tool_tasks.execution"},
+            "operations/tool_tasks/reads.py": {"codey.operations.tool_tasks.execution"},
             "codemode/catalog.py": {"codey.operations"},
             "codemode/types.py": {"codey.codemode.catalog"},
             "research/provenance.py": {"codey.research.report_quality"},

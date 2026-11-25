@@ -225,7 +225,7 @@ def admits(snapshot: TurnSnapshot, name: str) -> bool:
 
 
 def can_bind_fill(snapshot: TurnSnapshot) -> bool:
-    return (snapshot.input_binding is None and snapshot.browser_copy is None and snapshot.research_scope is None
+    return (snapshot.input_binding is None and snapshot.browser.copy is None and snapshot.research.scope is None
             and snapshot.policy is not None and not snapshot.policy.strict_research
             and {"codemode", *base.DIRECT_TOOLS} <= set(snapshot.tool_names)
             and all(admits(snapshot, name) for name in base.DIRECT_TOOLS))
@@ -407,7 +407,7 @@ def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
     def request_snapshot(context: KernelContext, snapshot: TurnSnapshot, *,
                          delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
         baseline, handoff = original_snapshot(context, snapshot, delivered_results=delivered_results)
-        candidate = replace(baseline, browser_followups=False, browser_fill_text=None)
+        candidate = replace(baseline, browser=replace(baseline.browser, followups=False, fill_text=None))
         research = context.execution.research_tools
         browser = research.browser_session if research is not None else None
         # Receipt progress now produces handoff text on ordinary browser turns too.

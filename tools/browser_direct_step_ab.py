@@ -54,7 +54,7 @@ def schema_for(snapshot: TurnSnapshot) -> JsonObject:
 def model_view(snapshot: TurnSnapshot, task: str) -> TurnSnapshot:
     """Render a narrower view; never pass this view to the kernel for execution."""
     spec = next((spec for spec in snapshot.model_specs if spec.name == "codemode"), None)
-    if (codemode_only(task) or snapshot.input_binding is not None or snapshot.browser_copy is not None
+    if (codemode_only(task) or snapshot.input_binding is not None or snapshot.browser.copy is not None
             or spec is None or "code" not in dict(spec.parameters)):
         return snapshot
     return refresh_snapshot_contract(replace(snapshot, tool_names=tuple(

@@ -482,7 +482,7 @@ def _dispatch_durable_task(checkpoint: object, *, state: TaskSubmissionState) ->
     if control_service is not None and not control_service.permits_dispatch(checkpoint):
         return False
     if checkpoint.execution_kind == "tool":
-        from codey.operations.tool_tasks import run_tool_task
+        from codey.operations.tool_tasks.execution import run_tool_task
 
         return state.durable_scheduler.dispatch_tool_task(checkpoint, lambda signal: run_tool_task(
             state.durable, checkpoint, stores=state.task_submission_stores, signal=signal,

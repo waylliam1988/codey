@@ -32,7 +32,7 @@ def prepare_request_snapshot(
     from codey.operations.browser.browser_resources import resume_assistance_observation
     from codey.operations.project.verification_workflow import verification_workflow
     from codey.operations.task_handoff import task_handoff
-    from codey.operations.tool_task_delivery import active_tool_task_controls
+    from codey.operations.tool_tasks.delivery import active_tool_task_controls
 
     question = decode_json_object(thaw_json(durable.task(run_id).state.get("question", {})))
     assistance = (resume_assistance_observation(browser, question.get("continuation", {}), session._memory_results)
@@ -54,5 +54,5 @@ def prepare_request_snapshot(
         targets = session.policy.edit_scope or tuple(filter(None, (declared_edit_target(session.task_text),)))
         bindings, instructions = instruction_handoff(
             execution.project_path, (*targets, *session.read_files), session._memory_results)
-        snapshot = replace(snapshot, project_instructions=bindings)
+        snapshot = replace(snapshot, project=replace(snapshot.project, instructions=bindings))
     return snapshot, "\n\n".join(part for part in (assistance, instructions, edit_retry, hint, workflow) if part)

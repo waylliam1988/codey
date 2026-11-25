@@ -29,7 +29,7 @@ def test_applied_unconfirmed_copy_blocks_the_next_snapshot(marker: str, complete
     session = TaskSession(policy, task_kind="hybrid",
         task_text="Copy the value from https://example.com/ into dispatch.json field label as a string.")
     session._memory_results.update(observed_receipts())
-    assert build_turn_snapshot(session).browser_copy is not None
+    assert build_turn_snapshot(session).browser.copy is not None
     if earlier_success:
         session._memory_results["earlier-write"] = ToolResult(
             ToolCall("edit", {"path": "dispatch.json", "browser_source": {"ref": "capture"}},

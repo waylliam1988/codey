@@ -328,7 +328,7 @@ def execute_turn(
         permission_profile,
         frozen_specs=frozen_specs,
         custom_executors=frozen_custom_executor_map(snapshot),
-        research_scope=snapshot.research_scope if snapshot is not None else None,
+        research_scope=snapshot.research.scope if snapshot is not None else None,
         browser_session=browser_session,
         durable=durable if isinstance(durable, DurableSession) else None,
     )
@@ -673,7 +673,7 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
                 continue
             spec = frozen_specs.get(name) if frozen_specs is not None else None
             if spec is not None and spec.executor == "task_control":
-                from codey.operations.tool_tasks import control_tool_task
+                from codey.operations.tool_tasks.execution import control_tool_task
 
                 result = control_tool_task(call, durable=durable, owner_task_id=run_id, store=managed_outputs,
                                            caller_policy=session.policy)
@@ -758,7 +758,7 @@ def _admit_background(context: ToolExecutionContext, identity: str, call: ToolCa
             tool_resources_for(context.durable).release_browser(tool_task_id(identity))
         raise
     if defer_result:
-        from codey.operations.tool_tasks import COMMAND_YIELD_MS, automatic_command_result
+        from codey.operations.tool_tasks.execution import COMMAND_YIELD_MS, automatic_command_result
 
         assert isinstance(context.durable, DurableSession)
         return automatic_command_result(context.durable, call, origin_effect_id=identity,

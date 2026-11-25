@@ -18,11 +18,16 @@ _HELPER = Path(__file__).with_suffix(".ps1")
 def analyze_powershell(command: str, shell: ShellSpec, digest: str) -> ShellAnalysis:
     try:
         cancellation.check()
-        return _inspect(command, shell, digest, _HELPER.read_text(encoding="utf-8"))
+        return _inspect(command, shell, digest, _helper_source())
     except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired,
             cancellation.PipeDrainTimeout, cancellation.ProcessOutputReadError) as exc:
         return ShellAnalysis(digest, "opaque", parser_identity(shell),
                              reason=f"PowerShell AST unavailable: {type(exc).__name__}")
+
+
+@lru_cache(maxsize=1)
+def _helper_source() -> str:
+    return _HELPER.read_text(encoding="utf-8")
 
 
 @lru_cache(maxsize=64)

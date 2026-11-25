@@ -146,7 +146,7 @@ def experiment(directory: Path, case: natural.Case, arm: Arm) -> Generator[None,
             nonlocal active
             research = context.execution.research_tools
             active = research.browser_session if research is not None else None
-            if not context.native and not acknowledge and snapshot.research_scope is not None:
+            if not context.native and not acknowledge and snapshot.research.scope is not None:
                 prompt += "\n\n" + GUIDANCE
                 if arm.examples:
                     prompt += "\n\n" + EXAMPLES

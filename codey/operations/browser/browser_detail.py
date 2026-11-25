@@ -122,7 +122,7 @@ def offer_page_details(session: TaskSession, snapshot: TurnSnapshot,
                        browser: BrowserSession | None) -> tuple[TurnSnapshot, str]:
     from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 
-    if (browser is None or not _can_inspect(session) or snapshot.research_scope is None
+    if (browser is None or not _can_inspect(session) or snapshot.research.scope is None
             or not {"browser_read", "browser_click"} <= set(snapshot.nested_tool_names)
             or PAGE_DETAIL_TOOL in session.controller_denied or session.model_tool_names is not None):
         return snapshot, ""
@@ -165,7 +165,7 @@ def offer_query_controls(session: TaskSession, snapshot: TurnSnapshot, context: 
     )
     from codey.operations.browser.turn_surface import offer_browser_call
 
-    if (browser is None or not _can_inspect(session) or snapshot.research_scope is None
+    if (browser is None or not _can_inspect(session) or snapshot.research.scope is None
             or (document := _observed_document(session, browser)) is None
             or not same_document(document, context.browser_document)):
         return snapshot, ""
@@ -181,7 +181,7 @@ def offer_query_controls(session: TaskSession, snapshot: TurnSnapshot, context: 
 def initial_query_access(session: TaskSession, snapshot: TurnSnapshot,
                          browser: BrowserSession | None, call: ToolCall) -> ToolCall:
     """Read and observe in one existing program, retaining both formal child receipts."""
-    if (browser is None or not _can_inspect(session) or snapshot.research_scope is None
+    if (browser is None or not _can_inspect(session) or snapshot.research.scope is None
             or call.name != "open_url" or "codemode" not in snapshot.tool_names
             or not {"open_url", "browser_snapshot"} <= set(snapshot.nested_tool_names)):
         return call

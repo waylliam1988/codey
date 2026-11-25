@@ -58,7 +58,7 @@ def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall
     """Materialize explicit navigation to one authorized task URL before interaction."""
     from codey.operations.browser.browser_linked_record import requested_linked_record
 
-    research = session.policy.strict_research and snapshot.research_scope is not None
+    research = session.policy.strict_research and snapshot.research.scope is not None
     # Repeated page rounds own their transitions. A single explicitly required
     # navigation can initialize Research before any control interaction.
     if any(isinstance(parse_browser_requirement(check), BrowserPageRounds) for check in session.policy.required_checks):
@@ -78,7 +78,7 @@ def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall
                     if (rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_navigate"]
     if not requirements and not explicit_web_intent(session.task_text).browser_navigation_requested:
         return None
-    url = _task_navigation_url(session) if requirements else snapshot.task_navigation_url
+    url = _task_navigation_url(session) if requirements else snapshot.browser.navigation_url
     if url is None or any(rule.via not in {"", "codemode"} for rule in requirements):
         return None
     args: JsonObject = {"url": url}
@@ -110,10 +110,10 @@ def handoff_call(session: TaskSession, snapshot: TurnSnapshot,
         return snapshot, None, f"{call.name} is unavailable under the current frozen authorization."
     only = codemode_only(session.task_text)
     if not only:
-        snapshot = offer_browser_call(snapshot, session, call.name, research=snapshot.research_scope is not None)
+        snapshot = offer_browser_call(snapshot, session, call.name, research=snapshot.research.scope is not None)
     bound_navigation = (call.name == "browser_navigate"
-                        and snapshot.task_navigation_url is not None)
-    if bound_navigation and call.args == {"url": snapshot.task_navigation_url}:
+                        and snapshot.browser.navigation_url is not None)
+    if bound_navigation and call.args == {"url": snapshot.browser.navigation_url}:
         call = replace(call, args={"target": "task"})
     task_selector = call.name == "browser_navigate" and "target" in call.args
     direct = (call.name in snapshot.tool_names and not only
@@ -154,8 +154,8 @@ def observation_recovery_handoff(session: TaskSession, snapshot: TurnSnapshot,
     The caller owns repeat accounting. This supplies choices, never selects a
     business target or replays a delivered/uncertain action.
     """
-    references = snapshot.browser_references
-    if (references is None or snapshot.input_binding is not None or snapshot.browser_copy is not None
+    references = snapshot.browser.references
+    if (references is None or snapshot.input_binding is not None or snapshot.browser.copy is not None
             or "browser_fill" not in snapshot.inventory_names
             or not same_document(parse_json_object(references.document_json), context.browser_document)):
         return snapshot, ""
@@ -204,7 +204,7 @@ def observation_recovery_handoff(session: TaskSession, snapshot: TurnSnapshot,
 def query_result_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                          generation: int | None, *, task_named: bool = True) -> tuple[TurnSnapshot, str]:
     """Offer observed query controls under the calling task's selection policy."""
-    if not snapshot.browser_followups or snapshot.input_binding is not None or snapshot.browser_copy is not None:
+    if not snapshot.browser.followups or snapshot.input_binding is not None or snapshot.browser.copy is not None:
         return snapshot, ""
     checks = snapshot.policy.required_checks if snapshot.policy else ()
     if "result" not in click_followup_plan(checks, set(snapshot.nested_tool_names)).plans:
@@ -247,7 +247,7 @@ def query_result_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
         if not named:
             continue
         ref = row["ref"]
-        references = snapshot.browser_references
+        references = snapshot.browser.references
         if references is not None:
             ref = next((choice for choice in references.choices() if references.resolve(choice) == row["ref"]), ref)
         offered, call, _ = handoff_call(session, snapshot, ToolCall("browser_click", {"ref": ref, "purpose": "result"}))
@@ -286,7 +286,7 @@ def _input_after_click(records: Mapping[str, ExecutionRecord], results: Mapping[
 
 def confirmed_query_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext) -> str:
     """Deliver the original query-to-passage association after acquisition has finished."""
-    if snapshot.research_scope is None:
+    if snapshot.research.scope is None:
         return ""
     records, results = tool_facts(session, context)
     lines: list[str] = []
@@ -297,7 +297,7 @@ def confirmed_query_handoff(session: TaskSession, snapshot: TurnSnapshot, contex
         passages = result.canonical.get("read_passages")
         refs = {passage for row in passages if isinstance(row, dict)
                 and isinstance(passage := row.get("ref"), str)} if isinstance(passages, list) else set()
-        labels = ", ".join(f"[{label}]" for label, passage in snapshot.research_scope.aliases if passage in refs)
+        labels = ", ".join(f"[{label}]" for label, passage in snapshot.research.scope.aliases if passage in refs)
         if labels:
             region = result.audit.get("query_region")
             owner = region.get("context") if isinstance(region, dict) else None
@@ -365,7 +365,7 @@ def bind_browser_references(session: TaskSession, snapshot: TurnSnapshot, contex
                             generation: int | None) -> TurnSnapshot:
     """Freeze complete controls independently of body-text truncation."""
     references = None
-    if (snapshot.input_binding is None and snapshot.browser_copy is None
+    if (snapshot.input_binding is None and snapshot.browser.copy is None
             and any(spec.executor == "browser" and "ref" in dict(spec.parameters)
                     and spec.name in snapshot.nested_tool_names for spec in snapshot.frozen_specs)
             and context.browser_document is not None
@@ -375,13 +375,13 @@ def bind_browser_references(session: TaskSession, snapshot: TurnSnapshot, contex
         except ValueError:
             # Older/incomplete receipts cannot authorize descriptive selection.
             references = None
-    return refresh_snapshot_contract(replace(snapshot, browser_references=references))
+    return refresh_snapshot_contract(replace(snapshot, browser=replace(snapshot.browser, references=references)))
 
 
 def browser_observation_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                                 generation: int | None) -> str:
     """Retain current UI state even when Research compacts the child snapshot."""
-    references = snapshot.browser_references
+    references = snapshot.browser.references
     current = _current_snapshot(session, context, generation, require_text=False)
     if references is None or current is None or references.receipt_ref != current[0]:
         return ""
@@ -401,7 +401,7 @@ def browser_observation_handoff(session: TaskSession, snapshot: TurnSnapshot, co
     if prior := _previous_page_observation(session, url):
         lines.append("Earlier page observation (historical quoted data):\n" + json.dumps(prior, ensure_ascii=False))
     lines.extend(_record_controls(current[1]))
-    if ("browser_click" in snapshot.tool_names and snapshot.browser_followups
+    if ("browser_click" in snapshot.tool_names and snapshot.browser.followups
             and "controls" in click_followup_plan(session.policy.required_checks, set(snapshot.nested_tool_names)).plans):
         buttons: list[JsonObject] = [{"tool": "browser_click", "args": {"ref": choice, "purpose": "controls"}}
             for choice in references.choices("browser_click") if isinstance(choice, dict) and choice.get("role") == "button"
@@ -433,7 +433,7 @@ def linked_record_handoff(session: TaskSession, snapshot: TurnSnapshot, context:
     from codey.operations.browser.browser_linked_record import linked_record_progress, requested_linked_record
 
     request = requested_linked_record(session)
-    if request is None or snapshot.input_binding is not None or snapshot.browser_copy is not None:
+    if request is None or snapshot.input_binding is not None or snapshot.browser.copy is not None:
         return snapshot, ""
     progress = linked_record_progress(session, request)
     if progress.read_ref:
@@ -511,7 +511,7 @@ def browser_control_wait_handoff(session: TaskSession, snapshot: TurnSnapshot, c
     from codey.operations.browser.browser_waits import snapshot_text_baseline, snapshot_wait_baseline
 
     document = context.browser_document
-    if (next_step is not None or document is None or snapshot.input_binding is not None or snapshot.browser_copy is not None
+    if (next_step is not None or document is None or snapshot.input_binding is not None or snapshot.browser.copy is not None
             or "browser_wait" not in snapshot.nested_tool_names or pending_click(session._memory_results, context.browser_document) is not None):
         return snapshot, ""
     current = _current_snapshot(session, context, generation, require_text=False)
@@ -536,7 +536,7 @@ def browser_control_wait_handoff(session: TaskSession, snapshot: TurnSnapshot, c
         return snapshot, f"Wait {wait[0]} from snapshot {wait[1]} already settled. Observe its current page.\n" + observe
     before = [(key, row) for key, row in committed_results(records, results, frozenset({"browser_snapshot"}))
               if tuple(records).index(key) < tuple(records).index(ref)]
-    references = snapshot.browser_references
+    references = snapshot.browser.references
     if not before or references is None or before[-1][1].truncated:
         return snapshot, ""
     prior_ref, prior = before[-1]
@@ -611,7 +611,7 @@ def _action_receipts(session: TaskSession, snapshot: TurnSnapshot,
 
 def _compile_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                      generation: int | None, delivered_results: Sequence[ToolResult]) -> tuple[TurnSnapshot, str]:
-    if (snapshot.task_navigation_url is None or context.browser_document is None
+    if (snapshot.browser.navigation_url is None or context.browser_document is None
             or not any(not result.ok and result.call.name == "codemode"
                        and result.audit.get("error_code") == "syntax_error"
                        and result.canonical.get("child_effect_ids") == [] for result in delivered_results)
@@ -622,7 +622,7 @@ def _compile_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Comp
                                     include_failed=frozenset({"browser_navigate"}))
     navigation = navigations[-1][1] if navigations else None
     if (navigation is None or not navigation.ok
-            or navigation.call.args.get("url") != snapshot.task_navigation_url
+            or navigation.call.args.get("url") != snapshot.browser.navigation_url
             or not same_document(navigation.audit.get("browser_document"), context.browser_document)):
         return snapshot, ""
     if (current := _current_snapshot(session, context, generation)) is not None:
@@ -656,8 +656,8 @@ def _reload_recovery(snapshot: TurnSnapshot, records: Mapping[str, ExecutionReco
     """Focus a proven unchanged reload on current controls, preserving the nested inventory."""
     from codey.operations.progress_comparison import reload_snapshot
 
-    references = snapshot.browser_references
-    if (references is None or not {"codemode", "browser_click"} <= set(snapshot.tool_names) or not snapshot.browser_followups
+    references = snapshot.browser.references
+    if (references is None or not {"codemode", "browser_click"} <= set(snapshot.tool_names) or not snapshot.browser.followups
             or not {"browser_navigate", "browser_snapshot"} <= set(snapshot.nested_tool_names)):
         return snapshot, ""
     order = {ref: index for index, ref in enumerate(records)}
@@ -702,7 +702,7 @@ def _navigation_handoff(session: TaskSession, snapshot: TurnSnapshot, context: C
         snapshot, action = _call_handoff(session, snapshot, ToolCall("browser_snapshot", {}))
         return snapshot, (f"Navigation already succeeded in committed receipt {ref}. Its current document has no "
                           "complete control observation. Observe this page without repeating navigation.\n" + action)
-    if current is not None and snapshot.browser_references is not None and len(navigations) >= 2:
+    if current is not None and snapshot.browser.references is not None and len(navigations) >= 2:
         previous_ref, previous = navigations[-2]
         previous_document = previous.audit.get("browser_document")
         if (previous.ok and navigation.ok and previous.call.args == navigation.call.args
@@ -718,16 +718,16 @@ def _navigation_handoff(session: TaskSession, snapshot: TurnSnapshot, context: C
                 "Another navigation reloads the page; it is unnecessary for retrieving these controls. "
                 "Reload only when the task and current observations justify it."
                 + ("\n" + recovery if recovery else ""))
-    if (snapshot.task_navigation_url is None or current is None or current[1].get("elements") != []
+    if (snapshot.browser.navigation_url is None or current is None or current[1].get("elements") != []
             or current[1].get("complete") is not True or actions):
         return snapshot, ""
     requested = navigation.call.args.get("url")
     raw_value = navigation.canonical.get("value")
     value = decode_json_object(raw_value) if isinstance(raw_value, dict) else None
     if (not navigation.ok or navigation.call.call_id.startswith("required-source:")
-            or not isinstance(requested, str) or requested == snapshot.task_navigation_url
+            or not isinstance(requested, str) or requested == snapshot.browser.navigation_url
             or value is None or value.get("http_status") != 404
-            or value.get("url") == snapshot.task_navigation_url
+            or value.get("url") == snapshot.browser.navigation_url
             or value.get("url") != context.browser_document.get("url")
             or not same_document(navigation.audit.get("browser_document"), context.browser_document)
             or tuple(records).index(current[0]) <= tuple(records).index(ref)):
@@ -775,7 +775,7 @@ def _download_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Com
 def browser_step(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext, *,
                   workflow: bool = False) -> BrowserNextStep | None:
     records, results = tool_facts(session, context)
-    references = snapshot.browser_references
+    references = snapshot.browser.references
     return next_browser_step(session.policy.required_checks, records=records, results=results,
         document=context.browser_document, names=set(snapshot.nested_tool_names), workflow=workflow,
         observation_ref=references.receipt_ref if references is not None else "")
@@ -785,7 +785,7 @@ def _step_handoff(session: TaskSession, snapshot: TurnSnapshot, step: BrowserNex
     if step.call is None:
         return snapshot, step.feedback
     snapshot, action = _call_handoff(session, snapshot, step.call)
-    references = snapshot.browser_references
+    references = snapshot.browser.references
     controls_payload: list[JsonObject] = [row.payload() for row in references.controls] if references is not None else []
     controls = ("\nCurrent controls from settled snapshot " + references.receipt_ref + ":\n"
                 + json.dumps(controls_payload, ensure_ascii=False)
@@ -877,7 +877,7 @@ def _workflow_handoff(
     session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext, generation: int | None, *,
     step: BrowserNextStep | None, delivered_results: Sequence[ToolResult],
 ) -> tuple[TurnSnapshot, str]:
-    if (snapshot.input_binding is not None or snapshot.browser_copy is not None
+    if (snapshot.input_binding is not None or snapshot.browser.copy is not None
             or "browser_read" not in snapshot.inventory_names):
         return snapshot, ""
     records, results = tool_facts(session, context)

@@ -34,7 +34,7 @@ def test_research_leaf_offering_cannot_expand_the_frozen_surface(guard: str) -> 
     if guard == "no_scope":
         from dataclasses import replace
 
-        snapshot = replace(snapshot, research_scope=None)
+        snapshot = replace(snapshot, research=replace(snapshot.research, scope=None))
     offered = offer_browser_call(snapshot, session, "browser_wait", research=True)
     if guard in {"ordinary", "no_scope"}:
         assert "browser_wait" in offered.tool_names and offered.policy == snapshot.policy
@@ -82,11 +82,13 @@ def test_research_completes_with_direct_steps_and_cites_the_post_wait_read(
     assert result["passed"] is True, result
     calls = [row.result for row in tool_receipts(directory / "state")]
     reads = [result for result in calls if result.call.name == "browser_read" and result.ok]
-    assert len(reads) == (3 if composed and sequence else 2)
     assert all("research_observation" in row.canonical and "read_passages" in row.canonical for row in reads)
     assert sum(row.call.name == "browser_navigate" and row.ok for row in calls) == 1
     assert next(index for index, row in enumerate(calls) if row.call.name == "browser_navigate") < next(
         index for index, row in enumerate(calls) if row.call.name == "browser_fill")
     assert sum(result.call.name == "browser_wait" and result.ok for result in calls) == 1
     assert sum(result.call.name == "browser_click" and result.ok for result in calls) == 1
-    assert any(result.ok and result.call.name == "submit_research_answer" for result in calls)
+    wait, = (index for index, row in enumerate(calls) if row.ok and row.call.name == "browser_wait")
+    submission, = (index for index, row in enumerate(calls) if row.ok and row.call.name == "submit_research_answer")
+    assert any(row.call.name == "browser_read" and row.ok and "QUARTZ_851" in row.model_text
+               for row in calls[wait + 1:submission])

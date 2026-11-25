@@ -75,7 +75,7 @@ def offer(session: TaskSession, snapshot: TurnSnapshot, context: CompletionConte
     names = {"codemode", "read_file", "edit"}
     edit = next((spec for spec in snapshot.frozen_specs if spec.name == "edit"), None)
     if (not fields or free_program_required(session.task_text)
-            or snapshot.input_binding is not None or snapshot.browser_copy is not None
+            or snapshot.input_binding is not None or snapshot.browser.copy is not None
             or "codemode" not in snapshot.tool_names or not names <= set(snapshot.inventory_names)
             or names & set(session.controller_denied) or edit is None
             or write_form(edit) is None

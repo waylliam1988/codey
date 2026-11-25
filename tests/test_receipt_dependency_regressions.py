@@ -48,8 +48,8 @@ def test_control_presentation_versions_are_explicit_and_tampering_cannot_select_
 
     session = session_with_snapshot()
     references = replace(binding(), presentation_version=version)
-    snapshot = refresh_snapshot_contract(replace(offer_browser_tools(build_turn_snapshot(session), session),
-                                                browser_references=references))
+    offered = offer_browser_tools(build_turn_snapshot(session), session)
+    snapshot = refresh_snapshot_contract(replace(offered, browser=replace(offered.browser, references=references)))
     payload = snapshot_description(snapshot)
     assert restore_snapshot(payload) == snapshot
     raw = decode_json_object(payload["browser_references"])
@@ -68,8 +68,9 @@ def test_unversioned_d379cc63_control_presentation_restores_as_choices() -> None
     from tests.test_browser_result_adoption_ab import session_with_snapshot
 
     session = session_with_snapshot()
-    snapshot = refresh_snapshot_contract(replace(offer_browser_tools(build_turn_snapshot(session), session),
-                                                browser_references=replace(binding(), presentation_version=2)))
+    offered = offer_browser_tools(build_turn_snapshot(session), session)
+    references = replace(binding(), presentation_version=2)
+    snapshot = refresh_snapshot_contract(replace(offered, browser=replace(offered.browser, references=references)))
     payload = snapshot_description(snapshot)
     raw = decode_json_object(payload["browser_references"])
     raw.pop("presentation_version")

@@ -103,7 +103,7 @@ def execution_specs(snapshot: TurnSnapshot) -> dict[str, ToolSpec]:
 
 def expose_leaves(snapshot: TurnSnapshot, session: KernelSessionView) -> TurnSnapshot:
     """Add reachability only; definitions, nested capabilities and grants stay frozen."""
-    if (session.task_kind != "chat" or snapshot.input_binding is not None or snapshot.browser_copy is not None
+    if (session.task_kind != "chat" or snapshot.input_binding is not None or snapshot.browser.copy is not None
             or "codemode" not in snapshot.tool_names):
         return snapshot
     specs = {spec.name: spec for spec in snapshot.frozen_specs}

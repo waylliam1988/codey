@@ -26,7 +26,7 @@ from tests.test_tool_task_background import open_runtime
 def test_fixed_validator_consumes_terminal_receipt_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
                                                       passing: bool, budget: int) -> None:
     # Force the real durable path to yield, without making the test wait ten seconds.
-    monkeypatch.setattr("codey.operations.tool_tasks.COMMAND_YIELD_MS", 0)
+    monkeypatch.setattr("codey.operations.tool_tasks.execution.COMMAND_YIELD_MS", 0)
     runtime = open_runtime(tmp_path)
     try:
         runtime.session.max_turns = budget

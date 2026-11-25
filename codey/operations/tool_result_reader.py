@@ -114,7 +114,7 @@ def _execution_origin(context: ReceiptReaderContext, result: ToolResult,
     if (durable is None or not isinstance(ref, dict) or not isinstance(task := ref.get("task_ref"), str)
             or not isinstance(execution := ref.get("execution_ref"), str)):
         return context, result
-    from codey.operations.tool_task_reads import owned_tool_task, tool_execution_result
+    from codey.operations.tool_tasks.reads import owned_tool_task, tool_execution_result
 
     child = owned_tool_task(durable, task, owner_task_id=context.run_id)
     original = tool_execution_result(durable, child, store=context.managed_outputs)
@@ -179,7 +179,7 @@ def resolve_receipt_quote(context: ReceiptReaderContext, reference: str, *,
 
 def _task_result(delegate: ReceiptReaderContext, call: ToolCall, identity: str, durable: DurableSession | None,
                  *, paged: bool, limit: int) -> ToolResult | tuple[ReceiptReaderContext, ToolResult]:
-    from codey.operations.tool_task_reads import owned_tool_task, tool_execution_result, tool_task_snapshot
+    from codey.operations.tool_tasks.reads import owned_tool_task, tool_execution_result, tool_task_snapshot
 
     if durable is None:
         raise ValueError("task controls require durable execution")

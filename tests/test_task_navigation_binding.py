@@ -53,7 +53,7 @@ def test_project_disclosure_reuses_documented_source_binding(monkeypatch: pytest
                         lambda _session: ProjectDeliveryLinks(specification=url))
     selected, _ = task_handoff(session, snapshot, CompletionContext(), None)
     restored = restore_snapshot(snapshot_description(selected))
-    assert restored.task_source_url == url
+    assert restored.browser.source_url == url
     assert "open_url" in restored.tool_names
 
 
@@ -165,7 +165,7 @@ def test_same_intent_retains_original_address_and_comparison_key(task: str) -> N
     assert intent.original_urls == {ORIGINAL}
     assert intent.urls == {source_url_key(ORIGINAL)}
     snapshot = build_turn_snapshot(session_for(task))
-    assert snapshot.task_navigation_url == ORIGINAL
+    assert snapshot.browser.navigation_url == ORIGINAL
 
 
 @pytest.mark.parametrize("task", ["查看结果", f"不要打开 {URL}", f"代码示例 `open {URL}`",
@@ -175,7 +175,7 @@ def test_same_intent_retains_original_address_and_comparison_key(task: str) -> N
 def test_ambiguous_or_unrequested_addresses_have_no_binding(task: str) -> None:
     session = session_for(task)
     snapshot = build_turn_snapshot(session)
-    assert snapshot.task_navigation_url is None
+    assert snapshot.browser.navigation_url is None
     calls: list[ToolCall] = []
     result = run_program(session, snapshot, calls, "return unwrap(await tools.browser_navigate({target:'task'}));")
     assert not result.ok and not calls
@@ -183,26 +183,26 @@ def test_ambiguous_or_unrequested_addresses_have_no_binding(task: str) -> None:
 
 @pytest.mark.parametrize("kind", ["research", "project"])
 def test_authorized_task_binding_is_shared_by_research_and_project(kind: str) -> None:
-    assert build_turn_snapshot(session_for(f"打开 {URL}", kind=kind)).task_navigation_url == URL
+    assert build_turn_snapshot(session_for(f"打开 {URL}", kind=kind)).browser.navigation_url == URL
 
 
 def test_hybrid_uses_the_original_task_address() -> None:
-    assert build_turn_snapshot(session_for(f"打开 <{ORIGINAL}>", kind="hybrid")).task_navigation_url == ORIGINAL
+    assert build_turn_snapshot(session_for(f"打开 <{ORIGINAL}>", kind="hybrid")).browser.navigation_url == ORIGINAL
 
 
 def test_authorization_and_frozen_required_source_must_match() -> None:
     session = session_for(f"打开 {URL}", grants=GRANTS - {"browser.interact"})
     source_only = build_turn_snapshot(session)
-    assert source_only.task_navigation_url == URL and "browser_navigate" not in source_only.inventory_names
+    assert source_only.browser.navigation_url == URL and "browser_navigate" not in source_only.inventory_names
     session = session_for(f"打开 {URL}")
     session.required_source_urls = frozenset({"https://example.com/other"})
-    assert build_turn_snapshot(session).task_navigation_url is None
+    assert build_turn_snapshot(session).browser.navigation_url is None
     session.required_source_urls = frozenset()
-    assert build_turn_snapshot(session).task_navigation_url is None
+    assert build_turn_snapshot(session).browser.navigation_url is None
     session = session_for(f"打开 {URL}")
     session.controller_denied = ("browser_navigate",)
     snapshot = build_turn_snapshot(session)
-    assert snapshot.task_navigation_url == URL
+    assert snapshot.browser.navigation_url == URL
     assert "browser_navigate" not in snapshot.inventory_names
     calls: list[ToolCall] = []
     result = run_program(session, snapshot, calls, "return unwrap(await tools.browser_navigate({target:'task'}));")
@@ -213,7 +213,7 @@ def test_composed_model_exposure_can_use_its_authorized_nested_navigation() -> N
     session = session_for(f"打开 {URL}")
     session.model_tool_names = ("codemode", "done")
     snapshot = build_turn_snapshot(session)
-    assert snapshot.task_navigation_url == URL
+    assert snapshot.browser.navigation_url == URL
     assert "browser_navigate" in snapshot.nested_tool_names
 
 
@@ -246,7 +246,7 @@ def test_each_url_keeps_its_own_action_and_negation_through_restore(task: str, e
     assert source_requirements(task)["required_urls"] == sorted(expected_urls)
     session = session_for(task)
     snapshot = restore_snapshot(snapshot_description(build_turn_snapshot(session)))
-    assert snapshot.task_navigation_url == expected
+    assert snapshot.browser.navigation_url == expected
     calls: list[ToolCall] = []
     result = run_program(session, snapshot, calls, "return unwrap(await tools.browser_navigate({target:'task'}));")
     assert result.ok is (expected is not None)
@@ -259,14 +259,14 @@ def test_revocation_clears_original_candidates_and_their_ambiguity(first: str) -
     intent = explicit_web_intent(task)
     assert intent.urls == {URL}
     assert intent.original_urls == {URL + "#new"}
-    assert build_turn_snapshot(session_for(task)).task_navigation_url == URL + "#new"
+    assert build_turn_snapshot(session_for(task)).browser.navigation_url == URL + "#new"
 
 
 def test_legacy_source_requirement_cannot_reauthorize_a_negated_task_url() -> None:
     session = session_for("Open the report and do not visit https://example.com/records/Case-A")
     session.required_source_urls = frozenset({"https://example.com/records/Case-A"})
     snapshot = restore_snapshot(snapshot_description(build_turn_snapshot(session)))
-    assert snapshot.task_navigation_url is None
+    assert snapshot.browser.navigation_url is None
     calls: list[ToolCall] = []
     result = run_program(session, snapshot, calls, "return unwrap(await tools.browser_navigate({target:'task'}));")
     assert not result.ok and not calls
@@ -277,7 +277,7 @@ def test_legacy_source_requirement_cannot_reauthorize_a_negated_task_url() -> No
 def test_dedicated_input_contracts_keep_their_own_binding(task: str) -> None:
     snapshot = build_turn_snapshot(session_for(task, grants=GRANTS | {"project.write", "browser.effect"}))
     assert snapshot.input_binding is not None
-    assert snapshot.task_navigation_url is None
+    assert snapshot.browser.navigation_url is None
 
 
 @pytest.mark.parametrize("native", [False, True])
@@ -292,7 +292,7 @@ def test_snapshot_roundtrip_and_runtime_use_the_same_bound_catalog(native: bool)
         outer_descriptions={spec.name: spec.description for spec in restored.model_specs})
     assert 'target: "task"' in specs["codemode"].declarations
     assert set(dict(specs["browser_navigate"].parameters)) == {"url"}
-    unbound = snapshot_catalog(replace(restored, task_navigation_url=None))
+    unbound = snapshot_catalog(replace(restored, browser=replace(restored.browser, navigation_url=None)))
     assert catalog.digest != unbound.digest
     assert [entry for entry in catalog.entries if entry.name not in {"browser_navigate", "open_url", "source_search"}] == [
         entry for entry in unbound.entries if entry.name not in {"browser_navigate", "open_url", "source_search"}]

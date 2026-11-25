@@ -111,13 +111,13 @@ def task_guidance_for_policy(policy: TaskPolicy, *, task_kind: str) -> str:
 
 def request_tool_guidance(snapshot: TurnSnapshot, intent: WebIntent) -> tuple[str, ...]:
     parts: list[str] = []
-    if snapshot.browser_followups and "codemode" in snapshot.tool_names:
+    if snapshot.browser.followups and "codemode" in snapshot.tool_names:
         parts.append("Browser actions in CodeMode are sequential. Use refs from the latest snapshot and take a "
                      "fresh snapshot after page mutations. If delivery is uncertain, inspect the page before retrying. "
                      "browser_read returns citable source text.")
     if "codemode" in snapshot.tool_names:
         parts.append("CodeMode has no fetch, process, or imports. Use the authorized host tools for those operations.")
-    if (intent.requested or snapshot.task_source_url or snapshot.research_scope is not None) and (
+    if (intent.requested or snapshot.browser.source_url or snapshot.research.scope is not None) and (
             snapshot.policy is not None and snapshot.policy.allows("web.read")):
         parts.append("Use the returned source and observation times when reporting time-sensitive facts.")
         if "shell" in snapshot.tool_names and not {"open_url", "web_search"}.intersection(snapshot.inventory_names):

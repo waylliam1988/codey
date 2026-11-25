@@ -154,7 +154,7 @@ def allows_surface(snapshot: TurnSnapshot, direct_names: tuple[str, ...] = DIREC
     policy = snapshot.policy
     names = {"codemode", *direct_names}
     return (policy is not None
-            and snapshot.browser_copy is None
+            and snapshot.browser.copy is None
             and (snapshot.input_binding is None or snapshot.input_binding.kind == "declared_fields")
             and "codemode" in snapshot.tool_names and set(direct_names) <= set(snapshot.nested_tool_names)
             and (snapshot.allowed is None or names <= set(snapshot.allowed))

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 
+from codey.operations.browser.turn_inputs import BrowserTurnInputs
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import prepare_completion_output
 from codey.operations.kernel.turn_contract import TurnSnapshot
@@ -28,8 +29,7 @@ def repair_snapshot(snapshot: TurnSnapshot) -> TurnSnapshot:
     return refresh_snapshot_contract(replace(snapshot, tool_names=names, nested_tool_names=(),
         frozen_specs=tuple(spec for spec in snapshot.frozen_specs if spec.name in names),
         custom_executors=tuple(row for row in snapshot.custom_executors if row[0] in names),
-        browser_followups=False, browser_references=None, browser_fill_text=None,
-        browser_copy=None, input_binding=None, task_navigation_url=None, task_source_url=None))
+        browser=BrowserTurnInputs(), input_binding=None))
 
 
 def repair_messages(messages: list[ProviderToolResult] | None, prompt: str, *, rejected_control: bool) -> list[ProviderToolResult] | None:

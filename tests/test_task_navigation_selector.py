@@ -54,7 +54,7 @@ def test_direct_selector_freezes_the_exact_source_and_preserves_other_navigation
     plan = normalize_turn(reply, snapshot=restored)
     assert not plan.protocol_error and len(plan.calls) == 1
     assert plan.calls[0].name == "codemode" and plan.calls[0].args["inputs"] == {"target": "task"}
-    assert resolve_task_navigation({"target": "task"}, restored.task_navigation_url) == {"url": url}
+    assert resolve_task_navigation({"target": "task"}, restored.browser.navigation_url) == {"url": url}
     alternate = "https://example.com/another-authorized-page"
     assert resolve_task_navigation({"url": alternate}, url) == {"url": alternate}
     _, action, error = handoff_call(session, restored, ToolCall("browser_navigate", {"url": alternate}))
@@ -84,7 +84,7 @@ def test_no_unique_source_keeps_url_input_and_denied_navigation_stays_denied() -
     session.task_text = f"查看 {URL} 和 https://example.com/other。"
     session.required_source_urls = frozenset({URL, "https://example.com/other"})
     multiple = offer_browser_call(build_turn_snapshot(session), session, "browser_navigate")
-    assert multiple.task_navigation_url is None
+    assert multiple.browser.navigation_url is None
     assert next(spec for spec in multiple.model_specs if spec.name == "browser_navigate").required == ("url",)
     session.controller_denied = ("browser_navigate",)
     denied = offer_browser_call(build_turn_snapshot(session), session, "browser_navigate")

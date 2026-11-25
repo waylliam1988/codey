@@ -1021,51 +1021,23 @@ class SelfRepairSupervisorTests(unittest.TestCase):
 
 
 class ProviderRegistryOverrideTests(unittest.TestCase):
-    def test_registry_returns_worker_for_enabled_override(self) -> None:
+    def test_production_provider_entry_points_use_builtin_adapters(self) -> None:
         from codey.providers import registry
 
-        fake_override = mock.Mock()
-        with (
-            mock.patch.object(registry, "load_enabled_override", return_value=fake_override),
-            mock.patch.object(registry, "WorkerChatProvider", return_value="worker") as worker,
-        ):
-            provider = registry.connect_provider("qwen", port=9100)
+        with mock.patch.object(registry.QwenWebProvider, "connect", return_value=mock.sentinel.builtin) as connected:
+            self.assertIs(registry.connect_provider("qwen"), mock.sentinel.builtin)
+            self.assertIs(registry.connect_fresh_provider_tab("qwen"), mock.sentinel.builtin)
+        self.assertEqual(connected.call_count, 2)
 
-        self.assertEqual(provider, "worker")
-        self.assertEqual(worker.call_args.args[0], "qwen")
-        self.assertEqual(worker.call_args.args[1], fake_override)
-
-    def test_registry_worker_child_env_uses_builtin_provider(self) -> None:
-        from codey.env_names import PROVIDER_WORKER_CHILD_ENV
-        from codey.providers import registry
-
-        provider_type = mock.Mock()
-        provider_type.connect.return_value = "builtin"
-        with (
-            mock.patch.dict("os.environ", {PROVIDER_WORKER_CHILD_ENV: "1"}),
-            mock.patch.object(registry, "PROVIDER_TYPES", {"qwen": provider_type}),
-            mock.patch.object(registry, "load_enabled_override") as load_override,
-        ):
-            provider = registry.connect_provider("qwen")
-
-        self.assertEqual(provider, "builtin")
-        load_override.assert_not_called()
-
-    def test_registry_skips_override_when_connecting_existing_provider(self) -> None:
-        from codey.providers import registry
-
-        provider_type = mock.Mock()
-        provider_type.connect.return_value = "builtin"
-        with (
-            mock.patch.object(registry, "PROVIDER_TYPES", {"qwen": provider_type}),
-            mock.patch.object(registry, "load_enabled_override") as load_override,
-            mock.patch.object(registry, "WorkerChatProvider") as worker,
-        ):
-            provider = registry.connect_existing_provider("qwen")
-
-        self.assertEqual(provider, "builtin")
-        load_override.assert_not_called()
-        worker.assert_not_called()
+    def test_app_context_has_no_automatic_candidate_runner(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with mock.patch("codey.app.context.DEFAULT_STATE_HOME", root):
+                state = server.AppContext(root, start_scheduler=False)
+                try:
+                    self.assertIsNone(state.self_repair)
+                finally:
+                    state.close()
 
 
 class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
@@ -1236,6 +1208,7 @@ class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             state = server.AppContext(Path(td) / "state")
             try:
+                state.self_repair = SelfRepairSupervisor(state.state_home)
                 state.self_repair._kick_running = True
 
                 reserved = state.reserve_run(
@@ -1297,7 +1270,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
     def test_parent_runner_uses_subprocess_and_parses_result(self) -> None:
         completed = mock.Mock(
             returncode=0,
-            stdout='noise\n{"ok":true,"provider_id":"qwen","generation":4,"changed_files":["codey/providers/web_drivers/qwen.py"]}\n',
+            stdout='noise\n{"ok":true,"provider_id":"qwen","generation":4,"error":"","changed_files":["codey/providers/web_drivers/qwen.py"]}\n',
             stderr="",
             stdout_truncated=False,
             stderr_truncated=False,

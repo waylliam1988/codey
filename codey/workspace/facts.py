@@ -68,11 +68,30 @@ class SuccessfulCheck:
 
 
 @dataclass(frozen=True)
+class ProjectFactSource:
+    session_id: str
+    run_id: str
+
+    @classmethod
+    def from_payload(cls, value: object) -> ProjectFactSource | None:
+        if not object_fields(value):
+            return None
+        session_id, run_id = value.get("session_id"), value.get("run_id")
+        if not isinstance(session_id, str) or not session_id or not isinstance(run_id, str) or not run_id:
+            return None
+        return cls(session_id, run_id)
+
+    def to_payload(self) -> JsonObject:
+        return {"session_id": self.session_id, "run_id": self.run_id}
+
+
+@dataclass(frozen=True)
 class SuccessfulChange:
     task: str
     files: tuple[str, ...] = ()
     checks: tuple[SuccessfulCheck, ...] = ()
     receipt: str = ""
+    source: ProjectFactSource | None = None
 
     def to_payload(self) -> JsonObject:
         payload: JsonObject = {
@@ -82,6 +101,8 @@ class SuccessfulChange:
         }
         if self.receipt:
             payload["receipt"] = self.receipt
+        if self.source is not None:
+            payload["source"] = self.source.to_payload()
         return payload
 
 
@@ -176,6 +197,7 @@ def _successful_change(
     files: Sequence[object],
     checks: Sequence[object],
     receipt: object = "",
+    source: ProjectFactSource | None = None,
 ) -> SuccessfulChange | None:
     task_excerpt = _safe_task_excerpt(task)
     if not task_excerpt:
@@ -197,6 +219,7 @@ def _successful_change(
         files=safe_files,
         checks=safe_checks,
         receipt=_safe_receipt(receipt),
+        source=source,
     )
 
 
@@ -212,6 +235,7 @@ def _successful_change_from_payload(value: object) -> SuccessfulChange | None:
         files=files,
         checks=checks,
         receipt=value.get("receipt", ""),
+        source=ProjectFactSource.from_payload(value.get("source")),
     )
 
 
@@ -274,12 +298,14 @@ class ProjectFactsStore:
         files: Sequence[object],
         checks: Sequence[object] = (),
         receipt: object = "",
+        source: ProjectFactSource | None = None,
     ) -> bool:
         change = _successful_change(
             task=task,
             files=files,
             checks=checks or (),
             receipt=receipt,
+            source=source,
         )
         if change is None:
             return False

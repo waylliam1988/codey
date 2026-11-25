@@ -51,7 +51,7 @@ def test_snapshot_freezes_text_without_changing_authority(kind: str) -> None:
     base = build_turn_snapshot(session)
     offered = offer_browser_tools(base, session)
     restored = restore_snapshot(snapshot_description(offered))
-    assert restored == offered and restored.browser_fill_text == NOTE
+    assert restored == offered and restored.browser.fill_text == NOTE
     assert base.nested_tool_names == restored.nested_tool_names
     from codey.operations.browser.catalog import snapshot_catalog
     from codey.toolchain.browser_native_specs import browser_native_specs

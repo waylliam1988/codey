@@ -342,7 +342,7 @@ class KernelContext:
                     or identity in self.session.executed or identity in self.session.restored_effect_ids):
                 continue
             if effect.intent.run_id != self.sink.run_id and effect.settlement.status == "interrupted":
-                from codey.operations.tool_task_reads import tool_execution_result
+                from codey.operations.tool_tasks.reads import tool_execution_result
 
                 restored = tool_execution_result(self.durable, self.durable.task(effect.intent.run_id),
                                                 store=self.sink.managed_outputs)
@@ -482,7 +482,7 @@ class KernelContext:
                     part for part in (messages[-1].user_content, handoff) if part))
             else:
                 prompt = "\n\n".join(part for part in (prompt, handoff) if part)
-        from codey.operations.tool_task_delivery import append_tool_task_notifications
+        from codey.operations.tool_tasks.delivery import append_tool_task_notifications
 
         prompt, messages, notification_refs = append_tool_task_notifications(
             self.durable, owner_task_id=self.sink.run_id, store=self.sink.managed_outputs,
@@ -534,7 +534,7 @@ class KernelContext:
             observations = "" if source_only else task_working_context(
                 self.session, self.execution.research_tools.ledger if self.execution.research_tools is not None else None,
                 self.execution.research_tools.store if self.execution.research_tools is not None else None,
-                self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research_scope,
+                self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research.scope,
                 tool_names=snapshot.tool_names, provider=self.provider, fixed_context=fixed)
             # Canonical replay excludes optional memory candidates. Each continuation must
             # carry its frozen context without relying on a warm wire history.
@@ -547,9 +547,9 @@ class KernelContext:
                 options = replace(options, output_token_limit=4096)
                 from codey.research.answer_contract import AnswerScope
 
-                if self.native and isinstance(snapshot.research_scope, AnswerScope):
+                if self.native and isinstance(snapshot.research.scope, AnswerScope):
                     options = replace(options, require_tool_call=True)
-                if snapshot.research_scope is not None:
+                if snapshot.research.scope is not None:
                     options = replace(options, tool_call_history_groups=1)
         if scoped_contract:
             options = replace(options, supplied=options.supplied | {"tool_call_contract"},
@@ -594,7 +594,7 @@ class KernelContext:
             request_scoped_contract=self.request_scoped_context, snapshot=snapshot)
         prompt = prepared.prompt
         if prefetched:
-            results = "\n\n".join(task_result_context(self.session, result, snapshot.research_scope,
+            results = "\n\n".join(task_result_context(self.session, result, snapshot.research.scope,
                                                      tool_names=snapshot.tool_names)
                                     for result in prefetched)
             prompt += "\n\nRequired source results from the runtime's initial access:\n" + results
@@ -624,7 +624,7 @@ class KernelContext:
                 self.session, self.execution.research_tools.ledger if self.execution.research_tools is not None else None,
                 self.execution.research_tools.store if self.execution.research_tools is not None else None,
                 self.execution.research_tools.session_id if self.execution.research_tools is not None else "",
-                research_scope=snapshot.research_scope, tool_names=snapshot.tool_names,
+                research_scope=snapshot.research.scope, tool_names=snapshot.tool_names,
                 provider=self.provider)) if part)
         self.freeze(state, snapshot, turn=turn, prompt=prompt, handoff=handoff,
                     counters=replace(state.counters, progress=progress.snapshot()),
@@ -669,7 +669,7 @@ class KernelContext:
                                                turn, "provider_failure"))
                 return None
             if not reply.tool_calls:
-                completion = ("submit_research_answer for the complete task" if snapshot.research_scope is not None else
+                completion = ("submit_research_answer for the complete task" if snapshot.research.scope is not None else
                               "done(summary) if the verified task is complete")
                 self.retry(state, "Your previous response was truncated. No operation from that response was executed. "
                            "Use smaller complete tool calls for the remaining work; do not repeat completed work. "
@@ -799,7 +799,7 @@ class KernelContext:
         """Host searches are observations, never replies to invented native call IDs."""
         if not self.native:
             return results, boundary_prompt
-        supplemental = "\n\n".join(task_result_context(self.session, row, snapshot.research_scope,
+        supplemental = "\n\n".join(task_result_context(self.session, row, snapshot.research.scope,
             tool_names=snapshot.tool_names) for row in results if _host_acquisition_result(row))
         return ([row for row in results if not _host_acquisition_result(row)],
                 "\n\n".join(part for part in (boundary_prompt, supplemental) if part))
@@ -835,7 +835,7 @@ class KernelContext:
     def _compare_project_check(self, result: ToolResult, *,
                                include_accepted: bool = False) -> ProjectCheckComparison | None:
         from codey.operations.progress_comparison import compare_project_check
-        from codey.operations.tool_task_reads import settled_check_for_progress
+        from codey.operations.tool_tasks.reads import settled_check_for_progress
 
         execution = settled_check_for_progress(self.durable, result, owner_task_id=self.sink.run_id,
                                                 receipts=self.session._memory_results, include_accepted=include_accepted)
@@ -896,7 +896,7 @@ class KernelContext:
                                                  delivered_results=results)
 
         def result_context(result: ToolResult) -> str:
-            value: str = task_result_context(self.session, result, snapshot.research_scope, tool_names=snapshot.tool_names)
+            value: str = task_result_context(self.session, result, snapshot.research.scope, tool_names=snapshot.tool_names)
             return value
 
         transport_results, boundary_prompt = self.provider_delivery(results, snapshot, boundary_prompt=self.boundary_text())
@@ -907,7 +907,7 @@ class KernelContext:
         observations = "" if self.request_scoped_observations else task_working_context(
             self.session, self.execution.research_tools.ledger if self.execution.research_tools is not None else None,
                 self.execution.research_tools.store if self.execution.research_tools is not None else None,
-                self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research_scope,
+                self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research.scope,
                 tool_names=snapshot.tool_names, provider=self.provider)
         reminder = progress.repeat_feedback() if progress.warning_batch_id != action.delivery_batch_id else ""
         if reminder:

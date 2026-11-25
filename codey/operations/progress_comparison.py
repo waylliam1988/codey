@@ -22,7 +22,7 @@ from codey.workspace.paths import safe_join
 
 if TYPE_CHECKING:
     from codey.operations.task_session import TaskSession
-    from codey.operations.tool_task_reads import SettledCheckExecution
+    from codey.operations.tool_tasks.reads import SettledCheckExecution
     from codey.storage.managed_outputs import ManagedOutputStore
 
 # Repeated observations do not establish whether another effect was required

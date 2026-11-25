@@ -54,7 +54,7 @@ def test_successful_navigation_to_404_and_empty_snapshot_offer_the_bound_selecto
                                          delivered_results=[parent])
     assert session._memory_results["wrong-navigation"].ok
     assert next_step(hint) == {"tool": "browser_navigate", "args": {"target": "task"}}
-    assert offered.task_navigation_url == URL
+    assert offered.browser.navigation_url == URL
 
 
 @pytest.mark.parametrize("state", ["200", "no_status", "failed_navigation", "no_snapshot", "controls", "incomplete",

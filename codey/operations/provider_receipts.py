@@ -32,7 +32,6 @@ if TYPE_CHECKING:
     from codey.operations.browser.browser_copy import CopyTurn
     from codey.operations.kernel.turn_contract import ModelInputBinding, TurnSnapshot
     from codey.operations.kernel_contracts import ToolExecutor
-    from codey.operations.project.project_instructions import ProjectInstructionBinding
     from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.tool_spec import ToolSpec
 
@@ -123,27 +122,19 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
         "kind": binding.kind, "tool": binding.model_spec.name, "source_refs": list(binding.source_refs),
     }
     payload = decode_json_object(json_value({"schema_version": TURN_SNAPSHOT_SCHEMA,
-            "task_navigation_url": snapshot.task_navigation_url,
-            "browser_copy": snapshot.browser_copy.payload() if snapshot.browser_copy is not None else None,
             "input_binding": binding_payload,
             "implementation_id": runtime_implementation_id() if snapshot.implementation_compatible else "",
             "allowed": json_value(snapshot.allowed),
             "contract_text": snapshot.contract_text, "tool_names": list(snapshot.tool_names),
             "nested_tool_names": list(snapshot.nested_tool_names),
-            "research_scope": snapshot.research_scope.to_payload() if snapshot.research_scope is not None else None,
             "ignore_runtime_claims": snapshot.ignore_runtime_claims,
             "policy": snapshot.policy.to_payload(), "specs": json_value(snapshot.frozen_specs),
             "executors": [{"name": name, "binding": None if fn is None else _executor_identity(fn)}
                           for name, fn in snapshot.custom_executors]}))
-    payload["task_source_url"] = snapshot.task_source_url
-    payload["project_instructions"] = [rule.to_payload() for rule in snapshot.project_instructions]
-    payload["navigation_verifies"] = snapshot.navigation_verifies
-    payload["data_file_reads"] = None if snapshot.data_file_reads is None else list(snapshot.data_file_reads)
-    payload["symbol_read_refs"] = dict(snapshot.symbol_read_refs)
+    payload.update(snapshot.browser.to_payload())
+    payload.update(snapshot.project.to_payload())
+    payload.update(snapshot.research.to_payload())
     payload["model_specs"] = json_value(snapshot.model_specs)
-    payload["browser_fill_text"] = snapshot.browser_fill_text
-    payload["browser_followups"] = snapshot.browser_followups
-    payload["browser_references"] = snapshot.browser_references.payload() if snapshot.browser_references else None
     return payload
 
 
@@ -292,47 +283,6 @@ def _snapshot_payload(raw: object) -> JsonObject:
     return payload
 
 
-def _restore_bound_source(
-    payload: JsonObject,
-    navigation_url: str | None,
-    names: list[str],
-    nested: list[str],
-    policy: TaskPolicy,
-) -> str | None:
-    value = payload.get("task_source_url")
-    if value is None:
-        return None
-    from codey.policies.network import check_fetch_url
-
-    source = require_json_string(value, "task_source_url")
-    if (not source or navigation_url is None
-            or check_fetch_url(source, resolve=False) is not None
-            or "open_url" not in (*names, *nested) or not policy.allows("web.read")):
-        raise ValueError("invalid captured task source binding")
-    return source
-
-
-def _restore_project_instructions(payload: JsonObject, policy: TaskPolicy) -> tuple[ProjectInstructionBinding, ...]:
-    from codey.operations.project.project_instructions import ProjectInstructionBinding
-
-    raw = payload.get("project_instructions", [])
-    if not isinstance(raw, list):
-        raise ValueError("invalid captured project instruction collection")
-    instructions = tuple(ProjectInstructionBinding.from_payload(rule) for rule in raw)
-    if len({rule.name for rule in instructions}) != len(instructions) or instructions and not policy.allows("project.write"):
-        raise ValueError("invalid captured project instruction scope")
-    return instructions
-
-
-def _restore_navigation_verification(payload: JsonObject, navigation_url: str | None, followups: bool,
-                                     names: list[str], nested: list[str]) -> bool:
-    verifies = require_json_boolean(payload.get("navigation_verifies", False), "navigation_verifies")
-    if verifies and (not followups or navigation_url is None
-                     or "browser_navigate" not in names or not {"browser_snapshot", "browser_read"} <= set(nested)):
-        raise ValueError("invalid captured application navigation verification")
-    return verifies
-
-
 def _restore_model_specs(
     raw_model_specs: object, names: list[str], specs: list[ToolSpec],
 ) -> tuple[ToolSpec, ...]:
@@ -391,7 +341,10 @@ def _restore_executors(
 
 
 def restore_snapshot(payload: object) -> TurnSnapshot:
+    from codey.operations.browser.turn_inputs import BrowserTurnInputs
     from codey.operations.kernel.turn_contract import TurnSnapshot
+    from codey.operations.project.turn_inputs import ProjectTurnInputs
+    from codey.operations.research.turn_inputs import ResearchTurnInputs
     from codey.policies.output_requirement import explanation_spec, has_explanation
     from codey.policies.task_policy import TaskPolicy
 
@@ -413,24 +366,12 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
                 memory_candidate_spec(explanation_spec(spec)) if CANDIDATE_FIELD in dict(spec.parameters)
                 else explanation_spec(spec)) for spec in specs):
         raise ValueError("unsupported captured explanation contract; start a new request")
-    from codey.operations.browser.browser_copy import CopyTurn
-
-    copy = CopyTurn.restore(decode_json_object(payload["browser_copy"])) if payload["browser_copy"] is not None else None
+    copy = BrowserTurnInputs.restore_copy(payload)
     input_binding, binding_compatible = _restore_input_binding(raw_binding, names, specs, copy, policy, model_specs)
-    navigation_url = payload.get("task_navigation_url")
-    if navigation_url is not None:
-        from codey.policies.network import check_fetch_url
-
-        navigation_url = require_json_string(navigation_url, "task_navigation_url")
-        targets = {"browser_navigate", "open_url"}
-        navigation = next((spec for spec in specs if spec.name in targets and spec.name in (*names, *nested)), None)
-        if (not navigation_url or check_fetch_url(navigation_url, resolve=False) is not None
-                or "codemode" not in names and "open_url" not in names
-                or navigation is None or not policy.allows(navigation.grant)
-                or input_binding is not None and input_binding.kind != "declared_fields"
-                or copy is not None):
-            raise ValueError("invalid captured task navigation binding")
-    source_url = _restore_bound_source(payload, navigation_url, names, nested, policy)
+    browser = BrowserTurnInputs.from_payload(
+        payload, copy=copy, overlay_compatible=input_binding is None or input_binding.kind == "declared_fields",
+        tool_names=names, nested_names=nested, specs=specs, policy=policy,
+    )
     ignore_runtime_claims = require_json_boolean(payload["ignore_runtime_claims"], "ignore_runtime_claims")
     if nested:
         from codey.codemode.catalog import build_codemode_catalog
@@ -439,61 +380,39 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
             specs, allow_writes=policy.allows("project.write"),
             allow_project_edit="edit" in nested,
             allow_project_run="run" in nested,
-            task_navigation_url=navigation_url,
-            task_source_url=source_url,
-            task_source_selector=source_url is not None,
+            task_navigation_url=browser.navigation_url,
+            task_source_url=browser.source_url,
+            task_source_selector=browser.source_url is not None,
         )
         if "codemode" not in names or not set(nested) <= {entry.name for entry in catalog.entries}:
             raise ValueError("captured nested capabilities exceed the frozen CodeMode inventory")
     bindings, compatible = _restore_executors(
         raw_executors, inventory, payload["implementation_id"] == runtime_implementation_id() and binding_compatible,
     )
-    from codey.research.answer_contract import AnswerScope
+    from codey.operations.browser.browser_followups import FOLLOWUP_TOOLS, allows_surface
 
-    scope = AnswerScope.from_payload(payload["research_scope"]) if payload["research_scope"] is not None else None
-    from codey.operations.browser.browser_followups import FOLLOWUP_TOOLS, MAX_TEXT, allows_surface
-
-    fill_text = payload.get("browser_fill_text")
-    if fill_text is not None and (not isinstance(fill_text, str) or not fill_text.strip() or len(fill_text) > MAX_TEXT):
-        raise ValueError("invalid captured browser fill text")
-    from codey.operations.browser.browser_references import BrowserReferences
-
-    followups = require_json_boolean(payload["browser_followups"], "browser_followups")
-    raw_references = payload.get("browser_references")
-    references = BrowserReferences.restore(raw_references) if raw_references is not None else None
-    if (fill_text is not None and not followups or references is not None
-            and (input_binding is not None and input_binding.kind != "declared_fields"
-                 or copy is not None or not any(spec.executor == "browser" and "ref" in dict(spec.parameters)
-                     and spec.name in nested for spec in specs))):
-        raise ValueError("invalid captured browser input binding")
     snapshot = TurnSnapshot(allowed=None if allowed is None else tuple(allowed), contract_text=contract,
         tool_names=tuple(names), policy=policy, frozen_specs=tuple(specs),
         custom_executors=bindings, implementation_compatible=bool(compatible), nested_tool_names=tuple(nested),
-        research_scope=scope, ignore_runtime_claims=ignore_runtime_claims,
-        browser_copy=copy, input_binding=input_binding, task_navigation_url=navigation_url,
-        task_source_url=source_url, model_specs=model_specs,
-        browser_followups=followups, browser_fill_text=fill_text, browser_references=references,
-        project_instructions=_restore_project_instructions(payload, policy),
-        navigation_verifies=_restore_navigation_verification(payload, navigation_url, followups, names, nested),
-        data_file_reads=None if payload["data_file_reads"] is None else
-            tuple(require_json_strings(payload["data_file_reads"], "data file reads")),
-        symbol_read_refs=tuple(sorted((path, require_json_string(ref, "symbol read receipt"))
-                               for path, ref in decode_json_object(payload.get("symbol_read_refs", {})).items())))
+        research=ResearchTurnInputs.from_payload(payload), ignore_runtime_claims=ignore_runtime_claims,
+        browser=browser, input_binding=input_binding, model_specs=model_specs,
+        project=ProjectTurnInputs.from_payload(payload, allow_write=policy.allows("project.write")))
     from codey.toolchain.constants import PAGE_DETAIL_TOOL
 
     # Native disclosure reads have their own frozen choice contract. They
     # coexist with, but do not lower through, the browser follow-up programs.
     direct = tuple(spec.name for spec in specs if spec.executor == "browser" and spec.name in names and spec.name != PAGE_DETAIL_TOOL)
-    research = snapshot.research_scope is not None
+    research = snapshot.research.scope is not None
     from codey.toolchain.browser_native_specs import browser_native_specs
 
     direct_surface = set(FOLLOWUP_TOOLS) | set(browser_native_specs())
-    if snapshot.browser_followups and (not set(direct) <= direct_surface
+    if snapshot.browser.followups and (not set(direct) <= direct_surface
             or not allows_surface(snapshot, direct, research=research)):
         raise ValueError("captured browser follow-ups exceed the authorized browser interface")
-    from codey.operations.kernel.turn_presentation import render_snapshot_contract
+    from codey.operations.kernel.turn_presentation import render_snapshot_contract, validate_browser_declarations
     from codey.toolchain.tool_prompt import contract_semantics
 
     if contract_semantics(contract) != contract_semantics(render_snapshot_contract(snapshot)):
         raise ValueError("captured contract text differs from its frozen model definitions")
+    validate_browser_declarations(snapshot)
     return snapshot

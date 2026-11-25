@@ -114,7 +114,7 @@ def test_mixed_request_freezes_distinct_source_and_browser_selection() -> None:
     snapshot = offer_browser_call(build_turn_snapshot(session), session, "browser_navigate")
     restored = restore_snapshot(snapshot_description(snapshot))
     assert restored == snapshot
-    assert restored.task_navigation_url == page and restored.task_source_url == source
+    assert restored.browser.navigation_url == page and restored.browser.source_url == source
     read = normalize_turn(decode_text_turn('{"tool":"open_url","args":{"target":"task"}}'), snapshot=restored)
     assert not read.protocol_error
     assert read.calls[0].args["url"] == source

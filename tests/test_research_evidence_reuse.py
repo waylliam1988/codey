@@ -25,11 +25,11 @@ def test_multiple_questions_reuse_pinned_original_without_fetch_or_adopting_clai
         session.policy = TaskPolicy(session.policy.grants, strict_research=True)
         frozen = restore_snapshot(snapshot_description(build_turn_snapshot(session, native=native)))
         monkeypatch.setattr(tools.search, "fetch", lambda *_: pytest.fail("reusing a read refetched the source"))
-        text = answer_context(session, tools.ledger, frozen.research_scope)
+        text = answer_context(session, tools.ledger, frozen.research.scope)
         assert TEXT in text and session.task_text in text
         args = {"state": "answered", "markdown": "Only one writer at a time [e1]. Readers and a writer may overlap [e1]."}
         result, ok, _ = ExecutionDelegate(session=session, research_tools=tools,
-            research_scope=frozen.research_scope).research_executor._execute_research(ToolCall("submit_research_answer", args))
+            research_scope=frozen.research.scope).research_executor._execute_research(ToolCall("submit_research_answer", args))
         assert ok, result.model_text
         session._memory_results["submit"] = result
         report = compile_answer_report(session, tools.ledger, store, project="", session_id="first")

@@ -59,7 +59,7 @@ def test_small_symbol_edit_uses_frozen_read_and_preserves_surroundings(tmp_path:
     assert "replacements" not in dict(next(spec for spec in retry.model_specs if spec.name == "edit").parameters)
     plan = normalize_turn(decode_text_turn(json.dumps(
         {"tool": "edit", "args": {"path": "a.py", "symbol": "f", "content": "def f():\n    return 1"}})), snapshot=retry)
-    assert not plan.protocol_error and plan.calls[0].args["base_result_ref"] == dict(snapshot.symbol_read_refs)["a.py"]
+    assert not plan.protocol_error and plan.calls[0].args["base_result_ref"] == dict(snapshot.project.symbol_reads)["a.py"]
     if case == "stale":
         original += b"# external change\r\n"
         path.write_bytes(original)

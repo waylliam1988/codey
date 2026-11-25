@@ -2568,19 +2568,6 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual([(event_id, item["seq"]) for event_id, item in replay], [(2, 2)])
         self.assertEqual(live["seq"], 3)
 
-    def test_event_bus_durable_projection_is_not_replayed_after_sqlite_commit(self) -> None:
-        self.assertTrue(
-            server._is_replayed_durable_commit(
-                {"type": "durable_commit", "commit_seq": 11}, 11
-            )
-        )
-        self.assertFalse(
-            server._is_replayed_durable_commit(
-                {"type": "durable_commit", "commit_seq": 12}, 11
-            )
-        )
-        self.assertFalse(server._is_replayed_durable_commit({"type": "tool", "commit_seq": 11}, 11))
-
     def test_replay_events_after_expired_cursor_requests_resync(self) -> None:
         with mock.patch.object(app_context, "SSE_REPLAY_LIMIT", 2):
             state = server.AppContext()
@@ -2879,7 +2866,7 @@ class RunSnapshotTests(unittest.TestCase):
     def test_memory_summary_api_reports_disabled_without_state_home(self) -> None:
         state = server.AppContext()
         try:
-            status, payload = app_api.ghost_summary_response(state, {})
+            status, payload = app_api.ghost_summary_response(state, {"scope_kind": ["user"]})
             self.assertEqual(status, 200)
             self.assertTrue(payload["ok"])
             self.assertFalse(payload["enabled"])
@@ -2937,21 +2924,21 @@ class RunSnapshotTests(unittest.TestCase):
 
         store_cls.assert_called_once_with(state_home / "vault")
 
-    def test_app_context_lazily_constructs_self_repair_supervisor(self) -> None:
+    def test_default_app_context_does_not_construct_self_repair_supervisor(self) -> None:
         from codey.repairs import self_repair as self_repair_module
 
         with tempfile.TemporaryDirectory() as td:
             state_home = Path(td) / "state"
-            with mock.patch.object(
-                self_repair_module, "SelfRepairSupervisor"
-            ) as supervisor_cls:
+            with (
+                mock.patch.object(app_context, "DEFAULT_STATE_HOME", state_home),
+                mock.patch.object(self_repair_module, "SelfRepairSupervisor") as supervisor_cls,
+            ):
                 state = server.AppContext(state_home)
-
-                supervisor_cls.assert_not_called()
-                self.assertIs(state.self_repair, supervisor_cls.return_value)
-                self.assertIs(state.self_repair, supervisor_cls.return_value)
-
-        supervisor_cls.assert_called_once_with(state_home, runner=None)
+                try:
+                    self.assertIsNone(state.self_repair)
+                    supervisor_cls.assert_not_called()
+                finally:
+                    state.close()
 
     def test_state_snapshot_keeps_only_the_latest_shell_result(self) -> None:
         state = server.AppContext()

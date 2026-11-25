@@ -113,7 +113,7 @@ def test_navigation_binding_uses_explicit_unambiguous_intent(task: str, expected
     if expected and "only" in task:
         assert call is not None and call.name == "codemode"
         offered = offer_browser_tools(snapshot, session)
-        assert offered.tool_names == snapshot.tool_names and offered.browser_followups
+        assert offered.tool_names == snapshot.tool_names and offered.browser.followups
         assert restore_snapshot(snapshot_description(offered)) == offered
 
 

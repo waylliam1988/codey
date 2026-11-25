@@ -115,9 +115,9 @@ def test_frozen_report_obligation_excludes_legacy_finding_completion_guidance(ki
     assert "Final answer must be JSON" in text
 
 
-def test_legacy_strict_guidance_retains_its_finding_contract() -> None:
+def test_strict_evidence_followup_retains_its_finding_contract() -> None:
     policy = TaskPolicy(GRANTS, strict_research=True)
-    text = task_guidance_for_policy(policy, task_kind="hybrid")
+    text = task_guidance_for_policy(policy, task_kind="evidence_followup")
     assert "research_plan" in text and "[fN]" in text and "report_sections.coverage" in text
 
 
@@ -185,14 +185,14 @@ def test_fixed_copy_keeps_report_and_other_authorized_actions_available(tmp_path
         required_checks=(*session.policy.required_checks, "research_submission"))
     original = offer_browser_tools(build_turn_snapshot(session), session)
     if navigation:
-        assert original.task_navigation_url == URL
+        assert original.browser.navigation_url == URL
     snapshot, hint = browser_task_handoff(session, original, context)
     assert snapshot.input_binding is not None
     assert snapshot.tool_names == original.tool_names
     assert "submit_research_answer" in snapshot.tool_names
     assert "Report submission is still pending" in hint
     assert '{"tool":"edit","args":{"path":"ledger.data"}}' in hint
-    assert snapshot.browser_followups
+    assert snapshot.browser.followups
     assert restore_snapshot(snapshot_description(snapshot)) == snapshot
     proposal = AssistantTurn(tool_calls=(ProviderToolCall("report", "submit_research_answer", {
         "markdown": "The acquired record gives the requested amount [e1].", "state": "answered"}),))
@@ -578,7 +578,7 @@ def test_repeated_missing_field_reads_reuse_observed_fill_choices_without_replay
     original = build_turn_snapshot(session)
     refs = BrowserReferences("snapshot", json.dumps(context.browser_document), 1,
         (ObservedControl("current", "textbox", "Locality", "", "", False),))
-    snapshot = replace(original, browser_references=refs)
+    snapshot = replace(original, browser=replace(original.browser, references=refs))
     offered, feedback = observation_recovery_handoff(session, snapshot, context, repeated=repeated)
     assert "Fuzhou" in feedback and "original spelling" in feedback
     assert "Locality" in feedback and "Do not repeat an unchanged input" in feedback

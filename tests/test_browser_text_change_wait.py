@@ -23,7 +23,7 @@ from codey.operations.kernel_progress import KernelProgress
 from codey.operations.progress_comparison import progress_comparison
 from codey.operations.task_handoff import task_handoff
 from codey.operations.task_session import TaskSession
-from codey.operations.tool_tasks import run_tool_task
+from codey.operations.tool_tasks.execution import run_tool_task
 from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
@@ -295,8 +295,8 @@ def test_delayed_native_controls_can_continue_without_repeating_the_delivered_cl
     assert clicked.ok, clicked.model_text
     observed_snapshot(session, browser)
     current, hint = task_handoff(session, build_turn_snapshot(session), CompletionContext(), browser)
-    assert current.browser_references is not None
-    ref = current.browser_references.receipt_ref
+    assert current.browser.references is not None
+    ref = current.browser.references.receipt_ref
     assert '"condition": "text_changed"' in hint and ref in hint
     args: JsonObject = {"condition": "text_changed", "value": ref, "timeout_ms": 4000}
     reply = (AssistantTurn(tool_calls=(ProviderToolCall("wait", "browser_wait", args),)) if native
@@ -309,9 +309,9 @@ def test_delayed_native_controls_can_continue_without_repeating_the_delivered_cl
         snapshot=current, research_tools=tools, executors={"codemode": parent})[0]
     assert result.ok, result.model_text
     fresh, _hint = task_handoff(session, build_turn_snapshot(session), CompletionContext(), browser)
-    assert fresh.browser_references is not None
-    assert fresh.browser_references.receipt_ref != ref
-    assert fresh.browser_references.resolve({"role": "button", "name": "Continue"})
+    assert fresh.browser.references is not None
+    assert fresh.browser.references.receipt_ref != ref
+    assert fresh.browser.references.resolve({"role": "button", "name": "Continue"})
     finished = program(session, tools, fresh,
         "return unwrap(await tools.browser_click({ref:{role:'button',name:'Continue'},purpose:'controls'}));", turn=3)
     assert finished.ok, finished.model_text
@@ -329,8 +329,8 @@ def test_once_only_click_is_blocked_after_timeout_on_the_same_document(
     first = program(session, tools, observed_snapshot(session, browser), body)
     assert first.ok, first.model_text
     after_click = observed_snapshot(session, browser)
-    assert after_click.browser_references is not None
-    ref = after_click.browser_references.receipt_ref
+    assert after_click.browser.references is not None
+    ref = after_click.browser.references.receipt_ref
     timed_out = program(session, tools, after_click,
         "return await tools.browser_wait({condition:'controls_changed',value:"
         + canonical_json(ref) + ",timeout_ms:100});", turn=2)
@@ -348,8 +348,8 @@ def test_observation_wait_preserves_timeout_cancellation_and_original_document(
     assert browser.navigate(URL).ok
     install(browser, "<main>Stable text.</main>")
     snapshot = observed_snapshot(session, browser)
-    assert snapshot.browser_references is not None
-    text, document = browser_waits.snapshot_text_baseline(session, snapshot.browser_references.receipt_ref)
+    assert snapshot.browser.references is not None
+    text, document = browser_waits.snapshot_text_baseline(session, snapshot.browser.references.receipt_ref)
     if stop == "navigation":
         assert browser.navigate(URL + "?another-document").ok
         rejected = browser.wait_for_text_change(text, document, 500)

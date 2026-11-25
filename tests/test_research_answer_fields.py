@@ -534,7 +534,7 @@ def test_frozen_snapshot_restores_only_with_current_scope() -> None:
     snapshot = build_turn_snapshot(session)
     restored = restore_snapshot(snapshot_description(snapshot))
     assert restored == snapshot
-    assert restored.research_scope is not None and restored.research_scope.schema_version == ANSWER_SCOPE_VERSION
+    assert restored.research.scope is not None and restored.research.scope.schema_version == ANSWER_SCOPE_VERSION
     declaration = session.policy.required_checks[0]
     rule = parse_tool_success_check(declaration)
     assert rule is not None and rule.declaration == declaration

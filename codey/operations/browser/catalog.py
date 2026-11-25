@@ -33,22 +33,22 @@ def snapshot_catalog(
     """Derive model choices or replay capabilities from the same frozen specs."""
     names = set(snapshot.nested_tool_names)
     writable = allow_writes and snapshot.policy is not None and snapshot.policy.allows("project.write")
-    specs = tuple(reference_spec(spec, snapshot.browser_references if observed_choices else None)
+    specs = tuple(reference_spec(spec, snapshot.browser.references if observed_choices else None)
                   for spec in snapshot.frozen_specs if spec.name in names)
     plans = None
-    if snapshot.browser_followups:
+    if snapshot.browser.followups:
         specs, plans = browser_catalog_specs(specs, snapshot.policy.required_checks if snapshot.policy else (),
-                                             observe_links=snapshot.research_scope is None)
+                                             observe_links=snapshot.research.scope is None)
     return build_codemode_catalog(
         specs,
         allow_project_edit=writable and "edit" in names,
         allow_project_run=allow_writes and snapshot.policy is not None and snapshot.policy.allows("project.verify")
             and "run" in names,
-        task_navigation_url=snapshot.task_navigation_url,
-        task_source_url=snapshot.task_source_url,
-        task_source_selector=snapshot.task_source_url is not None,
+        task_navigation_url=snapshot.browser.navigation_url,
+        task_source_url=snapshot.browser.source_url,
+        task_source_selector=snapshot.browser.source_url is not None,
         click_followups=plans,
-        browser_result_reads=snapshot.research_scope is not None,
-        browser_flows=snapshot.browser_followups,
+        browser_result_reads=snapshot.research.scope is not None,
+        browser_flows=snapshot.browser.followups,
         semantic_edits=True,
     )

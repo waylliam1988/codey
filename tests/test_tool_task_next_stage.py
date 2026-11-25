@@ -10,7 +10,7 @@ from codey.operations.kernel.kernel_context import KernelContext
 from codey.operations.kernel_contracts import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
 from codey.operations.project_completion_checks import _evidence_with_session_facts
 from codey.operations.task_session import TaskSession, session_checks_passed
-from codey.operations.tool_tasks import run_tool_task
+from codey.operations.tool_tasks.execution import run_tool_task
 from codey.providers.requests import ProviderRequest
 from codey.providers.transport import ProviderTransport
 from codey.runtime.core.models import ToolCall
@@ -38,7 +38,7 @@ def restore(runtime: Runtime, session: TaskSession | None = None) -> TaskSession
 def test_declared_verification_waits_for_same_diagnostic_cleanup(tmp_path: Path) -> None:
     from codey.operations.kernel.kernel_protocol import normalize_turn
     from codey.operations.project.verification_workflow import completion_workflow, verification_workflow
-    from codey.operations.tool_tasks import control_tool_task, wait_tool_task
+    from codey.operations.tool_tasks.execution import control_tool_task, wait_tool_task
     from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.protocols.text_turn import decode_text_turn
     from codey.types.json_value import parse_json_object, require_json_string
@@ -158,7 +158,7 @@ def test_pending_input_is_not_delivered_again_after_recovery(tmp_path: Path, mon
                       store: object, caller_policy: object = None) -> ToolResult:
             raise AssertionError("unsettled input must not reach process control twice")
 
-        monkeypatch.setattr("codey.operations.tool_tasks.control_tool_task", forbidden)
+        monkeypatch.setattr("codey.operations.tool_tasks.execution.control_tool_task", forbidden)
         result = execute_turn(TaskSession(runtime.session.policy, project=str(runtime.project)), [call],
             run_id="r", turn=0, session_id="s", snapshot=runtime.snapshot, project_path=runtime.project,
             durable=runtime.app.durable, intent_sink=restored_sink, managed_outputs=runtime.app.managed_outputs,
@@ -217,7 +217,7 @@ def test_durable_process_input_dedup_and_cleanup(tmp_path: Path, tty: bool, code
                 assert time.monotonic() < deadline, runtime.app.durable.task(ref)
                 threading.Event().wait(0.02)
         newline = "\r" if tty and os.name == "nt" else "\n"
-        from codey.operations.tool_tasks import control_tool_task
+        from codey.operations.tool_tasks.execution import control_tool_task
         from codey.policies.task_policy import TaskPolicy
 
         denied = control_tool_task(ToolCall("task_input", {"task_ref": ref, "data": "unauthorized"}),

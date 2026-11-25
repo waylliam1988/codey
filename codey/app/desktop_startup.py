@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import json
 import threading
-from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
+from codey.app.folder_picker import run_folder_dialog
 from codey.control.client import ensure_service
 from codey.launcher.startup import StartupTrace, startup_stage
 
@@ -76,6 +76,9 @@ class DesktopStartup:
             self._closed.set()
             self._navigating = False
             self._cancel_deadline()
+
+    def choose_folder(self, mode: str, initial: str) -> dict[str, object]:
+        return run_folder_dialog(mode, initial, self._closed)
 
     def _cancel_deadline(self) -> None:
         if self._ready_timer is not None:
@@ -225,23 +228,17 @@ class DesktopStartup:
 
 
 class StartupBridge:
-    def __init__(self, startup: DesktopStartup, folder_dialog: Callable[[str], str | None] | None = None) -> None:
+    def __init__(self, startup: DesktopStartup) -> None:
         self._startup = startup
-        self._folder_dialog = folder_dialog
         self._picker = threading.Lock()
 
-    def pick_folder(self, initial: str) -> dict[str, object]:
-        if self._folder_dialog is None or not self._picker.acquire(blocking=False):
-            return {"ok": False, "busy": True}
+    def pick_folder(self, mode: str, initial: str) -> dict[str, object]:
+        if mode not in ("open", "new") or not isinstance(initial, str):
+            return {"error": "invalid folder picker options"}
+        if not self._picker.acquire(blocking=False):
+            return {"error": "folder picker is busy"}
         try:
-            start = Path(initial).expanduser() if initial else Path.home()
-            selected = self._folder_dialog(str(start if start.is_dir() else Path.home()))
-            if selected is None:
-                return {"ok": False, "cancelled": True}
-            path = Path(selected).resolve()
-            if not path.is_dir():
-                return {"ok": False, "error": "selected path is not a directory"}
-            return {"ok": True, "path": str(path), "name": path.name or str(path)}
+            return self._startup.choose_folder(mode, initial)
         finally:
             self._picker.release()
 

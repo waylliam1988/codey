@@ -4,16 +4,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from codey.operations.browser.turn_inputs import BrowserTurnInputs
+from codey.operations.project.turn_inputs import ProjectTurnInputs
+from codey.operations.research.turn_inputs import ResearchTurnInputs
 from codey.toolchain.spec_model import ToolSpec
 from codey.toolchain.tool_spec import freeze_spec_parameters
 
 if TYPE_CHECKING:
-    from codey.operations.browser.browser_copy import CopyTurn
-    from codey.operations.browser.browser_references import BrowserReferences
     from codey.operations.kernel_contracts import ToolExecutor
-    from codey.operations.project.project_instructions import ProjectInstructionBinding
     from codey.policies.task_policy import TaskPolicy
-    from codey.research.answer_contract import AnswerScope
 
 
 @dataclass(frozen=True)
@@ -51,23 +50,15 @@ class TurnSnapshot:
     custom_executors: tuple[tuple[str, ToolExecutor | None], ...] = ()
     implementation_compatible: bool = True
     nested_tool_names: tuple[str, ...] = ()
-    research_scope: AnswerScope | None = None
+    research: ResearchTurnInputs = ResearchTurnInputs()
     ignore_runtime_claims: bool = False
-    browser_copy: CopyTurn | None = None
     input_binding: ModelInputBinding | None = None
-    task_navigation_url: str | None = None
-    task_source_url: str | None = None
-    browser_followups: bool = False
-    browser_fill_text: str | None = None
-    browser_references: BrowserReferences | None = None
-    project_instructions: tuple[ProjectInstructionBinding, ...] = ()
-    navigation_verifies: bool = False
-    data_file_reads: tuple[str, ...] | None = None
-    symbol_read_refs: tuple[tuple[str, str], ...] = ()
+    browser: BrowserTurnInputs = BrowserTurnInputs()
+    project: ProjectTurnInputs = ProjectTurnInputs()
 
     @property
     def navigation_observes(self) -> bool:
-        return self.browser_followups and "browser_snapshot" in self.nested_tool_names
+        return self.browser.followups and "browser_snapshot" in self.nested_tool_names
 
     @property
     def inventory_names(self) -> tuple[str, ...]:

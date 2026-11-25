@@ -134,7 +134,7 @@ def _partial_edit_target(reply: str, snapshot: TurnSnapshot, session: TaskSessio
         return "", ()
     try:
         path = file_selector_key(require_json_string(parse_json_value(match[1]), "edit path"))
-        reference = dict(snapshot.symbol_read_refs).get(path)
+        reference = dict(snapshot.project.symbol_reads).get(path)
         if reference is None:
             return "", ()
         source = edit_base_text(session, Path(session.project), path, reference)
@@ -154,11 +154,11 @@ def compact_symbol_retry(snapshot: TurnSnapshot, reply: AssistantTurn | str, *,
     spec = next((item for item in snapshot.model_specs if item.name == "edit"), None)
     if (not isinstance(reply, AssistantTurn) or reply.finish is not TurnFinish.OUTPUT_LIMIT or reply.tool_calls
             or re.match(r'^\s*\{\s*"tool"\s*:\s*"edit"', reply.text) is None
-            or not snapshot.symbol_read_refs or spec is None or snapshot.input_binding is not None
+            or not snapshot.project.symbol_reads or spec is None or snapshot.input_binding is not None
             or "symbol" not in dict(spec.parameters)):
         return snapshot
     path, symbols = _partial_edit_target(reply.text, snapshot, session)
-    paths = [path] if path and symbols else [name for name, _ in snapshot.symbol_read_refs]
+    paths = [path] if path and symbols else [name for name, _ in snapshot.project.symbol_reads]
     return _compact_definition_spec(snapshot, spec, paths, symbols)
 
 
@@ -184,7 +184,7 @@ def edit_anchor_retry(session: TaskSession, snapshot: TurnSnapshot, delivered: t
     name = _failed_definition_name(result)
     if not name:
         return snapshot, ""
-    reference = dict(snapshot.symbol_read_refs).get(path)
+    reference = dict(snapshot.project.symbol_reads).get(path)
     positions = result.audit.get("search_candidate_lines")
     candidate_lines = tuple(line for line in positions if type(line) is int) if isinstance(positions, list) else ()
     current = (symbol_retry_source(session, Path(session.project), path, name, reference, candidate_lines=candidate_lines)
@@ -222,8 +222,8 @@ def _compact_definition_spec(snapshot: TurnSnapshot, spec: ToolSpec, paths: list
     domains: dict[str, object] = {"path": {"type": "string", "enum": paths}}
     if symbols:
         domains["symbol"] = {"type": "string", "enum": list(symbols)}
-    single_target = (len(symbols) == 1 and snapshot.task_navigation_url is None
-                     and snapshot.task_source_url is None and snapshot.browser_references is None)
+    single_target = (len(symbols) == 1 and snapshot.browser.navigation_url is None
+                     and snapshot.browser.source_url is None and snapshot.browser.references is None)
     mandatory = ("content",) if single_target else SYMBOL_EDIT_FIELDS
     parameters = tuple((key, domains.get(key, schema))
                        for key, schema in spec.parameters if key in {"path", "symbol", "content", "base_result_ref"})

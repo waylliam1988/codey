@@ -163,7 +163,7 @@ def cards(session: TaskSession, snapshot: TurnSnapshot) -> str:
                 lines.append(render({"operation": name, "call": action}))
             elif error:
                 lines.append(error)
-    references = snapshot.browser_references
+    references = snapshot.browser.references
     if references is not None:
         seen: set[str] = set()
         for choice in references.choices():

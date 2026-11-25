@@ -68,12 +68,12 @@ def conflict_followup(session: TaskSession, resources: ResearchTools | None, sna
 
     limits = session.research_acquisition_limits
     used = sum(value == "search" for value in session.research_acquisition_slots.values())
-    if (snapshot.research_scope is not None and snapshot.research_scope.primary_passages is not None
+    if (snapshot.research.scope is not None and snapshot.research.scope.primary_passages is not None
             and any(call.name == "submit_research_answer" and call.args.get("state") == "answered" for call in calls)):
         from codey.research.primary_sources import primary_acquisition
 
         if primary := primary_acquisition(session, resources.ledger,
-                missing_primary=not snapshot.research_scope.primary_passages,
+                missing_primary=not snapshot.research.scope.primary_passages,
                 may_search=limits is None or used < limits[0], may_open="open_result" in snapshot.tool_names):
             return primary
     findings = (result.call for ref, result in session._memory_results.items()

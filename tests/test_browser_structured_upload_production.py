@@ -41,10 +41,9 @@ def test_observed_file_controls_are_selected_without_model_javascript(
     identity = str(attachment["id"])
     directory = tmp_path / "run"
     if case == "parent_return":
-        from codey.operations.browser.browser_upload import lower_upload_action
-        from codey.operations.kernel import kernel_protocol
+        from codey.operations.browser import browser_upload
 
-        original_lower = lower_upload_action
+        original_lower = browser_upload.lower_upload_action
 
         def missing_return(args: JsonObject, checks: tuple[str, ...] = ()) -> JsonObject:
             converted = original_lower(args, checks)
@@ -52,7 +51,7 @@ def test_observed_file_controls_are_selected_without_model_javascript(
                 converted["code"] = str(converted["code"]).removeprefix("return ")
             return converted
 
-        monkeypatch.setattr(kernel_protocol, "lower_upload_action", missing_return)
+        monkeypatch.setattr(browser_upload, "lower_upload_action", missing_return)
     strict = case == "strict"
     provider = BrowserSearchProvider(headless=True) if case == "expired" else None
     if provider is not None:

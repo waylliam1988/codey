@@ -103,7 +103,7 @@ def test_only_current_complete_controls_are_bound(truncation: str) -> None:
     snapshot = offer_browser_tools(build_turn_snapshot(session), session)
     frozen = bind_browser_references(session, snapshot, CompletionContext(browser_document=document),
                                      8 if truncation == "generation" else 7)
-    assert (frozen.browser_references is not None) is (truncation == "body")
+    assert (frozen.browser.references is not None) is (truncation == "body")
 
 
 @pytest.mark.parametrize("version", [6, 7, 8, 9])
@@ -114,7 +114,7 @@ def test_snapshot_versions_parse_separately_from_runtime_compatibility(version: 
     assert restore_snapshot(payload) == snapshot
     restored = restore_snapshot({**payload, "implementation_id": "previous-runtime"})
     assert not restored.implementation_compatible
-    assert restored.browser_references is None
+    assert restored.browser.references is None
     payload["schema_version"] = version
     if version < 9:
         del payload["browser_followups"], payload["browser_references"]
@@ -129,7 +129,7 @@ def test_snapshot_versions_parse_separately_from_runtime_compatibility(version: 
 def test_outer_and_nested_use_the_same_ref_schema_and_frozen_binding() -> None:
     session = session_with_snapshot()
     snapshot = offer_browser_tools(build_turn_snapshot(session), session)
-    frozen = refresh_snapshot_contract(replace(snapshot, browser_references=binding()))
+    frozen = refresh_snapshot_contract(replace(snapshot, browser=replace(snapshot.browser, references=binding())))
     assert restore_snapshot(snapshot_description(frozen)) == frozen
     outer = next(spec for spec in frozen.model_specs if spec.name == "browser_fill")
     nested = next(entry for entry in snapshot_catalog(frozen).entries if entry.name == "browser_fill")
@@ -148,9 +148,9 @@ def test_expired_binding_removes_descriptions_from_nested_declarations() -> None
     # Hybrid/CodeMode callers can have a control binding without Chat followups.
     snapshot = build_turn_snapshot(session)
     frozen = bind_browser_references(session, snapshot, CompletionContext(browser_document=DOCUMENT), 7)
-    assert frozen.browser_references is not None and not frozen.browser_followups
+    assert frozen.browser.references is not None and not frozen.browser.followups
     expired = bind_browser_references(session, frozen, CompletionContext(browser_document=DOCUMENT), 8)
-    assert expired.browser_references is None
+    assert expired.browser.references is None
     codemode = next(spec for spec in expired.frozen_specs if spec.name == "codemode")
     assert codemode.declarations == render_declarations(snapshot_catalog(expired),
         outer_descriptions={spec.name: spec.description for spec in expired.model_specs})
@@ -207,7 +207,7 @@ def test_chromium_rejects_changed_meaning_before_delivery(
     assert ExecutionDelegate(session=session, research_tools=tools).execute(ToolCall("browser_navigate", {"url": URL}))[1]
     install(browser, '<section aria-label="订单 A-173"><button onclick="window.delivered=true">Query</button></section>')
     frozen = observed_snapshot(session, browser)
-    assert frozen.browser_references is not None
+    assert frozen.browser.references is not None
     mutations = {"name": "document.querySelector('button').textContent='Confirm submission'",
         "role": "document.querySelector('button').setAttribute('role','link')",
         "disabled": "document.querySelector('button').disabled=true",

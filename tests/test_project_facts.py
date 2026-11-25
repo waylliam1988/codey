@@ -389,12 +389,23 @@ class ProjectFactsTests(unittest.TestCase):
             facts = state.project_facts.load(project)
             rendered = state.project_facts.render(project)
             stop_reason = state.run_registry.last_stop_reason()
+            source = facts.successful_changes[-1].source
+            assert source is not None and state.run_ledgers is not None
+            assert source.session_id == "session-1"
+            from codey.runs.ledger import read_ledger
+
+            receipt_rows = read_ledger(state.run_ledgers.path_for(source.session_id, source.run_id))
+            self.assertEqual(state.forget_conversation(source.session_id), {})
+            self.assertFalse(state.durable.has_conversation(source.session_id))
+            self.assertEqual(state.project_facts.load(project), facts)
             state.close()
 
         self.assertEqual(stop_reason, "done")
         self.assertTrue(facts.successful_changes, rendered)
         self.assertEqual(facts.successful_changes[-1].checks[0].command, "npm test")
         self.assertEqual(facts.successful_changes[-1].checks[0].cwd, "backend")
+        self.assertTrue(any(row.payload.get("type") == "changes_collected" and row.payload.get("receipt")
+                            for row in receipt_rows))
         self.assertIn("checks: backend/: npm test", rendered)
 
     def test_project_completion_does_not_record_failed_run(self) -> None:

@@ -24,7 +24,6 @@ from codey.providers.web_provider import (
     QwenWebProvider,
     StepFunWebProvider,
 )
-from codey.repairs.adapter_overrides import AdapterOverride
 from codey.runtime.core import cancellation
 
 
@@ -374,7 +373,6 @@ class ProviderRegistryTests(unittest.TestCase):
         glm = object()
         local = object()
         with (
-            mock.patch.object(registry, "load_enabled_override", return_value=None),
             mock.patch.object(registry.DeepSeekWebProvider, "connect", return_value=deepseek),
             mock.patch.object(registry.QwenWebProvider, "connect", return_value=qwen),
             mock.patch.object(registry.StepFunWebProvider, "connect", return_value=stepfun),
@@ -463,7 +461,6 @@ class ProviderRegistryTests(unittest.TestCase):
     def test_connect_existing_provider_does_not_open_or_raise_window(self) -> None:
         qwen = object()
         with (
-            mock.patch.object(registry, "load_enabled_override", return_value=None),
             mock.patch.object(registry.QwenWebProvider, "connect", return_value=qwen) as connected,
         ):
             self.assertIs(registry.connect_existing_provider("qwen"), qwen)
@@ -478,7 +475,6 @@ class ProviderRegistryTests(unittest.TestCase):
     def test_connect_fresh_provider_tab_opens_isolated_background_tab(self) -> None:
         qwen = object()
         with (
-            mock.patch.object(registry, "load_enabled_override", return_value=None),
             mock.patch.object(registry.QwenWebProvider, "connect", return_value=qwen) as connected,
         ):
             self.assertIs(registry.connect_fresh_provider_tab("qwen"), qwen)
@@ -491,30 +487,9 @@ class ProviderRegistryTests(unittest.TestCase):
             fresh_tab=True,
         )
 
-    def test_connect_fresh_provider_tab_uses_enabled_adapter_override_worker(self) -> None:
-        override = AdapterOverride(
-            "qwen",
-            7,
-            "active",
-            Path("override-root"),
-        )
-        with (
-            mock.patch.object(registry, "load_enabled_override", return_value=override),
-            mock.patch.object(registry, "WorkerChatProvider", return_value="worker") as worker,
-            mock.patch.object(registry.QwenWebProvider, "connect") as connected,
-        ):
-            self.assertEqual(registry.connect_fresh_provider_tab("qwen"), "worker")
-
-        worker.assert_called_once_with(
-            "qwen",
-            override,
-            port=registry.DEFAULT_PORT + registry.PROVIDER_WORKER_PORT_OFFSETS["qwen"],
-        )
-        connected.assert_not_called()
-
     def test_borrow_open_provider_reuses_sibling_page_without_closing_context(self) -> None:
-        owner = SimpleNamespace(url="https://chat.deepseek.com/")
-        sibling = SimpleNamespace(url="https://chat.qwen.ai/c/1")
+        owner = mock.Mock(spec=registry.Page, url="https://chat.deepseek.com/")
+        sibling = mock.Mock(spec=registry.Page, url="https://chat.qwen.ai/c/1")
         owner.context = SimpleNamespace(pages=[owner, sibling])
 
         provider = registry.borrow_open_provider("qwen", owner)
@@ -524,8 +499,8 @@ class ProviderRegistryTests(unittest.TestCase):
         provider.close()
 
     def test_borrow_open_glm_provider_reuses_sibling_page(self) -> None:
-        owner = SimpleNamespace(url="https://chat.deepseek.com/")
-        sibling = SimpleNamespace(url="https://chatglm.cn/")
+        owner = mock.Mock(spec=registry.Page, url="https://chat.deepseek.com/")
+        sibling = mock.Mock(spec=registry.Page, url="https://chatglm.cn/")
         owner.context = SimpleNamespace(pages=[owner, sibling])
 
         provider = registry.borrow_open_provider("glm", owner)
@@ -534,7 +509,7 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertIs(provider.session.page, sibling)
 
     def test_borrow_open_provider_does_not_open_missing_tab(self) -> None:
-        owner = SimpleNamespace(url="https://chat.deepseek.com/")
+        owner = mock.Mock(spec=registry.Page, url="https://chat.deepseek.com/")
         owner.context = SimpleNamespace(pages=[owner])
 
         self.assertIsNone(registry.borrow_open_provider("qwen", owner))

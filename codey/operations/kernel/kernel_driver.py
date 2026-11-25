@@ -358,7 +358,7 @@ def _recover_interrupted_effects(context: KernelContext, action: RuntimeAction) 
     unknown = False
     for identity in action.effect_ids or (action.effect_id,):
         original = next(effect for effect in effects if effect.effect_id == identity)
-        from codey.operations.tool_tasks import recover_command_admission
+        from codey.operations.tool_tasks.execution import recover_command_admission
 
         recovered = recover_command_admission(context.durable, origin_effect_id=identity,
             owner_task_id=sink.run_id, store=sink.managed_outputs) if original.category == "tool_call" else None

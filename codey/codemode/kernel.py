@@ -401,9 +401,9 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
         if repair is not None:
             return DurableCodeModeReplay.for_repair(durable, run_id, repair, runtime_contract)
         fingerprint: dict[str, object] = {"args": call.args, "catalog": catalog.digest, "allow_writes": allow_writes,
-            "task_navigation_url": snapshot.task_navigation_url,
-            "task_source_url": snapshot.task_source_url,
-            "browser_references": snapshot.browser_references.payload() if snapshot.browser_references else None,
+            "task_navigation_url": snapshot.browser.navigation_url,
+            "task_source_url": snapshot.browser.source_url,
+            "browser_references": snapshot.browser.references.payload() if snapshot.browser.references else None,
             "runtime": runtime_contract}
         if snapshot.input_binding is not None and snapshot.input_binding.source_refs:
             fingerprint["bound_sources"] = snapshot.input_binding.source_refs
@@ -662,7 +662,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                 settled = receipt(index)
                 if settled is not None and settled.ok and settled.call.name == "edit" and settled.call.args.get("path") == target:
                     continue
-                changed = changed_instruction_target(project_path, target, snapshot.project_instructions)
+                changed = changed_instruction_target(project_path, target, snapshot.project.instructions)
                 if changed is not None:
                     pending.append(changed)
             if pending:
@@ -704,14 +704,14 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             artifact_store=managed_outputs,
             session_id=session_id,
             run_id=str(run_id or ""),
-            task_navigation_url=snapshot.task_navigation_url,
-            task_source_url=snapshot.task_source_url,
-            browser_references=snapshot.browser_references,
+            task_navigation_url=snapshot.browser.navigation_url,
+            task_source_url=snapshot.browser.source_url,
+            browser_references=snapshot.browser.references,
             browser_stage=browser_stage,
             original_browser_wait=original_browser_wait,
             plan_patch=plan_patch,
             semantic_plan=semantic_plan,
-            symbol_reads=dict(snapshot.symbol_read_refs),
+            symbol_reads=dict(snapshot.project.symbol_reads),
             link_result_observed=link_result_observed,
             bound_edit=bound_edit if declared_copy else None,
         ).execute(call)

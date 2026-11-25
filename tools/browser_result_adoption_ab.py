@@ -73,7 +73,7 @@ def assert_stable(source: str, harness: str) -> None:
 def result_call(snapshot: TurnSnapshot, args: JsonObject) -> JsonObject | None:
     """Use the production call generator and frozen interface validation."""
     session = TaskSession(snapshot.policy) if snapshot.policy is not None else None
-    if session is None or not snapshot.browser_followups:
+    if session is None or not snapshot.browser.followups:
         return None
     _, call, _ = handoff_call(session, snapshot, ToolCall('browser_click', args))
     return call

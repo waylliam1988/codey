@@ -96,7 +96,7 @@ def _workflow_passages(session: TaskSession, context: CompletionContext, documen
 
 def research_submission_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                                 browser: BrowserSession | None) -> tuple[TurnSnapshot, str]:
-    scope = snapshot.research_scope
+    scope = snapshot.research.scope
     if browser is None or scope is None or "submit_research_answer" not in snapshot.tool_names:
         return snapshot, ""
     rule = submission_sequence(session)
@@ -157,7 +157,7 @@ def research_browser_handoff(session: TaskSession, snapshot: TurnSnapshot,
     from codey.operations.browser.turn_surface import offer_browser_call
 
     sequence = submission_sequence(session)
-    if snapshot.research_scope is None or not (sequence or declared_workflow_url(session)):
+    if snapshot.research.scope is None or not (sequence or declared_workflow_url(session)):
         return snapshot, ""
     names = {"browser_navigate", "browser_wait", "browser_read"} if sequence else set()
     for check in session.policy.required_checks:

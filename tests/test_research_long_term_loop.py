@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -14,6 +15,7 @@ from codey.knowledge.recall import KnowledgeAccess, KnowledgeRecall
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_facts import project_result_observation
+from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, TaskPolicy
@@ -23,6 +25,7 @@ from codey.research.answer_report import compile_answer_report
 from codey.research.ledger import ResearchLedger
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall
+from codey.types.json_value import decode_json_object
 from tests.test_research_deterministic_completion import _run
 from tests.test_research_findings import TEXT, URL, execute, setup
 from tests.test_research_whole_answer import record_submission
@@ -195,19 +198,18 @@ def test_material_access_and_archive_scope_remain_restricted(tmp_path, scope, ow
         store.close()
 
 
-def test_strict_optional_accumulation_cannot_create_a_second_answer(tmp_path):
-    store, tools, _, delegate = setup(tmp_path)
+def test_strict_optional_accumulation_cannot_create_a_second_answer(tmp_path: Path) -> None:
+    store, tools, _, _ = setup(tmp_path)
     session = strict_session()
-    delegate.session = session
     try:
         snapshot = build_turn_snapshot(session, native=True)
-        args = {"commit_id": "bypass", "changes": [{"expected_revision": 0,
-                "value": K("second-answer", "answer", "Bypass publication", "model_inference").to_dict()}]}
+        args = decode_json_object({"commit_id": "bypass", "changes": [{"expected_revision": 0,
+            "value": K("second-answer", "answer", "Bypass publication", "model_inference").to_dict()}]})
         plan = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("commit", "knowledge_commit", args),)),
                               snapshot=snapshot)
         assert plan.protocol_error
-        delegate._research_scope = snapshot.research_scope
-        result, ok, _ = delegate._execute_research(ToolCall("knowledge_commit", args))
+        delegate = ExecutionDelegate(session=session, research_tools=tools, research_scope=snapshot.research.scope)
+        result, ok, _ = delegate.research_executor._execute_research(ToolCall("knowledge_commit", args))
         assert not ok and "knowledge_updates" in result.model_text
         assert store.repository.read("second-answer") is None
     finally:

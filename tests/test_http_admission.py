@@ -5,7 +5,7 @@ import http.client
 import socket
 import threading
 from http.server import BaseHTTPRequestHandler
-from pathlib import Path
+from time import monotonic, sleep
 
 import pytest
 
@@ -50,30 +50,38 @@ def test_http_rejects_before_spawning_an_extra_request_thread(monkeypatch: pytes
 
 
 
-def test_browser_folder_dialog_runs_off_the_handler_thread(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    picker_entered = threading.Event()
+def test_browser_folder_dialog_admits_and_polls_without_waiting_for_the_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entered = threading.Event()
     release = threading.Event()
-    draw_threads: list[threading.Thread] = []
-    selected: list[str | None] = []
-    caller = threading.Thread(
-        target=lambda: selected.append(folder_picker.pick_folder(initial=str(tmp_path))),
-    )
 
-    def choose(mode: str, initial: str | None) -> str | None:
-        assert mode == "open" and initial == str(tmp_path)
-        draw_threads.append(threading.current_thread())
-        picker_entered.set()
+    def run_dialog(mode: str, initial: str) -> dict[str, object]:
+        assert (mode, initial) == ("open", "")
+        entered.set()
         assert release.wait(3)
-        return str(tmp_path)
+        return folder_picker.folder_selection(None)
 
-    monkeypatch.setattr(folder_picker, "_choose_folder", choose)
-    caller.start()
+    monkeypatch.setattr(folder_picker, "_run_dialog", run_dialog)
+    picker = folder_picker.FolderPicker()
     try:
-        assert picker_entered.wait(3)
-        with pytest.raises(folder_picker.FolderPickerBusy):
-            folder_picker.pick_folder()
+        status, payload = picker.start({})
+        assert status == 202
+        identity = payload["id"]
+        assert isinstance(identity, str)
+        assert entered.wait(3)
+        assert picker.start({})[0] == 409
+        assert picker.status(identity)[0] == 202
+        assert picker.status("wrong")[0] == 404
+        release.set()
+        deadline = monotonic() + 3
+        while picker.status(identity)[0] == 202 and monotonic() < deadline:
+            sleep(0.01)
+        assert picker.status(identity) == (200, folder_picker.folder_selection(None))
+        status, next_payload = picker.start({})
+        assert status == 202 and next_payload["id"] != identity
+        assert picker.status(identity) == (200, folder_picker.folder_selection(None))
     finally:
         release.set()
-        caller.join(timeout=3)
-    assert draw_threads and draw_threads[0] is not caller
-    assert selected == [str(tmp_path)]
+        picker.close()
+    assert picker.start({})[0] == 503

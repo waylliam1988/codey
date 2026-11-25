@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from codey.app.headless_runner import HeadlessConnector, HeadlessRequest, HeadlessResult, run_headless
 from codey.operations.browser.browser_completion import evaluate_research_sequence
+from codey.operations.browser.turn_inputs import BrowserTurnInputs
 from codey.operations.kernel.kernel_context import KernelContext
 from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
@@ -48,7 +49,7 @@ class Handoff:
 
 def handoff(rule: BrowserResearchSequence, snapshot: TurnSnapshot, *, records: Mapping[str, ExecutionRecord],
             results: Mapping[str, ToolResult], document: JsonObject | None) -> Handoff:
-    scope, policy = snapshot.research_scope, snapshot.policy
+    scope, policy = snapshot.research.scope, snapshot.policy
     if not isinstance(scope, AnswerScope) or policy is None or rule.declaration not in policy.required_checks:
         return Handoff("collect", "out_of_scope")
     outcome = evaluate_research_sequence(rule, records=records, results=results, document=document, report=None)
@@ -79,8 +80,7 @@ def narrow(snapshot: TurnSnapshot, step: Handoff) -> TurnSnapshot:
     inventory = names + nested
     specs = tuple(spec for spec in snapshot.frozen_specs if spec.name in inventory)
     return refresh_snapshot_contract(replace(snapshot, tool_names=names, nested_tool_names=nested, frozen_specs=specs,
-        browser_references=None, browser_fill_text=None, browser_followups=False,
-        task_navigation_url=None, task_source_url=None, browser_copy=None, input_binding=None,
+        browser=BrowserTurnInputs(), input_binding=None,
         custom_executors=tuple(row for row in snapshot.custom_executors if row[0] in inventory)))
 
 
@@ -95,7 +95,7 @@ def candidate(directory: Path, arm: Arm, *, rule: BrowserResearchSequence = RULE
                coding_context_prepared: bool = False, initial_source_batch: bool = False,
                handoff: str | None = None, task_span: TaskPromptSpan | None = None) -> None:
         hint = handoff or ""
-        if isinstance(snapshot.research_scope, AnswerScope) and not acknowledge:
+        if isinstance(snapshot.research.scope, AnswerScope) and not acknowledge:
             tools = context.execution.research_tools
             browser = tools.browser_session if tools is not None else None
             step = inspect_handoff(rule, snapshot, records=context.session.executed, results=context.session._memory_results,

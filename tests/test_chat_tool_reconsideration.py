@@ -81,7 +81,7 @@ def test_completion_errors_still_require_correcting_the_declared_submission(nati
     prompt = _repair_prompt(plan, snapshot=snapshot, native=native)
     assert "If unnecessary" not in prompt and "Correct the rejected call" in prompt
     if research:
-        assert snapshot.research_scope is not None
+        assert snapshot.research.scope is not None
         assert "submit_research_answer" in prompt
 
 

@@ -17,12 +17,19 @@ from typing import ClassVar, Protocol
 from playwright.sync_api import Page
 
 from codey.automation import browser
-from codey.automation.browser import DEFAULT_PORT, DEFAULT_PROFILE, Session
+from codey.automation.browser import DEFAULT_PORT, DEFAULT_PROFILE
 from codey.durable.session import DurableSession
 from codey.providers.diagnostics import ProviderFailure
 from codey.providers.request_metrics import text_section
 from codey.providers.task_prompt import TASK_HEADING
 from codey.providers.web_driver import run_web_new_chat, run_web_send
+
+
+class WebSession(Protocol):
+    @property
+    def page(self) -> Page: ...
+
+    def close(self) -> None: ...
 
 
 class WebDriver(Protocol):
@@ -48,7 +55,7 @@ class WebChatProvider:
     spec: ClassVar[WebProviderSpec]
     last_failure: ProviderFailure | None = None
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: WebSession) -> None:
         self.session = session
         self.last_failure: ProviderFailure | None = None
         self.name: str = type(self).spec.name

@@ -21,8 +21,6 @@ Endpoints
     POST /api/stop        request cooperative stop of the current task
     GET  /api/events      Server-Sent Events stream of log lines
 
-A single Codey instance can run one task at a time; while a task is running
-new /api/run calls return 409.
 """
 
 from __future__ import annotations
@@ -31,7 +29,7 @@ import contextlib
 import json
 import sys
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -55,7 +53,7 @@ from codey.app.conversation_routes import (
     retry_fork_response,
 )
 from codey.app.documents import document_response
-from codey.app.folder_picker import FolderPickerBusy, pick_folder
+from codey.app.folder_picker import FOLDER_PICKER_PATH, FolderPicker
 from codey.app.history_routes import validate_runs_response
 from codey.app.http_plumbing import (
     WEB_DIR,
@@ -88,39 +86,15 @@ HTTP_CONNECTIONS = 32
 SSE_CONNECTIONS = 8
 
 
-def _event_commit_seq(event: object) -> int:
-    if not isinstance(event, dict):
-        return 0
-    fields: Mapping[object, object] = event
-    value = fields.get("commit_seq")
-    return value if type(value) is int and value > 0 else 0
-
-
-def _is_replayed_durable_commit(event: object, durable_cursor: int) -> bool:
-    """Drop the EventBus copy after the durable commit was replayed.
-
-    Durable commits are reconstructed from SQLite first because the in-memory
-    EventBus is lost on restart.  A still-retained EventBus replay can contain
-    the same ``durable_commit`` projection, so sending both copies would make
-    the browser apply one committed fact twice.  Other runtime events remain
-    eligible for EventBus replay.
-    """
-    if not isinstance(event, dict):
-        return False
-    fields: Mapping[object, object] = event
-    if fields.get("type") != "durable_commit":
-        return False
-    commit_seq = _event_commit_seq(event)
-    return commit_seq > 0 and commit_seq <= max(0, int(durable_cursor))
-
-
 class CodeyHTTPServer(ThreadingHTTPServer):
     """Keep routine browser disconnects out of the local server log."""
 
+    daemon_threads = True
     request_queue_size = 32
     app_context: AppContext | None = None
 
     def __init__(self, server_address: tuple[str, int], request_handler_class: type[BaseHTTPRequestHandler]) -> None:
+        self.folder_picker = FolderPicker()
         self._request_slots = threading.BoundedSemaphore(HTTP_CONNECTIONS)
         self.event_slots = threading.BoundedSemaphore(SSE_CONNECTIONS)
         super().__init__(server_address, request_handler_class)
@@ -159,6 +133,10 @@ class CodeyHTTPServer(ThreadingHTTPServer):
         finally:
             self._request_slots.release()
 
+    def server_close(self) -> None:
+        super().server_close()
+        self.folder_picker.close()
+
     def launch_url(self, base_url: str) -> str:
         return f"{base_url}#codey_bootstrap={self.operator_auth.issue_bootstrap()}"
 
@@ -167,22 +145,6 @@ class CodeyHTTPServer(ThreadingHTTPServer):
         if isinstance(error, (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)):
             return
         super().handle_error(request, client_address)
-
-
-def _pick_folder_response(_ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
-    mode = str(body.get("mode") or "open").strip().lower()
-    if mode not in {"open", "new"}:
-        return 400, {"error": "invalid mode"}
-    initial = str(body.get("initial") or "").strip() or None
-    try:
-        path = pick_folder(mode=mode, initial=initial)
-    except FolderPickerBusy:
-        return 409, {"error": "folder picker is busy"}
-    except Exception as exc:
-        return 500, {"error": str(exc)}
-    if not path:
-        return 200, {"ok": False, "cancelled": True}
-    return 200, {"ok": True, "path": path, "name": Path(path).name or path}
 
 
 def _run_submit_route(_ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
@@ -363,7 +325,6 @@ _POST_ROUTES: dict[str, _PostRoute] = {
     "/api/research/restore": app_api.research_restore_response,
     "/api/research/notes": app_api.research_notes_response,
     "/api/ghost/action": app_api.ghost_action_response,
-    "/api/pick_folder": _pick_folder_response,
     "/api/changes": lambda ctx, body: app_api.changes_response(
         ctx,
         str((body.get("project") if isinstance(body, dict) else "") or ""),
@@ -545,6 +506,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not self._require_operator():
             return
+        if url.path == FOLDER_PICKER_PATH:
+            identity = parse_qs(url.query).get("id", [""])[0]
+            self._send_json(*self._bound_server().folder_picker.status(identity))
+            return
         if url.path == "/api/operator_session":
             self._send_json(200, {"ok": True})
             return
@@ -648,6 +613,9 @@ class Handler(BaseHTTPRequestHandler):
             assert actor is not None
             self._control_response(body, actor, lifecycle=url.path == "/api/lifecycle")
             return
+        if url.path == FOLDER_PICKER_PATH:
+            self._start_folder_picker(body)
+            return
         route = _POST_ROUTES.get(url.path)
         if route is not None:
             if not object_fields(body):
@@ -665,6 +633,17 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_response(404)
         self.end_headers()
+
+    def _start_folder_picker(self, body: object) -> None:
+        if not object_fields(body):
+            self._send_json(400, {"error": "invalid json"})
+            return
+        try:
+            status, result = self._bound_server().folder_picker.start(body)
+        except RuntimeError as exc:
+            self._send_json(500, {"error": str(exc)})
+            return
+        self._send_json(status, result)
 
     def _apply_ui_control(self, ctx: AppContext, path: str, body: dict[str, object]) -> bool:
         service = ctx.control_service

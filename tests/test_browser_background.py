@@ -11,7 +11,7 @@ from codey.operations.browser.browser_resources import build_task_browser
 from codey.operations.browser.turn_surface import offer_browser_tools
 from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.kernel.turn_contract import TurnSnapshot
-from codey.operations.tool_tasks import run_tool_task
+from codey.operations.tool_tasks.execution import run_tool_task
 from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.tool_resources import tool_resources_for

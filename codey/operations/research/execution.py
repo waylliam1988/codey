@@ -272,6 +272,10 @@ class ResearchExecutor:
         return result, ok, code
 
     def _commit_research_knowledge(self, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
+        if self._research_scope is not None:
+            result = ToolResult(ok=False, call=call,
+                                model_text="Use knowledge_updates in submit_research_answer for this research task.")
+            return result, False, None
         outcome = tools.knowledge_commit(call.args)
         return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
 

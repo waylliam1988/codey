@@ -289,7 +289,7 @@ def readback_experiment(directory: Path, arm: Arm, case: natural.Case, *,
         nonlocal hinted, read_available
         read_available = "codemode" in snapshot.tool_names and "browser_read" in snapshot.nested_tool_names
         browser = active
-        if guidance and not hinted and browser is not None and isinstance(snapshot.research_scope, AnswerScope):
+        if guidance and not hinted and browser is not None and isinstance(snapshot.research.scope, AnswerScope):
             document = browser.document_identity()
             if document is not None and document.get("url") == case.url:
                 selected = projection(browser, record)

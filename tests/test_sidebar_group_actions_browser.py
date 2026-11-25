@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
-from codey.app import server
+from codey.app import folder_picker, server
 from codey.app.context import AppContext
 from codey.app.public_event_feed import PublicEventFeed
 
@@ -49,11 +49,11 @@ def test_group_actions_hover_keyboard_scope_and_picker(
     chosen = tmp_path / "Added Project"
     chosen.mkdir()
 
-    def pick_folder(mode: str = "open", initial: str | None = None) -> str | None:
+    def pick_folder(mode: str, initial: str) -> dict[str, object]:
         calls.append((mode, initial))
-        return None if cancel else str(chosen)
+        return folder_picker.folder_selection(None if cancel else str(chosen))
 
-    monkeypatch.setattr(server, "pick_folder", pick_folder)
+    monkeypatch.setattr(folder_picker, "_run_dialog", pick_folder)
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         page = browser.new_page(viewport={"width": 1440, "height": 900})
@@ -88,12 +88,13 @@ def test_group_actions_hover_keyboard_scope_and_picker(
         assert "new-chat.svg" in new_chat.locator(".new-chat-icon").evaluate("el => getComputedStyle(el).maskImage")
         expect(add_project.locator("svg")).to_have_attribute("viewBox", "0 0 24 24")
         projects.hover()
-        with page.expect_response("**/api/pick_folder") as picked:
+        with (page.expect_response("**/api/pick_folder?*") as picked,
+              page.expect_response("**/api/pick_folder") as started):
             add_project.click()
+        assert started.value.status == 202
         response = picked.value
-        receipt = {"request": response.request.post_data, "status": response.status, "response": response.text()}
+        receipt = {"request": started.value.request.post_data, "status": response.status, "response": response.text()}
         (tmp_path / "picker-receipt.json").write_text(json.dumps(receipt, indent=2), encoding="utf-8")
-        print(json.dumps(receipt))
         assert response.status == 200
         assert calls == [("open", str(tmp_path))]
         expect(page.locator(".project-main")).to_have_count(1 if cancel else 2)

@@ -14,9 +14,12 @@ from codey.operations.browser.browser_upload import (
     upload_model_spec,
     upload_phase,
 )
+from codey.operations.browser.turn_inputs import BrowserTurnInputs
 from codey.operations.kernel.turn_contract import ModelInputBinding, TurnSnapshot
 from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.project.edit_base import symbol_read_refs
+from codey.operations.project.turn_inputs import ProjectTurnInputs
+from codey.operations.research.turn_inputs import ResearchTurnInputs
 from codey.toolchain.tool_spec import freeze_spec_parameters, is_text_batch_tool
 
 if TYPE_CHECKING:
@@ -103,7 +106,9 @@ def controller_allowed_for_session(session: KernelSessionView) -> tuple[str, ...
     from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
 
     denied = {"submit_research_review", *(name.strip().lower() for name in session.controller_denied)}
-    if not whole_research(session):
+    if whole_research(session):
+        denied.add("knowledge_commit")
+    else:
         denied.add("submit_research_answer")
     if not requires_question_ref(session):
         denied.add("research_plan")
@@ -370,15 +375,15 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         frozen_specs=frozen,
         custom_executors=executors,
         nested_tool_names=nested,
-        research_scope=scope,
+        research=ResearchTurnInputs(scope, data_file_reads),
         ignore_runtime_claims=session.task_kind == "chat" and not session.policy.strict_research
                               and not has_explanation(session.policy.required_checks),
-        browser_copy=browser_copy,
+        browser=BrowserTurnInputs(copy=browser_copy, navigation_url=task_navigation_url, source_url=task_source_url),
         input_binding=binding,
-        task_navigation_url=task_navigation_url, task_source_url=task_source_url,
-        data_file_reads=data_file_reads,
-        symbol_read_refs=tuple(sorted(symbol_read_refs(session._memory_results, session.executed).items()))
-                         if "edit" in inventory else (),
+        project=ProjectTurnInputs(symbol_reads=(
+            tuple(sorted(symbol_read_refs(session._memory_results, session.executed).items()))
+            if "edit" in inventory else ()
+        )),
     ))
 
 

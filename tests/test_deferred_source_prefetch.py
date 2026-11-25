@@ -83,7 +83,7 @@ def test_different_page_without_404_receipts_does_not_trigger_navigation_recover
         offered, hint = task_handoff(session, snapshot, CompletionContext(), browser)
         assert '{"args":{"target":"task"},"tool":"browser_navigate"}' not in hint
         assert "Return to the bound task page" not in hint
-        assert offered.task_navigation_url == URL
+        assert offered.browser.navigation_url == URL
         assert set(offered.inventory_names) == set(snapshot.inventory_names)
         assert not session.executed
     finally:

@@ -16,7 +16,7 @@ from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
-from codey.research.answer_contract import AnswerScope, answer_scope, answer_spec, submit_answer
+from codey.research.answer_contract import ANSWER_SCOPE_VERSION, AnswerScope, answer_scope, answer_spec, submit_answer
 from codey.research.answer_report import AnswerReport, compile_answer_report
 from codey.research.calculation import calculate, calculation_fields, read_data, render_calculations
 from codey.research.ledger import ResearchLedger
@@ -105,7 +105,7 @@ def test_original_evidence_parsing_scope_and_report_slots() -> None:
     value = calculate({"operation": "growth_rate", "operands": [operand("parsed", 0), operand("parsed", 1)]}, task)
     commit(task, "computed", "calculate", value)
     frozen = answer_scope(task)
-    assert frozen.schema_version == 9 and AnswerScope.from_payload(frozen.to_payload()) == frozen
+    assert frozen.schema_version == ANSWER_SCOPE_VERSION and AnswerScope.from_payload(frozen.to_payload()) == frozen
     assert frozen.calculations == calculation_fields(task)
     spec = spec_for_tool("submit_research_answer")
     assert spec is not None
@@ -318,7 +318,7 @@ def test_data_acquisition_uses_one_read_and_replays_the_frozen_plan(tmp_path: Pa
         assert observed.ok, observed.model_text
     snapshot = build_turn_snapshot(task, native=True)
     if mode == "legacy":
-        snapshot = replace(snapshot, data_file_reads=None)
+        snapshot = replace(snapshot, research=replace(snapshot.research, data_file_reads=None))
     code = """
 const first = await tools.read_data({path:inputs.path, format:'csv'});
 const second = await tools.read_data({path:'./input.csv', format:'csv'});
