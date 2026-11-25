@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from codey.durable import DurableSession, MemoryDurableStore, SubmissionPlacement
+from codey.utils.object_fields import require_object_rows
 
 
 def _session() -> tuple[DurableSession, str]:
@@ -39,6 +40,14 @@ def test_generation_boundary_commits_placement_and_active_checkpoint_together() 
     assert session.commit_sequence() == before + 1
     assert session.task("active").state["generation_boundary"] == "post_tools"
     assert session.store.submission(str(placed[0].submission_id)).placement is SubmissionPlacement.PLACED
+    [record] = session.commits_after(before)
+    payload = record.to_payload()
+    assert payload["task_id"] == "active"
+    [active, steering] = (
+        row["task_id"] for row in require_object_rows(payload["projections"])
+        if row["type"] == "task_progressed"
+    )
+    assert (active, steering) == ("active", "steer")
 
 
 def test_generation_boundary_failure_leaves_placement_and_checkpoint_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:

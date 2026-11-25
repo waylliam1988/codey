@@ -58,13 +58,9 @@ def mutation_projection(mutation: DurableMutation) -> dict[str, object]:
             "mode": submission.mode,
             "input_receipts": receipt_fields(submission.content),
         })
-    task = mutation.task
-    if task is not None:
-        projections.append({
-            "type": "task_progressed", "task_id": task.task_id,
-            "phase": task.phase, "status": task.status, "revision": task.revision,
-        })
-    for task in mutation.task_updates:
+    primary_task = mutation.task
+    tasks = ((primary_task,) if primary_task is not None else ()) + mutation.task_updates
+    for task in tasks:
         projections.append({
             "type": "task_progressed", "task_id": task.task_id,
             "phase": task.phase, "status": task.status, "revision": task.revision,
@@ -96,6 +92,6 @@ def mutation_projection(mutation: DurableMutation) -> dict[str, object]:
         **({"edited_entry_id": mutation.edited_entry_id, "replaced_run_ids": list(mutation.replaced_run_ids)}
            if mutation.edited_entry_id is not None else {}),
         "entry_ids": [entry.entry_id for entry in mutation.entries],
-        "task_id": task.task_id if task is not None else "",
+        "task_id": primary_task.task_id if primary_task is not None else "",
         "projections": projections,
     }

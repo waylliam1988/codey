@@ -1937,3 +1937,8 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 初始四文件基线 59 passed。最终执行 `python -m pytest -q tests/durable/test_edit_admission.py tests/durable/test_branch_revision_cas.py tests/durable/test_queued_input_revision.py tests/durable/test_context_edit_folding.py tests/durable/test_fork_ancestry.py --tb=short`，70 passed。执行 `python -m pytest -q tests/test_edit_api.py tests/test_edit_conversation_plan.py --tb=short`，7 passed。两组均退出 0，无失败或跳过。
 - `python -m mypy codey/durable/edit.py tests/durable/test_branch_revision_cas.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated`、同两文件 Ruff 和 Pyrefly 退出 0。全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q059 完成。累计完成 107/358 批，完成批覆盖 189/1009 个生产文件，另有 15 批部分完成。下一批 Q060 为持久事件投影及进程存活检查。
+
+### Q060 提交事件与进程存活检查
+
+- Q059 已提交 `37eea4f7`。完整检查 `events.py` 与 `process.py`。在生成边界中，当前任务是 mutation 的主检查点，引导任务在附加检查点中。顶层 `task_id` 标识发起本次边界提交的任务，附加任务各自通过 `task_progressed` 发布。运行 `python -m pytest -q tests/durable/test_generation_boundary_commit.py::test_generation_boundary_commits_placement_and_active_checkpoint_together --tb=short` 所覆盖的回归在修改前读到 `steer` 而非 `active`，退出 1。合并主任务与附加任务的事件生成，顶层 ID 始终来自主检查点。复验也确认两个任务事件按原顺序保留。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_generation_boundary_commit.py tests/durable/test_commit_events.py tests/durable/test_inbox_history_projection.py tests/durable/test_branch_revision_cas.py --tb=short`，22 passed、无失败或跳过、退出 0。两份事件相关文件的完整严格 Any、Ruff 和 scoped Pyrefly 通过。
