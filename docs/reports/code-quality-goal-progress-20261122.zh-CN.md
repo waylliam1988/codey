@@ -2232,3 +2232,8 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - Q084C 已提交 `8a51ce31`。完整检查 `browser_detail.py`、`browser_upload.py` 和 `browser_linked_record.py`。请求解释 Markdown 围栏里的示例时，示例内容属于解释对象。旧上传分类先移除了反引号围栏，却将波浪线围栏中的上传示例识别为实际请求。在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_upload_examples.py --tb=short`，修改前 1 failed、1 passed、退出 1。上传范围解析与上传状态检查共用围栏模式后，两种围栏均通过，直接上传请求仍会生成范围。
 - 详情与链接记录收窄回执字段，链接记录用正则匹配对象提取字段，清除 27 条严格 Any 诊断。三份源码和回归整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 `python -m tools.kernel_type_precision_gate` 均退出 0。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_upload_examples.py tests/test_browser_detail_production.py tests/test_browser_linked_record.py tests/test_browser_file_upload.py tests/test_browser_structured_upload_production.py tests/test_upload_wait_contract.py tests/test_task_contract_boundaries.py --tb=short`，51 passed、无失败或跳过、退出 0。覆盖真实浏览器、链接记录、结构化上传、等待和任务合同。Q084D 完成。累计完成 149/375 批，覆盖 251/1011 个生产文件，另有 15 批部分完成。下一批 Q085 核对浏览器交互、资源引用和延迟导入。
+
+### Q085 浏览器复制、进度恢复、引用与资源
+
+- Q084D 已提交 `a2b5c98a`。Q085 的真实 Chromium 验证中，类型复制的五个用例访问受控页面时收到 HTTP 404，随后捕获到空表格和空 JSON 记录，最终脚本应答用尽。用 `python -` 从 `HEAD` 提取原始分类和恢复函数，在进程内替换后运行 `tests/test_browser_typed_copy.py::test_production_copy_preserves_precision_and_writes_once`，同样五项失败、退出 1，确认症状先于 Q085 生产改动。
+- 类型复制验证工具原先把页面路由安装在旧搜索浏览器上。生产任务经 `source_browser` 使用任务所有的浏览器实例，旧工具送入的配置无法携带该路由。复用默认复制测试及浏览器专项工具已有的 `ResumableBrowserSearchProvider` 后，固定页面路由随任务浏览器执行。保留原先的精确内容、单次写入与回执断言。在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_typed_copy.py --tb=short`，最终 13 passed、无失败或跳过、退出 0。工具和测试整文件严格 Any 及 Ruff 通过。工具归属 Q272，已在本批完成该文件的审查和验证。

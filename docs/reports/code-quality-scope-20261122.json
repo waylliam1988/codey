@@ -7468,7 +7468,8 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 3
+      "candidate_test_count": 3,
+      "followups": ["Q085 reviewed and verified tools/browser_typed_copy_live_gate.py while repairing its stale browser adapter. All 13 typed-copy tests, whole-file strict Any and Ruff passed. Count this file with its owning batch and reuse that evidence unless later changes invalidate it."]
     },
     {
       "responsibility": "tools: browser contracts and interaction",

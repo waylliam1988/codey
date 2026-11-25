@@ -6,11 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
 
-from playwright.sync_api import Route
-
 from codey.app.headless_runner import HeadlessRequest, run_headless
-from codey.research.browser_search import BrowserSearchProvider
+from codey.automation.browser_contracts import RouteDecision
 from codey.types.json_value import JsonObject
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider
 from tools.browser_leaf_exposure_ab import response_actions
 from tools.browser_production_live_gate import select_target
 from tools.completion_artifact_audit import tool_receipts
@@ -63,7 +62,7 @@ def run_copy(directory: Path, target: Target, name: str) -> JsonObject:
     file = project / case.path
     file.write_text(case.original, encoding="utf-8", newline="")
 
-    def route(_provider: BrowserSearchProvider, request: Route) -> None:
+    def route(_provider: ResumableBrowserSearchProvider, request: RouteDecision) -> None:
         allowed = request.request.url == URL
         request.fulfill(status=200 if allowed else 404, body=case.html if allowed else "",
                         content_type="text/html; charset=utf-8")
@@ -75,9 +74,9 @@ def run_copy(directory: Path, target: Target, name: str) -> JsonObject:
         return None
 
     recorder = ExperimentProvider(target, directory, fixed_acquisition=False)
-    browser = BrowserSearchProvider(headless=True)
+    browser = ResumableBrowserSearchProvider(headless=True)
 
-    def search_factory() -> BrowserSearchProvider:
+    def search_factory() -> ResumableBrowserSearchProvider:
         return browser
 
     def connect(*_args: object, **_kwargs: object) -> ExperimentProvider:
@@ -88,12 +87,14 @@ def run_copy(directory: Path, target: Target, name: str) -> JsonObject:
         requested_capabilities=("web.read", "browser.observe", "browser.interact", "browser.effect"),
         model_selection={"model": target.model, "base_url": target.base_url})
     write_json(directory / "request.json", {"task": case.task, "model": target.model, "case": name})
+    available: dict[str, bool] = {"local": True}
+    available_tabs: dict[str, bool] = {}
     try:
-        with patch.object(BrowserSearchProvider, "_guard_request", route), \
+        with patch.object(ResumableBrowserSearchProvider, "_guard_request", route), \
                 patch("codey.research.search_factory.default_research_search_provider", search_factory), \
                 patch("codey.operations.task_phases.dispatch.default_research_search_provider", search_factory), \
-                patch("codey.app.provider_services.provider_availability", return_value={"local": True}), \
-                patch("codey.app.provider_services.provider_tab_availability", return_value={}), \
+                patch("codey.app.provider_services.provider_availability", return_value=available), \
+                patch("codey.app.provider_services.provider_tab_availability", return_value=available_tabs), \
                 patch("codey.app.review_service.run_review", unavailable_review):
             result = run_headless(request, emit_jsonl=emit, connect_provider=connect)
     finally:
