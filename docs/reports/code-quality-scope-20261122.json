@@ -389,6 +389,9 @@
         "Q069",
         "Q070",
         "Q071",
+        "Q071B",
+        "Q071C",
+        "Q071D",
         "Q072",
         "Q073",
         "Q074"
@@ -4494,19 +4497,43 @@
       "result": "Refuse a missing pinned premise during answer scope selection and inherit the scope of resolved staged premises when creating an inference. Both regressions, 75 existing related cases and the production type gates passed. One unrelated known-baseline normalization failure was reproduced with the original modules and tracked in Q098."
     },
     {
-      "responsibility": "codey/knowledge: knowledge and memory",
-      "files": [
-        "codey/knowledge/archive.py",
-        "codey/knowledge/concept_schema.py",
-        "codey/knowledge/concepts.py",
-        "codey/knowledge/note.py",
-        "codey/knowledge/recall.py"
-      ],
+      "responsibility": "Stable knowledge archive identities",
+      "files": ["codey/knowledge/archive.py"],
       "id": "Q071",
+      "status": "completed_unchanged",
+      "reviewed_files": ["codey/knowledge/archive.py"],
+      "verified_files": ["codey/knowledge/archive.py"],
+      "tests": ["tests/test_research_reference_coverage.py"],
+      "result": "Direct digest and part-boundary checks plus existing caller verification passed. Whole-file strict Any and Ruff passed."
+    },
+    {
+      "responsibility": "Knowledge note persistence and concept schema",
+      "files": ["codey/knowledge/concept_schema.py", "codey/knowledge/note.py"],
+      "id": "Q071B",
+      "status": "completed_changed",
+      "reviewed_files": ["codey/knowledge/concept_schema.py", "codey/knowledge/note.py"],
+      "verified_files": ["codey/knowledge/concept_schema.py", "codey/knowledge/note.py"],
+      "tests": ["tests/test_knowledge_note_import.py", "tests/test_fail_closed_runtime_sweep.py", "tests/test_knowledge.py", "tests/test_knowledge_sqlite_authority.py", "tests/test_knowledge_repository.py", "tests/test_knowledge_answer_scope.py"],
+      "reviewed_support": ["tests/test_knowledge_note_import.py"],
+      "result": "Malformed YAML syntax and noniterable list fields now follow the existing invalid-note rejection path. Removed one unused private regex. Typed the note factory, serialization and YAML boundary. Both regressions passed, as did 57 scoped tests, three compatibility comparisons and all production gates."
+    },
+    {
+      "responsibility": "Knowledge concept graph and support projections",
+      "files": ["codey/knowledge/concepts.py"],
+      "id": "Q071C",
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 35
+      "tests": ["tests/test_knowledge.py", "tests/test_long_term_knowledge.py"]
+    },
+    {
+      "responsibility": "Knowledge access and recall presentation",
+      "files": ["codey/knowledge/recall.py"],
+      "id": "Q071D",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/test_knowledge_multilingual_recall.py", "tests/test_knowledge_repository.py", "tests/test_research_prior_knowledge.py"]
     },
     {
       "responsibility": "codey/knowledge: shared contracts and module services",
@@ -10016,6 +10043,11 @@
       "batch": "Q066",
       "replacement": ["Q066", "Q066B", "Q066C", "Q066D"],
       "reason": "Verify storage and controls, learning rules, projections and backend composition in dependency order."
+    },
+    {
+      "batch": "Q071",
+      "replacement": ["Q071", "Q071B", "Q071C", "Q071D"],
+      "reason": "Archive identities, note persistence and its schema, concept graph composition, and recall have independently verifiable contracts."
     },
     {
       "commit": "64bd6337",

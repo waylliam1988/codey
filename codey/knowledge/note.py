@@ -11,20 +11,14 @@ from __future__ import annotations
 import math
 import re
 import uuid
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Self, SupportsFloat, SupportsIndex, TypedDict, Unpack
 
 from codey.knowledge.concept_schema import ConceptRelation, clean_relations
 from codey.policies.prompt_safety import is_prompt_visible_text_safe
-
-
-def _yaml() -> Any:
-    # Lazy: keep `import codey.knowledge.note` (and AppContext/serve boot)
-    # free of the yaml import tax until a note is actually serialized.
-    import yaml
-
-    return yaml
+from codey.types.json_value import JsonObject
 
 NOTE_TYPES = (
     "source",
@@ -59,7 +53,6 @@ _TYPE_FOLDERS = {
     "commit": "commits",
     "note": "notes",
 }
-_WIKILINK_RE = re.compile(r"\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]")
 _WIKILINK_KIND_RE = re.compile(r"\[\[([^\]|]+?)(?:\|[^\]]+)?\]\](?:\s*\(([a-z_]+)\))?")
 _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n?(.*)$", re.DOTALL)
 _SLUG_RE = re.compile(r"[^a-z0-9\u4e00-\u9fff]+")
@@ -87,6 +80,22 @@ def is_safe_id(note_id: str) -> bool:
     if ".." in note_id or "/" in note_id or "\\" in note_id:
         return False
     return bool(_SAFE_ID_RE.match(note_id))
+
+
+class _NoteOptions(TypedDict, total=False):
+    tags: list[str]
+    sources: list[str]
+    aliases: list[str]
+    relations: list[ConceptRelation]
+    open_questions: list[str]
+    confidence: float | None
+    status: str
+    session_id: str
+    project: str
+    retrieved_at: str | None
+    valid_until: str | None
+    created: str
+    updated: str
 
 
 @dataclass
@@ -122,9 +131,8 @@ class KnowledgeNote:
             self.updated = self.created
 
     @classmethod
-    def create(cls: Any, *, type: str, title: str, body: str, **kwargs: Any) -> KnowledgeNote:
-        note_id = kwargs.pop("id", None) or make_id(title)
-        return cast(KnowledgeNote, cls(id=note_id, type=type, title=title, body=body, **kwargs))
+    def create(cls, *, type: str, title: str, body: str, id: str | None = None, **kwargs: Unpack[_NoteOptions]) -> Self:
+        return cls(id=id or make_id(title), type=type, title=title, body=body, **kwargs)
 
     @property
     def folder(self) -> str:
@@ -133,17 +141,17 @@ class KnowledgeNote:
     def wikilink_edges(self) -> list[tuple[str, str]]:
         edges: dict[str, str] = {}
         for match in _WIKILINK_KIND_RE.finditer(self.body):
-            target = match.group(1).strip()
+            target, relation = match.groups("")
+            target = target.strip()
             if not target:
                 continue
-            kind = match.group(2)
-            kind = kind if kind in LINK_KINDS else "relates"
+            kind = relation if relation in LINK_KINDS else "relates"
             if target not in edges or (edges[target] == "relates" and kind != "relates"):
                 edges[target] = kind
         return list(edges.items())
 
-    def frontmatter(self) -> dict[str, Any]:
-        data: dict[str, Any] = {
+    def frontmatter(self) -> JsonObject:
+        data: JsonObject = {
             "id": self.id,
             "type": self.type,
             "title": self.title,
@@ -158,7 +166,8 @@ class KnowledgeNote:
         if self.aliases:
             data["aliases"] = list(self.aliases)
         if self.relations:
-            data["relations"] = [dict(r) for r in self.relations]
+            data["relations"] = [{"src": relation["src"], "dst": relation["dst"], "kind": relation["kind"]}
+                                 for relation in self.relations]
         if self.open_questions:
             data["open_questions"] = list(self.open_questions)
         if self.confidence is not None:
@@ -176,7 +185,10 @@ class KnowledgeNote:
         return data
 
     def to_markdown(self) -> str:
-        header = _yaml().safe_dump(
+        # Keep PyYAML out of the normal application import path.
+        from yaml import safe_dump
+
+        header = safe_dump(
             self.frontmatter(),
             allow_unicode=True,
             sort_keys=False,
@@ -187,20 +199,30 @@ class KnowledgeNote:
 
     @classmethod
     def from_markdown(cls, text: str) -> KnowledgeNote:
+        from yaml import YAMLError, safe_load
+
         match = _FRONTMATTER_RE.match(text.lstrip("\ufeff"))
         if not match:
             raise ValueError("note is missing a frontmatter block")
-        meta = _yaml().safe_load(match.group(1)) or {}
-        if not isinstance(meta, dict):
+        header, body = match.groups("")
+        try:
+            loaded: object = safe_load(header)
+        except YAMLError as exc:
+            raise ValueError("invalid note frontmatter syntax") from exc
+        if not loaded:
+            meta: Mapping[object, object] = {}
+        elif isinstance(loaded, dict):
+            meta = loaded
+        else:
             raise ValueError("note frontmatter is not a mapping")
         return cls(
             id=str(meta.get("id") or ""),
             type=str(meta.get("type") or "note"),
             title=str(meta.get("title") or ""),
-            body=match.group(2).strip("\n"),
-            tags=[str(t) for t in (meta.get("tags") or [])],
-            sources=[str(s) for s in (meta.get("sources") or [])],
-            aliases=[str(a) for a in (meta.get("aliases") or [])],
+            body=body.strip("\n"),
+            tags=_metadata_strings(meta.get("tags")),
+            sources=_metadata_strings(meta.get("sources")),
+            aliases=_metadata_strings(meta.get("aliases")),
             relations=clean_relations(meta.get("relations"))[0],
             open_questions=clean_open_questions(meta.get("open_questions") or []),
             confidence=_as_float(meta.get("confidence")),
@@ -236,14 +258,23 @@ def _is_safe_open_question(text: str) -> bool:
     return is_prompt_visible_text_safe(text)
 
 
-def _as_float(value: Any) -> float | None:
-    if isinstance(value, bool):
+def _metadata_strings(value: object) -> list[str]:
+    if not value:
+        return []
+    if not isinstance(value, Iterable):
+        raise ValueError("note frontmatter list field is not iterable")
+    items: Iterable[object] = value
+    return [str(item) for item in items]
+
+
+def _as_float(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (str, bytes, bytearray, SupportsFloat, SupportsIndex)):
         return None
     try:
-        number = float(value) if value is not None else None
+        number = float(value)
     except (TypeError, ValueError, OverflowError):
         return None
-    if number is None or not math.isfinite(number):
+    if not math.isfinite(number):
         return None
     return number
 
@@ -255,5 +286,5 @@ def _safe_confidence(value: object) -> float | None:
     return round(max(0.0, min(1.0, number)), 2)
 
 
-def _as_str(value: Any) -> str | None:
+def _as_str(value: object) -> str | None:
     return str(value) if value not in (None, "") else None

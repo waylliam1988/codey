@@ -2044,3 +2044,15 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 作用域推导拒绝缺失的固定版本，推论使用已经解析的暂存版本。相同命令复验 2 passed、退出 0。回归核对原引用身份、个人前提、暂存推论和最终持久化内容。研究引用恢复逐字段收窄，保留精确键集合、重复绑定及原身份序列。`answer_refs.py`、`research/references.py` 和新增回归的完整严格 Any 及 Ruff 均退出 0，`research/references.py` 的已验证范围记入 Q169。
 - 调用方执行 `python -m pytest -q tests/test_hybrid_knowledge_guidance.py tests/test_research_reference_coverage.py tests/test_research_question_ownership.py tests/test_research_long_term_loop.py --tb=short -o faulthandler_timeout=60`，75 passed、1 failed、无跳过、退出 1。失败节点 `test_strict_optional_accumulation_cannot_create_a_second_answer` 在归一化阶段得到空 `protocol_error`。用 `python -` 从 `9b24f17a` 在内存载入两份原源码再运行该节点，结果相同，1 failed、退出 1。断言发生在工具执行和发布之前，由 Q098 核对当前协议合同与执行防线。
 - 全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 `python -m tools.kernel_type_precision_gate` 均退出 0。Q070 完成。累计完成 122/362 批，完成批覆盖 208/1011 个生产文件，另有 15 批部分完成。下一批 Q071 拆分 Knowledge 档案写入、概念关系和检索模块。
+
+### Q071 Knowledge 稳定档案标识
+
+- Q070 已提交 `b567c266`。按档案身份、笔记及概念模式、概念图、检索拆分 Q071 原有五文件，各文件保留唯一归属。完整检查 `archive.py`，以 `python -` 验证 UTF-8 规范摘要和不同类别、输入顺序及字段边界。`python -m mypy codey/knowledge/archive.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 和同文件 Ruff 均退出 0。
+- Q070 已运行 `tests/test_research_reference_coverage.py` 中的固定版本、推论身份和暂存重试测试，沿用该结果。Q071 完成，无需修改源码，进度随下一提交保存。累计完成 123/365 批，覆盖 209/1011 个生产文件，另有 15 批部分完成。下一批 Q071B 为 Knowledge 笔记持久化与概念模式。
+
+### Q071B Knowledge 笔记持久化与概念模式
+
+- 完整检查 `note.py`、`concept_schema.py`。旧笔记迁移跳过解析器判定无效的笔记。打开带未闭合 YAML 列表或 `tags: 5` 的旧库时，原解析器分别泄漏 PyYAML `ParserError` 和 `TypeError`，阻断有效笔记导入。运行 `python -m pytest -q tests/test_knowledge_note_import.py --tb=short`。未闭合列表在直接运行中失败，随后在内存加载 `b567c266` 原解析器运行最终两输入，2 failed、退出 1。把两种错误纳入现有 `ValueError` 边界，同两用例通过，显式导入继续拒绝无效笔记。
+- 笔记工厂、导出和 YAML 动态读取的整文件类型收窄，保留延迟导入 PyYAML。移除私有 `_WIKILINK_RE`，仓内仅历史 AST 基线提到该名，运行路径使用能识别关系类型的 `_WIKILINK_KIND_RE`。用 `python -` 加载 `b567c266` 旧实现比较三份有效 YAML 的笔记值、导出字节及链接结果，并在同一探针确认导入笔记模块仍不加载 YAML，退出 0。首次探针的内联问题字符串未加引号导致 YAML 解析失败，修正输入后重跑。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_note_import.py tests/test_fail_closed_runtime_sweep.py::GhostKnowledgeSweepTests::test_store_skips_malformed_legacy_notes tests/test_knowledge.py tests/test_knowledge_sqlite_authority.py tests/test_knowledge_repository.py tests/test_knowledge_answer_scope.py --tb=short`，57 passed、无失败或跳过、退出 0。覆盖旧笔记迁移、显式导入、SQLite 文档、概念关系和研究归档调用方。
+- 两份生产源码及回归严格 Any 与 Ruff 均退出 0，原 55 条 mypy 诊断已清除。全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 `python -m tools.kernel_type_precision_gate` 均退出 0。Q071B 完成。累计完成 124/365 批，覆盖 211/1011 个生产文件，另有 15 批部分完成。下一批 Q071C 审查概念图。
