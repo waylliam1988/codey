@@ -4531,10 +4531,12 @@
       "responsibility": "Knowledge access and recall presentation",
       "files": ["codey/knowledge/recall.py"],
       "id": "Q071D",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/test_knowledge_multilingual_recall.py", "tests/test_knowledge_repository.py", "tests/test_research_prior_knowledge.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/knowledge/recall.py"],
+      "verified_files": ["codey/knowledge/recall.py"],
+      "tests": ["tests/test_knowledge_recall_budget.py", "tests/test_knowledge_multilingual_recall.py", "tests/test_knowledge_repository.py", "tests/test_research_prior_knowledge.py", "tests/test_long_term_knowledge.py", "tests/test_research_read_guidance_ab.py"],
+      "reviewed_support": ["tests/test_knowledge_recall_budget.py"],
+      "result": "Full recall honors budgets too small for its introduction. Typed the provenance boundary. The 28-case production group passed. The expanded group passed 39 cases and reproduced three unchanged compact A/B fixture failures tracked in Q087."
     },
     {
       "responsibility": "codey/knowledge: shared contracts and module services",
@@ -4755,7 +4757,8 @@
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 10
+      "candidate_test_count": 10,
+      "followups": ["Q071D expanded test_research_read_guidance_ab.py reproduces three failures with the original recall implementation from 8238b0f2. The experiment expects a strict text reduction at a one-character budget where both forms are empty, and its fixed header replacement rejects the 900-character locator fallback. Check the experiment fixture alongside knowledge context guidance." ]
     },
     {
       "responsibility": "codey/operations: context and checkpoint boundaries",

@@ -2070,3 +2070,9 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge.py::ConceptGraphBuilderTests tests/test_knowledge.py::UnifiedResearchGraphTests tests/test_knowledge_version_graph.py tests/test_long_term_knowledge.py tests/test_research_knowledge_acceptance.py --tb=short -o faulthandler_timeout=60`，27 passed、2 failed、退出 1。将 `9650f518` 的 `concepts.py` 在内存载入并用 `pytest.main` 分别运行前四段目标与最后一份文件，结果同为 27 passed（退出 0）和 2 failed（退出 1）。第一次内存载入因默认 GBK 解码失败，改用 UTF-8 后完成对照。
 - 两项集成失败均在首个 `web_search`。事件记录显示实际浏览器搜索因 `search_navigation_failed` 结束，概念图尚未执行。夹具替换了默认研究搜索工厂，但首轮混合任务未收到该替身的返回。Q162 跟进混合搜索装配及测试替身，原断言保留。
 - Q071C 完成。累计完成 125/365 批，覆盖 212/1011 个生产文件，另有 15 批部分完成。下一批 Q071D 检查检索范围与呈现。
+
+### Q071D Knowledge 检索范围与呈现
+
+- Q071C 已提交 `8238b0f2`。完整检查 `recall.py`。`max_chars` 约束完整检索文本，普通模式在预算小于说明头时仍返回整段说明。使用一条有效的会话条目请求 1 字符，在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_recall_budget.py --tb=short`。夹具补齐会话作用域后，修改前 1 failed、1 passed、退出 1。加入说明头的预算检查后两种模式均通过，并验证正常预算仍提供同一条目。
+- 最终执行 `python -m pytest -q tests/test_knowledge_recall_budget.py tests/test_knowledge_multilingual_recall.py tests/test_knowledge_repository.py tests/test_research_prior_knowledge.py tests/test_long_term_knowledge.py --tb=short`，28 passed、无失败或跳过、退出 0。加入 `tests/test_research_read_guidance_ab.py` 的扩展组为 39 passed、3 failed、退出 1。内存载入 `8238b0f2` 原检索文件后单跑实验文件，11 passed、3 failed、退出 1。两个 1 字符案例要求空字符串严格缩短，900 字符案例的固定实验标头无法处理短定位器。Q087 核对该实验夹具。
+- `recall.py` 和新回归的严格 Any 与 Ruff 通过，清除来源元数据边界的 1 条 Any 诊断。全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel 精度门禁均通过。Q071D 完成。累计完成 126/365 批，覆盖 213/1011 个生产文件，另有 15 批部分完成。下一批 Q072 检查 Knowledge 存储和图谱依赖。

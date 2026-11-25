@@ -197,6 +197,8 @@ def render_recall(hits: list[KnowledgeHit], *, max_chars: int = 6000, include_an
                 if len("\n".join(lines)) + 1 + len(locator) <= max_chars:
                     lines.append(locator)
             return "\n".join(lines) if len(lines) > 1 else ""
+    elif len("\n".join(lines)) > max_chars:
+        return ""
     for hit in hits:
         version, value = hit.version, hit.version.value
         row: JsonObject = {"id": value.id, "revision": version.revision, "kind": value.kind,
@@ -211,8 +213,9 @@ def render_recall(hits: list[KnowledgeHit], *, max_chars: int = 6000, include_an
             references: list[JsonValue] = [
                 {"target": ref.target, "revision": ref.revision, "relation": ref.relation} for ref in value.references
             ]
+            provenance: object = value.provenance
             row.update(origin=value.origin, path=list[JsonValue](hit.path), content=value.content[:700],
-                conditions=canonical_json_object(value.conditions), provenance=canonical_json_object(value.provenance),
+                conditions=canonical_json_object(value.conditions), provenance=canonical_json_object(provenance),
                 references=references)
         remaining = max_chars - len("\n".join(lines)) - 1
         text = canonical_json(row)
