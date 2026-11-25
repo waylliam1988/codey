@@ -2083,3 +2083,10 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 统一文档行解码，按路径查询在同一 SELECT 内读取文档，清除本文件 27 条 Any 诊断。外层 `KnowledgeStore.write_note` 的独立提前返回另列 Q072D，届时验证公开路径合同。
 - 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_document_path.py tests/test_knowledge_sqlite_authority.py tests/test_knowledge_note_import.py tests/test_knowledge.py tests/test_knowledge_answer_scope.py --tb=short`，53 passed、无失败或跳过、退出 0。两份修改文件的完整严格 Any、Ruff、全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel 精度门禁均通过。
 - Q072 完成。累计完成 127/371 批，覆盖 214/1011 个生产文件，另有 15 批部分完成。下一批 Q072B 审查 SQLite 索引。
+
+### Q072B Knowledge SQLite 索引
+
+- Q072 已提交 `0f0b5472`。完整审查 `index.py` 的连接、查询及投影写入。笔记正文、标签、来源和全文索引属于一次更新。用 SQLite 触发器令来源插入失败，再成功写另一条笔记。单独调用和外层事务捕获异常的两个用例均在修改前留下部分正文和标签，执行 `python -m pytest -q tests/test_knowledge_index_transactions.py --tb=short` 得 2 failed、退出 1。写入使用已有事务和嵌套保存点后同两例通过，后续成功写入仍提交。
+- 收窄线程本地连接和 SQLite 行的类型，验证查询记录值，保留笔记路径及调用方映射接口。整文件 115 条严格 Any 诊断清除。首次生产 mypy 发现路径类型及历史查询字典与两个调用方不合，调整索引返回边界后通过。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_knowledge_index_transactions.py tests/test_knowledge.py tests/test_knowledge_multilingual_recall.py tests/test_knowledge_indexer_startup.py tests/test_knowledge_sqlite_authority.py tests/test_knowledge_repository.py tests/test_knowledge_document_path.py tests/test_knowledge_version_graph.py --tb=short`，66 passed、无失败或跳过、退出 0。修改前原计划三文件基线 53 passed。索引与新增回归的完整严格 Any、Ruff、全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel 精度门禁均通过。
+- Q072B 完成。累计完成 128/371 批，覆盖 215/1011 个生产文件，另有 15 批部分完成。下一批 Q072C 审查 Knowledge 对象仓库。

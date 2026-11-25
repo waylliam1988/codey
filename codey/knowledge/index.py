@@ -6,11 +6,60 @@ import contextlib
 import json
 import sqlite3
 import threading
-from collections.abc import Generator
+from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Protocol, TypedDict
 
 from codey.knowledge.note import KnowledgeNote
+from codey.types.json_value import JsonObject, require_json_integer, require_json_string
+
+
+class _IndexRow(Protocol):
+    def keys(self) -> list[str]: ...
+
+    def __getitem__(self, key: str | int, /) -> object: ...
+
+
+_row_factory: Callable[[sqlite3.Cursor, tuple[object, ...]], _IndexRow] = sqlite3.Row
+
+
+class _IndexThread(threading.local):
+    conn: sqlite3.Connection | None = None
+    transaction_depth: int = 0
+
+
+class _NoteRow(TypedDict):
+    id: str | None
+    path: str | None
+    type: str | None
+    title: str | None
+    confidence: int | float | None
+    status: str | None
+    session_id: str | None
+    project: str | None
+    created: str | None
+    updated: str | None
+    content_hash: str | None
+    body: str | None
+    open_questions: str | None
+
+
+def _row_values(row: _IndexRow) -> Iterator[tuple[str, str | int | float | None]]:
+    columns = row.keys()
+    for key in columns:
+        value = row[key]
+        if value is not None and not isinstance(value, (str, int, float)):
+            raise ValueError(f"invalid SQLite index value for {key}")
+        yield key, value
+
+
+def _row_object(row: _IndexRow) -> JsonObject:
+    return dict(_row_values(row))
+
+
+def _note_text(row: _IndexRow, key: str) -> str | None:
+    value = row[key]
+    return require_json_string(value, key) if value is not None else None
 
 
 class KnowledgeIndex:
@@ -18,7 +67,7 @@ class KnowledgeIndex:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
+        self._conn.row_factory = _row_factory
         try:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA busy_timeout=5000")
@@ -26,7 +75,7 @@ class KnowledgeIndex:
         except sqlite3.OperationalError:
             pass
         self._lock = threading.RLock()
-        self._local = threading.local()
+        self._local = _IndexThread()
         self._read_conns: set[sqlite3.Connection] = set()
         self._read_conns_lock = threading.Lock()
         self._closed = False
@@ -39,15 +88,15 @@ class KnowledgeIndex:
 
     def _read_conn(self) -> sqlite3.Connection:
         """Thread-local read connection; writes stay on _conn under _lock."""
-        if getattr(self._local, "transaction_depth", 0):
+        if self._local.transaction_depth:
             return self._conn
         with self._read_conns_lock:
             if self._closed:
                 raise RuntimeError("knowledge index is closed")
-        conn = getattr(self._local, "conn", None)
+        conn = self._local.conn
         if conn is None:
             conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
-            conn.row_factory = sqlite3.Row
+            conn.row_factory = _row_factory
             with contextlib.suppress(sqlite3.OperationalError):
                 conn.execute("PRAGMA busy_timeout=5000")
             with self._read_conns_lock:
@@ -63,7 +112,7 @@ class KnowledgeIndex:
         """Serialize a knowledge transaction, including its derived projections."""
         with self._lock:
             self._ensure_open_locked()
-            depth = getattr(self._local, "transaction_depth", 0)
+            depth = self._local.transaction_depth
             savepoint = f"knowledge_{depth}"
             self._conn.execute("BEGIN IMMEDIATE" if depth == 0 else f"SAVEPOINT {savepoint}")
             self._local.transaction_depth = depth + 1
@@ -79,10 +128,6 @@ class KnowledgeIndex:
                 raise
             finally:
                 self._local.transaction_depth = depth
-
-    def _commit(self) -> None:
-        if not getattr(self._local, "transaction_depth", 0):
-            self._conn.commit()
 
     def _detect_fts(self) -> bool:
         try:
@@ -133,9 +178,7 @@ class KnowledgeIndex:
         c.commit()
 
     def upsert(self, note: KnowledgeNote, *, path: str, content_hash: str) -> None:
-        with self._lock:
-            self._ensure_open_locked()
-            c = self._conn
+        with self.transaction() as c:
             c.execute(
                 "INSERT INTO notes(id,path,type,title,confidence,status,session_id,project,"
                 "created,updated,content_hash,body,open_questions) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) "
@@ -183,12 +226,9 @@ class KnowledgeIndex:
                     "INSERT INTO notes_fts(id,title,body) VALUES(?,?,?)",
                     (note.id, note.title, note.body),
                 )
-            self._commit()
 
     def remove(self, note_id: str) -> None:
-        with self._lock:
-            self._ensure_open_locked()
-            c = self._conn
+        with self.transaction() as c:
             c.execute("DELETE FROM links WHERE src_id=? OR dst_id=?", (note_id, note_id))
             c.execute("DELETE FROM tags WHERE note_id=?", (note_id,))
             c.execute("DELETE FROM sources WHERE note_id=?", (note_id,))
@@ -196,12 +236,9 @@ class KnowledgeIndex:
             c.execute("DELETE FROM notes WHERE id=?", (note_id,))
             if self.fts_enabled:
                 c.execute("DELETE FROM notes_fts WHERE id=?", (note_id,))
-            self._commit()
 
     def clear(self) -> None:
-        with self._lock:
-            self._ensure_open_locked()
-            c = self._conn
+        with self.transaction() as c:
             c.execute("DELETE FROM links")
             c.execute("DELETE FROM tags")
             c.execute("DELETE FROM sources")
@@ -209,33 +246,49 @@ class KnowledgeIndex:
             c.execute("DELETE FROM notes")
             if self.fts_enabled:
                 c.execute("DELETE FROM notes_fts")
-            self._commit()
 
     def add_link(self, src_id: str, dst_id: str, kind: str = "relates") -> None:
-        with self._lock:
-            self._ensure_open_locked()
-            self._conn.execute(
+        with self.transaction() as c:
+            c.execute(
                 "INSERT OR IGNORE INTO links(src_id,dst_id,kind) VALUES(?,?,?)",
                 (src_id, dst_id, kind),
             )
-            self._commit()
 
-    def get(self, note_id: str) -> dict[str, Any] | None:
-        row = self._read_conn().execute("SELECT * FROM notes WHERE id=?", (note_id,)).fetchone()
-        return dict(row) if row else None
+    def get(self, note_id: str) -> _NoteRow | None:
+        row: _IndexRow | None = self._read_conn().execute("SELECT * FROM notes WHERE id=?", (note_id,)).fetchone()
+        if row is None:
+            return None
+        confidence = row["confidence"]
+        if confidence is not None and not isinstance(confidence, (int, float)):
+            raise ValueError("invalid SQLite index value for confidence")
+        return {
+            "id": _note_text(row, "id"),
+            "path": _note_text(row, "path"),
+            "type": _note_text(row, "type"),
+            "title": _note_text(row, "title"),
+            "confidence": confidence,
+            "status": _note_text(row, "status"),
+            "session_id": _note_text(row, "session_id"),
+            "project": _note_text(row, "project"),
+            "created": _note_text(row, "created"),
+            "updated": _note_text(row, "updated"),
+            "content_hash": _note_text(row, "content_hash"),
+            "body": _note_text(row, "body"),
+            "open_questions": _note_text(row, "open_questions"),
+        }
 
     def count(self) -> int:
-        row = self._read_conn().execute("SELECT COUNT(*) FROM notes").fetchone()
-        return int(row[0])
+        row: _IndexRow = self._read_conn().execute("SELECT COUNT(*) FROM notes").fetchone()
+        return require_json_integer(row[0], "note count")
 
     def resolve(self, target: str) -> str | None:
         if self.get(target):
             return target
-        row = self._read_conn().execute(
+        row: _IndexRow | None = self._read_conn().execute(
             "SELECT id FROM notes WHERE title=? LIMIT 1",
             (target,),
         ).fetchone()
-        return row["id"] if row else None
+        return require_json_string(row["id"], "note id") if row is not None else None
 
     @staticmethod
     def _escape_like(query: str) -> str:
@@ -243,14 +296,14 @@ class KnowledgeIndex:
         # into "everything".
         return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
-    def search(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
+    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
         query = (query or "").strip()
         if not query:
             return []
         conn = self._read_conn()
         if self.fts_enabled:
             try:
-                rows = conn.execute(
+                rows: list[_IndexRow] = conn.execute(
                     "SELECT n.id,n.type,n.title,n.status,n.confidence,n.updated,"
                     "n.session_id,n.project,"
                     " snippet(notes_fts,2,'','','...',12) AS snippet"
@@ -259,7 +312,7 @@ class KnowledgeIndex:
                     (_fts_query(query), limit),
                 ).fetchall()
                 if rows:
-                    return [dict(r) for r in rows]
+                    return [_row_object(row) for row in rows]
             except sqlite3.OperationalError as exc:
                 if "locked" in str(exc).lower():
                     import logging
@@ -276,7 +329,7 @@ class KnowledgeIndex:
             " ORDER BY updated DESC LIMIT ?",
             (like, like, limit),
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [_row_object(row) for row in rows]
 
     def recent(
         self,
@@ -285,7 +338,7 @@ class KnowledgeIndex:
         session_id: str = "",
         types: tuple[str, ...] = (),
         project: str = "",
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str, object]]:
         clauses: list[str] = []
         args: list[object] = []
         if session_id:
@@ -299,50 +352,50 @@ class KnowledgeIndex:
             args.extend(types)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
         args.append(limit)
-        rows = self._read_conn().execute(
+        rows: list[_IndexRow] = self._read_conn().execute(
             "SELECT id,type,title,status,updated,session_id,project,body,open_questions FROM notes"
             f"{where} ORDER BY updated DESC LIMIT ?",
             tuple(args),
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [dict(_row_values(row)) for row in rows]
 
-    def links_for(self, note_ids: list[str]) -> list[dict[str, Any]]:
+    def links_for(self, note_ids: list[str]) -> list[JsonObject]:
         if not note_ids:
             return []
         marks = ",".join("?" * len(note_ids))
-        rows = self._read_conn().execute(
+        rows: list[_IndexRow] = self._read_conn().execute(
             f"SELECT src_id,dst_id,kind FROM links WHERE src_id IN ({marks})",
             note_ids,
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [_row_object(row) for row in rows]
 
-    def notes_by_ids(self, note_ids: list[str]) -> list[dict[str, Any]]:
+    def notes_by_ids(self, note_ids: list[str]) -> list[JsonObject]:
         ids = _unique(note_ids)
         if not ids:
             return []
         marks = ",".join("?" * len(ids))
-        rows = self._read_conn().execute(
+        rows: list[_IndexRow] = self._read_conn().execute(
             "SELECT id,path,type,title,confidence,status,session_id,project,"
             "created,updated,content_hash,body,open_questions FROM notes"
             f" WHERE id IN ({marks})",
             ids,
         ).fetchall()
-        by_id = {str(row["id"]): dict(row) for row in rows}
+        by_id = {require_json_string(row["id"], "note id"): _row_object(row) for row in rows}
         return [by_id[note_id] for note_id in ids if note_id in by_id]
 
-    def links_touching(self, note_ids: list[str]) -> list[dict[str, Any]]:
+    def links_touching(self, note_ids: list[str]) -> list[JsonObject]:
         ids = _unique(note_ids)
         if not ids:
             return []
         marks = ",".join("?" * len(ids))
-        rows = self._read_conn().execute(
+        rows: list[_IndexRow] = self._read_conn().execute(
             "SELECT src_id,dst_id,kind FROM links"
             f" WHERE src_id IN ({marks}) OR dst_id IN ({marks})",
             (*ids, *ids),
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [_row_object(row) for row in rows]
 
-    def replace_links_touching(self, note_ids: list[str], links: list[dict[str, Any]]) -> None:
+    def replace_links_touching(self, note_ids: list[str], links: Sequence[Mapping[str, object]]) -> None:
         ids = _unique(note_ids)
         if not ids:
             return
@@ -357,9 +410,7 @@ class KnowledgeIndex:
             if src_id not in id_set and dst_id not in id_set:
                 continue
             rows.append((src_id, dst_id, str(row.get("kind") or "relates")))
-        with self._lock:
-            self._ensure_open_locked()
-            c = self._conn
+        with self.transaction() as c:
             c.execute(
                 "DELETE FROM links"
                 f" WHERE src_id IN ({marks}) OR dst_id IN ({marks})",
@@ -369,27 +420,26 @@ class KnowledgeIndex:
                 "INSERT OR IGNORE INTO links(src_id,dst_id,kind) VALUES(?,?,?)",
                 rows,
             )
-            self._commit()
 
-    def sources_for(self, note_ids: list[str]) -> list[dict[str, Any]]:
+    def sources_for(self, note_ids: list[str]) -> list[JsonObject]:
         ids = _unique(note_ids)
         if not ids:
             return []
         marks = ",".join("?" * len(ids))
-        rows = self._read_conn().execute(
+        rows: list[_IndexRow] = self._read_conn().execute(
             f"SELECT note_id,source FROM sources WHERE note_id IN ({marks})",
             ids,
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [_row_object(row) for row in rows]
 
-    def tags_for(self, note_ids: list[str], *, active_only: bool = False) -> list[dict[str, Any]]:
+    def tags_for(self, note_ids: list[str], *, active_only: bool = False) -> list[JsonObject]:
         ids = _unique(note_ids)
         if not ids:
             return []
         marks = ",".join("?" * len(ids))
         conn = self._read_conn()
         if active_only:
-            rows = conn.execute(
+            rows: list[_IndexRow] = conn.execute(
                 "SELECT t.note_id,t.tag FROM tags t"
                 " JOIN notes n ON n.id=t.note_id"
                 f" WHERE n.status='active' AND t.note_id IN ({marks})",
@@ -400,9 +450,9 @@ class KnowledgeIndex:
                 f"SELECT note_id,tag FROM tags WHERE note_id IN ({marks})",
                 ids,
             ).fetchall()
-        return [dict(r) for r in rows]
+        return [_row_object(row) for row in rows]
 
-    def concept_edge_rows(self, limit: int = 2048, *, session_id: str = "") -> list[dict[str, Any]]:
+    def concept_edge_rows(self, limit: int = 2048, *, session_id: str = "") -> list[JsonObject]:
         """Declared concept relations from active notes, newest first.
 
         When a session is requested, rows from that session are read before the
@@ -423,7 +473,7 @@ class KnowledgeIndex:
             unique_keys=("note_id", "src", "dst", "kind"),
         )
 
-    def tag_concept_rows(self, limit: int = 4096, *, session_id: str = "") -> list[dict[str, Any]]:
+    def tag_concept_rows(self, limit: int = 4096, *, session_id: str = "") -> list[JsonObject]:
         """Raw tag rows of active notes joined with note metadata.
 
         Session rows are read first for the same reason as `concept_edge_rows`:
@@ -451,25 +501,23 @@ class KnowledgeIndex:
         limit: int,
         session_id: str,
         unique_keys: tuple[str, ...],
-    ) -> list[dict[str, Any]]:
+    ) -> list[JsonObject]:
         session_id = (session_id or "").strip()
         conn = self._read_conn()
-        rows = []
+        rows: list[_IndexRow] = []
         if session_id:
-            rows.extend(
-                conn.execute(
-                    select_sql + " AND n.session_id=? ORDER BY n.updated DESC LIMIT ?",
-                    (session_id, limit),
-                ).fetchall()
-            )
+            session_rows: list[_IndexRow] = conn.execute(
+                select_sql + " AND n.session_id=? ORDER BY n.updated DESC LIMIT ?",
+                (session_id, limit),
+            ).fetchall()
+            rows.extend(session_rows)
         if len(rows) < limit:
-            rows.extend(
-                conn.execute(
-                    select_sql + " ORDER BY n.updated DESC LIMIT ?",
-                    (limit,),
-                ).fetchall()
-            )
-        return _unique_rows([dict(r) for r in rows], limit, unique_keys)
+            recent_rows: list[_IndexRow] = conn.execute(
+                select_sql + " ORDER BY n.updated DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            rows.extend(recent_rows)
+        return _unique_rows([_row_object(row) for row in rows], limit, unique_keys)
 
     def close(self) -> None:
         with self._lock:
@@ -517,8 +565,8 @@ def _unique(values: list[str]) -> list[str]:
     return out
 
 
-def _unique_rows(rows: list[dict[str, Any]], limit: int, keys: tuple[str, ...]) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
+def _unique_rows(rows: list[JsonObject], limit: int, keys: tuple[str, ...]) -> list[JsonObject]:
+    out: list[JsonObject] = []
     seen: set[tuple[str, ...]] = set()
     for row in rows:
         key = tuple(str(row.get(item) or "") for item in keys)

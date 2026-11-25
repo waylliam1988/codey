@@ -4557,8 +4557,10 @@
     },
     {
       "id": "Q072B", "responsibility": "Knowledge SQLite index and cache", "files": ["codey/knowledge/index.py"],
-      "status": "not_started", "reviewed_files": [], "verified_files": [],
-      "tests": ["tests/test_knowledge.py", "tests/test_knowledge_indexer_startup.py", "tests/test_knowledge_multilingual_recall.py"]
+      "status": "completed_changed", "reviewed_files": ["codey/knowledge/index.py"], "verified_files": ["codey/knowledge/index.py"],
+      "tests": ["tests/test_knowledge_index_transactions.py", "tests/test_knowledge.py", "tests/test_knowledge_multilingual_recall.py", "tests/test_knowledge_indexer_startup.py", "tests/test_knowledge_sqlite_authority.py", "tests/test_knowledge_repository.py", "tests/test_knowledge_document_path.py", "tests/test_knowledge_version_graph.py"],
+      "reviewed_support": ["tests/test_knowledge_index_transactions.py"],
+      "result": "SQLite index mutations use transactions and nested savepoints. Two fault-injection cases reproduced partial commits before the fix and passed afterward. Typed SQLite and thread-local boundaries. All 66 scoped cases and production type gates passed."
     },
     {
       "id": "Q072C", "responsibility": "Knowledge object repository, relations and purge", "files": ["codey/knowledge/repository.py"],
