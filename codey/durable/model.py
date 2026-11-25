@@ -492,18 +492,27 @@ class SubmissionRecord:
             content = _thaw_object(self.content)
             _validate_json(content)
             object.__setattr__(self, "content", _freeze_json(content))
-        if self.status == SubmissionStatus.DONE:
-            if self.mode == "write":
-                if not self.input_entry_id:
-                    raise ValueError("completed writes require an entry")
-            elif (self.mode == "steer" and isinstance(self.detail, Mapping)
-                  and isinstance(self.detail.get("consumed_by_task_id"), str)
-                  and self.detail.get("consumed_by_task_id") and self.input_entry_id):
-                pass
-            elif not self.answer_entry_id:
-                raise ValueError("completed submissions require an answer entry")
-        if self.status != SubmissionStatus.DONE and self.answer_entry_id is not None:
+        validate_submission_outcome(
+            self.status, self.mode, input_entry_id=self.input_entry_id,
+            answer_entry_id=self.answer_entry_id, detail=self.detail,
+        )
+
+
+def validate_submission_outcome(
+    status: SubmissionStatus, mode: str, *, input_entry_id: str | None,
+    answer_entry_id: str | None, detail: Mapping[str, object] | None,
+) -> None:
+    if status is not SubmissionStatus.DONE:
+        if answer_entry_id is not None:
             raise ValueError("only completed submissions may reference an answer entry")
+        return
+    if mode == "write":
+        if not input_entry_id:
+            raise ValueError("completed writes require an entry")
+        return
+    consumer = detail.get("consumed_by_task_id") if mode == "steer" and detail is not None else None
+    if not answer_entry_id and not (isinstance(consumer, str) and consumer and input_entry_id):
+        raise ValueError("completed submissions require an answer entry")
 
 
 @dataclass(frozen=True)

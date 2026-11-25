@@ -19,12 +19,14 @@ from codey.durable.model import (
     SubmissionRecord,
     SubmissionUpdate,
     TaskCheckpoint,
+    validate_submission_outcome,
 )
 from codey.durable.timeline import TaskSettlementHistory, TaskTransition
 
 
-def validate_submission_placement(
-    update: SubmissionUpdate, current_placement: SubmissionPlacement, current_entry_id: str | None,
+def validate_submission_update_state(
+    update: SubmissionUpdate, *, current_placement: SubmissionPlacement,
+    current_entry_id: str | None, current_mode: str,
 ) -> None:
     placement = current_placement if update.placement is None else SubmissionPlacement(update.placement)
     if current_placement is SubmissionPlacement.PLACED and placement is SubmissionPlacement.QUEUED:
@@ -34,6 +36,13 @@ def validate_submission_placement(
         raise CommitConflict("placing a submission requires an input entry")
     if placement is SubmissionPlacement.QUEUED and entry_id is not None:
         raise CommitConflict("queued submission cannot reference an input entry")
+    try:
+        validate_submission_outcome(
+            update.status, current_mode if update.mode is None else update.mode,
+            input_entry_id=entry_id, answer_entry_id=update.answer_entry_id, detail=update.detail,
+        )
+    except ValueError as exc:
+        raise CommitConflict(str(exc)) from exc
 
 
 class DurableStore(Protocol):

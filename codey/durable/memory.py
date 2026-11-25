@@ -40,7 +40,7 @@ from codey.durable.model import (
     valid_task_status_transition,
     valid_task_transition,
 )
-from codey.durable.store import validate_submission_placement
+from codey.durable.store import validate_submission_update_state
 from codey.durable.timeline import TaskSettlementHistory, TaskTransition, execution_payload, transition_from_payload
 
 
@@ -442,7 +442,10 @@ class MemoryDurableStore:
             raise CommitConflict("answer entry must be part of the same commit")
         if update.input_entry_id is not None and update.input_entry_id not in {entry.entry_id for entry in entries}:
             raise CommitConflict("placed input entry must be part of the same commit")
-        validate_submission_placement(update, SubmissionPlacement(current.placement), current.input_entry_id)
+        validate_submission_update_state(
+            update, current_placement=SubmissionPlacement(current.placement),
+            current_entry_id=current.input_entry_id, current_mode=current.mode,
+        )
 
     def _validate_entry_chain(self, entries: tuple[EntryDraft, ...], conversation_id: str, head: str | None) -> None:
         parent = head

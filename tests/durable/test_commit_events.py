@@ -99,6 +99,29 @@ def test_submission_entry_requires_placement_in_the_same_commit(session: Durable
     assert session.submission(previous.submission_id).placement is SubmissionPlacement.PLACED
 
 
+def test_placing_a_follow_up_cannot_complete_it_without_an_answer(session: DurableSession) -> None:
+    admitted = session.admit_input(
+        conversation_id="conversation", request_id="request", task_id="task",
+        text="inspect", provider_snapshot={}, placement=SubmissionPlacement.QUEUED,
+    )
+    assert admitted.submission_id is not None
+    previous = session.submission(admitted.submission_id)
+    head, revision = session.head("conversation")
+    sequence = session.commit_sequence()
+    entry = EntryDraft("entry", "conversation", head, "user_message", {"text": "inspect"})
+    update = SubmissionUpdate(
+        previous.submission_id, "conversation", SubmissionStatus.QUEUED, SubmissionStatus.DONE,
+        input_entry_id=entry.entry_id, placement=SubmissionPlacement.PLACED,
+    )
+
+    with pytest.raises((CommitConflict, ValueError), match="completed submissions require an answer entry"):
+        session.store.commit(DurableMutation("conversation", revision, entries=(entry,), submission_update=update))
+
+    assert session.commit_sequence() == sequence
+    assert session.head("conversation") == (head, revision)
+    assert session.submission(previous.submission_id) == previous
+
+
 def test_replayed_submission_does_not_publish_an_uncommitted_task_identity(session: DurableSession) -> None:
     published: list[dict[str, object]] = []
 

@@ -1954,3 +1954,7 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 在 `D:\codey` 的直接基线 62 passed。最终执行 `python -m pytest -q tests/durable/test_store_contract.py tests/durable/test_waiting_reverse_index.py tests/durable/test_owner_reverse_index.py tests/durable/test_settlement_history_projection.py tests/durable/test_settlement_projection_cost.py tests/durable/test_commit_events.py tests/durable/test_generation_boundary_commit.py tests/durable/test_inbox_placement.py tests/durable/test_atomic_task_failure.py --tb=short`，121 passed、无失败或跳过、退出 0。此组重验共享存储协议和 SQLite 变更所影响的 Q052、Q053 范围。
 - `python -m mypy codey/durable/memory.py codey/durable/sqlite.py codey/durable/store.py tests/durable/test_commit_events.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated`、同四文件 Ruff 与 Pyrefly 均退出 0。全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q061 完成。累计完成 109/358 批，完成批覆盖 192/1009 个生产文件，另有 14 批部分完成。下一批 Q062 为持久模型与不变量。
+
+### Q062 持久模型和状态不变量
+
+- Q061 已提交 `9a68c3f0`。检查 `model.py` 的任务、审批、提交、产物及事务形状。普通输入完成必须引用已提交的回答，引导消费和被动写入另有既定结果形状。通过 `python -m pytest -q tests/durable/test_commit_events.py::test_placing_a_follow_up_cannot_complete_it_without_an_answer --tb=short` 复现。原 Memory 在记录模型拒绝前推进了序号，SQLite 接受了无回答的完成状态，2 failed、退出 1。两个后端在写入前复用记录模型的结果校验，同两用例通过。回归核对提交序号、头部和原排队记录。
