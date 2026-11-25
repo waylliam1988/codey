@@ -2201,3 +2201,15 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 完整检查 `context.py`。挤占记录标识本可单独容纳、但因先前条目占用预算而被排除的记忆。用等于后一条内容长度的预算，旧实现把仅在并列时才存在的分隔符算入单独长度，遗漏挤占记录。在 `D:\codey` 执行 `python -m pytest -q tests/test_memory_context_displacement.py --tb=short`，1 failed、退出 1。
 - 挤占判定使用条目本身的长度。回归覆盖恰好可单独容纳和少一字符两种预算。`python -m pytest -q tests/test_memory_context_displacement.py tests/test_memory_boundary.py tests/test_memory_adaptation_flow.py tests/test_memory_attempt_gate_lifecycle.py --tb=short`，44 passed、无失败或跳过、退出 0。去掉新增回归的基线为 43 passed。
 - 源码与回归整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁通过。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。Q082 完成。累计完成 144/372 批，覆盖 239/1011 个生产文件，另有 15 批部分完成。下一批 Q083 核对 Operations 包入口。
+
+### Q083 Operations 包入口
+
+- Q082 已提交 `b999452d`。完整检查 `operations/__init__.py` 与 `operations/task_phases/__init__.py`。在 `D:\codey` 用新进程验证父包未加载直接子模块，并验证相位包全部 15 个导出与 `dispatch`、`hooks`、`lifecycle`、`settlement` 的原对象一致，退出 0。两份源码的整文件严格 Any 与 Ruff 均通过。
+- `python -m pytest -q tests/test_task_runtime_coordinator.py tests/durable/test_task_runtime_terminal_checkpoint.py --tb=short`，6 passed、无失败或跳过、退出 0。相位具体实现仍由所属批次验证。
+- Q083 完成，无源码变更。累计完成 145/372 批，覆盖 241/1011 个生产文件，另有 15 批部分完成。下一批 Q084 核对浏览器交互和结果衔接。
+
+### Q084 浏览器结果与报告
+
+- 原十文件按结果报告、动作及等待、任务交接、页面资源与记录四类拆分。完整检查 `browser_text_report.py` 和 `browser_result_evidence.py`。元数据报告需要用户明确请求。用相同示例文字包在反引号和波浪线围栏中，在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_metadata_examples.py --tb=short`。波浪线围栏导致旧实现误生成报告范围，1 failed、1 passed、退出 1。复用现有围栏模式后两例通过。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_browser_metadata_examples.py tests/test_browser_text_report_production.py tests/test_browser_handoff_next_steps.py::test_scalar_metadata_binding_requires_the_current_document tests/test_browser_handoff_next_steps.py::test_metadata_conflict_requires_recovery_instead_of_another_execution tests/test_browser_handoff_next_steps.py::test_text_metadata_pending_uses_the_same_reason_and_exact_expression tests/test_browser_control_continuation.py::test_answered_requires_a_post_action_read_but_honest_missing_evidence_is_reportable --tb=short`，18 passed、无失败或跳过、退出 0。覆盖相同文档的正式回执及动作后的读证据。
+- 两份源码及回归整文件严格 Any、Ruff、全生产 mypy 765 文件、ty 和 kernel 精度门禁通过。Pyrefly 0 errors（35 suppressed、164 warnings 未展示）。Q084 完成。累计完成 146/375 批，覆盖 243/1011 个生产文件，另有 15 批部分完成。下一批 Q084B 检查动作进度和等待。

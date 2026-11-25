@@ -470,6 +470,9 @@
       "batches": [
         "Q083",
         "Q084",
+        "Q084B",
+        "Q084C",
+        "Q084D",
         "Q085",
         "Q086",
         "Q087",
@@ -4755,35 +4758,48 @@
         "codey/operations/task_phases/__init__.py"
       ],
       "id": "Q083",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_unchanged",
+      "reviewed_files": ["codey/operations/__init__.py", "codey/operations/task_phases/__init__.py"],
+      "verified_files": ["codey/operations/__init__.py", "codey/operations/task_phases/__init__.py"],
+      "tests": ["tests/test_task_runtime_coordinator.py", "tests/durable/test_task_runtime_terminal_checkpoint.py"],
+      "result": "The operations root imports without loading children. All 15 task-phase exports resolve to their owning module objects. Six scoped tests, strict Any and Ruff passed. No source edit was needed."
     },
     {
-      "responsibility": "codey/operations: browser contracts and interaction",
-      "files": [
-        "codey/operations/browser_completion.py",
-        "codey/operations/browser_next_step.py",
-        "codey/operations/browser_task_handoff.py",
-        "codey/operations/browser_followups.py",
-        "codey/operations/browser_waits.py",
-        "codey/operations/browser_detail.py",
-        "codey/operations/browser_upload.py",
-        "codey/operations/browser_text_report.py",
-        "codey/operations/browser_result_evidence.py",
-        "codey/operations/browser_linked_record.py"
-      ],
       "id": "Q084",
+      "responsibility": "Browser result evidence and text reports",
+      "files": ["codey/operations/browser_text_report.py", "codey/operations/browser_result_evidence.py"],
+      "status": "completed_changed",
+      "reviewed_files": ["codey/operations/browser_text_report.py", "codey/operations/browser_result_evidence.py"],
+      "verified_files": ["codey/operations/browser_text_report.py", "codey/operations/browser_result_evidence.py"],
+      "tests": ["tests/test_browser_metadata_examples.py", "tests/test_browser_text_report_production.py", "tests/test_browser_handoff_next_steps.py", "tests/test_browser_control_continuation.py"],
+      "reviewed_support": ["tests/test_browser_metadata_examples.py"],
+      "result": "Both supported code fence delimiters suppress examples before explicit report intent is classified. The original tilde-fence regression failed. All 18 scoped tests, strict Any and production gates passed.",
+      "followups": ["Q014C's historic runtime inventory mismatch was addressed by Q078. Its full-worktree service replacement fixture remains outside the authorized workflow."]
+    },
+    {
+      "id": "Q084B",
+      "responsibility": "Browser action progress, next steps, and waits",
+      "files": ["codey/operations/browser_completion.py", "codey/operations/browser_next_step.py", "codey/operations/browser_followups.py", "codey/operations/browser_waits.py"],
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 33,
       "followups": [
-        "Q035C: two baseline failures in test_browser_execution_defaults.py. Check whether the declared navigation should read before snapshotting and whether the current document is gated by original fill and click receipts before suggesting the declared wait. Both failures reproduce with the original Code Mode host and do not invoke it.",
-        "External concurrent addition: browser_result_evidence.py. Pending whole-file review and Any audit; Q084 expands from 8 to 9 closely related browser completion/followup files. Not edited or committed by this governance batch.",
-        "Q014C dependency test_release_control.py::test_browser_session_survives_service_replacement_but_bootstrap_does_not failed at snapshot/read_runtime before authentication: published descriptor has 876 files versus actual 877; missing codey/operations/browser_result_evidence.py (existing commit 1292e668). q014c-runtime-inventory.json. Q014C changes only typed auth tests; preserve rejection and refresh generated inventory via normal publisher when validating release/runtime scope. Runtime read_runtime explicit Any remains at Q078; diagnostic-path inspection is not whole-file governance."
+        "Q035C: two baseline failures in test_browser_execution_defaults.py. Check whether the declared navigation should read before snapshotting and whether the current document is gated by original fill and click receipts before suggesting the declared wait. Both failures reproduce with the original Code Mode host and do not invoke it. Coordinate with Q084C if implementation ownership is in task handoff."
       ]
+    },
+    {
+      "id": "Q084C",
+      "responsibility": "Browser task and continuation handoff",
+      "files": ["codey/operations/browser_task_handoff.py"],
+      "status": "not_started", "reviewed_files": [], "verified_files": [],
+      "tests": ["tests/test_browser_handoff_next_steps.py", "tests/test_browser_execution_defaults.py"]
+    },
+    {
+      "id": "Q084D",
+      "responsibility": "Browser resource details, uploads, and linked records",
+      "files": ["codey/operations/browser_detail.py", "codey/operations/browser_upload.py", "codey/operations/browser_linked_record.py"],
+      "status": "not_started", "reviewed_files": [], "verified_files": [],
+      "tests": ["tests/test_browser_linked_record.py", "tests/test_browser_structured_upload_production.py"]
     },
     {
       "responsibility": "codey/operations: browser contracts and interaction",
@@ -10134,6 +10150,11 @@
       "batch": "Q077",
       "replacement": ["Q077", "Q077B"],
       "reason": "Startup timing and cache evidence are verified separately from the standalone coordinator and service rollback. All three production files retain an owner."
+    },
+    {
+      "batch": "Q084",
+      "replacement": ["Q084", "Q084B", "Q084C", "Q084D"],
+      "reason": "Result reports, action and wait progress, continuation handoff, and page resources have distinct tests. All ten production files retain one owner."
     },
     {
       "commit": "64bd6337",

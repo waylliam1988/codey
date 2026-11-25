@@ -53,7 +53,7 @@ def report_scope(session: TaskSession) -> BrowserTextReport | None:
             or not policy.allows("browser.interact") or len(session.required_source_urls) > 1
             or any(is_output_check(check) for check in policy.required_checks)):
         return None
-    task = re.sub(r"```[\s\S]*?```", "", session.task_text)
+    task = _FENCED_CODE.sub("\n", session.task_text)
     properties = {match[1] for match in _READ_PROPERTY.finditer(task)}
     reports = [match[1] for match in _REPORT.finditer(task) if not _NO_REPORT.search(task[:match.start()])]
     if (len(properties) != 1 or not re.search(r"\bbrowser_tab_list\b", task, re.ASCII)
