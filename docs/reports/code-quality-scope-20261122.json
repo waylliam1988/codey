@@ -4617,10 +4617,12 @@
         "codey/knowledge/search_text.py"
       ],
       "id": "Q074",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 3
+      "status": "completed_changed",
+      "reviewed_files": ["codey/knowledge/research_interest.py", "codey/knowledge/search_text.py"],
+      "verified_files": ["codey/knowledge/research_interest.py", "codey/knowledge/search_text.py"],
+      "tests": ["tests/test_knowledge_search_candidate_limits.py", "tests/test_knowledge_multilingual_recall.py", "tests/test_knowledge_recall_budget.py", "tests/test_research_topic_continuity.py", "tests/test_research_iteration_topic_continuity.py", "tests/test_fail_closed_boundary_sweep.py", "tests/test_fail_closed_runtime_sweep.py"],
+      "reviewed_support": ["tests/test_knowledge_search_candidate_limits.py"],
+      "result": "Deduplicate case-equivalent questions and repeated query words before their respective limits. Both baseline regressions failed. All 36 scoped cases and production gates passed, and both production files passed whole-file strict Any."
     },
     {
       "responsibility": "codey/launcher: package entry and composition",

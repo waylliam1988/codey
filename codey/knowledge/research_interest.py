@@ -5,9 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
-from typing import Any
 
 from codey.knowledge.concept_schema import normalize_concept
 from codey.knowledge.concepts import ConceptGraphBuilder, MissingConceptLink
@@ -45,7 +44,8 @@ def build_research_interest_candidates(
     project: str = "",
     limit: int = MAX_RESEARCH_INTEREST_CANDIDATES,
 ) -> tuple[ResearchInterestCandidate, ...]:
-    if store is None or getattr(store, "index", None) is None:
+    index: object = getattr(store, "index", None)
+    if store is None or index is None:
         return ()
     limit = _bounded_int(limit, MAX_RESEARCH_INTEREST_CANDIDATES, 1, 32)
     rows: list[ResearchInterestCandidate] = []
@@ -82,7 +82,7 @@ def candidate_to_topic_hint(candidate: ResearchInterestCandidate) -> dict[str, o
 
 def apply_research_affinity_hints(
     candidates: Iterable[ResearchInterestCandidate],
-    hints: Iterable[Any],
+    hints: Iterable[object],
 ) -> tuple[ResearchInterestCandidate, ...]:
     rows = tuple(candidates or ())
     if not rows:
@@ -97,7 +97,7 @@ def apply_research_affinity_hints(
         )
         for candidate in rows
     )
-    return tuple(sorted(boosted, key=lambda item: (-item.priority, -item.confidence, item.question)))
+    return tuple(sorted(boosted, key=_candidate_rank))
 
 
 def _candidates_from_recent_research_notes(
@@ -285,9 +285,12 @@ def _structured_open_questions(value: object, *, limit: int = 4) -> tuple[str, .
         except json.JSONDecodeError:
             return ()
     out: list[str] = []
+    seen: set[str] = set()
     for item in clean_open_questions(raw):
         cleaned = _clean_text(item, MAX_RESEARCH_QUESTION_CHARS)
-        if cleaned and cleaned not in out:
+        key = cleaned.casefold()
+        if cleaned and key not in seen:
+            seen.add(key)
             out.append(cleaned)
         if len(out) >= limit:
             break
@@ -313,8 +316,12 @@ def _dedupe_candidates(
     for candidate in candidates:
         if candidate.id not in by_id:
             by_id[candidate.id] = candidate
-    rows = sorted(by_id.values(), key=lambda item: (-item.priority, -item.confidence, item.question))
+    rows = sorted(by_id.values(), key=_candidate_rank)
     return tuple(rows[:limit])
+
+
+def _candidate_rank(candidate: ResearchInterestCandidate) -> tuple[float, float, str]:
+    return (-candidate.priority, -candidate.confidence, candidate.question)
 
 
 def _bounded_refs(values: Iterable[str]) -> tuple[str, ...]:
@@ -387,7 +394,7 @@ def _bounded_int(value: object, default: int, minimum: int, maximum: int) -> int
     return max(minimum, min(maximum, number))
 
 
-def _hint_weight_by_target(hints: Iterable[Any], *, kind: str) -> dict[str, float]:
+def _hint_weight_by_target(hints: Iterable[object], *, kind: str) -> dict[str, float]:
     out: dict[str, float] = {}
     for hint in list(hints or ()):
         if str(_field(hint, "kind") or "").strip().lower() != kind:
@@ -405,9 +412,10 @@ def _hint_weight_by_target(hints: Iterable[Any], *, kind: str) -> dict[str, floa
     return out
 
 
-def _field(value: Any, key: str) -> object:
+def _field(value: object, key: str) -> object:
     if isinstance(value, dict):
-        return value.get(key)
+        fields: Mapping[object, object] = value
+        return fields.get(key)
     return getattr(value, key, "")
 
 

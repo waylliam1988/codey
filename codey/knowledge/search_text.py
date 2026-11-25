@@ -31,7 +31,12 @@ SEARCH_INDEX_VERSION = "cjk-bigram-1"
 
 
 def cjk_terms(text: str) -> list[str]:
-    return list(dict.fromkeys(run[i : i + 2] for run in _CJK.findall(text) for i in range(len(run) - 1)))
+    unique: dict[str, None] = {}
+    for match in _CJK.finditer(text):
+        run = match.group()
+        for i in range(len(run) - 1):
+            unique[run[i : i + 2]] = None
+    return list(unique)
 
 
 def indexed_text(text: str) -> str:
@@ -39,5 +44,11 @@ def indexed_text(text: str) -> str:
 
 
 def query_terms(text: str) -> list[str]:
-    words = [term for term in re.findall(r"[^\W_]+", text.casefold()) if term not in _STOP and not _CJK.search(term)]
-    return list(dict.fromkeys([*words[:12], *cjk_terms(text)[:64]]))
+    words: dict[str, None] = {}
+    for match in re.finditer(r"[^\W_]+", text.casefold()):
+        word = match.group()
+        if word not in _STOP and not _CJK.search(word):
+            words[word] = None
+            if len(words) == 12:
+                break
+    return [*words, *cjk_terms(text)[:64]]
