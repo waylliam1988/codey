@@ -100,7 +100,9 @@ def test_json_literals_are_kept_byte_for_byte(draft: str) -> None:
     assert render(draft) == draft
     verdict = evaluate(session(json_required=True), draft)
     assert verdict.complete, verdict.followup
-    assert verdict.final_text == draft and json.loads(verdict.final_text) == json.loads(draft)
+    actual: object = json.loads(verdict.final_text)
+    expected: object = json.loads(draft)
+    assert verdict.final_text == draft and actual == expected
 
 
 def test_invalid_explicit_json_is_checked_as_json_instead_of_citation_prose() -> None:
@@ -114,6 +116,36 @@ def test_existing_hyperlinks_and_other_task_domains_are_not_rewritten() -> None:
     assert render(draft) == draft
     verdict = evaluate(session(kind="project"), "literal [s999]")
     assert verdict.complete and verdict.final_text == "literal [s999]"
+
+
+@pytest.mark.parametrize("draft", [
+    "See https://example.com/record-extra.",
+    "[Later record](<https://example.com/record?version=2>)",
+    "[Different path](<https://example.com/record.>)",
+    "<https://example.net/redirect?url=https://example.com/record>",
+    "`https://example.com/record`",
+])
+def test_required_source_needs_its_own_url_in_prose(draft: str) -> None:
+    url = "https://example.com/record"
+    assert render_source_citations(draft, sources={"s1": url}, searches={}, required_sources=("s1",)) == (
+        draft + f"\n\n## Sources\n- [s1](<{url}>)"
+    )
+
+
+@pytest.mark.parametrize("draft", [
+    "See https://example.com/record.",
+    "参见 https://example.com/record。",
+    "[Original record](https://example.com/record)",
+    "[Original record](<https://example.com/record>)",
+])
+def test_exact_required_source_url_in_prose_needs_no_extra_link(draft: str) -> None:
+    assert render_source_citations(draft, sources={"s1": "https://example.com/record"}, searches={},
+                                   required_sources=("s1",)) == draft
+
+
+def test_rendered_required_source_url_with_encoded_characters_needs_no_extra_link() -> None:
+    draft = "来源[s1]。"
+    assert render_source_citations(draft, sources={"s1": URL}, searches={}, required_sources=("s1",)) == render(draft)
 
 
 def test_shared_code_mask_preserves_offsets_and_research_label_accounting() -> None:

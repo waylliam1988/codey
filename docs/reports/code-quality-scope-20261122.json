@@ -4829,10 +4829,12 @@
         "codey/operations/chat_citations.py"
       ],
       "id": "Q086",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 1
+      "status": "completed_changed",
+      "reviewed_files": ["codey/operations/chat_citations.py"],
+      "verified_files": ["codey/operations/chat_citations.py"],
+      "tests": ["tests/test_chat_programmatic_citations.py", "tests/test_chat_citations_delivery.py", "tests/test_browser_linked_record.py", "tests/test_chat_final_format_guidance.py", "tests/test_project_and_machine_outputs_preserve_final_delivery.py"],
+      "reviewed_support": ["tests/test_chat_programmatic_citations.py"],
+      "result": "Required citations check complete prose URLs and accept the original or encoded destination. Path prefixes, distinct queries, embedded redirect values and code spans cannot satisfy a required source. All 63 unique targeted tests, whole-file strict Any, Ruff and production gates passed."
     },
     {
       "responsibility": "codey/operations: knowledge and memory",
