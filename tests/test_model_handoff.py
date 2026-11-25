@@ -34,6 +34,9 @@ def test_model_handoffs_forward_original_receipts_read_by_the_intermediate_run(
     contents = b"# Original source context\n" * 44 + b"VALUE = 23\n"
     (project / "old.py").write_bytes(contents)
     (project / "unused.py").write_bytes(b"UNUSED = 9\n")
+    later_reads = [f"extra{index}.py" for index in range(12)]
+    for path in later_reads:
+        (project / path).write_text("EXTRA = 17\n", encoding="utf-8")
     state_home = tmp_path / "state"
     (tmp_path / "old").mkdir()
     (tmp_path / "new").mkdir()
@@ -47,6 +50,8 @@ def test_model_handoffs_forward_original_receipts_read_by_the_intermediate_run(
     def replies() -> Iterator[JsonObject]:
         yield {"tool": "read_file", "args": {"path": "old.py"}}
         yield {"tool": "read_file", "args": {"path": "unused.py"}}
+        for path in later_reads:
+            yield {"tool": "read_file", "args": {"path": path}}
         yield {"tool": "done", "args": {"summary": "Read the source value."}}
         yield {"tool": "read_tool_result", "args": {"result_ref": old_read, "query": "VALUE = 23"}}
         assert "VALUE = 23" in str(requests(tmp_path / "new")[-1]["messages"])
@@ -66,7 +71,8 @@ def test_model_handoffs_forward_original_receipts_read_by_the_intermediate_run(
     try:
         old = run_headless(HeadlessRequest(project, task, provider_id="local", session_id=session_id,
             state_home=state_home, model_selection={"model": "old-model", "base_url": url},
-            project_changes_required=False), emit_jsonl=lambda _row: None, connect_provider=lambda _name, *, port: old_provider)
+            project_changes_required=False, max_turns=24), emit_jsonl=lambda _row: None,
+            connect_provider=lambda _name, *, port: old_provider)
     finally:
         old_provider.close()
     assert old.stop_reason == "done"
@@ -84,7 +90,7 @@ def test_model_handoffs_forward_original_receipts_read_by_the_intermediate_run(
     assert new.stop_reason == "done" and new.run_id != old.run_id
     payload = requests(tmp_path / "new")[0]
     assert payload["model"] == "new-model"
-    assert "User-authorized model handoff" in str(payload["messages"]) and old_read in str(payload["messages"])
+    assert "User-authorized model handoff" in str(payload["messages"]) and old_read not in str(payload["messages"])
     assert "VALUE = 23" not in str(payload["messages"])
     provider = ExperimentProvider(Target(url, "third-model", 789, 10), tmp_path / "third", fixed_acquisition=False)
     try:
@@ -107,13 +113,16 @@ def test_model_handoffs_forward_original_receipts_read_by_the_intermediate_run(
             state.task_submission_stores.managed_outputs, session_id, new.run_id)
         lookup = ToolCall("read_tool_result", {"result_ref": old_read, "query": "VALUE = 23"})
         assert read_tool_result(authorized, lookup, durable=state.durable).ok
+        page = read_tool_result(authorized, ToolCall("read_tool_result", {"result_ref": "handoff:read_file", "offset": 12}),
+                                durable=state.durable)
+        assert page.ok and old_read in page.model_text and unused_read in page.model_text
         assert not authorized.session._memory_results
         unauthorized = ReceiptReader(authorized.session, authorized.managed_outputs, "other-conversation", new.run_id)
         assert not read_tool_result(unauthorized, lookup, durable=state.durable).ok
         unrelated = ReceiptReader(authorized.session, authorized.managed_outputs, session_id, old.run_id)
         assert not read_tool_result(unrelated, lookup, durable=state.durable).ok
         assert (project / "old.py").read_bytes() == contents
-        assert len([row for row in tool_receipts(state_home) if row.result.call.name == "read_file"]) == 2
+        assert len([row for row in tool_receipts(state_home) if row.result.call.name == "read_file"]) == 2 + len(later_reads)
 
 
 @pytest.mark.usefixtures("scripted_local_api_connection", "no_external_advisor_models")

@@ -94,6 +94,17 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
     from codey.durable.model import TASK_TERMINAL_STATUSES
     from codey.operations.tool_task_delivery import notified_tool_tasks
     from codey.operations.tool_tasks import terminal_tool_task_observations, wait_tool_task
+    from codey.operations.verification_workflow import completion_workflow
+
+    plan = context.plan(state)
+    if plan.control is not None and plan.control.kind == "done":
+        context.session.last_done_text = plan.control.body or ""
+        context.session.last_done_args = dict(plan.control_args)
+    declared_plan, workflow_gap = completion_workflow(context.session, context.durable, context.sink.run_id,
+                                                      context.sink.managed_outputs)
+    if workflow_gap:
+        _reject_completion(context, state, workflow_gap, failure_key="declared_verification_workflow")
+        return
 
     children = [child for child in context.durable.owned_tasks(context.sink.run_id) if child.execution_kind == "tool"]
     pending = [child for child in children if child.status not in TASK_TERMINAL_STATUSES]
@@ -115,10 +126,6 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
             "Use those results to continue or report the outcome; no polling or repeat execution is needed.",
             error="", error_source="", error_type=""))
         return
-    plan = context.plan(state)
-    if plan.control is not None and plan.control.kind == "done":
-        context.session.last_done_text = plan.control.body or ""
-        context.session.last_done_args = dict(plan.control_args)
     error_source = ""
     error_type = ""
     compiled = None
@@ -126,7 +133,9 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
     blocked = False
     try:
         refresh_verification_candidates(context.session)
-        completion_context = context.completion_context
+        completion_context = (replace(context.completion_context, selected_check=declared_plan)
+            if declared_plan is not None and context.completion_context.selected_check is None
+                and context.session.selected_verification is None else context.completion_context)
         checks = context.session.policy.required_checks
         from codey.operations.project_delivery import PAGE_AFTER_EDIT
 
@@ -169,28 +178,32 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
             purpose="done", result=result.to_payload(), workspace_revision=context.session.workspace_revision,
             workspace_fingerprint=context.session.workspace_fingerprint))
     else:
-        from codey.operations.kernel_progress import KernelProgress
-
-        progress = KernelProgress(context.transport.stagnant_turns, snapshot=state.counters.progress)
-        proposal = context.session.last_done_args
-        from codey.research.answer_contract import submitted_answer, whole_research
-
-        if whole_research(context.session):
-            proposal = canonical_json_object(submitted_answer(context.session) or {})
         from codey.operations.explanation_repair import FAILURE_KEY, active
 
         failure_key = ((domain_issue["code"] + ":" + domain_issue["path"]) if domain_issue else
                        FAILURE_KEY if error_source == FAILURE_KEY or active(state.counters.progress) else "")
-        progress.reject_completion(proposal, followup, context.session, failure_key=failure_key)
-        counters = replace(state.counters, progress=progress.snapshot())
-        done_spec = next((spec for spec in context.response(state).snapshot.model_specs if spec.name == "done"), None)
-        decision = RetryDecision(
-            purpose="retry", prompt=kernel_prompt._completion_followup(followup, native=context.native,
-                structured_report=done_spec is not None and "report_sections" in done_spec.required,
-                whole_submission=whole_research(context.session), done_spec=done_spec), error="",
-            error_source=error_source, error_type=error_type)
-        context.advance(state, operation_payload.LEAF_CONTROL_READY, data=decision,
-            counters=counters)
+        _reject_completion(context, state, followup, failure_key=failure_key,
+                           error_source=error_source, error_type=error_type)
+
+
+def _reject_completion(context: KernelContext, state: RuntimeOperationState, followup: str, *,
+                       failure_key: str, error_source: str = "", error_type: str = "") -> None:
+    from codey.operations.kernel_progress import KernelProgress
+    from codey.research.answer_contract import submitted_answer, whole_research
+
+    progress = KernelProgress(context.transport.stagnant_turns, snapshot=state.counters.progress)
+    research = whole_research(context.session)
+    proposal = (canonical_json_object(submitted_answer(context.session) or {}) if research else
+                context.session.last_done_args)
+    progress.reject_completion(proposal, followup, context.session, failure_key=failure_key)
+    done_spec = next((spec for spec in context.response(state).snapshot.model_specs if spec.name == "done"), None)
+    decision = RetryDecision(
+        purpose="retry", prompt=kernel_prompt._completion_followup(followup, native=context.native,
+            structured_report=done_spec is not None and "report_sections" in done_spec.required,
+            whole_submission=research, done_spec=done_spec), error="",
+        error_source=error_source, error_type=error_type)
+    context.advance(state, operation_payload.LEAF_CONTROL_READY, data=decision,
+                    counters=replace(state.counters, progress=progress.snapshot()))
 
 
 def _ids(reply: AssistantTurn | str) -> list[str]:

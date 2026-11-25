@@ -149,6 +149,13 @@ def test_admission_prompt_and_receipt_reader_point_to_task_output(runtime: Runti
     assert next_read["tool"] == "task_output"
     assert decode_json_object(next_read["args"])["task_ref"] == ref
     assert payload["kind"] == "accepted" and payload["exit_code"] is None
+    reader = ReceiptReader(runtime.session, runtime.app.managed_outputs, "s", "r")
+    lookup = ToolCall("read_tool_result", {"result_ref": ref})
+    alias = read_tool_result(reader, lookup, durable=runtime.app.durable)
+    assert alias.call == lookup and alias.ok
+    assert parse_json_object(alias.model_text)["task_ref"] == ref
+    intruder = ReceiptReader(runtime.session, runtime.app.managed_outputs, "s", ref)
+    assert not read_tool_result(intruder, lookup, durable=runtime.app.durable).ok
 
 
 def test_admission_events_report_accepted_without_a_command_exit(runtime: Runtime) -> None:
@@ -222,6 +229,39 @@ def test_guarded_full_read_update_reuses_existing_version_contract(runtime: Runt
         "base_result_ref": turn_effect_id("r", 0, 0)}), turn=1)
     assert updated.ok, updated.model_text
     assert path.read_text(encoding="utf-8") == source.replace("return 1", "return 2")
+
+
+def test_failed_anchor_reoffers_definition_after_current_file_read(runtime: Runtime) -> None:
+    from codey.operations.edit_base import bound_symbol_retry, edit_anchor_retry
+    from codey.providers.base import AssistantTurn, ProviderToolCall
+
+    path = runtime.project / "worker.py"
+    original = "def current():\n    return 1\n\ndef untouched():\n    return 2\n"
+    path.write_text(original, encoding="utf-8")
+    assert runtime.execute(ToolCall("read_file", {"path": path.name})).ok
+    stale = ToolCall("edit", {"path": path.name, "replacements": [
+        {"old_string": "def current():\n    return 0", "new_string": "def current():\n    return 3"}]})
+    failed = runtime.execute(stale, turn=1)
+    assert not failed.ok and failed.audit["error_code"] == "edit_search_not_found"
+    snapshot = build_turn_snapshot(runtime.session, native=True)
+    bound, hint = edit_anchor_retry(runtime.session, snapshot, (failed,))
+    assert bound_symbol_retry(bound) == ("worker.py", "current")
+    assert "return 1" in hint and "untouched" not in hint
+    path.write_text(original.replace("return 1", "return 8"), encoding="utf-8")
+    _, stale_hint = edit_anchor_retry(runtime.session, snapshot, (failed,))
+    assert '"tool":"read_file"' in stale_hint
+    read = runtime.execute(ToolCall("read_file", {"path": path.name}), turn=2)
+    assert read.ok
+    bound, hint = edit_anchor_retry(runtime.session, build_turn_snapshot(runtime.session, native=True), (read,))
+    assert "return 8" in hint and "untouched" not in hint
+    content = "def current():\n    return 3"
+    assert normalize_turn(AssistantTurn(text=content), snapshot=bound).protocol_error
+    plan = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("edit-original", "edit", {"content": content}),)),
+                          snapshot=bound)
+    assert not plan.protocol_error and plan.calls[0].args["symbol"] == "current"
+    assert plan.calls[0].call_id == "edit-original"
+    updated = runtime.execute(plan.calls[0], turn=3)
+    assert updated.ok and path.read_text(encoding="utf-8") == original.replace("return 1", "return 3")
 
 
 def test_cancel_child_does_not_cancel_user_submission(runtime: Runtime) -> None:

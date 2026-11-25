@@ -1025,7 +1025,7 @@ class ExecutionDelegate:
         if (last is not None and last[1].call.call_id in PRIMARY_ACQUISITION_IDS and last[1].ok
                 and last[0] not in self._research_scope.attempt_refs and call.args.get("state") == "answered"):
             raise ValueError("first_party_followup_available: review the just-acquired source results before submitting.")
-        declared = submit_answer(self._research_scope, call.args)
+        declared = submit_answer(self._research_scope, call.args, passages=tools.ledger.read_passages)
         from codey.research.report_evidence import (
             CLAIM_CHECK_VERSION,
             check_report_evidence,

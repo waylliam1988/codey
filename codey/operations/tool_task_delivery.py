@@ -111,6 +111,7 @@ def pending_tool_task_notifications(durable: DurableSession, *, owner_task_id: s
 
         owned_tool_task(durable, child.task_id, owner_task_id=owner_task_id)
         value = tool_task_snapshot(durable, child, store=store, args={"limit": 1600}, include_output=False)
+        value["read_result"] = {"tool": "read_tool_result", "args": {"result_ref": child.task_id}}
         text = json.dumps(value, ensure_ascii=False)
         if sum(map(len, texts)) + len(texts) + len(text) > NOTIFICATION_MAX_CHARS:
             break

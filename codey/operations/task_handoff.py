@@ -5,7 +5,9 @@ from collections.abc import Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from codey.codemode.verification import project_check_call, restrict_verification
 from codey.knowledge.model import canonical_json
+from codey.research.quote_slots import requests_exact_quote
 
 if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
@@ -74,6 +76,25 @@ def report_completes_task(session: TaskSession) -> bool:
             and not session.edited_files)
 
 
+def _quote_guidance(session: TaskSession, snapshot: TurnSnapshot) -> str:
+    if (session.policy.allows("web.read") and "read_tool_result" in snapshot.tool_names
+            and requests_exact_quote(session.task_text)):
+        return ("For exact quotations in done, insert the chosen paragraph quote slot in the summary. "
+                "Use read_tool_result on the original receipt to see the available paragraph_quotes. "
+                "The host inserts the exact wording and original passage citation.")
+    return ""
+
+
+def _project_check_guidance(snapshot: TurnSnapshot) -> str:
+    run = next((spec for spec in snapshot.frozen_specs if spec.name == "run" and "run" in snapshot.tool_names), None)
+    check = project_check_call(run) if run is not None else None
+    if check is None:
+        return ""
+    return ("The existing project check can be selected without copying its command or working directory: "
+            + canonical_json(check) + ". Follow the user's workflow when deciding whether and when to run it. "
+            "Reuse completed receipts instead of rerunning a check merely to retrieve its output.")
+
+
 def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                  browser: BrowserSession | None, *,
                  delivered_results: Sequence[ToolResult] = (),
@@ -123,7 +144,7 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     snapshot = bind_browser_references(session, snapshot, context, generation)
     from codey.operations.browser_followups import DIRECT_TOOLS
 
-    hints: list[str] = []
+    hints = [_quote_guidance(session, snapshot)]
     from codey.operations.browser_result_evidence import action_summary
     from codey.operations.project_delivery import live_record_subject_call, project_delivery_context
 
@@ -138,6 +159,8 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
         else:
             hints.append("The application verification page is bound. Navigate with target=task and read the opened page.")
     elif links.application and session.edited_files and not ready_for_page:
+        snapshot = replace(snapshot, frozen_specs=tuple(
+            restrict_verification(spec) if spec.name == "run" else spec for spec in snapshot.frozen_specs))
         hints.append("Finish the requested project changes and get current project checks before verifying the application page.")
         scope = tuple(dict.fromkeys((*context.scope_files, *session.verification_paths)))
         plan = resolve_verification_requirement(session, context, scope)
@@ -155,14 +178,7 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     next_step = browser_step(session, snapshot, context)
     snapshot, control_wait = browser_control_wait_handoff(session, snapshot, context, generation, next_step=next_step)
     hints.append(control_wait)
-    from codey.codemode.verification import project_check_call
-
-    run = next((spec for spec in snapshot.model_specs if spec.name == "run"), None)
-    check = project_check_call(run) if run is not None else None
-    if check is not None:
-        hints.append("The existing project check can be selected without copying its command or working directory: "
-            + canonical_json(check) + ". Follow the user's workflow when deciding whether and when to run it. "
-            "Reuse completed receipts instead of rerunning a check merely to retrieve its output.")
+    hints.append(_project_check_guidance(snapshot))
     if context.browser_document is None:
         deferred = intent.deferred_urls
         if deferred:

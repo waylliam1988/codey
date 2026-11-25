@@ -120,6 +120,12 @@ class KernelContext:
         self.window = self.capabilities.window_ref
         self.completion_context = wiring._completion_context_with_ignores(
             self.observation.completion_context, self.execution.workspace_ignored_paths)
+        from functools import partial
+
+        from codey.operations.tool_result_reader import ReceiptReader, resolve_receipt_quote
+
+        self.completion_context = replace(self.completion_context, resolve_quote=partial(resolve_receipt_quote,
+            ReceiptReader(session, self.sink.managed_outputs, self.sink.session_id, self.sink.run_id), durable=self.durable))
         from codey.operations.browser_progress import restore_browser_progress
         from codey.operations.browser_resources import build_task_browser
         from codey.toolchain.tool_spec import tool_specs
@@ -446,13 +452,20 @@ class KernelContext:
         from codey.operations.browser_resources import resume_assistance_observation
         from codey.operations.task_handoff import task_handoff
         from codey.operations.tool_task_delivery import active_tool_task_controls
+        from codey.operations.verification_workflow import verification_workflow
 
         question = decode_json_object(thaw_json(self.durable.task(self.sink.run_id).state.get("question", {})))
         assistance = (resume_assistance_observation(browser, question.get("continuation", {}), self.session._memory_results)
                       if question.get("state") == "answered" else "")
+        snapshot, workflow = verification_workflow(self.session, snapshot, self.durable, self.sink.run_id,
+            self.sink.managed_outputs, self.execution.workspace_revision_store,
+            ignored_paths=self.execution.workspace_ignored_paths)
         snapshot, hint = task_handoff(self.session, snapshot, self.completion_context, browser,
                                      delivered_results=delivered_results,
                                      task_controls=active_tool_task_controls(self.durable, self.sink.run_id))
+        from codey.operations.edit_base import edit_anchor_retry
+
+        snapshot, edit_retry = edit_anchor_retry(self.session, snapshot, tuple(delivered_results))
         instructions = ""
         if self.execution.project_path is not None and "edit" in snapshot.inventory_names:
             from codey.operations.project_delivery import declared_edit_target
@@ -463,7 +476,7 @@ class KernelContext:
                 self.execution.project_path, (*targets, *self.session.read_files), self.session._memory_results)
             version = snapshot.input_contract_version if snapshot.input_contract_version >= 18 else 18
             snapshot = replace(snapshot, input_contract_version=version, project_instructions=bindings)
-        return snapshot, "\n\n".join(part for part in (assistance, instructions, hint) if part)
+        return snapshot, "\n\n".join(part for part in (assistance, instructions, edit_retry, hint, workflow) if part)
 
     def freeze(self, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int, prompt: str = "",
                messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
@@ -516,7 +529,8 @@ class KernelContext:
                 or (state.leaf == operation_payload.LEAF_TOOL_DELIVERY_PENDING and not initial_source_batch) else "",
             tool_task_notifications=notification_refs)
         tools = tuple(tools_from_specs(snapshot.model_specs))
-        options = ProviderRequestOptions(task_prompt_span=task_span)
+        options = ProviderRequestOptions(task_prompt_span=task_span,
+            require_tool_call=self.native and not acknowledge and bound_symbol_retry(snapshot) is not None)
         coding = ""
         # Full-turn prompts already contain their prepared context. Native
         # continuations still need a fresh projection after tool execution.

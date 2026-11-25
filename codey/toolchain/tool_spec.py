@@ -416,6 +416,7 @@ def _all_specs() -> dict[str, ToolSpec]:
     specs["read_tool_result"] = ToolSpec(
         name="read_tool_result", grant="control", executor="receipt", replay_class="safe",
         description="Read a stored result from this task without repeating its execution. "
+                    "Use an owned tool_task reference for live status and output, or handoff:TOOL to list authorized original receipts by tool. "
                     "Use view=value for the full canonical JSON value, or view=output (default) for display/command output. "
                     "A missing canonical value is an error; display text cannot replace it. "
                     "Use query (a literal keyword, 1-512 characters) to locate a bounded excerpt in long output; "

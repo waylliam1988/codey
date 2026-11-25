@@ -203,10 +203,13 @@ class TurnSnapshot:
 
     @property
     def model_specs(self) -> tuple[ToolSpec, ...]:
+        from codey.codemode.verification import verification_model_spec
+
         binding = self.input_binding
         specs = tuple(binding.model_spec if binding is not None and spec.name == binding.model_spec.name else spec
                       for spec in self.frozen_specs if spec.name in self.tool_names)
         specs = tuple(reference_spec(spec, self.browser_references) for spec in specs)
+        specs = tuple(verification_model_spec(spec) if spec.name == "run" else spec for spec in specs)
         if self.input_contract_version >= 13 and self.bound_source_url is not None:
             from codey.codemode.navigation import TASK_SOURCE_TOOLS, task_source_spec
 
@@ -883,7 +886,8 @@ def _lower_bound_inputs(
             from codey.codemode.verification import resolve_verification
 
             try:
-                args = (resolve_verification(args, {"properties": canonical_json_object(dict(models[name].parameters))})
+                args = (resolve_verification(args, {"properties": canonical_json_object(
+                            dict(next(spec.parameters for spec in snapshot.frozen_specs if spec.name == "run")))})
                         if name == "run" else bind_symbol_read(
                             lower_compact_symbol_edit(args, models[name]), dict(snapshot.symbol_read_refs)))
             except ValueError as exc:
@@ -1068,7 +1072,8 @@ def normalize_turn(
 
 
 def _bound_symbol_source(reply: DecodedTextTurn | AssistantTurn) -> str:
-    if isinstance(reply, AssistantTurn) and reply.finish is TurnFinish.COMPLETE and not reply.tool_calls:
+    if (isinstance(reply, AssistantTurn) and reply.raw.get("text_protocol") is True
+            and reply.finish is TurnFinish.COMPLETE and not reply.tool_calls):
         return raw_symbol_content(reply.text)
     return raw_symbol_content(reply.text) if isinstance(reply, TextAnswer) else ""
 

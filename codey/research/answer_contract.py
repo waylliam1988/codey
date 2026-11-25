@@ -24,7 +24,7 @@ from codey.research.answer_values import (
     evidence_status_suffix,
 )
 from codey.research.knowledge_updates import normalize_updates, updates_schema
-from codey.research.passages import read_passage_refs
+from codey.research.passages import ReadPassage, read_passage_refs
 from codey.research.questions import is_investigation_tool
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
@@ -288,7 +288,8 @@ def citation_occurrences(markdown: str) -> list[CitationOccurrence]:
     return rows
 
 
-def submit_answer(scope: AnswerScope, args: ToolArgs) -> AnswerSubmission:
+def submit_answer(scope: AnswerScope, args: ToolArgs, *,
+                  passages: Mapping[str, ReadPassage] | None = None) -> AnswerSubmission:
     args = canonical_json_object(args)
     markdown_value = args.get("markdown")
     state = args.get("state")
@@ -312,6 +313,10 @@ def submit_answer(scope: AnswerScope, args: ToolArgs) -> AnswerSubmission:
         from codey.research.calculation import render_calculations
 
         markdown = render_calculations(markdown, scope.calculations, scope.aliases)
+    if "{{quote:" in markdown:
+        from codey.research.quote_slots import render_research_quotes
+
+        markdown = render_research_quotes(markdown, scope.aliases, passages or {})
     if scope.execution_summary and not markdown.endswith(scope.execution_summary):
         markdown += "\n\n" + scope.execution_summary
     if len(markdown) + len(status) > MAX_ANSWER_CHARACTERS:
@@ -409,6 +414,7 @@ def answer_spec(spec: ToolSpec, scope: AnswerScope) -> ToolSpec:
                   "knowledge_updates": updates_schema()}
     return freeze_spec_parameters(replace(spec, parameters=tuple(answer_parameters.items()), required=("markdown", "state"),
         description="Submit the whole research answer as Markdown, with explicit [eN] citations beside supported statements. "
+                    "For an exact quotation, use {{quote:e1}} or {{quote:e1:START:END}} with the source positions from the read. "
                     "For browser action results, cite the formal post-action passage. Explicit quotations must occur "
                     "in their cited passage. The application appends exact browser action counts and sequence from receipts. "
                     "Explain any unanswered requested point in place. state is your declaration, not semantic certification. "

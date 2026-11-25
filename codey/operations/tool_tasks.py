@@ -47,6 +47,7 @@ from codey.types.json_value import (
     require_json_string,
 )
 from codey.utils.failure_output import failure_excerpt
+from codey.workspace.revision import WorkspaceRevisionStore
 
 COMMAND_YIELD_MS = 10_000
 
@@ -107,7 +108,8 @@ def recover_command_admission(durable: DurableSession, *, origin_effect_id: str,
 
 
 def tool_execution_result(durable: DurableSession, child: TaskCheckpoint, *, store: ManagedOutputStore | None,
-                          project_path: Path | None = None) -> tuple[str, ToolResult] | None:
+                          project_path: Path | None = None, workspace_store: WorkspaceRevisionStore | None = None,
+                          ignored_paths: tuple[str, ...] = ()) -> tuple[str, ToolResult] | None:
     request = ToolTaskInput.from_payload(child.state["tool_input"])
     effects = durable.effects(child.task_id)
     if not effects:
@@ -125,7 +127,8 @@ def tool_execution_result(durable: DurableSession, child: TaskCheckpoint, *, sto
     projection = RuntimeEffectProjection(RuntimeEffectIntent.from_payload(intent_payload),
         RuntimeEffectSettlement.from_payload(settlement_payload))
     return effect.effect_id, restore_result_receipt(projection, store=store,
-        session_id=child.conversation_id, run_id=child.task_id, project_path=project_path)
+        session_id=child.conversation_id, run_id=child.task_id, project_path=project_path,
+        workspace_store=workspace_store, ignored_paths=ignored_paths)
 
 
 @dataclass(frozen=True)
@@ -143,7 +146,7 @@ def settled_check_for_progress(
     accepted = caller_result.call.name == "run" and caller_result.kind == "accepted"
     if caller_result.call.name == "run" and not accepted:
         reference = caller_result.canonical.get("tool_task")
-    elif (accepted and include_accepted) or (caller_result.call.name == "task_output" and caller_result.ok):
+    elif (accepted and include_accepted) or (_task_observation_ref(caller_result) is not None and caller_result.ok):
         reference = caller_result.canonical.get("value")
     else:
         return None
@@ -152,7 +155,7 @@ def settled_check_for_progress(
     execution_ref = execution_effect_id(task_ref)
     if not accepted and reference.get("execution_ref") != execution_ref:
         return None
-    if caller_result.call.name == "task_output" and caller_result.call.args.get("task_ref") != task_ref:
+    if caller_result.call.name != "run" and _task_observation_ref(caller_result) != task_ref:
         return None
     try:
         child = owned_tool_task(durable, task_ref, owner_task_id=owner_task_id)
@@ -391,6 +394,14 @@ def wait_tool_task(durable: DurableSession, task_ref: str, *, owner_task_id: str
         unsubscribe()
 
 
+def _task_observation_ref(result: ToolResult) -> str | None:
+    if result.call.name in {"task_output", "task_cancel"}:
+        ref = result.call.args.get("task_ref")
+        return ref if isinstance(ref, str) else None
+    ref = result.call.args.get("result_ref")
+    return ref if result.call.name == "read_tool_result" and isinstance(ref, str) and ref.startswith("tool_task:") else None
+
+
 def terminal_tool_task_observations(results: Mapping[str, ToolResult]) -> set[str]:
     """Derive observed terminal states from committed control receipts."""
     observed: set[str] = set()
@@ -398,8 +409,8 @@ def terminal_tool_task_observations(results: Mapping[str, ToolResult]) -> set[st
         forwarded = result.canonical.get("tool_task")
         if result.kind == "completed" and result.call.name == "run" and isinstance(forwarded, dict):
             observed.add(require_json_string(forwarded["task_ref"], "task_ref"))
-        if result.ok and result.call.name in {"task_output", "task_cancel"}:
-            value = decode_json_object(result.canonical["value"])
+        if result.ok and _task_observation_ref(result) is not None and isinstance(raw := result.canonical.get("value"), dict):
+            value = decode_json_object(raw)
             if value["status"] in TASK_TERMINAL_STATUSES:
                 observed.add(require_json_string(value["task_ref"], "task_ref"))
     return observed

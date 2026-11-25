@@ -51,6 +51,7 @@ from codey.policies.requirement import RequirementEvaluation
 from codey.policies.tool_requirement import MAX_REQUIRED_TOOLS, ToolObservation
 from codey.research.finding_report import ResearchReport
 from codey.research.issues import ResearchIssuePayload
+from codey.research.passages import ReadPassage
 from codey.utils.refs import stable_ref
 
 CheckProvider = Callable[[CompletionCheckInput], list[CompletionCheck]]
@@ -535,7 +536,7 @@ def _browser_completion_block(session: TaskSession, text: str, context: Completi
     return None
 
 
-def _render_task_citations(session: TaskSession, text: str) -> str:
+def _render_task_citations(session: TaskSession, text: str, context: CompletionContext) -> str:
     if session.policy.strict_research or not session.policy.allows("web.read"):
         return text
     from codey.operations.chat_citations import render_source_citations
@@ -547,16 +548,35 @@ def _render_task_citations(session: TaskSession, text: str) -> str:
     from codey.policies.output_requirement import is_output_check
 
     required = project_citation_labels(session)
-    sources = session.source_ids
+    sources = dict(session.source_ids)
     if original := original_handoff_citation(session):
         label, url = original
         sources = {**sources, label: url}
         required = tuple(dict.fromkeys((*required, label)))
     elif session.task_kind == "chat" and len(sources) == 1 and user_requests_citations(session.task_text):
         required = tuple(sources)
-    if session.task_kind == "chat" or required:
+    literal = any(is_output_check(check) for check in session.policy.required_checks)
+    quote_requested = "{{quote:" in text and not literal
+    if quote_requested:
+        from codey.research.quote_slots import render_quote_slots
+
+        resolver = context.resolve_quote
+        if resolver is None:
+            raise ValueError("Original source receipts are unavailable for this quote.")
+
+        def cited(reference: str) -> tuple[ReadPassage, str]:
+            passage = resolver(reference)
+            label = next((key for key, url in sources.items() if url == passage.source.final_url), "")
+            if not label:
+                number = max((int(key[1:]) for key in sources), default=0) + 1
+                label = f"s{number}"
+                sources[label] = passage.source.final_url
+            return passage, f"[{label}] (`{passage.ref}`)"
+
+        text = render_quote_slots(text, cited)
+    if session.task_kind == "chat" or required or quote_requested:
         return render_source_citations(text, sources=sources, searches=session.search_results,
-            literal=any(is_output_check(check) for check in session.policy.required_checks), required_sources=required)
+            literal=literal, required_sources=required)
     return text
 
 
@@ -579,7 +599,7 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
 
     try:
         text, report = prepare_research_completion(session, text, context)
-        text = _render_task_citations(session, text)
+        text = _render_task_citations(session, text, context)
     except ValueError as exc:
         # Field paths, allowed references and acquisition guidance belong to
         # the domain preparation error; the generic exception handler hides them.

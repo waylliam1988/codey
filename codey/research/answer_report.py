@@ -221,7 +221,7 @@ def compile_answer_report(session: TaskSession, ledger: ResearchLedger, store: K
             submission["markdown"], submission["state"], original_scope.aliases)
     from codey.research.answer_contract import submit_answer
 
-    proposed = submit_answer(original_scope, result.call.args)
+    proposed = submit_answer(original_scope, result.call.args, passages=ledger.read_passages)
     if "research_evidence_check" in result.canonical:
         from codey.research.report_evidence import (
             CLAIM_CHECK_VERSIONS,

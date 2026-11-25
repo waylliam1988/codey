@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from codey.knowledge.store import KnowledgeStore
     from codey.operations.research_prerequisites import ResearchPrerequisiteFacts
     from codey.research.ledger import ResearchLedger
+    from codey.research.passages import ReadPassage
     from codey.research.staging import StagedKnowledgeStore
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
     from codey.types.json_value import JsonObject
@@ -40,6 +41,7 @@ class CompletionContext:
     task_changed: bool | None = None
     checkpoint_green: bool = False
     browser_document: JsonObject | None = None
+    resolve_quote: Callable[[str], ReadPassage] | None = None
 
     @classmethod
     def from_value(cls, value: object, *, ignored_paths: tuple[str, ...] = ()) -> CompletionContext:

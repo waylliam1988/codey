@@ -688,7 +688,10 @@ def _search_not_found(
         lines.extend(context.splitlines())
     else:
         lines.extend(["Use read_file to inspect the current file text.", EXACT_REPLACEMENT_CONTEXT_HINT])
-    return ToolOutcome.error(_bounded_failure_output(lines))
+    positions = _line_vote_positions(original_content.splitlines(), search.splitlines())
+    return ToolOutcome.error(_bounded_failure_output(lines), error_code="edit_search_not_found",
+                             audit={"search_candidate_lines": [position + 1 for position in positions],
+                                    "replacement_index": replacement_index})
 
 
 def _multiple_matches(

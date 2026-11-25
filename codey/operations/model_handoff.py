@@ -9,6 +9,7 @@ from codey.knowledge.model import canonical_json
 from codey.operations.kernel_receipts import restore_result_receipt
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.research.passages import receipt_passages
+from codey.research.quote_slots import quote_slot
 from codey.runtime.core.api_selection import ApiRunSelection
 from codey.runtime.core.models import ToolResult
 from codey.runtime.effects.effect_records import RuntimeEffectProjection, RuntimeEffectStore
@@ -32,7 +33,7 @@ _HANDOFF_TOOLS = frozenset({
     "read_file", "edit", "run", "open_url", "open_result", "source_search", "browser_read",
     "browser_snapshot", "browser_click", "browser_wait", "browser_fill", "browser_navigate",
 })
-_HANDOFF_RECEIPT_LIMIT = 12
+_HANDOFF_PREVIEW_LIMIT = 12
 
 
 def authorize_model_handoff(durable: DurableSession, *, request: HandoffRun, target: ApiRunSelection | None,
@@ -98,8 +99,6 @@ def _project_receipts(source: TaskCheckpoint, effects: tuple[RuntimeEffectProjec
                 receipts.setdefault(ref, inherited[ref])
         elif result.kind != "accepted":
             receipts[intent.effect_id] = (effect, result)
-        if len(receipts) == _HANDOFF_RECEIPT_LIMIT:
-            break
     return receipts
 
 
@@ -144,14 +143,31 @@ def _handoff_receipts(durable: DurableSession, source: TaskCheckpoint, effects: 
 
 def read_handoff_receipt(durable: DurableSession, *, session_id: str, run_id: str, identity: str,
                          outputs: ManagedOutputStore | None) -> tuple[str, ToolResult] | None:
+    receipt = _authorized_receipts(durable, session_id=session_id, run_id=run_id, outputs=outputs).get(identity)
+    if receipt is None:
+        return None
+    effect, result = receipt
+    return effect.intent.run_id, result
+
+
+def find_handoff_receipts(durable: DurableSession, *, session_id: str, run_id: str, tool: str,
+                          outputs: ManagedOutputStore | None, offset: int) -> JsonObject:
+    if tool not in _HANDOFF_TOOLS:
+        raise ValueError("select a tool that can carry original handoff receipts")
+    refs = [{"result_ref": ref, "ok": result.ok} for ref, (_, result) in
+            _authorized_receipts(durable, session_id=session_id, run_id=run_id, outputs=outputs).items()
+            if result.call.name == tool]
+    end = offset + _HANDOFF_PREVIEW_LIMIT
+    return decode_json_object({"tool": tool, "receipts": refs[offset:end], "next_offset": end if end < len(refs) else None})
+
+
+def _authorized_receipts(durable: DurableSession, *, session_id: str, run_id: str,
+                         outputs: ManagedOutputStore | None) -> dict[str, tuple[RuntimeEffectProjection, ToolResult]]:
     target = durable.task(run_id)
     if target.conversation_id != session_id or target.execution_kind != "model":
-        return None
+        return {}
     prior = _prior_handoff(durable, target)
-    if prior is not None and (receipt := _handoff_receipts(durable, *prior, outputs).get(identity)) is not None:
-        effect, result = receipt
-        return effect.intent.run_id, result
-    return None
+    return _handoff_receipts(durable, *prior, outputs) if prior is not None else {}
 
 
 def render_model_handoff(source: TaskCheckpoint, effects: tuple[RuntimeEffectProjection, ...],
@@ -165,7 +181,9 @@ def model_handoff_context(source: TaskCheckpoint, effects: tuple[RuntimeEffectPr
     unknown: list[JsonObject] = [{"tool": effect.intent.tool_name, "effect_ref": effect.intent.effect_id}
                                 for effect in reversed(effects) if _unknown_action(effect)]
     source_urls: dict[str, None] = {}
-    for effect, result in _handoff_receipts(durable, source, effects, outputs).values():
+    receipts = _handoff_receipts(durable, source, effects, outputs)
+    ranked = sorted(receipts.values(), key=_preview_priority)
+    for effect, result in ranked[:_HANDOFF_PREVIEW_LIMIT]:
         intent, settlement = effect.intent, effect.settlement
         assert settlement is not None
         row: JsonObject = {"result_ref": intent.effect_id, "tool": result.call.name, "ok": result.ok}
@@ -185,7 +203,8 @@ def model_handoff_context(source: TaskCheckpoint, effects: tuple[RuntimeEffectPr
                 if excerpt and not looks_prompt_visible_secret(excerpt) and not looks_prompt_visible_secret(passage.source.final_url):
                     originals.append({"passage_ref": passage.ref, "url": passage.source.final_url,
                         "source_hash": passage.source.text_hash, "start": passage.start,
-                        "end": passage.start + len(excerpt), "excerpt": excerpt})
+                        "end": passage.start + len(excerpt), "excerpt": excerpt,
+                        "quote_slot": quote_slot(intent.effect_id + ":" + passage.ref)})
                     source_urls[passage.source.final_url] = None
             if originals:
                 row["original_passages"] = originals
@@ -200,3 +219,12 @@ def model_handoff_context(source: TaskCheckpoint, effects: tuple[RuntimeEffectPr
             "An unknown action requires a read-only observation before any new action is authorized.\n"
             + canonical_json({"source_run": source.task_id, "receipts": rows, "unknown_actions": unknown}))
     return text, tuple(source_urls)
+
+
+def _preview_priority(receipt: tuple[RuntimeEffectProjection, ToolResult]) -> int:
+    _, result = receipt
+    if result.ok and result.canonical.get("read_passages"):
+        return 0
+    if result.call.name in {"edit", "read_file", "run"}:
+        return 1
+    return 2

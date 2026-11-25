@@ -130,11 +130,11 @@ def test_truncated_edit_binds_a_single_observed_definition_through_request_resto
     assert not good.protocol_error
     assert good.calls[0].args == {"content": "def labels(): return 2", "path": "labels.py", "symbol": "labels",
                                   "base_result_ref": dict(snapshot.symbol_read_refs)["labels.py"]}
-    raw = AssistantTurn(text="def labels():\n    return r'[^\\w\\s]'")
+    raw = AssistantTurn(text="def labels():\n    return r'[^\\w\\s]'", raw={"text_protocol": True})
     assert normalize_turn(raw, snapshot=retry).calls[0].args["content"] == raw.text
-    imports = normalize_turn(AssistantTurn(text="```python\nimport re\n\ndef labels():\n    return re.ASCII\n```"), snapshot=retry)
+    imports = normalize_turn(replace(raw, text="```python\nimport re\n\ndef labels():\n    return re.ASCII\n```"), snapshot=retry)
     assert imports.calls[0].args["content"] == "def labels():\n    import re\n    return re.ASCII"
-    signature = AssistantTurn(text="import re\ndef labels(value=re.ASCII):\n    return value")
+    signature = replace(raw, text="import re\ndef labels(value=re.ASCII):\n    return value")
     assert normalize_turn(signature, snapshot=retry).protocol_error
     assert normalize_turn(replace(raw, finish=TurnFinish.OUTPUT_LIMIT), snapshot=retry).protocol_error
     assert normalize_turn(AssistantTurn(text="I finished the change."), snapshot=retry).protocol_error

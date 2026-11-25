@@ -12,9 +12,10 @@ import pytest
 from codey.operations.task_execution import ExecutionDelegate
 from codey.policies.tool_requirement import require_tool_success
 from codey.providers.api_generation import AttemptObserver
-from codey.research.answer_contract import AnswerScope, digest, submit_answer
+from codey.research.answer_contract import AnswerScope, digest, submit_answer, validate_submission
 from codey.research.ledger import OpenedSource
 from codey.research.passages import ReadPassage
+from codey.research.quote_slots import paragraph_quote_slots
 from codey.research.report_evidence import CLAIM_CHECK_VERSION, check_report_evidence, review_submission_issues
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -70,6 +71,24 @@ def assert_collecting(directory: Path) -> None:
     request = requests(directory)[-1]
     assert '"codemode"' in json.dumps(request.get("response_format", request.get("tools")))
     assert "post-wait page evidence is ready" not in json.dumps(request["messages"])
+
+
+def test_exact_quote_slot_preserves_contiguous_original_and_replays() -> None:
+    url = "https://example.com/official"
+    quote = "同一句。\r\n同一句。带 ``` 标记和 [e99]。"
+    original = "背景。\r\n\r\n" + quote
+    passage = ReadPassage("p123456abcdef", OpenedSource(url, url, "", "", "hash"), original, (), 0, len(original))
+    scope = AnswerScope(digest("task"), (("e1", passage.ref),), ("attempt",))
+    choices = paragraph_quote_slots("e1", passage)
+    slot = decode_json_object(choices[1])["slot"]
+    submission = submit_answer(scope, {"state": "answered", "markdown": f"原文逐字引述如下。\n\n{slot}"},
+                               passages={passage.ref: passage})
+    assert quote in submission["markdown"]
+    assert [row["passage_ref"] for row in submission["citations"]] == [passage.ref]
+    assert validate_submission(submission, "task") == submission
+    with pytest.raises(ValueError, match="inside the cited passage"):
+        submit_answer(scope, {"state": "answered", "markdown": "{{quote:e1:0:9999}}"},
+                      passages={passage.ref: passage})
 
 
 def assert_submitting(directory: Path, *, sequence: bool = True) -> str:

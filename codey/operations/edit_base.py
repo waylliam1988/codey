@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codey.knowledge.model import canonical_json
 from codey.toolchain.constants import FULL_READ_REFERENCE_HINT
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer, require_json_string
 
@@ -50,6 +51,10 @@ def bind_symbol_read(args: JsonObject, reads: Mapping[str, str]) -> JsonObject:
 
 def unchanged_definition(result: ToolResult) -> tuple[str, str, str] | None:
     """Recognize an unchanged replacement of one complete Python definition."""
+    return _replacement_definition(result, unchanged=True)
+
+
+def _replacement_definition(result: ToolResult, *, unchanged: bool) -> tuple[str, str, str] | None:
     import ast
 
     from codey.toolchain.syntax_query import reindent_python_source
@@ -58,7 +63,7 @@ def unchanged_definition(result: ToolResult) -> tuple[str, str, str] | None:
     rows = result.call.args.get("replacements")
     if (not isinstance(path, str) or Path(path).suffix.casefold() != ".py"
             or not isinstance(rows, list) or len(rows) != 1 or not isinstance(row := rows[0], dict)
-            or not isinstance(text := row.get("old_string"), str) or row.get("new_string") != text):
+            or not isinstance(text := row.get("old_string"), str) or unchanged and row.get("new_string") != text):
         return None
     try:
         body = ast.parse(reindent_python_source(text)).body
@@ -86,7 +91,8 @@ def current_definition(session: TaskSession, project: Path, path: str, name: str
         return None
 
 
-def symbol_retry_source(session: TaskSession, project: Path, path: str, symbol: str, ref: str) -> str | None:
+def symbol_retry_source(session: TaskSession, project: Path, path: str, symbol: str, ref: str, *,
+                        candidate_lines: tuple[int, ...] = ()) -> str | None:
     """Read the bound definition once its receipt still matches the workspace."""
     import ast
 
@@ -100,6 +106,11 @@ def symbol_retry_source(session: TaskSession, project: Path, path: str, symbol: 
         ):
             return None
         matches = [node for node in python_definitions(source) if node.name == symbol]
+        if candidate_lines and len(matches) == 1:
+            node = matches[0]
+            first = min((decorator.lineno for decorator in node.decorator_list), default=node.lineno)
+            if not any(first <= line <= (node.end_lineno or node.lineno) for line in candidate_lines):
+                return ""
         original = ast.get_source_segment(source, matches[0], padded=True) if len(matches) == 1 else None
         return reindent_python_source(original) if original else ""
     except SyntaxError:
@@ -137,11 +148,8 @@ def compact_symbol_retry(snapshot: TurnSnapshot, reply: AssistantTurn | str, *,
                          session: TaskSession | None = None) -> TurnSnapshot:
     """Narrow a truncated edit retry without accepting any of its arguments."""
     import re
-    from dataclasses import replace
 
-    from codey.operations.kernel_protocol import refresh_snapshot_contract
     from codey.providers.base import AssistantTurn, TurnFinish
-    from codey.toolchain.tool_spec import freeze_spec_parameters
 
     spec = next((item for item in snapshot.model_specs if item.name == "edit"), None)
     if (not isinstance(reply, AssistantTurn) or reply.finish is not TurnFinish.OUTPUT_LIMIT or reply.tool_calls
@@ -151,6 +159,66 @@ def compact_symbol_retry(snapshot: TurnSnapshot, reply: AssistantTurn | str, *,
         return snapshot
     path, symbols = _partial_edit_target(reply.text, snapshot, session)
     paths = [path] if path and symbols else [name for name, _ in snapshot.symbol_read_refs]
+    return _compact_definition_spec(snapshot, spec, paths, symbols)
+
+
+def edit_anchor_retry(session: TaskSession, snapshot: TurnSnapshot, delivered: tuple[ToolResult, ...],
+                      ) -> tuple[TurnSnapshot, str]:
+    from codey.research.calculation import file_selector_key
+
+    if len(delivered) != 1 or snapshot.input_binding is not None:
+        return snapshot, ""
+    result = delivered[0]
+    if result.ok and result.call.name in {"read", "read_file"}:
+        target_path = result.call.args.get("path")
+        result = next((receipt for receipt in reversed(tuple(session._memory_results.values()))
+                       if receipt.call.name == "edit" and receipt.call.args.get("path") == target_path), result)
+    if result.ok or result.audit.get("error_code") != "edit_search_not_found":
+        return snapshot, ""
+    spec = next((item for item in snapshot.model_specs if item.name == "edit"), None)
+    path = result.call.args.get("path")
+    if (not isinstance(path, str) or Path(path).suffix.casefold() != ".py"
+            or spec is None or "symbol" not in dict(spec.parameters)):
+        return snapshot, ""
+    path = file_selector_key(path)
+    name = _failed_definition_name(result)
+    if not name:
+        return snapshot, ""
+    reference = dict(snapshot.symbol_read_refs).get(path)
+    positions = result.audit.get("search_candidate_lines")
+    candidate_lines = tuple(line for line in positions if type(line) is int) if isinstance(positions, list) else ()
+    current = (symbol_retry_source(session, Path(session.project), path, name, reference, candidate_lines=candidate_lines)
+               if reference else None)
+    if current is None:
+        action = canonical_json({"tool": "read_file", "args": {"path": path}})
+        return snapshot, f"Read the current complete file before editing {name}.\n" + action
+    if not current:
+        return snapshot, ""
+    narrowed = _compact_definition_spec(snapshot, spec, [path], (name,))
+    return narrowed, f"Use the current definition of {name} in {path}. For an edit tool call, put only the new definition in content.\n\n{current}"
+
+
+def _failed_definition_name(result: ToolResult) -> str:
+    import re
+
+    target = _replacement_definition(result, unchanged=False)
+    if target is not None:
+        return target[1]
+    rows = result.call.args.get("replacements")
+    if (not isinstance(rows, list) or len(rows) != 1 or not isinstance(row := rows[0], dict)
+            or not isinstance(old := row.get("old_string"), str)):
+        return ""
+    headers = re.findall(r"(?m)^[ \t]*(?:async +def|def|class) +([^\W\d]\w*)\s*[(\[:]", old)
+    return headers[0] if len(headers) == 1 and re.match(r"\s*(?:async +def|def|class)\s+", old) else ""
+
+
+def _compact_definition_spec(snapshot: TurnSnapshot, spec: ToolSpec, paths: list[str],
+                             symbols: tuple[str, ...]) -> TurnSnapshot:
+    from dataclasses import replace
+
+    from codey.operations.kernel_protocol import refresh_snapshot_contract
+    from codey.toolchain.tool_spec import freeze_spec_parameters
+
     domains: dict[str, object] = {"path": {"type": "string", "enum": paths}}
     if symbols:
         domains["symbol"] = {"type": "string", "enum": list(symbols)}
@@ -246,7 +314,9 @@ def _bound_edit_target(spec: ToolSpec) -> tuple[str, str] | None:
 def lower_compact_symbol_edit(args: JsonObject, spec: ToolSpec) -> JsonObject:
     if (target := _bound_edit_target(spec)) is None:
         return args
-    return {"path": target[0], "symbol": target[1], **args}
+    if args.get("path", target[0]) != target[0] or args.get("symbol", target[1]) != target[1]:
+        raise ValueError("Edit must target the definition bound to this request.")
+    return {**args, "path": target[0], "symbol": target[1]}
 
 
 def _edit_base(session: TaskSession | None, project: Path, path: str, ref: str) -> tuple[str, str]:

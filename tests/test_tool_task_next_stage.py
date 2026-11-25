@@ -34,6 +34,76 @@ def restore(runtime: Runtime, session: TaskSession | None = None) -> TaskSession
     return restored
 
 
+def test_declared_verification_waits_for_same_diagnostic_cleanup(tmp_path: Path) -> None:
+    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.tool_tasks import control_tool_task, wait_tool_task
+    from codey.operations.verification_workflow import completion_workflow, verification_workflow
+    from codey.protocols.text_turn import decode_text_turn
+    from codey.types.json_value import parse_json_object, require_json_string
+
+    runtime = open_runtime(tmp_path)
+    worker: threading.Thread | None = None
+    stop = threading.Event()
+    try:
+        runtime.session.task_text = (
+            "1. Start python -m pytest -q -s test_order.py in the background.\n"
+            "2. Repeat the same regression in the background until it passes.\n"
+            "3. Start python -m pytest -q -s probe_order.py in the background. "
+            "Once ready-for-cleanup appears, stop only that diagnostic and confirm.\n"
+            "4. Run python -m pytest -q test_health.py in the foreground.\n")
+        (runtime.project / "test_order.py").write_text("def test_pass():\n    assert True\n", encoding="utf-8")
+        (runtime.project / "test_health.py").write_text("def test_health():\n    assert True\n", encoding="utf-8")
+        (runtime.project / "probe_order.py").write_text(
+            "import time\ndef test_probe():\n    print('ready-for-cleanup', flush=True)\n    time.sleep(30)\n",
+            encoding="utf-8")
+        durable = runtime.app.durable
+        def next_step() -> tuple[ToolCall, str]:
+            restore(runtime, runtime.session)
+            current, hint = verification_workflow(runtime.session, build_turn_snapshot(runtime.session, native=True),
+                durable, "r", runtime.app.managed_outputs, runtime.app.workspace_revisions, ignored_paths=())
+            plan = normalize_turn(decode_text_turn(hint.splitlines()[-1]), snapshot=current)
+            assert not plan.protocol_error and len(plan.calls) == 1, (plan.protocol_error, hint)
+            return plan.calls[0], hint
+
+        first, _ = next_step()
+        assert first.args["command"] == "python -m pytest -q -s test_order.py"
+        reference = runtime.accept(require_json_string(first.args["command"], "command"))
+        run_tool_task(durable, durable.claim_task_checkpoint(reference), stores=runtime.app.task_submission_stores,
+                      signal=stop)
+        probe, _ = next_step()
+        assert probe.args["command"] == "python -m pytest -q -s probe_order.py"
+        accepted = runtime.execute(probe, turn=1)
+        ref = require_json_string(parse_json_object(accepted.model_text)["task_ref"], "task_ref")
+        child = durable.claim_task_checkpoint(ref)
+        worker = threading.Thread(target=lambda: run_tool_task(durable, child,
+            stores=runtime.app.task_submission_stores, signal=stop))
+        worker.start()
+        deadline = time.monotonic() + 15
+        while True:
+            action, hint = next_step()
+            assert action.args["task_ref"] == ref
+            if action.name == "task_cancel":
+                assert "ready-for-cleanup" in hint
+                break
+            assert action.name == "task_output" and time.monotonic() < deadline, hint
+            stop.wait(0.02)
+        cancelled = control_tool_task(action, durable=durable, owner_task_id="r", store=runtime.app.managed_outputs)
+        assert cancelled.ok and parse_json_object(cancelled.model_text)["status"] == "cancelled"
+        assert not wait_tool_task(durable, ref, owner_task_id="r", wait_ms=10000).state.get("cleanup_unknown")
+        health, hint = next_step()
+        assert health.args["command"] == "python -m pytest -q test_health.py"
+        assert health.args["run_in_background"] is False and ref in hint
+        assert runtime.execute(health, turn=2).ok
+        plan, gap = completion_workflow(runtime.session, durable, "r", runtime.app.managed_outputs)
+        assert plan is not None and not gap
+        assert [row.candidate.command for row in plan.obligations] == [first.args["command"], health.args["command"]]
+    finally:
+        stop.set()
+        if worker is not None:
+            worker.join(15)
+        assert runtime.app.close()
+
+
 @pytest.mark.parametrize(("first_pass", "second_pass"), [(True, False), (False, True)])
 def test_recovery_orders_child_and_parent_checks_by_settlement(
     tmp_path: Path, first_pass: bool, second_pass: bool,
