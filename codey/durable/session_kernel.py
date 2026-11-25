@@ -91,11 +91,7 @@ class SessionKernel:
 
     @contextmanager
     def history_read(self, conversation_id: str) -> Generator[HistoryReader]:
-        with self.store.history_snapshot() as reader:
-            with self._write_lock:
-                self._ensure_usable()
-                # BEGIN alone is deferred: this SELECT fixes the WAL snapshot.
-                reader.display_head(conversation_id)
+        with self.store.history_snapshot(conversation_id=conversation_id, admission=self.control_line()) as reader:
             yield reader
 
     @_mutation_line

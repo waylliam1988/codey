@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import uuid
 from collections.abc import Generator, Mapping
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
@@ -673,10 +673,14 @@ class MemoryDurableStore:
             return tuple(self._entries[conversation_id])
 
     @contextmanager
-    def history_snapshot(self) -> Generator[HistoryReader, None, None]:
+    def history_snapshot(
+        self, *, conversation_id: str | None = None, admission: AbstractContextManager[None] | None = None,
+    ) -> Generator[HistoryReader, None, None]:
         with self.history_lifetime.read():
-            with self._lock:
+            with admission if admission is not None else nullcontext(), self._lock:
                 reader = MemoryHistoryReader(self)
+                if conversation_id is not None:
+                    reader.display_head(conversation_id)
             yield reader
 
     def head(self, conversation_id: str) -> tuple[str | None, int]:

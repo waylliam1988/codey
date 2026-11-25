@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Callable, Generator, Iterator, Mapping
-from contextlib import closing, contextmanager
+from contextlib import AbstractContextManager, closing, contextmanager, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -294,11 +294,18 @@ class SQLiteDurableStore:
             return _entries(database, conversation_id)
 
     @contextmanager
-    def history_snapshot(self) -> Generator[HistoryReader, None, None]:
+    def history_snapshot(
+        self, *, conversation_id: str | None = None, admission: AbstractContextManager[None] | None = None,
+    ) -> Generator[HistoryReader, None, None]:
         with self.history_lifetime.read(), closing(self._connect()) as database:
             database.execute("BEGIN")
             try:
-                yield SQLiteHistoryReader(database)
+                reader = SQLiteHistoryReader(database)
+                with admission if admission is not None else nullcontext():
+                    if conversation_id is not None:
+                        # The first SELECT pins SQLite's deferred snapshot.
+                        reader.display_head(conversation_id)
+                yield reader
             finally:
                 database.execute("ROLLBACK")
 

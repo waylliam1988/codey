@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
+from types import TracebackType
 
 import pytest
 
@@ -77,6 +78,50 @@ def test_fork_is_published_as_the_child_creation_commit(backend: str, tmp_path: 
     assert mutation.create_conversation is not None
     assert mutation.create_conversation.parent_conversation_id == "root"
     assert mutation.create_conversation.parent_entry_id == entry.entry_id
+
+
+def test_memory_history_snapshot_is_pinned_on_the_session_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = DurableSession(MemoryDurableStore())
+    session.create_conversation("conversation")
+    first = session.append_message("conversation", "user_message", {"text": "before lock"})
+    awaiting_admission = threading.Event()
+    pages: list[dict[str, object]] = []
+    errors: list[Exception] = []
+
+    def read() -> None:
+        try:
+            pages.append(session.history_page("conversation"))
+        except Exception as error:
+            errors.append(error)
+
+    reader = threading.Thread(target=read)
+    lock = session._write_lock
+
+    class ObservedLock:
+        def __enter__(self) -> None:
+            if threading.current_thread() is reader:
+                awaiting_admission.set()
+            lock.acquire()
+
+        def __exit__(self, _kind: type[BaseException] | None, _error: BaseException | None,
+                     _traceback: TracebackType | None) -> None:
+            lock.release()
+
+    monkeypatch.setattr(session, "_write_lock", ObservedLock())
+    try:
+        with session.control_line():
+            reader.start()
+            assert awaiting_admission.wait(5)
+            second = session.append_message("conversation", "assistant_message", {"text": "on the line"})
+    finally:
+        reader.join(5)
+        session.close()
+    assert not reader.is_alive()
+    assert not errors
+    [page] = pages
+    assert page["display_version"] == second.entry_id
+    assert page["snapshot_revision"] == 2
+    assert second.parent_id == first.entry_id
 
 
 def test_history_window_holds_the_session_line_only_for_admission(monkeypatch: pytest.MonkeyPatch) -> None:
