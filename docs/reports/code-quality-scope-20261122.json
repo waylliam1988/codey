@@ -4308,10 +4308,11 @@
         "codey/durable/edit.py"
       ],
       "id": "Q059",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/edit.py"],
+      "verified_files": ["codey/durable/edit.py"],
+      "tests": ["tests/durable/test_edit_admission.py", "tests/durable/test_branch_revision_cas.py", "tests/durable/test_queued_input_revision.py", "tests/durable/test_context_edit_folding.py", "tests/durable/test_fork_ancestry.py", "tests/test_edit_api.py", "tests/test_edit_conversation_plan.py"],
+      "result": "Enforced the non-negative integer revision contract in durable edit admission. Boolean and floating-point regressions failed before the fix and passed after. 77 scoped tests and all type gates passed."
     },
     {
       "responsibility": "codey/durable: execution evidence and event projection",

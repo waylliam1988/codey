@@ -11,7 +11,10 @@ from codey.durable.session_kernel import SessionKernel
 
 def prepare_edit(session: SessionKernel, conversation_id: str, revision: int, edit: Mapping[str, object],
                  *, placed: bool, has_tool_results: bool) -> tuple[str | None, str | None, tuple[str, ...]]:
-    if revision != edit.get("expected_revision") or not session.store.has_conversation(conversation_id):
+    expected_revision = edit.get("expected_revision")
+    if type(expected_revision) is not int or expected_revision < 0:
+        raise ValueError("input.expected_revision must be a non-negative integer")
+    if revision != expected_revision or not session.store.has_conversation(conversation_id):
         raise CommitConflict("Conversation changed. Cancel the edit and try again.")
     if has_tool_results or not placed:
         raise ValueError("an edit must place one new user input")

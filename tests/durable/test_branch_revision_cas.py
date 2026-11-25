@@ -22,6 +22,30 @@ def test_branch_requires_the_revision_captured_by_the_writer(backend: str, tmp_p
         second.branch("conversation", entry.entry_id, expected_revision=revision)
 
 
+@pytest.mark.parametrize("invalid_revision", [True, 1.0])
+def test_message_edit_requires_an_integer_revision(invalid_revision: object) -> None:
+    session = DurableSession(MemoryDurableStore())
+    try:
+        session.create_conversation("conversation")
+        entry = session.append_message("conversation", "user_message", {"text": "one"})
+        head = session.head("conversation")
+        sequence = session.commit_sequence()
+        assert head[1] == 1
+
+        with pytest.raises(ValueError, match="expected_revision.*non-negative integer"):
+            session.admit_input(
+                conversation_id="conversation", request_id="edit", task_id="edit", text="updated",
+                provider_snapshot={}, task_state={"input": {
+                    "kind": "edit_user_message", "entry_id": entry.entry_id, "expected_revision": invalid_revision,
+                }},
+            )
+
+        assert session.head("conversation") == head
+        assert session.commit_sequence() == sequence
+    finally:
+        session.close()
+
+
 def test_branch_commit_is_published_with_the_new_head_and_revision() -> None:
     published: list[object] = []
     session = DurableSession(MemoryDurableStore(), on_commit=lambda result, _mutation: published.append(result))

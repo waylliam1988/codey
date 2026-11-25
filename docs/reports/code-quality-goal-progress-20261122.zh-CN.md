@@ -1930,3 +1930,10 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 修改前范围内三份历史测试 34 passed、退出 0。最终执行 `python -m pytest -q tests/durable/test_history_storage_paging.py tests/durable/test_history_snapshot_paging.py tests/durable/test_display_index.py tests/durable/test_conversation_delete_commit.py tests/test_history_file_lifetime.py --tb=short`，48 passed、无失败或跳过、退出 0。
 - `python -m mypy codey/durable/input_receipts.py codey/durable/sqlite_history.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 从 43 条诊断降为 0。同两文件 Ruff、Pyrefly 退出 0。全生产 ty 和 kernel_type_precision_gate 退出 0。当前工作树的全生产 mypy 765 文件退出 1，在并行改动的 `tool_result_reader.py:220`、`verification_workflow.py:73–74` 有 3 条诊断。Pyrefly 退出 1，在 `tool_result_reader.py:242` 有 1 条诊断，35 suppressed、164 warnings 未展示。
 - Q058 完成。累计完成 106/358 批，完成批覆盖 188/1009 个生产文件，另有 15 批部分完成。下一批 Q059 为持久编辑与输入修订。
+
+### Q059 持久编辑与输入修订
+
+- Q058 已提交 `319c35f6`。完整检查 `edit.py`。应用请求公开契约要求编辑版本是非负整数。当前版本为 1 时，直接持久入口根据 Python 相等性接受 `True` 与 `1.0`。运行 `python -m pytest -q tests/durable/test_branch_revision_cas.py::test_message_edit_requires_an_integer_revision --tb=short`，两项均因未抛出 ValueError 失败，退出 1。在事务内比较版本前验证其类型和范围后，同一命令 2 passed、退出 0，并确认无提交和头部变更。
+- 在 `D:\codey` 初始四文件基线 59 passed。最终执行 `python -m pytest -q tests/durable/test_edit_admission.py tests/durable/test_branch_revision_cas.py tests/durable/test_queued_input_revision.py tests/durable/test_context_edit_folding.py tests/durable/test_fork_ancestry.py --tb=short`，70 passed。执行 `python -m pytest -q tests/test_edit_api.py tests/test_edit_conversation_plan.py --tb=short`，7 passed。两组均退出 0，无失败或跳过。
+- `python -m mypy codey/durable/edit.py tests/durable/test_branch_revision_cas.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated`、同两文件 Ruff 和 Pyrefly 退出 0。全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- Q059 完成。累计完成 107/358 批，完成批覆盖 189/1009 个生产文件，另有 15 批部分完成。下一批 Q060 为持久事件投影及进程存活检查。
