@@ -30,6 +30,7 @@ from codey.types.json_value import (
     parse_json_object,
     require_json_string,
 )
+from codey.types.research_answer import answer_fields
 
 PROTOCOL_NO_JSON = "no_json"
 PROTOCOL_UNKNOWN_TOOL = "unknown_tool"
@@ -104,10 +105,7 @@ TOOL_CONTRACTS = {
                     "The final report accounts for every question with evidence or a specific gap; planning is not completion.",
     ),
     "submit_research_answer": ToolContract(
-        name="submit_research_answer", input_schema=object_schema({
-            "markdown": {"type": "string", "minLength": 12, "maxLength": 64000},
-            "state": {"type": "string", "enum": ["answered", "partial", "unresolved"]},
-        }, "markdown", "state"),
+        name="submit_research_answer", input_schema=object_schema(dict(answer_fields()), "markdown", "state"),
         example='{"tool":"submit_research_answer","args":{"state":"unresolved","markdown":"The investigation could not establish the answer."}}',
         description="Submit the complete Research answer under its frozen evidence contract.",
     ),

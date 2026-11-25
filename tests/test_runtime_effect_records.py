@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.runtime.core.operation_payload import (
     DRIVER_WRITER,
@@ -24,10 +26,20 @@ from codey.runtime.effects.effect_records import (
     compute_args_digest,
     new_effect_id,
 )
+from codey.runtime.effects.replay_args import validate_replay_args_shape
 from codey.runtime.effects.replay_policy import ReplayClass
-from codey.runtime.log.session_view import load_session_view, pending_for
-from codey.runtime.write.checkpoint import RuntimeOperationStore
+from codey.runtime.log.session_view import pending_for
+from codey.runtime.write.checkpoint import RuntimeOperationStore, view_from_checkpoint
 from codey.runtime.write.mutation_line import RuntimeMutationLine
+
+
+def test_research_replay_preserves_current_whole_answer_and_rejects_retired_forms() -> None:
+    args = {"state": "unresolved", "markdown": "  The evidence was inconclusive.  ", "knowledge_updates": []}
+    assert validate_replay_args_shape("submit_research_answer", args) == args
+    retired_forms: tuple[dict[str, object], ...] = ({"finding": {}}, {"findings": []})
+    for form in retired_forms:
+        with pytest.raises(ValueError, match="Submit markdown"):
+            validate_replay_args_shape("submit_research_answer", {"state": "unresolved", **form})
 
 
 class RuntimeEffectRecordsTests(unittest.TestCase):
@@ -84,13 +96,7 @@ class RuntimeEffectRecordsTests(unittest.TestCase):
         assert pending is not None
         self.assertEqual(pending.leaf, LEAF_PROVIDER_EFFECT_PENDING)
         derived = pending_for(
-            load_session_view(
-                __import__("tests.support.runtime_log_fixture", fromlist=["checkpoint_entries"]).checkpoint_entries(
-                    self.durable.task(self.run_id), self.durable.effects(self.run_id), session_id=self.session_id,
-                ),
-                session_id=self.session_id,
-                run_id=self.run_id,
-            )
+            view_from_checkpoint(*self.durable.task_facts(self.run_id), session_id=self.session_id)
         )
         self.assertEqual(derived.effect_ids, (effect_id,))
 

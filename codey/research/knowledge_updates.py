@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from codey.research.knowledge_update_types import KnowledgeUpdate, MutationPayload, UpdateReference
 from codey.research.tool_args import decode_conditions
 from codey.types.json_value import JsonObject, canonical_json_object
+from codey.types.research_answer import MAX_UPDATES
 
 if TYPE_CHECKING:
     from codey.research.report_values import EvidenceBinding
@@ -17,7 +18,6 @@ from codey.knowledge.archive import stable_identity
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, KnowledgeReference
 from codey.research.knowledge_schema import condition_map_schema, object_schema
 
-MAX_UPDATES = 16
 _KEY_PATTERN = r"[A-Za-z][A-Za-z0-9_-]{0,63}"
 # Keep the same reference language using ordinary grouping: local GBNF
 # compilers (including KoboldCpp 1.117.1) reject non-capturing groups and

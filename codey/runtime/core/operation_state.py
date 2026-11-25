@@ -8,7 +8,6 @@ ledger; UI events and run traces are observation only.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterable
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TypedDict, Unpack
@@ -61,8 +60,6 @@ from codey.runtime.core.operation_payload import (
     _text,
 )
 from codey.runtime.core.outcome import OperationOutcome, operation_outcome_from_stop_reason
-from codey.runtime.log.entries import RuntimeLogEntry
-from codey.runtime.log.session_projection import RuntimeProjection
 from codey.storage.local_store import project_key, session_key
 
 _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
@@ -220,34 +217,6 @@ def new_operation_state(
         task_policy=_parse_task_policy(task_policy),
         model_selection=_parse_model_selection(model_selection),
     )
-
-
-def operation_state_from_entries(
-    entries: Iterable[RuntimeLogEntry],
-    *,
-    session_id: str,
-    run_id: str,
-) -> RuntimeOperationState | None:
-    operation_id = operation_id_for_run(run_id or "")
-    lane = lane_for_run(run_id or "")
-    latest: RuntimeOperationState | None = None
-    for entry in entries:
-        if entry.kind != "operation_state" or entry.operation_id != operation_id:
-            continue
-        if entry.lane != lane:
-            raise RuntimeOperationTransitionError("operation state entry boundary mismatch")
-        state = RuntimeOperationState.from_payload(entry.payload)
-        if state is None:
-            raise RuntimeOperationTransitionError("invalid operation state payload")
-        if (
-            state.session_id != session_id
-            or state.run_id != run_id
-            or state.operation_id != operation_id
-            or state.lane != lane
-        ):
-            raise RuntimeOperationTransitionError("operation state payload boundary mismatch")
-        latest = state
-    return latest
 
 
 def operation_progress_text(state: RuntimeOperationState | None) -> str:
@@ -674,48 +643,6 @@ def mark_terminal(
     )
 
 
-def operation_state_entry(state: RuntimeOperationState) -> dict[str, object]:
-    return {
-        "lane": state.lane,
-        "operation_id": state.operation_id,
-        "kind": "operation_state",
-        "payload": state.to_payload(),
-    }
-
-
-def operation_started_entry(state: RuntimeOperationState) -> dict[str, object]:
-    return {
-        "lane": state.lane,
-        "operation_id": state.operation_id,
-        "kind": "operation_started",
-        "payload": {"operation_kind": state.task_kind},
-    }
-
-
-def start_entries(
-    projection: RuntimeProjection,
-    state: RuntimeOperationState,
-) -> tuple[dict[str, object], ...]:
-    existing = projection.operations.get(state.operation_id)
-    if existing is None:
-        return (operation_started_entry(state), operation_state_entry(state))
-    if existing.lane != state.lane or existing.status != "open":
-        raise RuntimeOperationTransitionError("task operation is not open")
-    return (operation_state_entry(state),)
-
-
-def operation_is_open(
-    projection: RuntimeProjection,
-    state: RuntimeOperationState,
-) -> bool:
-    existing = projection.operations.get(state.operation_id)
-    if existing is None:
-        return False
-    if existing.lane != state.lane or existing.status != "open":
-        raise RuntimeOperationTransitionError("task operation is not open")
-    return True
-
-
 def outcome_for_terminal(state: RuntimeOperationState) -> OperationOutcome:
     reason = state.terminal.stop_reason if state.terminal is not None else state.stop_reason
     return operation_outcome_from_stop_reason(
@@ -820,11 +747,6 @@ __all__ = [
     "mark_writer_settled",
     "new_operation_state",
     "operation_id_for_run",
-    "operation_is_open",
     "operation_progress_text",
-    "operation_started_entry",
-    "operation_state_entry",
-    "operation_state_from_entries",
     "outcome_for_terminal",
-    "start_entries",
 ]

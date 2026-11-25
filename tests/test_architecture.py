@@ -425,10 +425,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.runtime.observe.prompt_envelope",
             "codey.runtime.effects.replay_args",
             "codey.runtime.effects.replay_policy",
-            "codey.runtime.effects.keep_policies",
-            "codey.runtime.log.compaction",
-            "codey.runtime.log.entries",
-            "codey.runtime.log.session_projection",
             "codey.runtime.log.session_view",
             "codey.runtime.observe.terminalizer",
             "codey.utils.refs",
@@ -462,9 +458,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "write/research_publication.py",
             "write/tool_batches.py",
             "write/delivery_recovery.py",
-            "log/session_projection.py",
             "log/session_view.py",
-            "log/compaction.py",
             "observe/terminalizer.py",
         )
         self.assertFalse((ROOT / "codey" / "runtime" / "effects.py").exists())

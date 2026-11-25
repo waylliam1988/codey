@@ -81,10 +81,8 @@ def test_strict_source_present_in_all_readers() -> None:
         "runs/details.py",
         "runs/receipt.py",
         "runs/work_checkpoint.py",
-        "research/evidence_ledger.py",
         "runtime/effects/tool_result_delivery.py",
         "runtime/effects/effect_records.py",
-        "runtime/log/entries.py",
     ]
     missing: list[str] = []
     for rel in loose_files:

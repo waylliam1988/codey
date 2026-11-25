@@ -8,13 +8,13 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
 
 from codey.research import report_quality
 from codey.research.ledger import ResearchLedger, normalize_evidence_stance
 from codey.research.object_model import ResearchClaim, build_research_record
 from codey.research.urls import opened_url
 from codey.utils.citation_scanner import (
+    SourceIdRef,
     citation_ref_items,
     normalize_citation_groups,
     source_id_ref_items,
@@ -269,7 +269,7 @@ def _rewrite_source_id_refs(text: str, source_id_to_number: dict[str, int]) -> s
     return result
 
 
-def _source_id_replacement(text: str, item: Any, number: int) -> str:
+def _source_id_replacement(text: str, item: SourceIdRef, number: int) -> str:
     replacement = f"[{number}{item.page_suffix}]" if item.bracketed else f"[{number}]"
     if item.start > 0 and re.match(r"[A-Za-z0-9_]", text[item.start - 1]):
         replacement = " " + replacement

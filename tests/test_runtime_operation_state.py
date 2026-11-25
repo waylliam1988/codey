@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from codey.durable import DurableSession
 from codey.runtime.core.operation_payload import (
@@ -49,12 +50,10 @@ from codey.runtime.core.operation_state import (
     mark_writer_settled,
     operation_id_for_run,
     operation_progress_text,
-    operation_state_from_entries,
+    outcome_for_terminal,
 )
-from codey.runtime.log.entries import RuntimeLogEntry
-from codey.runtime.log.session_projection import reduce_session
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.runtime.write.mutation_line import RuntimeMutationLine
-from tests.support.runtime_log_fixture import checkpoint_entries
 from tests.support.sqlite_store import TemporarySQLiteStore
 
 PROOF_OK = "completion_proof:0123456789abcdef"
@@ -62,27 +61,17 @@ PROOF_FAIL = "completion_proof:fedcba9876543210"
 CONTEXT_REF = "sha256:" + "a" * 64
 
 
-def _state(leaf: str, **overrides: object) -> RuntimeOperationState:
-    values = {
-        "session_id": "s1",
-        "run_id": "run-1",
-        "operation_id": "task:" + "1" * 24,
-        "lane": "run:" + "2" * 24,
-        "project_ref": "project:" + "3" * 24,
-        "provider_id": "deepseek",
-        "turn_budget": 5,
-        "max_repair_rounds": 1,
-        "leaf": leaf,
-        "started_at": "2026-01-01T00:00:00Z",
-        "updated_at": "2026-01-01T00:00:01Z",
-        "task_kind": "project",
-    }
-    values.update(overrides)
-    return RuntimeOperationState(**values)
+def _state(leaf: str) -> RuntimeOperationState:
+    return RuntimeOperationState(
+        session_id="s1", run_id="run-1", operation_id="task:" + "1" * 24,
+        lane="run:" + "2" * 24, project_ref="project:" + "3" * 24, provider_id="deepseek",
+        turn_budget=5, max_repair_rounds=1, leaf=leaf, started_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:01Z", task_kind="project",
+    )
 
 
 class RuntimeOperationStateTests(unittest.TestCase):
-    def _runtime(self):
+    def _runtime(self) -> tuple[DurableSession, RuntimeMutationLine]:
         durable = DurableSession(TemporarySQLiteStore())
         durable.admit_input(
             conversation_id="s1", request_id="request-1", task_id="run-1",
@@ -91,12 +80,7 @@ class RuntimeOperationStateTests(unittest.TestCase):
         durable.start_task("run-1", state={})
         return durable, RuntimeMutationLine(durable=durable)
 
-    @staticmethod
-    def _entries(durable):
-        task, effects = durable.task_facts("run-1")
-        return checkpoint_entries(task, effects, session_id="s1")
-
-    def test_operation_state_is_first_class_log_entry(self) -> None:
+    def test_operation_state_is_saved_in_task_checkpoint(self) -> None:
         durable, line = self._runtime()
         try:
             state = line.accept_operation(
@@ -114,24 +98,13 @@ class RuntimeOperationStateTests(unittest.TestCase):
                 "run-1",
                 provider_id="deepseek",
             )
-            entries = self._entries(durable)
+            task = durable.task("run-1")
         finally:
             durable.close()
 
         assert state is not None
         self.assertEqual(state.leaf, LEAF_WRITER_RUNNING)
-        self.assertEqual(
-            [entry.kind for entry in entries if entry.operation_id == state.operation_id],
-            ["operation_started", "operation_state"],
-        )
-        self.assertEqual(
-            [
-                entry.payload["leaf"]
-                for entry in entries
-                if entry.kind == "operation_state"
-            ],
-            [LEAF_WRITER_RUNNING],
-        )
+        self.assertEqual(operation_from_checkpoint(task, "s1"), state)
 
     def test_start_returns_existing_open_state_without_rewinding(self) -> None:
         durable, line = self._runtime()
@@ -151,6 +124,7 @@ class RuntimeOperationStateTests(unittest.TestCase):
                 "run-1",
                 provider_id="deepseek",
             )
+            before = durable.task("run-1")
             resumed = line.accept_operation(
                 session_id="s1",
                 run_id="run-1",
@@ -160,22 +134,16 @@ class RuntimeOperationStateTests(unittest.TestCase):
                 max_repair_rounds=1,
                 task_kind="project",
             )
-            entries = self._entries(durable)
+            task = durable.task("run-1")
         finally:
             durable.close()
 
         assert resumed is not None
         self.assertEqual(resumed.leaf, LEAF_WRITER_RUNNING)
-        self.assertEqual(
-            [entry.kind for entry in entries].count("operation_started"),
-            1,
-        )
-        self.assertEqual(
-            [entry.kind for entry in entries].count("operation_state"),
-            1,
-        )
+        self.assertEqual(task, before)
+        self.assertEqual(operation_from_checkpoint(task, "s1"), resumed)
 
-    def test_terminal_transition_settles_operation_in_same_batch(self) -> None:
+    def test_terminal_transition_saves_completed_operation(self) -> None:
         durable, line = self._runtime()
         try:
             line.accept_operation(
@@ -196,19 +164,14 @@ class RuntimeOperationStateTests(unittest.TestCase):
                 max_turns=5,
                 provider="deepseek",
             )
-            entries = self._entries(durable)
-            projection = reduce_session(entries)
+            task = durable.task("run-1")
         finally:
             durable.close()
 
         assert terminal is not None
         self.assertEqual(terminal.leaf, LEAF_TERMINAL)
-        self.assertEqual(
-            [entry.kind for entry in entries if entry.operation_id == terminal.operation_id][-2:],
-            ["operation_state", "operation_settled"],
-        )
-        self.assertEqual(projection.operations[terminal.operation_id].outcome, "completed")
-        self.assertEqual(projection.lanes[terminal.lane].open_operation_id, "")
+        self.assertEqual(operation_from_checkpoint(task, "s1"), terminal)
+        self.assertEqual(outcome_for_terminal(terminal).status, "completed")
 
     def test_operation_state_payload_is_closed_and_versioned(self) -> None:
         self.assertEqual(SCHEMA_VERSION, 6)
@@ -258,21 +221,12 @@ class RuntimeOperationStateTests(unittest.TestCase):
                 provider_id="deepseek",
             )
             assert state is not None
-            valid_entries = self._entries(durable)
-            corrupt_payload = dict(valid_entries[-1].payload)
-            corrupt_payload["leaf"] = "retry_wait"
-            corrupt_entry = RuntimeLogEntry(
-                session_id="s1",
-                lane=state.lane,
-                operation_id=state.operation_id,
-                kind="operation_state",
-                payload=corrupt_payload,
-            )
-
+            task = durable.task("run-1")
+            corrupt = replace(task, state={**task.state, "operation": {**state.to_payload(), "leaf": "retry_wait"}})
         finally:
             durable.close()
         with self.assertRaises(RuntimeOperationTransitionError):
-            operation_state_from_entries((*valid_entries, corrupt_entry), session_id="s1", run_id="run-1")
+            operation_from_checkpoint(corrupt, "s1")
 
     def test_pending_provider_state_requires_driver(self) -> None:
         state = mark_provider_effect_pending(

@@ -36,12 +36,11 @@ from codey.types.json_value import (
     require_json_boolean,
     require_json_string,
 )
+from codey.types.research_answer import ANSWER_STATES, MAX_ANSWER_CHARACTERS, answer_fields, answer_text_and_state
 from codey.utils.citation_scanner import mask_markdown_code
 
 ANSWER_SCOPE_VERSION = 11
 ANSWER_CONTRACT_VERSION = 1
-MAX_ANSWER_CHARACTERS = 64000
-ANSWER_STATES = ("answered", "partial", "unresolved")
 ANSWER_TOOLS = ("web_search", "open_url", "open_result", "reopen_source", "open_hit", "source_search",
                 "knowledge_search", "knowledge_read",
                 "submit_research_answer", "ask_user")
@@ -278,13 +277,7 @@ def citation_occurrences(markdown: str) -> list[CitationOccurrence]:
 def submit_answer(scope: AnswerScope, args: ToolArgs, *,
                   passages: Mapping[str, ReadPassage] | None = None) -> AnswerSubmission:
     args = canonical_json_object(args)
-    markdown_value = args.get("markdown")
-    state = args.get("state")
-    if (not {"markdown", "state"} <= args.keys() or any(key not in {"markdown", "state", "knowledge_updates"} for key in args)
-            or not isinstance(state, str) or state not in ANSWER_STATES
-            or not isinstance(markdown_value, str)
-            or not 12 <= len(markdown_value.strip()) <= MAX_ANSWER_CHARACTERS):
-        raise ValueError("Submit markdown (12..64000 characters) and state=answered/partial/unresolved.")
+    markdown_value, state = answer_text_and_state(args)
     if state == "answered" and not scope.declared_fields_ready:
         raise ValueError("declared_fields_unavailable: the task-declared source fields are not established by formal reads. "
             "Complete the intended query and read its actual result before submitting answered. "
@@ -325,7 +318,7 @@ def submit_answer(scope: AnswerScope, args: ToolArgs, *,
         raise ValueError("primary_source_unverified: cite a passage from an opened first-party source, or report the gap as partial/unresolved.")
     if not scope.attempt_refs:
         raise ValueError("Investigate the task before submitting; failed acquisition attempts may support a gap report.")
-    if not citations and args["state"] != "unresolved":
+    if not citations and state != "unresolved":
         raise ValueError("An answered or partial report needs explicit [eN] evidence citations. Describe an unresolved gap otherwise.")
     body: UnsignedAnswerSubmission = {"schema_version": ANSWER_CONTRACT_VERSION, "task_digest": scope.task_digest,
             "markdown": markdown, "state": state, "scope": scope.to_payload(),
@@ -394,10 +387,8 @@ def answer_spec(spec: ToolSpec, scope: AnswerScope) -> ToolSpec:
         if spec.name == "knowledge_read":
             return freeze_spec_parameters(replace(spec, description=spec.description + " " + KNOWLEDGE_READ_GUIDANCE))
         return spec
-    states = [state for state in ANSWER_STATES if scope.declared_fields_ready or state != "answered"]
-    answer_parameters: dict[str, object] = {"markdown": {"type": "string", "minLength": 12, "maxLength": MAX_ANSWER_CHARACTERS},
-                  "state": {"type": "string", "enum": states},
-                  "knowledge_updates": updates_schema()}
+    states = tuple(state for state in ANSWER_STATES if scope.declared_fields_ready or state != "answered")
+    answer_parameters = {**answer_fields(states), "knowledge_updates": updates_schema()}
     return freeze_spec_parameters(replace(spec, parameters=tuple(answer_parameters.items()), required=("markdown", "state"),
         description="Submit the whole research answer as Markdown, with explicit [eN] citations beside supported statements. "
                     "For an exact quotation, use {{quote:e1}} or {{quote:e1:START:END}} with the source positions from the read. "

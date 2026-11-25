@@ -46,6 +46,12 @@ def test_handoff_and_repair_follow_current_browser_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str,
 ) -> None:
     directory = tmp_path / "run"
+    reads_before_retry: tuple[str, ...] = ()
+
+    def read_ids() -> tuple[str, ...]:
+        return tuple(row.identity for row in tool_receipts(directory / "state")
+                     if row.result.call.name == "browser_read")
+
     if case == "lost_after_submit":
         original = ExecutionDelegate._submit_research_answer
         reloaded = False
@@ -61,6 +67,7 @@ def test_handoff_and_repair_follow_current_browser_evidence(
         monkeypatch.setattr(ExecutionDelegate, "_submit_research_answer", submit)
 
     def replies() -> Iterator[JsonObject]:
+        nonlocal reads_before_retry
         latest_phase(directory, "collect")
         if case == "early":
             yield fixture.code_action(fixture.NAVIGATE + fixture.LOAD + f"const old={fixture.READ};" + fixture.WAIT + "return old;")
@@ -84,6 +91,8 @@ def test_handoff_and_repair_follow_current_browser_evidence(
             assert phase["reason"] == "browser_wait_missing" and isinstance(tools, list) and "codemode" in tools
             yield fixture.code_action(fixture.LOAD + fixture.WAIT + f"return {fixture.READ};")
         label = citation(directory)
+        if case in {"answer_format", "citation_format", "citation", "old_citation"}:
+            reads_before_retry = read_ids()
         if case == "answer_format":
             yield {"tool": "submit_research_answer", "args": {"state": "completed", "markdown": f"福州样本净重 173 克。 [{label}]"}}
             assert citation(directory) == label
@@ -109,22 +118,22 @@ def test_handoff_and_repair_follow_current_browser_evidence(
     initial_reads = [r for r in receipts if r.call.name == "browser_read"
                      and "required-source:navigation" in r.call.call_id]
     assert len(initial_reads) == 1
-    scripted_reads = [r for r in receipts if r.call.name == "browser_read" and r not in initial_reads]
     submissions = [result for result in receipts if result.call.name == "submit_research_answer"]
     if case in {"citation_format", "citation"}:
         assert [item.ok for item in submissions] == [False, True]
-        assert len(scripted_reads) == 1
     elif case == "answer_format":
         assert [item.ok for item in submissions] == [True]
-        assert len(scripted_reads) == 1 and result["model_calls"] == 3
+        assert result["model_calls"] == 3
     elif case == "old_citation":
-        assert [item.ok for item in submissions] == [True, True]
-        assert len(scripted_reads) == 2 and "browser_post_wait_citation_missing" in str(result["first_rejection"])
+        assert [item.ok for item in submissions] == [False, True]
+        assert "browser_result_evidence_missing" in submissions[0].model_text
     elif case == "lost_after_submit":
         assert [item.ok for item in submissions] == [True, True]
         assert "browser_wait_missing" in str(result["first_rejection"])
     else:
         assert len(submissions) == 1 and submissions[0].ok
+    if case in {"answer_format", "citation_format", "citation", "old_citation"}:
+        assert reads_before_retry and read_ids() == reads_before_retry
     requests = [row for row in rows(directory / "provider.jsonl") if row.get("phase") == "request"]
     phases = rows(directory / "handoff.jsonl")
     assert len(requests) == len(phases)

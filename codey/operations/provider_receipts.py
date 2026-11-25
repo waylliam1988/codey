@@ -107,16 +107,9 @@ def read_provider_artifact(store: ManagedOutputStore, record: ArtifactRecord, *,
 
 
 def request_artifact_for_effect(durable: DurableSession, effect: RuntimeEffectProjection) -> ArtifactRecord:
-    """Resolve the explicit reference, or decode the version-1 ownership format."""
-    if effect.intent.request_ref:
-        return durable.artifact(effect.intent.request_ref)
-    if effect.intent.schema_version != 1:
+    if not effect.intent.request_ref:
         raise RuntimeEffectError("provider intent has no frozen request reference")
-    requests = [artifact for artifact in durable.artifacts_for_effect(effect.intent.effect_id)
-                if artifact.metadata.get("kind") == REQUEST_KIND]
-    if len(requests) != 1:
-        raise RuntimeEffectError("legacy provider intent has no unique frozen request")
-    return requests[0]
+    return durable.artifact(effect.intent.request_ref)
 
 
 def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:

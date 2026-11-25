@@ -16,6 +16,7 @@ from codey.operations.kernel_protocol import TurnSnapshot
 from codey.policies.browser_requirement import BrowserResearchSequence
 from codey.policies.tool_requirement import parse_tool_success_check
 from codey.providers.base import ProviderToolResult
+from codey.providers.task_prompt import TaskPromptSpan
 from codey.providers.text_result_views import TextResultSpan
 from codey.research.answer_contract import AnswerScope
 from codey.research.browser_result_evidence import complete_page_passages
@@ -54,11 +55,13 @@ def handoff(rule: BrowserResearchSequence, snapshot: TurnSnapshot, *, records: M
     outcome = evaluate_research_sequence(rule, records=records, results=results, document=document, report=None)
     missing = {requirement.tool for check in policy.required_checks
                if (requirement := parse_tool_success_check(check)) is not None
-               and not requirement.observe(records, results=results).evaluation.passed}
+               and not requirement.observe(records, results=results, browser_document=document).evaluation.passed}
     if outcome.reason_code == "browser_read_after_wait_missing" and missing <= {"browser_read"}:
         return Handoff("read", outcome.reason_code)
-    if outcome.reason_code != "browser_post_wait_citation_missing" or missing:
-        return Handoff("collect", outcome.reason_code if not missing else "required_tools_missing")
+    if outcome.reason_code != "browser_post_wait_citation_missing":
+        return Handoff("collect", outcome.reason_code)
+    if missing:
+        return Handoff("collect", "required_tools_missing")
     passages = {passage for ref in outcome.evidence_refs if (result := results.get(ref)) is not None
                 and result.call.name == "browser_read" for passage in complete_page_passages(result, rule.url)}
     labels = tuple(label for label, ref in scope.aliases if ref in passages)
@@ -81,6 +84,7 @@ def narrow(snapshot: TurnSnapshot, step: Handoff) -> TurnSnapshot:
         specs = tuple(replace(spec, declarations=declarations) if spec.name == "codemode" else spec for spec in specs)
     return replace(snapshot, tool_names=names, nested_tool_names=nested, frozen_specs=specs,
         browser_references=None, browser_fill_text=None, browser_followups=False,
+        task_navigation_url=None, task_source_url=None, browser_copy=None, input_binding=None,
         contract_text=json_contract_text(tuple(spec for spec in specs if spec.name in names)),
         custom_executors=tuple(row for row in snapshot.custom_executors if row[0] in inventory))
 
@@ -94,7 +98,7 @@ def candidate(directory: Path, arm: Arm, *, rule: BrowserResearchSequence = RULE
                prompt: str = "", messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                counters: RuntimeExecutionCounters | None = None, text_result_spans: tuple[TextResultSpan, ...] = (),
                coding_context_prepared: bool = False, initial_source_batch: bool = False,
-               handoff: str | None = None) -> None:
+               handoff: str | None = None, task_span: TaskPromptSpan | None = None) -> None:
         hint = handoff or ""
         if isinstance(snapshot.research_scope, AnswerScope) and not acknowledge:
             tools = context.execution.research_tools
@@ -112,7 +116,7 @@ def candidate(directory: Path, arm: Arm, *, rule: BrowserResearchSequence = RULE
                 "labels": list(step.labels), "tools": list(snapshot.tool_names), "nested": list(snapshot.nested_tool_names)})
         original(context, state, snapshot, turn=turn, prompt=prompt, messages=messages, acknowledge=acknowledge,
             counters=counters, text_result_spans=text_result_spans, coding_context_prepared=coding_context_prepared,
-            initial_source_batch=initial_source_batch, handoff=hint)
+            initial_source_batch=initial_source_batch, handoff=hint, task_span=task_span)
 
     def preserve_snapshot(_context: KernelContext, snapshot: TurnSnapshot, *,
                           delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:

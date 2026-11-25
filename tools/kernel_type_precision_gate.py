@@ -24,7 +24,8 @@ TARGETS = (
     "codey/operations/provider_session.py",
     "codey/research/tools.py",
     "codey/operations/recovery.py",
-    "codey/runtime/log/session_projection.py",
+    "codey/runtime/effects/effect_records.py",
+    "codey/runtime/write/checkpoint.py",
     "codey/runtime/log/session_view.py",
     "codey/runtime/write/mutation_line.py",
     "codey/runtime/write/provider_effects.py",
@@ -39,7 +40,6 @@ SCOPED_TARGETS = {
         "_entry_policy_with_recovery", "_entry_check_conflict",
     ),
     "codey/operations/context.py": ("RunFrame.entry_policy", "RunFrame.entry_session"),
-    "codey/durable/checkpoint.py": ("mutate_checkpoint", "_unregistered_artifacts", "_effect_changes"),
 }
 
 CONTRACT_TARGETS = (

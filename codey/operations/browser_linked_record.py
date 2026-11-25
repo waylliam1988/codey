@@ -6,8 +6,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from codey.automation.browser_document import document_changed, normalize_element_ref, same_document
-from codey.automation.browser_receipts import committed_results
-from codey.operations.browser_completion import PAGE_EVIDENCE_INVALIDATORS, page_effect_possible
+from codey.automation.browser_receipts import PAGE_EVIDENCE_INVALIDATORS, committed_results, page_effect_possible
 from codey.operations.chat_citations import _source_link
 from codey.research.passages import receipt_passages
 from codey.runtime.core.models import ToolCall

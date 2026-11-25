@@ -1,25 +1,24 @@
 """Stopping a lifecycle cannot replace effect receipts or imply delivery."""
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.errors import CommitConflict
-from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
+from codey.durable.model import CommitResult, DurableMutation
+from codey.runtime.core.operation_payload import RuntimeOperationState, RuntimeOperationTransitionError
 from codey.runtime.core.operation_state import mark_terminal
 from codey.runtime.effects.effect_records import RuntimeEffectIntent, RuntimeEffectSettlement
 from codey.runtime.effects.tool_result_delivery import DeliveryBatchIntent, DeliveryBatchItem, compute_batch_digest
-from codey.runtime.log.session_view import load_session_view
-from codey.runtime.write.checkpoint import operation_from_checkpoint
+from codey.runtime.write.checkpoint import operation_from_checkpoint, view_from_checkpoint
 from codey.runtime.write.mutation_line import RuntimeMutationLine
-from tests.support.runtime_log_fixture import checkpoint_entries
-from tests.support.sqlite_store import TemporarySQLiteStore
 
 
-@pytest.fixture(params=["memory", "sqlite"])
-def runtime(request, tmp_path: Path):
-    store = TemporarySQLiteStore() if request.param == "memory" else SQLiteDurableStore(tmp_path / "runtime.sqlite")
+@pytest.fixture
+def runtime(tmp_path: Path) -> Iterator[tuple[DurableSession, RuntimeMutationLine]]:
+    store = SQLiteDurableStore(tmp_path / "runtime.sqlite")
     durable = DurableSession(store)
     durable.admit_input(conversation_id="s", request_id="input", task_id="r", text="inspect", provider_snapshot={})
     durable.start_task("r", state={})
@@ -33,14 +32,14 @@ def runtime(request, tmp_path: Path):
         durable.close()
 
 
-def _repair(mutations):
+def _repair(mutations: RuntimeMutationLine) -> None:
     mutations.mark_writer_settled("s", "r", provider_id="local", turns_used=1, stop_reason="done")
     mutations.record_completion_proof("s", "r", proof_ref="completion_proof:" + "a" * 16, proof_status="failed")
     mutations.admit_repair_context("s", "r", context_ref="sha256:" + "b" * 64)
     mutations.mark_repair_running("s", "r", provider_id="local")
 
 
-def _stop(mutations, driver, terminal):
+def _stop(mutations: RuntimeMutationLine, driver: str, terminal: bool) -> RuntimeOperationState | None:
     if terminal:
         return mutations.mark_terminal("s", "r", stop_reason="error", summary_chars=4, turns=1,
                                        max_turns=5, provider="local")
@@ -49,7 +48,7 @@ def _stop(mutations, driver, terminal):
     return mutations.mark_writer_settled("s", "r", provider_id="local", turns_used=1, stop_reason="error")
 
 
-def _tools(mutations, driver):
+def _tools(mutations: RuntimeMutationLine, driver: str) -> None:
     items = (DeliveryBatchItem(0, "read", "tool", "safe"),)
     mutations.begin_tool_batch("s", "r", intents=(RuntimeEffectIntent(
         effect_id="tool", effect_category="tool_call", session_id="s", run_id="r", phase=driver,
@@ -62,7 +61,7 @@ def _tools(mutations, driver):
 @pytest.mark.parametrize("driver", ["writer", "repair"])
 @pytest.mark.parametrize("terminal", [False, True])
 @pytest.mark.parametrize("category", ["provider_send", "tool_call"])
-def test_pending_effect_blocks_lifecycle_stop_without_changing_facts(runtime, driver, terminal, category):
+def test_pending_effect_blocks_lifecycle_stop_without_changing_facts(runtime: tuple[DurableSession, RuntimeMutationLine], driver: str, terminal: bool, category: str) -> None:
     durable, mutations = runtime
     if driver == "repair":
         _repair(mutations)
@@ -81,7 +80,7 @@ def test_pending_effect_blocks_lifecycle_stop_without_changing_facts(runtime, dr
 
 @pytest.mark.parametrize("driver", ["writer", "repair"])
 @pytest.mark.parametrize("terminal", [False, True])
-def test_unknown_tool_outcome_blocks_stop_and_retains_delivery(runtime, driver, terminal):
+def test_unknown_tool_outcome_blocks_stop_and_retains_delivery(runtime: tuple[DurableSession, RuntimeMutationLine], driver: str, terminal: bool) -> None:
     durable, mutations = runtime
     if driver == "repair":
         _repair(mutations)
@@ -98,7 +97,7 @@ def test_unknown_tool_outcome_blocks_stop_and_retains_delivery(runtime, driver, 
 
 @pytest.mark.parametrize("driver", ["writer", "repair"])
 @pytest.mark.parametrize("terminal", [False, True])
-def test_known_failed_result_can_be_abandoned_without_becoming_delivered(runtime, driver, terminal):
+def test_known_failed_result_can_be_abandoned_without_becoming_delivered(runtime: tuple[DurableSession, RuntimeMutationLine], driver: str, terminal: bool) -> None:
     durable, mutations = runtime
     if driver == "repair":
         _repair(mutations)
@@ -111,14 +110,14 @@ def test_known_failed_result_can_be_abandoned_without_becoming_delivered(runtime
     assert durable.commit_sequence() == sequence + 1
     assert durable.effects("r") == effects
     task, effects = durable.task_facts("r")
-    view = load_session_view(checkpoint_entries(task, effects, session_id="s"), session_id="s", run_id="r")
+    view = view_from_checkpoint(task, effects, session_id="s")
     [batch] = view.batches
     assert batch.is_abandoned and not batch.is_delivered
     assert batch.delivered_effect_ids == ()
     assert batch.abandoned_reason == ("operation_terminal" if terminal else f"{driver}_settled")
 
 
-def test_terminal_commit_retry_after_success_does_not_duplicate_abandonment(runtime, monkeypatch):
+def test_terminal_commit_retry_after_success_does_not_duplicate_abandonment(runtime: tuple[DurableSession, RuntimeMutationLine], monkeypatch: pytest.MonkeyPatch) -> None:
     durable, mutations = runtime
     _tools(mutations, "writer")
     mutations.settle_tool_effect("s", "r", RuntimeEffectSettlement(
@@ -127,7 +126,7 @@ def test_terminal_commit_retry_after_success_does_not_duplicate_abandonment(runt
     commit = durable.store.commit
     interrupted = False
 
-    def lost_success(mutation):
+    def lost_success(mutation: DurableMutation) -> CommitResult:
         nonlocal interrupted
         result = commit(mutation)
         if not interrupted:
@@ -139,10 +138,11 @@ def test_terminal_commit_retry_after_success_does_not_duplicate_abandonment(runt
     _stop(mutations, "writer", True)
     assert interrupted
     assert durable.commit_sequence() == sequence + 1
-    assert operation_from_checkpoint(durable.task("r"), "s").leaf == "terminal"
+    state = operation_from_checkpoint(durable.task("r"), "s")
+    assert state is not None and state.leaf == "terminal"
 
 
-def test_scheduler_failure_cannot_replace_authoritative_runtime_facts(runtime):
+def test_scheduler_failure_cannot_replace_authoritative_runtime_facts(runtime: tuple[DurableSession, RuntimeMutationLine]) -> None:
     durable, mutations = runtime
     mutations.begin_provider_effect("s", "r", RuntimeEffectIntent(
         effect_id="provider", effect_category="provider_send", session_id="s", run_id="r", phase="writer",
@@ -154,11 +154,12 @@ def test_scheduler_failure_cannot_replace_authoritative_runtime_facts(runtime):
     assert durable.task("r") == before
 
 
-def test_repeated_terminal_call_does_not_accept_a_corrupt_pending_ledger(runtime):
+def test_repeated_terminal_call_does_not_accept_a_corrupt_pending_ledger(runtime: tuple[DurableSession, RuntimeMutationLine]) -> None:
     durable, mutations = runtime
     _tools(mutations, "writer")
     task = durable.task("r")
     state = operation_from_checkpoint(task, "s")
+    assert state is not None
     corrupt_terminal = mark_terminal(state, stop_reason="error", summary_chars=4, turns=1,
                                      max_turns=5, provider="local")
     # Simulate contradictory data from an older writer. The idempotent

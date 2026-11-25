@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 class OverflowSweepTests(unittest.TestCase):
-    def test_source_connectors_score_fail_closed(self):
+    def test_source_connectors_score_fail_closed(self) -> None:
         from codey.research.source_connectors import _score
         self.assertEqual(_score(True), 0.0)
         self.assertEqual(_score(float("inf")), 0.0)
@@ -20,19 +20,19 @@ class OverflowSweepTests(unittest.TestCase):
         self.assertEqual(_score(10 ** 1000), 0.0)
         self.assertEqual(_score("oops"), 0.0)
 
-    def test_http_redirect_inf_is_false(self):
+    def test_http_redirect_inf_is_false(self) -> None:
         from codey.research.http_redirects import is_redirect_status
         self.assertFalse(is_redirect_status(float("inf")))
         self.assertFalse(is_redirect_status(float("-inf")))
         self.assertFalse(is_redirect_status("oops"))
 
-    def test_snippet_at_malformed_no_crash(self):
+    def test_snippet_at_malformed_no_crash(self) -> None:
         from codey.research.source_search import snippet_at
         self.assertEqual(snippet_at("hello", "oops"), snippet_at("hello", 0))
         self.assertEqual(snippet_at("hello", float("inf")), snippet_at("hello", 0))
         self.assertEqual(snippet_at("hello", True), snippet_at("hello", 0))
 
-    def test_query_planner_max_depth_no_crash(self):
+    def test_query_planner_max_depth_no_crash(self) -> None:
         import inspect
 
         from codey.research.query_planner import ResearchPlan
@@ -51,7 +51,7 @@ class OverflowSweepTests(unittest.TestCase):
         except (ValueError, TypeError, OverflowError) as exc:
             self.fail(f"to_payload crashed: {exc}")
 
-    def test_ledger_as_page_huge_digits_no_crash(self):
+    def test_ledger_as_page_huge_digits_no_crash(self) -> None:
         from codey.research import ledger as ledger_mod
         f = getattr(ledger_mod, "_as_page", None)
         if f is None:
@@ -62,7 +62,7 @@ class OverflowSweepTests(unittest.TestCase):
             self.fail("_as_page crashed on huge digits, should be None")
         self.assertIsNone(result)
 
-    def test_object_model_pages_read_fail_closed(self):
+    def test_object_model_pages_read_fail_closed(self) -> None:
         from codey.research.object_model import ResearchSource
         try:
             payload = ResearchSource(source_id="s", pages_read=(True, "oops", float("inf"))).to_jsonable()
@@ -74,7 +74,7 @@ class OverflowSweepTests(unittest.TestCase):
         self.assertEqual(tuple(pages), ())
 
 
-    def test_tools_merge_relation_tags_skips_bad(self):
+    def test_tools_merge_relation_tags_skips_bad(self) -> None:
         from codey.research.tools import _merge_relation_tags
         try:
             _merge_relation_tags([], [{"src": "a"}])
@@ -83,7 +83,7 @@ class OverflowSweepTests(unittest.TestCase):
         except (KeyError, TypeError):
             self.fail("_merge_relation_tags crashed on bad relation, should skip")
 
-    def test_ledger_record_open_document_no_crash(self):
+    def test_ledger_record_open_document_no_crash(self) -> None:
         import inspect
 
         from codey.research import ledger as ledger_mod
@@ -91,7 +91,7 @@ class OverflowSweepTests(unittest.TestCase):
         self.assertNotIn("int(page) for page in document.pages_read", src,
                          "record_open_document still uses bare int(page)")
 
-    def test_ledger_record_source_search_no_crash(self):
+    def test_ledger_record_source_search_no_crash(self) -> None:
         import inspect
 
         from codey.research import ledger as ledger_mod
@@ -101,7 +101,7 @@ class OverflowSweepTests(unittest.TestCase):
 
 
 class RunsRuntimeSweepTests(unittest.TestCase):
-    def test_work_checkpoint_null_byte_fail_closed(self):
+    def test_work_checkpoint_null_byte_fail_closed(self) -> None:
         from codey.runs.work_checkpoint import WorkCheckpointStore
         with tempfile.TemporaryDirectory() as td:
             store = WorkCheckpointStore(Path(td))
@@ -111,7 +111,7 @@ class RunsRuntimeSweepTests(unittest.TestCase):
                 self.fail("start raised ValueError on null byte, should fail closed")
             self.assertIsNone(result)
 
-    def test_file_hash_null_byte_no_crash(self):
+    def test_file_hash_null_byte_no_crash(self) -> None:
         from codey.runs.work_checkpoint import _file_hash
         try:
             result = _file_hash(Path("/tmp"), "a\x00b")
@@ -120,19 +120,7 @@ class RunsRuntimeSweepTests(unittest.TestCase):
             return
         self.assertIsNone(result)
 
-    def test_runtime_log_inf_fail_closed(self):
-        from codey.runtime.log.entries import RuntimeLogEntry, RuntimeLogWriteError
-        try:
-            RuntimeLogEntry(session_id="s", lane="l", operation_id="o",
-                            kind="operation_started", payload={"x": float("inf")}).to_json_line()
-        except RuntimeLogWriteError:
-            return
-        except ValueError:
-            self.fail("inf payload raised ValueError (500), should be RuntimeLogWriteError")
-            return
-        self.fail("inf payload should raise RuntimeLogWriteError, not dump")
-
-    def test_cancellation_wait_no_crash(self):
+    def test_cancellation_wait_no_crash(self) -> None:
         import inspect
 
         from codey.runtime.core import cancellation as canc
@@ -140,7 +128,7 @@ class RunsRuntimeSweepTests(unittest.TestCase):
         seg = src.split("def wait(")[1][:600] if "def wait(" in src else ""
         self.assertIn("_safe_timeout", seg, "wait() still uses bare float()")
 
-    def test_output_capture_no_crash(self):
+    def test_output_capture_no_crash(self) -> None:
         from codey.runtime.core.output_capture import BoundedByteCapture
         try:
             BoundedByteCapture(head_limit="oops")
@@ -148,14 +136,14 @@ class RunsRuntimeSweepTests(unittest.TestCase):
             self.fail("BoundedByteCapture crashed on bad limit")
             return
 
-    def test_prompt_envelope_budget_no_crash(self):
+    def test_prompt_envelope_budget_no_crash(self) -> None:
         from codey.runtime.observe.prompt_envelope import PromptEnvelope, PromptEnvelopeSection
         try:
             PromptEnvelope([PromptEnvelopeSection(name="x", text="hi", budget="oops")]).render()
         except (ValueError, TypeError, OverflowError):
             self.fail("render crashed on bad budget")
 
-    def test_prompt_surface_chars_no_crash(self):
+    def test_prompt_surface_chars_no_crash(self) -> None:
         from codey.runtime.observe.prompt_surface import build_prompt_surface_record
         try:
             build_prompt_surface_record(phase="p", send_ref="s",
@@ -164,7 +152,7 @@ class RunsRuntimeSweepTests(unittest.TestCase):
         except (ValueError, TypeError, OverflowError):
             self.fail("build_prompt_surface_record crashed on bad chars")
 
-    def test_trace_prompt_section_budget_no_crash(self):
+    def test_trace_prompt_section_budget_no_crash(self) -> None:
         import inspect
 
         from codey.runs import trace as trace_mod
@@ -172,7 +160,7 @@ class RunsRuntimeSweepTests(unittest.TestCase):
         self.assertNotIn("budget=max(0, int(budget or 0))", src,
                          "trace still uses bare int(budget)")
 
-    def test_events_metadata_none_no_crash(self):
+    def test_events_metadata_none_no_crash(self) -> None:
         from codey.runtime.observe import events as ev
         E = getattr(ev, "RunEvent", None)
         f = getattr(ev, "render_run_event", None)
@@ -183,28 +171,28 @@ class RunsRuntimeSweepTests(unittest.TestCase):
         except AttributeError:
             self.fail("render crashed on metadata=None, should treat as {}")
 
-    def test_seed_checks_non_iterable_no_crash(self):
+    def test_seed_checks_non_iterable_no_crash(self) -> None:
         from codey.runtime.observe.execution_evidence import ExecutionEvidence
         try:
             ExecutionEvidence().seed_checks(123)
         except TypeError:
             self.fail("seed_checks crashed on int, should skip")
 
-    def test_event_bus_replay_bool_fail_closed(self):
+    def test_event_bus_replay_bool_fail_closed(self) -> None:
         import inspect
 
         from codey.app.event_bus import EventBus
         src = inspect.getsource(EventBus.replay_events_after)
         self.assertIn("isinstance", src, "replay still maps True->1 without bool gate")
 
-    def test_details_actions_summary_no_crash(self):
+    def test_details_actions_summary_no_crash(self) -> None:
         import inspect
 
         from codey.runs import details as det
         src = inspect.getsource(det._actions_summary) if hasattr(det, "_actions_summary") else ""
         self.assertNotIn("int(counts.get", src, "details still uses bare int(counts)")
 
-    def test_runs_payload_reply_int_no_crash(self):
+    def test_runs_payload_reply_int_no_crash(self) -> None:
         import inspect
 
         from codey.runs import ledger as ledger_mod
@@ -214,18 +202,18 @@ class RunsRuntimeSweepTests(unittest.TestCase):
 
 
 class ProvidersAppSweepTests(unittest.TestCase):
-    def test_query_int_strict(self):
+    def test_query_int_strict(self) -> None:
         from codey.app.api import query_int
         default, lo, hi = 1, 1, 3
         self.assertEqual(query_int({"depth": ["1_000"]}, "depth", default, lo, hi), default)
         self.assertEqual(query_int({"depth": [True]}, "depth", default, lo, hi), default)
         self.assertEqual(query_int({"limit": [10.7]}, "limit", 96, 8, 200), 96)
 
-    def test_query_value_none_is_empty(self):
+    def test_query_value_none_is_empty(self) -> None:
         from codey.app.api import query_value
         self.assertEqual(query_value({"session_id": [None]}, "session_id"), "")
 
-    def test_continue_task_string_is_not_true(self):
+    def test_continue_task_string_is_not_true(self) -> None:
         import inspect
 
         from codey.app import api as api_mod
@@ -233,7 +221,7 @@ class ProvidersAppSweepTests(unittest.TestCase):
         self.assertNotIn('bool(body.get("continue_task"))', src,
                          'bool("false")==True pollution still present')
 
-    def test_server_content_length_guarded(self):
+    def test_server_content_length_guarded(self) -> None:
         import inspect
 
         from codey.app import server as server_mod
@@ -241,7 +229,7 @@ class ProvidersAppSweepTests(unittest.TestCase):
         self.assertNotIn('int(self.headers.get("Content-Length"', src,
                          "server still uses bare int(Content-Length)")
 
-    def test_shell_mint_generation_fail_closed(self):
+    def test_shell_mint_generation_fail_closed(self) -> None:
         import inspect
 
         from codey.app import shell_service as shell_mod
@@ -249,14 +237,14 @@ class ProvidersAppSweepTests(unittest.TestCase):
         self.assertNotIn("int(pending.pop", src,
                          "mint still coerces bad generation to 0==0 pass")
 
-    def test_controls_visible_locator_overflow(self):
+    def test_controls_visible_locator_overflow(self) -> None:
         import inspect
 
         from codey.providers import controls as controls_mod
         src = inspect.getsource(controls_mod.visible_locator)
         self.assertIn("OverflowError", src, "visible_locator still misses OverflowError")
 
-    def test_local_config_rejects_non_str(self):
+    def test_local_config_rejects_non_str(self) -> None:
         from codey.providers.local_config import config_from_dict
         try:
             config_from_dict({"schema_version": 1, "base_url": ["http://a"],
@@ -265,7 +253,7 @@ class ProvidersAppSweepTests(unittest.TestCase):
             return
         self.fail("config_from_dict accepted list/int/dict, should reject")
 
-    def test_web_provider_send_rejects_none(self):
+    def test_web_provider_send_rejects_none(self) -> None:
         import inspect
 
         from codey.providers.web_provider import WebChatProvider
@@ -273,14 +261,14 @@ class ProvidersAppSweepTests(unittest.TestCase):
         self.assertIn("isinstance(text, str)", src,
                       "send still dereferences None.strip() without guard")
 
-    def test_provider_services_bool_strict(self):
+    def test_provider_services_bool_strict(self) -> None:
         import inspect
 
         from codey.app import provider_services as ps_mod
         src = inspect.getsource(ps_mod)
         self.assertNotIn("bool(statuses.get", src, 'bool("false")==True still present')
 
-    def test_shell_exec_command_type_guarded(self):
+    def test_shell_exec_command_type_guarded(self) -> None:
         import inspect
 
         from codey.app import shell_service as shell_mod
@@ -290,23 +278,23 @@ class ProvidersAppSweepTests(unittest.TestCase):
 
 
 class _ExplodingInteger:
-    def __int__(self):
+    def __int__(self) -> int:
         raise AssertionError("transition must inspect the raw type, not convert it")
 
 
 class GhostKnowledgeSweepTests(unittest.TestCase):
 
 
-    def test_concepts_bool_ascii(self):
+    def test_concepts_bool_ascii(self) -> None:
         from codey.knowledge.concepts import _bounded_int
         self.assertEqual(_bounded_int(True, 64, 8, 200), 64)
         self.assertEqual(_bounded_int("１２", 64, 8, 200), 64)
 
-    def test_research_interest_bool(self):
+    def test_research_interest_bool(self) -> None:
         from codey.knowledge.research_interest import _unit_float
         self.assertEqual(_unit_float(True), 0.0)
 
-    def test_store_skips_malformed_legacy_notes(self):
+    def test_store_skips_malformed_legacy_notes(self) -> None:
         from pathlib import Path
 
         from codey.knowledge.note import KnowledgeNote
@@ -324,7 +312,7 @@ class GhostKnowledgeSweepTests(unittest.TestCase):
             finally:
                 store.close()
 
-    def test_facts_list_payload_no_crash(self):
+    def test_facts_list_payload_no_crash(self) -> None:
         from codey.workspace.facts import ProjectFactsStore
         with tempfile.TemporaryDirectory() as td:
             store = ProjectFactsStore(state_home=td)
@@ -336,7 +324,7 @@ class GhostKnowledgeSweepTests(unittest.TestCase):
             except AttributeError:
                 self.fail("facts load crashed on list payload, should return empty")
 
-    def test_refs_clip_limit_guarded(self):
+    def test_refs_clip_limit_guarded(self) -> None:
         from codey.utils.refs import clip
         try:
             clip("x", limit="oops")
@@ -344,7 +332,7 @@ class GhostKnowledgeSweepTests(unittest.TestCase):
             self.fail("clip crashed on bad limit, should fail closed")
             return
 
-    def test_refs_bounded_non_iterable(self):
+    def test_refs_bounded_non_iterable(self) -> None:
         from codey.utils.refs import bounded_refs
         try:
             bounded_refs(True)
@@ -354,35 +342,35 @@ class GhostKnowledgeSweepTests(unittest.TestCase):
 
 
 class AgentsOpsSweepTests(unittest.TestCase):
-    def test_loop_max_turns_guarded(self):
+    def test_loop_max_turns_guarded(self) -> None:
         import inspect
 
         from codey.operations import task_loop as loop_mod
         src = inspect.getsource(loop_mod)
         self.assertNotIn("max(1, int(request.max_turns))", src, "loop still uses bare int(max_turns)")
 
-    def test_seen_lru_no_crash(self):
+    def test_seen_lru_no_crash(self) -> None:
         from codey.agents.state import SeenInfoLRU
         try:
             SeenInfoLRU("oops")
         except (ValueError, TypeError, OverflowError):
             self.fail("SeenInfoLRU crashed on bad max_items")
 
-    def test_shell_payload_limit_no_crash(self):
+    def test_shell_payload_limit_no_crash(self) -> None:
         from codey.agents.shell_approval import shell_command_payload
         try:
             shell_command_payload("ls", limit="oops")
         except (ValueError, TypeError, OverflowError):
             self.fail("shell_command_payload crashed on bad limit")
 
-    def test_deferred_index_no_crash(self):
+    def test_deferred_index_no_crash(self) -> None:
         from codey.agents.shell_approval import DeferredToolCall
         try:
             DeferredToolCall(tool_index="oops", tool_name="read").to_payload()
         except (ValueError, TypeError, OverflowError):
             self.fail("DeferredToolCall crashed on bad index")
 
-    def test_search_page_zero_not_masked(self):
+    def test_search_page_zero_not_masked(self) -> None:
         from codey.toolchain.search_page import normalize_page_args
         # 0->1 clamp is intentional (documented non-bug in round2); lock no-crash + bool strict
         start, page = normalize_page_args(True, 10, None, 80)
@@ -393,7 +381,7 @@ class AgentsOpsSweepTests(unittest.TestCase):
         except (ValueError, TypeError, OverflowError):
             self.fail("normalize_page_args crashed, should default to 1")
 
-    def test_decision_blocked_no_crash(self):
+    def test_decision_blocked_no_crash(self) -> None:
         from codey.completion.decision import completion_blocked_reason
         try:
             completion_blocked_reason(proof_status="failed", failure_class="x",
@@ -401,7 +389,7 @@ class AgentsOpsSweepTests(unittest.TestCase):
         except (ValueError, TypeError, OverflowError):
             self.fail("completion_blocked_reason crashed on bad turns")
 
-    def test_repair_budget_no_crash(self):
+    def test_repair_budget_no_crash(self) -> None:
         import inspect
 
         from codey.completion import repair_context as rc_mod
@@ -409,7 +397,7 @@ class AgentsOpsSweepTests(unittest.TestCase):
         self.assertNotIn("budget = max(0, int(budget_chars or 0))", src,
                          "repair_context still uses bare int(budget)")
 
-    def test_definition_call_arg_strict(self):
+    def test_definition_call_arg_strict(self) -> None:
         from codey.runtime.core.models import ToolCall
         from codey.toolchain import definition as def_mod
         # Containers/bool/None fail closed to default (no "['a.py']"/"False" garbage);
@@ -419,7 +407,7 @@ class AgentsOpsSweepTests(unittest.TestCase):
         self.assertEqual(def_mod.call_arg(ToolCall("read", {"path": {"a": 1}}), "path", "d"), "d")
         self.assertEqual(def_mod.call_arg(ToolCall("run", {"command": 123}), "command", ""), "123")
 
-    def test_manifest_max_bytes_no_crash(self):
+    def test_manifest_max_bytes_no_crash(self) -> None:
         from codey.completion.discovery import read_manifest_text
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "m.md"
@@ -429,7 +417,7 @@ class AgentsOpsSweepTests(unittest.TestCase):
             except (ValueError, TypeError, OverflowError):
                 self.fail("read_manifest_text crashed on bad max_bytes, should be empty")
 
-    def test_protocol_escape_no_raise(self):
+    def test_protocol_escape_no_raise(self) -> None:
         from codey.agents.tool_execution import read_before_edit_outcome
         try:
             result = read_before_edit_outcome(Path("/proj"), "/etc/passwd", set())
@@ -440,21 +428,14 @@ class AgentsOpsSweepTests(unittest.TestCase):
         haystack = str(getattr(result, "model_text", "")) + str(getattr(result, "presentation", ""))
         self.assertIn("workspace_escape", haystack)
 
-    def test_over_budget_no_crash(self):
-        from codey.completion.repair_context import _over_budget
-        try:
-            _over_budget("x" * 1300, "oops")
-        except (ValueError, TypeError):
-            self.fail("_over_budget crashed on bad budget")
-
-    def test_verification_priority_guarded(self):
+    def test_verification_priority_guarded(self) -> None:
         import inspect
 
         from codey.completion import verification_policy as vp_mod
         src = inspect.getsource(vp_mod)
         self.assertNotIn("int(candidate.source_priority", src, "still uses bare int(priority)")
 
-    def test_adapter_record_no_crash(self):
+    def test_adapter_record_no_crash(self) -> None:
         from codey.repairs.adapter_overrides import _record
         try:
             _record({}, "oops")

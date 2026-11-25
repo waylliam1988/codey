@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from typing import NoReturn
 
 from codey.automation.browser_document import same_document
+from codey.automation.browser_receipts import ordered_browser_progress
 from codey.policies.output_requirement import EXPLANATION_GUIDANCE, JSON_ANSWER_GUIDANCE
 from codey.policies.requirement import RequirementEvaluation
 from codey.research.source_document import SourceReadScope
@@ -715,8 +716,6 @@ def _latest_report_reads(eligible: list[tuple[str, ExecutionRecord]], results: M
 def _ordered_requirement_refs(rule: ToolSuccessRequirement, records: Mapping[str, ExecutionRecord],
                               results: Mapping[str, ToolResult], document: JsonObject | None,
                               ) -> tuple[set[str], frozenset[str]]:
-    from codey.operations.browser_completion import ordered_browser_progress
-
     documents = [document]
     if rule.report_label and rule.browser_text is not None:
         documents = []

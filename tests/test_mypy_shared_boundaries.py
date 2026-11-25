@@ -59,7 +59,6 @@ def test_dynamic_payload_boundaries_are_clean() -> None:
     output = _mypy(
         "codey/workspace/changes.py",
         "codey/completion/contract.py",
-        "codey/runtime/log/entries.py",
         follow_imports="silent",
     )
     assert "codey\\workspace\\changes.py" not in output

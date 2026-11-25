@@ -12,6 +12,7 @@ import pytest
 
 from codey.durable import DurableSession, SQLiteDurableStore, SubmissionPlacement
 from codey.durable.errors import CommitConflict
+from codey.durable.model import CommitResult, DurableMutation
 from codey.operations.kernel_driver import drive_provider_request, load_prepared_request
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.task_effects import KernelEffectSink
@@ -25,7 +26,7 @@ from codey.runtime.core.operation_reducer import (
     ACTION_SETTLE_PROVIDER_UNKNOWN,
     ACTION_SUBMIT_PROVIDER_REQUEST,
 )
-from codey.runtime.effects.effect_records import RuntimeEffectError, RuntimeEffectIntent
+from codey.runtime.effects.effect_records import INTENT_SCHEMA_VERSION, RuntimeEffectError, RuntimeEffectIntent
 from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.runtime.write.drive import peek_next_action
 from codey.runtime.write.mutation_line import RuntimeMutationLine
@@ -37,7 +38,7 @@ from tests.support.provider_actions import prepare_legacy_request as prepare_pro
 
 
 @pytest.mark.parametrize("boundary", ["initial_frozen", "followup_frozen", "previous_settled", "intent_admitted", "response_saved"])
-def test_process_exit_preserves_the_original_request_and_dispatch_right(tmp_path, boundary):
+def test_process_exit_preserves_the_original_request_and_dispatch_right(tmp_path: Path, boundary: str) -> None:
     script = r'''
 import os, sys
 from pathlib import Path
@@ -123,7 +124,7 @@ raise AssertionError('fault point did not exit')
 
 @pytest.mark.parametrize("method", ["send_turn", "send_tool_results", "acknowledge_tool_results",
                                     "send_tool_results_bound", "acknowledge_tool_results_bound"])
-def test_driver_restores_exact_declarations_results_and_window(tmp_path, method):
+def test_driver_restores_exact_declarations_results_and_window(tmp_path: Path, method: str) -> None:
     durable, _, _, sink = runtime(tmp_path)
     tools = [ProviderToolDefinition("old_tool", "original", {"type": "object"})]
     results = [ProviderToolResult("original-call", "original result", "original input")]
@@ -147,7 +148,9 @@ def test_driver_restores_exact_declarations_results_and_window(tmp_path, method)
 
 
 @pytest.mark.parametrize("lost_at", ["freeze", "previous_boundary", "admission"])
-def test_lost_commit_acknowledgement_does_not_allocate_or_execute_again(tmp_path, monkeypatch, lost_at):
+def test_lost_commit_acknowledgement_does_not_allocate_or_execute_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lost_at: str,
+) -> None:
     durable, _, _, sink = runtime(tmp_path)
     provider = Mock(send=Mock(return_value="received"))
     recorded = ProviderActions(provider, sink)
@@ -156,7 +159,7 @@ def test_lost_commit_acknowledgement_does_not_allocate_or_execute_again(tmp_path
     commit = durable.store.commit
     lost = False
 
-    def interrupt(mutation):
+    def interrupt(mutation: DurableMutation) -> CommitResult:
         nonlocal lost
         result = commit(mutation)
         selected = ((lost_at == "freeze" and any(a.metadata.get("kind") == "provider_request" for a in mutation.artifacts))
@@ -184,7 +187,7 @@ def test_lost_commit_acknowledgement_does_not_allocate_or_execute_again(tmp_path
         durable.close()
 
 
-def test_cancellation_after_freezing_prevents_intent_admission(tmp_path):
+def test_cancellation_after_freezing_prevents_intent_admission(tmp_path: Path) -> None:
     durable, line, _, sink = runtime(tmp_path)
     provider = Mock()
     try:
@@ -201,7 +204,7 @@ def test_cancellation_after_freezing_prevents_intent_admission(tmp_path):
         durable.close()
 
 
-def test_internal_previous_generation_boundary_does_not_place_user_input(tmp_path):
+def test_internal_previous_generation_boundary_does_not_place_user_input(tmp_path: Path) -> None:
     durable, _, _, sink = runtime(tmp_path)
     provider = ProviderActions(Mock(send=Mock(return_value="received")), sink)
     try:
@@ -230,7 +233,7 @@ def test_retired_operation_schema_three_rejects_at_checkpoint(tmp_path: Path) ->
         durable.close()
 
 
-def test_corrupt_prepared_request_blocks_before_effect_or_provider_execution(tmp_path):
+def test_corrupt_prepared_request_blocks_before_effect_or_provider_execution(tmp_path: Path) -> None:
     from pathlib import Path
 
     durable, _, _, sink = runtime(tmp_path)
@@ -246,19 +249,17 @@ def test_corrupt_prepared_request_blocks_before_effect_or_provider_execution(tmp
         durable.close()
 
 
-def test_original_effect_codec_retains_its_version_and_new_reference_has_one_owner():
+def test_effect_codec_accepts_only_current_schema_and_provider_request_reference() -> None:
     intent = RuntimeEffectIntent("original", "provider_send", "s", "r", lane="task:r",
-                                 operation_id="task:r", schema_version=1)
+                                 operation_id="task:r", request_ref="artifact_original")
     assert RuntimeEffectIntent.from_payload(intent.to_payload()) == intent
-    current = replace(intent, schema_version=2, request_ref="artifact_original")
-    assert RuntimeEffectIntent.from_payload(current.to_payload()) == current
-    with pytest.raises(RuntimeEffectError, match="version-2 provider intent"):
-        replace(current, schema_version=1)
-    with pytest.raises(RuntimeEffectError, match="version-2 provider intent"):
-        replace(current, effect_category="tool_call")
+    with pytest.raises(RuntimeEffectError, match="unsupported schema version"):
+        RuntimeEffectIntent.from_payload({**intent.to_payload(), "schema_version": 1})
+    with pytest.raises(RuntimeEffectError, match="provider intent"):
+        replace(intent, effect_category="tool_call")
 
 
-def test_request_without_frozen_scope_is_rejected_without_a_new_request(tmp_path):
+def test_request_without_frozen_scope_is_rejected_without_a_new_request(tmp_path: Path) -> None:
     from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.provider_receipts import snapshot_description
 
@@ -269,23 +270,25 @@ def test_request_without_frozen_scope_is_rejected_without_a_new_request(tmp_path
         payload = {"method": "send", "args": ["original"], "kwargs": {}, "logical_turn": 1,
                    "window": None, "snapshot": snapshot_description(build_turn_snapshot(session, native=False))}
         ref = outputs.write_json_artifact(session_id="s", run_id="r", payload={
-            "schema_version": 1, "kind": "provider_request", "effect_id": "legacy", "payload": payload})
-        artifact = outputs.json_artifact_record(ref, owner_task_id="r", owner_effect_id="legacy",
+            "schema_version": 1, "kind": "provider_request", "effect_id": "missing-scope", "payload": payload})
+        artifact = outputs.json_artifact_record(ref, owner_task_id="r", owner_effect_id="missing-scope",
                                                metadata={"kind": "provider_request"})
-        line.begin_provider_effect("s", "r", RuntimeEffectIntent("legacy", "provider_send", "s", "r",
-            provider_id="local", turn=1, args_digest="legacy-digest", schema_version=1), artifacts=(artifact,))
-        sink.record_response("legacy", "saved response")
+        line.begin_provider_effect("s", "r", RuntimeEffectIntent("missing-scope", "provider_send", "s", "r",
+            provider_id="local", turn=1, args_digest="request-digest", request_ref=ref.handle), artifacts=(artifact,))
+        sink.record_response("missing-scope", "saved response")
+        state = operation_from_checkpoint(durable.task("r"), "s")
+        assert state is not None
         for _ in range(2):
             with pytest.raises(RuntimeEffectError, match="no frozen effect scope"):
-                sink.load_response(session, operation_from_checkpoint(durable.task("r"), "s").response_ref)
+                sink.load_response(session, state.response_ref)
         provider.send.assert_not_called()
         assert len(durable.effects("r")) == 1
-        assert durable.effect("legacy").intent["schema_version"] == 1
+        assert durable.effect("missing-scope").intent["schema_version"] == INTENT_SCHEMA_VERSION
     finally:
         durable.close()
 
 
-def test_request_scoped_json_contract_and_schema_restore_from_original_receipt(tmp_path):
+def test_request_scoped_json_contract_and_schema_restore_from_original_receipt(tmp_path: Path) -> None:
     durable, _, _, sink = runtime(tmp_path)
     provider = Mock(send=Mock(return_value="received"))
     schema = {"type": "object", "properties": {"tool": {"const": "original"}}}
@@ -305,7 +308,7 @@ def test_request_scoped_json_contract_and_schema_restore_from_original_receipt(t
         durable.close()
 
 
-def test_required_native_choice_is_replayed_from_its_frozen_request(tmp_path):
+def test_required_native_choice_is_replayed_from_its_frozen_request(tmp_path: Path) -> None:
     from codey.providers.base import AssistantTurn
 
     durable, _, _, sink = runtime(tmp_path)

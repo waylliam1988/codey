@@ -8,9 +8,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codey.automation.browser_document import same_document
-from codey.automation.browser_receipts import committed_results, delivery
+from codey.automation.browser_receipts import (
+    PAGE_EVIDENCE_INVALIDATORS,
+    committed_results,
+    delivery,
+    page_effect_possible,
+)
 from codey.completion.contract import CompletionCheck
-from codey.operations.browser_completion import PAGE_EVIDENCE_INVALIDATORS, page_effect_possible
 from codey.operations.browser_references import BrowserReferences
 from codey.operations.kernel_provenance import _kernel_workspace_identity_of
 from codey.policies.network import check_fetch_url

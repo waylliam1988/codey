@@ -395,8 +395,7 @@ def execute_turn(
     """
 
     frozen_specs = frozen_spec_map(snapshot)
-    from codey.automation.browser_receipts import query_document
-    from codey.operations.browser_completion import browser_click_stage
+    from codey.automation.browser_receipts import browser_click_stage, query_document
     from codey.operations.browser_waits import complete_wait_args
 
     normalized: list[ToolCall] = []

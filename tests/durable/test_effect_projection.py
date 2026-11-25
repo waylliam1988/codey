@@ -1,7 +1,10 @@
 from pathlib import Path
 
+import pytest
+
 from codey.durable import DurableSession, EffectRecord, SQLiteDurableStore
 from codey.runtime.effects.effect_records import (
+    RuntimeEffectError,
     RuntimeEffectIntent,
     RuntimeEffectStore,
     prepare_intent,
@@ -39,3 +42,5 @@ def test_production_effect_projection_reads_durable_record_without_jsonl(tmp_pat
     assert len(projections) == 1
     assert projections[0].intent.effect_id == "effect-1"
     assert projections[0].is_pending
+    with pytest.raises(RuntimeEffectError, match="boundary mismatch"):
+        RuntimeEffectStore(durable=durable).load_effects("another-conversation", "task-1")

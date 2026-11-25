@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -27,13 +27,7 @@ from typing import TYPE_CHECKING
 from codey.durable.model import TaskCheckpoint, thaw_json
 from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
-from codey.runtime.effects.keep_policies import (
-    RECORD_KIND_ABANDONED,
-    RECORD_KIND_RECOVERED,
-    keep_delivery_entry_for_compaction,
-)
 from codey.runtime.effects.replay_policy import is_replayable_safe_tool
-from codey.runtime.log.entries import RuntimeLogEntry
 from codey.types.json_value import (
     JsonObject,
     JsonValue,
@@ -51,18 +45,6 @@ SCHEMA_VERSION = 1
 EFFECT_KIND = "tool_result_delivery"
 
 RECORD_KIND_BATCH_INTENT = "batch_intent"
-RECORD_KIND_SEND_ATTEMPT = "send_attempt"
-RECORD_KIND_SEND_SUPERSEDED = "send_superseded"
-RECORD_KIND_DELIVERED = "delivered"
-RECORD_KINDS = frozenset({
-    RECORD_KIND_BATCH_INTENT,
-    RECORD_KIND_SEND_ATTEMPT,
-    RECORD_KIND_SEND_SUPERSEDED,
-    RECORD_KIND_DELIVERED,
-    RECORD_KIND_RECOVERED,
-    RECORD_KIND_ABANDONED,
-})
-
 ABANDONED_REASONS = frozenset({"writer_settled", "repair_settled", "operation_terminal"})
 
 MAX_BATCH_ID_CHARS = 128
@@ -114,79 +96,6 @@ _INTENT_PAYLOAD_KEYS = frozenset({
     "created_at",
 })
 
-_SEND_ATTEMPT_PAYLOAD_KEYS = frozenset({
-    "schema_version",
-    "effect_kind",
-    "record_kind",
-    "ref",
-    "batch_id",
-    "session_id",
-    "run_id",
-    "lane",
-    "operation_id",
-    "provider_effect_id",
-    "created_at",
-})
-
-_DELIVERED_PAYLOAD_KEYS = frozenset({
-    "schema_version",
-    "effect_kind",
-    "record_kind",
-    "ref",
-    "batch_id",
-    "session_id",
-    "run_id",
-    "lane",
-    "operation_id",
-    "provider_effect_id",
-    "created_at",
-})
-
-_SEND_SUPERSEDED_PAYLOAD_KEYS = frozenset({
-    "schema_version",
-    "effect_kind",
-    "record_kind",
-    "ref",
-    "batch_id",
-    "session_id",
-    "run_id",
-    "lane",
-    "operation_id",
-    "provider_effect_id",
-    "created_at",
-})
-
-_RECOVERED_PAYLOAD_KEYS = frozenset({
-    "schema_version",
-    "effect_kind",
-    "record_kind",
-    "ref",
-    "batch_id",
-    "session_id",
-    "run_id",
-    "lane",
-    "operation_id",
-    "recovered_effect_ids",
-    "recovered_reads",
-    "recovered_lookups",
-    "created_at",
-})
-
-_ABANDONED_PAYLOAD_KEYS = frozenset({
-    "schema_version",
-    "effect_kind",
-    "record_kind",
-    "ref",
-    "batch_id",
-    "session_id",
-    "run_id",
-    "lane",
-    "operation_id",
-    "reason",
-    "created_at",
-})
-
-
 class ToolResultDeliveryError(ValueError):
     """Raised when delivery receipt data violates schema, bounds, or invariants."""
 
@@ -195,9 +104,7 @@ class ToolResultDeliveryError(ValueError):
 class DeliveryCommit:
     """Witness that a provider accepted one complete result batch.
 
-    This is deliberately a small value object.  The runtime session log owns
-    persistence; callers can serialize the witness in the same mutation as
-    their provider ledger commit and later reconcile it with delivered rows.
+    The durable mutation commits this receipt with the provider settlement.
     """
 
     window_ref: Mapping[str, object]
@@ -364,52 +271,6 @@ def _validate_delivery_record_envelope(
         raise ToolResultDeliveryError(f"payload keys mismatch for {expected_kind}: {diff}")
 
 
-def _validate_run_boundary(
-    entry: RuntimeLogEntry,
-    payload: JsonObject,
-    session_id: str,
-    run_id: str,
-) -> bool:
-    """Strictly align with RuntimeEffectStore run boundary rules."""
-    expected_lane = lane_for_run(run_id)
-    expected_op = operation_id_for_run(run_id)
-
-    entry_lane_match = (entry.lane == expected_lane)
-    entry_op_match = (entry.operation_id == expected_op)
-    payload_run_match = (payload.get("run_id") == run_id)
-    payload_op_match = (payload.get("operation_id") == expected_op)
-    payload_lane_match = (payload.get("lane") == expected_lane)
-
-    # Check if this record is related to the queried run
-    matches_any = (
-        entry_lane_match
-        or entry_op_match
-        or payload_run_match
-        or payload_op_match
-        or payload_lane_match
-    )
-    if not matches_any:
-        return False
-
-    # If it is related, all 4 dimensions MUST match strictly
-    if (
-        entry.lane != expected_lane
-        or entry.operation_id != expected_op
-        or payload.get("session_id") != session_id
-        or payload.get("run_id") != run_id
-        or payload.get("lane") != expected_lane
-        or payload.get("operation_id") != expected_op
-    ):
-        raise ToolResultDeliveryError(
-            f"delivery record run boundary mismatch: "
-            f"entry=({entry.lane!r}, {entry.operation_id!r}), "
-            f"payload=({payload.get('session_id')!r}, {payload.get('run_id')!r}, "
-            f"{payload.get('lane')!r}, {payload.get('operation_id')!r}), "
-            f"expected=({session_id!r}, {run_id!r}, {expected_lane!r}, {expected_op!r})"
-        )
-    return True
-
-
 @dataclass(frozen=True)
 class DeliveryBatchIntent:
     batch_id: str
@@ -570,21 +431,6 @@ def prepare_batch_intent(
     )
 
 
-def delivery_record_entry(payload: JsonObject) -> dict[str, object]:
-    lane = _require_bounded_str(payload.get("lane"), "lane", MAX_REF_CHARS)
-    operation_id = _require_bounded_str(
-        payload.get("operation_id"),
-        "operation_id",
-        MAX_REF_CHARS,
-    )
-    return {
-        "lane": lane,
-        "operation_id": operation_id,
-        "kind": "operation_effect",
-        "payload": payload,
-    }
-
-
 def mark_send_attempt(
     *,
     batch_id: str,
@@ -718,145 +564,6 @@ def mark_abandoned(
     return replace(projection, is_abandoned=True, abandoned_reason=clean_reason)
 
 
-def iter_delivery_records_from_entries(
-    entries: tuple[RuntimeLogEntry, ...],
-    *,
-    session_id: str,
-    run_id: str,
-) -> Iterator[tuple[str, JsonObject]]:
-    """Iterate and strictly validate all delivery records for this run."""
-    for entry in entries:
-        if entry.kind != "operation_effect":
-            continue
-        payload = canonical_json_object(entry.payload)
-        if payload.get("effect_kind") != EFFECT_KIND:
-            continue
-
-        if not _validate_run_boundary(entry, payload, session_id, run_id):
-            continue
-
-        rkind = payload.get("record_kind")
-        if not isinstance(rkind, str) or rkind not in RECORD_KINDS:
-            raise ToolResultDeliveryError(f"unknown delivery record_kind: {rkind!r}")
-
-        batch_id = payload.get("batch_id")
-        _require_bounded_str(batch_id, "batch_id in delivery record", MAX_BATCH_ID_CHARS)
-
-        if rkind == RECORD_KIND_BATCH_INTENT:
-            _validate_delivery_record_envelope(payload, RECORD_KIND_BATCH_INTENT, _INTENT_PAYLOAD_KEYS)
-        elif rkind == RECORD_KIND_SEND_ATTEMPT:
-            _validate_delivery_record_envelope(payload, RECORD_KIND_SEND_ATTEMPT, _SEND_ATTEMPT_PAYLOAD_KEYS)
-            peid = payload.get("provider_effect_id")
-            _require_bounded_str(peid, "provider_effect_id in send_attempt", MAX_EFFECT_ID_CHARS)
-        elif rkind == RECORD_KIND_SEND_SUPERSEDED:
-            _validate_delivery_record_envelope(payload, RECORD_KIND_SEND_SUPERSEDED, _SEND_SUPERSEDED_PAYLOAD_KEYS)
-            peid = payload.get("provider_effect_id")
-            _require_bounded_str(peid, "provider_effect_id in send_superseded", MAX_EFFECT_ID_CHARS)
-        elif rkind == RECORD_KIND_DELIVERED:
-            _validate_delivery_record_envelope(payload, RECORD_KIND_DELIVERED, _DELIVERED_PAYLOAD_KEYS)
-            peid = payload.get("provider_effect_id")
-            _require_bounded_str(peid, "provider_effect_id in delivered", MAX_EFFECT_ID_CHARS)
-        elif rkind == RECORD_KIND_RECOVERED:
-            _validate_delivery_record_envelope(payload, RECORD_KIND_RECOVERED, _RECOVERED_PAYLOAD_KEYS)
-            _require_nonnegative_int(payload.get("recovered_reads"), "recovered_reads")
-            _require_nonnegative_int(payload.get("recovered_lookups"), "recovered_lookups")
-            effect_ids = payload.get("recovered_effect_ids")
-            if not isinstance(effect_ids, list):
-                raise ToolResultDeliveryError("recovered_effect_ids must be a list")
-            for eid in effect_ids:
-                _require_bounded_str(eid, "recovered_effect_id", MAX_EFFECT_ID_CHARS)
-        elif rkind == RECORD_KIND_ABANDONED:
-            _validate_delivery_record_envelope(payload, RECORD_KIND_ABANDONED, _ABANDONED_PAYLOAD_KEYS)
-            reason = payload.get("reason")
-            _require_bounded_str(reason, "reason in abandoned", 80)
-            if str(reason) not in ABANDONED_REASONS:
-                raise ToolResultDeliveryError(f"invalid abandoned reason: {reason!r}")
-
-        yield rkind, payload
-
-
-def batches_from_entries(
-    entries: tuple[RuntimeLogEntry, ...],
-    *,
-    session_id: str,
-    run_id: str,
-) -> tuple[DeliveryBatchProjection, ...]:
-    intents: dict[str, DeliveryBatchIntent] = {}
-    ordered_batch_ids: list[str] = []
-    send_attempts: dict[str, list[str]] = {}
-    superseded: dict[str, list[str]] = {}
-    delivered: dict[str, list[str]] = {}
-    recovered_facts: dict[str, JsonObject] = {}
-    abandoned_facts: dict[str, JsonObject] = {}
-
-    for rkind, payload in iter_delivery_records_from_entries(
-        entries,
-        session_id=session_id,
-        run_id=run_id,
-    ):
-        batch_id = require_json_string(payload["batch_id"], "batch_id")
-
-        if rkind == RECORD_KIND_BATCH_INTENT:
-            _apply_batch_intent_record(
-                payload=payload,
-                batch_id=batch_id,
-                intents=intents,
-                ordered_batch_ids=ordered_batch_ids,
-            )
-
-        elif rkind == RECORD_KIND_SEND_ATTEMPT:
-            send_attempts.setdefault(batch_id, []).append(require_json_string(payload["provider_effect_id"], "provider_effect_id"))
-
-        elif rkind == RECORD_KIND_SEND_SUPERSEDED:
-            superseded.setdefault(batch_id, []).append(require_json_string(payload["provider_effect_id"], "provider_effect_id"))
-
-        elif rkind == RECORD_KIND_DELIVERED:
-            delivered.setdefault(batch_id, []).append(require_json_string(payload["provider_effect_id"], "provider_effect_id"))
-
-        elif rkind == RECORD_KIND_RECOVERED:
-            _apply_recovered_record(
-                payload=payload,
-                batch_id=batch_id,
-                recovered_facts=recovered_facts,
-            )
-
-        elif rkind == RECORD_KIND_ABANDONED:
-            _apply_abandoned_record(
-                payload=payload,
-                batch_id=batch_id,
-                abandoned_facts=abandoned_facts,
-            )
-
-    _check_delivery_orphans(
-        intents=intents,
-        send_attempts=send_attempts,
-        superseded=superseded,
-        delivered=delivered,
-        recovered_facts=recovered_facts,
-        abandoned_facts=abandoned_facts,
-    )
-    _check_delivery_links(
-        send_attempts=send_attempts,
-        superseded=superseded,
-        delivered=delivered,
-    )
-    _check_delivery_terminals(
-        delivered=delivered,
-        recovered_facts=recovered_facts,
-        abandoned_facts=abandoned_facts,
-    )
-
-    return _build_delivery_projections(
-        ordered_batch_ids=ordered_batch_ids,
-        intents=intents,
-        send_attempts=send_attempts,
-        superseded=superseded,
-        delivered=delivered,
-        recovered_facts=recovered_facts,
-        abandoned_facts=abandoned_facts,
-    )
-
-
 def _batch_intent_from_payload(payload: JsonObject, batch_id: str) -> DeliveryBatchIntent:
     raw_items = payload.get("items")
     if not isinstance(raw_items, list) or not raw_items:
@@ -878,99 +585,6 @@ def _batch_intent_from_payload(payload: JsonObject, batch_id: str) -> DeliveryBa
     )
     intent.validate()
     return intent
-
-
-def _apply_batch_intent_record(
-    *,
-    payload: JsonObject,
-    batch_id: str,
-    intents: dict[str, DeliveryBatchIntent],
-    ordered_batch_ids: list[str],
-) -> None:
-    intent = _batch_intent_from_payload(payload, batch_id)
-
-    if batch_id in intents:
-        existing = intents[batch_id]
-        if (
-            existing.turn != intent.turn
-            or existing.items != intent.items
-            or existing.batch_digest != intent.batch_digest
-        ):
-            raise ToolResultDeliveryError(
-                f"conflicting duplicate batch intent for batch_id {batch_id!r}"
-            )
-    else:
-        intents[batch_id] = intent
-        ordered_batch_ids.append(batch_id)
-
-
-def _apply_recovered_record(
-    *,
-    payload: JsonObject,
-    batch_id: str,
-    recovered_facts: dict[str, JsonObject],
-) -> None:
-    if batch_id in recovered_facts:
-        existing = recovered_facts[batch_id]
-        if (
-            existing["recovered_effect_ids"] != payload["recovered_effect_ids"]
-            or existing.get("recovered_reads") != payload.get("recovered_reads")
-            or existing.get("recovered_lookups") != payload.get("recovered_lookups")
-        ):
-            raise ToolResultDeliveryError(f"conflicting recovered facts for batch {batch_id!r}")
-    else:
-        recovered_facts[batch_id] = payload
-
-
-def _apply_abandoned_record(
-    *,
-    payload: JsonObject,
-    batch_id: str,
-    abandoned_facts: dict[str, JsonObject],
-) -> None:
-    if batch_id in abandoned_facts:
-        existing = abandoned_facts[batch_id]
-        if existing.get("reason") != payload.get("reason"):
-            raise ToolResultDeliveryError(f"conflicting abandoned facts for batch {batch_id!r}")
-    else:
-        abandoned_facts[batch_id] = payload
-
-
-def _check_delivery_orphans(
-    *,
-    intents: dict[str, DeliveryBatchIntent],
-    send_attempts: dict[str, list[str]],
-    superseded: dict[str, list[str]],
-    delivered: dict[str, list[str]],
-    recovered_facts: dict[str, JsonObject] | None = None,
-    abandoned_facts: dict[str, JsonObject] | None = None,
-) -> None:
-    known_intent_ids = set(intents.keys())
-    orphan_attempts = set(send_attempts.keys()) - known_intent_ids
-    if orphan_attempts:
-        raise ToolResultDeliveryError(
-            f"orphan send_attempt records without corresponding batch_intent: {orphan_attempts}"
-        )
-    orphan_superseded = set(superseded.keys()) - known_intent_ids
-    if orphan_superseded:
-        raise ToolResultDeliveryError(
-            f"orphan send_superseded records without corresponding batch_intent: {orphan_superseded}"
-        )
-    orphan_delivered = set(delivered.keys()) - known_intent_ids
-    if orphan_delivered:
-        raise ToolResultDeliveryError(
-            f"orphan delivered records without corresponding batch_intent: {orphan_delivered}"
-        )
-    orphan_recovered = set((recovered_facts or {}).keys()) - known_intent_ids
-    if orphan_recovered:
-        raise ToolResultDeliveryError(
-            f"orphan recovered records without corresponding batch_intent: {orphan_recovered}"
-        )
-    orphan_abandoned = set((abandoned_facts or {}).keys()) - known_intent_ids
-    if orphan_abandoned:
-        raise ToolResultDeliveryError(
-            f"orphan abandoned records without corresponding batch_intent: {orphan_abandoned}"
-        )
 
 
 def _check_delivery_links(
@@ -1014,60 +628,6 @@ def _check_delivery_links(
         raise ToolResultDeliveryError(
             f"delivered records without matching send_attempt: {delivered_without_attempt}"
         )
-
-
-def _check_delivery_terminals(
-    *,
-    delivered: dict[str, list[str]],
-    recovered_facts: dict[str, JsonObject],
-    abandoned_facts: dict[str, JsonObject],
-) -> None:
-    """Abandoned is exclusive with delivered.
-
-    Recovered then delivered is a valid resume path (reconstructed results
-    still need a provider send), so delivered+recovered may coexist.
-    """
-    for bid in set(delivered) & set(abandoned_facts):
-        raise ToolResultDeliveryError(f"batch has both delivered and abandoned: {bid!r}")
-
-
-def _build_delivery_projections(
-    *,
-    ordered_batch_ids: list[str],
-    intents: dict[str, DeliveryBatchIntent],
-    send_attempts: dict[str, list[str]],
-    superseded: dict[str, list[str]],
-    delivered: dict[str, list[str]],
-    recovered_facts: dict[str, JsonObject],
-    abandoned_facts: dict[str, JsonObject] | None = None,
-) -> tuple[DeliveryBatchProjection, ...]:
-    abandoned_facts = abandoned_facts or {}
-    projections: list[DeliveryBatchProjection] = []
-    for bid in ordered_batch_ids:
-        intent = intents[bid]
-        attempts = tuple(send_attempts.get(bid, ()))
-        voided = tuple(s for s in superseded.get(bid, ()) if s in set(attempts))
-        delivered_ids = tuple(delivered.get(bid, ()))
-        rec = recovered_facts.get(bid)
-        abd = abandoned_facts.get(bid)
-
-        projections.append(
-            DeliveryBatchProjection(
-                intent=intent,
-                send_attempts=attempts,
-                superseded_effect_ids=voided,
-                delivered_effect_ids=delivered_ids,
-                is_delivered=bool(delivered_ids),
-                recovered_effect_ids=tuple(require_json_strings(rec["recovered_effect_ids"], "recovered_effect_ids")) if rec else (),
-                recovered_reads=_require_nonnegative_int(rec["recovered_reads"], "recovered_reads") if rec else 0,
-                recovered_lookups=_require_nonnegative_int(rec["recovered_lookups"], "recovered_lookups") if rec else 0,
-                is_recovered=rec is not None,
-                abandoned_reason=str(abd.get("reason") or "") if abd else "",
-                is_abandoned=abd is not None,
-            )
-        )
-
-    return tuple(projections)
 
 
 def delivery_batches_from_snapshot(value: object, *, session_id: str,
@@ -1156,13 +716,7 @@ class ToolResultDeliveryStore:
 __all__ = [
     "ABANDONED_REASONS",
     "EFFECT_KIND",
-    "RECORD_KIND_ABANDONED",
     "RECORD_KIND_BATCH_INTENT",
-    "RECORD_KIND_DELIVERED",
-    "RECORD_KIND_RECOVERED",
-    "RECORD_KIND_SEND_ATTEMPT",
-    "RECORD_KIND_SEND_SUPERSEDED",
-    "RECORD_KINDS",
     "DeliveryBatchItem",
     "DeliveryBatchIntent",
     "DeliveryBatchProjection",
@@ -1170,11 +724,7 @@ __all__ = [
     "DeliveryRecoveredFact",
     "ToolResultDeliveryError",
     "ToolResultDeliveryStore",
-    "batches_from_entries",
     "compute_batch_digest",
-    "delivery_record_entry",
-    "iter_delivery_records_from_entries",
-    "keep_delivery_entry_for_compaction",
     "new_batch_id",
     "prepare_batch_intent",
 ]

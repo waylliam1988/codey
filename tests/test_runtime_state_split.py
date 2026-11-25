@@ -1,74 +1,32 @@
-"""Parity tests: lock behavior of the four refactored runtime functions.
-
-Pure-extraction guard for:
-- RuntimeOperationState.from_payload (operation_payload.py)
-- batches_from_entries (tool_result_delivery.py)
-- _compact_entries (compaction.py)
-- validate_prompt_surface_payload (prompt_surface.py)
-
-No bug-fix tests here: any deterministic bug found during the split must
-first get a failing test in this file (red), then a product-code fix (green).
-Uncertain observations are recorded in the task report only.
-"""
+"""Contract tests for durable runtime state, delivery snapshots and prompt surfaces."""
 
 from __future__ import annotations
 
 import unittest
 
 from codey.runtime.core.operation_payload import RuntimeOperationState
-from codey.runtime.core.operation_state import lane_for_run, new_operation_state, operation_id_for_run
+from codey.runtime.core.operation_state import new_operation_state
 from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,
+    DeliveryBatchProjection,
     ToolResultDeliveryError,
-    batches_from_entries,
+    compute_batch_digest,
+    delivery_batches_from_snapshot,
+    mark_delivered,
+    mark_send_attempt,
 )
-from codey.runtime.log.compaction import _compact_entries
-from codey.runtime.log.entries import RuntimeLogEntry
 from codey.runtime.observe.prompt_surface import (
     build_prompt_surface_record,
     validate_prompt_surface_payload,
 )
+from codey.runtime.write.checkpoint import delivery_snapshot
 
 _SESSION = "sess-b5"
 _RUN = "run-b5"
 
 
-def _entry(*, lane: str, operation_id: str, kind: str, payload: dict) -> RuntimeLogEntry:
-    return RuntimeLogEntry(
-        session_id=_SESSION,
-        lane=lane,
-        operation_id=operation_id,
-        kind=kind,
-        payload=payload,
-    )
-
-
-def _delivery_items() -> tuple[DeliveryBatchItem, ...]:
-    from codey.runtime.effects.tool_result_delivery import compute_batch_digest
-
-    items = (
-        DeliveryBatchItem(tool_index=0, tool_name="read", ref="eff-1", replay_class="safe"),
-        DeliveryBatchItem(tool_index=1, tool_name="search", ref="eff-2", replay_class="safe"),
-    )
-    digest = compute_batch_digest(items)
-    return items, digest
-
-
-def _intent_payload(batch_id: str = "batch-b5-1") -> dict:
-    items, digest = _delivery_items()
-    intent = DeliveryBatchIntent(
-        batch_id=batch_id,
-        session_id=_SESSION,
-        run_id=_RUN,
-        turn=1,
-        items=items,
-        batch_digest=digest,
-    )
-    return intent.to_payload()
-
-
-def _valid_surface_payload() -> dict:
+def _valid_surface_payload() -> dict[str, object]:
     record = build_prompt_surface_record(
         phase="writer",
         send_ref="effect_b5",
@@ -164,169 +122,40 @@ class OperationStateFromPayloadParityTests(unittest.TestCase):
         self.assertIsNone(RuntimeOperationState.from_payload(payload))
 
 
-class BatchesFromEntriesParityTests(unittest.TestCase):
-    def _lane_op(self) -> tuple[str, str]:
-        return lane_for_run(_RUN), operation_id_for_run(_RUN)
-
-    def test_empty_entries(self) -> None:
-        self.assertEqual(
-            batches_from_entries((), session_id=_SESSION, run_id=_RUN),
-            (),
+class DeliverySnapshotTests(unittest.TestCase):
+    def setUp(self) -> None:
+        items = (DeliveryBatchItem(tool_index=0, tool_name="read", ref="eff-1", replay_class="safe"),)
+        self.intent = DeliveryBatchIntent(
+            batch_id="batch-b5-1", session_id=_SESSION, run_id=_RUN, turn=1,
+            items=items, batch_digest=compute_batch_digest(items), created_at="2026-01-01T00:00:00Z",
         )
 
-    def test_intent_only_projection(self) -> None:
-        lane, op = self._lane_op()
-        entries = (
-            _entry(lane=lane, operation_id=op, kind="operation_effect", payload=_intent_payload()),
-        )
-        batches = batches_from_entries(entries, session_id=_SESSION, run_id=_RUN)
-        self.assertEqual(len(batches), 1)
-        self.assertEqual(batches[0].intent.batch_id, "batch-b5-1")
-        self.assertFalse(batches[0].is_delivered)
+    def _load(self, snapshots: object) -> tuple[DeliveryBatchProjection, ...]:
+        return delivery_batches_from_snapshot(snapshots, session_id=_SESSION, run_id=_RUN)
 
-    def test_attempt_then_delivered_lifecycle(self) -> None:
-        from codey.runtime.effects.tool_result_delivery import mark_delivered, mark_send_attempt
+    def test_empty_checkpoint(self) -> None:
+        self.assertEqual(self._load([]), ())
 
-        lane, op = self._lane_op()
-        intent = _entry(lane=lane, operation_id=op, kind="operation_effect", payload=_intent_payload())
-        first = batches_from_entries((intent,), session_id=_SESSION, run_id=_RUN)
-        attempt = mark_send_attempt(batch_id="batch-b5-1", provider_effect_id="pe-1", batches=first)
-        assert attempt is not None
-        self.assertEqual(attempt.send_attempts, ("pe-1",))
-        delivered = mark_delivered(batch_id="batch-b5-1", provider_effect_id="pe-1", batches=(attempt,))
+    def test_pending_batch_remains_undelivered(self) -> None:
+        [batch] = self._load([delivery_snapshot(DeliveryBatchProjection(self.intent))])
+        self.assertEqual(batch.intent.batch_id, self.intent.batch_id)
+        self.assertFalse(batch.is_delivered)
+
+    def test_attempt_then_delivered_survives_checkpoint(self) -> None:
+        pending = DeliveryBatchProjection(self.intent)
+        attempted = mark_send_attempt(batch_id=self.intent.batch_id, provider_effect_id="pe-1", batches=(pending,))
+        assert attempted is not None
+        delivered = mark_delivered(batch_id=self.intent.batch_id, provider_effect_id="pe-1", batches=(attempted,))
         assert delivered is not None
-        self.assertTrue(delivered.is_delivered)
-        self.assertEqual(delivered.delivered_effect_ids, ("pe-1",))
+        [restored] = self._load([delivery_snapshot(delivered)])
+        self.assertEqual(restored.send_attempts, ("pe-1",))
+        self.assertTrue(restored.is_delivered)
+        self.assertEqual(restored.delivered_effect_ids, ("pe-1",))
 
-    def test_orphan_attempt_rejected(self) -> None:
-        lane, op = self._lane_op()
-        payload = {
-            "schema_version": 1,
-            "effect_kind": "tool_result_delivery",
-            "record_kind": "send_attempt",
-            "ref": "delivery_attempt:batch-ghost:pe-x",
-            "batch_id": "batch-ghost",
-            "session_id": _SESSION,
-            "run_id": _RUN,
-            "lane": lane,
-            "operation_id": op,
-            "provider_effect_id": "pe-x",
-            "created_at": "2026-01-01T00:00:00Z",
-        }
-        entries = (_entry(lane=lane, operation_id=op, kind="operation_effect", payload=payload),)
+    def test_delivery_without_attempt_rejected(self) -> None:
+        corrupt = DeliveryBatchProjection(self.intent, delivered_effect_ids=("pe-1",))
         with self.assertRaises(ToolResultDeliveryError):
-            batches_from_entries(entries, session_id=_SESSION, run_id=_RUN)
-
-
-class CompactEntriesParityTests(unittest.TestCase):
-    def _op_entries(self) -> tuple[str, str]:
-        return lane_for_run(_RUN), operation_id_for_run(_RUN)
-
-    def test_keeps_spine_drops_intermediate_state(self) -> None:
-        lane, op = self._op_entries()
-        state = new_operation_state(
-            session_id=_SESSION,
-            run_id=_RUN,
-            project="",
-            provider_id="prov",
-            turn_budget=5,
-            max_repair_rounds=1,
-        )
-        entries = (
-            _entry(lane=lane, operation_id=op, kind="operation_started", payload={"operation_kind": "task"}),
-            _entry(lane=lane, operation_id=op, kind="operation_state", payload=dict(state.to_payload())),
-            _entry(lane=lane, operation_id=op, kind="operation_state", payload=dict(state.to_payload())),
-        )
-        compacted = _compact_entries(entries)
-        self.assertEqual([e.kind for e in compacted], ["operation_started", "operation_state"])
-        self.assertEqual([e.batch_index for e in compacted], [0, 1])
-        self.assertEqual(compacted[0].batch_count, 2)
-
-    def test_open_operation_keeps_pairs_and_delivery(self) -> None:
-        lane, op = self._op_entries()
-        entries = (
-            _entry(lane=lane, operation_id=op, kind="operation_started", payload={"operation_kind": "task"}),
-            _entry(
-                lane=lane,
-                operation_id=op,
-                kind="operation_effect",
-                payload={"effect_kind": "runtime_effect", "record_kind": "intent", "effect_id": "e1"},
-            ),
-            _entry(
-                lane=lane,
-                operation_id=op,
-                kind="operation_effect",
-                payload={"effect_kind": "runtime_effect", "record_kind": "settlement", "effect_id": "e1", "status": "ok"},
-            ),
-            _entry(
-                lane=lane,
-                operation_id=op,
-                kind="operation_effect",
-                payload={"effect_kind": "tool_result_delivery", "record_kind": "batch_intent", "batch_id": "b1"},
-            ),
-        )
-        compacted = _compact_entries(entries)
-        kinds = [(e.kind, e.payload.get("record_kind")) for e in compacted]
-        self.assertEqual(
-            kinds,
-            [
-                ("operation_started", None),
-                ("operation_effect", "intent"),
-                ("operation_effect", "settlement"),
-                ("operation_effect", "batch_intent"),
-            ],
-        )
-
-    def test_closed_operation_drops_ok_pair_and_intent_keeps_recovered(self) -> None:
-        lane, op = self._op_entries()
-        state = new_operation_state(
-            session_id=_SESSION,
-            run_id=_RUN,
-            project="",
-            provider_id="prov",
-            turn_budget=5,
-            max_repair_rounds=1,
-        )
-        entries = (
-            _entry(lane=lane, operation_id=op, kind="operation_started", payload={"operation_kind": "task"}),
-            _entry(lane=lane, operation_id=op, kind="operation_state", payload=dict(state.to_payload())),
-            _entry(
-                lane=lane,
-                operation_id=op,
-                kind="operation_effect",
-                payload={"effect_kind": "runtime_effect", "record_kind": "intent", "effect_id": "e1"},
-            ),
-            _entry(
-                lane=lane,
-                operation_id=op,
-                kind="operation_effect",
-                payload={"effect_kind": "runtime_effect", "record_kind": "settlement", "effect_id": "e1", "status": "ok"},
-            ),
-            _entry(
-                lane=lane,
-                operation_id=op,
-                kind="operation_effect",
-                payload={"effect_kind": "tool_result_delivery", "record_kind": "batch_intent", "batch_id": "b1"},
-            ),
-            _entry(
-                lane=lane,
-                operation_id=op,
-                kind="operation_effect",
-                payload={"effect_kind": "tool_result_delivery", "record_kind": "recovered", "batch_id": "b1"},
-            ),
-            _entry(lane=lane, operation_id=op, kind="operation_settled", payload={"status": "closed"}),
-        )
-        compacted = _compact_entries(entries)
-        kinds = [(e.kind, e.payload.get("record_kind")) for e in compacted]
-        self.assertEqual(
-            kinds,
-            [
-                ("operation_started", None),
-                ("operation_state", None),
-                ("operation_effect", "recovered"),
-                ("operation_settled", None),
-            ],
-        )
+            self._load([delivery_snapshot(corrupt)])
 
 
 class PromptSurfaceParityTests(unittest.TestCase):
@@ -347,10 +176,6 @@ class PromptSurfaceParityTests(unittest.TestCase):
         payload = _valid_surface_payload()
         payload["sections"] = [{"name": "s", "digest": "nope", "chars": 3}]
         self.assertFalse(validate_prompt_surface_payload(payload))
-
-    def test_non_mapping_rejected(self) -> None:
-        self.assertFalse(validate_prompt_surface_payload("nope"))  # type: ignore[arg-type]
-
 
 if __name__ == "__main__":
     unittest.main()

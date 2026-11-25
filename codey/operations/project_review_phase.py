@@ -30,7 +30,6 @@ from codey.reviews.impact_map import safe_review_impact_map
 from codey.reviews.persistence import append_review_result_ledger
 from codey.runtime.core import cancellation
 from codey.runtime.core.run_result import RunResult
-from codey.utils.object_fields import object_fields
 
 
 def review_not_requested(**_kwargs: object) -> None:
@@ -137,45 +136,31 @@ def _emit_review_unavailable(ctx: ProjectRun) -> None:
     )
 
 
-def _run_review_with_trace(ctx: ProjectRun, **kwargs: object) -> tuple[str, ReviewResult] | None:
-    changes_value = kwargs.get("changes")
-    changes = changes_value if object_fields(changes_value) else dict[str, object]()
+def _run_review_with_trace(
+    ctx: ProjectRun, *, session_id: str, project: str, task: str, writer_summary: str,
+    changes: dict[str, object] | None, recent_log: str, writer_id: str, change_brief: str,
+    project_map: str, verification_map: str, execution_evidence: str,
+) -> tuple[str, ReviewResult] | None:
+    changes = changes or {}
     try:
-        review_impact_map = safe_review_impact_map(
-            str(kwargs.get("project") or ctx.project),
-            changes,
-        )
+        review_impact_map = safe_review_impact_map(project, changes)
     except cancellation.TaskCancelled:
         raise
     except Exception:
         review_impact_map = ""
     record_review_input_prepared_trace(
-        ctx.frame.trace,
-        task=str(kwargs.get("task") or ""),
-        writer_summary=str(kwargs.get("writer_summary") or ""),
-        changes=changes,
-        recent_log=str(kwargs.get("recent_log") or ""),
-        change_brief=str(kwargs.get("change_brief") or ""),
-        project_map=str(kwargs.get("project_map") or ""),
-        verification_map=str(kwargs.get("verification_map") or ""),
-        review_impact_map=review_impact_map,
-        execution_evidence=str(kwargs.get("execution_evidence") or ""),
+        ctx.frame.trace, task=task, writer_summary=writer_summary, changes=changes,
+        recent_log=recent_log, change_brief=change_brief, project_map=project_map,
+        verification_map=verification_map, review_impact_map=review_impact_map,
+        execution_evidence=execution_evidence,
     )
-    kwargs["review_impact_map"] = review_impact_map
-    kwargs["trace_recorder"] = ctx.frame.trace
-    try:
-        run_id = str(getattr(ctx.frame, "run_id", "") or "")
-    except Exception:
-        run_id = ""
-    if run_id and "run_id" not in kwargs:
-        kwargs["run_id"] = run_id
-    try:
-        source = str(getattr(getattr(ctx, "request", None), "review_source_run_id", "") or "")
-    except Exception:
-        source = ""
-    if source and "review_source_run_id" not in kwargs:
-        kwargs["review_source_run_id"] = source
-    reviewed: tuple[str, ReviewResult] | None = ctx.deps.review.run(**kwargs)
+    reviewed = ctx.deps.review.run(
+        session_id=session_id, project=project, task=task, writer_summary=writer_summary,
+        changes=changes, recent_log=recent_log, writer_id=writer_id, change_brief=change_brief,
+        project_map=project_map, verification_map=verification_map, review_impact_map=review_impact_map,
+        execution_evidence=execution_evidence, trace_recorder=ctx.frame.trace,
+        run_id=ctx.frame.run_id, review_source_run_id=ctx.request.review_source_run_id,
+    )
     with contextlib.suppress(Exception):
         _persist_project_review_ledger(ctx, reviewed)
     return reviewed
@@ -271,6 +256,7 @@ def validate_candidate(ctx: ProjectRun, *, allow_review_repair: bool = True) -> 
             ctx.review_cycle = ReviewCycleResult(ctx.result, ctx.task_changed, ctx.task_changes, ctx.task_changes_dirty)
         return
     run_review_phase(ctx, allow_repair=allow_review_repair)
+    assert ctx.review_cycle is not None
     repaired_after_review = ctx.review_cycle.review_repair_attempted
     if repaired_after_review and ctx.result is not None and ctx.result.stop_reason == 'done':
         run_review_phase(ctx, allow_repair=False)

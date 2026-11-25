@@ -30,6 +30,7 @@ from codey.operations.prompting import (
 from codey.operations.research_flow import research_payload as _research_payload
 from codey.operations.result import ModeOutcome
 from codey.operations.task_context import ProjectTaskContextBuilder
+from codey.providers.transport import ProviderTransport
 from codey.research.pipeline import ResearchPipelineResult
 from codey.research.run_result import ResearchRunResult
 from codey.runs.receipt import VERIFICATION_TRUST_TRUSTED, build_task_receipt
@@ -50,7 +51,6 @@ __all__ = [
 
 def _prepare_project_context(ctx: ProjectRun) -> None:
     ctx.state = ctx.deps.state
-    ctx.request = ctx.frame.request
     ctx.agent_task = ctx.request.task
     ctx.agent_fresh_chat = ctx.frame.fresh_chat
     if ctx.work.ledger is not None:
@@ -120,8 +120,10 @@ def _prepare_new_project_context(ctx: ProjectRun) -> None:
                 task=ctx.request.task,
                 context=context,
             )
+            provider = ctx.frame.provider
+            assert provider is not None and not isinstance(provider, ProviderTransport)
             planned = ctx.deps.agent.run_consensus(
-                selected_provider=ctx.frame.provider,
+                selected_provider=provider,
                 selected_provider_id=ctx.frame.provider_id,
                 task=ctx.request.task,
                 context=context,
@@ -151,8 +153,10 @@ def _prepare_new_project_context(ctx: ProjectRun) -> None:
                 task=ctx.request.task,
                 context=context,
             )
+            policy = ctx.frame.entry_policy
+            assert policy is not None
             reports = ctx.deps.agent.run_project_audit(
-                parent_policy=ctx.frame.entry_policy,
+                parent_policy=policy,
                 project=ctx.project,
                 selected_provider=ctx.frame.provider,
                 selected_provider_id=ctx.frame.provider_id,
@@ -176,9 +180,9 @@ def _persist_verified_project_facts(ctx: ProjectRun) -> bool:
     project_facts = ctx.deps.persistence.project_facts
     if project_facts is None:
         return True
+    assert ctx.receipt is not None and ctx.project_context is not None
     required = (
-        project_facts is not None
-        and ctx.result.stop_reason == "done"
+        ctx.result.stop_reason == "done"
         and ctx.task_changed
         and ctx.result.checks_passed
         and ctx.receipt.verification.trust == VERIFICATION_TRUST_TRUSTED
@@ -227,9 +231,11 @@ def _build_project_done_event(ctx: ProjectRun) -> dict[str, object]:
     assert ctx.result is not None
     changes_payload = None
     if ctx.task_changed and ctx.task_changes and ctx.task_changes.get("ok"):
+        files: object = ctx.task_changes.get("files")
+        change_rows: list[object] = list(files) if isinstance(files, (list, tuple)) else []
         changes_payload = {
             "changed_count": ctx.task_changes.get("changed_count", 0),
-            "files": ctx.task_changes.get("files", [])[:3],
+            "files": change_rows[:3],
             "mode": ctx.task_changes.get("mode"),
             "project": ctx.project,
         }
@@ -238,6 +244,7 @@ def _build_project_done_event(ctx: ProjectRun) -> dict[str, object]:
         research_payload = _research_payload(
             ctx.research_result, pipeline_result=ctx.research_pipeline_result,
         )
+    assert ctx.receipt is not None
     receipt_payload = ctx.receipt.to_dict()
     if ctx.result.proof is not None:
         receipt_payload["completion_proof"] = ctx.result.proof.to_payload()
@@ -264,24 +271,26 @@ def _finalize_project(ctx: ProjectRun) -> ModeOutcome:
 
     assert ctx.result is not None
     result = ctx.result
-    ctx.receipt = build_task_receipt(
+    receipt = build_task_receipt(
         ctx.task_changes,
         proof=getattr(ctx.decision, "proof", None),
         provenance=getattr(ctx.decision, "provenance", None),
         integrity=ctx.integrity,
         checks_passed=result.checks_passed,
     )
+    ctx.receipt = receipt
     ctx.hooks.append_ledger(
         lambda ledger: record_task_changes(
             ledger, ctx.deps.persistence.managed_outputs, ctx.task_changes,
             checks_passed=result.checks_passed,
-            receipt=ctx.receipt.to_dict(),
+            receipt=receipt.to_dict(),
         )
     )
     facts_write_succeeded = _persist_verified_project_facts(ctx)
     _settle_work_checkpoint(ctx, facts_write_succeeded)
-    with contextlib.suppress(Exception):
-        ctx.tracker.prune_clean()
+    if ctx.tracker is not None:
+        with contextlib.suppress(Exception):
+            ctx.tracker.prune_clean()
     ctx.frame.conversation.update_snapshot(
         replace(
             ctx.frame.conversation.snapshot,
@@ -320,6 +329,7 @@ def run_project_mode(
         hooks=hooks,
         project=project,
         state=deps.state,
+        request=frame.request,
         config_result=config_result,
         research_result=research_result,
         research_pipeline_result=research_pipeline_result,

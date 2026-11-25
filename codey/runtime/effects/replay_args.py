@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from codey.runtime.effects.replay_policy import IDEMPOTENT_RUNTIME_TOOL_NAMES, is_replayable_safe_tool
 from codey.toolchain.definition import TOOL_DEFINITION_BY_NAME
 from codey.toolchain.tool_args_repair import ToolArgLimits, normalize_tool_args
+from codey.types.json_value import decode_json_object
+from codey.types.research_answer import answer_text_and_state
 
 REPLAY_ARG_TEXT_MAX_CHARS = 1000
 REPLAY_READ_MAX_LINES = ToolArgLimits().read_max_lines
@@ -96,34 +98,9 @@ def _validate_knowledge_commit(args: Mapping[str, object]) -> dict[str, object]:
 
 
 def _validate_research_answer(args: Mapping[str, object]) -> dict[str, object]:
-    import json
-
-    state = args.get("state")
-    if not isinstance(state, str) or state not in {"answered", "partial", "unresolved"}:
-        raise ValueError("research answer replay requires its explicit original state")
-    if set(args) in ({"state", "markdown"}, {"state", "markdown", "knowledge_updates"}):
-        if not isinstance(args["markdown"], str) or not 12 <= len(args["markdown"].strip()) <= 64000:
-            raise ValueError("invalid original whole-answer declaration")
-        if "knowledge_updates" in args:
-            from codey.research.knowledge_updates import MAX_UPDATES
-
-            updates = args["knowledge_updates"]
-            if not isinstance(updates, list) or len(updates) > MAX_UPDATES or any(not isinstance(row, dict) for row in updates):
-                raise ValueError("invalid original whole-answer knowledge batch")
-    elif set(args) == {"state", "findings"}:
-        refs = args["findings"]
-        if (not isinstance(refs, list) or len(refs) > 16 or any(not isinstance(ref, str) for ref in refs)
-                or len(set(refs)) != len(refs) or bool(refs) != (state != "unresolved")):
-            raise ValueError("invalid original research selection")
-    elif set(args) == {"state", "finding"}:
-        if state == "unresolved" or not isinstance(args["finding"], dict):
-            raise ValueError("invalid original inline declaration")
-    else:
-        raise ValueError("research answer replay requires one original selection form")
-    # Only preserve shape and exact JSON here. The original frozen contract,
-    # scope, passages and knowledge executor validate meaning before any write.
-    json.dumps(dict(args), allow_nan=False)
-    return dict(args)
+    payload = decode_json_object(args)
+    answer_text_and_state(payload)
+    return dict(payload)
 
 
 def validate_replay_args_shape(

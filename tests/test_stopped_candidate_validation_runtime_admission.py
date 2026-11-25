@@ -1,27 +1,29 @@
 """Stopped-candidate validation has one durable, budget-preserving admission."""
 
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
 from codey.runtime.core import operation_payload
 from codey.runtime.core import operation_state as states
+from codey.runtime.write.checkpoint import operation_from_checkpoint
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from tests.test_runtime_operation_state import _state
 
 
-def stopped(**overrides):
-    return _state(operation_payload.LEAF_WRITER_SETTLED, writer_attempt=1, turns_used=3,
-                  stop_reason='no_progress', **overrides)
+def stopped() -> operation_payload.RuntimeOperationState:
+    return replace(_state(operation_payload.LEAF_WRITER_SETTLED), writer_attempt=1, turns_used=3,
+                   stop_reason="no_progress")
 
 
-def admission(state, provider='deepseek'):
-    transition = getattr(states, 'mark_candidate_validation_running', None)
-    assert callable(transition), 'A stopped candidate needs explicit durable validation admission'
-    return transition(state, provider_id=provider, writer_attempt=state.writer_attempt + 1)
+def admission(
+    state: operation_payload.RuntimeOperationState, provider: str = "deepseek",
+) -> operation_payload.RuntimeOperationState:
+    return states.mark_candidate_validation_running(state, provider_id=provider, writer_attempt=state.writer_attempt + 1)
 
 
-def test_admission_preserves_used_budget_and_cannot_be_repeated():
+def test_admission_preserves_used_budget_and_cannot_be_repeated() -> None:
     state = admission(stopped())
     assert state.leaf == operation_payload.LEAF_WRITER_RUNNING
     assert state.writer_attempt == 2 and state.turns_used == 3
@@ -31,22 +33,28 @@ def test_admission_preserves_used_budget_and_cannot_be_repeated():
         admission(settled)
 
 
-@pytest.mark.parametrize('changes', [
-    {'stop_reason': 'done'}, {'stop_reason': 'approval'}, {'turns_used': 4},
-    {'candidate_validation_attempted': True}, {'completion_proof_ref': 'completion_proof:0123456789abcdef'},
-    {'leaf': operation_payload.LEAF_TOOL_EFFECT_PENDING}, {'task_kind': 'research'},
+@pytest.mark.parametrize("state", [
+    replace(stopped(), stop_reason="done"),
+    replace(stopped(), stop_reason="approval"),
+    replace(stopped(), turns_used=4),
+    replace(stopped(), candidate_validation_attempted=True),
+    replace(stopped(), completion_proof_ref="completion_proof:0123456789abcdef"),
+    replace(stopped(), leaf=operation_payload.LEAF_TOOL_EFFECT_PENDING),
+    replace(stopped(), task_kind="research"),
 ])
-def test_admission_rejects_wrong_phase_reason_budget_proof_and_reentry(changes):
+def test_admission_rejects_wrong_phase_reason_budget_proof_and_reentry(
+    state: operation_payload.RuntimeOperationState,
+) -> None:
     with pytest.raises(operation_payload.RuntimeOperationTransitionError):
-        admission(replace(stopped(), **changes))
+        admission(state)
 
 
-def test_admission_cannot_switch_provider():
+def test_admission_cannot_switch_provider() -> None:
     with pytest.raises(operation_payload.RuntimeOperationTransitionError):
         admission(stopped(), 'local')
 
 
-def test_admission_is_committed_through_existing_session_log(tmp_path):
+def test_admission_is_committed_in_task_checkpoint(tmp_path: Path) -> None:
     from codey.durable import DurableSession, SQLiteDurableStore
     durable = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
     durable.admit_input(conversation_id="s1", request_id="request-run-1", task_id="run-1", text="test",
@@ -57,22 +65,16 @@ def test_admission_is_committed_through_existing_session_log(tmp_path):
     line.mark_writer_running('s1', 'run-1', provider_id='deepseek')
     line.mark_writer_settled('s1', 'run-1', provider_id='deepseek', turns_used=3,
                             stop_reason='no_progress')
-    commit = getattr(line, 'mark_candidate_validation_running', None)
-    assert callable(commit), 'Validation admission must persist, not just mutate an in-memory flag'
-    result = commit('s1', 'run-1', provider_id='deepseek', writer_attempt=2)
-    from tests.support.runtime_log_fixture import checkpoint_entries
-    restored = states.operation_state_from_entries(
-        checkpoint_entries(durable.task("run-1"), durable.effects("run-1"), session_id="s1"),
-        session_id="s1", run_id="run-1",
-    )
+    result = line.mark_candidate_validation_running("s1", "run-1", provider_id="deepseek", writer_attempt=2)
+    restored = operation_from_checkpoint(durable.task("run-1"), "s1")
     assert restored is not None
     assert restored == result
     assert restored.turns_used == 3 and restored.writer_attempt == 2
     durable.close()
 
 
-def test_repair_admission_preserves_the_failed_proof_and_existing_repair_round():
-    state = _state(operation_payload.LEAF_REPAIR_SETTLED, stop_reason='no_progress', turns_used=3,
+def test_repair_admission_preserves_the_failed_proof_and_existing_repair_round() -> None:
+    state = replace(_state(operation_payload.LEAF_REPAIR_SETTLED), stop_reason='no_progress', turns_used=3,
         writer_attempt=1, repair_rounds=1, repair_context_ref='sha256:' + 'a' * 64,
         completion_proof_ref='completion_proof:0123456789abcdef', completion_proof_status='failed')
     resumed = admission(state)
@@ -83,7 +85,7 @@ def test_repair_admission_preserves_the_failed_proof_and_existing_repair_round()
     assert operation_payload.RuntimeOperationState.from_payload(resumed.to_payload()) == resumed
 
 
-def test_candidate_validation_is_once_for_the_whole_operation_not_once_per_phase():
+def test_candidate_validation_is_once_for_the_whole_operation_not_once_per_phase() -> None:
     resumed = admission(stopped())
     assert resumed.to_payload().get('candidate_validation_attempted') is True
     repair = replace(resumed, leaf=operation_payload.LEAF_REPAIR_SETTLED, stop_reason='no_progress',
@@ -94,13 +96,13 @@ def test_candidate_validation_is_once_for_the_whole_operation_not_once_per_phase
 
 
 @pytest.mark.parametrize('value', [None, 0, 1, 'true'])
-def test_candidate_validation_consumption_is_a_strict_durable_boolean(value):
+def test_candidate_validation_consumption_is_a_strict_durable_boolean(value: object) -> None:
     payload = stopped().to_payload()
     payload['candidate_validation_attempted'] = value
     assert operation_payload.RuntimeOperationState.from_payload(payload) is None
 
 
-def test_pre_consumption_state_schema_cannot_claim_current_admission_facts():
+def test_pre_consumption_state_schema_cannot_claim_current_admission_facts() -> None:
     payload = stopped().to_payload()
     payload.pop('candidate_validation_attempted')
     payload['schema_version'] = 1

@@ -9,13 +9,14 @@ imports helpers from here, never via ``project_completion_flow`` re-exports.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING
 
+from codey.agents.request import AgentRequest
 from codey.agents.tools import AgentToolFns, build_project_tool_fns
-from codey.agents.writer_failover import WriterFailoverRunner
+from codey.agents.writer_failover import CheckpointView, WriterFailoverRunner
 from codey.completion.contract import completion_proof_trace_payload
 from codey.completion.edit_integrity import EditIntegrityObservation
 from codey.completion.engine import CompletionEngine, blocked_note
@@ -29,11 +30,11 @@ from codey.operations.prompting import (
 )
 from codey.operations.task_context import ProjectTaskContextBuilder
 from codey.operations.task_state import TaskState
-from codey.providers.diagnostics import ProviderFailure
-from codey.runs.work_checkpoint import CheckpointCheck, WorkCheckpointStore
+from codey.runs.work_checkpoint import CheckpointCheck, WorkCheckpoint, WorkCheckpointStore
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
-from codey.runtime.write.mutation_line import RuntimeOperationState
+from codey.runtime.observe.terminalizer import nonnegative_event_count
+from codey.runtime.write.mutation_line import RuntimeMutationLine, RuntimeOperationState
 from codey.storage.managed_outputs import (
     ManagedOutputStore,
     run_command_with_managed_output,
@@ -42,6 +43,33 @@ from codey.workspace.change_brief import ChangeBrief
 from codey.workspace.config import ProjectConfigLoadResult, ProjectVerificationCommand
 from codey.workspace.facts import ProjectFactsStore, VerifiedCommand
 
+if TYPE_CHECKING:
+    from codey.completion.contract import CompletionProof
+    from codey.completion.decision import CompletionDecision
+    from codey.completion.verification_policy import VerificationPlan
+    from codey.operations.task_context import ProjectTaskContext
+    from codey.operations.task_run import (
+        CaptureProviderFailure,
+        CollectChanges,
+        ConsensusTask,
+        ProjectAuditTask,
+        ReviewTask,
+    )
+    from codey.operations.task_session import TaskSession
+    from codey.research.pipeline import ResearchPipelineResult
+    from codey.research.run_result import ResearchRunResult
+    from codey.research.tools import ResearchTools
+    from codey.reviews.coordinator import ReviewCycleResult
+    from codey.runs.receipt import TaskReceipt
+    from codey.runtime.effects.effect_records import RuntimeEffectStore
+    from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
+    from codey.runtime.observe.events import RunEvent
+    from codey.storage.execution_output_store import ExecutionOutputStore
+    from codey.task.model import TaskSubmission
+    from codey.toolchain.runtime import ToolOutcome
+    from codey.workspace.changes import ChangeTracker
+    from codey.workspace.revision import WorkspaceRevisionStore
+
 
 def _default_is_git_repository(_project: str | Path) -> bool:
     return False
@@ -49,10 +77,10 @@ def _default_is_git_repository(_project: str | Path) -> bool:
 
 @dataclass(frozen=True)
 class AgentAccess:
-    run: Callable[..., Any]
-    capture_provider_failure: Callable[..., ProviderFailure]
-    run_consensus: Callable[..., Any] | None = None
-    run_project_audit: Callable[..., Any] | None = None
+    run: Callable[[AgentRequest], RunResult]
+    capture_provider_failure: CaptureProviderFailure
+    run_consensus: ConsensusTask | None = None
+    run_project_audit: ProjectAuditTask | None = None
     is_git_repository: Callable[[str | Path], bool] = _default_is_git_repository
 
 
@@ -61,29 +89,29 @@ class PersistenceAccess:
     project_facts: ProjectFactsStore | None = None
     work_checkpoints: WorkCheckpointStore | None = None
     managed_outputs: ManagedOutputStore | None = None
-    execution_outputs: Any = None
+    execution_outputs: ExecutionOutputStore | None = None
     knowledge_store: KnowledgeStore | None = None
     search_factory: Callable[[], object] | None = None
 
 
 @dataclass(frozen=True)
 class VerificationAccess:
-    collect_changes: Callable[..., Any]
-    workspace_revisions: Any
+    collect_changes: CollectChanges
+    workspace_revisions: WorkspaceRevisionStore
 
 
 @dataclass(frozen=True)
 class ReviewAccess:
-    run: Callable[..., Any]
+    run: ReviewTask
     review_fix_turns: int = 12
     review_log_lines: int = 80
 
 
 @dataclass(frozen=True)
 class RuntimeAccess:
-    mutations: Any = None
-    effects: Any = None
-    tool_result_delivery: Any = None
+    mutations: RuntimeMutationLine | None = None
+    effects: RuntimeEffectStore | None = None
+    tool_result_delivery: ToolResultDeliveryStore | None = None
 
 
 @dataclass(frozen=True)
@@ -139,7 +167,7 @@ COMPLETION_REPAIR_FOLLOWUP = (
 
 
 def record_completion_proof_trace(
-    trace: Any | None,
+    trace: object | None,
     proof: object,
 ) -> None:
     if proof is None:
@@ -150,7 +178,7 @@ def record_completion_proof_trace(
 
 
 def record_edit_integrity_trace(
-    trace: Any | None,
+    trace: object | None,
     observation: EditIntegrityObservation | None,
 ) -> None:
     if observation is None:
@@ -179,7 +207,7 @@ def blocked_result(result: RunResult, reason: str) -> RunResult:
 
 def safe_verification_map(
     project: str,
-    changes: dict[str, Any],
+    changes: dict[str, object],
     checks: tuple[object, ...],
     project_map: str,
     recommended_commands: tuple[str, ...] = (),
@@ -197,11 +225,11 @@ def safe_verification_map(
 
 
 def record_review_input_prepared_trace(
-    trace: Any | None,
+    trace: object | None,
     *,
     task: str,
     writer_summary: str,
-    changes: dict[str, Any],
+    changes: dict[str, object],
     recent_log: str,
     change_brief: str,
     project_map: str,
@@ -232,8 +260,8 @@ def managed_tool_fns(
     session_id: str,
     run_id: str,
 ) -> AgentToolFns | None:
-    managed_outputs = getattr(deps.persistence, "managed_outputs", None)
-    execution_outputs = getattr(deps.persistence, "execution_outputs", None)
+    managed_outputs = deps.persistence.managed_outputs
+    execution_outputs = deps.persistence.execution_outputs
     if managed_outputs is None and execution_outputs is None:
         return None
 
@@ -244,7 +272,7 @@ def managed_tool_fns(
         tool_id: str,
         _permission_profile: str,
         _phase: str,
-    ) -> Any:
+    ) -> ToolOutcome:
         if managed_outputs is not None:
             return run_command_with_managed_output(
                 root,
@@ -310,7 +338,7 @@ def _bullet_lines(values: tuple[str, ...]) -> str:
     return "\n".join(f"- {item}" for item in values)
 
 
-def refresh_checkpoint_view(ctx: ProjectRun) -> Any:
+def refresh_checkpoint_view(ctx: ProjectRun) -> CheckpointView:
     """Shared checkpoint refresh (single owner; phases must not duplicate)."""
     assert ctx.context_builder is not None
     refreshed = ctx.context_builder.refresh_checkpoint(ctx.work.work_checkpoint)
@@ -329,8 +357,6 @@ def refresh_checkpoint_view(ctx: ProjectRun) -> Any:
             ctx.project,
             ignored_paths=ctx.configured_ignored_paths,
         )
-    from codey.agents.writer_failover import CheckpointView
-
     return CheckpointView(
         prompt=ctx.checkpoint_prompt,
         changed_files=ctx.resumed_changed_files,
@@ -338,10 +364,11 @@ def refresh_checkpoint_view(ctx: ProjectRun) -> Any:
     )
 
 
-def commit_runtime_operation(ctx: ProjectRun, step: str, commit: Callable[[Any, str, str], object | None]) -> None:
+def commit_runtime_operation(ctx: ProjectRun, step: str, commit: Callable[[RuntimeMutationLine, str, str], RuntimeOperationState | None]) -> None:
     """Shared runtime commit (single owner; phases must not duplicate)."""
+    from codey.durable.errors import DurableStoreError
     from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
-    from codey.runtime.log.entries import RuntimeLogError
+    from codey.runtime.effects.effect_records import RuntimeEffectError
 
     operation = ctx.work.operation
     mutations = ctx.deps.runtime.mutations
@@ -353,11 +380,11 @@ def commit_runtime_operation(ctx: ProjectRun, step: str, commit: Callable[[Any, 
         raise ProjectRuntimeMutationError(f"runtime mutation line missing while committing {step}")
     try:
         committed = commit(mutations, operation.session_id, operation.run_id)
-    except (OSError, ValueError, RuntimeOperationTransitionError, RuntimeLogError) as exc:
+    except (OSError, ValueError, RuntimeOperationTransitionError, DurableStoreError, RuntimeEffectError) as exc:
         raise ProjectRuntimeMutationError(f"runtime mutation failed while committing {step}: {exc}") from exc
     if committed is None:
         raise ProjectRuntimeMutationError(f"runtime mutation produced no operation while committing {step}")
-    ctx.work.operation = cast(RuntimeOperationState, committed)
+    ctx.work.operation = committed
 
 
 @dataclass
@@ -368,12 +395,12 @@ class ProjectRun:
     hooks: RunHooks
     project: str
     state: TaskState
+    request: TaskSubmission
     config_result: ProjectConfigLoadResult | None = None
-    research_result: Any = None
-    research_pipeline_result: Any = None
-    request: Any = None
+    research_result: ResearchRunResult | None = None
+    research_pipeline_result: ResearchPipelineResult | None = None
     context_builder: ProjectTaskContextBuilder | None = None
-    project_context: Any = None
+    project_context: ProjectTaskContext | None = None
     verified_facts: str = ""
     verification_verified_commands: tuple[VerifiedCommand, ...] = ()
     verification_candidates: tuple[VerificationCandidate, ...] = ()
@@ -384,36 +411,36 @@ class ProjectRun:
     project_map: str = ""
     checkpoint_prompt: str = ""
     resumed_changed_files: tuple[str, ...] = ()
-    resumed_successful_checks: tuple[Any, ...] = ()
+    resumed_successful_checks: tuple[VerificationCandidate, ...] = ()
     agent_task: str = ""
     change_brief: ChangeBrief | None = None
     agent_fresh_chat: bool = False
     has_user_files: bool = False
     used_project_audit: bool = False
-    tracker: Any = None
+    tracker: ChangeTracker | None = None
     tried_writers: set[str] | None = None
     repair_projection: RepairContextProjection | None = None
     failover: WriterFailoverRunner | None = None
     result: RunResult | None = None
     inherited_green: bool = False
     task_changed: bool = False
-    task_changes: dict[str, Any] | None = None
+    task_changes: dict[str, object] | None = None
     task_changes_dirty: bool = False
-    review_cycle: Any = None
+    review_cycle: ReviewCycleResult | None = None
     files: tuple[str, ...] = ()
-    selected_check: Any = None
+    selected_check: VerificationCandidate | VerificationPlan | None = None
     checkpoint_green: bool = False
     verification_forbidden: bool = False
     completion_engine: CompletionEngine | None = None
-    decision: Any = None
+    decision: CompletionDecision | None = None
     integrity: EditIntegrityObservation | None = None
-    proof: Any = None
-    task_session: Any = None
-    research_tools: Any = None
+    proof: CompletionProof | None = None
+    task_session: TaskSession | None = None
+    research_tools: ResearchTools | None = None
     blocked_reason: str = ""
     repaired_once: bool = False
     writer_attempt_index: int = 0
-    receipt: Any = None
+    receipt: TaskReceipt | None = None
 
     @property
     def task_state(self) -> TaskState:
@@ -426,36 +453,31 @@ class ProjectRun:
 def handle_project_tool_event(
     deps: ProjectCompletionDeps,
     *,
-    event: Any,
+    event: RunEvent,
     project: str,
     work: RunWork,
     run_id: str,
     update_checkpoint: Callable[
-        [Callable[[Any, Any], Any]],
+        [Callable[[WorkCheckpointStore, WorkCheckpoint], WorkCheckpoint]],
         None,
     ],
 ) -> None:
     """Shared tool-event projection (single owner; hooks must not duplicate)."""
-    call = getattr(event, "call", None)
-    outcome = getattr(event, "outcome", None)
+    call = event.call
+    outcome = event.outcome
     if call is None or outcome is None:
         return
-    name = str(getattr(call, "name", "") or "")
+    name = call.name
     if name == "run":
-        args = getattr(call, "args", {}) if isinstance(getattr(call, "args", {}), dict) else dict[str, object]()
-        command = str(args.get("command") or "")
-        cwd = str(args.get("path") or ".")
+        command = str(call.args.get("command") or "")
+        cwd = str(call.args.get("path") or ".")
         from codey.utils.refs import strict_run_success
 
         ok = strict_run_success(
-            getattr(outcome, "ok", None), getattr(outcome, "exit_code", None)
+            outcome.ok, outcome.exit_code
         )
-        try:
-            meta = getattr(event, "metadata", {}) or {}
-            tool_index = int(meta.get("tool_index") or 0) if isinstance(meta, dict) else 0
-        except (TypeError, ValueError):
-            tool_index = 0
-        tool_id = f"{getattr(event, 'turn', 0)}:{max(0, tool_index)}"
+        tool_index = nonnegative_event_count(event.metadata.get("tool_index"))
+        tool_id = f"{event.turn}:{tool_index}"
         if ok and deps.persistence.project_facts is not None:
             with contextlib.suppress(OSError, ValueError):
                 deps.persistence.project_facts.record_success(project, cwd, command)
@@ -481,14 +503,13 @@ def handle_project_tool_event(
             outcome=outcome,
         )
     elif name == "edit":
-        outcome_ok = getattr(outcome, "ok", None)
-        outcome_changed = getattr(outcome, "changed", None)
+        outcome_ok = outcome.ok
+        outcome_changed = outcome.changed
         if type(outcome_ok) is not bool or outcome_ok is not True:
             return
         if type(outcome_changed) is not bool or outcome_changed is not True:
             return
-        args = getattr(call, "args", {}) if isinstance(getattr(call, "args", {}), dict) else dict[str, object]()
-        rel = str(args.get("path") or "")
+        rel = str(call.args.get("path") or "")
         update_checkpoint(lambda store, item: store.record_edit(item, rel))
 
 
@@ -502,7 +523,7 @@ def record_analysis_run(
     command: str,
     cwd: str,
     ok: bool,
-    outcome: Any,
+    outcome: ToolOutcome,
 ) -> None:
     """Project one audited run-command execution into the run trace.
 
@@ -519,10 +540,10 @@ def record_analysis_run(
     if trace is None or not command:
         return
     try:
-        audit = outcome.audit if isinstance(getattr(outcome, "audit", None), Mapping) else dict[str, object]()
+        audit = outcome.audit
         if not audit.get("command_started_at"):
             return
-        managed = outcome.managed_output() if callable(getattr(outcome, "managed_output", None)) else dict[str, object]()
+        managed = outcome.managed_output()
         record = analysis_run_record(
             {
                 "run_id": run_id,
@@ -531,7 +552,7 @@ def record_analysis_run(
                 "command": command,
                 "cwd": cwd,
                 "project": project,
-                "exit_code": getattr(outcome, "exit_code", None),
+                "exit_code": outcome.exit_code,
                 "ok": ok,
                 "started_at": audit.get("command_started_at"),
                 "finished_at": audit.get("command_finished_at"),

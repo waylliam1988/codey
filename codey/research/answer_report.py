@@ -12,7 +12,6 @@ from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
 from codey.knowledge.store import KnowledgeStore
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS
 from codey.research.answer_contract import (
-    ANSWER_STATES,
     AnswerSessionView,
     citation_occurrences,
     digest,
@@ -42,6 +41,7 @@ from codey.types.json_value import (
     encode_transport_value,
     require_json_string,
 )
+from codey.types.research_answer import ANSWER_STATES
 from codey.utils.research_coverage import CoverageRow
 
 REPORT_SCHEMA = "research_answer_v1"

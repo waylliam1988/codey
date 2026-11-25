@@ -78,8 +78,7 @@ def _modal_ids(result: ToolResult) -> set[str] | None:
 def observed_link_outcome(session: TaskSession, click: str, document: JsonObject | None, *,
                           through: str | None = None) -> bool:
     from codey.automation.browser_document import same_document
-    from codey.automation.browser_receipts import committed_results
-    from codey.operations.browser_completion import PAGE_EVIDENCE_INVALIDATORS
+    from codey.automation.browser_receipts import PAGE_EVIDENCE_INVALIDATORS, committed_results
 
     positions = {ref: index for index, ref in enumerate(session.executed)}
     action = session._memory_results.get(click)

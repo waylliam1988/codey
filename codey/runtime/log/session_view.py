@@ -1,15 +1,7 @@
-"""Canonical runtime read model.
-
-Durable entries are parsed exactly once into a SessionView. All runtime
-readers (drive, mutation builders, recovery) consume the view instead of
-re-parsing entries. SessionView covers the runtime operation projection
-only: operation state, effect ledger, delivery ledger. It must never grow
-into a session-global view (messages, evidence, ghost, completion).
-"""
+"""Read model for a durable runtime operation and its effects and delivery batches."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 
 from codey.runtime.core.operation_payload import (
@@ -26,17 +18,14 @@ from codey.runtime.core.operation_payload import (
     RuntimeOperationState,
     RuntimeOperationTransitionError,
 )
-from codey.runtime.core.operation_state import operation_state_from_entries
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,
     SENT_STATE_NOT_SENT,
     SETTLEMENT_STATUS_ERROR,
     RuntimeEffectProjection,
-    effects_from_entries,
 )
-from codey.runtime.effects.tool_result_delivery import DeliveryBatchProjection, batches_from_entries
-from codey.runtime.log.entries import RuntimeLogEntry
+from codey.runtime.effects.tool_result_delivery import DeliveryBatchProjection
 
 
 @dataclass(frozen=True)
@@ -197,37 +186,10 @@ def driver_for_state(state: RuntimeOperationState, *, explicit: str = "") -> str
     return DRIVER_WRITER
 
 
-def load_session_view(
-    entries: Iterable[RuntimeLogEntry],
-    *,
-    session_id: str,
-    run_id: str,
-) -> SessionView:
-    materialized = tuple(entries)
-    return SessionView(
-        state=operation_state_from_entries(
-            materialized,
-            session_id=session_id,
-            run_id=run_id,
-        ),
-        effects=effects_from_entries(
-            materialized,
-            session_id=session_id,
-            run_id=run_id,
-        ),
-        batches=batches_from_entries(
-            materialized,
-            session_id=session_id,
-            run_id=run_id,
-        ),
-    )
-
-
 __all__ = [
     "PendingRuntimeFacts",
     "SessionView",
     "driver_for_state",
-    "load_session_view",
     "not_sent_continuation_effect",
     "pending_for",
     "require_open_view",

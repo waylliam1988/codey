@@ -20,15 +20,15 @@ from codey.durable.model import (
 )
 from codey.durable.reducer import with_effect_intents, with_effect_settlement
 from codey.runtime.core.operation_payload import RuntimeOperationState, RuntimeOperationTransitionError
+from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.effects.effect_records import (
     RuntimeEffectError,
     RuntimeEffectIntent,
-    RuntimeEffectProjection,
     RuntimeEffectSettlement,
+    project_durable_effects,
 )
 from codey.runtime.effects.tool_result_delivery import DeliveryBatchProjection, delivery_from_checkpoint
 from codey.runtime.log.session_view import SessionView
-from codey.types.json_value import canonical_json_object
 
 if TYPE_CHECKING:
     from codey.durable.contracts import RuntimeCheckpointPort
@@ -67,7 +67,10 @@ def operation_from_checkpoint(task: TaskCheckpoint, session_id: str) -> RuntimeO
     if "task_policy" in task.state:
         payload["task_policy"] = thaw_json(task.state["task_policy"])
     state = RuntimeOperationState.from_payload(payload)
-    if state is None or state.run_id != task.task_id or state.session_id != session_id:
+    if (
+        state is None or state.run_id != task.task_id or state.session_id != session_id
+        or state.lane != lane_for_run(task.task_id) or state.operation_id != operation_id_for_run(task.task_id)
+    ):
         raise RuntimeOperationTransitionError("invalid durable operation checkpoint")
     return state
 
@@ -88,26 +91,8 @@ def view_from_checkpoint(task: TaskCheckpoint, effects: tuple[EffectRecord, ...]
     state = operation_from_checkpoint(task, session_id)
     if state is None:
         return SessionView(None, (), ())
-    projections = tuple(_effect_projection(record, state) for record in effects if record.category != "shell")
+    projections = project_durable_effects(effects, session_id=session_id, run_id=task.task_id)
     return SessionView(state, projections, delivery_from_checkpoint(task, session_id=session_id))
-
-
-def _effect_projection(record: EffectRecord, state: RuntimeOperationState) -> RuntimeEffectProjection:
-    intent = RuntimeEffectIntent.from_payload(canonical_json_object(record.intent))
-    if ((intent.session_id, intent.run_id, intent.lane, intent.operation_id)
-            != (state.session_id, state.run_id, state.lane, state.operation_id)
-            or intent.effect_id != record.effect_id or record.task_id != intent.run_id
-            or record.category != intent.effect_category or record.args_digest != intent.args_digest
-            or record.replay_class != intent.replay_class):
-        raise RuntimeEffectError("durable effect intent boundary mismatch")
-    settlement = None
-    if record.settlement is not None:
-        settlement = RuntimeEffectSettlement.from_payload(canonical_json_object(record.settlement))
-        if ((settlement.session_id, settlement.run_id, settlement.lane, settlement.operation_id)
-                != (state.session_id, state.run_id, state.lane, state.operation_id)
-                or settlement.effect_id != intent.effect_id or settlement.effect_category != intent.effect_category):
-            raise RuntimeEffectError("durable effect settlement boundary mismatch")
-    return RuntimeEffectProjection(intent, settlement)
 
 
 def _apply_boundary_transition(mutation: DurableMutation, state: RuntimeOperationState) -> DurableMutation:

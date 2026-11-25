@@ -1,9 +1,6 @@
 """Runtime external effect intent, settlement, and audit projection.
 
-This module owns the bounded JSONL projection used by the UI and diagnostics.
-Production recovery facts are written to ``codey.durable`` first; the runtime
-projection is useful for redelivery receipts and inspection but cannot decide
-whether an external effect should run.
+Decode durable facts for effect recovery, redelivery and inspection.
 """
 
 from __future__ import annotations
@@ -11,23 +8,23 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING
 
 from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
-from codey.runtime.effects.keep_policies import (
-    SENT_STATE_MAYBE_SENT,
-    SETTLEMENT_STATUS_ERROR,
-    SETTLEMENT_STATUS_INTERRUPTED,
-    keep_effect_pair_for_compaction,
-)
 from codey.runtime.effects.replay_args import validate_replay_args_shape
 from codey.runtime.effects.replay_policy import (
     ReplayClass,
     is_replayable_safe_tool,
 )
 from codey.storage.local_store import session_key
+from codey.types.json_value import canonical_json_object
+
+if TYPE_CHECKING:
+    from codey.durable.model import EffectRecord
+    from codey.durable.session import DurableSession
 
 SCHEMA_VERSION = 1
 INTENT_SCHEMA_VERSION = 2
@@ -45,6 +42,8 @@ EFFECT_CATEGORIES = frozenset({
 })
 
 SETTLEMENT_STATUS_OK = "ok"
+SETTLEMENT_STATUS_ERROR = "error"
+SETTLEMENT_STATUS_INTERRUPTED = "interrupted"
 SETTLEMENT_STATUSES = frozenset({
     SETTLEMENT_STATUS_OK,
     SETTLEMENT_STATUS_ERROR,
@@ -52,6 +51,7 @@ SETTLEMENT_STATUSES = frozenset({
 })
 
 SENT_STATE_SETTLED = "settled"
+SENT_STATE_MAYBE_SENT = "maybe_sent"
 # A send that deterministically produced no usable provider reply (e.g. the
 # provider rejected the request before processing it). Unlike MAYBE_SENT, a
 # NOT_SENT attempt is safe to supersede with a retry of the same batch.
@@ -144,7 +144,7 @@ def new_effect_id(category: str, run_id: str) -> str:
     return f"eff_{short_cat}_{safe_run}_{uuid.uuid4().hex[:12]}"
 
 
-def compute_args_digest(args: Any) -> str:
+def compute_args_digest(args: object) -> str:
     """Compute a bounded deterministic digest of arguments without storing raw text."""
     if args is None:
         return ""
@@ -158,7 +158,7 @@ def compute_args_digest(args: Any) -> str:
     return f"sha256:{hashlib.sha256(content).hexdigest()[:16]}"
 
 
-def _require_bounded_str(val: Any, name: str, max_len: int, *, allow_empty: bool = False) -> str:
+def _require_bounded_str(val: object, name: str, max_len: int, *, allow_empty: bool = False) -> str:
     if not isinstance(val, str):
         raise RuntimeEffectError(f"{name} must be a str")
     if not allow_empty and not val:
@@ -168,7 +168,7 @@ def _require_bounded_str(val: Any, name: str, max_len: int, *, allow_empty: bool
     return val
 
 
-def _require_nonnegative_int(val: Any, name: str) -> int:
+def _require_nonnegative_int(val: object, name: str) -> int:
     if isinstance(val, bool) or not isinstance(val, int):
         raise RuntimeEffectError(f"{name} must be an integer")
     if val < 0:
@@ -177,7 +177,7 @@ def _require_nonnegative_int(val: Any, name: str) -> int:
     return checked_val
 
 
-def _require_enum_str(val: Any, name: str, allowed: frozenset[str] | tuple[str, ...]) -> str:
+def _require_enum_str(val: object, name: str, allowed: frozenset[str] | tuple[str, ...]) -> str:
     if not isinstance(val, str) or not val:
         raise RuntimeEffectError(f"missing or invalid {name}: {val}")
     if val not in allowed:
@@ -185,13 +185,13 @@ def _require_enum_str(val: Any, name: str, allowed: frozenset[str] | tuple[str, 
     return val
 
 
-def _reject_unknown_payload_keys(payload: dict[str, Any], allowed: frozenset[str]) -> None:
+def _reject_unknown_payload_keys(payload: Mapping[str, object], allowed: frozenset[str]) -> None:
     unknown = sorted(set(payload) - allowed)
     if unknown:
         raise RuntimeEffectError(f"unknown effect payload keys: {', '.join(unknown)}")
 
 
-def _require_ref(payload: dict[str, Any], expected: str) -> None:
+def _require_ref(payload: Mapping[str, object], expected: str) -> None:
     actual = _require_bounded_str(payload.get("ref"), "ref", MAX_REF_CHARS)
     if actual != expected:
         raise RuntimeEffectError(f"effect ref '{actual}' does not match expected ref '{expected}'")
@@ -202,7 +202,7 @@ def _replay_args_from_payload(
     effect_category: str,
     replay_class: str,
     tool_name: str,
-    raw_replay_args: Any,
+    raw_replay_args: object,
 ) -> dict[str, object] | None:
     if raw_replay_args is None:
         return None
@@ -215,10 +215,11 @@ def _replay_args_from_payload(
     if not isinstance(raw_replay_args, dict):
         return None
     try:
-        validate_replay_args_shape(tool_name, raw_replay_args)
+        replay_args: dict[str, object] = dict(canonical_json_object(raw_replay_args))
+        validate_replay_args_shape(tool_name, replay_args)
     except ValueError:
         return None
-    return dict(raw_replay_args)
+    return replay_args
 
 
 @dataclass(frozen=True)
@@ -251,11 +252,11 @@ class RuntimeEffectIntent:
     schema_version: int = INTENT_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if type(self.schema_version) is not int or self.schema_version not in {1, INTENT_SCHEMA_VERSION}:
+        if type(self.schema_version) is not int or self.schema_version != INTENT_SCHEMA_VERSION:
             raise RuntimeEffectError(f"invalid schema_version: {self.schema_version}")
         _require_bounded_str(self.request_ref, "request_ref", MAX_REF_CHARS, allow_empty=True)
-        if self.request_ref and (self.schema_version == 1 or self.effect_category != EFFECT_CATEGORY_PROVIDER_SEND):
-            raise RuntimeEffectError("request reference requires a version-2 provider intent")
+        if self.request_ref and self.effect_category != EFFECT_CATEGORY_PROVIDER_SEND:
+            raise RuntimeEffectError("request reference requires a provider intent")
         _require_bounded_str(self.effect_id, "effect_id", MAX_EFFECT_ID_CHARS)
         _require_bounded_str(self.session_id, "session_id", MAX_REF_CHARS)
         _require_bounded_str(self.run_id, "run_id", MAX_REF_CHARS)
@@ -293,8 +294,8 @@ class RuntimeEffectIntent:
             except ValueError as exc:
                 raise RuntimeEffectError(f"invalid replay_args: {exc}") from exc
 
-    def to_payload(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
+    def to_payload(self) -> dict[str, object]:
+        payload: dict[str, object] = {
             "schema_version": self.schema_version,
             "effect_kind": EFFECT_KIND,
             "record_kind": self.record_kind,
@@ -329,14 +330,12 @@ class RuntimeEffectIntent:
         return payload
 
     @classmethod
-    def from_payload(cls, payload: dict[str, Any]) -> RuntimeEffectIntent:
-        if not isinstance(payload, dict):
-            raise RuntimeEffectError("payload must be a dict")
+    def from_payload(cls, payload: Mapping[str, object]) -> RuntimeEffectIntent:
         _reject_unknown_payload_keys(payload, _INTENT_PAYLOAD_KEYS)
         if payload.get("effect_kind") != EFFECT_KIND or payload.get("record_kind") != RECORD_KIND_INTENT:
             raise RuntimeEffectError("invalid payload kind for RuntimeEffectIntent")
         version = payload.get("schema_version")
-        if type(version) is not int or version not in {1, INTENT_SCHEMA_VERSION}:
+        if type(version) is not int or version != INTENT_SCHEMA_VERSION:
             raise RuntimeEffectError(f"unsupported schema version: {version}")
         effect_id = _require_bounded_str(payload.get("effect_id"), "effect_id", MAX_EFFECT_ID_CHARS)
         _require_ref(payload, f"effect:{effect_id}")
@@ -445,8 +444,8 @@ class RuntimeEffectSettlement:
         _require_enum_str(self.sent_state, "sent_state", SENT_STATES)
         _require_enum_str(self.replay_class, "replay_class", (ReplayClass.SAFE, ReplayClass.UNSAFE))
 
-    def to_payload(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
+    def to_payload(self) -> dict[str, object]:
+        payload: dict[str, object] = {
             "schema_version": self.schema_version,
             "effect_kind": EFFECT_KIND,
             "record_kind": self.record_kind,
@@ -490,9 +489,7 @@ class RuntimeEffectSettlement:
         return payload
 
     @classmethod
-    def from_payload(cls, payload: dict[str, Any]) -> RuntimeEffectSettlement:
-        if not isinstance(payload, dict):
-            raise RuntimeEffectError("payload must be a dict")
+    def from_payload(cls, payload: Mapping[str, object]) -> RuntimeEffectSettlement:
         _reject_unknown_payload_keys(payload, _SETTLEMENT_PAYLOAD_KEYS)
         if payload.get("effect_kind") != EFFECT_KIND or payload.get("record_kind") != RECORD_KIND_SETTLEMENT:
             raise RuntimeEffectError("invalid payload kind for RuntimeEffectSettlement")
@@ -548,8 +545,8 @@ class RuntimeEffectSettlement:
             result_excerpt=result_excerpt,
             result_ref=result_ref,
             result_text=result_text,
-            result_payload=payload.get("result_payload", ""),
-            result_payload_sha256=payload.get("result_payload_sha256", ""),
+            result_payload=_require_bounded_str(payload.get("result_payload", ""), "result_payload", MAX_RESULT_TEXT_CHARS, allow_empty=True),
+            result_payload_sha256=_require_bounded_str(payload.get("result_payload_sha256", ""), "result_payload_sha256", MAX_RESULT_SHA_CHARS, allow_empty=True),
             result_len=result_len,
             result_truncated=raw_truncated,
             result_sha256=result_sha256,
@@ -612,15 +609,6 @@ def prepare_intent(
     return replace(intent, session_id=session_id, run_id=run_id,
                    lane=expected_lane, operation_id=expected_op,
                    created_at=intent.created_at or _now())
-
-
-def effect_intent_entry(intent: RuntimeEffectIntent) -> dict[str, object]:
-    return {
-        "lane": intent.lane,
-        "operation_id": intent.operation_id,
-        "kind": "operation_effect",
-        "payload": intent.to_payload(),
-    }
 
 
 def prepare_settlement(
@@ -708,126 +696,6 @@ def prepare_settlement(
     )
 
 
-def effect_settlement_entry(settlement: RuntimeEffectSettlement) -> dict[str, object]:
-    return {
-        "lane": settlement.lane,
-        "operation_id": settlement.operation_id,
-        "kind": "operation_effect",
-        "payload": settlement.to_payload(),
-    }
-
-
-def effects_from_entries(
-    entries: tuple[Any, ...],
-    *,
-    session_id: str,
-    run_id: str,
-) -> tuple[RuntimeEffectProjection, ...]:
-    """Project effect intent/settlement pairs from already-read log entries."""
-    expected_lane = lane_for_run(run_id)
-    expected_op = operation_id_for_run(run_id)
-    intents: dict[str, RuntimeEffectIntent] = {}
-    settlements: dict[str, RuntimeEffectSettlement] = {}
-    ordered_effect_ids: list[str] = []
-
-    for entry in entries:
-        if entry.kind != "operation_effect":
-            continue
-        payload = entry.payload
-        if not isinstance(payload, dict):
-            continue
-        if payload.get("effect_kind") != EFFECT_KIND:
-            continue
-
-        is_current_operation = (entry.lane == expected_lane or entry.operation_id == expected_op)
-        is_current_run = (payload.get("run_id") == run_id)
-        if not is_current_operation and not is_current_run:
-            continue
-
-        if entry.lane != expected_lane:
-            raise RuntimeEffectError(
-                f"entry lane '{entry.lane}' does not match expected lane '{expected_lane}' for run {run_id}"
-            )
-        if entry.operation_id != expected_op:
-            raise RuntimeEffectError(
-                f"entry operation_id '{entry.operation_id}' does not match expected operation_id '{expected_op}' for run {run_id}"
-            )
-        payload_session_id = payload.get("session_id")
-        if not payload_session_id or payload_session_id != session_id:
-            raise RuntimeEffectError(
-                f"payload session_id '{payload_session_id}' does not match expected session_id '{session_id}' for run {run_id}"
-            )
-        payload_run_id = payload.get("run_id")
-        if not payload_run_id or payload_run_id != run_id:
-            raise RuntimeEffectError(
-                f"payload run_id '{payload_run_id}' does not match expected run_id '{run_id}'"
-            )
-        payload_lane = payload.get("lane")
-        if not payload_lane or payload_lane != expected_lane:
-            raise RuntimeEffectError(
-                f"payload lane '{payload_lane}' does not match expected lane '{expected_lane}' for run {run_id}"
-            )
-        payload_op = payload.get("operation_id")
-        if not payload_op or payload_op != expected_op:
-            raise RuntimeEffectError(
-                f"payload operation_id '{payload_op}' does not match expected operation_id '{expected_op}'"
-            )
-
-        record_kind = payload.get("record_kind")
-        effect_id = str(payload.get("effect_id") or "")
-        if not effect_id:
-            raise RuntimeEffectError("missing effect_id in effect payload")
-
-        if record_kind == RECORD_KIND_INTENT:
-            if effect_id in intents:
-                raise RuntimeEffectError(f"duplicate intent in session log: {effect_id}")
-            ordered_effect_ids.append(effect_id)
-            intents[effect_id] = RuntimeEffectIntent.from_payload(payload)
-            continue
-
-        if record_kind == RECORD_KIND_SETTLEMENT:
-            if effect_id not in intents:
-                raise RuntimeEffectError(f"orphan settlement without intent in session log: {effect_id}")
-            new_settlement = RuntimeEffectSettlement.from_payload(payload)
-            if new_settlement.effect_category != intents[effect_id].effect_category:
-                raise RuntimeEffectError(
-                    f"settlement category '{new_settlement.effect_category}' does not match intent category '{intents[effect_id].effect_category}'"
-                )
-            if effect_id in settlements:
-                existing = settlements[effect_id]
-                if (
-                    existing.status == new_settlement.status
-                    and existing.error_code == new_settlement.error_code
-                    and existing.sent_state == new_settlement.sent_state
-                    and existing.effect_category == new_settlement.effect_category
-                    and existing.replay_class == new_settlement.replay_class
-                    and existing.replay_count == new_settlement.replay_count
-                    and existing.replayed_from_effect_id == new_settlement.replayed_from_effect_id
-                    and existing.result_excerpt == new_settlement.result_excerpt
-                    and existing.result_ref == new_settlement.result_ref
-                    and existing.result_text == new_settlement.result_text
-                    and existing.result_payload == new_settlement.result_payload
-                    and existing.result_payload_sha256 == new_settlement.result_payload_sha256
-                    and existing.result_len == new_settlement.result_len
-                    and existing.result_truncated == new_settlement.result_truncated
-                    and existing.result_sha256 == new_settlement.result_sha256
-                    and existing.call_id == new_settlement.call_id
-                    and existing.exit_code == new_settlement.exit_code
-                ):
-                    continue
-                raise RuntimeEffectError(f"conflicting duplicate settlement in session log: {effect_id}")
-            settlements[effect_id] = new_settlement
-            continue
-
-        raise RuntimeEffectError(f"unknown record_kind: {record_kind}")
-
-    return tuple(
-        RuntimeEffectProjection(intent=intent, settlement=settlements.get(eid))
-        for eid in ordered_effect_ids
-        if (intent := intents.get(eid)) is not None
-    )
-
-
 def require_new_effect_id(
     effects: tuple[RuntimeEffectProjection, ...],
     effect_id: str,
@@ -846,10 +714,45 @@ def find_effect(
     return found
 
 
+def project_durable_effects(
+    records: tuple[EffectRecord, ...],
+    *,
+    session_id: str,
+    run_id: str,
+) -> tuple[RuntimeEffectProjection, ...]:
+    boundary = (session_id, run_id, lane_for_run(run_id), operation_id_for_run(run_id))
+    projections: list[RuntimeEffectProjection] = []
+    for record in records:
+        if record.category == "shell":
+            continue
+        intent = RuntimeEffectIntent.from_payload(canonical_json_object(record.intent))
+        if (
+            (intent.session_id, intent.run_id, intent.lane, intent.operation_id) != boundary
+            or record.task_id != run_id
+            or intent.effect_id != record.effect_id
+            or intent.effect_category != record.category
+            or intent.args_digest != record.args_digest
+            or intent.replay_class != record.replay_class
+        ):
+            raise RuntimeEffectError("durable effect intent boundary mismatch")
+        settlement = None
+        if record.settlement is not None:
+            settlement = RuntimeEffectSettlement.from_payload(canonical_json_object(record.settlement))
+            if (
+                (settlement.session_id, settlement.run_id, settlement.lane, settlement.operation_id) != boundary
+                or settlement.effect_id != record.effect_id
+                or settlement.effect_category != record.category
+                or settlement.status != record.status
+            ):
+                raise RuntimeEffectError("durable effect settlement boundary mismatch")
+        projections.append(RuntimeEffectProjection(intent, settlement))
+    return tuple(projections)
+
+
 class RuntimeEffectStore:
     """Projection store for external effect intents and settlements."""
 
-    def __init__(self, *, durable: Any) -> None:
+    def __init__(self, *, durable: DurableSession) -> None:
         if durable is None:
             raise ValueError("an effect store requires durable storage")
         self.durable = durable
@@ -860,7 +763,13 @@ class RuntimeEffectStore:
         run_id: str,
     ) -> tuple[RuntimeEffectProjection, ...]:
         """Load and aggregate all effect intent/settlement pairs for a run in strict chronological order."""
-        return _durable_effects(self.durable, run_id=run_id)
+        try:
+            task, records = self.durable.task_facts(run_id)
+        except KeyError:
+            return ()
+        if task.conversation_id != session_id:
+            raise RuntimeEffectError("durable effect task boundary mismatch")
+        return project_durable_effects(records, session_id=session_id, run_id=run_id)
 
     def pending_effects(
         self,
@@ -929,34 +838,6 @@ class RuntimeEffectStore:
         )
 
 
-def _durable_effects(durable: Any, *, run_id: str) -> tuple[RuntimeEffectProjection, ...]:
-    """Adapt canonical durable effect records to the pure recovery model."""
-    from codey.durable.model import thaw_json
-
-    rows: list[RuntimeEffectProjection] = []
-    try:
-        records = durable.effects(run_id)
-    except KeyError:
-        return ()
-    for record in records:
-        # Approval execution receipts belong to the durable approval machine,
-        # not the provider/tool runtime projection.
-        if record.category == "shell":
-            continue
-        raw_intent = thaw_json(record.intent)
-        if not isinstance(raw_intent, dict):
-            raise RuntimeEffectError("durable effect intent must be an object")
-        intent = RuntimeEffectIntent.from_payload(raw_intent)
-        settlement = None
-        if record.settlement is not None:
-            raw_settlement = thaw_json(record.settlement)
-            if not isinstance(raw_settlement, dict):
-                raise RuntimeEffectError("durable effect settlement must be an object")
-            settlement = RuntimeEffectSettlement.from_payload(raw_settlement)
-        rows.append(RuntimeEffectProjection(intent=intent, settlement=settlement))
-    return tuple(rows)
-
-
 __all__ = [
     "EFFECT_CATEGORIES",
     "EFFECT_CATEGORY_PROVIDER_SEND",
@@ -980,11 +861,7 @@ __all__ = [
     "SETTLEMENT_STATUS_INTERRUPTED",
     "SETTLEMENT_STATUS_OK",
     "compute_args_digest",
-    "effect_intent_entry",
-    "effect_settlement_entry",
-    "effects_from_entries",
     "find_effect",
-    "keep_effect_pair_for_compaction",
     "new_effect_id",
     "prepare_intent",
     "prepare_settlement",

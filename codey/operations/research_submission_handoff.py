@@ -4,13 +4,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from codey.operations.browser_completion import (
-    PAGE_EVIDENCE_INVALIDATORS,
-    PAGE_EVIDENCE_TOOLS,
-    ordered_page_passages,
-    post_wait_passages,
-    wait_matched_on_page,
-)
+from codey.automation.browser_receipts import PAGE_EVIDENCE_INVALIDATORS, PAGE_EVIDENCE_TOOLS, wait_matched_on_page
+from codey.operations.browser_completion import ordered_page_passages, post_wait_passages
 from codey.operations.completion_output import tool_facts
 from codey.policies.browser_requirement import BrowserResearchSequence, parse_browser_requirement
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, STRICT_RESEARCH_REQUIRED_CHECKS

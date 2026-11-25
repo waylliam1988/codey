@@ -9,8 +9,6 @@ asserts they never rebuild half-full.
 
 No wall-clock time and no uuids ever enter a durable payload: ids come from
 world counters (``op-001``, ``effect-001``) and timestamps from ``FakeClock``.
-Mutation batch uuids assigned inside ``RuntimeSessionLog`` are normalized
-away by ``model.normalize``.
 """
 
 from __future__ import annotations
@@ -40,10 +38,9 @@ from codey.runtime.effects.tool_result_delivery import (
     ToolResultDeliveryStore,
     compute_batch_digest,
 )
-from codey.runtime.log.entries import RuntimeLogEntry
-from codey.runtime.write.checkpoint import RuntimeOperationStore
+from codey.runtime.write.checkpoint import RuntimeOperationStore, view_from_checkpoint
 from codey.runtime.write.mutation_line import RuntimeMutationLine
-from codey.types.json_value import JsonObject, decode_json_object, decode_json_value, require_json_string
+from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object, require_json_string
 from tests.stress.faults import FaultController
 
 
@@ -343,45 +340,31 @@ class StressWorld:
     #: convergence facts. Dropped from canonical rows (documented, not hidden).
     VOLATILE_PAYLOAD_KEYS = frozenset({"created_at", "started_at", "updated_at"})
 
-    def canonical(self) -> dict[str, object]:
-        from tests.support.runtime_log_fixture import checkpoint_entries
+    def _runtime_fact(self, kind: str, payload: JsonObject) -> JsonObject:
+        return {
+            "kind": kind,
+            "operation_id": payload["operation_id"],
+            "record": payload.get("record_kind", ""),
+            "effect_id": payload.get("effect_id", ""),
+            "ref": payload.get("ref", ""),
+            "payload": {key: value for key, value in payload.items() if key not in self.VOLATILE_PAYLOAD_KEYS},
+        }
 
-        rows: list[dict[str, object]] = []
-        batch_aliases: dict[str, str] = {}
-        entries: list[RuntimeLogEntry] = []
+    def canonical(self) -> dict[str, object]:
+        rows: list[JsonObject] = []
         durable_runs: set[str] = set()
         for task in self.durable.tasks():
             if task.conversation_id != self.session_id:
                 continue
-            try:
-                _task, effects = self.durable.task_facts(task.task_id)
-            except KeyError:
-                continue
-            entries.extend(checkpoint_entries(task, effects, session_id=self.session_id))
+            view = view_from_checkpoint(*self.durable.task_facts(task.task_id), session_id=self.session_id)
             durable_runs.add(task.task_id)
-        for entry in entries:
-            batch_id = entry.batch_id
-            if batch_id not in batch_aliases:
-                batch_aliases[batch_id] = f"<batch{len(batch_aliases)}>"
-            payload = {
-                key: decode_json_value(json.loads(json.dumps(value, sort_keys=True, default=str)))
-                for key, value in entry.payload.items()
-                if key not in self.VOLATILE_PAYLOAD_KEYS
-            }
-            rows.append({
-                "session_id": entry.session_id,
-                "lane": entry.lane,
-                "operation_id": entry.operation_id,
-                "kind": entry.kind,
-                "record": payload.get("record_kind", ""),
-                "effect_id": payload.get("effect_id", ""),
-                "batch_id": payload.get("batch_id", ""),
-                "ref": payload.get("ref", ""),
-                "payload": payload,
-                "batch_index": entry.batch_index,
-                "batch_count": entry.batch_count,
-                "batch_ref": batch_aliases[batch_id],
-            })
+            if view.state is not None:
+                payload = canonical_json_object(view.state.to_payload())
+                rows.append(self._runtime_fact("operation_state", payload))
+            for effect in view.effects:
+                rows.append(self._runtime_fact("operation_effect", canonical_json_object(effect.intent.to_payload())))
+                if effect.settlement is not None:
+                    rows.append(self._runtime_fact("operation_effect", canonical_json_object(effect.settlement.to_payload())))
         ghost_rows = [
             {key: row[key] for key in sorted(row)} for row in self.ghost_rows()
         ]

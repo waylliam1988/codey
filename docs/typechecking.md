@@ -50,7 +50,7 @@ python -m tools.kernel_type_precision_gate
 ```
 
 Files migrated completely are protected at zero explicit dynamic types. The
-remaining mixed modules (`task_entry.py`, `context.py`, `durable/checkpoint.py`)
+remaining mixed modules (`task_entry.py`, `context.py`)
 have named function/field scopes in `SCOPED_TARGETS`; removing a protected symbol
 fails the gate. This does not claim the surrounding legacy code is fully typed.
 Checkpoint callbacks declare their parameters and return rows explicitly, and

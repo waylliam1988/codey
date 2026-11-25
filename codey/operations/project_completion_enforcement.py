@@ -195,9 +195,8 @@ def _prepare_completion_enforcement(ctx: ProjectRun) -> None:
         if ctx.result.stop_reason == "done" and ctx.task_changed and ctx.files
         else None
     )
-    ctx.checkpoint_green = (
-        ctx.inherited_green or ctx.review_cycle.inherited_checks_passed
-    )
+    assert ctx.review_cycle is not None
+    ctx.checkpoint_green = ctx.inherited_green or ctx.review_cycle.inherited_checks_passed
     ctx.verification_forbidden = task_forbids_verification(ctx.request.task)
     ctx.completion_engine = CompletionEngine()
 
@@ -205,6 +204,7 @@ def _prepare_completion_enforcement(ctx: ProjectRun) -> None:
 def _maybe_run_completion_repair(ctx: ProjectRun) -> None:
     assert ctx.result is not None
     assert ctx.completion_engine is not None
+    assert ctx.decision is not None
     result = ctx.result
     remaining_turns = ctx.request.max_turns - ctx.result.turns
     if not (
@@ -378,6 +378,7 @@ def _settle_blocked_completion(ctx: ProjectRun) -> None:
         and ctx.proof is not None
         and ctx.proof.status in ("failed", "blocked")
     ):
+        assert ctx.decision is not None
         ctx.blocked_reason = ctx.completion_engine.blocked_reason(
             proof_status=ctx.proof.status,
             failure_class=ctx.decision.failure_class,
@@ -412,6 +413,7 @@ def _apply_completion_verdict(ctx: ProjectRun) -> None:
         ctx.result = blocked_result(ctx.result, ctx.blocked_reason)
     elif ctx.result.stop_reason == "done":
         if ctx.proof is not None:
+            assert ctx.decision is not None
             verified = ctx.decision.provenance.stance in (
                 STANCE_FRESH_PASS,
                 STANCE_INHERITED_PASS,

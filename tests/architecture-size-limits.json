@@ -4,7 +4,7 @@
   "durable/model.py": 1086,
   "durable/sqlite.py": 1029,
   "operations/kernel_context.py": 1054,
-  "operations/kernel_execution.py": 1084,
+  "operations/kernel_execution.py": 1083,
   "operations/kernel_protocol.py": 1089,
   "operations/task_execution.py": 1164,
   "providers/api_provider.py": 1069,
@@ -14,7 +14,6 @@
   "research/object_model.py": 1018,
   "research/source_connectors.py": 1173,
   "runs/trace.py": 1524,
-  "runtime/effects/tool_result_delivery.py": 1180,
   "toolchain/runtime.py": 1479,
   "toolchain/tool_spec.py": 1182,
   "workspace/changes.py": 1499

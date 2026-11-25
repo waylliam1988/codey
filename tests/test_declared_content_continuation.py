@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
+from codey.automation.browser_receipts import ordered_browser_progress
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.replay import DurableCodeModeReplay
 from codey.completion.verification_policy import VerificationCandidate
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.operations.browser_completion import ordered_browser_progress
 from codey.operations.browser_next_step import next_browser_step
 from codey.operations.browser_task_handoff import browser_task_handoff
 from codey.operations.completion_gate import evaluate

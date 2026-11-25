@@ -87,6 +87,7 @@ def _run_one_writer_attempt(
     window_action = ctx.frame.window_action if spec.provider is ctx.frame.provider else None
     ctx.frame.window_action = None
 
+    assert ctx.project_context is not None
     result: RunResult = ctx.deps.agent.run(AgentRequest(
         provider=spec.provider,
         project=Path(ctx.project),
@@ -321,8 +322,10 @@ def _maybe_consult_consensus_after_writer(ctx: ProjectRun) -> None:
             context=context,
             draft=ctx.result.summary,
         )
+        provider = ctx.frame.provider
+        assert provider is not None and not isinstance(provider, ProviderTransport)
         consulted = ctx.deps.agent.run_consensus(
-            selected_provider=ctx.frame.provider,
+            selected_provider=provider,
             selected_provider_id=ctx.frame.provider_id,
             task=ctx.request.task,
             context=context,
@@ -386,7 +389,8 @@ def _run_writer_phase(ctx: ProjectRun) -> None:
             ),
         )
     ctx.inherited_green = bool(
-        ctx.project_context.checkpoint.resumed
+        ctx.project_context is not None
+        and ctx.project_context.checkpoint.resumed
         and ctx.work.work_checkpoint is not None
         and not ctx.result.changed
         and not ctx.result.checks_ran
