@@ -62,6 +62,7 @@ from codey.durable.sqlite_records import (
     task_from_row,
 )
 from codey.durable.sqlite_schema import initialize_database
+from codey.durable.store import validate_submission_placement
 from codey.durable.timeline import (
     TaskSettlementHistory,
     TaskTransition,
@@ -906,13 +907,9 @@ def _validate_submission_update(
         raise CommitConflict("answer entry must be part of the same commit")
     if update.input_entry_id is not None and update.input_entry_id not in {entry.entry_id for entry in entries}:
         raise CommitConflict("placed input entry must be part of the same commit")
-    if update.placement is not None:
-        placement = SubmissionPlacement(update.placement)
-        current_placement = SubmissionPlacement(_text(row, "placement"))
-        if current_placement is SubmissionPlacement.PLACED and placement is not SubmissionPlacement.PLACED:
-            raise CommitConflict("placed submission cannot return to queued")
-        if placement is SubmissionPlacement.PLACED and update.input_entry_id is None and _column(row, "input_entry_id") is None:
-            raise CommitConflict("placing a submission requires an input entry")
+    validate_submission_placement(
+        update, SubmissionPlacement(_text(row, "placement")), _optional_text(row, "input_entry_id"),
+    )
 
 
 def _write_entries(database: sqlite3.Connection, mutation: DurableMutation, revision: int,

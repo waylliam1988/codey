@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import AbstractContextManager
 from typing import Protocol
 
+from codey.durable.errors import CommitConflict
 from codey.durable.history import HistoryReader
 from codey.durable.history_lifetime import HistoryLifetime
 from codey.durable.model import (
@@ -14,10 +15,25 @@ from codey.durable.model import (
     EffectRecord,
     EntryDraft,
     SubmissionDraft,
+    SubmissionPlacement,
     SubmissionRecord,
+    SubmissionUpdate,
     TaskCheckpoint,
 )
 from codey.durable.timeline import TaskSettlementHistory, TaskTransition
+
+
+def validate_submission_placement(
+    update: SubmissionUpdate, current_placement: SubmissionPlacement, current_entry_id: str | None,
+) -> None:
+    placement = current_placement if update.placement is None else SubmissionPlacement(update.placement)
+    if current_placement is SubmissionPlacement.PLACED and placement is SubmissionPlacement.QUEUED:
+        raise CommitConflict("placed submission cannot return to queued")
+    entry_id = current_entry_id if update.input_entry_id is None else update.input_entry_id
+    if placement is SubmissionPlacement.PLACED and entry_id is None:
+        raise CommitConflict("placing a submission requires an input entry")
+    if placement is SubmissionPlacement.QUEUED and entry_id is not None:
+        raise CommitConflict("queued submission cannot reference an input entry")
 
 
 class DurableStore(Protocol):

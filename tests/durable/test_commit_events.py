@@ -7,8 +7,18 @@ from pathlib import Path
 
 import pytest
 
-from codey.durable import DurableSession, EffectRecord, MemoryDurableStore, SQLiteDurableStore
-from codey.durable.model import CommitRecord, CommitResult, DurableMutation, TaskCheckpoint
+from codey.durable import CommitConflict, DurableSession, EffectRecord, MemoryDurableStore, SQLiteDurableStore
+from codey.durable.model import (
+    CommitRecord,
+    CommitResult,
+    DurableMutation,
+    EntryDraft,
+    SubmissionDraft,
+    SubmissionPlacement,
+    SubmissionStatus,
+    SubmissionUpdate,
+    TaskCheckpoint,
+)
 from codey.utils.object_fields import require_object_rows
 
 
@@ -45,6 +55,48 @@ def test_append_returns_the_committed_entry_with_its_real_sequence(session: Dura
     entry = session.append_message("conversation", "user_message", {"text": "hello"})
     assert entry.commit_seq > 0
     assert entry == session.entries("conversation")[0]
+
+
+def test_rejected_admission_projection_does_not_advance_the_commit_sequence(session: DurableSession) -> None:
+    session.create_conversation("conversation")
+    entry = EntryDraft("entry", "conversation", None, "user_message", {"text": "inspect"})
+    draft = SubmissionDraft("submission", "request", "conversation", entry,
+                            content={"input_receipts": {"inbox": "accepted"}})
+    sequence = session.commit_sequence()
+
+    with pytest.raises(ValueError, match="invalid input receipt"):
+        session.store.commit(DurableMutation("conversation", 0, entries=(entry,), submission=draft))
+
+    assert session.commit_sequence() == sequence
+    assert session.commits_after(sequence) == ()
+    assert session.head("conversation") == (None, 0)
+    assert session.entries("conversation") == ()
+    assert session.append_message("conversation", "user_message", {"text": "valid"}).commit_seq == sequence + 1
+
+
+def test_submission_entry_requires_placement_in_the_same_commit(session: DurableSession) -> None:
+    admitted = session.admit_input(
+        conversation_id="conversation", request_id="request", task_id="task",
+        text="inspect", provider_snapshot={}, placement=SubmissionPlacement.QUEUED,
+    )
+    assert admitted.submission_id is not None
+    previous = session.submission(admitted.submission_id)
+    head, revision = session.head("conversation")
+    sequence = session.commit_sequence()
+    entry = EntryDraft("entry", "conversation", head, "user_message", {"text": "inspect"})
+    update = SubmissionUpdate(
+        previous.submission_id, "conversation", SubmissionStatus.QUEUED, SubmissionStatus.QUEUED,
+        input_entry_id=entry.entry_id,
+    )
+
+    with pytest.raises((CommitConflict, ValueError), match="queued submission"):
+        session.store.commit(DurableMutation("conversation", revision, entries=(entry,), submission_update=update))
+
+    assert session.commit_sequence() == sequence
+    assert session.head("conversation") == (head, revision)
+    assert session.submission(previous.submission_id) == previous
+    session.place_submission(previous.submission_id)
+    assert session.submission(previous.submission_id).placement is SubmissionPlacement.PLACED
 
 
 def test_replayed_submission_does_not_publish_an_uncommitted_task_identity(session: DurableSession) -> None:

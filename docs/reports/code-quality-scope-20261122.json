@@ -4333,16 +4333,11 @@
         "codey/durable/memory.py"
       ],
       "id": "Q061",
-      "status": "partial_follow_up",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0,
-      "inspected_functions": [
-        "task_history",
-        "task_settlement_history",
-        "queued_submissions"
-      ],
-      "result": "Memory settlement projection and typed queue ordering callback verified; whole-file strict Any passed. Full store business review remains pending; do not count this batch complete."
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/memory.py"],
+      "verified_files": ["codey/durable/memory.py"],
+      "tests": ["tests/durable/test_store_contract.py", "tests/durable/test_waiting_reverse_index.py", "tests/durable/test_owner_reverse_index.py", "tests/durable/test_settlement_history_projection.py", "tests/durable/test_settlement_projection_cost.py", "tests/durable/test_commit_events.py", "tests/durable/test_generation_boundary_commit.py", "tests/durable/test_inbox_placement.py", "tests/durable/test_atomic_task_failure.py"],
+      "result": "Preserved the memory commit sequence on projection rejection and checked placement before recording a queued submission input on either backend. 121 scoped tests and all type gates passed."
     },
     {
       "responsibility": "codey/durable: provider connection and selection",

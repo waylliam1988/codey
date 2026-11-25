@@ -40,6 +40,7 @@ from codey.durable.model import (
     valid_task_status_transition,
     valid_task_transition,
 )
+from codey.durable.store import validate_submission_placement
 from codey.durable.timeline import TaskSettlementHistory, TaskTransition, execution_payload, transition_from_payload
 
 
@@ -177,16 +178,17 @@ class MemoryDurableStore:
                 and creation is None
             ):
                 return CommitResult(revision, self._sequence)
-            stored_entries = finalized_entries(mutation, self._sequence + 1)
+            sequence = self._sequence + 1
+            stored_entries = finalized_entries(mutation, sequence)
             inherited = creation.parent_entry_id if creation else self._parents[mutation.conversation_id][1]
             versions, nodes = self._prepare_display_index(stored_entries, inherited)
             generation = self._path_generations.get(mutation.conversation_id, 0) + int(rewrites_path(mutation))
-            self._sequence += 1
-            record = CommitRecord(self._sequence, "durable", datetime.now(UTC).isoformat(), {
+            record = CommitRecord(sequence, "durable", datetime.now(UTC).isoformat(), {
                 **mutation_projection(mutation), "database_id": self.database_id,
                 "path_generation": generation,
                 "revision": new_revision,
             })
+            self._sequence = sequence
             self._commits.append(record)
             result = CommitResult(new_revision, self._sequence, record=record)
             if creation is not None:
@@ -440,12 +442,7 @@ class MemoryDurableStore:
             raise CommitConflict("answer entry must be part of the same commit")
         if update.input_entry_id is not None and update.input_entry_id not in {entry.entry_id for entry in entries}:
             raise CommitConflict("placed input entry must be part of the same commit")
-        if update.placement is not None:
-            placement = SubmissionPlacement(update.placement)
-            if current.placement is SubmissionPlacement.PLACED and placement is not SubmissionPlacement.PLACED:
-                raise CommitConflict("placed submission cannot return to queued")
-            if placement is SubmissionPlacement.PLACED and update.input_entry_id is None and current.input_entry_id is None:
-                raise CommitConflict("placing a submission requires an input entry")
+        validate_submission_placement(update, SubmissionPlacement(current.placement), current.input_entry_id)
 
     def _validate_entry_chain(self, entries: tuple[EntryDraft, ...], conversation_id: str, head: str | None) -> None:
         parent = head
