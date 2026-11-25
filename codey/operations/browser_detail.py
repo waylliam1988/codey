@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -59,8 +60,11 @@ def _retained_failure(result: ToolResult, source: str) -> bool:
     attempts = acquisition.get("attempts") if isinstance(acquisition, dict) else None
     if result.ok or not isinstance(attempts, list) or not attempts:
         return False
-    last = attempts[-1]
-    return (isinstance(last, dict) and last.get("backend") == "browser"
+    raw: object = attempts[-1]
+    if not isinstance(raw, dict):
+        return False
+    last: Mapping[str, object] = raw
+    return (last.get("backend") == "browser"
             and last.get("delivery") == "confirmed" and last.get("failure_code") != "policy_denied"
             and isinstance(url := last.get("final_url"), str) and source_url_key(url) == source)
 

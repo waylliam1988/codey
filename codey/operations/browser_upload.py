@@ -34,7 +34,8 @@ _REPORT_HASH = re.compile(
     r"[^。！？!?;；\n]{0,240}\bsha[ -]?256\b", re.I | re.ASCII)
 _PAGE_TEXT = re.compile(r"内容标记|页面(?:正文|文本|显示)|\b(?:content marker|page text)\b", re.I)
 _ATTACHMENT = re.compile(r"\batt_[0-9a-f]{64}\b")
-_QUOTED_STATUS = re.compile(r'```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`|"[^"\n]*"|“[^”\n]*”|「[^」\n]*」'
+_FENCED_CODE = r"```[\s\S]*?```|~~~[\s\S]*?~~~"
+_QUOTED_STATUS = re.compile(_FENCED_CODE + r'|`[^`\n]*`|"[^"\n]*"|“[^”\n]*”|「[^」\n]*」'
                             r"|(?<!\w)'[^'\n]*'(?!\w)")
 _STATUS_CLAUSES = re.compile(r"[。！？；，\n.!?;,]|\bbut\b|但是|但", re.I)
 _UPLOAD_ASSERTION = re.compile(
@@ -95,7 +96,7 @@ def upload_completion_scope(session: TaskSession) -> UploadScope | None:
 def task_upload_scope(task_kind: str, task: str, urls: frozenset[str], policy: TaskPolicy) -> UploadScope | None:
     if task_kind != "chat" or policy.strict_research or len(urls) != 1 or not policy.allows("browser.effect"):
         return None
-    task = re.sub(r"```[\s\S]*?```", "", task)
+    task = re.sub(_FENCED_CODE, "", task)
     actions = list(_UPLOAD.finditer(task))
     attachment_matches: list[str] = _ATTACHMENT.findall(task)
     attachments = set(attachment_matches)

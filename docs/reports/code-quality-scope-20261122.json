@@ -4799,8 +4799,12 @@
       "id": "Q084D",
       "responsibility": "Browser resource details, uploads, and linked records",
       "files": ["codey/operations/browser_detail.py", "codey/operations/browser_upload.py", "codey/operations/browser_linked_record.py"],
-      "status": "not_started", "reviewed_files": [], "verified_files": [],
-      "tests": ["tests/test_browser_linked_record.py", "tests/test_browser_structured_upload_production.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/operations/browser_detail.py", "codey/operations/browser_upload.py", "codey/operations/browser_linked_record.py"],
+      "verified_files": ["codey/operations/browser_detail.py", "codey/operations/browser_upload.py", "codey/operations/browser_linked_record.py"],
+      "tests": ["tests/test_browser_upload_examples.py", "tests/test_browser_detail_production.py", "tests/test_browser_linked_record.py", "tests/test_browser_file_upload.py", "tests/test_browser_structured_upload_production.py", "tests/test_upload_wait_contract.py", "tests/test_task_contract_boundaries.py"],
+      "reviewed_support": ["tests/test_browser_upload_examples.py"],
+      "result": "Tilde-fenced upload examples no longer activate structured upload. Linked record extraction uses typed matches and browser detail and linked record receipts are narrowed. All 51 targeted tests, strict Any, Ruff and production gates passed."
     },
     {
       "responsibility": "codey/operations: browser contracts and interaction",

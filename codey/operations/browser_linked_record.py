@@ -150,11 +150,9 @@ class LinkedRecordProgress:
             if self.request.author:
                 fields.append(("Author", subject))
         if self.request.date or self.request.place:
-            joined = _DATE_PLACE.findall(detail)
-            dates = _DATE_ONLY.findall(detail)
-            places = _PLACE_ONLY.findall(detail)
-            dates.extend(date for date, _ in joined)
-            places.extend(place for _, place in joined)
+            joined = tuple(_DATE_PLACE.finditer(detail))
+            dates = [match[1] for match in _DATE_ONLY.finditer(detail)] + [match[1] for match in joined]
+            places = [match[1] for match in _PLACE_ONLY.finditer(detail)] + [match[2] for match in joined]
             for needed, label, values in ((self.request.date, "Date of birth", dates),
                                            (self.request.place, "Place of birth", places)):
                 if needed:
@@ -164,7 +162,8 @@ class LinkedRecordProgress:
                     fields.append((label, next(iter(distinct))))
         if self.request.title:
             title = region.get("label")
-            headings = {*_HEADING.findall(self.text), *self.source_title.split(" | ")[:1]}
+            headings = {match[1] for match in _HEADING.finditer(self.text)}
+            headings.update(self.source_title.split(" | ")[:1])
             if not isinstance(title, str) or not title or _space(title) not in set(map(_space, headings)):
                 return None
             fields.append(("Title", title))
@@ -221,7 +220,9 @@ def linked_record_progress(session: TaskSession, request: LinkedRecordRequest) -
                                          include_failed=PAGE_EVIDENCE_INVALIDATORS):
         name = receipt.call.name
         raw = receipt.canonical.get("value")
-        value = raw if isinstance(raw, dict) else {}
+        value: JsonObject = {}
+        if isinstance(raw, dict):
+            value = raw
         document = receipt.audit.get("browser_document")
         if (not progress.click_ref and name == "browser_snapshot" and isinstance(document, dict)
                 and _is_entry_snapshot(request, value)):
