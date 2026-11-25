@@ -13,7 +13,7 @@ import pytest
 from codey.durable import DurableSession, SQLiteDurableStore, SubmissionPlacement
 from codey.durable.errors import CommitConflict
 from codey.durable.model import CommitResult, DurableMutation
-from codey.operations.kernel_driver import drive_provider_request, load_prepared_request
+from codey.operations.kernel.kernel_driver import drive_provider_request, load_prepared_request
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
@@ -43,7 +43,7 @@ def test_process_exit_preserves_the_original_request_and_dispatch_right(tmp_path
 import os, sys
 from pathlib import Path
 from tests.durable.test_provider_response_receipts import runtime
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.operations.task_session import TaskSession
 from tests.support.provider_actions import ProviderActions
 from codey.policies.task_policy import TaskPolicy
@@ -260,8 +260,8 @@ def test_effect_codec_accepts_only_current_schema_and_provider_request_reference
 
 
 def test_request_without_frozen_scope_is_rejected_without_a_new_request(tmp_path: Path) -> None:
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.provider_receipts import snapshot_description
+    from codey.operations.turn_snapshot import build_turn_snapshot
 
     durable, line, outputs, sink = runtime(tmp_path)
     session = TaskSession(TaskPolicy(frozenset({"control"})), max_turns=4)

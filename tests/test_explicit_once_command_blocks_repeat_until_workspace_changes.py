@@ -1,5 +1,5 @@
 """An explicit once requirement limits executions, not result reads or fresh tests."""
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult

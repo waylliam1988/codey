@@ -12,7 +12,7 @@ from codey.research.quote_slots import requests_exact_quote
 if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
     from codey.operations.completion_context import CompletionContext
-    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.kernel_protocol import TurnSnapshot
     from codey.operations.task_session import TaskSession
     from codey.runtime.core.models import ToolResult
     from codey.task.web_intent import WebIntent
@@ -32,7 +32,7 @@ def _project_surface(session: TaskSession, snapshot: TurnSnapshot) -> bool:
 
 def _project_catalog(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                      intent: WebIntent) -> TurnSnapshot:
-    from codey.operations.kernel_protocol import refresh_snapshot_contract
+    from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
 
     compact = (_project_surface(session, snapshot) and context.browser_document is None
                and not intent.browser_navigation_requested and not snapshot.browser_followups)
@@ -43,7 +43,7 @@ def _project_catalog(session: TaskSession, snapshot: TurnSnapshot, context: Comp
 
 def _select_outer_tools(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                         intent: WebIntent, *, ready_for_page: bool, task_controls: frozenset[str]) -> TurnSnapshot:
-    from codey.operations.kernel_protocol import offer_browser_call, offer_browser_tools
+    from codey.operations.browser.turn_surface import offer_browser_call, offer_browser_tools
     from codey.policies.browser_requirement import parse_browser_requirement
     from codey.policies.tool_requirement import parse_tool_success_check
 
@@ -68,8 +68,8 @@ def _select_outer_tools(session: TaskSession, snapshot: TurnSnapshot, context: C
 
 def report_completes_task(session: TaskSession) -> bool:
     """Only report-only work can propose completion directly from submission."""
+    from codey.operations.project.project_delivery import PAGE_AFTER_EDIT
     from codey.operations.project_completion_checks import _task_requires_modification
-    from codey.operations.project_delivery import PAGE_AFTER_EDIT
 
     return (not _task_requires_modification(session)
             and PAGE_AFTER_EDIT not in session.policy.required_checks
@@ -100,8 +100,8 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
                  delivered_results: Sequence[ToolResult] = (),
                  task_controls: frozenset[str] = frozenset()) -> tuple[TurnSnapshot, str]:
     from codey.completion.verification_policy import VerificationPlan
-    from codey.operations.browser_detail import offer_page_details, offer_query_controls
-    from codey.operations.browser_task_handoff import (
+    from codey.operations.browser.browser_detail import offer_page_details, offer_query_controls
+    from codey.operations.browser.browser_task_handoff import (
         bind_browser_references,
         browser_control_wait_handoff,
         browser_observation_handoff,
@@ -121,7 +121,7 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
 
     generation = browser.generation if browser is not None else None
     context = replace(context, browser_document=browser.document_identity() if browser is not None else None)
-    from codey.operations.project_delivery import observed_delivery_links
+    from codey.operations.project.project_delivery import observed_delivery_links
 
     intent = explicit_web_intent(session.task_text)
     links = observed_delivery_links(session)
@@ -139,13 +139,12 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
                                    task_controls=task_controls)
     if (ready_for_page and snapshot.task_navigation_url == links.application and snapshot.navigation_observes
             and "browser_navigate" in snapshot.tool_names and "browser_read" in snapshot.nested_tool_names):
-        version = snapshot.input_contract_version if snapshot.input_contract_version >= 19 else 19
-        snapshot = replace(snapshot, input_contract_version=version, navigation_verifies=True)
+        snapshot = replace(snapshot, navigation_verifies=True)
     snapshot = bind_browser_references(session, snapshot, context, generation)
-    from codey.operations.browser_followups import DIRECT_TOOLS
+    from codey.operations.browser.browser_followups import DIRECT_TOOLS
 
     hints = [_quote_guidance(session, snapshot)]
-    from codey.operations.project_delivery import live_record_subject_call, project_delivery_context
+    from codey.operations.project.project_delivery import live_record_subject_call, project_delivery_context
     from codey.research.browser_result_evidence import action_summary
 
     if delivery := project_delivery_context(session, context.browser_document, links):
@@ -201,7 +200,7 @@ def task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Completi
     hints.append(hint)
     snapshot, hint = offer_page_details(session, snapshot, browser)
     hints.append(hint)
-    if snapshot.bound_source_url == links.specification and delivery.get("record_specification") == {"state": "unread"}:
+    if snapshot.task_source_url == links.specification and delivery.get("record_specification") == {"state": "unread"}:
         from codey.codemode.navigation import TASK_TARGET
 
         snapshot, read_specification, _ = handoff_call(session, snapshot, ToolCall("open_url", {"target": TASK_TARGET}))

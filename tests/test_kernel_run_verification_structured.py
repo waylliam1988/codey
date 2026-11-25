@@ -11,7 +11,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from codey.operations import kernel_execution as execute
+from codey.operations.kernel import kernel_execution as execute
 from codey.operations.task_session import TaskSession
 from codey.runtime.core.models import ToolCall, ToolResult
 

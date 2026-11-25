@@ -123,8 +123,9 @@ def test_multiple_tools_bind_their_own_required_arguments_and_bounds():
 
 @pytest.mark.parametrize("native", [False, True])
 def test_research_schema_accepts_whole_answers_and_rejects_old_submission(native):
-    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.kernel.kernel_protocol import normalize_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
 
@@ -154,8 +155,8 @@ def test_research_schema_accepts_whole_answers_and_rejects_old_submission(native
 
 
 def test_shared_strict_report_tools_require_done_coverage_state():
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import tools_from_specs
 
@@ -174,8 +175,9 @@ def test_shared_strict_report_tools_require_done_coverage_state():
 
 
 def test_strict_report_task_refs_bind_the_original_task_in_both_contracts():
-    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.kernel.kernel_protocol import normalize_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
 
@@ -200,8 +202,9 @@ def test_strict_report_task_refs_bind_the_original_task_in_both_contracts():
 
 @pytest.mark.parametrize("native", [False, True])
 def test_report_question_choices_follow_registered_receipts_and_freeze_per_turn(native):
-    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.kernel.kernel_protocol import normalize_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
 
@@ -231,8 +234,9 @@ def test_report_question_choices_follow_registered_receipts_and_freeze_per_turn(
 
 @pytest.mark.parametrize("native", [False, True])
 def test_format_requirement_needs_no_qn_or_task_ref_and_duplicate_repairs_are_rejected(native):
-    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.kernel.kernel_protocol import normalize_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
 
@@ -255,8 +259,8 @@ def test_format_requirement_needs_no_qn_or_task_ref_and_duplicate_repairs_are_re
 
 
 def test_format_only_task_has_valid_empty_task_refs_schema():
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import tools_from_specs
 

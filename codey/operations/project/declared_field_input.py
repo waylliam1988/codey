@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Literal
 
 from codey.completion.contract import CHECK_NOT_APPLICABLE, CHECK_PASS
-from codey.operations.browser_copy import write_unconfirmed
+from codey.operations.browser.browser_copy import write_unconfirmed
 from codey.operations.completion_output import tool_facts
 from codey.task.instruction_text import instruction_text
 from codey.toolchain.constants import STALE_READ_REFERENCE_CODE
@@ -16,7 +16,7 @@ from codey.types.json_value import JsonObject
 
 if TYPE_CHECKING:
     from codey.operations.completion_context import CompletionContext
-    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.kernel_protocol import TurnSnapshot
     from codey.operations.task_session import TaskSession
     from codey.operations.work_status import WorkStatus
 
@@ -68,7 +68,7 @@ def lower(args: JsonObject, edit: ToolSpec) -> JsonObject:
 
 def offer(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
           status: WorkStatus) -> tuple[TurnSnapshot, str]:
-    from codey.operations.kernel_protocol import ModelInputBinding, refresh_snapshot_contract
+    from codey.operations.kernel.kernel_protocol import ModelInputBinding, refresh_snapshot_contract
 
     fields = tuple(row for row in status.tools if row.rule.file_path)
     names = {"codemode", "read_file", "edit"}

@@ -10,11 +10,11 @@ from codey.operations.kernel_contracts import (
     KernelResult,
     result_from_payload,
 )
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.kernel_request_builder import KernelRunRequestBuilder
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.provider_request_context import ProviderRequestContext
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import TextError, decode_text_turn
 from codey.providers.transport import ProviderTransport

@@ -7,7 +7,7 @@ from unittest import mock
 
 class GuardedReplayFailureSettlesPendingIntentTests(unittest.TestCase):
     def test_replay_check_exception_settles_guard_error(self) -> None:
-        from codey.operations import kernel_execution
+        from codey.operations.kernel import kernel_execution
         from codey.operations.kernel_errors import RecoveryFailed
         from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -37,7 +37,7 @@ class GuardedReplayFailureSettlesPendingIntentTests(unittest.TestCase):
         self.assertEqual(len(settled), 1)
 
     def test_replay_check_settlement_failure_is_not_suppressed(self) -> None:
-        from codey.operations import kernel_execution
+        from codey.operations.kernel import kernel_execution
         from codey.operations.kernel_errors import EffectSettlementFailed, RecoveryFailed
         from codey.runtime.core.models import ToolCall, ToolResult
 

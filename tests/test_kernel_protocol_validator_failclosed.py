@@ -52,7 +52,7 @@ class ValidatorExceptionFailClosedTests(unittest.TestCase):
         assert plan.protocol_error_kind == "no_json"
 
     def test_json_done_rejected_when_spec_validator_raises(self) -> None:
-        from codey.operations import kernel_protocol as kp
+        from codey.operations.kernel import kernel_protocol as kp
 
         def boom(name, args):
             raise RuntimeError("validator boom")

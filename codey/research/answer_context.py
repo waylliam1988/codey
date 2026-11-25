@@ -72,13 +72,13 @@ def fitting_full_read(session: _PreviewSession, ledger: ResearchLedger, call: To
                       opened: ResearchToolOutput, *, provider: object = None) -> ResearchToolOutput:
     """Preview the actual work view; extend a default HTML read only if all fits."""
     from codey.research.answer_contract import answer_scope
-    from codey.research.ledger_receipts import source_observation
     from codey.research.passages import (
         MAX_READ_PASSAGES,
         describe_captured_window,
         render_passage_window,
         restore_passages,
     )
+    from codey.research.source_observation import source_observation
     from codey.research.source_rendering import render_opened_source
     from codey.research.source_snapshots import snapshot_document
 

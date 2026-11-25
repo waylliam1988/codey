@@ -10,9 +10,9 @@ from unittest.mock import patch
 
 from codey.app.headless_runner import HeadlessConnector, HeadlessRequest, HeadlessResult, run_headless
 from codey.codemode.catalog import build_codemode_catalog, render_declarations
-from codey.operations.browser_completion import evaluate_research_sequence
-from codey.operations.kernel_context import KernelContext
-from codey.operations.kernel_protocol import TurnSnapshot
+from codey.operations.browser.browser_completion import evaluate_research_sequence
+from codey.operations.kernel.kernel_context import KernelContext
+from codey.operations.kernel.kernel_protocol import TurnSnapshot
 from codey.policies.browser_requirement import BrowserResearchSequence
 from codey.policies.tool_requirement import parse_tool_success_check
 from codey.providers.base import ProviderToolResult

@@ -22,7 +22,7 @@ ARMS = ("baseline", "receipt_only", "search_only", "original_control", "producti
 def original_history(session):
     """The committed 71f6bf3d presentation, retained as the post-integration control."""
     from codey.knowledge.model import canonical_json
-    from codey.research.questions import INVESTIGATION_TOOLS
+    from codey.research.tool_names import INVESTIGATION_TOOLS
 
     counts, rows = {}, []
     for identity, result in session._memory_results.items():
@@ -39,7 +39,7 @@ def original_history(session):
 def receipt_only_history(session, rows):
     """Conservative presentation only; never modify settled memory or receipts."""
     from codey.knowledge.model import canonical_json
-    from codey.research.questions import INVESTIGATION_TOOLS
+    from codey.research.tool_names import INVESTIGATION_TOOLS
 
     seen = set()
     represented = set()

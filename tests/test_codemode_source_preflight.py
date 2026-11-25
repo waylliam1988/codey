@@ -6,16 +6,17 @@ import pytest
 
 from codey.codemode.catalog import build_catalog_snapshot
 from codey.codemode.kernel import CodeModeKernelExecutor
-from codey.codemode.protocol import (
+from codey.codemode.runtime import NodeWorkerRuntime
+from codey.codemode.shape_repair import preflight_plan, preflight_shape_diagnostic
+from codey.codemode.types import ToolCatalogEntry
+from codey.protocols.codemode import (
     CodeModeInputError,
+    CodeModeLimits,
     analyze_codemode_source,
     parse_codemode_args,
     parse_codemode_text,
 )
-from codey.codemode.runtime import NodeWorkerRuntime
-from codey.codemode.shape_repair import preflight_plan, preflight_shape_diagnostic
-from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
-from codey.research.calculation import data_output_schema
+from codey.research.calculation_schema import data_output_schema
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.types.json_value import JsonObject
 

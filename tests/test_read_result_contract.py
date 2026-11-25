@@ -39,8 +39,8 @@ def test_empty_and_clipped_reads_never_invent_complete_text(tmp_path: Path) -> N
 def test_host_requires_declared_structured_value_without_display_fallback() -> None:
     from codey.codemode.catalog import build_codemode_catalog
     from codey.codemode.host import CodeModeHost
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
 
     snapshot = build_turn_snapshot(TaskSession(policy=TaskPolicy(frozenset({"control", "project.read"}))))
@@ -105,8 +105,8 @@ def test_malformed_structured_values_fail_schema_validation(tmp_path: Path, fiel
 def test_child_value_type_is_stable_when_parent_uses_a_smaller_artifact_threshold(tmp_path: Path) -> None:
     from codey.codemode.catalog import build_codemode_catalog
     from codey.codemode.kernel import CodeModeKernelExecutor
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
 
     (tmp_path / "a.txt").write_text("data\n", encoding="utf-8")

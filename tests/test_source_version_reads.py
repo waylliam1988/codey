@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
 from codey.research.ledger import ResearchLedger

@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from codey.automation.browser_session import BrowserSession
 from codey.codemode.host import CodeModeHost
+from codey.operations.browser.execution import BrowserExecutor
 from codey.operations.task_execution import ExecutionDelegate
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.constants import STALE_READ_REFERENCE_ERROR
@@ -26,7 +27,7 @@ VARIANTS = {"original": (173, "QUARTZ_851"), "alternate": (247, "BASALT_426")}
 @contextmanager
 def bind_browser_fields(directory: Path) -> Iterator[None]:
     invoke = CodeModeHost.invoke
-    execute = ExecutionDelegate._execute_browser_operation
+    execute = BrowserExecutor.execute_operation
     active_browser: BrowserSession | None = None
 
     def observe(delegate: ExecutionDelegate, browser: BrowserSession, call: ToolCall, *,
@@ -68,7 +69,7 @@ def bind_browser_fields(directory: Path) -> Iterator[None]:
         append_json(directory / "bindings.jsonl", {**evidence, "file_read_ref": ref, "status": status})
         return result
 
-    with (patch.object(ExecutionDelegate, "_execute_browser_operation", observe),
+    with (patch.object(BrowserExecutor, "execute_operation", observe),
           patch.object(CodeModeHost, "invoke", edit)):
         yield
 

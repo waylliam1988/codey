@@ -13,7 +13,7 @@ from codey.types.json_value import JsonObject, JsonValue, decode_json_object, re
 if TYPE_CHECKING:
     import ast
 
-    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.kernel_protocol import TurnSnapshot
     from codey.operations.task_session import TaskSession
     from codey.providers.base import AssistantTurn
     from codey.runtime.core.models import ToolResult
@@ -216,14 +216,14 @@ def _compact_definition_spec(snapshot: TurnSnapshot, spec: ToolSpec, paths: list
                              symbols: tuple[str, ...]) -> TurnSnapshot:
     from dataclasses import replace
 
-    from codey.operations.kernel_protocol import refresh_snapshot_contract
+    from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
     from codey.toolchain.tool_spec import freeze_spec_parameters
 
     domains: dict[str, object] = {"path": {"type": "string", "enum": paths}}
     if symbols:
         domains["symbol"] = {"type": "string", "enum": list(symbols)}
     single_target = (len(symbols) == 1 and snapshot.task_navigation_url is None
-                     and snapshot.bound_source_url is None and snapshot.browser_references is None)
+                     and snapshot.task_source_url is None and snapshot.browser_references is None)
     mandatory = ("content",) if single_target else SYMBOL_EDIT_FIELDS
     parameters = tuple((key, domains.get(key, schema))
                        for key, schema in spec.parameters if key in {"path", "symbol", "content", "base_result_ref"})
@@ -298,7 +298,7 @@ def _definition_with_local_imports(source: str, fn: ast.FunctionDef | ast.AsyncF
 def _bound_edit_target(spec: ToolSpec) -> tuple[str, str] | None:
     if spec.required != ("content",):
         return None
-    from codey.toolchain.tool_spec import thaw_schema_value
+    from codey.toolchain.spec_model import thaw_schema_value
 
     params = dict(spec.parameters)
     fields: list[str] = []

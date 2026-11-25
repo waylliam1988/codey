@@ -35,7 +35,7 @@ from codey.workspace.coding_context import CodingContext, render_coding_context
 from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
 
 if TYPE_CHECKING:
-    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.kernel_protocol import TurnSnapshot
     from codey.toolchain.tool_spec import ToolSpec
 
 __all__ = [
@@ -91,7 +91,7 @@ def _tool_contract_parts(tool_names: tuple[str, ...], contract_text: str, *, nat
 
 def _text_request_prompt(prompt: str, snapshot: TurnSnapshot, *, schema_constrained: bool = False) -> str:
     """Every text continuation carries its own frozen executable contract."""
-    from codey.operations.edit_base import bound_symbol_retry
+    from codey.operations.project.edit_base import bound_symbol_retry
 
     if (target := bound_symbol_retry(snapshot)) is not None:
         path, symbol = target
@@ -315,7 +315,7 @@ def _completion_followup(feedback: str, *, native: bool, structured_report: bool
 
 
 def _browser_read_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool) -> str:
-    from codey.operations.browser_copy import committed_children
+    from codey.operations.browser.browser_copy import committed_children
     from codey.policies.tool_requirement import _browser_body
 
     references = decode_json_value(result.canonical.get("child_effect_ids"))
@@ -390,7 +390,7 @@ def _source_failure_context(result: ToolResult, session: TaskSession) -> str:
 
 def _child_failure_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool = True) -> str:
     from codey.automation.browser_receipts import delivery
-    from codey.operations.browser_copy import captured_data, committed_children, write_unconfirmed
+    from codey.operations.browser.browser_copy import captured_data, committed_children, write_unconfirmed
 
     references = result.canonical.get("child_effect_ids")
     failures: list[JsonObject] = []
@@ -431,8 +431,8 @@ def _child_failure_context(result: ToolResult, session: TaskSession, *, receipt_
 
 def _browser_followup_context(result: ToolResult, session: TaskSession) -> str:
     from codey.automation.browser_receipts import delivery
-    from codey.operations.browser_copy import committed_children
-    from codey.operations.browser_followups import PENDING, UNCERTAIN, pending_click
+    from codey.operations.browser.browser_copy import committed_children
+    from codey.operations.browser.browser_followups import PENDING, UNCERTAIN, pending_click
 
     refs = decode_json_value(result.canonical.get("child_effect_ids"))
     if not isinstance(refs, list):

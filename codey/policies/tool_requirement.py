@@ -563,7 +563,7 @@ def omit_selected_text(text: str, selected: str) -> str:
 
 def _query_body(receipt: ToolResult, selector: BrowserTextSelector) -> str | None:
     """Select only a confirmed record region covered by the formal read window."""
-    from codey.research.ledger_receipts import source_observation
+    from codey.research.source_observation import source_observation
 
     region = receipt.audit.get("query_region")
     if not isinstance(region, dict) or not receipt.audit.get("query_click"):
@@ -592,7 +592,7 @@ def _query_body(receipt: ToolResult, selector: BrowserTextSelector) -> str | Non
 def report_read_scope(receipt: ToolResult, selector: BrowserTextSelector, *,
                       require_complete: bool = True, include_missing: bool = False) -> SourceReadScope | None:
     """Select formal source ownership independently of an explicit after-query obligation."""
-    from codey.research.ledger_receipts import source_observation
+    from codey.research.source_observation import source_observation
     from codey.task.web_intent import source_url_key
 
     try:
@@ -736,7 +736,7 @@ def _ordered_requirement_refs(rule: ToolSuccessRequirement, records: Mapping[str
 
 
 def _browser_body(receipt: ToolResult, *, url: str | None = None) -> str | None:
-    from codey.research.ledger_receipts import source_observation
+    from codey.research.source_observation import source_observation
 
     source, text, _pages = source_observation(receipt.canonical.get("research_observation"))
     passages = receipt.canonical.get("read_passages")

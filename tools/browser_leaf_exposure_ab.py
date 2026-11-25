@@ -21,13 +21,14 @@ from unittest.mock import patch
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.automation.browser_contracts import RouteDecision as Route
 from codey.env_names import NATIVE_TOOLS_ENV
-from codey.operations import kernel_protocol
-from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot, refresh_snapshot_contract
+from codey.operations import turn_snapshot
+from codey.operations.kernel.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
+from codey.operations.turn_snapshot import KernelSessionView
 from codey.policies.tool_requirement import decode_answer
 from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import source_observation
 from codey.research.passages import restore_passages
+from codey.research.source_observation import source_observation
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
@@ -121,7 +122,7 @@ def expose_leaves(snapshot: TurnSnapshot, session: KernelSessionView) -> TurnSna
 
 @contextmanager
 def experiment(directory: Path, arm: Arm) -> Generator[None, None, None]:
-    original = kernel_protocol.build_turn_snapshot
+    original = turn_snapshot.build_turn_snapshot
 
     def build(session: KernelSessionView, *, native: bool = False) -> TurnSnapshot:
         baseline = original(session, native=native)
@@ -139,7 +140,7 @@ def experiment(directory: Path, arm: Arm) -> Generator[None, None, None]:
             "added": [name for name in candidate.tool_names if name not in baseline.tool_names], "snapshot": payload})
         return restored
 
-    with patch.object(kernel_protocol, "build_turn_snapshot", build):
+    with patch.object(turn_snapshot, "build_turn_snapshot", build):
         yield
 
 

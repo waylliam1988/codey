@@ -13,15 +13,16 @@ import pytest
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.runtime import CodeModeRuntime, DeliveryRecorder, NodeWorkerRuntime, ToolInvoker
 from codey.codemode.state import CodeModeStateStore
-from codey.codemode.types import CodeModeLimits, CodeModeResult, DeliveryReference, ToolCatalogEntry
+from codey.codemode.types import CodeModeResult, DeliveryReference, ToolCatalogEntry
 from codey.durable import DurableSession, SQLiteDurableStore
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.kernel_contracts import ToolExecutor
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.provider_session import adapt_provider
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
+from codey.protocols.codemode import CodeModeLimits
 from codey.providers.base import AssistantTurn
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.write.mutation_line import RuntimeMutationLine
@@ -138,9 +139,9 @@ def test_completed_parent_restores_original_receipt_without_vm(tmp_path: Path, m
     "try { await tools.read_file({path:'a.py'}); } catch {} return await store('after_failure', true);",
 ])
 def test_missing_child_receipt_blocks_instead_of_reexecuting(tmp_path: Path, continuation: str) -> None:
-    from codey.codemode.identity import parent_execution_id
     from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_session import turn_effect_id
+    from codey.runtime.core.codemode_identity import parent_execution_id
 
     project, state, logdir, m, managed, revs, sink, session = fixture(tmp_path)
     call = ToolCall(
@@ -404,10 +405,10 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(
     resumed_sink = KernelEffectSink(line, session_id="s", run_id="r", provider_id="local", durable=durable, managed_outputs=managed)
     fresh = _new_session(project)
     fresh.verification_forbidden = scoped
-    from codey.operations import kernel_execution
+    from codey.operations.kernel import kernel_execution
     invoke = kernel_execution._run_via_delegate_or_fn
 
-    from codey.operations.kernel_execution import ToolDelegate
+    from codey.operations.kernel.kernel_execution import ToolDelegate
 
     def no_dispatch(delegate: ToolDelegate | None, runnable: Mapping[str, ToolExecutor], session: TaskSession,
                     call: ToolCall, name: str, *, active_turn: int, tool_index: int,

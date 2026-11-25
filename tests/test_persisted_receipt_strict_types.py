@@ -71,7 +71,7 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest import mock
 
-        from codey.operations import kernel_execution
+        from codey.operations.kernel import kernel_execution
         from codey.runtime.core.models import ToolCall, ToolResult
 
         call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")
@@ -105,7 +105,7 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest import mock
 
-        from codey.operations import kernel_execution
+        from codey.operations.kernel import kernel_execution
         from codey.runtime.core.models import ToolCall, ToolResult
 
         call = ToolCall(name="read_file", args={"path": "a.py"}, call_id="c1")

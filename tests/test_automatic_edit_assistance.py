@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.runtime import EditBlock, RunCommandRawResult, edit_file, project_run_command_result

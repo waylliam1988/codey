@@ -4,10 +4,11 @@ from dataclasses import replace
 
 import pytest
 
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_prompt import _repair_prompt, _text_request_prompt
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
 from codey.providers.text_tool_schema import text_tool_schema
@@ -98,7 +99,9 @@ def test_argument_repair_is_self_contained_and_uses_only_the_failing_frozen_tool
         encoded = prompt.split("Arguments (JSON Schema; only declared fields): ")[1].splitlines()[0]
         schema = parse_json_object(encoded)
         assert prompt.count(captured.description) == 1
-    assert schema == tool_spec.thaw_schema_value(tool_spec._schema_for_spec(captured))
+    from codey.toolchain.spec_model import thaw_schema_value
+
+    assert schema == thaw_schema_value(tool_spec._schema_for_spec(captured))
     assert schema["required"] == ["query"] and schema["additionalProperties"] is False
     assert "UNSENT_DESCRIPTION" not in prompt and "Current edit contract" not in prompt
     assert "catalog_digest" not in prompt and "summary string" not in prompt

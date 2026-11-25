@@ -48,7 +48,8 @@ def test_host_rejects_non_read_only_catalog_entry() -> None:
 
 def test_runtime_executes_independent_read_calls_concurrently() -> None:
     from codey.codemode.runtime import NodeWorkerRuntime
-    from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
+    from codey.codemode.types import ToolCatalogEntry
+    from codey.protocols.codemode import CodeModeLimits
 
     rendezvous = threading.Barrier(2)
 
@@ -86,7 +87,8 @@ def test_large_codemode_value_is_written_as_artifact_reference() -> None:
 
 def test_worker_enforces_final_output_limit() -> None:
     from codey.codemode.runtime import NodeWorkerRuntime
-    from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
+    from codey.codemode.types import ToolCatalogEntry
+    from codey.protocols.codemode import CodeModeLimits
 
     result = NodeWorkerRuntime().execute(
         "return 'x'.repeat(1000);",

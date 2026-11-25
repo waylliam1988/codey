@@ -13,10 +13,11 @@ from unittest.mock import patch
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.automation.browser_contracts import RouteDecision as Route
 from codey.automation.browser_receipts import committed_results
-from codey.operations import kernel_protocol
-from codey.operations.browser_upload import browser_opened
-from codey.operations.kernel_context import KernelContext
-from codey.operations.kernel_protocol import TurnSnapshot
+from codey.operations.browser.browser_upload import browser_opened
+from codey.operations.kernel import kernel_protocol
+from codey.operations.kernel.kernel_context import KernelContext
+from codey.operations.kernel.kernel_protocol import TurnSnapshot
+from codey.operations.research.execution import ResearchExecutor
 from codey.operations.task_execution import ExecutionDelegate
 from codey.policies.browser_requirement import PAGE_TRANSITIONS
 from codey.policies.tool_requirement import _browser_body
@@ -150,7 +151,7 @@ def experiment(directory: Path, arm: Arm) -> Generator[None, None, None]:
     descriptor: object = vars(TurnSnapshot)["model_specs"]
     assert isinstance(descriptor, property) and descriptor.fget is not None
     original_specs: Callable[[TurnSnapshot], object] = descriptor.fget
-    execute_browser, open_source = ExecutionDelegate._execute_browser, ExecutionDelegate._execute_source_open
+    execute_browser, open_source = ExecutionDelegate._execute_browser, ResearchExecutor._execute_source_open
 
     def specs(snapshot: TurnSnapshot) -> tuple[ToolSpec, ...]:
         values = original_specs(snapshot)
@@ -247,7 +248,7 @@ def experiment(directory: Path, arm: Arm) -> Generator[None, None, None]:
             counters=counters, text_result_spans=text_result_spans, coding_context_prepared=coding_context_prepared,
             initial_source_batch=initial_source_batch, handoff=handoff)
 
-    with (patch.object(ExecutionDelegate, "_execute_browser", read), patch.object(ExecutionDelegate, "_execute_source_open", opened),
+    with (patch.object(ExecutionDelegate, "_execute_browser", read), patch.object(ResearchExecutor, "_execute_source_open", opened),
           patch.object(TurnSnapshot, "model_specs", property(specs)), patch.object(kernel_protocol, "normalize_turn", lower),
           patch.object(KernelContext, "freeze", freeze)):
         yield

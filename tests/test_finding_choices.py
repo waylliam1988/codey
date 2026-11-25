@@ -4,18 +4,19 @@ from __future__ import annotations
 import hashlib
 from dataclasses import replace
 
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.answer_contract import AnswerScope, digest
 from codey.research.finding_choices import finding_choices
-from codey.research.ledger import OpenedSource
 from codey.research.passages import passage_ref
+from codey.research.source_document import OpenedSource
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import spec_for_tool, validate_args_with_spec
 from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object

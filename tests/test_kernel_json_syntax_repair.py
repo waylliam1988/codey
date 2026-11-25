@@ -79,7 +79,7 @@ def test_decoder_recursion_limit_is_a_rejected_turn(monkeypatch):
     def exhausted(_source, **_kwargs):
         raise RecursionError("decoder recursion limit")
 
-    monkeypatch.setattr("codey.operations.kernel_protocol.json.loads", exhausted)
+    monkeypatch.setattr("codey.operations.kernel.kernel_protocol.json.loads", exhausted)
     plan = normalize_turn(_edit(), policy=POLICY)
     assert plan.protocol_error_kind == "invalid_json"
     assert not plan.calls and plan.control is None

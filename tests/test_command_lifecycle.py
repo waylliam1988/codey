@@ -172,8 +172,8 @@ def test_reserved_caller_recovers_same_execution_after_lost_acknowledgement(
     runtime: Runtime, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from codey.operations import tool_tasks
-    from codey.operations.kernel_context import KernelContext
-    from codey.operations.kernel_driver import _recover_interrupted_effects
+    from codey.operations.kernel.kernel_context import KernelContext
+    from codey.operations.kernel.kernel_driver import _recover_interrupted_effects
     from codey.operations.task_session import TaskSession, turn_effect_id
     from codey.runtime.core.operation_reducer import ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS, RuntimeAction
 

@@ -1,6 +1,6 @@
 import pytest
 
-from codey.codemode.protocol import CodeModeInputError, parse_codemode_args, parse_codemode_text
+from codey.protocols.codemode import CodeModeInputError, parse_codemode_args, parse_codemode_text
 
 
 def test_text_input_reports_excessive_json_nesting() -> None:

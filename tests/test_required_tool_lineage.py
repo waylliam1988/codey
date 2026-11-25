@@ -6,10 +6,11 @@ import pytest
 
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.operations.completion_gate import evaluate
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.recovery import record_entry_policy
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
 from codey.protocols.text_turn import decode_text_turn
@@ -38,7 +39,7 @@ SCENARIOS = [
 @pytest.fixture
 def runtime(tmp_path, request):
     project, storage, logdir = _dirs(tmp_path)
-    _, mutations, managed, revisions, deps, sink = _open_runtime(logdir, storage, "s", "r", project)
+    mutations, managed, revisions, deps, sink = _open_runtime(logdir, storage, "s", "r", project)
     selectors = getattr(request, "param", {"path": "created.txt"})
     required = (() if selectors is None else selectors if isinstance(selectors, tuple) else
                 (require_tool_success("edit", via="codemode", arguments=selectors),))
@@ -254,7 +255,7 @@ def test_ordinary_write_without_a_route_requirement_still_completes(runtime):
 def test_parallel_child_receipts_satisfy_both_targets_before_and_after_restart(runtime, monkeypatch):
     import threading
 
-    from codey.operations import kernel_execution
+    from codey.operations.kernel import kernel_execution
 
     barrier = threading.Barrier(2)
     original = kernel_execution._run_via_delegate_or_fn

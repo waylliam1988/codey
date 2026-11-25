@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from codey.automation.browser_receipts import PAGE_EVIDENCE_INVALIDATORS, PAGE_EVIDENCE_TOOLS, wait_matched_on_page
-from codey.operations.browser_completion import ordered_page_passages, post_wait_passages
+from codey.operations.browser.browser_completion import ordered_page_passages, post_wait_passages
 from codey.operations.completion_output import tool_facts
 from codey.policies.browser_requirement import BrowserResearchSequence, parse_browser_requirement
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, STRICT_RESEARCH_REQUIRED_CHECKS
@@ -16,7 +16,7 @@ from codey.task.web_intent import source_url_key
 if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
     from codey.operations.completion_context import CompletionContext
-    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.kernel_protocol import TurnSnapshot
     from codey.operations.task_session import TaskSession
     from codey.runtime.core.execution_record import ExecutionRecord
     from codey.runtime.core.models import ToolResult
@@ -154,7 +154,7 @@ def research_submission_handoff(session: TaskSession, snapshot: TurnSnapshot, co
 def research_browser_handoff(session: TaskSession, snapshot: TurnSnapshot,
                               context: CompletionContext) -> tuple[TurnSnapshot, str]:
     """Reuse fixed browser leaf lowering inside an explicit Research workflow."""
-    from codey.operations.kernel_protocol import offer_browser_call
+    from codey.operations.browser.turn_surface import offer_browser_call
 
     sequence = submission_sequence(session)
     if snapshot.research_scope is None or not (sequence or declared_workflow_url(session)):
@@ -166,7 +166,7 @@ def research_browser_handoff(session: TaskSession, snapshot: TurnSnapshot,
             names.add(requirement.tool)
     for name in sorted(names):
         snapshot = offer_browser_call(snapshot, session, name, research=True)
-    from codey.operations.browser_task_handoff import browser_continuation_handoff
+    from codey.operations.browser.browser_task_handoff import browser_continuation_handoff
 
     snapshot, continuation = browser_continuation_handoff(session, snapshot, context, workflow=True)
     if continuation:

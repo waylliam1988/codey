@@ -16,13 +16,9 @@ from codey.operations.kernel_result import _call_args_digest, denied_before_exec
 from codey.operations.task_session import TaskSession
 from codey.policies.tool_requirement import argument_digest
 from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import (
-    restore_ledger_observation,
-    search_observation,
-    source_observation,
-    source_search_observation,
-)
+from codey.research.ledger_receipts import restore_ledger_observation, search_observation, source_search_observation
 from codey.research.receipt_types import SourceSearchObservation
+from codey.research.source_observation import source_observation
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import canonical_tool_name, is_source_read_tool, spec_for_tool
@@ -44,7 +40,8 @@ def project_result_observation(
         # Managed commands project execution facts from the child's sole
         # receipt. The caller carries only an observation and its reference.
         return
-    from codey.research.source_acquisition import acquisition_observation, failure_event
+    from codey.research.source_acquisition import acquisition_observation
+    from codey.types.source_failure import failure_event
 
     if "source_acquisition" in result.canonical:
         acquisition_observation(result.canonical["source_acquisition"])

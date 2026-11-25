@@ -13,13 +13,8 @@ from codey.codemode import catalog as catalog_module
 from codey.codemode.host import CodeModeHost
 from codey.codemode.runtime import DeliveryRecorder, NodeWorkerRuntime, ToolInvoker
 from codey.codemode.state import CodeModeStateStore
-from codey.codemode.types import (
-    CodeModeLimits,
-    CodeModeResult,
-    DeliveryReference,
-    ToolCatalogEntry,
-    ToolCatalogSnapshot,
-)
+from codey.codemode.types import CodeModeResult, DeliveryReference, ToolCatalogEntry, ToolCatalogSnapshot
+from codey.protocols.codemode import CodeModeLimits
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 from tools.completion_explanation_ab import append_json
 from tools.structured_surface import prechecked_invoke

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codey.completion.contract import CHECK_NOT_APPLICABLE, CHECK_PASS, CompletionCheck
-from codey.operations.browser_completion import evaluate_page_rounds, research_page_evidence
+from codey.operations.browser.browser_completion import evaluate_page_rounds, research_page_evidence
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import tool_facts
 from codey.operations.explicit_execution_requirements import requested_output_read_check

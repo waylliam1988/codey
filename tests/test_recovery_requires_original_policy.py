@@ -40,7 +40,7 @@ def _durable_task(
 @pytest.mark.parametrize("corruption", ["missing", "version", "required_checks", "strict_research"])
 def test_missing_or_invalid_original_policy_cannot_become_weaker_task(tmp_path, corruption):
     project, state, logdir = _dirs(tmp_path)
-    log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
+    mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
     original = TaskPolicy(grants=frozenset({"control", "web.read"}), strict_research=True,
                           required_checks=("research_evidence_saved",))
     payload = None
@@ -60,7 +60,7 @@ def test_missing_or_invalid_original_policy_cannot_become_weaker_task(tmp_path, 
 
 def test_valid_original_policy_is_restored_exactly(tmp_path):
     project, state, logdir = _dirs(tmp_path)
-    log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
+    mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
     original = TaskPolicy(grants=frozenset({"control", "web.read"}), strict_research=True,
                           required_checks=("research_evidence_saved",))
     durable = _durable_task("s", "r", project, policy=original)
@@ -80,7 +80,7 @@ def test_every_recovery_dispatch_uses_original_policy(tmp_path, monkeypatch, kin
     from codey.task.model import TaskSubmission
 
     project, state, logdir = _dirs(tmp_path)
-    log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
+    mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
     original = TaskPolicy(grants=frozenset({"control", "project.read"}),
                           strict_research=True, required_checks=("research_evidence_saved",))
     durable = _durable_task("s", "r", project, policy=original)
@@ -107,7 +107,7 @@ def test_policy_recovery_rejects_missing_schema_fields(field):
     payload = TaskPolicy(frozenset({"control"}), strict_research=True,
                          required_checks=("research_evidence_saved",)).to_payload()
     del payload[field]
-    with pytest.raises(ValueError, match="fields"):
+    with pytest.raises(ValueError, match="version" if field == "version" else "fields"):
         TaskPolicy.from_payload(payload)
 
 
@@ -147,7 +147,7 @@ def test_project_dispatch_records_policy_before_first_tool(tmp_path, monkeypatch
     from codey.task.model import TaskSubmission
 
     project, state, logdir = _dirs(tmp_path)
-    log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
+    mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
     durable = _durable_task("s", "r", project)
     mutations = RuntimeMutationLine(durable=durable)
     request = TaskSubmission("s", str(project), "edit a.py", 8, False, "local", intent="project")
@@ -182,8 +182,8 @@ def test_original_modification_requirement_survives_changed_resume_request(tmp_p
 
 
 def test_original_verification_prohibition_survives_changed_resume_request():
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_entry import build_task_policy_for_entry, start_task_session
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from tests.test_entry_session_task_requirements_init import _frame, _work
 
     original = _frame("edit a.py; do not run tests")
@@ -207,7 +207,7 @@ def test_resume_before_first_settlement_keeps_original_policy_or_blocks(tmp_path
     from codey.task.model import TaskSubmission
 
     project, state, logdir = _dirs(tmp_path)
-    log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
+    mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
     original = TaskPolicy(frozenset({"control", "project.read"}), required_checks=("custom_required",))
     # The runtime fixture already owns the admitted durable task. Reuse its
     # session so policy and operation state cannot diverge across stores.
@@ -255,7 +255,7 @@ def test_persisted_authorization_snapshot_cannot_be_replaced(tmp_path, change):
     from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 
     project, state, logdir = _dirs(tmp_path)
-    log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
+    mutations, *_ = _open_runtime(logdir, state, "s", "r", project)
     original = TaskPolicy(frozenset({"control", "project.read"}), required_checks=("must_check",),
                           denied_capabilities=frozenset({"project.write"}))
     durable = _durable_task("s", "r", project, policy=original)

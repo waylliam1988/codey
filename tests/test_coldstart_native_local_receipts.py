@@ -21,8 +21,8 @@ def test_native_done_exposed_as_function() -> None:
 
 
 def test_native_codec_system_prompt_is_native_only() -> None:
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
 
     policy = TaskPolicy(grants=frozenset({"control", "project.read"}))
@@ -32,7 +32,7 @@ def test_native_codec_system_prompt_is_native_only() -> None:
     # Native contract is function-call wording, not JSON-object wording.
     import json as _json
 
-    from codey.toolchain.tool_spec import thaw_schema_value
+    from codey.toolchain.spec_model import thaw_schema_value
 
     text = _json.dumps([{"name":t.name,"description":t.description,"parameters":thaw_schema_value(t.parameters)} for t in tools_from_specs(snapshot.frozen_specs)])
     assert "parameters" in text.lower()
@@ -42,8 +42,8 @@ def test_native_codec_hash_is_native_not_json() -> None:
     from codey.policies.task_policy import TaskPolicy
 
     policy = TaskPolicy(frozenset({"control", "project.read"}))
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
 
     session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2)
     snapshot = build_turn_snapshot(session, native=True)
@@ -270,7 +270,7 @@ def test_mutation_queue_batches_different_files_and_serializes_side_effects(tmp_
 
 
 def test_tool_turn_results_sort_back_to_tool_index(tmp_path: Path) -> None:
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.kernel_transport import _native_tool_results
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy

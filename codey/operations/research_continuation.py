@@ -287,7 +287,7 @@ class ResearchContinuation:
 
     def kernel(self, session: TaskSession, request: KernelRunRequest, *, invocation: ResearchInvocation) -> KernelResult:
         """Restore a completed output or enter the sole driver for active work."""
-        from codey.operations.kernel_context import KernelContext
+        from codey.operations.kernel.kernel_context import KernelContext
         from codey.operations.task_loop import run_task_kernel
 
         state = self.state()

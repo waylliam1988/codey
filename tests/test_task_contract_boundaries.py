@@ -9,7 +9,7 @@ import pytest
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
 from codey.knowledge.store import KnowledgeStore
 from codey.launcher.runtime import read_runtime
-from codey.operations.browser_upload import lower_upload_action, structured_upload_spec, task_upload_scope
+from codey.operations.browser.browser_upload import lower_upload_action, structured_upload_spec, task_upload_scope
 from codey.operations.knowledge_context import knowledge_background
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy

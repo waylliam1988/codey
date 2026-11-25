@@ -5,15 +5,16 @@ import pytest
 
 from codey.knowledge.model import canonical_json
 from codey.operations.execution_claims import observed_claim, validate_execution_claims
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_prompt import _completion_followup
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.runtime.core.execution_receipt import ExecutionReceipt
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.toolchain.tool_spec import thaw_schema_value
+from codey.toolchain.spec_model import thaw_schema_value
 from codey.types.json_value import decode_json_object, parse_json_object
 
 

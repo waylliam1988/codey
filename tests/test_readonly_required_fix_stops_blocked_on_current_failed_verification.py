@@ -4,9 +4,9 @@ from threading import Event
 
 import pytest
 
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.kernel_contracts import KernelResult
 from codey.operations.kernel_control import no_progress_result
-from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_progress import KernelProgress
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy

@@ -25,8 +25,8 @@ class PermissionProfileTests(unittest.TestCase):
 
 
     def test_whole_research_submission_requires_its_scoped_contract(self) -> None:
-        from codey.operations.kernel_protocol import build_turn_snapshot
         from codey.operations.task_session import TaskSession
+        from codey.operations.turn_snapshot import build_turn_snapshot
         from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, TaskPolicy
 
         grants = frozenset({"control", "web.read", "knowledge.read", "knowledge.write"})

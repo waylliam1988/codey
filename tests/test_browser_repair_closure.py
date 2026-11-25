@@ -15,21 +15,22 @@ from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.shape_repair import readonly_settled, shape_diagnostic
 from codey.codemode.types import ToolCatalogEntry
 from codey.memory.candidates import CANDIDATE_FIELD
-from codey.operations.browser_followups import click_followup_plan
+from codey.operations.browser.browser_followups import click_followup_plan
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import evaluate
 from codey.operations.completion_output import explanation_text, prepare_completion_output
 from codey.operations.explanation_repair import repair_prompt as explanation_repair_prompt
 from codey.operations.file_field_binding import bound_content, file_rules, validate_content
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn, refresh_snapshot_contract
 from codey.operations.kernel_contracts import RetryDecision, ToolExecutor
-from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.kernel_preparation import prepare_kernel_turn
 from codey.operations.kernel_prompt import _completion_followup, _repair_prompt, kernel_prompt_for_session
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn, refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
 from codey.operations.tool_result_reader import ReceiptReader, read_tool_result
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.output_requirement import EXPLANATION_DONE_EXAMPLE, declaration
 from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.policies.tool_requirement import (
@@ -41,7 +42,7 @@ from codey.policies.tool_requirement import (
 )
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
-from codey.research.ledger import OpenedSource
+from codey.research.source_document import OpenedSource
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.web_intent import explicit_browser_checks
 from codey.toolchain.tool_spec import ToolSpec, _schema_for_spec, freeze_spec_parameters, spec_for_tool

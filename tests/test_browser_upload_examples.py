@@ -2,7 +2,7 @@
 
 import pytest
 
-from codey.operations.browser_upload import task_upload_scope
+from codey.operations.browser.browser_upload import task_upload_scope
 from codey.policies.task_policy import TaskPolicy
 
 

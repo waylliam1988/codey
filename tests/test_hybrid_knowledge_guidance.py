@@ -14,12 +14,13 @@ from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.chat_knowledge import read_knowledge_versions
 from codey.operations.completion_context import CompletionContext
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.research_completion_checks import knowledge_reference_checks, research_completion_feedback
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall

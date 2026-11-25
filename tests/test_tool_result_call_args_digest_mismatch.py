@@ -37,7 +37,7 @@ class ToolResultCallArgsDigestMismatchTests(unittest.TestCase):
         self.assertEqual(str(out.model_text), "hello")
 
     def test_execute_turn_rejects_args_mismatch_without_losing_receipt(self) -> None:
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
 

@@ -133,7 +133,7 @@ class TaskSession:
 
     @property
     def verification_paths(self) -> tuple[str, ...]:
-        from codey.operations.project_delivery import documented_verification_paths
+        from codey.operations.project.project_delivery import documented_verification_paths
 
         return tuple(dict.fromkeys((*self.edited_files, *documented_verification_paths(self))))
 

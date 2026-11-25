@@ -20,7 +20,7 @@ def _policy():
 
 class KernelRecoveryErrorAbortsBatchWithoutExecutorTests(unittest.TestCase):
     def test_batch_check_exception_never_runs_executor(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall
 
@@ -40,7 +40,7 @@ class KernelRecoveryErrorAbortsBatchWithoutExecutorTests(unittest.TestCase):
             "codey.operations.kernel_recovery.delivered_slot_typed",
             side_effect=RuntimeError("delivery boom"),
         ), mock.patch(
-            "codey.operations.kernel_execution.delivered_slot_typed",
+            "codey.operations.kernel.kernel_execution.delivered_slot_typed",
             side_effect=RuntimeError("delivery boom"),
         ):
             results = ke.execute_turn(

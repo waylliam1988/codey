@@ -16,7 +16,7 @@ def _policy():
 
 class IntentSettlementReconcilesReceiptTests(unittest.TestCase):
     def test_executed_plus_pending_intent_never_reexecutes(self) -> None:
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.runtime.core.models import ToolCall
 
@@ -74,7 +74,7 @@ class IntentSettlementReconcilesReceiptTests(unittest.TestCase):
         self.assertTrue(results)
 
     def test_failed_commit_does_not_publish_a_memory_receipt(self) -> None:
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
 

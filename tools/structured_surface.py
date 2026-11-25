@@ -18,18 +18,17 @@ from codey.codemode.catalog import build_codemode_catalog
 from codey.codemode.host import CodeModeHost
 from codey.codemode.runtime import NodeWorkerRuntime
 from codey.completion.contract import CompletionCheck
-from codey.operations import completion_gate, completion_output, kernel_control, kernel_protocol
+from codey.operations import completion_gate, completion_output, kernel_control, turn_snapshot
 from codey.operations.completion_context import CompletionContext
-from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
+from codey.operations.kernel.kernel_protocol import TurnSnapshot
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import KernelSessionView
 from codey.policies.requirement import RequirementEvaluation
 from codey.providers.base import ProviderToolDefinition, tools_from_specs
 from codey.providers.text_tool_schema import text_tool_schema
+from codey.toolchain.spec_model import thaw_schema_value
 from codey.toolchain.tool_prompt import json_contract_text
-from codey.toolchain.tool_spec import (
-    _check_spec_value_against_schema,
-    thaw_schema_value,
-)
+from codey.toolchain.tool_spec import _check_spec_value_against_schema
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 from tools import mechanical_surface
 from tools.completion_artifact_audit import tool_receipts
@@ -227,7 +226,7 @@ def prototype(directory: Path, scenario: str, *, enabled: bool) -> Generator[Non
     if not enabled:
         yield
         return
-    build = kernel_protocol.build_turn_snapshot
+    build = turn_snapshot.build_turn_snapshot
     prepare = completion_output.prepare_completion_output
     required_verdict = completion_gate._required_checks_verdict
     invoke = CodeModeHost.invoke
@@ -328,7 +327,7 @@ def prototype(directory: Path, scenario: str, *, enabled: bool) -> Generator[Non
         return hashlib.sha256((digest(runtime) + VERSION + PROGRAM_DIGEST).encode()).hexdigest()
 
     with ExitStack() as stack:
-        stack.enter_context(patch.object(kernel_protocol, "build_turn_snapshot", capture))
+        stack.enter_context(patch.object(turn_snapshot, "build_turn_snapshot", capture))
         stack.enter_context(patch.object(CodeModeHost, "invoke", checked))
         stack.enter_context(patch.object(NodeWorkerRuntime, "contract_digest", contract_digest))
         stack.enter_context(patch.object(kernel_control, "prepare_completion_output", assemble))

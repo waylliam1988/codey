@@ -62,7 +62,7 @@ def probe(root, proxy, model, protocol, case):
         "failure": "Open https://source-a.test/observation/requested once. If it fails, report the observed failure and finish without inventing source contents.",
     }[case]
     project, state, logdir = _dirs(root)
-    _, mutations, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project)
+    mutations, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project)
     required = case in {"redirect", "locator"}
     policy = TaskPolicy(frozenset({"control", "web.read"}), sources_open_required=required,
                         required_checks=(("research_sources_opened", "tool_succeeded:source_search", "tool_succeeded:open_hit")

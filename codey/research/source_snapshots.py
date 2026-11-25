@@ -5,9 +5,10 @@ import hashlib
 from dataclasses import replace
 
 from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import ledger_observation, source_observation, source_snapshot
+from codey.research.ledger_receipts import ledger_observation
 from codey.research.pdf_extract import parse_pages
 from codey.research.source_document import SourceDocument, SourcePage
+from codey.research.source_observation import source_observation, source_snapshot
 from codey.types.json_value import JsonObject
 
 

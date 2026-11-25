@@ -175,14 +175,14 @@ def test_source_eof_is_explicit_and_out_of_range_reads_do_not_commit_observation
     delegate = ExecutionDelegate(session=session, research_tools=tools)
     size = len(backend.text)
     for offset in (size, size + 8000):
-        result, ok, _ = delegate._execute_research(ToolCall("open_url", {"url": url, "offset": offset}))
+        result, ok, _ = delegate.research_executor._execute_research(ToolCall("open_url", {"url": url, "offset": offset}))
         assert not ok and not result.ok
         assert f"length={size} characters" in result.model_text
         assert "No passage was read" in result.model_text
         assert not result.canonical.get("research_observation") and not result.canonical.get("read_passages")
     assert not tools.ledger.opened_sources and not tools.ledger.read_passages and not session.opened_sources
     call = ToolCall("open_url", {"url": url, "offset": size - 400, "limit": 500})
-    result, ok, _ = delegate._execute_research(call)
+    result, ok, _ = delegate.research_executor._execute_research(call)
     assert ok, result.model_text
     result = bind_source_identity(session, call, result, ok=ok)
     project_result_observation(session, call, result, ok=ok, research_ledger=tools.ledger)

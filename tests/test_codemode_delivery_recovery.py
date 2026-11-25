@@ -11,8 +11,9 @@ import pytest
 from codey.codemode.host import CodeModeHost
 from codey.codemode.replay import DurableCodeModeReplay
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.operations import kernel_execution
 from codey.operations.generation_boundary import durable_generation_boundary_callback
+from codey.operations.kernel import kernel_execution
+from codey.operations.kernel.kernel_execution import ToolDelegate
 from codey.operations.kernel_contracts import (
     KernelExecutionDeps,
     KernelObservationDeps,
@@ -20,7 +21,6 @@ from codey.operations.kernel_contracts import (
     KernelTransportDeps,
     ToolExecutor,
 )
-from codey.operations.kernel_execution import ToolDelegate
 from codey.operations.provider_session import adapt_provider
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_loop import run_task_kernel

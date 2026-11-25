@@ -5,14 +5,15 @@ import json
 
 import pytest
 
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_prompt import _repair_prompt
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
-from codey.research.questions import QUESTION_BOUND_TOOLS
+from codey.research.tool_names import QUESTION_BOUND_TOOLS
 from codey.runtime.core.models import ToolCall
 from codey.types.json_value import ToolArgs
 

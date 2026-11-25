@@ -16,11 +16,11 @@ from tests.support.task_browser import browser_for
 
 
 def test_source_only_authorization_borrows_the_task_worker_without_exposing_actions() -> None:
-    from codey.operations.kernel_context import KernelContext
+    from codey.operations.kernel.kernel_context import KernelContext
     from codey.operations.kernel_contracts import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.provider_session import adapt_provider
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.research.tools import ResearchTools
     from codey.research.web_sources import WebSourceProvider

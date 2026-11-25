@@ -351,7 +351,7 @@ def project_evidence_checks(session: TaskSession, context: CompletionContext) ->
     rows = evaluate_project_completion(ProjectCompletionFacts.capture(session), context)
     from pathlib import Path
 
-    from codey.operations.browser_copy import copy_target
+    from codey.operations.browser.browser_copy import copy_target
     from codey.toolchain.runtime import WRITE_MAX_FILE_BYTES, safe_join
     from codey.workspace.paths import content_hash, read_text_bounded
 

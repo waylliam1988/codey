@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall
@@ -47,7 +47,7 @@ def test_stale_version_feedback_requires_a_new_observation_before_retry(tmp_path
 
 def test_invalid_program_return_exposes_only_invoked_frozen_types_and_child_receipt_references(tmp_path):
     from codey.codemode.kernel import build_execute_turn_executor
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.turn_snapshot import build_turn_snapshot
 
     (tmp_path / "a.py").write_text("old\n")
     session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "project.write"})), project=str(tmp_path))
@@ -100,7 +100,7 @@ def test_whole_file_update_rejects_unproven_or_stale_baselines(tmp_path, case):
 @pytest.mark.parametrize("content", ["after\n", "'quotes' \"double\" \\n\nnext\r\n\u2028\u2029馃榾\n"])
 def test_codemode_whole_file_update_reuses_child_receipt_in_same_runtime(tmp_path, reference, content):
     from codey.codemode.kernel import build_execute_turn_executor
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.turn_snapshot import build_turn_snapshot
 
     (tmp_path / "a.py").write_bytes(b"before\n")
     session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "project.write"})), project=str(tmp_path))

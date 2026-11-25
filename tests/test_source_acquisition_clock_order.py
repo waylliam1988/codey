@@ -4,12 +4,12 @@ from itertools import permutations
 
 import pytest
 
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.reference_handles import ReferenceHandleError, ReferenceHandleResolver
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import source_observation, source_snapshot
+from codey.research.source_observation import source_observation, source_snapshot
 from codey.runtime.core.models import ToolCall
 from codey.types.json_value import JsonObject
 from tests.test_committed_research_projection import runtime

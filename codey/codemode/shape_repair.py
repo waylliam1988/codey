@@ -9,8 +9,8 @@ from typing import Literal
 import tree_sitter_javascript
 from tree_sitter import Language, Node, Parser
 
-from codey.codemode.protocol import CodeModeInputError, SourceDiagnostic, _diagnostic, _node_text, parse_codemode_args
 from codey.codemode.types import ToolCatalogSnapshot
+from codey.protocols.codemode import CodeModeInputError, SourceDiagnostic, _diagnostic, _node_text, parse_codemode_args
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.types.json_value import JsonObject, canonical_json_object
 

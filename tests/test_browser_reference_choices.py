@@ -9,11 +9,13 @@ import pytest
 
 from codey.automation.browser_session import BrowserSession, BrowserToolOutput
 from codey.codemode.catalog import snapshot_catalog
-from codey.operations.browser_references import BrowserReferences, reference_failure
-from codey.operations.kernel_protocol import build_turn_snapshot, offer_browser_tools, refresh_snapshot_contract
+from codey.operations.browser.browser_references import BrowserReferences, reference_failure
+from codey.operations.browser.turn_surface import offer_browser_tools
+from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import validate_args_with_spec

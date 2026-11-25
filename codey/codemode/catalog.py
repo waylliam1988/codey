@@ -17,14 +17,14 @@ from codey.codemode.types import (
     ToolCatalogEntry,
     ToolCatalogSnapshot,
 )
-from codey.operations.browser_references import BrowserReferences, reference_spec
+from codey.operations.browser.browser_references import BrowserReferences, reference_spec
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.toolchain.result_schema import model_output_schema, schema_typescript
 from codey.toolchain.tool_spec import ToolSpec, _schema_for_spec, is_text_batch_tool
 from codey.types.json_value import JsonObject, canonical_json_object, require_json_strings
 
 if TYPE_CHECKING:
-    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.kernel_protocol import TurnSnapshot
 
 
 def snapshot_catalog(
@@ -39,16 +39,15 @@ def snapshot_catalog(
         allow_project_run=allow_writes and snapshot.policy is not None and snapshot.policy.allows("project.verify")
             and "run" in names,
         task_navigation_url=snapshot.task_navigation_url,
-        task_source_url=snapshot.bound_source_url,
-        task_source_selector=snapshot.input_contract_version >= 13 and snapshot.bound_source_url is not None,
+        task_source_url=snapshot.task_source_url,
+        task_source_selector=snapshot.task_source_url is not None,
         browser_followup_checks=(snapshot.policy.required_checks if snapshot.policy else ())
         if snapshot.browser_followups else None,
-        observe_link_navigation=(snapshot.input_contract_version >= 21
-                                 and snapshot.research_scope is None),
+        observe_link_navigation=snapshot.research_scope is None,
         browser_result_reads=snapshot.research_scope is not None,
         browser_references=snapshot.browser_references if observed_choices else None,
-        browser_flows=snapshot.input_contract_version >= 16 and snapshot.browser_followups,
-        semantic_edits=snapshot.input_contract_version >= 17,
+        browser_flows=snapshot.browser_followups,
+        semantic_edits=True,
     )
 
 
@@ -145,13 +144,13 @@ def build_codemode_catalog(
     source_values: Iterable[ToolSpec] = specs.values() if isinstance(specs, Mapping) else specs
     values = tuple(reference_spec(spec, browser_references) for spec in source_values)
     if browser_followup_checks is not None:
-        from codey.operations.browser_followups import PURPOSES, click_plans, model_spec
+        from codey.operations.browser.browser_followups import PURPOSES, click_plans, model_spec
 
         plans = click_plans(browser_followup_checks, {spec.name for spec in values})
         control_steps = plans.get("controls")
         if isinstance(control_steps, list) and any(spec.name == "browser_read" and not spec.required for spec in values):
             plans["controls"] = [*control_steps, {"name": "browser_read", "args": JsonObject()}]
-        from codey.operations.browser_followups import add_link_observation
+        from codey.operations.browser.browser_followups import add_link_observation
 
         add_link_observation(plans, browser_followup_checks, enabled=observe_link_navigation)
         purposes = tuple(purpose for purpose in PURPOSES if purpose in plans)

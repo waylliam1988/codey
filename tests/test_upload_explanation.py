@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from codey.operations.browser_upload import UploadEvidence
+from codey.operations.browser.browser_upload import UploadEvidence
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import _browser_completion_block
 from codey.operations.completion_output import prepare_completion_output

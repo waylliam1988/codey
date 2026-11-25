@@ -44,7 +44,7 @@ def test_recovery_preserves_facts_and_never_reexecutes(tmp_path, exits, trace):
                     recovered_batch_id=recovery.recovered_tool_result_batch_id,
                     managed_outputs=ManagedOutputStore(state), durable=durable,
                 )
-                from codey.operations.kernel_protocol import build_turn_snapshot
+                from codey.operations.turn_snapshot import build_turn_snapshot
 
                 # Direct storage-boundary sends still need the exact original
                 # request identity that KernelContext.freeze supplies in production.

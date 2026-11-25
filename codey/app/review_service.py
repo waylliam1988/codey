@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codey.app import provider_services as providers
-from codey.operations.task_state import TaskState
+from codey.app.task_state import AppTaskState
 from codey.policies.limits import REVIEW_TIMEOUT
 from codey.providers import controls as provider_controls
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
@@ -33,12 +33,12 @@ if TYPE_CHECKING:
     from codey.reviews.input import ReviewInput
 
 
-def emit_review(ctx: TaskState, session_id: str, text: str) -> None:
+def emit_review(ctx: AppTaskState, session_id: str, text: str) -> None:
     ctx.emit({"type": "review", "session_id": session_id, "text": text})
 
 
 def emit_review_with_payload(
-    ctx: TaskState,
+    ctx: AppTaskState,
     session_id: str,
     text: str,
     review: ReviewResult,
@@ -59,7 +59,7 @@ class _ReviewSnapshotChanged(RuntimeError):
 
 
 def run_review_attempt(
-    ctx: TaskState,
+    ctx: AppTaskState,
     *,
     session_id: str,
     project: str,
@@ -147,7 +147,7 @@ def run_review_attempt(
 
 
 def _early_snapshot_result(
-    ctx: TaskState, session_id: str, reviewer_id: str, prepared: ReviewInput, snapshot: ReviewSnapshot,
+    ctx: AppTaskState, session_id: str, reviewer_id: str, prepared: ReviewInput, snapshot: ReviewSnapshot,
 ) -> ReviewResult | None:
     if snapshot.ok:
         return None
@@ -164,7 +164,7 @@ def _early_snapshot_result(
     return review
 
 
-def _stale_before_send(ctx: TaskState, session_id: str, reviewer_id: str, prepared: ReviewInput) -> ReviewResult:
+def _stale_before_send(ctx: AppTaskState, session_id: str, reviewer_id: str, prepared: ReviewInput) -> ReviewResult:
     review = ReviewResult(
         verdict="unknown",
         summary="Review outdated · files changed",
@@ -265,7 +265,7 @@ def _parse_with_single_repair(
 
 
 def _finalize_review(
-    ctx: TaskState, session_id: str, project: str, reviewer_id: str, self_review: bool,
+    ctx: AppTaskState, session_id: str, project: str, reviewer_id: str, self_review: bool,
     prepared: ReviewInput, snapshot: ReviewSnapshot, review: ReviewResult, trace_recorder: object | None,
     run_id: str, review_policy: str = WEB_IF_AVAILABLE, model_id: str = "",
 ) -> ReviewResult:
@@ -326,7 +326,7 @@ def _finalize_review(
 
 
 def _persist_attempt_artifact(
-    ctx: TaskState, session_id: str, run_id: str, attempt_id: str, review: ReviewResult,
+    ctx: AppTaskState, session_id: str, run_id: str, attempt_id: str, review: ReviewResult,
     scope_digest: str, prompt_digest: str, snapshot_digest: str, reviewer_id: str, self_review: bool,
     model_id: str, review_policy: str,
 ) -> str:
@@ -358,7 +358,7 @@ def _persist_attempt_artifact(
 
 
 def run_review(
-    ctx: TaskState,
+    ctx: AppTaskState,
     *,
     session_id: str,
     project: str,
@@ -405,7 +405,7 @@ def run_review(
 
 
 def _connect_review_model(
-    ctx: TaskState, *, session_id: str, run_id: str, writer_id: str,
+    ctx: AppTaskState, *, session_id: str, run_id: str, writer_id: str,
     self_review_allowed: bool, standalone: bool,
     connect_reviewer: Callable[[str], ChatProvider] | None,
     leases: contextlib.ExitStack,
@@ -454,7 +454,7 @@ def _connect_review_model(
 
 
 def _selected_cross_connection_reviewer(
-    ctx: TaskState,
+    ctx: AppTaskState,
     session_id: str,
     run_id: str,
     writer_id: str,
@@ -506,7 +506,7 @@ def _selected_cross_connection_reviewer(
 
 
 def _selected_api_reviewer(
-    ctx: TaskState, session_id: str, run_id: str, writer_id: str, *, standalone: bool = False,
+    ctx: AppTaskState, session_id: str, run_id: str, writer_id: str, *, standalone: bool = False,
     leases: contextlib.ExitStack | None = None,
 ) -> tuple[str, ChatProvider] | None:
     from codey.providers.api_connections import capture_reviewer_selection, open_selection
@@ -534,14 +534,14 @@ def _selected_api_reviewer(
     return selection.connection_id, open_selection(selection)
 
 
-def _review_checkpoint(ctx: TaskState, run_id: str) -> TaskCheckpoint | None:
+def _review_checkpoint(ctx: AppTaskState, run_id: str) -> TaskCheckpoint | None:
     try:
         return ctx.durable.task(run_id)
     except (AttributeError, KeyError, ValueError, TypeError):
         return None
 
 
-def _enabled_review_models(ctx: TaskState, connection_ids: Iterable[str]) -> dict[str, set[str]]:
+def _enabled_review_models(ctx: AppTaskState, connection_ids: Iterable[str]) -> dict[str, set[str]]:
     snapshot: object = ctx.providers.model_preferences.snapshot()
     sources = require_object_fields(snapshot).get("sources")
     if not mapping_fields(sources):

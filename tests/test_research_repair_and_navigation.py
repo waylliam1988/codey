@@ -11,8 +11,9 @@ from codey.knowledge.store import KnowledgeStore
 from codey.operations import kernel_prompt
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import evaluate
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.answer_context import answer_context
 from codey.research.answer_contract import answer_scope

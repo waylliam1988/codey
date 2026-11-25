@@ -8,8 +8,8 @@ import sqlite3
 from collections import Counter
 from pathlib import Path
 
-from codey.operations.browser_followups import explicit_fill_text
-from codey.operations.kernel_protocol import _response_objects
+from codey.operations.browser.browser_followups import explicit_fill_text
+from codey.operations.kernel.kernel_protocol import _response_objects
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.response_record import decode_reply
 from codey.runtime.core.models import ToolResult

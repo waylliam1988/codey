@@ -8,19 +8,20 @@ import pytest
 
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.answer_contract import AnswerScope, answer_scope, answer_spec, submit_answer
 from codey.research.answer_report import AnswerReport, compile_answer_report
 from codey.research.calculation import calculate, calculation_fields, read_data, render_calculations
 from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import source_observation
 from codey.research.passages import ReadPassage
+from codey.research.source_observation import source_observation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import spec_for_tool
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
@@ -317,7 +318,7 @@ def test_data_acquisition_uses_one_read_and_replays_the_frozen_plan(tmp_path: Pa
         assert observed.ok, observed.model_text
     snapshot = build_turn_snapshot(task, native=True)
     if mode == "legacy":
-        snapshot = replace(snapshot, input_contract_version=17)
+        snapshot = replace(snapshot, data_file_reads=None)
     code = """
 const first = await tools.read_data({path:inputs.path, format:'csv'});
 const second = await tools.read_data({path:'./input.csv', format:'csv'});

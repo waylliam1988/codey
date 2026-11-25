@@ -16,8 +16,8 @@ from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
 from codey.knowledge.store import KnowledgeStore
 from codey.memory.candidates import candidate_from_payload
 from codey.memory.context import retrieve_context
-from codey.operations.edit_base import edit_base_version
 from codey.operations.kernel_contracts import DoneDecision, KernelResult
+from codey.operations.project.edit_base import edit_base_version
 from codey.operations.source_gaps import source_interaction_context
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
@@ -25,14 +25,14 @@ from codey.providers.api_provider import ApiProvider
 from codey.research.answer_contract import AnswerScope, digest, submit_answer
 from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.evidence_gaps import evidence_gaps, gap_search_candidates, same_source_groups
-from codey.research.ledger import EvidenceItem, OpenedSource, ResearchLedger
-from codey.research.ledger_receipts import source_observation, source_snapshot
+from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.passages import ReadPassage
 from codey.research.receipt_types import InvestigationRecord
 from codey.research.reference import ResearchReference
 from codey.research.report_evidence import check_report_evidence
-from codey.research.source_document import SourceDocument, SourcePage
+from codey.research.source_document import OpenedSource, SourceDocument, SourcePage
 from codey.research.source_gateway import ResearchSourceGateway
+from codey.research.source_observation import source_observation, source_snapshot
 from codey.research.source_snapshots import snapshot_document
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.effects.effect_records import RuntimeEffectSettlement

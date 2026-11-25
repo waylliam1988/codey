@@ -11,7 +11,7 @@ from codey.research.completion_guidance import render_completion_guidance
 
 if TYPE_CHECKING:
     from codey.knowledge.store import KnowledgeStore
-    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.kernel_protocol import TurnSnapshot
     from codey.operations.task_session import TaskSession
     from codey.research.answer_contract import AnswerScope
     from codey.research.ledger import ResearchLedger
@@ -116,7 +116,7 @@ def request_tool_guidance(snapshot: TurnSnapshot, intent: WebIntent) -> tuple[st
                      "browser_read returns citable source text.")
     if "codemode" in snapshot.tool_names:
         parts.append("CodeMode has no fetch, process, or imports. Use the authorized host tools for those operations.")
-    if (intent.requested or snapshot.bound_source_url or snapshot.research_scope is not None) and (
+    if (intent.requested or snapshot.task_source_url or snapshot.research_scope is not None) and (
             snapshot.policy is not None and snapshot.policy.allows("web.read")):
         parts.append("Use the returned source and observation times when reporting time-sensitive facts.")
         if "shell" in snapshot.tool_names and not {"open_url", "web_search"}.intersection(snapshot.inventory_names):

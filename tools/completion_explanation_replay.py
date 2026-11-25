@@ -11,11 +11,12 @@ from codey.automation.browser_receipts import query_document
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import evaluate
 from codey.operations.completion_output import prepare_completion_output
+from codey.operations.kernel.kernel_protocol import TurnSnapshot, normalize_turn
 from codey.operations.kernel_facts import project_execution_record, project_result_observation
-from codey.operations.kernel_protocol import TurnSnapshot, build_turn_snapshot, normalize_turn
 from codey.operations.kernel_receipts import restore_result_receipt
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import TextRequests, decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall

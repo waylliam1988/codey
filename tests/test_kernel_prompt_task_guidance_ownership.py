@@ -145,7 +145,7 @@ def test_all_guidance_grant_and_denial_combinations_remain_within_authorization(
 
 @pytest.mark.parametrize("native", [False, True])
 def test_note_id_usage_is_owned_by_the_shared_tool_contract(native: bool) -> None:
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.research.tool_contract import knowledge_read_id_guidance
 
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "knowledge.read"})))
@@ -160,7 +160,7 @@ def test_note_id_usage_is_owned_by_the_shared_tool_contract(native: bool) -> Non
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("denied", [False, True])
 def test_note_reader_description_respects_authorized_write_visibility(native: bool, denied: bool) -> None:
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.turn_snapshot import build_turn_snapshot
 
     session = TaskSession(policy=TaskPolicy(
         grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}), strict_research=True,
@@ -217,7 +217,8 @@ def test_completion_followup_preserves_submitted_report_format(native: bool) -> 
 
 
 def test_strict_report_has_one_preferred_example_without_changing_ordinary_done() -> None:
-    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.kernel.kernel_protocol import normalize_turn
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.protocols.text_turn import decode_text_turn
     from codey.research.tool_contract import STRUCTURED_REPORT_EXAMPLE
 

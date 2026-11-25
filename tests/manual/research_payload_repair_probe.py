@@ -31,8 +31,8 @@ def main():
         import subprocess
 
         from codey.operations.kernel_prompt import _native_done_guidance
-        from codey.operations.kernel_protocol import build_turn_snapshot
         from codey.operations.task_session import TaskSession
+        from codey.operations.turn_snapshot import build_turn_snapshot
         from codey.policies.task_policy import TaskPolicy
 
         old_source = subprocess.check_output(["git", "show", "922cf231:codey/operations/kernel_prompt.py"], text=True)

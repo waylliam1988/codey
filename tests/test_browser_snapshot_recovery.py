@@ -4,9 +4,9 @@ import pytest
 
 from codey.codemode.catalog import render_declarations, snapshot_catalog
 from codey.codemode.replay import repair_catalog_digest
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Generator, Mapping
+from collections.abc import Callable, Generator, Iterable, Mapping
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from inspect import getattr_static
@@ -15,22 +15,24 @@ from codey.codemode.host import CodeModeHost
 from codey.codemode.runtime import NodeWorkerRuntime
 from codey.codemode.types import ToolCatalogSnapshot
 from codey.completion.contract import CompletionCheck
-from codey.operations import completion_gate, kernel_protocol
-from codey.operations.browser_text_report import BrowserMetadata, MetadataPending
+from codey.operations import completion_gate, turn_snapshot
+from codey.operations.browser.browser_text_report import BrowserMetadata, MetadataPending
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import tool_facts
-from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
+from codey.operations.kernel.kernel_protocol import TurnSnapshot
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import KernelSessionView
 from codey.policies.requirement import RequirementEvaluation
 from codey.policies.tool_requirement import ToolObservation, ToolSuccessRequirement, argument_digest
 from codey.providers.base import ProviderToolDefinition, tools_from_specs
 from codey.providers.text_tool_schema import text_tool_schema
-from codey.research.ledger_receipts import source_observation
+from codey.research.source_observation import source_observation
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
 from codey.toolchain import tool_prompt
 from codey.toolchain.result_schema import browser_output_schema, validate_output
-from codey.toolchain.tool_spec import ToolSpec, thaw_schema_value
+from codey.toolchain.spec_model import thaw_schema_value
+from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object, require_json_string
 from tools import mechanical_surface, structured_surface
 from tools.completion_artifact_audit import EffectReceipt, tool_receipts
@@ -331,7 +333,7 @@ def prototype(directory: Path, scenario: str, config: str, *,
               runtime_action: Callable[[list[EffectReceipt]], JsonObject | None] | None = None) -> Generator[None, None, None]:
     features = CONFIGS[config]
     same_plan_edits = config == EDIT_BOUNDARY_CONTROL
-    build = kernel_protocol.build_turn_snapshot
+    build = turn_snapshot.build_turn_snapshot
     invoke = CodeModeHost.invoke
     render = catalog_module.render_declarations
     observe = ToolSuccessRequirement._observe_value
@@ -475,7 +477,11 @@ def prototype(directory: Path, scenario: str, config: str, *,
         effective = normalized_args(name, args)
         return structured_surface.prechecked_invoke(host, name, effective, invoke)
 
-    def declarations(snapshot: ToolCatalogSnapshot) -> str:
+    def declarations(
+        snapshot: ToolCatalogSnapshot, *, budget_bytes: int = catalog_module.MODEL_CATALOG_BUDGET_BYTES,
+        outer_descriptions: Mapping[str, str] | None = None, outer_specs: Iterable[ToolSpec] = (),
+        detail_budget_bytes: int | None = None, detail_names: tuple[str, ...] = (), include_json_edit: bool = False,
+    ) -> str:
         entries = []
         for entry in snapshot.entries:
             if entry.name == "browser_wait":
@@ -486,7 +492,9 @@ def prototype(directory: Path, scenario: str, config: str, *,
                 entry = replace(entry, parameters=params,
                     description=entry.description + " Omitted timeout_ms defaults to 5000. Explicit invalid values are rejected.")
             entries.append(entry)
-        return render(replace(snapshot, entries=tuple(entries)))
+        return render(replace(snapshot, entries=tuple(entries)), budget_bytes=budget_bytes,
+            outer_descriptions=outer_descriptions, outer_specs=outer_specs, detail_budget_bytes=detail_budget_bytes,
+            detail_names=detail_names, include_json_edit=include_json_edit)
 
     def source_observe(requirement: ToolSuccessRequirement, eligible: list[tuple[str, ExecutionRecord]],
                        results: Mapping[str, ToolResult] | None) -> ToolObservation:
@@ -610,7 +618,7 @@ def prototype(directory: Path, scenario: str, config: str, *,
         if config == RECEIPT_DELIVERY and scenario in {"upload_bound", "upload", "download", "return_failure"}:
             stack.enter_context(patch.object(completion_gate, "evaluate", deliver_file_result))
         if features.structured:
-            stack.enter_context(patch.object(kernel_protocol, "build_turn_snapshot", capture))
+            stack.enter_context(patch.object(turn_snapshot, "build_turn_snapshot", capture))
             stack.enter_context(patch.object(tool_prompt, "tool_repair_text", consistent_repair))
             stack.enter_context(patch.object(ToolSuccessRequirement, "execution_guidance", property(step_execution_guidance)))
         yield

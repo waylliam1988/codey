@@ -106,7 +106,7 @@ def test_only_actual_fetch_failure_can_be_used_for_source_gaps(monkeypatch, fail
     opened = tools.open_url(url, offset=1000 if failure == "offset" else 0)
     assert not opened.ok
     delegate = ExecutionDelegate(session=source_session(), research_tools=tools)
-    result, _, _ = delegate._opened_result(ToolCall("open_url", {"url": url}), opened, url,
+    result, _, _ = delegate.research_executor._opened_result(ToolCall("open_url", {"url": url}), opened, url,
                                            ledger=ResearchLedger(), turn=1, tool_index=0)
     expected_code = {"fetch": "request_failed", "policy": "policy_denied", "offset": "read_range_unavailable"}[failure]
     assert result.canonical["source_failure"]["code"] == expected_code

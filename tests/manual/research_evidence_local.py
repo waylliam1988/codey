@@ -175,7 +175,7 @@ def main():
             ToolCall("open_url", {"question_ref": "q1", "url": source["url"],
                                   "offset": row["offset"], "limit": row["limit"]}) for row in windows]]
         for index, call in enumerate(calls):
-            result, ok, _ = delegate._execute_research(call)
+            result, ok, _ = delegate.research_executor._execute_research(call)
             if not ok:
                 raise RuntimeError("fixture setup failed: " + result.model_text)
             result = bind_source_identity(session, call, result, ok=ok)
@@ -187,7 +187,7 @@ def main():
         if args.candidate_refresh_probe:
             probe_receipts = []
             for index, call in enumerate(candidate_refresh_calls(next(iter(tools.ledger.read_passages)))):
-                result, ok, _ = delegate._execute_research(call)
+                result, ok, _ = delegate.research_executor._execute_research(call)
                 if not ok:
                     raise RuntimeError("candidate refresh setup failed: " + result.model_text)
                 project_result_observation(session, call, result, ok=ok, research_ledger=tools.ledger)

@@ -2,7 +2,7 @@
 
 import pytest
 
-from codey.operations.browser_copy import CopyTarget, copy_target
+from codey.operations.browser.browser_copy import CopyTarget, copy_target
 
 
 @pytest.mark.parametrize("fence", ["```", "~~~"])

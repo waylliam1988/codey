@@ -68,7 +68,7 @@ def test_all_fitting_originals_are_kept_verbatim_and_invented_reads_rejected(tmp
                 answer_contract.submit_answer(scope, {"state": "answered", "markdown": f"An invented source [{label}]."})
         ref = scope.passage_refs[0]
         wrong = ExecutionDelegate(session=session, research_tools=tools, research_scope=scope)
-        result, ok, _ = wrong._execute_research(ToolCall("knowledge_read", {"id": ref}))
+        result, ok, _ = wrong.research_executor._execute_research(ToolCall("knowledge_read", {"id": ref}))
         assert not ok and "[eN]" in result.model_text
         assert "read_receipt_index" not in result.model_text and "read_tool_result" not in result.model_text
         assert "read_tool_result" not in answer_contract.ANSWER_TOOLS

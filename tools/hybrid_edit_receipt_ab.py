@@ -15,9 +15,9 @@ from typing import Literal, Protocol
 from unittest.mock import patch
 
 from codey.codemode.kernel import build_execute_turn_executor
-from codey.operations import kernel_protocol
-from codey.operations.edit_base import edit_base_text
-from codey.operations.kernel_execution import execute_turn
+from codey.operations import turn_snapshot
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.project.edit_base import edit_base_text
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -88,7 +88,7 @@ class FileExperiment:
 
     def execute(self, code: str, inputs: JsonObject | None = None) -> ToolResult:
         self.turn += 1
-        snapshot = kernel_protocol.build_turn_snapshot(self.session)
+        snapshot = turn_snapshot.build_turn_snapshot(self.session)
         executor = build_execute_turn_executor(session=self.session, snapshot=snapshot,
             run_id="hybrid-credential-experiment", effect_scope="task", turn=self.turn,
             project_path=self.project, allow_writes=True, workspace_revision_store=self.revisions)

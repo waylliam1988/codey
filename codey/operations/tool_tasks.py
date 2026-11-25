@@ -267,7 +267,7 @@ def _resume_tool_task(durable: DurableSession, captured: TaskCheckpoint, *, stor
 
 def _run_admitted_operation(durable: DurableSession, child: TaskCheckpoint, request: ToolTaskInput,
                             stores: TaskSubmissionStores) -> None:
-    from codey.operations.kernel_execution import execute_tool_operation
+    from codey.operations.kernel.kernel_execution import execute_tool_operation
     from codey.operations.kernel_tool_args import _validate_tool_args
     from codey.operations.provider_receipts import restore_snapshot
     from codey.operations.task_execution import ExecutionDelegate
@@ -301,7 +301,7 @@ def _run_admitted_operation(durable: DurableSession, child: TaskCheckpoint, requ
 
     session = TaskSession(snapshot.policy, project=request.project)
     if call.name == "browser_wait" and call.args.get("condition") in {"text_changed", "controls_changed"}:
-        from codey.operations.browser_waits import restore_wait_snapshot
+        from codey.operations.browser.browser_waits import restore_wait_snapshot
 
         owner_task_id = require_json_string(child.owner_task_id, "background wait owner")
         owned_tool_task(durable, child.task_id, owner_task_id=owner_task_id)
@@ -343,7 +343,7 @@ def _run_admitted_operation(durable: DurableSession, child: TaskCheckpoint, requ
             durable.record_effect_intent(task_id, EffectRecord(identity, task_id, "tool_call", spec.replay_class,
                 intent.args_digest, "pending", canonical_json_object(intent_payload)))
             from codey.automation.browser_invocation import invocation_scope
-            from codey.operations.browser_progress import browser_invocation
+            from codey.operations.browser.browser_progress import browser_invocation
 
             with invocation_scope(browser_invocation(identity, durable=durable, store=stores.managed_outputs,
                     session_id=child.conversation_id, run_id=task_id)):

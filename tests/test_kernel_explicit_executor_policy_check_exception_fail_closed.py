@@ -1,6 +1,6 @@
 """Explicit executor is not run when delegate policy check raises.
 
-Repro: delegate ``handles()`` is True and ``_policy_check()`` raises.
+Repro: delegate ``handles()`` is True and ``check_policy()`` raises.
 The kernel must fail closed with an explicit ERROR result and must never
 invoke the injected executor.
 
@@ -14,7 +14,7 @@ from unittest import mock
 
 class ExplicitExecutorPolicyCheckExceptionFailClosedTests(unittest.TestCase):
     def test_policy_check_exception_blocks_executor(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall, ToolResult
@@ -33,11 +33,11 @@ class ExplicitExecutorPolicyCheckExceptionFailClosedTests(unittest.TestCase):
             def handles(self, name: str) -> bool:
                 return True
 
-            def _policy_check(self, call):
+            def check_policy(self, call):
                 raise RuntimeError("policy store boom")
 
         with mock.patch(
-            "codey.operations.kernel_execution._build_delegate",
+            "codey.operations.kernel.kernel_execution._build_delegate",
             return_value=_ExplodingDelegate(),
         ):
             results = ke.execute_turn(

@@ -4,8 +4,8 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 
-from codey.research.ledger_receipts import source_observation
 from codey.research.receipt_types import SourceSearchObservation
+from codey.research.source_observation import source_observation
 from codey.research.source_search import SourceSearchHit, render_results
 from codey.runtime.core.execution_record import HitTarget
 

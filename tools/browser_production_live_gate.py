@@ -29,9 +29,10 @@ if __package__ in (None, ""):
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.automation.browser_session import BrowserSession, BrowserToolOutput
 from codey.env_names import NATIVE_TOOLS_ENV
-from codey.operations import kernel_protocol
-from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
+from codey.operations import turn_snapshot
+from codey.operations.kernel.kernel_protocol import TurnSnapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
+from codey.operations.turn_snapshot import KernelSessionView
 from codey.policies.browser_requirement import require_browser_research_sequence
 from codey.policies.tool_requirement import (
     parse_tool_success_check,
@@ -187,7 +188,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
     version_check_reached = False
     result_file: Path | None = None
     project: Path | None = None
-    build_snapshot = kernel_protocol.build_turn_snapshot
+    build_snapshot = turn_snapshot.build_turn_snapshot
 
     def restored_snapshot(session: KernelSessionView, *, native: bool = False) -> TurnSnapshot:
         nonlocal snapshot_count
@@ -376,11 +377,11 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             stack.enter_context(patch.dict(os.environ, dict[str, str]([(NATIVE_TOOLS_ENV, "1")])))
             stack.enter_context(patch("codey.app.provider_services.provider_availability", return_value=dict[str, bool](local=True)))
             if recording.fixed_acquisition:
-                from codey.operations.kernel_context import KernelContext
+                from codey.operations.kernel.kernel_context import KernelContext
 
                 stack.enter_context(patch.object(KernelContext, "prefetch_required_sources", return_value=False))
             if restore_snapshots:
-                stack.enter_context(patch.object(kernel_protocol, "build_turn_snapshot", restored_snapshot))
+                stack.enter_context(patch.object(turn_snapshot, "build_turn_snapshot", restored_snapshot))
             if stale_edit:
                 stack.enter_context(patch.object(tool_runtime, "_write_text_after_final_path_check", inject_before_version_check))
             if inject_stale_ref:

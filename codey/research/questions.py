@@ -5,16 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 from codey.policies.task_policy import TaskPolicy
+from codey.research.tool_names import INVESTIGATION_TOOLS
 from codey.types.json_value import ToolArgs
 from codey.utils.research_coverage import CoverageRow, coverage_rows
 
 if TYPE_CHECKING:
     from codey.research.ledger import ResearchLedger
-
-
-INVESTIGATION_TOOLS = frozenset({"web_search", "open_url", "open_result", "reopen_source", "open_hit",
-                                 "source_search", "knowledge_search", "knowledge_read"})
-QUESTION_BOUND_TOOLS = INVESTIGATION_TOOLS | {"save_finding", "save_inference"}
 
 
 def is_investigation_tool(name: str) -> bool:

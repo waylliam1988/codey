@@ -13,7 +13,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from codey.durable.model import thaw_json
-from codey.operations.kernel_context import KernelContext
+from codey.operations.kernel.kernel_context import KernelContext
 from codey.operations.kernel_contracts import KernelDecision, KernelResult, KernelRunRequest, result_from_payload
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.prepared_provider_request import PreparedProviderRequest
@@ -235,8 +235,8 @@ def _execute_provider(sink: KernelEffectSink, provider: ProviderTransport, inten
 
 def drive_kernel(session: TaskSession, request: KernelRunRequest) -> KernelResult:
     """Run normal work and restart work through one operation decision loop."""
+    from codey.operations.kernel.kernel_context import KernelContext
     from codey.operations.kernel_actions import _provider_failure
-    from codey.operations.kernel_context import KernelContext
     from codey.operations.kernel_contracts import KernelResult
     from codey.runtime.core import operation_reducer as rules
 

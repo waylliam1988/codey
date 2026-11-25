@@ -16,8 +16,8 @@ from codey.automation.browser_receipts import (
     page_effect_possible,
     wait_matched_on_page,
 )
-from codey.operations.browser_completion import post_wait_passages
-from codey.operations.browser_followups import UNCERTAIN, click_followup_plan, pending_click
+from codey.operations.browser.browser_completion import post_wait_passages
+from codey.operations.browser.browser_followups import UNCERTAIN, click_followup_plan, pending_click
 from codey.policies.browser_requirement import BrowserResearchSequence, parse_browser_requirement
 from codey.policies.tool_requirement import ToolSuccessRequirement, argument_digest, parse_tool_success_check
 from codey.research.browser_result_evidence import complete_page_passages

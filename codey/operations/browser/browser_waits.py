@@ -6,12 +6,15 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from codey.policies.tool_requirement import argument_digest, parse_tool_success_check
-from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, thaw_schema_value, validate_args_against_spec
+from codey.runtime.core.models import ToolCall
+from codey.toolchain.spec_model import thaw_schema_value
+from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, validate_args_against_spec
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession
     from codey.operations.task_session import TaskSession
+    from codey.runtime.core.execution_record import ExecutionRecord
     from codey.runtime.core.models import ToolResult
     from codey.storage.managed_outputs import ManagedOutputStore
 
@@ -128,7 +131,7 @@ def _snapshot_baseline(session: TaskSession, result_ref: str) -> tuple[JsonObjec
 
 
 def snapshot_wait_baseline(session: TaskSession, result_ref: str, condition: str) -> tuple[JsonValue, JsonObject]:
-    from codey.operations.browser_references import BrowserReferences
+    from codey.operations.browser.browser_references import BrowserReferences
 
     value, document = _snapshot_baseline(session, result_ref)
     if condition == "controls_changed":
@@ -177,6 +180,41 @@ def restore_wait_snapshot(session: TaskSession, durable: DurableSession, *, owne
 class BrowserWaitPlan:
     waits: tuple[JsonObject, ...]
     missing: tuple[JsonObject, ...]
+
+
+class InvalidBrowserWait(ValueError):
+    def __init__(self, call: ToolCall, message: str) -> None:
+        super().__init__(message)
+        self.call = call
+
+
+def prepare_browser_waits(
+    calls: list[ToolCall], *,
+    specs: Mapping[str, ToolSpec] | None,
+    executed: Mapping[str, ExecutionRecord],
+    observed: Mapping[str, ToolResult],
+    delivered: Mapping[str, ToolResult] | None,
+    run_scope: str, turn: int, index_base: int,
+) -> list[ToolCall]:
+    from codey.automation.browser_receipts import browser_click_stage, query_document
+    from codey.operations.task_session import turn_effect_id
+
+    prepared: list[ToolCall] = []
+    for offset, call in enumerate(calls):
+        if call.name == "browser_wait":
+            spec = specs.get(call.name) if specs is not None else None
+            try:
+                stage = browser_click_stage(executed, observed, query_document(observed))
+                identity = turn_effect_id(run_scope, turn, index_base + offset)
+                receipt = (delivered or {}).get(identity) or observed.get(identity)
+                original = receipt.call.args if receipt is not None and receipt.call.name == call.name else None
+                args = complete_wait_args(call.args, dict(spec.parameters).get("timeout_ms") if spec else None,
+                                          stage=stage, original=original)
+            except ValueError as exc:
+                raise InvalidBrowserWait(call, str(exc)) from exc
+            call = replace(call, args=args)
+        prepared.append(call)
+    return prepared
 
 
 def complete_wait_args(args: JsonObject, timeout_schema: object = None, *, stage: int = 0,

@@ -61,7 +61,7 @@ class DurableSinkSingleSettlementFailClosedTests(unittest.TestCase):
 
     def test_execute_turn_with_durable_sink_settles_once(self) -> None:
         from codey.durable import DurableSession
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_effects import KernelEffectSink
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.policies.task_policy import TaskPolicy

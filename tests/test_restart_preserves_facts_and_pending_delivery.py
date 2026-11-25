@@ -19,8 +19,8 @@ from tests.test_session_log_receipt_recovery_preserves_facts import (
 
 def _send_results(provider, sink):
     from codey.operations.generation_boundary import GenerationBoundaryRequest, durable_generation_boundary_callback
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.runtime.core.operation_payload import LEAF_WRITER_RUNNING
     from codey.runtime.write.checkpoint import RuntimeOperationStore
 

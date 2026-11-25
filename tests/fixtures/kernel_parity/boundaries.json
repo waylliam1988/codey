@@ -33,7 +33,7 @@
     },
     "codey/agents/tool_turn.py": {
       "current_owners": [
-        "codey/operations/kernel_execution.py",
+        "codey/operations/kernel/kernel_execution.py",
         "codey/operations/task_execution.py"
       ],
       "tests": [
@@ -53,7 +53,7 @@
     },
     "codey/protocols/native_openai.py": {
       "current_owners": [
-        "codey/operations/kernel_protocol.py",
+        "codey/operations/kernel/kernel_protocol.py",
         "codey/toolchain/tool_spec.py"
       ],
       "tests": [
@@ -63,7 +63,7 @@
     },
     "codey/research/protocols.py": {
       "current_owners": [
-        "codey/operations/kernel_protocol.py",
+        "codey/operations/kernel/kernel_protocol.py",
         "codey/toolchain/tool_spec.py"
       ],
       "tests": [
@@ -83,7 +83,7 @@
     },
     "codey/research/controller.py": {
       "current_owners": [
-        "codey/operations/kernel_protocol.py",
+        "codey/operations/kernel/kernel_protocol.py",
         "codey/operations/task_session.py"
       ],
       "tests": [

@@ -26,10 +26,10 @@ if TYPE_CHECKING:
     from codey.runtime.core.run_result import RunResult
     from codey.workspace.changes import ChangeTracker
 
+from codey.app.task_state import TaskSubmissionState
 from codey.automation.browser_worker import submit as submit_browser_task
 from codey.durable.errors import CommitConflict
 from codey.durable.model import TASK_TERMINAL_STATUSES, TaskStatus, thaw_json
-from codey.operations.task_state import TaskSubmissionState
 from codey.providers.diagnostics import ProviderFailure, capture_provider_failure
 from codey.providers.model_preferences import ModelDisabledError
 from codey.providers.snapshot import capture_provider_selection, provider_snapshot

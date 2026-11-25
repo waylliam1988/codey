@@ -14,7 +14,7 @@ class KernelSettlementFailureFailClosedTests(unittest.TestCase):
     def test_sink_failure_does_not_publish_executed_projection(self) -> None:
         from unittest.mock import Mock
 
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -30,8 +30,8 @@ class KernelSettlementFailureFailClosedTests(unittest.TestCase):
         self.assertEqual(session._memory_results, {})
 
     def test_settlement_failure_raises_settlement_error(self) -> None:
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.kernel_errors import EffectSettlementFailed
-        from codey.operations.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -56,7 +56,7 @@ class KernelSettlementFailureFailClosedTests(unittest.TestCase):
 
     def test_memory_cache_failure_stays_tolerant(self) -> None:
         """Process-local _memory_results is a cache: its failure never blocks."""
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
 

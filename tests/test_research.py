@@ -22,8 +22,9 @@ from codey.automation import browser_worker
 from codey.automation.browser import Session, open_headless_page
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.network import check_fetch_url
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
@@ -63,7 +64,7 @@ def _research_policy() -> TaskPolicy:
 
 def _execute_research_call(tools: ResearchTools, call: ToolCall) -> ToolResult:
     """当前生产执行入口：同一 execute_turn（内存会话，无持久化）。"""
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
 
     session = TaskSession(
@@ -78,8 +79,8 @@ def _execute_research_call(tools: ResearchTools, call: ToolCall) -> ToolResult:
 
 def _validate_research_call(call: ToolCall) -> ToolPlan:
     """当前生产校验入口：同一 snapshot 的 normalize_turn。"""
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
 
     session = TaskSession(
         policy=_research_policy(), task_kind="research", max_turns=2, task_text="q",

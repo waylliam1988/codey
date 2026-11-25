@@ -14,13 +14,13 @@ from typing import TYPE_CHECKING
 from codey.operations import kernel_prompt as _prompt
 from codey.operations import kernel_transport as _transport
 from codey.operations.completion_context import CompletionContext, CompletionContextInput
+from codey.operations.kernel.kernel_execution import execute_turn as _execute_turn
 from codey.operations.kernel_contracts import (
     KernelResult,
     KernelTransportDeps,
     StopSignal,
     ToolExecutor,
 )
-from codey.operations.kernel_execution import execute_turn as _execute_turn
 from codey.operations.kernel_trace import record_outbound
 from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
     from codey.durable import DurableStore
     from codey.durable.session import DurableSession
-    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.kernel_protocol import TurnSnapshot
     from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy

@@ -8,11 +8,11 @@ import pytest
 from codey.automation.browser_session import BrowserSession
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.completion_context import CompletionContext
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_handoff import task_handoff
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.research.answer_contract import answer_scope
 from codey.research.answer_report import AnswerReport, compile_answer_report
@@ -49,7 +49,7 @@ def test_controls_purpose_waits_past_loading_text_for_the_actual_next_control(
 def test_control_change_wait_does_not_treat_loading_text_as_a_new_control(
     production_browser: tuple[TaskSession, ResearchTools, BrowserSession],
 ) -> None:
-    from codey.operations.browser_waits import snapshot_wait_baseline
+    from codey.operations.browser.browser_waits import snapshot_wait_baseline
 
     session, _tools, browser = production_browser
     assert browser.navigate(URL).ok
@@ -98,7 +98,7 @@ def test_same_named_controls_swapping_enabled_regions_count_as_a_change(
 def test_truncated_control_sample_cannot_satisfy_a_wait(
     production_browser: tuple[TaskSession, ResearchTools, BrowserSession],
 ) -> None:
-    from codey.operations.browser_waits import snapshot_wait_baseline
+    from codey.operations.browser.browser_waits import snapshot_wait_baseline
 
     session, _tools, browser = production_browser
     assert browser.navigate(URL).ok

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object, encode_transport_value
 
 
 def normalized_doi(value: object) -> str:
@@ -69,6 +69,46 @@ class SourceReadScope:
 
     def bounds(self, text: str) -> tuple[int, int]:
         return (self.start, self.end) if self.start is not None and self.end is not None else (0, len(text))
+
+
+@dataclass(frozen=True)
+class SourceQuality:
+    level: str = "secondary"
+    kind: str = "web"
+    freshness: str = "undated"
+    independent_group: str = ""
+
+    def render(self) -> str:
+        parts = [self.level, self.kind, self.freshness, self.independent_group]
+        return " · ".join(part for part in parts if part)
+
+    def to_dict(self) -> JsonObject:
+        return canonical_json_object(encode_transport_value(self))
+
+
+@dataclass(frozen=True)
+class OpenedSource:
+    requested_url: str
+    final_url: str
+    title: str
+    retrieved_at: str
+    text_hash: str
+    quality: SourceQuality = field(default_factory=SourceQuality)
+    content_kind: str = "html"
+    mime_type: str = ""
+    page_count: int = 0
+    pages_read: tuple[int, ...] = ()
+    truncated: bool = False
+    read_scope: SourceReadScope | None = None
+    publication: PublicationMetadata | None = None
+    pdf_sha256: str = ""
+
+    def to_dict(self) -> JsonObject:
+        data = canonical_json_object(encode_transport_value(self))
+        del data["read_scope"]  # Target text belongs to the durable capture, not the bounded UI payload.
+        data["quality"] = self.quality.to_dict()
+        data["pages_read"] = list(self.pages_read)
+        return data
 
 
 @dataclass(frozen=True)

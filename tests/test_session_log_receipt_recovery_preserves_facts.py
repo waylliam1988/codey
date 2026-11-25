@@ -128,8 +128,8 @@ def _settle_edit_then_runs(project, state, logdir, session_id, run_id, run_audit
     separately via run_task_kernel; here the focus is trusted workspace
     provenance through the real stores + shared restore_task_session.
     """
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel.kernel_execution import execute_turn
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.runtime.core.models import ToolCall, ToolResult
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
 
@@ -197,7 +197,7 @@ def _settle_edit_then_runs(project, state, logdir, session_id, run_id, run_audit
 def _recover_formal(project, state, logdir, session_id, run_id):
     """Reopen stores (restart) then recover via the formal entry path."""
     from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.operations.kernel_context import KernelContext
+    from codey.operations.kernel.kernel_context import KernelContext
     from codey.operations.kernel_contracts import (
         KernelExecutionDeps,
         KernelObservationDeps,

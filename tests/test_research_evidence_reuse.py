@@ -2,9 +2,9 @@
 
 import pytest
 
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_execution import ExecutionDelegate
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.research.answer_context import answer_context
 from codey.research.answer_contract import answer_scope, submit_answer
@@ -29,7 +29,7 @@ def test_multiple_questions_reuse_pinned_original_without_fetch_or_adopting_clai
         assert TEXT in text and session.task_text in text
         args = {"state": "answered", "markdown": "Only one writer at a time [e1]. Readers and a writer may overlap [e1]."}
         result, ok, _ = ExecutionDelegate(session=session, research_tools=tools,
-            research_scope=frozen.research_scope)._execute_research(ToolCall("submit_research_answer", args))
+            research_scope=frozen.research_scope).research_executor._execute_research(ToolCall("submit_research_answer", args))
         assert ok, result.model_text
         session._memory_results["submit"] = result
         report = compile_answer_report(session, tools.ledger, store, project="", session_id="first")

@@ -19,7 +19,7 @@ from codey.operations.kernel_contracts import (
     KernelRunRequest,
     KernelTransportDeps,
 )
-from codey.operations.project_delivery import documented_verification_paths, observed_delivery_links
+from codey.operations.project.project_delivery import documented_verification_paths, observed_delivery_links
 from codey.operations.provider_session import adapt_provider
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_loop import run_task_kernel
@@ -147,7 +147,7 @@ def test_patch_cold_restart_preserves_settled_write_and_original_baseline(
 
 
 def test_cold_restart_recovers_the_original_project_documentation(tmp_path: Path) -> None:
-    from codey.operations.project_delivery import declared_project_checks
+    from codey.operations.project.project_delivery import declared_project_checks
 
     class Crash(BaseException):
         pass

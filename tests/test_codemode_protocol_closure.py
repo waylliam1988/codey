@@ -13,9 +13,11 @@ from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.replay import DurableCodeModeReplay
 from codey.codemode.runtime import CodeModeRequest, CodeModeSession, NodeWorkerRuntime
 from codey.codemode.state import DurableCodeModeState
-from codey.codemode.types import CodeModeLimits, DeliveryReference, ToolCatalogEntry
+from codey.codemode.types import DeliveryReference, ToolCatalogEntry
 from codey.durable import DurableSession, SQLiteDurableStore
+from codey.operations.browser.turn_surface import offer_browser_tools
 from codey.operations.generation_boundary import durable_generation_boundary_callback
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.kernel_contracts import (
     KernelExecutionDeps,
     KernelObservationDeps,
@@ -23,13 +25,13 @@ from codey.operations.kernel_contracts import (
     KernelTransportDeps,
     ToolExecutor,
 )
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot, offer_browser_tools
 from codey.operations.provider_session import adapt_provider
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_loop import run_task_kernel
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
+from codey.protocols.codemode import CodeModeLimits
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.write.mutation_line import RuntimeMutationLine

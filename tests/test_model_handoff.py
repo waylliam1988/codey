@@ -9,11 +9,11 @@ import pytest
 from codey.app import task_submit
 from codey.app.context import AppContext
 from codey.app.headless_runner import HeadlessRequest, run_headless
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.model_handoff import authorize_model_handoff, render_model_handoff
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
 from codey.operations.tool_result_reader import ReceiptReader, read_tool_result
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.snapshot import provider_snapshot
 from codey.runtime.core.api_selection import ApiRunSelection

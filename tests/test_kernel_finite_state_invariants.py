@@ -10,8 +10,8 @@ from collections.abc import Callable
 from functools import partial
 from itertools import product
 
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.capabilities import KNOWN_TASK_GRANTS
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import tools_from_specs

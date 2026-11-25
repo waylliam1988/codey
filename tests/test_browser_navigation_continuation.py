@@ -9,25 +9,20 @@ from codey.automation.browser_contracts import BrowserToolOutput, RouteDecision
 from codey.automation.browser_session import BrowserSession
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.knowledge.model import canonical_json
-from codey.operations.browser_task_handoff import (
+from codey.operations.browser.browser_task_handoff import (
     bind_browser_references,
     browser_observation_handoff,
     browser_task_handoff,
 )
+from codey.operations.browser.turn_surface import offer_browser_call
 from codey.operations.completion_context import CompletionContext
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import TurnSnapshot, normalize_turn
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.kernel_protocol import (
-    InputContractVersion,
-    TurnSnapshot,
-    build_turn_snapshot,
-    normalize_turn,
-    offer_browser_call,
-    refresh_snapshot_contract,
-)
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_handoff import task_handoff
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
@@ -52,7 +47,7 @@ def offered() -> tuple[TaskSession, TurnSnapshot]:
 
 
 @pytest.mark.parametrize("native", [False, True])
-def test_navigation_freezes_observation_followup_without_changing_historical_requests(native: bool) -> None:
+def test_navigation_freezes_observation_followup_on_restore(native: bool) -> None:
     _session, snapshot = offered()
     reply = (AssistantTurn(tool_calls=(ProviderToolCall("navigate", "browser_navigate", {"target": "task"}),))
              if native else decode_text_turn('{"tool":"browser_navigate","args":{"target":"task"}}'))
@@ -61,13 +56,6 @@ def test_navigation_freezes_observation_followup_without_changing_historical_req
     assert not plan.protocol_error
     assert "tools.browser_snapshot" in require_json_string(plan.calls[0].args["code"], "code")
     assert "automatically" in next(spec.description for spec in restored.model_specs if spec.name == "browser_navigate")
-    legacy_versions: tuple[InputContractVersion, ...] = (12, 13)
-    for version in legacy_versions:
-        legacy = refresh_snapshot_contract(replace(snapshot, input_contract_version=version))
-        legacy = restore_snapshot(snapshot_description(legacy))
-        old = normalize_turn(reply, snapshot=legacy)
-        assert not old.protocol_error
-        assert "tools.browser_snapshot" not in require_json_string(old.calls[0].args["code"], "code")
 
 
 def test_navigation_does_not_request_an_unauthorized_observation() -> None:

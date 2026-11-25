@@ -4,12 +4,13 @@ from __future__ import annotations
 import pytest
 
 from codey.automation.browser_session import BrowserSession
-from codey.operations.browser_task_handoff import browser_task_handoff
+from codey.operations.browser.browser_task_handoff import browser_task_handoff
+from codey.operations.browser.turn_surface import offer_browser_tools
 from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.kernel_protocol import build_turn_snapshot, offer_browser_tools
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string

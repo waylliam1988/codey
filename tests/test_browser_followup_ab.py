@@ -9,11 +9,14 @@ from pathlib import Path
 import pytest
 
 from codey.automation.browser_session import BrowserSession
-from codey.operations import kernel_protocol
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn, refresh_snapshot_contract
+from codey.operations import turn_snapshot
+from codey.operations.browser.execution import BrowserExecutor
+from codey.operations.kernel import kernel_protocol
+from codey.operations.kernel.kernel_protocol import normalize_turn, refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
@@ -73,7 +76,7 @@ def test_followups_do_not_bypass_authorization_or_bound_inputs(guard: str) -> No
 def test_failed_original_admission_is_never_lowered(tmp_path: Path) -> None:
     session = TaskSession(TaskPolicy(GRANTS), task_kind="chat")
     with ab.intervention(tmp_path, ab.VARIANTS["combined"]):
-        snapshot = kernel_protocol.build_turn_snapshot(session)
+        snapshot = turn_snapshot.build_turn_snapshot(session)
         denied = kernel_protocol.normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall(
             "bad", "browser_fill", {"ref": "x"}),)), snapshot=snapshot)
         assert denied.protocol_error and not denied.calls
@@ -145,7 +148,7 @@ def test_full_headless_preserves_values_effect_counts_and_formal_evidence(
 def test_web_source_does_not_become_knowledge_object_with_guidance(tmp_path: Path) -> None:
     session = TaskSession(TaskPolicy(GRANTS), task_kind="chat")
     with ab.intervention(tmp_path, ab.VARIANTS["reference_guidance"]):
-        snapshot = kernel_protocol.build_turn_snapshot(session)
+        snapshot = turn_snapshot.build_turn_snapshot(session)
         reply = AssistantTurn(tool_calls=(ProviderToolCall("bad-knowledge", "done", {
             "summary": "已读取网页 [s1]", "knowledge_refs": [{"id": "s1", "revision": 1}]}),))
         plan = kernel_protocol.normalize_turn(reply, snapshot=snapshot)
@@ -169,7 +172,7 @@ def test_failed_followup_preserves_committed_action_and_does_not_replay(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str,
 ) -> None:
     directory = tmp_path / failure
-    original = ExecutionDelegate._execute_browser_operation
+    original = BrowserExecutor.execute_operation
     snapshots = 0
 
     def browser(delegate: ExecutionDelegate, resource: BrowserSession, call: ToolCall, *, turn: int,
@@ -193,7 +196,7 @@ def test_failed_followup_preserves_committed_action_and_does_not_replay(
         yield {"tool": "done", "args": {"summary": "尚未取得完整结果。"}}
 
     install_http(monkeypatch, proposals())
-    monkeypatch.setattr(ExecutionDelegate, "_execute_browser_operation", browser)
+    monkeypatch.setattr(BrowserExecutor, "execute_operation", browser)
     row = ab.run_variant(directory, base.CASES["click" if failure == "read" else "quoted"], "combined",
                          Target("http://scripted.test/v1", "fixture", 1, 10), max_turns=3)
     assert not row["passed"]

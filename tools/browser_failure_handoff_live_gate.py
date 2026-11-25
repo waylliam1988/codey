@@ -13,8 +13,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from unittest.mock import patch
 
-from codey.operations.kernel_context import KernelContext
-from codey.operations.kernel_protocol import TurnSnapshot, normalize_turn
+from codey.operations.kernel.kernel_context import KernelContext
+from codey.operations.kernel.kernel_protocol import TurnSnapshot, normalize_turn
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import ProviderToolDefinition
 from codey.runtime.core.models import ToolResult

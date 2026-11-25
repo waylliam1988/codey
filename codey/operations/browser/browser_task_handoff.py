@@ -16,7 +16,7 @@ from codey.automation.browser_receipts import (
 from codey.codemode.catalog import snapshot_catalog
 from codey.codemode.json_edit import edit_guidance
 from codey.completion.contract import CHECK_NOT_APPLICABLE, CHECK_PASS
-from codey.operations.browser_followups import (
+from codey.operations.browser.browser_followups import (
     DIRECT_TOOLS,
     click_followup_plan,
     codemode_only,
@@ -26,18 +26,15 @@ from codey.operations.browser_followups import (
     unconfirmed_clicks,
     waits_for_next_control,
 )
-from codey.operations.browser_next_step import BrowserNextStep, next_browser_step
-from codey.operations.browser_references import BrowserReferences
-from codey.operations.browser_text_report import MetadataPending, observe_metadata, report_scope
+from codey.operations.browser.browser_next_step import BrowserNextStep, next_browser_step
+from codey.operations.browser.browser_references import BrowserReferences
+from codey.operations.browser.browser_text_report import MetadataPending, observe_metadata, report_scope
+from codey.operations.browser.turn_surface import offer_browser_call
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import tool_facts
-from codey.operations.kernel_protocol import (
-    TurnSnapshot,
-    _task_navigation_url,
-    offer_browser_call,
-    refresh_snapshot_contract,
-)
+from codey.operations.kernel.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import _task_navigation_url
 from codey.operations.work_status import WorkStatus, work_status
 from codey.policies.browser_requirement import BrowserPageRounds, parse_browser_requirement
 from codey.policies.requirement import RequirementEvaluation
@@ -57,7 +54,7 @@ from codey.types.json_value import JsonObject, JsonValue, decode_json_object, pa
 
 def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall | None:
     """Materialize explicit navigation to one authorized task URL before interaction."""
-    from codey.operations.browser_linked_record import requested_linked_record
+    from codey.operations.browser.browser_linked_record import requested_linked_record
 
     research = session.policy.strict_research and snapshot.research_scope is not None
     # Repeated page rounds own their transitions. A single explicitly required
@@ -112,7 +109,7 @@ def handoff_call(session: TaskSession, snapshot: TurnSnapshot,
     only = codemode_only(session.task_text)
     if not only:
         snapshot = offer_browser_call(snapshot, session, call.name, research=snapshot.research_scope is not None)
-    bound_navigation = (call.name == "browser_navigate" and snapshot.task_navigation_selector
+    bound_navigation = (call.name == "browser_navigate"
                         and snapshot.task_navigation_url is not None)
     if bound_navigation and call.args == {"url": snapshot.task_navigation_url}:
         call = replace(call, args={"target": "task"})
@@ -431,7 +428,7 @@ def _record_controls(value: JsonObject) -> list[str]:
 
 
 def linked_record_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext) -> tuple[TurnSnapshot, str]:
-    from codey.operations.browser_linked_record import linked_record_progress, requested_linked_record
+    from codey.operations.browser.browser_linked_record import linked_record_progress, requested_linked_record
 
     request = requested_linked_record(session)
     if request is None or snapshot.input_binding is not None or snapshot.browser_copy is not None:
@@ -449,7 +446,7 @@ def linked_record_handoff(session: TaskSession, snapshot: TurnSnapshot, context:
 def _previous_page_observation(session: TaskSession, current_url: JsonValue) -> JsonObject:
     from urllib.parse import urlsplit
 
-    from codey.operations.browser_completion import complete_snapshot_text
+    from codey.operations.browser.browser_completion import complete_snapshot_text
     from codey.task.web_intent import source_url_key
 
     if not isinstance(current_url, str):
@@ -509,7 +506,7 @@ def browser_control_wait_handoff(session: TaskSession, snapshot: TurnSnapshot, c
                                  generation: int | None, *,
                                  next_step: BrowserNextStep | None = None) -> tuple[TurnSnapshot, str]:
     """Offer a read-only continuation when the next control may appear later."""
-    from codey.operations.browser_waits import snapshot_text_baseline, snapshot_wait_baseline
+    from codey.operations.browser.browser_waits import snapshot_text_baseline, snapshot_wait_baseline
 
     document = context.browser_document
     if (next_step is not None or document is None or snapshot.input_binding is not None or snapshot.browser_copy is not None
@@ -696,7 +693,7 @@ def _navigation_handoff(session: TaskSession, snapshot: TurnSnapshot, context: C
     current = _current_snapshot(session, context, generation, require_text=False)
     actions = _action_receipts(session, snapshot, context)
     partial = (_current_snapshot(session, context, generation, require_text=False, allow_partial_controls=True)
-               if snapshot.input_contract_version >= 21 and current is None else current)
+               if current is None else current)
     if (partial is None and navigation.ok and "browser_snapshot" in snapshot.nested_tool_names
             and same_document(navigation.audit.get("browser_document"), context.browser_document)
             and (not actions or tuple(records).index(actions[-1][0]) < tuple(records).index(ref))):
@@ -802,7 +799,7 @@ def browser_continuation_handoff(session: TaskSession, snapshot: TurnSnapshot,
 
 def _project_edit_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                           status: WorkStatus) -> tuple[TurnSnapshot, str]:
-    from codey.operations.declared_field_input import offer
+    from codey.operations.project.declared_field_input import offer
 
     offered, guidance = offer(session, snapshot, context, status)
     if guidance:

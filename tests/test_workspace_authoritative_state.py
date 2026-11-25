@@ -40,7 +40,7 @@ class WorkspaceAuthoritativeStateTests(unittest.TestCase):
     def test_kernel_edit_and_following_run_share_one_store_bump(self) -> None:
         from unittest.mock import patch
 
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall, ToolResult

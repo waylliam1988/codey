@@ -37,8 +37,8 @@ def test_codemode_description_does_not_teach_global_value_field_shapes() -> None
 
 
 def test_aggregated_leaf_keeps_its_original_semantics_in_the_frozen_model_contract() -> None:
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
 
     session = TaskSession(task_kind="hybrid", task_text="Use CodeMode only for project and browser actions.", policy=TaskPolicy(grants=frozenset({

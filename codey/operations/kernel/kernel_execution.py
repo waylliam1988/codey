@@ -18,20 +18,16 @@ from contextlib import ExitStack
 from contextvars import Context, copy_context
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from codey.automation.browser_invocation import invocation_scope
 from codey.durable.session import DurableSession
-from codey.operations.browser_progress import browser_invocation
+from codey.operations.browser.browser_progress import browser_invocation
+from codey.operations.browser.execution import browser_execution_receipt
+from codey.operations.kernel.kernel_protocol import frozen_custom_executor_map, frozen_spec_map
 from codey.operations.kernel_contracts import StopSignal, ToolExecutor
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_facts import bind_source_identity, project_execution_record, project_result_observation
-from codey.operations.kernel_protocol import frozen_custom_executor_map, frozen_spec_map
-from codey.operations.kernel_provenance import (
-    _kernel_workspace_identity_of,
-    _with_trusted_workspace_state,
-    sync_workspace_state_after_edit,
-)
 from codey.operations.kernel_recovery import (
     _batch_aborted_results,
     _batch_recovery_failed_results,
@@ -41,28 +37,33 @@ from codey.operations.kernel_recovery import (
 )
 from codey.operations.kernel_recovery_context import RecoveryContext
 from codey.operations.kernel_result import (
+    PolicyDeniedResult,
     _consistent_tool_result,
     _error_result,
     _normalize_delegate_result,
     _normalize_explicit_result,
-    denied_before_execution,
     policy_denial_result,
     strict_exit_code_or_none,
 )
 from codey.operations.kernel_tool_args import _validate_tool_args
+from codey.operations.project.edit_settlement import (
+    invalidate_workspace_identity,
+    prepare_edit_settlement,
+    recheck_unconfirmed_workspace,
+)
 from codey.operations.task_session import TaskSession, effect_coordinates, turn_effect_id
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.tool_resources import tool_resources_for
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
-from codey.types.json_value import JsonObject, decode_json_object, require_json_string
+from codey.types.json_value import JsonObject, require_json_string
 
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
     from codey.agents.tools import AgentToolFns
     from codey.automation.browser_session import BrowserSession
     from codey.durable import DurableStore
-    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.kernel_protocol import TurnSnapshot
     from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_execution import ProjectPolicyCheck
     from codey.research.answer_contract import AnswerScope
@@ -90,7 +91,7 @@ class ToolDelegate(Protocol):
 
 @runtime_checkable
 class PolicyCheckingDelegate(Protocol):
-    def _policy_check(self, call: ToolCall) -> ProjectPolicyCheck: ...
+    def check_policy(self, call: ToolCall) -> ProjectPolicyCheck: ...
 
 
 class SettleToolResult(Protocol):
@@ -220,7 +221,7 @@ def _explicit_policy_denial(
         return None
     try:
         if isinstance(delegate, PolicyCheckingDelegate):
-            decision = delegate._policy_check(call)
+            decision = delegate.check_policy(call)
             if decision.denied:
                 return (
                     policy_denial_result(call, decision.message, reason_code=decision.reason_code),
@@ -278,12 +279,7 @@ def _run_via_delegate_or_fn(
             turn=active_turn,
             tool_index=tool_index,
         )
-        # Only the production project's guard owns this disposition; custom
-        # and injected executor metadata is normalized without this authority.
-        from codey.operations.task_execution import ExecutionDelegate
-
-        runtime_guard = (type(delegate) is ExecutionDelegate
-                         and name == "run" and denied_before_execution(result))
+        runtime_guard = name == "run" and isinstance(result, PolicyDeniedResult)
         result = _consistent_tool_result(call, result, runtime_guard=runtime_guard)
         result, ok, exit_code = _normalize_delegate_result(name, result, ok, exit_code)
         return result, ok, exit_code
@@ -298,62 +294,16 @@ def execute_tool_operation(
     workspace_ignored_paths: tuple[str, ...] = (),
 ) -> tuple[ToolResult, bool, int | None]:
     """The same business operation and normalization for inline and owned work."""
-    from codey.operations.project_delivery import (
-        PAGE_AFTER_EDIT,
-        ProjectFileBasis,
-        edit_scope_violation,
-        project_file_basis,
-        project_source_binding,
-        project_write_basis,
-    )
-    from codey.toolchain.execution_options import split_execution_options
-    from codey.workspace.revision import WorkspaceIdentity
+    from codey.operations.project.operation_evidence import attach_operation_evidence, prepare_operation
 
-    source_basis = None
-    file_basis: ProjectFileBasis | None = None
-    if call.name == "edit":
-        source_basis, error = project_write_basis(session)
-        if error:
-            return _error_result(call, error), False, None
-    if (call.name == "edit" and project_path is not None and snapshot is not None
-            and isinstance(target := call.args.get("path"), str)):
-        from codey.operations.project_instructions import INSTRUCTION_CHANGE, changed_instruction_target
-
-        try:
-            if violation := edit_scope_violation(project_path, target, session.policy.edit_scope, task=session.task_text):
-                return _error_result(call, violation), False, None
-            if source_basis is not None:
-                file_basis = project_file_basis(session, project_path, target, call.args)
-            changed = changed_instruction_target(project_path, target, snapshot.project_instructions)
-        except (OSError, ValueError) as exc:
-            return _error_result(call, str(exc)), False, None
-        if changed is not None:
-            return replace(_error_result(call, f"Repository instructions for {changed} must be observed before writing."),
-                canonical={INSTRUCTION_CHANGE: [changed]}, audit={"error_code": INSTRUCTION_CHANGE}), False, None
-
-    args, _options = split_execution_options(call.args)
-    if file_basis is not None and file_basis.version and "replacements" in args:
-        expected = file_basis.version.removeprefix("raw:")
-        if args.get("expected_version", expected) != expected:
-            return _error_result(call, "The patch version and selected file receipt disagree."), False, None
-        args = {**args, "expected_version": expected}
-    result, ok, code = _run_via_delegate_or_fn(delegate, runnable, session, replace(call, args=args), call.name,
+    prepared = prepare_operation(session, call, project_path=project_path, snapshot=snapshot)
+    if isinstance(prepared, ToolResult):
+        return prepared, False, None
+    result, ok, code = _run_via_delegate_or_fn(delegate, runnable, session, replace(call, args=prepared.args), call.name,
         active_turn=turn, tool_index=tool_index, project_path=project_path)
-    result = replace(result, call=call)
-    if ok and source_basis is not None and file_basis is not None:
-        result = replace(result, canonical={**result.canonical,
-            "project_source_basis": project_source_binding(source_basis, file_basis)})
-    verify_run = call.name == "run" and code is not None
-    verify_page = call.name == "browser_read" and ok and PAGE_AFTER_EDIT in session.policy.required_checks
-    stable_workspace = True
-    if (verify_run or verify_page) and project_path is not None and workspace_revision_store is not None:
-        after = workspace_revision_store.current_state(project_path, ignored_paths=workspace_ignored_paths if verify_page else ())
-        stable_workspace = (not after.identity_reason and after.revision == session.workspace_revision
-                            and after.fingerprint == session.workspace_fingerprint)
-    if (verify_run or verify_page) and stable_workspace and WorkspaceIdentity.trusted_pair(
-            session.workspace_revision, session.workspace_fingerprint).trusted:
-        result = _with_trusted_workspace_state(result, revision=session.workspace_revision,
-                                              fingerprint=session.workspace_fingerprint)
+    result = attach_operation_evidence(session, call, result, prepared, ok=ok, exit_code=code,
+        project_path=project_path, workspace_revision_store=workspace_revision_store,
+        workspace_ignored_paths=workspace_ignored_paths)
     return result, ok, code
 
 
@@ -395,27 +345,16 @@ def execute_turn(
     """
 
     frozen_specs = frozen_spec_map(snapshot)
-    from codey.automation.browser_receipts import browser_click_stage, query_document
-    from codey.operations.browser_waits import complete_wait_args
+    from codey.operations.browser.browser_waits import InvalidBrowserWait, prepare_browser_waits
 
-    normalized: list[ToolCall] = []
-    wait_turn, wait_base = effect_coordinates(session.turn if turn is None else turn, tool_index_base)
-    wait_scope = f"{run_id}:{effect_scope}" if effect_scope else run_id
-    for offset, call in enumerate(calls):
-        if call.name == "browser_wait":
-            spec = frozen_specs.get(call.name) if frozen_specs is not None else None
-            try:
-                stage = browser_click_stage(session.executed, session._memory_results, query_document(session._memory_results))
-                identity = turn_effect_id(wait_scope or "adhoc", wait_turn, wait_base + offset)
-                receipt = (delivered or {}).get(identity) or session._memory_results.get(identity)
-                original = receipt.call.args if receipt is not None and receipt.call.name == "browser_wait" else None
-                args = complete_wait_args(call.args, dict(spec.parameters).get("timeout_ms") if spec is not None else None,
-                                          stage=stage, original=original)
-            except ValueError as exc:
-                return [_error_result(call, str(exc))]
-            call = replace(call, args=args)
-        normalized.append(call)
-    calls = normalized
+    active_turn, base_index = effect_coordinates(session.turn if turn is None else turn, tool_index_base)
+    run_scope = f"{run_id}:{effect_scope}" if effect_scope else run_id
+    try:
+        calls = prepare_browser_waits(calls, specs=frozen_specs, executed=session.executed,
+            observed=session._memory_results, delivered=delivered,
+            run_scope=run_scope or "adhoc", turn=active_turn, index_base=base_index)
+    except InvalidBrowserWait as exc:
+        return [_error_result(exc.call, str(exc))]
     if snapshot is not None:
         if not snapshot.implementation_compatible:
             return [_error_result(call, "captured tool implementation cannot be verified after restart; call not executed")
@@ -856,7 +795,7 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
                 settle(identity, call, blocked, ok=False)
                 results.append(blocked)
                 continue
-            verification_blocked = _recheck_unconfirmed_workspace(session, call, recovery_ctx, execution_evidence)
+            verification_blocked = recheck_unconfirmed_workspace(session, call, recovery_ctx, execution_evidence)
             if verification_blocked is not None:
                 verification_blocked = replace(verification_blocked, audit={
                     **verification_blocked.audit, "execution_disposition": "denied_before_execution",
@@ -888,36 +827,21 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
                     workspace_revision_store=workspace_revision_store, snapshot=context.snapshot,
                     workspace_ignored_paths=workspace_ignored_paths)
             if call.name.startswith("browser_"):
-                result = _browser_execution_receipt(result, identity, started)
-            # Single settlement per effect: edits defer settlement until the
-            # authoritative bump decides the final result.
-            edit_done = _settle_edit_with_workspace_bump(
-                session, identity, call, name, result, ok,
-                exit_code=exit_code, project_path=project_path,
-                execution_evidence=execution_evidence,
-                workspace_ignored_paths=workspace_ignored_paths,
-                workspace_revision_store=workspace_revision_store,
-                settle=settle, results=results,
+                result = browser_execution_receipt(result, identity, started)
+            edit = prepare_edit_settlement(
+                session, call, result, ok, project_path=project_path, execution_evidence=execution_evidence,
+                workspace_ignored_paths=workspace_ignored_paths, workspace_revision_store=workspace_revision_store,
             )
-            if edit_done is not None:
-                if edit_done == "unconfirmed":
+            if edit is not None:
+                result, unconfirmed = edit
+                settle(identity, call, result, ok=result.ok)
+                if unconfirmed:
                     workspace_unconfirmed = True
+                    invalidate_workspace_identity(session, execution_evidence)
+                results.append(result)
                 continue
             results.append(settle(identity, call, result, ok=ok, exit_code=exit_code))
     return results
-
-
-def _browser_execution_receipt(result: ToolResult, identity: str, started: float) -> ToolResult:
-    workspace_proof = _kernel_workspace_identity_of(result)
-    raw = result.canonical.get("value")
-    delivery = decode_json_object(raw).get("delivery") if isinstance(raw, dict) else None
-    observed = replace(result, audit={**result.audit, "browser_execution": {
-        "effect_ref": identity, "elapsed_ms": int((time.monotonic() - started) * 1000),
-        "phase": "unknown" if delivery == "uncertain" else "finished"}})
-    if workspace_proof is not None:
-        return _with_trusted_workspace_state(observed, revision=workspace_proof.revision,
-                                            fingerprint=workspace_proof.fingerprint)
-    return observed
 
 
 def _automatic_command(context: ToolExecutionContext, call: ToolCall) -> bool:
@@ -949,7 +873,7 @@ def _admit_background(context: ToolExecutionContext, identity: str, call: ToolCa
             resource_binding = browser.capture_wait_binding()
             if call.name == "browser_wait" and call.args.get("condition") in {"text_changed", "controls_changed"}:
                 from codey.automation.browser_document import same_document
-                from codey.operations.browser_waits import snapshot_wait_baseline
+                from codey.operations.browser.browser_waits import snapshot_wait_baseline
 
                 if context.delegate.session is None:
                     raise ValueError("text_changed requires the original task receipts")
@@ -983,101 +907,3 @@ def _admit_background(context: ToolExecutionContext, identity: str, call: ToolCa
 def _structured_executor_result(value: object) -> ToolResult | None:
     """Injected executors are runtime boundaries even when statically annotated."""
     return value if isinstance(value, ToolResult) else None
-
-
-def _recheck_unconfirmed_workspace(
-    session: TaskSession, call: ToolCall, context: RecoveryContext, execution_evidence: ExecutionEvidence | None,
-) -> ToolResult | None:
-    """A fresh complete observation can restore verification, never redo a mutation."""
-    from codey.workspace.revision import WorkspaceIdentity
-
-    if call.name != "run" or context.revision_store is None:
-        return None
-    if WorkspaceIdentity.trusted_pair(session.workspace_revision, session.workspace_fingerprint).trusted:
-        return None
-    state = context.current_state(refresh=True)
-    identity = WorkspaceIdentity.trusted_pair(state.revision, state.fingerprint) if state is not None else WorkspaceIdentity()
-    if not identity.trusted:
-        reason = (state.identity_reason if state is not None else "") or "scan_unavailable"
-        return _error_result(call, f"workspace identity unconfirmed ({reason}); verification was not executed")
-    session.set_workspace_state(identity.revision, identity.fingerprint)
-    if execution_evidence is not None:
-        execution_evidence.set_workspace_state(identity.revision, identity.fingerprint)
-    return None
-
-
-def _settle_edit_with_workspace_bump(
-    session: TaskSession,
-    identity: str,
-    call: ToolCall,
-    name: str,
-    result: ToolResult,
-    ok: bool,
-    *,
-    exit_code: int | None,
-    project_path: Path | None,
-    execution_evidence: ExecutionEvidence | None,
-    workspace_ignored_paths: tuple[str, ...],
-    workspace_revision_store: WorkspaceRevisionStore | None,
-    settle: SettleToolResult,
-    results: list[ToolResult],
-) -> Literal["trusted", "unconfirmed"] | None:
-    """Settle one edit with its authoritative bump; None means not handled."""
-    if name != "edit" or not ok:
-        return None
-    if isinstance(result.audit, dict) and "changed" in result.audit:
-        raw_changed = result.audit.get("changed")
-        if type(raw_changed) is not bool:
-            return _settle_unconfirmed_edit(session, identity, call, "edit result changed flag must be a boolean",
-                                             execution_evidence=execution_evidence, settle=settle, results=results)
-        changed = raw_changed
-    else:
-        changed = True
-    if not changed:
-        return None
-    try:
-        rev, fp = sync_workspace_state_after_edit(
-            session,
-            project_path,
-            execution_evidence,
-            ignored_paths=workspace_ignored_paths,
-            revision_store=workspace_revision_store,
-        )
-    except Exception as exc:
-        from codey.workspace.revision import WorkspaceScanError
-
-        reason = exc.reason if isinstance(exc, WorkspaceScanError) else "identity_settlement_failed"
-        return _settle_unconfirmed_edit(session, identity, call, reason,
-                                         execution_evidence=execution_evidence, settle=settle, results=results)
-    if rev and fp:
-        try:
-            trusted = _with_trusted_workspace_state(result, revision=rev, fingerprint=fp)
-        except Exception:
-            return _settle_unconfirmed_edit(session, identity, call, "provenance attach failed",
-                                             execution_evidence=execution_evidence, settle=settle, results=results)
-        settle(identity, call, trusted, ok=True)
-        results.append(trusted)
-        return "trusted"
-    return _settle_unconfirmed_edit(session, identity, call, "revision_store_missing" if workspace_revision_store is None else "identity_invalid",
-                                     execution_evidence=execution_evidence, settle=settle, results=results)
-
-
-def _settle_unconfirmed_edit(session: TaskSession, identity: str, call: ToolCall, reason: str,
-                             *, execution_evidence: ExecutionEvidence | None, settle: SettleToolResult,
-                             results: list[ToolResult]) -> Literal["unconfirmed"]:
-    """Persist an uncertain mutation once and invalidate its live identity."""
-    failed = _error_result(
-        call,
-        f"edit happened but workspace identity unconfirmed ({reason}); "
-        "re-check workspace before verifying, do not re-apply the edit",
-    )
-    failed = ToolResult(ok=failed.ok, call=call, model_text=failed.model_text,
-                        audit={**failed.audit, "changed": True, "mutation_applied": True},
-                        canonical={"workspace_unconfirmed": True, "mutation_applied": True,
-                                   "identity_status": "unconfirmed", "identity_reason": reason})
-    settle(identity, call, failed, ok=False)
-    session.set_workspace_state(0, "")
-    if execution_evidence is not None:
-        execution_evidence.set_workspace_state(0, "")
-    results.append(failed)
-    return "unconfirmed"

@@ -32,7 +32,7 @@ class KernelRecoveredResultAndTrustedAttachFailClosedTests(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.workspace.revision import WorkspaceRevisionStore
@@ -59,7 +59,7 @@ class KernelRecoveredResultAndTrustedAttachFailClosedTests(unittest.TestCase):
                 "codey.operations.kernel_provenance._with_trusted_workspace_state",
                 side_effect=RuntimeError("attach boom"),
             ), mock.patch(
-                "codey.operations.kernel_execution._with_trusted_workspace_state",
+                "codey.operations.kernel.kernel_execution._with_trusted_workspace_state",
                 side_effect=RuntimeError("attach boom"),
             ):
                 results = ke.execute_turn(

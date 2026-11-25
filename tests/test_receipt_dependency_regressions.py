@@ -10,13 +10,14 @@ import pytest
 from codey.automation.browser_receipts import ordered_browser_progress
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.completion.verification_policy import VerificationCandidate
-from codey.operations.browser_completion import post_wait_passages
-from codey.operations.browser_next_step import next_browser_step
-from codey.operations.browser_task_handoff import browser_task_handoff
+from codey.operations.browser.browser_completion import post_wait_passages
+from codey.operations.browser.browser_next_step import next_browser_step
+from codey.operations.browser.browser_task_handoff import browser_task_handoff
 from codey.operations.completion_gate import evaluate
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.browser_requirement import BrowserResearchSequence
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import parse_tool_success_check, require_tool_success
@@ -41,7 +42,8 @@ def test_real_5796b29d_snapshot_is_preserved_but_rejected_by_current_runtime() -
 
 @pytest.mark.parametrize("version", [1, 2, 3, 4])
 def test_control_presentation_versions_are_explicit_and_tampering_cannot_select_another_contract(version: Literal[1, 2, 3, 4]) -> None:
-    from codey.operations.kernel_protocol import offer_browser_tools, refresh_snapshot_contract
+    from codey.operations.browser.turn_surface import offer_browser_tools
+    from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
     from tests.test_browser_result_adoption_ab import session_with_snapshot
 
     session = session_with_snapshot()
@@ -61,7 +63,8 @@ def test_control_presentation_versions_are_explicit_and_tampering_cannot_select_
 
 
 def test_unversioned_d379cc63_control_presentation_restores_as_choices() -> None:
-    from codey.operations.kernel_protocol import offer_browser_tools, refresh_snapshot_contract
+    from codey.operations.browser.turn_surface import offer_browser_tools
+    from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
     from tests.test_browser_result_adoption_ab import session_with_snapshot
 
     session = session_with_snapshot()

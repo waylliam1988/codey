@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from codey.durable.model import thaw_json
 from codey.operations import kernel_prompt
-from codey.operations.browser_followups import unconfirmed_clicks
+from codey.operations.browser.browser_followups import unconfirmed_clicks
 from codey.operations.completion_output import OutputBindingError, prepare_completion_output
 from codey.operations.kernel_contracts import (
     ClosingDecision,
@@ -32,8 +32,8 @@ from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.types.json_value import canonical_json_object, decode_json_object, require_json_integer, require_json_string
 
 if TYPE_CHECKING:
-    from codey.operations.kernel_context import KernelContext
-    from codey.operations.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
+    from codey.operations.kernel.kernel_context import KernelContext
+    from codey.operations.kernel.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
     from codey.operations.task_session import TaskSession
 
 
@@ -85,8 +85,8 @@ def validate_decision(payload: object, *, schema_version: object = 2) -> KernelD
 
 
 def evaluate_completion(context: KernelContext, state: RuntimeOperationState) -> None:
-    from codey.operations.browser_text_report import report_scope
-    from codey.operations.browser_upload import upload_completion_scope
+    from codey.operations.browser.browser_text_report import report_scope
+    from codey.operations.browser.browser_upload import upload_completion_scope
     from codey.operations.completion_gate import evaluate
     from codey.operations.project_verification import refresh_verification_candidates
 
@@ -137,7 +137,7 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
             if declared_plan is not None and context.completion_context.selected_check is None
                 and context.session.selected_verification is None else context.completion_context)
         checks = context.session.policy.required_checks
-        from codey.operations.project_delivery import PAGE_AFTER_EDIT
+        from codey.operations.project.project_delivery import PAGE_AFTER_EDIT
 
         if (upload_completion_scope(context.session) is not None or report_scope(context.session) is not None or has_browser_field_bindings(checks)
                 or PAGE_AFTER_EDIT in checks
@@ -220,13 +220,13 @@ def no_progress_result(session: TaskSession, turn: int) -> KernelResult:
 
 def _retry_snapshot(context: KernelContext, received: ReceivedProviderTurn, *, text_reply: bool,
                     error: str) -> tuple[TurnSnapshot, str | None]:
-    from codey.operations.edit_base import (
+    from codey.operations.kernel_preparation import capture_turn_snapshot
+    from codey.operations.project.edit_base import (
         bound_symbol_retry,
         compact_symbol_retry,
         is_compact_symbol_retry,
         symbol_retry_source,
     )
-    from codey.operations.kernel_preparation import capture_turn_snapshot
     from codey.operations.research_submission_handoff import SUBMISSION_TOOLS
 
     snapshot = received.snapshot
@@ -256,7 +256,7 @@ def _retry_snapshot(context: KernelContext, received: ReceivedProviderTurn, *, t
 
 def _retry_prompt(context: KernelContext, snapshot: TurnSnapshot, decision: RetryDecision, *,
                   text_reply: bool) -> tuple[str, TaskPromptSpan | None]:
-    from codey.operations.edit_base import bound_symbol_retry
+    from codey.operations.project.edit_base import bound_symbol_retry
 
     task = str(context.transport.user_task or context.session.task_text).strip()
     if bound_symbol_retry(snapshot) is not None:
@@ -335,7 +335,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         if context.observation.on_event is None:
             raise ValueError("user questions require an event surface")
         task = context.durable.task(context.sink.run_id)
-        from codey.operations.browser_resources import capture_assistance_binding
+        from codey.operations.browser.browser_resources import capture_assistance_binding
 
         assistance = capture_assistance_binding(context.execution.browser_session, context.session._memory_results)
         request: Callable[[str, str, str, object, dict[str, object]], object] = DurableUserQuestionStore(context.durable).request

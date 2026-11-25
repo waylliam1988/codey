@@ -12,10 +12,10 @@ import pytest
 
 from codey.durable import DurableSession
 from codey.durable.model import CommitResult, DurableMutation, thaw_json
-from codey.operations.kernel_context import KernelContext
+from codey.operations.kernel.kernel_context import KernelContext
+from codey.operations.kernel.kernel_driver import load_prepared_request
 from codey.operations.kernel_contracts import KernelResult, KernelRunRequest
 from codey.operations.kernel_control import validate_decision
-from codey.operations.kernel_driver import load_prepared_request
 from codey.operations.prepared_provider_request import PreparedProviderRequest
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_loop import run_task_kernel

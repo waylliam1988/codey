@@ -9,8 +9,8 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -21,7 +21,10 @@ from codey.completion.verification_policy import discover_verification_candidate
 from codey.operations.task_context import ProjectTaskContextBuilder
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import controls
+from codey.providers.api_provider import ApiProvider
 from codey.providers.registry import connect_provider
+from codey.providers.token_accounting import ApiExchangeUsage
+from codey.types.json_value import JsonObject, parse_json_object
 from codey.workspace.change_brief import new_project_change_brief, project_audit_change_brief
 from codey.workspace.revision import WorkspaceRevisionStore
 from tests.manual.coding_current_context_ab import CountingProvider, _changed_files
@@ -33,7 +36,7 @@ ARMS = ("baseline", "map", "context", "combined", "plan", "audit")
 
 def source_metadata():
     root = Path(__file__).resolve().parents[2]
-    paths = ("codey/operations/kernel_context.py", "codey/operations/completion_gate.py", "codey/operations/knowledge_context.py",
+    paths = ("codey/operations/kernel/kernel_context.py", "codey/operations/completion_gate.py", "codey/operations/knowledge_context.py",
              "codey/completion/verification_policy.py", "tests/manual/coding_pipeline_value_ab.py",
              "tests/manual/coding_pipeline_cases.py", "tests/manual/coding_memory_value_ab.py",
              "tests/manual/coding_review_value_ab.py")
@@ -44,51 +47,48 @@ def source_metadata():
 class EvidenceProvider(CountingProvider):
     """Preserve native capabilities and observe actual HTTP payloads/usage."""
 
-    def __init__(self, provider, *, timeout=600):
+    def __init__(self, provider: ApiProvider, *, timeout: float = 600) -> None:
         super().__init__(provider, timeout=timeout, new_chat_timeout=60)
-        self.wire: list[dict[str, Any]] = []
-        self.usage: list[dict[str, Any]] = []
-        self.requests: list[dict[str, Any]] = []
+        self.wire: list[JsonObject] = []
+        self.usage: list[ApiExchangeUsage] = []
+        self.requests: list[JsonObject] = []
         original = provider._observe_http_attempt
 
-        def observe(**kwargs):
-            original(**kwargs)
-            data = kwargs["data"]
-            row = {key: value for key, value in kwargs.items() if key != "data"}
-            row["sha256"] = hashlib.sha256(data).hexdigest()
-            row["bytes"] = len(data)
-            self.wire.append(row)
-            if row["phase"] == "request":
-                self.requests.append(json.loads(data))
+        def observe(*, attempt: int, data: bytes, phase: str, response_bytes: int, seconds: float) -> None:
+            original(attempt=attempt, data=data, phase=phase, response_bytes=response_bytes, seconds=seconds)
+            self.wire.append({"attempt": attempt, "phase": phase, "response_bytes": response_bytes, "seconds": seconds,
+                              "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)})
+            if phase == "request":
+                self.requests.append(parse_json_object(data.decode("utf-8")))
 
         provider._observe_http_attempt = observe
         self.bind_usage("local", lambda _record: None)
 
-    def bind_usage(self, connection_id, sink):
-        def record(item):
-            self.usage.append(item.to_payload())
+    def bind_usage(self, connection_id: str, sink: Callable[[ApiExchangeUsage], None]) -> None:
+        def record(item: ApiExchangeUsage) -> None:
+            self.usage.append(item)
             sink(item)
         self.provider.bind_usage(connection_id, record)
 
-    def mark(self):
+    def mark(self) -> tuple[int, int, int, int, int]:
         return len(self.prompts), len(self.replies), len(self.wire), len(self.usage), len(self.requests)
 
-    def evidence(self, mark):
+    def evidence(self, mark: tuple[int, int, int, int, int]) -> dict[str, object]:
         prompt, reply, wire, usage, request = mark
         records = self.usage[usage:]
-        def total_known(key):
-            values = [row["usage"].get(key) for row in records]
-            return sum(values) if values and all(isinstance(value, int) for value in values) else None
-        contexts = [row["context"].get("value") for row in records]
+        def total_known(values: list[int | None]) -> int | None:
+            known = [value for value in values if value is not None]
+            return sum(known) if known and len(known) == len(values) else None
+        contexts = [row.context.value for row in records]
         request_rows = self.requests[request:]
         return {
             "raw_replies": self.replies[reply:], "logical_prompts": self.prompts[prompt:],
-            "wire": self.wire[wire:], "usage": records, "requests": self.requests[request:],
+            "wire": self.wire[wire:], "usage": [row.to_payload() for row in records], "requests": self.requests[request:],
             "http_requests": sum(row["phase"] == "request" for row in self.wire[wire:]),
-            "reported_input_tokens": total_known("input_tokens"),
-            "reported_output_tokens": total_known("output_tokens"),
-            "input_context_tokens": sum(contexts) if contexts and all(isinstance(value, int) for value in contexts) else None,
-            "context_count_methods": sorted({row["context"]["method"] for row in records}),
+            "reported_input_tokens": total_known([row.usage.input_tokens for row in records]),
+            "reported_output_tokens": total_known([row.usage.output_tokens for row in records]),
+            "input_context_tokens": total_known(contexts),
+            "context_count_methods": sorted({row.context.method for row in records}),
             "coding_context_request_count": sum("Coding current local context:" in json.dumps(row) for row in request_rows),
             "knowledge_write_guidance_request_count": sum("Personal knowledge owner for this isolated knowledge space:" in json.dumps(row)
                                                           for row in request_rows),
@@ -102,7 +102,7 @@ def write_files(root: Path, files: dict[str, str]) -> None:
         path.write_text(content, encoding="utf-8")
 
 
-def grade(root: Path, case: CodingCase) -> dict[str, Any]:
+def grade(root: Path, case: CodingCase) -> dict[str, object]:
     rows = []
     for name, code in case.checks:
         try:
@@ -165,7 +165,7 @@ def event_rows(events):
 def run_arm(provider, case, arm, *, max_turns=24, background=False):
     mark = provider.mark()
     start = time.monotonic()
-    row: dict[str, Any] = {"case": case.name, "arm": arm, "background_map_context": background}
+    row: dict[str, object] = {"case": case.name, "arm": arm, "background_map_context": background}
     with tempfile.TemporaryDirectory() as temporary:
         root, state = Path(temporary) / "project", Path(temporary) / "state"
         root.mkdir()
@@ -235,7 +235,10 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     controls.begin_task_context("coding-pipeline-value-ab")
-    provider = EvidenceProvider(connect_provider("local"))
+    connected = connect_provider("local")
+    if not isinstance(connected, ApiProvider):
+        raise TypeError("this wire-accounting probe requires an API provider")
+    provider = EvidenceProvider(connected)
     cases = tuple(BY_NAME[name] for name in args.case) if args.case else CASES
     arms = args.arm or ("baseline", "map", "context")
     payload = {"model": provider.model, "native_tools": provider.native_tools,

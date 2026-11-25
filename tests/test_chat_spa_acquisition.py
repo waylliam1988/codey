@@ -11,7 +11,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.task_session import TaskSession
 from codey.research import browser_search, source_download
 from codey.research.extract import is_application_shell

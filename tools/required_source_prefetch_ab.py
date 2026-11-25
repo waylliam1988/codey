@@ -10,11 +10,12 @@ from pathlib import Path
 from subprocess import TimeoutExpired
 from unittest.mock import patch
 
-from codey.operations import kernel_protocol
-from codey.operations.kernel_context import KernelContext
-from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
+from codey.operations import turn_snapshot
+from codey.operations.kernel.kernel_context import KernelContext
+from codey.operations.kernel.kernel_protocol import TurnSnapshot
 from codey.operations.source_gaps import task_source_coverage
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import KernelSessionView
 from codey.policies.network import check_fetch_url
 from codey.runtime.core import cancellation
 from codey.task.web_intent import source_url_key
@@ -60,7 +61,7 @@ def first_attempt(current_url: Callable[[], str | None]) -> Callable[[list[Effec
 def run_arm(directory: Path, arm: str, status: int, target: Target, *, max_turns: int) -> JsonObject:
     before = edit.production_source_digest()
     current: str | None = None
-    build = kernel_protocol.build_turn_snapshot
+    build = turn_snapshot.build_turn_snapshot
 
     def capture(session: KernelSessionView, *, native: bool = False) -> TurnSnapshot:
         nonlocal current
@@ -70,7 +71,7 @@ def run_arm(directory: Path, arm: str, status: int, target: Target, *, max_turns
         return snapshot
 
     schedule = first_attempt(lambda: current) if arm == "B" else None
-    with (patch.object(kernel_protocol, "build_turn_snapshot", capture),
+    with (patch.object(turn_snapshot, "build_turn_snapshot", capture),
           patch.object(KernelContext, "prefetch_required_sources", return_value=False),
           protocol_surface.prototype(directory, "source_failure", "A", runtime_action=schedule),
           patch("codey.app.provider_services.provider_tab_availability", return_value={}),

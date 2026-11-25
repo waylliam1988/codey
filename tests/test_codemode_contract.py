@@ -6,8 +6,8 @@ import pytest
 @pytest.mark.parametrize("inputs", [None, [], {1: "key"}, {"x": float("nan")},
                                    {"x": object()}, {"x": 9_007_199_254_740_992}])
 def test_inputs_reject_non_json_and_unsafe_numbers_without_coercion(inputs):
-    from codey.codemode.protocol import parse_codemode_args
     from codey.codemode.runtime import NodeWorkerRuntime
+    from codey.protocols.codemode import parse_codemode_args
 
     with pytest.raises(ValueError, match="inputs"):
         parse_codemode_args({"code": "return inputs;", "inputs": inputs})
@@ -18,7 +18,7 @@ def test_inputs_reject_non_json_and_unsafe_numbers_without_coercion(inputs):
 
 
 def test_input_snapshot_is_immutable_and_not_aliased_to_callers():
-    from codey.codemode.protocol import parse_codemode_args
+    from codey.protocols.codemode import parse_codemode_args
 
     data = {"nested": {"lines": ["first\nsecond"]}}
     program = parse_codemode_args({"code": "return inputs;", "inputs": data})
@@ -29,7 +29,7 @@ def test_input_snapshot_is_immutable_and_not_aliased_to_callers():
 
 
 def test_parse_codemode_args_rejects_recursive_and_oversized_program() -> None:
-    from codey.codemode.protocol import parse_codemode_args
+    from codey.protocols.codemode import parse_codemode_args
 
     with pytest.raises(ValueError, match="code"):
         parse_codemode_args({"code": ""})
@@ -63,7 +63,7 @@ def test_catalog_is_frozen_and_never_advertises_codemode_itself() -> None:
 
 
 def test_text_protocol_accepts_only_one_codemode_object() -> None:
-    from codey.codemode.protocol import parse_codemode_text
+    from codey.protocols.codemode import parse_codemode_text
 
     program = parse_codemode_text('{"tool":"codemode","args":{"code":"return 1"}}')
     assert program.code == "return 1"

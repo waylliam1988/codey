@@ -8,6 +8,8 @@ from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
 
+from codey.operations import turn_snapshot
+from codey.operations.research.execution import ResearchExecutor
 from tests.manual import research_branch_review as branch
 from tests.manual import research_framework_comparison as framework
 from tests.manual import research_lazy_revision_ab as freezing
@@ -29,8 +31,6 @@ def read_only_guidance(text):
 
 @contextmanager
 def treatment(arm):
-    from codey.operations import kernel_protocol
-    from codey.operations.task_execution import ExecutionDelegate
     from codey.research import answer_context, answer_contract
     from codey.toolchain import tool_spec
 
@@ -38,20 +38,20 @@ def treatment(arm):
         raise ValueError(arm)
     with ExitStack() as stack:
         if arm == "no_revision":
-            original_allowed = kernel_protocol.controller_allowed_for_session
+            original_allowed = turn_snapshot.controller_allowed_for_session
 
             def allowed(session):
                 names = original_allowed(session)
                 return tuple(n for n in names if n not in RETIRED) if names is not None else names
 
-            stack.enter_context(patch.object(kernel_protocol, "controller_allowed_for_session", allowed))
+            stack.enter_context(patch.object(turn_snapshot, "controller_allowed_for_session", allowed))
             for module in (answer_context, answer_contract):
                 stack.enter_context(patch.object(module, "ANSWER_GUIDANCE", read_only_guidance(module.ANSWER_GUIDANCE)))
         elif arm == "deferred_control":
             original_specs = tool_spec._all_specs
-            original_allowed = kernel_protocol.controller_allowed_for_session
+            original_allowed = turn_snapshot.controller_allowed_for_session
             original_context = answer_context.answer_context
-            original_execute = ExecutionDelegate._execute_research
+            original_execute = ResearchExecutor._execute_research
             original_answer_spec = answer_contract.answer_spec
 
             def specs():
@@ -89,7 +89,8 @@ def treatment(arm):
                     return original_answer_spec(spec, scope)
                 from dataclasses import replace
 
-                from codey.toolchain.tool_spec import freeze_spec_parameters, thaw_schema_value
+                from codey.toolchain.spec_model import thaw_schema_value
+                from codey.toolchain.tool_spec import freeze_spec_parameters
 
                 spec = original_answer_spec(spec, scope)
                 parameters = thaw_schema_value(dict(spec.parameters))
@@ -101,11 +102,11 @@ def treatment(arm):
                     "the original answer transaction. Optional accumulation never certifies interpretation."))
 
             stack.enter_context(patch.object(tool_spec, "_all_specs", specs))
-            stack.enter_context(patch.object(kernel_protocol, "controller_allowed_for_session", allowed))
+            stack.enter_context(patch.object(turn_snapshot, "controller_allowed_for_session", allowed))
             stack.enter_context(patch.object(answer_context, "answer_context", context))
             stack.enter_context(patch.object(answer_contract, "answer_spec", answer_spec))
-            stack.enter_context(patch.object(ExecutionDelegate, "_execute_research", execute))
-            stack.enter_context(patch.object(ExecutionDelegate, "_commit_research_knowledge", commit))
+            stack.enter_context(patch.object(ResearchExecutor, "_execute_research", execute))
+            stack.enter_context(patch.object(ResearchExecutor, "_commit_research_knowledge", commit))
             for module in (answer_context, answer_contract):
                 stack.enter_context(patch.object(module, "ANSWER_GUIDANCE", module.ANSWER_GUIDANCE.replace(
                     READ_ONLY_GUIDANCE, legacy.REVISION_GUIDANCE)))

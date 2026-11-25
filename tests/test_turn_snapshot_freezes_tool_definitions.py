@@ -2,8 +2,9 @@ from codey.providers.base import AssistantTurn, ProviderToolCall
 
 
 def test_tools_registered_after_snapshot_are_not_accepted_this_turn() -> None:
-    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.kernel.kernel_protocol import normalize_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.tool_spec import register_custom_tool, unregister_custom_tool
 

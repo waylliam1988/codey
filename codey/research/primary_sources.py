@@ -6,8 +6,8 @@ from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Protocol
 
 from codey.research.answer_contract import AnswerSessionView
-from codey.research.ledger_receipts import source_observation
 from codey.research.passages import read_passage_refs
+from codey.research.source_observation import source_observation
 from codey.research.source_trust import primary_source_url
 from codey.research.urls import host_key
 from codey.runtime.core.models import ToolCall, ToolResult

@@ -24,9 +24,9 @@ def test_codemode_child_scopes_produce_distinct_durable_batches() -> None:
 
 def test_nested_execute_turn_passes_unique_child_scopes_to_intent_sink() -> None:
     from codey.codemode.kernel import build_execute_turn_executor
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult
 

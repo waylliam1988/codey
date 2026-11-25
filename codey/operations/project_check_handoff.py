@@ -8,14 +8,14 @@ from codey.agents.protocol import canonical_project_path
 from codey.codemode.verification import project_check_choices
 from codey.completion.verification_policy import _command_family
 from codey.knowledge.model import canonical_json
-from codey.operations.edit_base import (
+from codey.operations.kernel.kernel_protocol import TurnSnapshot
+from codey.operations.progress_comparison import ProjectCheckComparison
+from codey.operations.project.edit_base import (
     bound_symbol_retry,
     current_definition,
     is_compact_symbol_retry,
     unchanged_definition,
 )
-from codey.operations.kernel_protocol import TurnSnapshot
-from codey.operations.progress_comparison import ProjectCheckComparison
 from codey.operations.reference_handles import ReferenceHandleError, ReferenceHandleResolver
 from codey.operations.task_session import TaskSession
 from codey.runtime.core.models import ToolResult

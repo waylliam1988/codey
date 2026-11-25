@@ -9,7 +9,7 @@ from playwright.sync_api import expect, sync_playwright
 
 from codey.app import server
 from codey.app.context import AppContext
-from codey.research.source_acquisition import failure_event
+from codey.types.source_failure import failure_event
 from tests.http_context import attach_public_events
 
 

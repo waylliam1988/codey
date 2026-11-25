@@ -312,8 +312,9 @@ def test_knowledge_write_single_relation_object_normalizes_to_list() -> None:
 
 
 def test_knowledge_write_synthesis_is_reserved_for_done() -> None:
-    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.kernel.kernel_protocol import normalize_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.protocols.text_turn import decode_text_turn
 

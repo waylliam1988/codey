@@ -1,11 +1,11 @@
 """External data uses the shared tools and never weakens CodeMode isolation."""
 import pytest
 
-from codey.codemode.protocol import CodeModeInputError, parse_codemode_args
 from codey.operations.kernel_prompt import kernel_prompt_for_session
 from codey.operations.task_session import TaskSession
 from codey.policies.command_line import ShellSpec, resolve_shell
 from codey.policies.task_policy import TaskPolicy
+from codey.protocols.codemode import CodeModeInputError, parse_codemode_args
 
 
 @pytest.mark.parametrize('native', [False, True])

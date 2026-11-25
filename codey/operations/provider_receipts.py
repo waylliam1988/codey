@@ -19,6 +19,7 @@ from codey.runtime.effects.effect_records import RuntimeEffectError, RuntimeEffe
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import (
     JsonObject,
+    JsonValue,
     decode_json_object,
     require_json_boolean,
     require_json_integer,
@@ -28,15 +29,16 @@ from codey.types.json_value import (
 from codey.workspace.context_admission import ContextCandidate
 
 if TYPE_CHECKING:
-    from codey.operations.browser_copy import CopyTurn
+    from codey.operations.browser.browser_copy import CopyTurn
+    from codey.operations.kernel.kernel_protocol import ModelInputBinding, TurnSnapshot
     from codey.operations.kernel_contracts import ToolExecutor
-    from codey.operations.kernel_protocol import InputContractVersion, ModelInputBinding, TurnSnapshot
-    from codey.operations.project_instructions import ProjectInstructionBinding
+    from codey.operations.project.project_instructions import ProjectInstructionBinding
     from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.tool_spec import ToolSpec
 
 REQUEST_KIND = "provider_request"
 RESPONSE_KIND = "provider_response"
+TURN_SNAPSHOT_SCHEMA = 23
 
 
 def restore_context(payload: object) -> tuple[str, tuple[ContextCandidate, ...]]:
@@ -116,10 +118,14 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
     """Persist the captured contract, never Python callables or a live registry."""
     if snapshot.policy is None:
         raise ValueError("captured turn has no authorization policy")
-    payload = decode_json_object(json_value({"schema_version": snapshot.input_contract_version,
+    binding = snapshot.input_binding
+    binding_payload: JsonObject | None = None if binding is None else {
+        "kind": binding.kind, "tool": binding.model_spec.name, "source_refs": list(binding.source_refs),
+    }
+    payload = decode_json_object(json_value({"schema_version": TURN_SNAPSHOT_SCHEMA,
             "task_navigation_url": snapshot.task_navigation_url,
             "browser_copy": snapshot.browser_copy.payload() if snapshot.browser_copy is not None else None,
-            "input_binding": json_value(snapshot.input_binding),
+            "input_binding": binding_payload,
             "implementation_id": runtime_implementation_id() if snapshot.implementation_compatible else "",
             "allowed": json_value(snapshot.allowed),
             "contract_text": snapshot.contract_text, "tool_names": list(snapshot.tool_names),
@@ -129,16 +135,12 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
             "policy": snapshot.policy.to_payload(), "specs": json_value(snapshot.frozen_specs),
             "executors": [{"name": name, "binding": None if fn is None else _executor_identity(fn)}
                           for name, fn in snapshot.custom_executors]}))
-    if snapshot.input_contract_version >= 15:
-        payload["task_source_url"] = snapshot.task_source_url
-    if snapshot.input_contract_version >= 18:
-        payload["project_instructions"] = [rule.to_payload() for rule in snapshot.project_instructions]
-    if snapshot.input_contract_version >= 19:
-        payload["navigation_verifies"] = snapshot.navigation_verifies
-    if snapshot.input_contract_version >= 20:
-        payload["data_file_reads"] = list(snapshot.data_file_reads)
-    if snapshot.input_contract_version >= 22:
-        payload["symbol_read_refs"] = dict(snapshot.symbol_read_refs)
+    payload["task_source_url"] = snapshot.task_source_url
+    payload["project_instructions"] = [rule.to_payload() for rule in snapshot.project_instructions]
+    payload["navigation_verifies"] = snapshot.navigation_verifies
+    payload["data_file_reads"] = None if snapshot.data_file_reads is None else list(snapshot.data_file_reads)
+    payload["symbol_read_refs"] = dict(snapshot.symbol_read_refs)
+    payload["model_specs"] = json_value(snapshot.model_specs)
     payload["browser_fill_text"] = snapshot.browser_fill_text
     payload["browser_followups"] = snapshot.browser_followups
     payload["browser_references"] = snapshot.browser_references.payload() if snapshot.browser_references else None
@@ -213,22 +215,26 @@ def _restore_spec(value: object) -> ToolSpec:
 
 
 def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSpec],
-                           copy: CopyTurn | None, policy: TaskPolicy) -> tuple[ModelInputBinding | None, bool]:
-    from codey.operations.kernel_protocol import ModelInputBinding
+                           copy: CopyTurn | None, policy: TaskPolicy,
+                           model_specs: tuple[ToolSpec, ...]) -> tuple[ModelInputBinding | None, bool]:
+    from codey.operations.kernel.kernel_protocol import ModelInputBinding
 
     if payload is None:
         if copy is not None and "codemode" in names:
             raise ValueError("captured structured input has no input binding")
         return None, True
     raw = decode_json_object(payload)
-    if set(raw) not in ({"kind", "model_spec"}, {"kind", "model_spec", "source_refs"}):
+    if set(raw) != {"kind", "tool", "source_refs"}:
         raise ValueError("invalid captured input binding")
     source_refs = tuple(require_json_strings(raw.get("source_refs", []), "bound source receipts"))
     if source_refs and raw["kind"] != "declared_fields":
         raise ValueError("source receipts require a declared-field binding")
     if raw["kind"] == "actions":
         raise ValueError("captured codemode.action input is no longer supported; start a new request")
-    model = _restore_spec(raw["model_spec"])
+    name = require_json_string(raw["tool"], "bound tool")
+    model = next((spec for spec in model_specs if spec.name == name), None)
+    if model is None:
+        raise ValueError("captured input binding has no model definition")
     if raw["kind"] == "upload":
         binding = ModelInputBinding("upload", model)
     elif raw["kind"] == "browser_copy":
@@ -252,9 +258,9 @@ def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSp
         # the current lowering implementation to match that contract.
         return binding, copy.spec(execution) == model
     elif binding.kind == "declared_fields":
-        from codey.operations.declared_field_input import model_spec, write_form
         from codey.operations.file_field_binding import file_rules
-        from codey.toolchain.tool_spec import thaw_schema_value
+        from codey.operations.project.declared_field_input import model_spec, write_form
+        from codey.toolchain.spec_model import thaw_schema_value
 
         parameters = dict(model.parameters)
         path_schema = decode_json_object(thaw_schema_value(parameters.get("path")))
@@ -270,46 +276,20 @@ def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSp
     return binding, True
 
 
-def _snapshot_payload(raw: object) -> tuple[JsonObject, InputContractVersion]:
+def _snapshot_payload(raw: object) -> JsonObject:
     payload = decode_json_object(raw)
-    expected = {"schema_version", "implementation_id", "allowed", "contract_text", "tool_names", "policy", "specs", "executors",
-                "nested_tool_names", "research_scope", "ignore_runtime_claims", "browser_copy", "input_binding",
-                "task_navigation_url", "browser_fill_text", "browser_followups", "browser_references"}
-    version = require_json_integer(payload.get("schema_version"), "snapshot version")
-    if version >= 15:
-        expected.add("task_source_url")
-    if version >= 18:
-        expected.add("project_instructions")
-    if version >= 19:
-        expected.add("navigation_verifies")
-    if version >= 20:
-        expected.add("data_file_reads")
-    if version >= 22:
-        expected.add("symbol_read_refs")
-    match version:
-        case 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22:
-            if set(payload) != expected:
-                raise ValueError("invalid captured turn snapshot version/shape")
-            return payload, version
-        case _:
-            raise ValueError("unsupported captured turn snapshot version; start a new request")
-
-
-def _restore_model_contract(snapshot: TurnSnapshot, raw_references: object) -> TurnSnapshot:
-    from codey.operations.kernel_protocol import render_snapshot_contract
-    from codey.toolchain.tool_prompt import contract_semantics
-
-    contract = contract_semantics(snapshot.contract_text)
-    references = snapshot.browser_references
-    if (contract != contract_semantics(render_snapshot_contract(snapshot))
-            and references is not None and isinstance(raw_references, dict)
-            and "presentation_version" not in raw_references):
-        # Two historical presentations shared snapshot version 9. Select only
-        # a presentation whose complete generated contract matches the artifact.
-        snapshot = replace(snapshot, browser_references=replace(references, presentation_version=1))
-    if contract != contract_semantics(render_snapshot_contract(snapshot)):
-        raise ValueError("captured contract text differs from its frozen model definitions")
-    return snapshot
+    if require_json_integer(payload.get("schema_version"), "snapshot version") != TURN_SNAPSHOT_SCHEMA:
+        raise ValueError("unsupported captured turn snapshot version; start a new request")
+    expected = {
+        "schema_version", "implementation_id", "allowed", "contract_text", "tool_names",
+        "policy", "specs", "model_specs", "executors", "nested_tool_names", "research_scope",
+        "ignore_runtime_claims", "browser_copy", "input_binding", "task_navigation_url",
+        "browser_fill_text", "browser_followups", "browser_references", "task_source_url",
+        "project_instructions", "navigation_verifies", "data_file_reads", "symbol_read_refs",
+    }
+    if set(payload) != expected:
+        raise ValueError("invalid captured turn snapshot shape")
+    return payload
 
 
 def _restore_bound_source(
@@ -325,7 +305,7 @@ def _restore_bound_source(
     from codey.policies.network import check_fetch_url
 
     source = require_json_string(value, "task_source_url")
-    if (not source or navigation_url is None or (source == navigation_url and payload["schema_version"] == 15)
+    if (not source or navigation_url is None
             or check_fetch_url(source, resolve=False) is not None
             or "open_url" not in (*names, *nested) or not policy.allows("web.read")):
         raise ValueError("invalid captured task source binding")
@@ -333,7 +313,7 @@ def _restore_bound_source(
 
 
 def _restore_project_instructions(payload: JsonObject, policy: TaskPolicy) -> tuple[ProjectInstructionBinding, ...]:
-    from codey.operations.project_instructions import ProjectInstructionBinding
+    from codey.operations.project.project_instructions import ProjectInstructionBinding
 
     raw = payload.get("project_instructions", [])
     if not isinstance(raw, list):
@@ -353,70 +333,42 @@ def _restore_navigation_verification(payload: JsonObject, navigation_url: str | 
     return verifies
 
 
-def restore_snapshot(payload: object) -> TurnSnapshot:
-    from codey.operations.kernel_protocol import TurnSnapshot
-    from codey.policies.output_requirement import explanation_spec, has_explanation
-    from codey.policies.task_policy import TaskPolicy
-    from codey.toolchain.tool_spec import custom_executor_for
+def _restore_model_specs(
+    raw_model_specs: object, names: list[str], specs: list[ToolSpec],
+) -> tuple[ToolSpec, ...]:
+    if not isinstance(raw_model_specs, list):
+        raise ValueError("invalid captured model definitions")
+    model_specs = tuple(_restore_spec(raw) for raw in raw_model_specs)
+    if [spec.name for spec in model_specs] != names:
+        raise ValueError("captured model definitions do not match exposed tools")
+    specs_by_name = {spec.name: spec for spec in specs}
+    for model in model_specs:
+        execution = specs_by_name.get(model.name)
+        if execution is None or execution.grant != model.grant or execution.executor != model.executor:
+            raise ValueError("captured model tool differs from its execution authority")
+    return model_specs
 
-    payload, input_version = _snapshot_payload(payload)
-    raw_binding = payload["input_binding"]
-    names = require_json_strings(payload["tool_names"], "tool_names")
-    nested = require_json_strings(payload["nested_tool_names"], "nested_tool_names")
-    allowed = None if payload["allowed"] is None else require_json_strings(payload["allowed"], "allowed")
-    contract = require_json_string(payload["contract_text"], "contract_text")
-    if any(not name for name in (*names, *nested)) or len(set(names)) != len(names) or len(set(nested)) != len(nested):
-        raise ValueError("invalid captured turn contract")
+
+def _restore_inventory(
+    payload: JsonObject, names: list[str], nested: list[str],
+) -> tuple[list[ToolSpec], tuple[ToolSpec, ...], list[str], list[JsonValue]]:
     raw_specs, raw_executors = payload["specs"], payload["executors"]
     if not isinstance(raw_specs, list) or not isinstance(raw_executors, list):
         raise ValueError("invalid captured turn definitions")
     specs = [_restore_spec(raw) for raw in raw_specs]
+    model_specs = _restore_model_specs(payload["model_specs"], names, specs)
     inventory_names: dict[str, None] = dict.fromkeys([*names, *nested])
     inventory = list(inventory_names)
     if [spec.name for spec in specs] != inventory:
         raise ValueError("captured definitions do not match tool names")
-    policy = TaskPolicy.from_payload(payload["policy"])
-    from codey.memory.candidates import CANDIDATE_FIELD
-    from codey.operations.memory_candidate_transport import memory_candidate_spec
+    return specs, model_specs, inventory, raw_executors
 
-    if has_explanation(policy.required_checks) and any(
-            spec.name == "done" and spec != (
-                memory_candidate_spec(explanation_spec(spec)) if CANDIDATE_FIELD in dict(spec.parameters)
-                else explanation_spec(spec)) for spec in specs):
-        raise ValueError("unsupported captured explanation contract; start a new request")
-    from codey.operations.browser_copy import CopyTurn
 
-    copy = CopyTurn.restore(decode_json_object(payload["browser_copy"])) if payload["browser_copy"] is not None else None
-    input_binding, binding_compatible = _restore_input_binding(raw_binding, names, specs, copy, policy)
-    navigation_url = payload.get("task_navigation_url")
-    if navigation_url is not None:
-        from codey.policies.network import check_fetch_url
+def _restore_executors(
+    raw_executors: list[JsonValue], inventory: list[str], compatible: bool,
+) -> tuple[tuple[tuple[str, ToolExecutor | None], ...], bool]:
+    from codey.toolchain.tool_spec import custom_executor_for
 
-        navigation_url = require_json_string(navigation_url, "task_navigation_url")
-        targets = {"browser_navigate", "open_url"} if input_version >= 13 else {"browser_navigate"}
-        navigation = next((spec for spec in specs if spec.name in targets and spec.name in (*names, *nested)), None)
-        if (not navigation_url or check_fetch_url(navigation_url, resolve=False) is not None
-                or "codemode" not in names and (input_version < 13 or "open_url" not in names)
-                or navigation is None or not policy.allows(navigation.grant)
-                or input_binding is not None and input_binding.kind != "declared_fields"
-                or copy is not None):
-            raise ValueError("invalid captured task navigation binding")
-    source_url = _restore_bound_source(payload, navigation_url, names, nested, policy)
-    ignore_runtime_claims = require_json_boolean(payload["ignore_runtime_claims"], "ignore_runtime_claims")
-    if nested:
-        from codey.codemode.catalog import build_codemode_catalog
-
-        catalog = build_codemode_catalog(
-            specs, allow_writes=policy.allows("project.write"),
-            allow_project_edit="edit" in nested,
-            allow_project_run="run" in nested,
-            task_navigation_url=navigation_url,
-            task_source_url=source_url,
-            task_source_selector=input_version >= 13 and (source_url is not None or input_version < 15),
-        )
-        if "codemode" not in names or not set(nested) <= {entry.name for entry in catalog.entries}:
-            raise ValueError("captured nested capabilities exceed the frozen CodeMode inventory")
-    compatible = payload["implementation_id"] == runtime_implementation_id() and binding_compatible
     bindings: list[tuple[str, ToolExecutor | None]] = []
     for raw in raw_executors:
         row = decode_json_object(raw)
@@ -435,15 +387,76 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         bindings.append((name, current))
     if [name for name, _ in bindings] != inventory:
         raise ValueError("captured executor descriptors do not match tool names")
+    return tuple(bindings), compatible
+
+
+def restore_snapshot(payload: object) -> TurnSnapshot:
+    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.policies.output_requirement import explanation_spec, has_explanation
+    from codey.policies.task_policy import TaskPolicy
+
+    payload = _snapshot_payload(payload)
+    raw_binding = payload["input_binding"]
+    names = require_json_strings(payload["tool_names"], "tool_names")
+    nested = require_json_strings(payload["nested_tool_names"], "nested_tool_names")
+    allowed = None if payload["allowed"] is None else require_json_strings(payload["allowed"], "allowed")
+    contract = require_json_string(payload["contract_text"], "contract_text")
+    if any(not name for name in (*names, *nested)) or len(set(names)) != len(names) or len(set(nested)) != len(nested):
+        raise ValueError("invalid captured turn contract")
+    specs, model_specs, inventory, raw_executors = _restore_inventory(payload, names, nested)
+    policy = TaskPolicy.from_payload(payload["policy"])
+    from codey.memory.candidates import CANDIDATE_FIELD
+    from codey.operations.memory_candidate_transport import memory_candidate_spec
+
+    if has_explanation(policy.required_checks) and any(
+            spec.name == "done" and spec != (
+                memory_candidate_spec(explanation_spec(spec)) if CANDIDATE_FIELD in dict(spec.parameters)
+                else explanation_spec(spec)) for spec in specs):
+        raise ValueError("unsupported captured explanation contract; start a new request")
+    from codey.operations.browser.browser_copy import CopyTurn
+
+    copy = CopyTurn.restore(decode_json_object(payload["browser_copy"])) if payload["browser_copy"] is not None else None
+    input_binding, binding_compatible = _restore_input_binding(raw_binding, names, specs, copy, policy, model_specs)
+    navigation_url = payload.get("task_navigation_url")
+    if navigation_url is not None:
+        from codey.policies.network import check_fetch_url
+
+        navigation_url = require_json_string(navigation_url, "task_navigation_url")
+        targets = {"browser_navigate", "open_url"}
+        navigation = next((spec for spec in specs if spec.name in targets and spec.name in (*names, *nested)), None)
+        if (not navigation_url or check_fetch_url(navigation_url, resolve=False) is not None
+                or "codemode" not in names and "open_url" not in names
+                or navigation is None or not policy.allows(navigation.grant)
+                or input_binding is not None and input_binding.kind != "declared_fields"
+                or copy is not None):
+            raise ValueError("invalid captured task navigation binding")
+    source_url = _restore_bound_source(payload, navigation_url, names, nested, policy)
+    ignore_runtime_claims = require_json_boolean(payload["ignore_runtime_claims"], "ignore_runtime_claims")
+    if nested:
+        from codey.codemode.catalog import build_codemode_catalog
+
+        catalog = build_codemode_catalog(
+            specs, allow_writes=policy.allows("project.write"),
+            allow_project_edit="edit" in nested,
+            allow_project_run="run" in nested,
+            task_navigation_url=navigation_url,
+            task_source_url=source_url,
+            task_source_selector=source_url is not None,
+        )
+        if "codemode" not in names or not set(nested) <= {entry.name for entry in catalog.entries}:
+            raise ValueError("captured nested capabilities exceed the frozen CodeMode inventory")
+    bindings, compatible = _restore_executors(
+        raw_executors, inventory, payload["implementation_id"] == runtime_implementation_id() and binding_compatible,
+    )
     from codey.research.answer_contract import AnswerScope
 
     scope = AnswerScope.from_payload(payload["research_scope"]) if payload["research_scope"] is not None else None
-    from codey.operations.browser_followups import FOLLOWUP_TOOLS, MAX_TEXT, allows_surface
+    from codey.operations.browser.browser_followups import FOLLOWUP_TOOLS, MAX_TEXT, allows_surface
 
     fill_text = payload.get("browser_fill_text")
     if fill_text is not None and (not isinstance(fill_text, str) or not fill_text.strip() or len(fill_text) > MAX_TEXT):
         raise ValueError("invalid captured browser fill text")
-    from codey.operations.browser_references import BrowserReferences
+    from codey.operations.browser.browser_references import BrowserReferences
 
     followups = require_json_boolean(payload["browser_followups"], "browser_followups")
     raw_references = payload.get("browser_references")
@@ -455,14 +468,15 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         raise ValueError("invalid captured browser input binding")
     snapshot = TurnSnapshot(allowed=None if allowed is None else tuple(allowed), contract_text=contract,
         tool_names=tuple(names), policy=policy, frozen_specs=tuple(specs),
-        custom_executors=tuple(bindings), implementation_compatible=bool(compatible), nested_tool_names=tuple(nested),
+        custom_executors=bindings, implementation_compatible=bool(compatible), nested_tool_names=tuple(nested),
         research_scope=scope, ignore_runtime_claims=ignore_runtime_claims,
         browser_copy=copy, input_binding=input_binding, task_navigation_url=navigation_url,
-        input_contract_version=input_version, task_source_url=source_url,
+        task_source_url=source_url, captured_model_specs=model_specs,
         browser_followups=followups, browser_fill_text=fill_text, browser_references=references,
         project_instructions=_restore_project_instructions(payload, policy),
         navigation_verifies=_restore_navigation_verification(payload, navigation_url, followups, names, nested),
-        data_file_reads=tuple(require_json_strings(payload.get("data_file_reads", []), "data file reads")),
+        data_file_reads=None if payload["data_file_reads"] is None else
+            tuple(require_json_strings(payload["data_file_reads"], "data file reads")),
         symbol_read_refs=tuple(sorted((path, require_json_string(ref, "symbol read receipt"))
                                for path, ref in decode_json_object(payload.get("symbol_read_refs", {})).items())))
     from codey.toolchain.constants import PAGE_DETAIL_TOOL
@@ -477,4 +491,9 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     if snapshot.browser_followups and (not set(direct) <= direct_surface
             or not allows_surface(snapshot, direct, research=research)):
         raise ValueError("captured browser follow-ups exceed the authorized browser interface")
-    return _restore_model_contract(snapshot, raw_references)
+    from codey.operations.kernel.kernel_protocol import render_snapshot_contract
+    from codey.toolchain.tool_prompt import contract_semantics
+
+    if contract_semantics(contract) != contract_semantics(render_snapshot_contract(snapshot)):
+        raise ValueError("captured contract text differs from its frozen model definitions")
+    return snapshot

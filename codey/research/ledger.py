@@ -12,7 +12,7 @@ import copy
 import hashlib
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from difflib import get_close_matches
 
@@ -21,7 +21,11 @@ from codey.research.passages import ReadPassage
 from codey.research.receipt_types import InvestigationRecord, SourceSearchLocator, SourceSearchObservation
 from codey.research.reference import ResearchReference
 from codey.research.search_provenance import SearchAttempt
-from codey.research.source_document import PublicationMetadata, SourceDocument, SourceReadScope
+from codey.research.source_document import (
+    OpenedSource,
+    SourceDocument,
+    SourceQuality,
+)
 from codey.research.urls import host_key, opened_url, parsed_url
 from codey.types.json_value import JsonObject, canonical_json_object, encode_transport_value
 from codey.utils.refs import coerce_int, parse_int
@@ -36,21 +40,6 @@ MAX_PAYLOAD_EVIDENCE = 48
 MAX_PAYLOAD_SOURCE_SEARCHES = 24
 _SPACE_RE = re.compile(r"\s+")
 _YEAR_RE = re.compile(r"\b(20\d{2})\b")
-
-
-@dataclass(frozen=True)
-class SourceQuality:
-    level: str = "secondary"
-    kind: str = "web"
-    freshness: str = "undated"
-    independent_group: str = ""
-
-    def render(self) -> str:
-        parts = [self.level, self.kind, self.freshness, self.independent_group]
-        return " · ".join(part for part in parts if part)
-
-    def to_dict(self) -> JsonObject:
-        return canonical_json_object(encode_transport_value(self))
 
 
 @dataclass(frozen=True)
@@ -74,31 +63,6 @@ class SearchRecord:
     def to_dict(self) -> JsonObject:
         data = canonical_json_object(encode_transport_value(self))
         data["results"] = [item.to_dict() for item in self.results]
-        return data
-
-
-@dataclass(frozen=True)
-class OpenedSource:
-    requested_url: str
-    final_url: str
-    title: str
-    retrieved_at: str
-    text_hash: str
-    quality: SourceQuality = field(default_factory=SourceQuality)
-    content_kind: str = "html"
-    mime_type: str = ""
-    page_count: int = 0
-    pages_read: tuple[int, ...] = ()
-    truncated: bool = False
-    read_scope: SourceReadScope | None = None
-    publication: PublicationMetadata | None = None
-    pdf_sha256: str = ""
-
-    def to_dict(self) -> JsonObject:
-        data = canonical_json_object(encode_transport_value(self))
-        del data["read_scope"]  # Target text belongs to the durable capture, not the bounded UI payload.
-        data["quality"] = self.quality.to_dict()
-        data["pages_read"] = list(self.pages_read)
         return data
 
 

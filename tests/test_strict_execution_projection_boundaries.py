@@ -60,8 +60,8 @@ def test_project_delegate_rejects_string_false_outcome_ok() -> None:
             )
 
     delegate = ExecutionDelegate(project_path=Path("."), tool_fns=ToolFns())
-    delegate._policy_check = lambda _call: ProjectPolicyCheck(denied=False)
-    result, ok, exit_code = delegate._execute_project(
+    delegate.project_executor.check_policy = lambda _call: ProjectPolicyCheck(denied=False)
+    result, ok, exit_code = delegate.execute(
         ToolCall(name="run", args={"command": "false", "path": "."})
     )
 
@@ -82,7 +82,7 @@ def test_research_outcome_rejects_string_false_ok() -> None:
 
 
 def test_explicit_edit_string_false_changed_fails_closed_without_workspace_bump(tmp_path) -> None:
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult

@@ -36,10 +36,10 @@ def _accept_and_mark(mutations, session_id: str, run_id: str, project: str):
 
 def _settle_batch(tmp: Path, session_id: str, run_id: str, *, long_text: str = ""):
     """真实执行一次并结算（run 不可重放），交付前中断。返回日志目录。"""
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult
     from codey.storage.managed_outputs import ManagedOutputStore
@@ -128,7 +128,7 @@ def test_settled_run_receipts_rebuild_without_reexecution():
         _settle_batch(tmp, "s-settled", "r-settled")
         from unittest.mock import patch
 
-        with patch("codey.operations.kernel_execution.execute_turn",
+        with patch("codey.operations.kernel.kernel_execution.execute_turn",
                    side_effect=AssertionError("settled tools must not re-enter execution")):
             recovery = _recover(tmp, "s-settled", "r-settled", str(tmp))
         assert recovery.ok is True, "已结算 run 必须恢复交付"

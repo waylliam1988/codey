@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from codey.operations.browser_upload import structured_upload_spec, task_upload_scope
+from codey.operations.browser.browser_upload import structured_upload_spec, task_upload_scope
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
 from codey.storage.input_attachments import InputAttachmentStore

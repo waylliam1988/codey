@@ -6,8 +6,8 @@ from codey.policies.task_policy import TaskPolicy
 
 
 def test_codemode_is_visible_in_every_read_capable_snapshot() -> None:
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
 
     policy = TaskPolicy(grants=frozenset({"control", "project.read"}))
     snapshot = build_turn_snapshot(TaskSession(policy=policy))
@@ -16,8 +16,9 @@ def test_codemode_is_visible_in_every_read_capable_snapshot() -> None:
 
 
 def test_text_and_native_protocols_both_normalize_codemode() -> None:
-    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.kernel.kernel_protocol import normalize_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.protocols.text_turn import decode_text_turn
     from codey.providers.base import AssistantTurn, ProviderToolCall
 
@@ -64,9 +65,9 @@ def test_codemode_kernel_executor_routes_children_through_callback() -> None:
 
 def test_nested_child_reenters_execute_turn_with_frozen_snapshot() -> None:
     from codey.codemode.kernel import CodeModeKernelExecutor
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.runtime.core.models import ToolCall, ToolResult
 
     policy = TaskPolicy(grants=frozenset({"control", "project.read"}))
@@ -110,9 +111,9 @@ def test_nested_child_reenters_execute_turn_with_frozen_snapshot() -> None:
 
 def test_production_builder_wires_nested_calls_into_execute_turn() -> None:
     from codey.codemode.kernel import build_execute_turn_executor
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.runtime.core.models import ToolCall, ToolResult
 
     policy = TaskPolicy(grants=frozenset({"control", "project.read"}))

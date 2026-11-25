@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 from codey.providers.api_codec import GenerationSettings, allows_native_parallel_reads
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult, TurnFinish
-from codey.toolchain.tool_spec import thaw_schema_value
+from codey.toolchain.spec_model import thaw_schema_value
 from codey.types.json_value import decode_json_object, parse_json_object
 
 endpoint = "chat/completions"

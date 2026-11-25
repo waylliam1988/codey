@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.toolchain.tool_spec import tool_specs
 

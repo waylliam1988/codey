@@ -4,9 +4,9 @@ from __future__ import annotations
 import pytest
 
 from codey.operations.kernel_prompt import _native_final_rule, kernel_prompt_for_session
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.output_requirement import JSON_ANSWER_GUIDANCE
 from codey.policies.task_policy import TaskPolicy
 from tools.chat_answer_format_gate import baseline_format, format_ok

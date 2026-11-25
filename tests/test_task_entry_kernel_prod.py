@@ -182,8 +182,8 @@ class ToolContractTests(unittest.TestCase):
         self.assertNotIn("read_files", native)
 
     def test_search_then_open_allowed(self) -> None:
-        from codey.operations.kernel_protocol import controller_allowed_for_session
         from codey.operations.task_session import TaskSession
+        from codey.operations.turn_snapshot import controller_allowed_for_session
         from codey.policies.task_policy import build_task_policy
         from codey.task.model import TaskSubmission
 
@@ -237,7 +237,8 @@ class LoopPromptTests(unittest.TestCase):
         joined = "\n".join(prompts)
         self.assertIn("修复登录 bug", joined)
         self.assertIn("先查文档", joined)
-        self.assertIn("web_search", joined)
+        self.assertIn("Tool contract (use exactly these shapes)", joined)
+        self.assertIn("read_file(args:", joined)
 
     def test_native_detection_uses_config_not_hasattr(self) -> None:
         from unittest.mock import Mock
@@ -300,8 +301,8 @@ class LoopPromptTests(unittest.TestCase):
 
 class ExecutionEvidenceTests(unittest.TestCase):
     def test_failed_run_output_blocks_completion(self) -> None:
-        from codey.operations import kernel_execution as kernel
         from codey.operations.completion_gate import evaluate
+        from codey.operations.kernel import kernel_execution as kernel
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.runtime.core.models import ToolCall, ToolResult
@@ -324,7 +325,7 @@ class ExecutionEvidenceTests(unittest.TestCase):
         self.assertFalse(verdict.complete)
 
     def test_failed_open_and_write_leave_no_facts(self) -> None:
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.runtime.core.models import ToolCall, ToolResult
@@ -349,7 +350,7 @@ class ExecutionEvidenceTests(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.runtime.core.models import ToolCall, ToolResult
@@ -368,7 +369,7 @@ class ExecutionEvidenceTests(unittest.TestCase):
 
 class PersistenceTests(unittest.TestCase):
     def test_repeat_read_executes_twice(self) -> None:
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import build_task_policy
         from codey.runtime.core.models import ToolCall, ToolResult

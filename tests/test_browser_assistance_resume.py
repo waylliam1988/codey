@@ -1,8 +1,8 @@
 """Human assistance preserves the target and expires prior controls and pixels."""
 from __future__ import annotations
 
-from codey.operations.browser_resources import capture_assistance_binding, resume_assistance_observation
-from codey.operations.kernel_context import _research_effect_ids
+from codey.operations.browser.browser_resources import capture_assistance_binding, resume_assistance_observation
+from codey.operations.kernel.kernel_context import _research_effect_ids
 from codey.operations.task_session import turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.effects.effect_records import RuntimeEffectIntent, RuntimeEffectProjection

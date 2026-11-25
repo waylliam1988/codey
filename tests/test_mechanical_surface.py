@@ -141,8 +141,8 @@ def test_upload_delivers_actual_receipt_facts_without_model_copying(
 def test_result_encoding_recovery_uses_receipts_without_second_upload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from codey.operations import kernel_protocol
-    from codey.operations.browser_upload import lower_upload_action
+    from codey.operations.browser.browser_upload import lower_upload_action
+    from codey.operations.kernel import kernel_protocol
     from codey.types.json_value import JsonObject, decode_json_object
     from tests.test_browser_entry_candidates import upload_replies
 

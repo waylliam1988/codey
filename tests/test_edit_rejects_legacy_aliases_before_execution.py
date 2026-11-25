@@ -71,7 +71,7 @@ def test_no_change_reports_unchanged(tmp_path):
 
 
 def test_validation_rejects_legacy_before_execution():
-    from codey.operations.kernel_protocol import _validate_tool_args
+    from codey.operations.kernel.kernel_protocol import _validate_tool_args
 
     for args in (
         {"path": "a.py", "old_string": "x", "new_string": "y"},
@@ -83,7 +83,7 @@ def test_validation_rejects_legacy_before_execution():
 
 
 def test_native_validation_rejects_legacy_before_execution():
-    from codey.operations.kernel_protocol import _validate_tool_args
+    from codey.operations.kernel.kernel_protocol import _validate_tool_args
     from codey.toolchain.tool_spec import spec_for_tool
 
     spec = spec_for_tool("edit")

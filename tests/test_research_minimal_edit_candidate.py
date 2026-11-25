@@ -2,15 +2,15 @@
 
 from unittest.mock import patch
 
+from codey.operations.research.execution import ResearchExecutor
 from tests.support.research_minimal_edit_candidate import treatment
 
 
 def test_minimal_candidate_keeps_production_context_function_and_existing_tool_names():
-    from codey.operations.task_execution import ExecutionDelegate
     from codey.research import answer_context, answer_contract
 
     original_spec = answer_contract.answer_spec
-    original_commit = ExecutionDelegate._commit_research_knowledge
+    original_commit = ResearchExecutor._commit_research_knowledge
     original_tools = answer_contract.ANSWER_TOOLS
 
     def view(*args):
@@ -20,11 +20,11 @@ def test_minimal_candidate_keeps_production_context_function_and_existing_tool_n
         with treatment("minimal_edit"):
             assert answer_context._render_context is view
             assert answer_contract.answer_spec is not original_spec
-            assert ExecutionDelegate._commit_research_knowledge is not original_commit
+            assert ResearchExecutor._commit_research_knowledge is not original_commit
             assert original_tools == answer_contract.ANSWER_TOOLS
         assert answer_context._render_context is view
     assert answer_contract.answer_spec is original_spec
-    assert ExecutionDelegate._commit_research_knowledge is original_commit
+    assert ResearchExecutor._commit_research_knowledge is original_commit
 
 
 def test_focused_minimal_candidate_only_reorders_existing_blocks():

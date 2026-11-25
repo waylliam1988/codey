@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import pytest
 
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.research.answer_context import answer_context
 from codey.research.answer_contract import answer_scope
 from codey.research.ledger import ResearchLedger

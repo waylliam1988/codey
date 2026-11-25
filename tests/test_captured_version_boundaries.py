@@ -1,19 +1,16 @@
 """Persisted protocol versions remain strict integers across the decoder refactor."""
 from __future__ import annotations
 
-from dataclasses import replace
-
 import pytest
 
 from codey.knowledge.model import canonical_json
-from codey.operations.browser_references import BrowserReferences, ControlPresentationVersion
-from codey.operations.kernel_protocol import InputContractVersion, build_turn_snapshot, refresh_snapshot_contract
-from codey.operations.provider_receipts import restore_snapshot, snapshot_description
+from codey.operations.browser.browser_references import BrowserReferences, ControlPresentationVersion
+from codey.operations.provider_receipts import TURN_SNAPSHOT_SCHEMA, restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.types.json_value import JsonObject, JsonValue, parse_json_object
 
-INPUT_VERSIONS: tuple[InputContractVersion, ...] = (11, 12, 13, 14, 15, 16, 17, 18, 19, 20)
 CONTROL_VERSIONS: tuple[ControlPresentationVersion, ...] = (1, 2, 3, 4)
 
 
@@ -26,16 +23,11 @@ def control_payload() -> JsonObject:
     return BrowserReferences("snapshot", '{"url":"https://example.com/controls"}', 7, ()).payload()
 
 
-@pytest.mark.parametrize("version", INPUT_VERSIONS)
-def test_supported_input_versions_roundtrip_without_upgrading_the_contract(version: InputContractVersion) -> None:
-    original = restore_snapshot(snapshot_payload())
-    original = refresh_snapshot_contract(replace(original, input_contract_version=version))
-    payload = parse_json_object(canonical_json(snapshot_description(original)))
-    restored = restore_snapshot(payload)
-    assert restored == original
-    assert type(restored.input_contract_version) is int and restored.input_contract_version == version
-    assert restored.task_navigation_selector is (version >= 12)
-    assert restored.contract_text == original.contract_text
+def test_current_input_contract_roundtrips_frozen_declarations() -> None:
+    original = snapshot_payload()
+    restored = restore_snapshot(parse_json_object(canonical_json(original)))
+    assert original["schema_version"] == TURN_SNAPSHOT_SCHEMA
+    assert snapshot_description(restored) == original
 
 
 @pytest.mark.parametrize("version", [True, False, 11.0, 14.0, "14", None, [], {}])
@@ -46,15 +38,15 @@ def test_input_version_rejects_nonintegers_without_coercion(version: JsonValue) 
         restore_snapshot(payload)
 
 
-@pytest.mark.parametrize("version", [-1, 0, 10, 21])
+@pytest.mark.parametrize("version", [-1, 0, *range(10, TURN_SNAPSHOT_SCHEMA), TURN_SNAPSHOT_SCHEMA + 1])
 def test_unsupported_input_version_is_rejected_before_shape_validation(version: int) -> None:
     with pytest.raises(ValueError, match="unsupported captured turn snapshot version; start a new request"):
         restore_snapshot({"schema_version": version})
 
 
 def test_supported_input_version_still_requires_the_original_shape() -> None:
-    with pytest.raises(ValueError, match="invalid captured turn snapshot version/shape"):
-        restore_snapshot({"schema_version": 14})
+    with pytest.raises(ValueError, match="invalid captured turn snapshot shape"):
+        restore_snapshot({"schema_version": TURN_SNAPSHOT_SCHEMA})
 
 
 @pytest.mark.parametrize("version", CONTROL_VERSIONS)

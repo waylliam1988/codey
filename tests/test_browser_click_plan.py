@@ -10,15 +10,17 @@ import pytest
 from codey.codemode.catalog import build_codemode_catalog, render_declarations, snapshot_catalog
 from codey.codemode.host import CodeModeHost
 from codey.codemode.runtime import NodeWorkerRuntime
-from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
-from codey.operations.browser_waits import observed_link_outcome, pending_link_click
+from codey.codemode.types import ToolCatalogEntry
+from codey.operations.browser.browser_waits import observed_link_outcome, pending_link_click
+from codey.operations.browser.turn_surface import offer_browser_tools
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.kernel_prompt import _browser_followup_context, _browser_read_context
-from codey.operations.kernel_protocol import build_turn_snapshot, offer_browser_tools
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
+from codey.protocols.codemode import CodeModeLimits
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_object, parse_json_object
 

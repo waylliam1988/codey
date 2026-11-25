@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from codey.operations.kernel.kernel_driver import drive_provider_request
 from codey.operations.kernel_contracts import ToolExecutor
-from codey.operations.kernel_driver import drive_provider_request
 from codey.operations.provider_request import prepare_provider_request
 from codey.operations.provider_session import adapt_provider
 from codey.operations.task_session import TaskSession
@@ -46,8 +46,8 @@ def _run_codemode(
     session_id: str = "",
 ) -> ToolResult:
     from codey.codemode.kernel import build_execute_turn_executor
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel.kernel_execution import execute_turn
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.runtime.core.models import ToolCall
 
     snapshot = build_turn_snapshot(session)
@@ -68,14 +68,14 @@ def _run_codemode(
 
 
 def test_parse_codemode_preserves_repair_token() -> None:
-    from codey.codemode.protocol import parse_codemode_args
+    from codey.protocols.codemode import parse_codemode_args
 
     program = parse_codemode_args({"code": "return 1;", "repair_of": "cmr_abc123"})
     assert program.repair_of == "cmr_abc123"
 
 
 def test_kernel_argument_normalization_preserves_repair_token() -> None:
-    from codey.operations.kernel_protocol import _validate_tool_args
+    from codey.operations.kernel.kernel_protocol import _validate_tool_args
 
     normalized, error = _validate_tool_args("codemode", {
         "code": "return 1;",
@@ -290,8 +290,8 @@ def test_repair_argument_change_fails_without_fetching_again(tmp_path: Path, mon
 
 def test_receipt_only_repair_rejects_state_writes_without_reapplying_them(tmp_path: Path) -> None:
     from codey.codemode.kernel import build_execute_turn_executor
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel.kernel_execution import execute_turn
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.runtime.core.models import ToolCall
     from tests.test_codemode_replay_authority import fixture
 
@@ -342,9 +342,9 @@ def test_receipt_only_repair_rejects_state_writes_without_reapplying_them(tmp_pa
 
 def test_parallel_repair_binds_receipts_to_original_child_indices(tmp_path: Path) -> None:
     from codey.codemode.kernel import build_execute_turn_executor
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -392,17 +392,17 @@ def test_parallel_repair_binds_receipts_to_original_child_indices(tmp_path: Path
 def test_repair_after_durable_restore_reuses_the_original_child_receipt(tmp_path: Path) -> None:
     from codey.codemode.kernel import build_execute_turn_executor
     from codey.durable import DurableSession, SQLiteDurableStore
-    from codey.operations.kernel_context import KernelContext
+    from codey.operations.kernel.kernel_context import KernelContext
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.kernel_contracts import (
         KernelExecutionDeps,
         KernelObservationDeps,
         KernelRunRequest,
         KernelTransportDeps,
     )
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.runtime.core.models import ToolCall
     from codey.runtime.effects.effect_records import RuntimeEffectIntent, RuntimeEffectSettlement
     from codey.runtime.effects.replay_policy import ReplayClass
@@ -560,8 +560,8 @@ def test_missing_or_absent_repair_authorization_never_reuses_a_child(
     research_tools = ResearchTools(source, None, None)
 
     from codey.codemode.kernel import build_execute_turn_executor
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel.kernel_execution import execute_turn
+    from codey.operations.turn_snapshot import build_turn_snapshot
 
     snapshot = build_turn_snapshot(session)
     parent = build_execute_turn_executor(

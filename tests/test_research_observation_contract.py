@@ -148,7 +148,7 @@ def test_delegate_rejects_success_without_matching_observation(name):
                             web_search=lambda *a: ResearchToolOutput(URL, ok=True),
                             source_search=lambda *a: ResearchToolOutput("1. offset 7: text", ok=True),
                             open_url=lambda *a, **kw: ResearchToolOutput("body", ok=True))
-    result, ok, _ = ExecutionDelegate(session=TaskSession(policy=TaskPolicy(grants=frozenset())), research_tools=tools)._execute_research(
+    result, ok, _ = ExecutionDelegate(session=TaskSession(policy=TaskPolicy(grants=frozenset())), research_tools=tools).research_executor._execute_research(
         ToolCall(name, {"url": URL, "query": "q"}))
     assert ok is False and result.ok is False
     assert "observation" in result.model_text and not result.canonical

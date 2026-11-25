@@ -14,20 +14,16 @@ from codey.codemode.catalog import render_declarations, snapshot_catalog
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.replay import digest
 from codey.operations.completion_context import CompletionContext
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import (
-    TurnSnapshot,
-    build_turn_snapshot,
-    normalize_turn,
-    refresh_snapshot_contract,
-)
-from codey.operations.project_delivery import ProjectDeliveryLinks
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import TurnSnapshot, normalize_turn
+from codey.operations.project.project_delivery import ProjectDeliveryLinks
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_handoff import task_handoff
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.protocols.text_turn import decode_text_turn
-from codey.research.ledger import OpenedSource
+from codey.research.source_document import OpenedSource
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.model import TaskSubmission
 from codey.task.web_intent import explicit_web_intent, source_requirements, source_url_key
@@ -51,11 +47,11 @@ def test_project_disclosure_reuses_documented_source_binding(monkeypatch: pytest
     assert {"task_output", "task_cancel"} <= set(active.tool_names)
     assert "task_input" not in active.tool_names
     url = "https://example.com/project-format"
-    monkeypatch.setattr("codey.operations.project_delivery.observed_delivery_links",
+    monkeypatch.setattr("codey.operations.project.project_delivery.observed_delivery_links",
                         lambda _session: ProjectDeliveryLinks(specification=url))
     selected, _ = task_handoff(session, snapshot, CompletionContext(), None)
     restored = restore_snapshot(snapshot_description(selected))
-    assert restored.bound_source_url == url
+    assert restored.task_source_url == url
     assert "open_url" in restored.tool_names
 
 
@@ -69,7 +65,7 @@ def test_specification_handoff_executes_through_the_frozen_surface(
     if nested_only:
         session.model_tool_names = ("codemode", "read_file", "edit")
     url = "https://example.com/project-format"
-    monkeypatch.setattr("codey.operations.project_delivery.observed_delivery_links",
+    monkeypatch.setattr("codey.operations.project.project_delivery.observed_delivery_links",
                         lambda _session: ProjectDeliveryLinks(specification=url))
     selected, hint = task_handoff(session, build_turn_snapshot(session), CompletionContext(), None)
     snapshot = restore_snapshot(snapshot_description(selected))
@@ -135,8 +131,7 @@ def test_removed_action_contract_requires_new_request(kind: str) -> None:
 
     snapshot = build_turn_snapshot(session_for(f"Open <{ORIGINAL}>.", kind=kind))
     payload = snapshot_description(snapshot)
-    empty_spec: JsonObject = {}
-    payload["input_binding"] = {"kind": "actions", "model_spec": empty_spec}
+    payload["input_binding"] = {"kind": "actions", "tool": "codemode", "source_refs": []}
     payload["task_navigation_url"] = None
     with pytest.raises(ValueError, match=r"codemode\.action input is no longer supported"):
         restore_snapshot(payload)
@@ -343,10 +338,8 @@ def test_old_snapshot_has_no_implicit_binding_and_new_shapes_fail_closed() -> No
         del payload[key]
     payload["schema_version"] = 6
     del payload["task_navigation_url"]
-    with pytest.raises(ValueError, match="unsupported captured turn snapshot"):
+    with pytest.raises(ValueError, match="unsupported captured turn snapshot version"):
         restore_snapshot(payload)
-    legacy_snapshot = refresh_snapshot_contract(replace(snapshot, input_contract_version=11))
-    assert restore_snapshot(snapshot_description(legacy_snapshot)) == legacy_snapshot
     payload = snapshot_description(snapshot)
     payload["unknown"] = None
     with pytest.raises(ValueError, match="shape"):

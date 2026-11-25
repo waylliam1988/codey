@@ -42,12 +42,12 @@ def setup(tmp_path):
 
 
 def execute(delegate, tools, session, name, args):
-    from codey.research.questions import QUESTION_BOUND_TOOLS
+    from codey.research.tool_names import QUESTION_BOUND_TOOLS
 
     if name in QUESTION_BOUND_TOOLS and tools.ledger.questions:
         args = {"question_ref": "q1", **args}
     call = ToolCall(name, args)
-    result, ok, _ = delegate._execute_research(call)
+    result, ok, _ = delegate.research_executor._execute_research(call)
     if name == "open_url":
         assert ok, result.model_text
     if ok:

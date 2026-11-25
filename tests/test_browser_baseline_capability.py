@@ -9,9 +9,9 @@ import pytest
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.recovery import policy_from_durable_task
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.capabilities import BROWSER_CAPABILITIES
 from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget

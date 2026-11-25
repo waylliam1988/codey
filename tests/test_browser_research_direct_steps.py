@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from codey.operations.kernel_protocol import build_turn_snapshot, offer_browser_call
+from codey.operations.browser.turn_surface import offer_browser_call
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.types.json_value import JsonObject, decode_json_object
 from tests.test_research_submission_handoff_production import (

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from codey.operations.browser_copy import CopyTurn, copy_target
+from codey.operations.browser.browser_copy import CopyTurn, copy_target
 from codey.types.json_value import JsonObject
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools.browser_typed_copy_live_gate import copy_case, run_copy

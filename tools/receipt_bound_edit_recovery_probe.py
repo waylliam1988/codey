@@ -15,8 +15,8 @@ from unittest.mock import patch
 
 from codey.agents.tools import AgentToolFns
 from codey.codemode.kernel import build_execute_turn_executor
-from codey.operations import kernel_protocol
-from codey.operations.kernel_execution import execute_turn
+from codey.operations import turn_snapshot
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -125,7 +125,7 @@ def run_deterministic_case(directory: Path, arm: str, scenario: str) -> JsonObje
     stages: list[JsonValue] = []
     with ab.prototype_helper(directory, enabled=arm == "B"):
         for turn in range(1, 3 if scenario == "stale-recovery" else 2):
-            snapshot = kernel_protocol.build_turn_snapshot(session)
+            snapshot = turn_snapshot.build_turn_snapshot(session)
             executor = build_execute_turn_executor(
                 session=session, snapshot=snapshot, run_id="recovery-probe", effect_scope="task", turn=turn,
                 project_path=project, allow_writes=True, workspace_revision_store=revisions,

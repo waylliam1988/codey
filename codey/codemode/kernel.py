@@ -12,17 +12,18 @@ from typing import TYPE_CHECKING, Protocol
 
 from codey.codemode.catalog import build_catalog_snapshot, snapshot_catalog
 from codey.codemode.host import CodeModeHost
-from codey.codemode.identity import child_call_index, parent_execution_id
+from codey.codemode.identity import child_call_index
 from codey.codemode.output import externalize_value
 from codey.codemode.patch import PatchChild, PatchPreflightError, patch_summary
-from codey.codemode.protocol import CodeModeInputError, parse_codemode_args
 from codey.codemode.replay import CodeModeRepairContext, DurableCodeModeReplay, ExecutionTrace, digest
 from codey.codemode.runtime import CodeModeRuntime, NodeWorkerRuntime
 from codey.codemode.shape_repair import preflight_shape_diagnostic, readonly_settled, shape_diagnostic, shape_failure
 from codey.codemode.state import CodeModeStateStore
-from codey.codemode.types import CodeModeLimits, DeliveryReference, ToolCatalogEntry, ToolCatalogSnapshot
-from codey.operations.browser_references import BrowserReferences
+from codey.codemode.types import DeliveryReference, ToolCatalogEntry, ToolCatalogSnapshot
+from codey.operations.browser.browser_references import BrowserReferences
+from codey.protocols.codemode import CodeModeInputError, CodeModeLimits, parse_codemode_args
 from codey.runtime.core import cancellation
+from codey.runtime.core.codemode_identity import parent_execution_id
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import JsonObject, decode_json_object
@@ -33,8 +34,8 @@ if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
     from codey.durable import DurableStore
     from codey.durable.session import DurableSession
+    from codey.operations.kernel.kernel_protocol import TurnSnapshot
     from codey.operations.kernel_contracts import StopSignal, ToolExecutor
-    from codey.operations.kernel_protocol import TurnSnapshot
     from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_session import TaskSession
     from codey.research.tools import ResearchTools
@@ -97,7 +98,7 @@ def _project_patch_results(
 
 
 def _simplified_failure(result: ToolResult, spec: ToolSpec, children: Mapping[str, ToolResult]) -> ToolResult:
-    from codey.operations.browser_copy import EXPIRED, captured_data, write_unconfirmed
+    from codey.operations.browser.browser_copy import EXPIRED, captured_data, write_unconfirmed
     from codey.toolchain.constants import STALE_READ_REFERENCE_CODE
     from codey.toolchain.tool_prompt import tool_repair_text
 
@@ -365,7 +366,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
     browser_session: BrowserSession | None = None,
 ) -> Callable[[ToolCall], ToolResult]:
     """Build the production parent executor; every child re-enters execute_turn."""
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.kernel_tool_args import _validate_tool_args
     from codey.operations.task_effects import KernelEffectSink
 
@@ -400,7 +401,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             return DurableCodeModeReplay.for_repair(durable, run_id, repair, runtime_contract)
         fingerprint: dict[str, object] = {"args": call.args, "catalog": catalog.digest, "allow_writes": allow_writes,
             "task_navigation_url": snapshot.task_navigation_url,
-            **({"task_source_url": snapshot.bound_source_url} if snapshot.input_contract_version >= 15 else {}),
+            "task_source_url": snapshot.task_source_url,
             "browser_references": snapshot.browser_references.payload() if snapshot.browser_references else None,
             "runtime": runtime_contract}
         if snapshot.input_binding is not None and snapshot.input_binding.source_refs:
@@ -458,8 +459,8 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
         def bound_edit(index: int, args: JsonObject) -> JsonObject:
             from codey.agents.protocol import canonical_project_path
             from codey.durable.session import DurableSession
-            from codey.operations.edit_base import edit_base_text
             from codey.operations.file_field_binding import bound_receipt_content
+            from codey.operations.project.edit_base import edit_base_text
             from codey.types.json_value import decode_json_object, require_json_string
 
             binding = snapshot.input_binding
@@ -510,8 +511,8 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             if (child.name == "edit" and snapshot.input_binding is None and project_path is not None
                     and snapshot.policy is not None):
                 from codey.agents.protocol import canonical_project_path
-                from codey.operations.declared_field_input import free_program_required
                 from codey.operations.file_field_binding import file_rules
+                from codey.operations.project.declared_field_input import free_program_required
 
                 path = child.args.get("path")
                 rules = (file_rules(snapshot.policy.required_checks, canonical_project_path(project_path, path))
@@ -608,14 +609,14 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             return receipt.call.args if receipt is not None and receipt.call.name == "browser_wait" else None
 
         def link_result_observed(click: str, observation: str) -> bool:
-            from codey.operations.browser_waits import observed_link_outcome
+            from codey.operations.browser.browser_waits import observed_link_outcome
 
             receipt = session._memory_results.get(observation)
             document = receipt.audit.get("browser_document") if receipt is not None else None
             return isinstance(document, dict) and observed_link_outcome(
                 session, click, decode_json_object(document), through=observation)
 
-        from codey.operations.declared_field_input import lower as lower_declared_fields
+        from codey.operations.project.declared_field_input import lower as lower_declared_fields
 
         binding = snapshot.input_binding
         from codey.types.json_value import canonical_json_object
@@ -625,7 +626,10 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
         declared_copy = (binding is not None and binding.kind == "declared_fields" and bool(binding.source_refs)
             and (binding.model_spec.name == "codemode" or isinstance(inputs, dict) and set(inputs) == {"path"}
                  and original_args.get("code") == lower_declared_fields(inputs, specs["edit"])["code"]))
-        from codey.operations.project_instructions import changed_instruction_target, record_blocked_instruction_targets
+        from codey.operations.project.project_instructions import (
+            changed_instruction_target,
+            record_blocked_instruction_targets,
+        )
         from codey.types.json_value import require_json_string
 
         instruction_targets: set[str] = set()
@@ -633,7 +637,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
 
         def plan_patch(files: tuple[JsonObject, ...], indices: tuple[int, ...]) -> tuple[JsonObject, ...]:
             from codey.codemode.patch import preflight_patch
-            from codey.operations.project_delivery import edit_scope_violation, project_write_basis
+            from codey.operations.project.project_delivery import edit_scope_violation, project_write_basis
 
             if project_path is None or not allow_writes or snapshot.input_binding is not None:
                 raise ValueError("patch requires the ordinary project write contract")
@@ -700,7 +704,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             session_id=session_id,
             run_id=str(run_id or ""),
             task_navigation_url=snapshot.task_navigation_url,
-            task_source_url=snapshot.bound_source_url,
+            task_source_url=snapshot.task_source_url,
             browser_references=snapshot.browser_references,
             browser_stage=browser_stage,
             original_browser_wait=original_browser_wait,

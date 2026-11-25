@@ -175,7 +175,7 @@ def ablation(arm):
 
             stack.enter_context(patch.object(answer_context, "answer_context", view))
         if arm == "short_errors":
-            from codey.operations import kernel_context
+            from codey.operations.kernel import kernel_context
 
             original_result = kernel_context.task_result_context
 

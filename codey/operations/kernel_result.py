@@ -4,9 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from codey.operations.kernel_provenance import _EXECUTOR_STRIPPED_AUDIT_KEYS
 from codey.runtime.core.models import ToolCall, ToolResult
+
+if TYPE_CHECKING:
+    from codey.research.output_receipts import _Outcome
+    from codey.toolchain.runtime import ToolOutcome
 
 __all__ = [
     "_consistent_tool_result",
@@ -179,10 +184,14 @@ def _error_result(call: ToolCall, message: str) -> ToolResult:
     return ToolResult(ok=False, call=call, model_text=f"ERROR: {message}")
 
 
+class PolicyDeniedResult(ToolResult):
+    """A tool guard rejected the operation before dispatch."""
+
+
 def policy_denial_result(call: ToolCall, message: str, *, reason_code: str = "") -> ToolResult:
     """Runtime guard receipt: the executor has not been invoked."""
-    return ToolResult(ok=False, call=call, model_text=f"ERROR: {message}",
-                      audit={"execution_disposition": "denied_before_execution"},
+    return PolicyDeniedResult(ok=False, call=call, model_text=f"ERROR: {message}",
+                              audit={"execution_disposition": "denied_before_execution"},
                       canonical={"reason_code": reason_code, **({"next_action": "request_shell_approval"}
                                  if reason_code == "command_not_allowed" else {})})
 
@@ -289,3 +298,17 @@ def _normalize_delegate_result(
     final_ok = (type(ok) is bool and ok and result.ok and not invalid_audit and not invalid_exit
                 and result_ok(name, result, exit_code=exit_code))
     return replace(result, audit=audit, ok=final_ok), final_ok, valid_exit
+
+
+def result_from_outcome(call: ToolCall, outcome: ToolOutcome | _Outcome) -> ToolResult:
+    audit = dict(outcome.audit)
+    audit.pop("execution_disposition", None)
+    if call.name == "edit":
+        audit["changed"] = outcome.changed
+    return ToolResult(
+        ok=outcome.ok is True, call=call, model_text=str(outcome.model_text or ""),
+        truncated=outcome.truncated,
+        presentation=dict(outcome.presentation),
+        audit=audit,
+        canonical=dict(outcome.canonical),
+    )

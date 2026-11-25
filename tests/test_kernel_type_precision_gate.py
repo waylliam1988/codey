@@ -13,9 +13,9 @@ def test_kernel_type_precision_does_not_regress() -> None:
 
 
 def test_kernel_type_precision_rejects_a_new_dynamic_escape() -> None:
-    expected = {"codey/operations/kernel_execution.py": 8}
+    expected = {"codey/operations/kernel/kernel_execution.py": 8}
     with pytest.raises(SystemExit, match="precision changed"):
-        validate_counts(expected, {"codey/operations/kernel_execution.py": 9})
+        validate_counts(expected, {"codey/operations/kernel/kernel_execution.py": 9})
 
 
 @pytest.mark.parametrize("source", [

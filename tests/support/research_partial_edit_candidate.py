@@ -10,6 +10,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from codey.operations.research.execution import ResearchExecutor
+
 
 def normalize_edits(session, store, args):
     rows = []
@@ -49,7 +51,8 @@ def normalize_edits(session, store, args):
 
 
 def edit_spec(spec):
-    from codey.toolchain.tool_spec import freeze_spec_parameters, thaw_schema_value
+    from codey.toolchain.spec_model import thaw_schema_value
+    from codey.toolchain.tool_spec import freeze_spec_parameters
 
     params = thaw_schema_value(dict(spec.parameters))
     item = params["changes"]["items"]
@@ -90,7 +93,6 @@ def evidence_last(text):
 
 @contextmanager
 def treatment(arm):
-    from codey.operations.task_execution import ExecutionDelegate
     from codey.research import answer_context, answer_contract
     from tests.manual.research_state_fidelity_ab import pending_references
 
@@ -104,7 +106,7 @@ def treatment(arm):
             stack.enter_context(patch.object(answer_context, "_render_context", focused_view))
         elif arm == "partial_edit":
             original_spec = answer_contract.answer_spec
-            original_commit = ExecutionDelegate._commit_research_knowledge
+            original_commit = ResearchExecutor._commit_research_knowledge
             original_view = answer_context._render_context
 
             def spec(value, scope):
@@ -135,7 +137,7 @@ def treatment(arm):
                 return result
 
             stack.enter_context(patch.object(answer_contract, "answer_spec", spec))
-            stack.enter_context(patch.object(ExecutionDelegate, "_commit_research_knowledge", commit))
+            stack.enter_context(patch.object(ResearchExecutor, "_commit_research_knowledge", commit))
             stack.enter_context(patch.object(answer_context, "_render_context", view))
         elif arm not in {"baseline", "production"}:
             raise ValueError(arm)

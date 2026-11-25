@@ -9,16 +9,17 @@ from typing import TYPE_CHECKING
 
 from codey.automation.browser_document import document_changed, same_document
 from codey.automation.browser_receipts import delivery, query_document
-from codey.operations.browser_waits import BrowserWaitPlan, wait_plan
+from codey.operations.browser.browser_waits import BrowserWaitPlan, wait_plan
 from codey.policies.browser_requirement import BrowserPageRounds, BrowserResearchSequence, parse_browser_requirement
 from codey.policies.tool_requirement import parse_tool_success_check
 from codey.runtime.core.models import ToolResult
 from codey.task.instruction_text import instruction_text
-from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, thaw_schema_value
+from codey.toolchain.spec_model import thaw_schema_value
+from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 
 if TYPE_CHECKING:
-    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel.kernel_protocol import TurnSnapshot
 
 DIRECT_TOOLS = ("browser_snapshot", "browser_fill", "browser_click", "browser_read")
 SINGLE_STEP_TOOLS = ("browser_wait", "browser_eval", "browser_tab_list", "browser_download")

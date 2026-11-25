@@ -108,7 +108,7 @@ def score(scenario, row):
 
 def probe(root, proxy, model, protocol, scenario):
     project, state, logdir = _dirs(root)
-    _, mutations, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project)
+    mutations, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project)
     policy = TaskPolicy(frozenset({"control", "web.read"}), sources_open_required=scenario["sources"],
                         required_checks=("research_sources_opened",) if scenario["sources"] else ())
     record_entry_policy(mutations, session_id="s", run_id="r", policy=policy, durable=mutations.durable)

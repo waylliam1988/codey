@@ -8,15 +8,12 @@ from pathlib import Path
 
 import pytest
 
+from codey.operations.browser.turn_surface import offer_browser_tools
 from codey.operations.completion_context import CompletionContext
+from codey.operations.kernel.kernel_protocol import normalize_turn, refresh_snapshot_contract
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.kernel_protocol import (
-    build_turn_snapshot,
-    normalize_turn,
-    offer_browser_tools,
-    refresh_snapshot_contract,
-)
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
 from codey.protocols.text_turn import decode_text_turn

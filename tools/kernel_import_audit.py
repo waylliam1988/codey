@@ -21,7 +21,7 @@ SCOPES = {
 }
 FOCUS = (
     "codey.runtime.write.checkpoint",
-    "codey.operations.kernel_context",
+    "codey.operations.kernel.kernel_context",
     "codey.toolchain.tool_spec",
 )
 

@@ -10,16 +10,16 @@ import pytest
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.automation.browser_contracts import RouteDecision as Route
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.operations.browser_copy import CopyTurn
-from codey.operations.kernel_context import KernelContext
+from codey.operations.browser.browser_copy import CopyTurn
+from codey.operations.kernel.kernel_context import KernelContext
+from codey.operations.kernel.kernel_driver import drive_kernel, drive_provider_request
+from codey.operations.kernel.kernel_protocol import ModelInputBinding, TurnSnapshot, refresh_snapshot_contract
 from codey.operations.kernel_contracts import (
     KernelExecutionDeps,
     KernelRunRequest,
     KernelTransportDeps,
     result_from_payload,
 )
-from codey.operations.kernel_driver import drive_kernel, drive_provider_request
-from codey.operations.kernel_protocol import ModelInputBinding, TurnSnapshot, refresh_snapshot_contract
 from codey.operations.provider_receipts import (
     REQUEST_KIND,
     _restore_spec,

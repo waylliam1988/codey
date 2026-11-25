@@ -282,8 +282,9 @@ def test_pdf_bound_and_close_fault(monkeypatch):
 
 
 def test_turn_snapshot_fault():
-    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.kernel.kernel_protocol import normalize_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from codey.toolchain.tool_spec import register_custom_tool, unregister_custom_tool

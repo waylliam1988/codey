@@ -5,8 +5,8 @@ import json
 
 import pytest
 
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import tools_from_specs
 from codey.toolchain.runtime import EditBlock, edit_file

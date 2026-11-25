@@ -8,14 +8,16 @@ from pathlib import Path
 import pytest
 
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.browser.turn_surface import offer_browser_tools
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import evaluate
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_facts import bind_source_identity, project_execution_record, project_result_observation
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn, offer_browser_tools
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_handoff import report_completes_task
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, TaskPolicy, build_task_policy
 from codey.protocols.text_turn import decode_text_turn
 from codey.research.answer_contract import answer_scope, submit_answer, whole_research

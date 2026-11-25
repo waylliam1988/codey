@@ -1,7 +1,7 @@
 """Invoke explicit production provider actions in storage-boundary tests."""
 from __future__ import annotations
 
-from codey.operations.kernel_driver import drive_provider_request
+from codey.operations.kernel.kernel_driver import drive_provider_request
 from codey.operations.provider_request import prepare_provider_request as prepare_typed_request
 from codey.providers.request_codec import decode_provider_request
 from codey.providers.response_record import json_value

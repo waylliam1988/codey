@@ -15,13 +15,16 @@ import functools
 import threading
 import time
 import uuid
-from typing import Any
+from collections.abc import Iterator
+
+from playwright.sync_api import Locator
 
 from codey.app import provider_services as provider_services
-from codey.operations.task_state import TaskState
+from codey.app.task_state import AppTaskState
 from codey.providers import controls as provider_controls
 from codey.providers import flow as provider_flow
 from codey.providers import profile_doctor
+from codey.providers.base import ChatProvider
 from codey.runtime.core import cancellation
 
 CONTROL_TEACH_TIMEOUT = 300.0
@@ -34,11 +37,11 @@ def _profile_doctor_timeout(deadline: float) -> float:
     return max(0.1, min(PROFILE_DOCTOR_TIMEOUT, remaining))
 
 
-def borrow_open_provider(provider_id: str, owner_page: Any) -> Any | None:
+def borrow_open_provider(provider_id: str, owner_page: object) -> ChatProvider | None:
     return provider_services.borrow_open_provider(provider_id, owner_page)
 
 
-def _sibling_candidates(ctx: TaskState, request_provider_id: str, deadline: float) -> Any:
+def _sibling_candidates(ctx: AppTaskState, request_provider_id: str, deadline: float) -> Iterator[str]:
     """Healthy sibling ids within the recovery deadline (shared preamble)."""
     supervisor = ctx.providers.supervisor
     for provider_id in provider_services.reviewer_candidates(
@@ -53,7 +56,7 @@ def _sibling_candidates(ctx: TaskState, request_provider_id: str, deadline: floa
 
 
 def handle_profile_doctor(
-    ctx: TaskState,
+    ctx: AppTaskState,
     request: profile_doctor.ProfileDoctorRequest,
 ) -> str | None:
     """Try healthy sibling tabs within one bounded recovery deadline."""
@@ -94,7 +97,7 @@ def handle_profile_doctor(
 
 
 def handle_flow_recovery(
-    ctx: TaskState,
+    ctx: AppTaskState,
     request: provider_flow.FlowRecoveryRequest,
 ) -> str | None:
     """Ask healthy siblings to choose only among fixed flow predicates."""
@@ -135,7 +138,7 @@ def handle_flow_recovery(
     return None
 
 
-def bind_provider_handlers(ctx: TaskState) -> None:
+def bind_provider_handlers(ctx: AppTaskState) -> None:
     """Bind teach/doctor/recovery handlers to one task state (single seam).
 
     Both server startup and task entry call this; task entry rebinds per run
@@ -148,12 +151,12 @@ def bind_provider_handlers(ctx: TaskState) -> None:
     provider_flow.set_recovery_handler(functools.partial(handle_flow_recovery, ctx))
 
 
-def handle_control_teach(ctx: TaskState, request: provider_controls.ControlTeachRequest) -> Any:
+def handle_control_teach(ctx: AppTaskState, request: provider_controls.ControlTeachRequest) -> Locator:
     """Run the click-capture loop for one provider-control teach request."""
     while True:
         teach_id = "teach_" + uuid.uuid4().hex[:12]
         token = provider_controls.start_click_capture(request.page)
-        pending: dict[str, Any] = {
+        pending: dict[str, object] = {
             "id": teach_id,
             "request": request,
             "token": token,
@@ -190,7 +193,10 @@ def handle_control_teach(ctx: TaskState, request: provider_controls.ControlTeach
                 request.action,
                 timeout=1.0,
             )
-            return provider_controls.resolve_captured_control(request, captured)
+            resolved: object = provider_controls.resolve_captured_control(request, captured)
+            if not isinstance(resolved, Locator):
+                raise ValueError("captured control is unavailable")
+            return resolved
         except ValueError:
             continue
         finally:

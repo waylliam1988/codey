@@ -11,7 +11,7 @@ def test_real_workspace_edit_read_verify_and_external_change(tmp_path):
     project_text = os.environ.get("UI_SMOKE_PROJECT")
     if not project_text:
         pytest.skip("Set UI_SMOKE_PROJECT to run the real workspace smoke")
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall

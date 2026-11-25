@@ -25,7 +25,7 @@ def test_issue1_strict_hybrid_no_write_without_explicit():
 
 
 def test_issue1_strict_hybrid_edit_rejected_at_parse_and_execute(tmp_path):
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.runtime.core.models import ToolCall
@@ -179,7 +179,7 @@ def test_issue3_unified_completion_uses_session_facts_with_evidence():
 
 
 def test_issue4_same_slot_different_args_must_not_reuse(tmp_path):
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult
@@ -237,8 +237,8 @@ def test_issue4_policy_roundtrip_and_explicit_session_copy_keeps_facts():
 
 
 def test_issue5_strict_initial_snapshot_hides_unavailable_tools():
-    from codey.operations.kernel_protocol import build_turn_snapshot, controller_allowed_for_session
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot, controller_allowed_for_session
     from codey.policies.task_policy import build_task_policy
     from codey.providers.base import tools_from_specs
     from codey.task.model import TaskSubmission

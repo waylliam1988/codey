@@ -18,17 +18,13 @@ from codey.research.identity import (
     project_ref,
     sanitize_research_url_ref,
 )
-from codey.research.ledger import (
-    EvidenceItem,
-    OpenedSource,
-    ResearchLedger,
-    normalize_evidence_stance,
-)
+from codey.research.ledger import EvidenceItem, ResearchLedger, normalize_evidence_stance
 from codey.research.report_quality import (
     ReportQualityReview,
     citation_ref_items,
     parse_citation_rows,
 )
+from codey.research.source_document import OpenedSource
 from codey.research.urls import opened_url
 from codey.utils.refs import (
     bounded_refs as _bounded_refs,

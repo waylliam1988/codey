@@ -28,8 +28,8 @@ from codey.completion.contract import (
     register_completion_domain,
 )
 from codey.completion.verification_policy import VerificationPlan
-from codey.operations.browser_completion import evaluate_page_rounds, evaluate_research_sequence
-from codey.operations.browser_text_report import BrowserMetadata, MetadataPending
+from codey.operations.browser.browser_completion import evaluate_page_rounds, evaluate_research_sequence
+from codey.operations.browser.browser_text_report import BrowserMetadata, MetadataPending
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_inputs import CompletionCheckInput
 from codey.operations.completion_output import tool_facts
@@ -127,7 +127,7 @@ def _proof_evidence_refs(session: TaskSession, context: CompletionContext, repor
     try:
         ledger = context.research_ledger
         sources = ledger.opened_sources if ledger is not None else ()
-        from codey.research.ledger import OpenedSource
+        from codey.research.source_document import OpenedSource
 
         def source_url(source: OpenedSource) -> str:
             return source.final_url
@@ -196,7 +196,7 @@ def evaluate(session: TaskSession, done_text: object, *, context: object = None,
     try:
         normalized = CompletionContext.from_value(context)
         collect_completion_workspace(session, normalized)
-        from codey.operations.browser_linked_record import linked_record_completion
+        from codey.operations.browser.browser_linked_record import linked_record_completion
 
         draft = str(done_text or "").strip()
         text, linked_refs = linked_record_completion(session, draft)
@@ -497,9 +497,13 @@ def _proof_capacity_verdict(checks: list[CompletionCheck], *, publication: bool)
 def _browser_completion_block(session: TaskSession, text: str, context: CompletionContext,
                               metadata: BrowserMetadata | MetadataPending | None = None) -> GateVerdict | None:
     from codey.automation.browser_receipts import delivery
-    from codey.operations.browser_followups import PENDING, UNCERTAIN, pending_click
-    from codey.operations.browser_text_report import observe_metadata, report_scope
-    from codey.operations.browser_upload import bound_upload_explanation, upload_completion_scope, upload_evidence
+    from codey.operations.browser.browser_followups import PENDING, UNCERTAIN, pending_click
+    from codey.operations.browser.browser_text_report import observe_metadata, report_scope
+    from codey.operations.browser.browser_upload import (
+        bound_upload_explanation,
+        upload_completion_scope,
+        upload_evidence,
+    )
     from codey.operations.source_gaps import source_read_required, task_source_coverage
     from codey.policies.tool_requirement import decode_answer
 
@@ -541,7 +545,7 @@ def _render_task_citations(session: TaskSession, text: str, context: CompletionC
     if session.policy.strict_research or not session.policy.allows("web.read"):
         return text
     from codey.operations.chat_citations import render_source_citations
-    from codey.operations.project_delivery import (
+    from codey.operations.project.project_delivery import (
         original_handoff_citation,
         project_citation_labels,
         user_requests_citations,
@@ -596,7 +600,7 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
         return GateVerdict(False, str(exc), None)
     if block := _browser_completion_block(session, text, context, metadata):
         return block
-    from codey.operations.project_delivery import project_delivery_checks
+    from codey.operations.project.project_delivery import project_delivery_checks
 
     try:
         text, report = prepare_research_completion(session, text, context)

@@ -38,7 +38,7 @@ from codey.policies.tool_requirement import (
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition
 from codey.research.browser_search import BrowserSearchProvider
-from codey.research.ledger import OpenedSource
+from codey.research.source_document import OpenedSource
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object

@@ -71,8 +71,8 @@ def test_repeated_missing_result_reads_do_not_repeat_search_or_execution():
     session = TaskSession(policy=SimpleNamespace(allows=lambda _: True))
     delegate = ExecutionDelegate(session=session)
     with (
-        mock.patch.object(delegate, "_execute_project") as project,
-        mock.patch.object(delegate, "_execute_research") as research,
+        mock.patch.object(delegate.project_executor, "execute") as project,
+        mock.patch.object(delegate.research_executor, "execute") as research,
         mock.patch.object(delegate, "_resolve_custom_executor") as custom,
     ):
         for _ in range(2):

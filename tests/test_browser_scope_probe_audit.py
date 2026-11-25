@@ -6,8 +6,9 @@ from pathlib import Path
 import pytest
 
 from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import ledger_observation, source_observation
+from codey.research.ledger_receipts import ledger_observation
 from codey.research.passages import passage_ref
+from codey.research.source_observation import source_observation
 from codey.runtime.core.models import ToolCall, ToolResult
 from tools import browser_query_scope_probe as probe
 from tools.browser_leaf_exposure_ab import evidence_checks

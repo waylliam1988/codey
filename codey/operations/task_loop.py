@@ -1,6 +1,7 @@
 """Public entry for the single operation execution driver."""
 from __future__ import annotations
 
+from codey.operations.kernel.kernel_driver import drive_kernel
 from codey.operations.kernel_contracts import (
     KernelExecutionDeps,
     KernelObservationDeps,
@@ -8,7 +9,6 @@ from codey.operations.kernel_contracts import (
     KernelRunRequest,
     KernelTransportDeps,
 )
-from codey.operations.kernel_driver import drive_kernel
 from codey.operations.task_session import TaskSession
 
 __all__ = ["KernelExecutionDeps", "KernelObservationDeps", "KernelResult", "KernelRunRequest",

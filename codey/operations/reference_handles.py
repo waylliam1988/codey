@@ -11,7 +11,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from codey.operations.task_session import TaskSession
-from codey.research.ledger import EvidenceItem, OpenedSource, ResearchLedger
+from codey.research.ledger import EvidenceItem, ResearchLedger
+from codey.research.source_document import OpenedSource
 from codey.runtime.core.models import ToolResult
 from codey.runtime.effects.effect_records import compute_args_digest
 from codey.toolchain.tool_spec import spec_for_tool

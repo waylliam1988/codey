@@ -12,7 +12,7 @@ def test_project_map_json_protocol_case_targets_current_production_files() -> No
 
     assert case.expected_paths == (
         "codey/protocols/text_turn.py",
-        "codey/operations/kernel_protocol.py",
+        "codey/operations/kernel/kernel_protocol.py",
         "tests/test_text_turn_decoder_contract.py",
     )
     assert all((ROOT / path).is_file() for path in case.expected_paths)
@@ -23,7 +23,7 @@ def test_scoped_json_batching_case_has_no_retired_codec_target() -> None:
 
     assert case.expected_paths == (
         "codey/protocols/text_turn.py",
-        "codey/operations/kernel_protocol.py",
+        "codey/operations/kernel/kernel_protocol.py",
     )
     assert case.expected_tests == (
         "tests/test_text_turn_decoder_contract.py",

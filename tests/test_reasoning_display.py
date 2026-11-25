@@ -67,7 +67,7 @@ def test_plain_send_keeps_string_contract_and_exposes_only_matching_reasoning() 
 
 
 def test_text_json_tool_reply_with_reasoning_remains_executable_after_receipt_roundtrip() -> None:
-    from codey.operations.kernel_protocol import normalize_turn
+    from codey.operations.kernel.kernel_protocol import normalize_turn
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.response_record import decode_reply, encode_reply
 
@@ -90,7 +90,7 @@ def test_text_json_tool_reply_with_reasoning_remains_executable_after_receipt_ro
 
 
 def test_unmarked_native_prose_and_reasoning_do_not_become_text_tool_requests() -> None:
-    from codey.operations.kernel_protocol import normalize_turn
+    from codey.operations.kernel.kernel_protocol import normalize_turn
 
     plan = normalize_turn(AssistantTurn(text='{"tool":"web_search","args":{"query":"example"}}',
                                       reasoning="An example only."))

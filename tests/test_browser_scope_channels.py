@@ -15,10 +15,11 @@ from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.answer_context import fitting_full_read
 from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import restore_ledger_observation, source_observation
+from codey.research.ledger_receipts import restore_ledger_observation
 from codey.research.passages import passage_ref, restore_passages
 from codey.research.source_document import SourceDocument, SourceReadScope
 from codey.research.source_gateway import OpenedSource
+from codey.research.source_observation import source_observation
 from codey.research.source_reading import render_source_read
 from codey.research.source_snapshots import captured_source, document_snapshot, snapshot_document
 from codey.research.tools import ResearchTools

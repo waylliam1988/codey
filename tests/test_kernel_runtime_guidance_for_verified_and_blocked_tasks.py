@@ -4,8 +4,8 @@ import json
 import pytest
 
 from codey.operations.kernel_prompt import _result_context, kernel_prompt_for_session, working_context
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
 

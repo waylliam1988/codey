@@ -5,7 +5,7 @@ from collections.abc import Mapping
 
 from codey.policies.tool_requirement import ToolSuccessRequirement, parse_tool_success_check
 from codey.research.answer_contract import AnswerSessionView
-from codey.research.ledger_receipts import source_observation
+from codey.research.source_observation import source_observation
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object, require_json_integer
 

@@ -100,7 +100,7 @@ def execute_browser(call: ToolCall, browser: BrowserInteraction) -> ToolResult:
                 limit=require_json_integer(args.get("limit", 6000), "limit"), coherent=True)
             delegate = ExecutionDelegate(browser_session=browser, research_tools=ResearchTools(search=source,
                                                                      store=None, changes=None, ledger=ledger))
-            result, _, _ = delegate._opened_result(call, opened, url, ledger=ledger, turn=0, tool_index=0)
+            result, _, _ = delegate.research_executor._opened_result(call, opened, url, ledger=ledger, turn=0, tool_index=0)
             return result
         if call.name == "browser_snapshot":
             output = browser.snapshot(max_elements=require_json_integer(args.get("max_elements", 80), "max_elements"),

@@ -9,14 +9,14 @@ from pathlib import Path
 
 import pytest
 
-from codey.operations.browser_task_handoff import browser_task_handoff
+from codey.operations.browser.browser_task_handoff import browser_task_handoff
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import _required_tool_checks
 from codey.operations.completion_output import prepare_completion_output
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import parse_tool_success_check, require_browser_report_field, require_tool_success
 from codey.research.answer_contract import (
@@ -27,7 +27,7 @@ from codey.research.answer_contract import (
     validate_submission,
 )
 from codey.research.answer_report import AnswerReport
-from codey.research.ledger import OpenedSource
+from codey.research.source_document import OpenedSource
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object

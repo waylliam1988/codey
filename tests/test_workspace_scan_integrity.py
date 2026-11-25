@@ -67,7 +67,7 @@ def test_project_scan_configuration_is_applied_by_identity_authority(tmp_path):
 
 
 def test_applied_edit_retains_mutation_and_reason_when_identity_scan_fails(tmp_path):
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult
@@ -120,7 +120,7 @@ def test_applied_edit_retains_mutation_and_reason_when_identity_scan_fails(tmp_p
 def test_recheck_and_verify_after_scope_repair_never_reapplies_edit(tmp_path):
     import json
 
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall

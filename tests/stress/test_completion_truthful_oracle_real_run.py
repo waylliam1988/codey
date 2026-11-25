@@ -82,8 +82,8 @@ def _real_research_gate():
     from pathlib import Path
 
     from codey.operations.completion_gate import evaluate
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel.kernel_execution import execute_turn
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.research.answer_report import compile_answer_report
     from codey.runtime.core.models import ToolCall
     from codey.runtime.observe.execution_evidence import ExecutionEvidence

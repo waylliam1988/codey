@@ -6,7 +6,7 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 
-from codey.research.calculation import calculation_schema, data_schema
+from codey.research.calculation_schema import calculation_schema, data_schema
 from codey.research.knowledge_schema import (
     array_schema,
     comparison_schema,
@@ -20,8 +20,8 @@ from codey.research.knowledge_schema import (
     schema_object,
     schema_strings,
 )
-from codey.research.questions import QUESTION_BOUND_TOOLS
-from codey.toolchain.tool_spec import EXECUTION_CLAIMS_GUIDANCE, ToolSpec
+from codey.research.tool_names import QUESTION_BOUND_TOOLS
+from codey.toolchain.spec_model import EXECUTION_CLAIMS_GUIDANCE, ToolSpec
 from codey.types.json_value import (
     JsonObject,
     ToolArgs,
@@ -279,7 +279,7 @@ def question_bound_spec(spec: ToolSpec, *, question_refs: tuple[str, ...]) -> To
         return spec
     if not question_refs:
         return None
-    from codey.toolchain.tool_spec import freeze_spec_parameters
+    from codey.toolchain.spec_model import freeze_spec_parameters
 
     parameters = {**dict(spec.parameters), "question_ref": {"type": "string", "enum": list(question_refs)}}
     keys = (*spec.required, "question_ref")

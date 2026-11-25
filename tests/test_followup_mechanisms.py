@@ -9,8 +9,9 @@ import pytest
 
 from codey.codemode.catalog import snapshot_catalog
 from codey.codemode.host import CodeModeHost
-from codey.operations.kernel_protocol import build_turn_snapshot, offer_browser_tools
+from codey.operations.browser.turn_surface import offer_browser_tools
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.research.answer_contract import AnswerScope, digest, submit_answer
 from codey.research.evidence_gaps import (
@@ -19,10 +20,11 @@ from codey.research.evidence_gaps import (
     same_source_groups,
     suspected_source_pairs,
 )
-from codey.research.ledger import EvidenceItem, OpenedSource, ResearchLedger
+from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.passages import ReadPassage, read_passage_refs
 from codey.research.reference import ResearchReference
 from codey.research.report_evidence import check_report_evidence
+from codey.research.source_document import OpenedSource
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.web_intent import source_url_key
 from codey.types.json_value import JsonObject, ToolArgs, decode_json_object

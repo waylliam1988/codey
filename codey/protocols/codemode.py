@@ -3,14 +3,72 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from types import MappingProxyType
 
 import tree_sitter_javascript
 from tree_sitter import Language, Node, Parser
 
-from codey.codemode.types import CodeModeLimits, CodeModeProgram
-from codey.runtime.core.models import canonical_json_mapping
-from codey.types.json_value import JsonValue, parse_json_object
+from codey.types.json_value import JsonValue, canonical_json_object, parse_json_object
+
+
+def _freeze_value(value: JsonValue) -> object:
+    if isinstance(value, dict):
+        return MappingProxyType({key: _freeze_value(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return tuple(_freeze_value(item) for item in value)
+    return value
+
+
+def freeze_codemode_mapping(value: Mapping[str, object]) -> Mapping[str, object]:
+    return MappingProxyType({key: _freeze_value(item) for key, item in canonical_json_object(value).items()})
+
+
+@dataclass(frozen=True)
+class CodeModeLimits:
+    """One attempt's worker limits; child positions span the logical invocation.
+
+    Replayed positions consume their original receipts, not new effect budget.
+    timeout_ms bounds each worker attempt and inherits any outer deadline.
+    """
+    source_bytes: int = 100_000
+    timeout_ms: int = 30_000
+    max_child_calls: int = 64
+    max_concurrent_calls: int = 8
+    max_output_bytes: int = 200_000
+    max_pending_promises: int = 64
+    max_rpc_bytes: int = 1_000_000
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "source_bytes": self.source_bytes,
+            "timeout_ms": self.timeout_ms,
+            "max_child_calls": self.max_child_calls,
+            "max_concurrent_calls": self.max_concurrent_calls,
+            "max_output_bytes": self.max_output_bytes,
+            "max_pending_promises": self.max_pending_promises,
+            "max_rpc_bytes": self.max_rpc_bytes,
+        }
+
+    def __post_init__(self) -> None:
+        for field_name, value in self.as_dict().items():
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"{field_name} must be a positive integer")
+        if self.max_concurrent_calls > self.max_child_calls:
+            raise ValueError("max_concurrent_calls cannot exceed max_child_calls")
+
+
+@dataclass(frozen=True)
+class CodeModeProgram:
+    code: str
+    language: str = "javascript"
+    inputs: Mapping[str, object] = field(default_factory=dict)
+    repair_of: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "inputs", freeze_codemode_mapping(self.inputs))
+        object.__setattr__(self, "repair_of", str(self.repair_of or "").strip())
+
 
 _REPAIR_TOKEN = re.compile(r"cmr_[A-Za-z0-9_-]{6,64}\Z")
 _COMMENTED_STATEMENT = re.compile(r"\\(?:r\\n|n|r)[ \t]*(?:const|let|var|await|return|throw)\b")
@@ -170,7 +228,7 @@ def parse_codemode_args(args: Mapping[str, object], *, limits: CodeModeLimits | 
     if not isinstance(code, str) or not code.strip():
         raise CodeModeInputError("codemode code must be a non-empty string")
     try:
-        inputs = canonical_json_mapping(args.get("inputs", {}))
+        inputs = canonical_json_object(args.get("inputs", {}))
         _check_input_numbers(inputs)
         input_bytes = len(json.dumps(inputs, ensure_ascii=False, separators=(",", ":"),
                                     allow_nan=False).encode("utf-8")) if inputs else 0

@@ -5,7 +5,7 @@ from unittest import mock
 import pytest
 
 from codey.operations.completion_gate import evaluate
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.runtime.core.models import ToolCall, ToolResult
 from tests.test_explicit_once_command_blocks_repeat_until_workspace_changes import COMMAND, setup_session
 

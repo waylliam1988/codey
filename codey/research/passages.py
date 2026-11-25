@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, NotRequired, TypedDict
 from codey.types.json_value import JsonObject, canonical_json_object, require_json_integer, require_json_string
 
 if TYPE_CHECKING:
-    from codey.research.ledger import OpenedSource, ResearchLedger
-    from codey.research.source_document import SourceDocument
+    from codey.research.ledger import ResearchLedger
+    from codey.research.source_document import OpenedSource, SourceDocument
 
 
 class PassageDescriptor(TypedDict):
@@ -164,7 +164,7 @@ def describe_document_window(document: SourceDocument, text_hash: str, offset: i
 def describe_captured_window(observation: JsonObject, offset: int, limit: int, *,
                              coherent: bool = False) -> list[PassageDescriptor]:
     """Generate web, restored and stored-source windows from the same receipt."""
-    from codey.research.ledger_receipts import source_observation
+    from codey.research.source_observation import source_observation
     from codey.research.source_snapshots import snapshot_document
 
     source, _text, _pages = source_observation(observation)
@@ -203,7 +203,7 @@ def render_passage_window(document: SourceDocument, rows: list[PassageDescriptor
 
 def receipt_passages(observation: object, descriptors: object) -> tuple[ReadPassage, ...]:
     """Decode immutable bindings from the source receipt without publishing them."""
-    from codey.research.ledger_receipts import source_observation
+    from codey.research.source_observation import source_observation
 
     source, text, pages = source_observation(observation)
     lower, upper = source.read_scope.bounds(text) if source.read_scope is not None else (0, len(text))

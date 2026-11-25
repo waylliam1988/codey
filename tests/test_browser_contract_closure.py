@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from codey.codemode.json_edit import JsonNumber, replace_json_fields
-from codey.operations.browser_copy import select_source
+from codey.operations.browser.browser_copy import select_source
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import build_task_policy

@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from unittest.mock import patch
 
-from codey.research.ledger_receipts import source_observation
+from codey.research.source_observation import source_observation
 from codey.types.json_value import (
     JsonObject,
     canonical_json_object,

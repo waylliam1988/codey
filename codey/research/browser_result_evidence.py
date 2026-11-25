@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from codey.automation.browser_document import same_document
 from codey.automation.browser_receipts import committed_results, delivery, query_document
 from codey.policies.tool_requirement import _browser_body
-from codey.research.ledger_receipts import source_observation
+from codey.research.source_observation import source_observation
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import spec_for_tool

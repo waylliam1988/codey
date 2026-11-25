@@ -1,21 +1,4 @@
-"""Structural contract the task spine needs from application state.
-
-``TaskRunDeps.state`` used to be untyped, which hid the real coupling between
-``operations/`` and ``AppContext``: every ``state.handle_*`` addition
-silently widened what the spine could touch. This ``Protocol`` lists exactly
-the members the spine (plus ``task_submit`` and the app service modules) may
-use -- run coordination, locks, registries, and emit. ``AppContext``
-satisfies it structurally.
-
-No runtime import happens here (annotations only, real types under
-``TYPE_CHECKING``), so cold start is unaffected.
-
-Rule for growing this surface: add a member only when a ``TaskState``-typed
-caller needs it. HTTP-layer needs (ui_state, knowledge, ledgers) stay on the
-untyped ``ctx`` in ``api.py`` on purpose -- a second protocol there would just
-reduplicate ``AppContext``.
-"""
-
+"""State and services consumed by the task operation spine."""
 from __future__ import annotations
 
 import threading
@@ -27,21 +10,17 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codey.agents.handoff import ConversationContext
-    from codey.app.approval_registry import ApprovalRegistry
-    from codey.app.lifecycle import AppLifecycle
-    from codey.app.provider_registry import ProviderRegistry
-    from codey.app.run_registry import RunRegistry, RunSnapshot
-    from codey.app.shell_service import ShellExecutionTicket
-    from codey.app.task_runtime import TaskRuntimeCoordinator
-    from codey.durable.scheduler import DurableTaskScheduler
     from codey.durable.session import DurableSession
     from codey.knowledge.store import KnowledgeStore
     from codey.memory.service import MemoryService
     from codey.providers.base import ChatProvider
+    from codey.providers.diagnostics import ProviderFailure
+    from codey.providers.supervisor import ProviderSupervisor
     from codey.repairs.self_repair import SelfRepairSupervisor
     from codey.runs.ledger import RunLedgerStore
     from codey.runs.trace import RunTraceStore
     from codey.runs.work_checkpoint import WorkCheckpointStore
+    from codey.runtime.core.api_selection import ApiRunSelection
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.execution_output_store import ExecutionOutputStore
@@ -67,6 +46,26 @@ class TaskSubmissionStores:
     execution_outputs: ExecutionOutputStore | None = None
 
 
+class ActiveRun(Protocol):
+    @property
+    def run_id(self) -> str: ...
+    @property
+    def session_id(self) -> str: ...
+    @property
+    def project(self) -> str | None: ...
+
+
+class RunCoordination(Protocol):
+    def bind_api_selection(self, run_id: str, config: ApiRunSelection) -> None: ...
+    def set_last_provider_failure(self, value: ProviderFailure | None) -> None: ...
+    def stop_flag_for(self, run_id: str) -> threading.Event: ...
+
+
+class RunProviders(Protocol):
+    @property
+    def supervisor(self) -> ProviderSupervisor: ...
+
+
 class TaskState(Protocol):
     """Run coordination surface (locks, registries, emit)."""
 
@@ -75,11 +74,10 @@ class TaskState(Protocol):
     durable: DurableSession
     memory: MemoryService
     lock: threading.Lock
-    run_registry: RunRegistry
-    task_runtime: TaskRuntimeCoordinator
-    lifecycle: AppLifecycle
-    providers: ProviderRegistry
-    approvals: ApprovalRegistry
+    @property
+    def run_registry(self) -> RunCoordination: ...
+    @property
+    def providers(self) -> RunProviders: ...
     runtime_mutations: RuntimeMutationLine
 
     def reserve_run(
@@ -91,10 +89,10 @@ class TaskState(Protocol):
         provider_id: str,
         run_id: str = "",
         abort_if_stopped: bool = False,
-    ) -> RunSnapshot | None: ...
+    ) -> ActiveRun | None: ...
     def release_run(self, run_id: str) -> None: ...
-    def current_run(self) -> RunSnapshot | None: ...
-    def active_run_for(self, *, session_id: str = "", project: str | None = None) -> RunSnapshot | None: ...
+    def current_run(self) -> ActiveRun | None: ...
+    def active_run_for(self, *, session_id: str = "", project: str | None = None) -> ActiveRun | None: ...
     def stop_flag_for(self, run_id: str) -> threading.Event: ...
     def finish_run(self, run_id: str, event: dict[str, object]) -> bool: ...
     def start_run(self, run_id: str) -> bool: ...
@@ -110,9 +108,6 @@ class TaskState(Protocol):
     def resolve_shell_approval(self, approval_id: str) -> dict[str, object] | None: ...
     def expire_stale_shell_approvals(self, active_run_id: str) -> None: ...
     def approval_generation(self) -> int: ...
-    def claim_shell_ticket(
-        self, approval_id: str, *, timeout: int, output_limit: int,
-    ) -> tuple[dict[str, object] | None, ShellExecutionTicket | None]: ...
     def pop_pending_teach(self, teach_id: str) -> dict[str, object] | None: ...
     def is_busy(self) -> bool: ...
     def acquire_project_writer(self, project: str | Path) -> bool: ...
@@ -120,16 +115,6 @@ class TaskState(Protocol):
     def change_tracker_for(self, project: str | Path, *, persistent: bool, task_id: str = "") -> ChangeTracker: ...
     @property
     def self_repair(self) -> SelfRepairSupervisor | None: ...
-
-
-class TaskSubmissionState(TaskState, Protocol):
-    """State plus resources needed to assemble a task run."""
-
-    durable: DurableSession
-    durable_scheduler: DurableTaskScheduler
-
-    @property
-    def task_submission_stores(self) -> TaskSubmissionStores: ...
 
 
 def stop_flag_for(state: TaskState, run_id: str) -> threading.Event:
@@ -143,4 +128,4 @@ def stop_flag_for(state: TaskState, run_id: str) -> threading.Event:
     return event if isinstance(event, threading.Event) else threading.Event()
 
 
-__all__ = ["TaskState", "TaskSubmissionState", "TaskSubmissionStores", "stop_flag_for"]
+__all__ = ["TaskState", "TaskSubmissionStores", "stop_flag_for"]

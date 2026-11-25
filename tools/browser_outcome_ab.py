@@ -16,7 +16,8 @@ from codey.automation.browser_receipts import committed_results
 from codey.automation.browser_session import BrowserSession
 from codey.completion.contract import CHECK_FAIL, CHECK_PASS, CompletionCheck
 from codey.operations import completion_gate, task_execution
-from codey.operations.browser_completion import _snapshot_ref
+from codey.operations.browser.browser_completion import _snapshot_ref
+from codey.operations.browser.execution import BrowserExecutor
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import tool_facts
 from codey.operations.task_execution import ExecutionDelegate
@@ -97,7 +98,7 @@ def post_load_read(session: TaskSession, context: CompletionContext) -> Requirem
 
 @contextmanager
 def readiness_candidate(directory: Path, *, enabled: bool) -> Iterator[None]:
-    execute = ExecutionDelegate._execute_browser_operation
+    execute = BrowserExecutor.execute_operation
     checks = completion_gate._required_tool_checks
     pending: dict[BrowserSession, JsonObject] = {}
 
@@ -134,7 +135,7 @@ def readiness_candidate(directory: Path, *, enabled: bool) -> Iterator[None]:
             [*baseline.rows, CompletionCheck(CHECK, CHECK_PASS if outcome.passed else CHECK_FAIL, outcome.reason_code)],
             {**baseline.evaluations, CHECK: outcome}, baseline.tool_bindings)
 
-    with (patch.object(ExecutionDelegate, "_execute_browser_operation", browser_operation) if enabled else nullcontext(),
+    with (patch.object(BrowserExecutor, "execute_operation", browser_operation) if enabled else nullcontext(),
           patch.object(completion_gate, "_required_tool_checks", required_checks),
           patch.object(task_execution, "browser_receipt_tools", lambda declared: browser_receipt_tools(declared) | OBSERVED)):
         yield

@@ -5,9 +5,10 @@ import copy
 import pytest
 
 from codey.codemode.kernel import build_execute_turn_executor
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.core.models import ToolCall
 from tests.test_codemode_replay_authority import fixture

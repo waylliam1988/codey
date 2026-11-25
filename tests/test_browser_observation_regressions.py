@@ -11,19 +11,19 @@ from codey.automation.browser_document import document_changed, same_document
 from codey.automation.browser_query import QueryObservationError
 from codey.automation.browser_session import BrowserSession
 from codey.operations import kernel_control
-from codey.operations.browser_followups import pending_click, query_click
-from codey.operations.browser_task_handoff import browser_task_handoff
+from codey.operations.browser.browser_followups import pending_click, query_click
+from codey.operations.browser.browser_task_handoff import browser_task_handoff
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import _browser_completion_block
-from codey.operations.kernel_context import KernelContext
+from codey.operations.kernel.kernel_context import KernelContext
 from codey.operations.kernel_contracts import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.tool_requirement import require_tool_success
-from codey.research.ledger_receipts import source_observation
 from codey.research.passages import passage_ref
+from codey.research.source_observation import source_observation
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.runtime.core.operation_payload import RuntimeOperationState

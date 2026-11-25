@@ -131,8 +131,8 @@ def test_local_gemma_incomplete_frame_cannot_complete_as_plain_text() -> None:
 
 def test_incomplete_done_frame_gets_specific_repair_without_executing():
     from codey.operations.kernel_prompt import _repair_prompt
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.response_record import decode_reply, encode_reply
 
@@ -288,9 +288,10 @@ def test_local_frame_rejects_nonfinite_values_and_unpaired_surrogates():
 
 
 def test_malformed_native_enum_requests_quoted_strings_without_coercing_the_call():
+    from codey.operations.kernel.kernel_protocol import normalize_turn
     from codey.operations.kernel_prompt import _repair_prompt
-    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
 
     snapshot = build_turn_snapshot(TaskSession(TaskPolicy(grants=frozenset({"control", "knowledge.write"}))), native=True)
@@ -305,7 +306,7 @@ def test_malformed_native_enum_requests_quoted_strings_without_coercing_the_call
 
 
 def test_local_frame_reports_missing_outer_argument_container_without_completing_it():
-    from codey.operations.kernel_protocol import normalize_turn
+    from codey.operations.kernel.kernel_protocol import normalize_turn
 
     raw = '<|tool_call>call:knowledge_commit{args:{"commit_id":"x","changes":[]}<tool_call|>'
     rejected = normalize_turn(normalize_local_reply(raw))

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from codey.operations.kernel_context import KernelContext
+from codey.operations.kernel.kernel_context import KernelContext
 from codey.operations.kernel_contracts import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
 from codey.operations.project_completion_checks import _evidence_with_session_facts
 from codey.operations.task_session import TaskSession, session_checks_passed
@@ -36,8 +36,9 @@ def restore(runtime: Runtime, session: TaskSession | None = None) -> TaskSession
 
 
 def test_declared_verification_waits_for_same_diagnostic_cleanup(tmp_path: Path) -> None:
-    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.kernel.kernel_protocol import normalize_turn
     from codey.operations.tool_tasks import control_tool_task, wait_tool_task
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.operations.verification_workflow import completion_workflow, verification_workflow
     from codey.protocols.text_turn import decode_text_turn
     from codey.types.json_value import parse_json_object, require_json_string
@@ -139,7 +140,7 @@ def test_recovery_orders_child_and_parent_checks_by_settlement(
 
 
 def test_pending_input_is_not_delivered_again_after_recovery(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_session import turn_effect_id
     from codey.runtime.core.models import ToolResult
@@ -224,7 +225,7 @@ def test_durable_process_input_dedup_and_cleanup(tmp_path: Path, tty: bool, code
             caller_policy=TaskPolicy(grants=frozenset({"control"})))
         assert not denied.ok and "original execution capability" in denied.model_text
         first = ToolCall("task_input", {"task_ref": ref, "data": "one" + newline})
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
 
         if codemode:
             from codey.codemode.kernel import build_execute_turn_executor

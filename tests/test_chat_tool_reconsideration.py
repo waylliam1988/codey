@@ -6,10 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_prompt import _repair_prompt
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall

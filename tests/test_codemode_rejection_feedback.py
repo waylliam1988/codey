@@ -4,9 +4,10 @@ from dataclasses import replace
 
 import pytest
 
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
@@ -137,7 +138,7 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
 
     project, storage, logdir = _dirs(tmp_path)
     (project / "app.py").write_text("OBSERVED-729\n", encoding="utf-8")
-    _, mutations, managed, revisions, _, sink = _open_runtime(logdir, storage, "s", "r", project)
+    mutations, managed, revisions, _, sink = _open_runtime(logdir, storage, "s", "r", project)
     policy = TaskPolicy(frozenset({"control", "project.read"}), required_checks=("tool_succeeded:codemode",))
     state = TaskSession(policy=policy, project=str(project), max_turns=5, verification_forbidden=True)
     record_entry_policy(mutations, session_id="s", run_id="r", policy=policy, durable=mutations.durable)

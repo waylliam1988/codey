@@ -170,7 +170,7 @@ def test_success_then_unknown_then_new_success_allows_completion(tmp_path, monke
 
 def test_denied_run_is_not_recorded_as_success(tmp_path, monkeypatch):
     """A policy-denied run must not be recorded as an executed success."""
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.runtime.core.models import ToolCall
 
     monkeypatch.setenv("NATIVE_TOOLS", "0")

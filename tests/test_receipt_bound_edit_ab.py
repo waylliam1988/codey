@@ -10,10 +10,10 @@ from codey.agents.tools import AgentToolFns
 from codey.codemode import catalog as codemode_catalog
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.types import ToolCatalogEntry
-from codey.operations import kernel_protocol
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations import turn_snapshot
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain import runtime as tool_runtime
@@ -143,7 +143,7 @@ def test_outer_prompt_and_native_tools_never_advertise_a_second_edit_contract(tm
 
     session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "project.write"})), project=str(tmp_path))
     with prototype_helper(tmp_path, enabled=enabled):
-        snapshot = kernel_protocol.build_turn_snapshot(session)
+        snapshot = turn_snapshot.build_turn_snapshot(session)
         restored = restore_snapshot(snapshot_description(snapshot))
     assert restored.inventory_names == snapshot.inventory_names
     assert restored.contract_text == snapshot.contract_text

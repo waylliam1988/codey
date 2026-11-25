@@ -7,11 +7,11 @@ import pytest
 
 from codey.agents import tool_execution
 from codey.agents.tools import AgentToolFns, build_project_tool_fns
-from codey.operations import kernel_execution
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.kernel import kernel_execution
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.kernel_result import _error_result
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.runtime import ToolOutcome

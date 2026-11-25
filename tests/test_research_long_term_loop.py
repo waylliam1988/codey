@@ -12,9 +12,10 @@ from codey.knowledge.model import KnowledgeObject as K
 from codey.knowledge.model import KnowledgeReference as R
 from codey.knowledge.recall import KnowledgeAccess, KnowledgeRecall
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_facts import project_result_observation
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.answer_contract import answer_scope

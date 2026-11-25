@@ -5,10 +5,12 @@ import pytest
 
 from codey.codemode.catalog import build_codemode_catalog
 from codey.codemode.kernel import build_execute_turn_executor
-from codey.operations.kernel_execution import execute_turn
+from codey.operations import turn_snapshot
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_preparation import prepare_kernel_turn
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
@@ -86,18 +88,17 @@ def test_registry_removal_cannot_erase_a_frozen_text_declaration():
 
 
 def test_registry_change_during_snapshot_cannot_split_the_sent_text_contract(monkeypatch):
-    from codey.operations import kernel_protocol
     from tests.support.kernel_runtime import KernelRunRequest, KernelTransportDeps, run_task_kernel
 
     name = "captured_contract_churn_probe"
     assert tool_spec.register_custom_tool(name, grant="control")
     expected = tool_spec.tool_specs()[name].json_examples[0]
-    capture = kernel_protocol._frozen_specs_for_names
+    capture = turn_snapshot._frozen_specs_for_names
     def remove_after_capture(names):
         frozen = capture(names)
         tool_spec.unregister_custom_tool(name)
         return frozen
-    monkeypatch.setattr(kernel_protocol, "_frozen_specs_for_names", remove_after_capture)
+    monkeypatch.setattr(turn_snapshot, "_frozen_specs_for_names", remove_after_capture)
     prompts = []
     class Provider:
         def send(self, prompt, timeout=None):

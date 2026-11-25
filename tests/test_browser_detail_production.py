@@ -77,7 +77,7 @@ def test_production_details_are_optional_record_bound_and_citable(
         browser = active
         return observe_details(active, document, task)
 
-    monkeypatch.setattr("codey.operations.browser_detail.observe_details", observe)
+    monkeypatch.setattr("codey.operations.browser.browser_detail.observe_details", observe)
 
     def replies() -> Iterator[JsonObject]:
         first = requests(directory)[0]

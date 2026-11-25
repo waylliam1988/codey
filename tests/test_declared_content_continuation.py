@@ -12,16 +12,17 @@ from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.replay import DurableCodeModeReplay
 from codey.completion.verification_policy import VerificationCandidate
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.operations.browser_next_step import next_browser_step
-from codey.operations.browser_task_handoff import browser_task_handoff
+from codey.operations.browser.browser_next_step import next_browser_step
+from codey.operations.browser.browser_task_handoff import browser_task_handoff
 from codey.operations.completion_gate import evaluate
 from codey.operations.completion_output import prepare_completion_output
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.kernel_receipts import restore_result_receipt
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_effects import KernelEffectSink
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.output_requirement import declaration
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import parse_tool_success_check, require_browser_file_field, require_tool_success
@@ -160,8 +161,8 @@ def test_settled_content_recovery_uses_original_arguments_after_source_and_file_
     document = context.browser_document
     assert document is not None
     snapshot, _ = browser_task_handoff(session, build_turn_snapshot(session), context)
-    from codey.operations.declared_field_input import model_spec
-    from codey.operations.kernel_protocol import refresh_snapshot_contract
+    from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
+    from codey.operations.project.declared_field_input import model_spec
 
     binding = snapshot.input_binding
     assert binding is not None

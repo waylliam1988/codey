@@ -7,7 +7,7 @@ from unittest import mock
 import pytest
 
 from codey.agents.runaway_guard import attempt_record
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.task_execution import _tool_result
 from codey.operations.task_session import TaskSession, turn_effect_id
 from codey.policies.task_policy import TaskPolicy

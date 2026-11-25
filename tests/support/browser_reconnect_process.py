@@ -12,13 +12,13 @@ from codey.automation.browser_binding import BrowserBinding, browser_endpoint, b
 from codey.automation.browser_contracts import RouteDecision as Route
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.operations.kernel_context import KernelContext
+from codey.operations.kernel.kernel_context import KernelContext
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.kernel_contracts import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_execution import close_research_tools
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.requests import ProviderRequest
 from codey.providers.transport import ProviderTransport

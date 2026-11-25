@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from codey.operations import kernel_prompt, kernel_protocol, knowledge_context
+from codey.operations import kernel_prompt, knowledge_context, turn_snapshot
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS
 from codey.research import answer_context, answer_contract
 from tests.manual.research_process_review import ARMS, _rewrite_view, ablation
@@ -15,7 +15,7 @@ from tests.test_research_findings import URL
 @pytest.mark.parametrize("arm", ARMS)
 def test_each_experimental_patch_restores_original_owners(arm):
     targets = ((kernel_prompt, "kernel_prompt_for_session"), (kernel_prompt, "_repair_prompt"),
-               (kernel_protocol, "controller_allowed_for_session"), (knowledge_context, "knowledge_background"),
+               (turn_snapshot, "controller_allowed_for_session"), (knowledge_context, "knowledge_background"),
                (answer_context, "answer_context"), (answer_contract, "submit_answer"),
                (answer_contract, "answer_spec"), (answer_contract, "ANSWER_GUIDANCE"))
     before = [getattr(module, name) for module, name in targets]

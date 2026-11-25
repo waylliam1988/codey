@@ -209,8 +209,9 @@ def archive_probe(root, previous):
     """Reproduce the shared rejection through the real compiler, without a model."""
     from codey.knowledge.store import KnowledgeStore
     from codey.research.answer_archive import prepare_evidence
-    from codey.research.ledger import OpenedSource, ResearchLedger, SourceQuality
+    from codey.research.ledger import ResearchLedger
     from codey.research.passages import ReadPassage, passage_ref
+    from codey.research.source_document import OpenedSource, SourceQuality
 
     with tempfile.TemporaryDirectory(prefix="archive-probe-", dir=root) as temporary:
         target = Path(temporary) / "knowledge"

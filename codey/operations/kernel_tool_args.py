@@ -240,7 +240,7 @@ def _validate_tool_args(
         return dict(args), ""
     if name == "codemode":
         try:
-            from codey.codemode.protocol import parse_codemode_args
+            from codey.protocols.codemode import parse_codemode_args
 
             program = parse_codemode_args(args if isinstance(args, dict) else {})
             from codey.runtime.core.models import canonical_json_mapping

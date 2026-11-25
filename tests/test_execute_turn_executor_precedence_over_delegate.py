@@ -23,7 +23,7 @@ def _policy():
 
 class ExecutorPrecedenceOverDelegateTests(unittest.TestCase):
     def test_injected_edit_fn_runs_with_real_project_path(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -51,7 +51,7 @@ class ExecutorPrecedenceOverDelegateTests(unittest.TestCase):
             self.assertEqual(str(results[0].model_text), "fake-edited")
 
     def test_injected_run_fn_runs_with_real_project_path(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
 

@@ -6,7 +6,7 @@ import pytest
 
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.operations import completion_gate
-from codey.operations.kernel_driver import load_prepared_request
+from codey.operations.kernel.kernel_driver import load_prepared_request
 from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_loop import run_task_kernel

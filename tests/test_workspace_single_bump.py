@@ -47,8 +47,8 @@ def _real_hooks_on_event(*, store, work, session_id="s1", run_id="r1", project, 
 class SingleBumpAcrossKernelAndHooksTests(unittest.TestCase):
     def test_single_edit_bumps_exactly_once_across_kernel_and_hooks(self) -> None:
         from codey.operations import kernel_events as kev
-        from codey.operations import kernel_execution as ke
         from codey.operations.context import RunWork
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall, ToolResult
@@ -123,8 +123,8 @@ class SingleBumpAcrossKernelAndHooksTests(unittest.TestCase):
 
     def test_consecutive_edits_and_ignored_paths_single_bump_each(self) -> None:
         from codey.operations import kernel_events as kev
-        from codey.operations import kernel_execution as ke
         from codey.operations.context import RunWork
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall, ToolResult

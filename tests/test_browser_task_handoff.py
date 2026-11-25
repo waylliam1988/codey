@@ -6,10 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from codey.operations.browser_task_handoff import initial_navigation
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn, offer_browser_tools
+from codey.operations.browser.browser_task_handoff import initial_navigation
+from codey.operations.browser.turn_surface import offer_browser_tools
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.browser_requirement import require_browser_page_rounds
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success

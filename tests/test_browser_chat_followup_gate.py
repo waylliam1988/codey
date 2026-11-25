@@ -9,9 +9,10 @@ import pytest
 
 from codey.automation.browser_session import BrowserSession
 from codey.operations import provider_receipts
-from codey.operations.kernel_protocol import TurnSnapshot, build_turn_snapshot, refresh_snapshot_contract
+from codey.operations.kernel.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
 from codey.operations.provider_request_context import ProviderRequestContext
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall

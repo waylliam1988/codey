@@ -8,7 +8,7 @@ def test_host_enforces_limits_even_when_worker_ignores_them(tmp_path, boundary):
     import json
 
     from codey.codemode.runtime import NodeWorkerRuntime
-    from codey.codemode.types import CodeModeLimits
+    from codey.protocols.codemode import CodeModeLimits
 
     calls = []
     messages = {
@@ -71,7 +71,7 @@ def test_vm_inputs_are_deeply_readonly_and_use_vm_owned_objects():
 
 def test_inputs_share_source_budget_and_invalid_source_is_not_repaired():
     from codey.codemode.runtime import NodeWorkerRuntime
-    from codey.codemode.types import CodeModeLimits
+    from codey.protocols.codemode import CodeModeLimits
 
     result = NodeWorkerRuntime().execute("return inputs;", inputs={"text": "字" * 20},
         catalog=(), invoke=lambda *_: None, limits=CodeModeLimits(source_bytes=50))
@@ -166,7 +166,8 @@ def test_explicit_empty_or_falsy_return_values_remain_exact(code, value):
 
 def test_node_runtime_calls_host_and_returns_only_final_value() -> None:
     from codey.codemode.runtime import NodeWorkerRuntime
-    from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
+    from codey.codemode.types import ToolCatalogEntry
+    from codey.protocols.codemode import CodeModeLimits
 
     seen: list[tuple[str, dict[str, object]]] = []
 
@@ -193,7 +194,8 @@ def test_node_runtime_calls_host_and_returns_only_final_value() -> None:
 
 def test_node_runtime_blocks_direct_process_access() -> None:
     from codey.codemode.runtime import NodeWorkerRuntime
-    from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
+    from codey.codemode.types import ToolCatalogEntry
+    from codey.protocols.codemode import CodeModeLimits
 
     result = NodeWorkerRuntime().execute(
         "return typeof process;",
@@ -208,7 +210,8 @@ def test_node_runtime_blocks_direct_process_access() -> None:
 
 def test_node_runtime_applies_source_limit_and_blocks_vm_escape_tokens() -> None:
     from codey.codemode.runtime import NodeWorkerRuntime
-    from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
+    from codey.codemode.types import ToolCatalogEntry
+    from codey.protocols.codemode import CodeModeLimits
 
     catalog = (ToolCatalogEntry("read_file", "read", {"type": "object"}),)
     oversized = NodeWorkerRuntime().execute(
@@ -232,7 +235,8 @@ def test_node_runtime_applies_source_limit_and_blocks_vm_escape_tokens() -> None
 
 def test_node_runtime_allows_local_function_declarations() -> None:
     from codey.codemode.runtime import NodeWorkerRuntime
-    from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
+    from codey.codemode.types import ToolCatalogEntry
+    from codey.protocols.codemode import CodeModeLimits
 
     result = NodeWorkerRuntime().execute(
         "function add(a, b) { return a + b; } return add(2, 3);",
@@ -246,7 +250,8 @@ def test_node_runtime_allows_local_function_declarations() -> None:
 
 def test_node_runtime_reports_unserializable_host_values() -> None:
     from codey.codemode.runtime import NodeWorkerRuntime
-    from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
+    from codey.codemode.types import ToolCatalogEntry
+    from codey.protocols.codemode import CodeModeLimits
 
     result = NodeWorkerRuntime().execute(
         "return await tools.read_file({path: 'a.py'});",
@@ -261,10 +266,10 @@ def test_node_runtime_reports_unserializable_host_values() -> None:
 def test_node_runtime_serializes_nested_frozen_catalog_schemas() -> None:
     from codey.codemode.catalog import build_codemode_catalog
     from codey.codemode.runtime import NodeWorkerRuntime
-    from codey.codemode.types import CodeModeLimits
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
+    from codey.protocols.codemode import CodeModeLimits
 
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read"})))
     snapshot = build_turn_snapshot(session)

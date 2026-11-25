@@ -10,10 +10,10 @@ from unittest.mock import patch
 
 from codey.automation.browser_observation import render_controls
 from codey.automation.browser_session import MAX_SNAPSHOT_ELEMENTS, MAX_SNAPSHOT_TEXT, BrowserSession, BrowserToolOutput
-from codey.operations.browser_followups import pending_click
-from codey.operations.browser_task_handoff import browser_task_handoff
+from codey.operations.browser.browser_followups import pending_click
+from codey.operations.browser.browser_task_handoff import browser_task_handoff
 from codey.operations.completion_context import CompletionContext
-from codey.operations.kernel_protocol import TurnSnapshot
+from codey.operations.kernel.kernel_protocol import TurnSnapshot
 from codey.operations.task_session import TaskSession
 from codey.types.json_value import JsonObject, decode_json_object
 from tools.browser_leaf_exposure_ab import Case, run_arm
@@ -86,7 +86,7 @@ def main() -> int:
                 with ExitStack() as stack:
                     stack.enter_context(patch.object(BrowserSession, 'snapshot', snapshot))
                     stack.enter_context(patch.object(BrowserSession, 'capture_query_result', capture))
-                    stack.enter_context(patch('codey.operations.browser_task_handoff.browser_task_handoff', handoff))
+                    stack.enter_context(patch('codey.operations.browser.browser_task_handoff.browser_task_handoff', handoff))
                     row = run_arm(args.run_dir / name, CASE, 'A', target)
                 row.update(context=grouped, recovery=recovery, injected=injected, fault=fault)
                 results.append(row)

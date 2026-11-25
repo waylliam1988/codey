@@ -10,6 +10,8 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.request import urlopen
 
+from codey.operations import turn_snapshot
+from codey.operations.research.execution import ResearchExecutor
 from tests.manual import research_branch_review as branch
 from tests.manual import research_framework_comparison as framework
 from tests.manual import research_read_guidance_ab as runner
@@ -87,8 +89,6 @@ def preparation_spec():
 def treatment(arm):
     if arm not in ARMS:
         raise ValueError(arm)
-    from codey.operations import kernel_protocol
-    from codey.operations.task_execution import ExecutionDelegate
     from codey.research import answer_context
     from codey.toolchain import tool_spec
 
@@ -98,9 +98,9 @@ def treatment(arm):
     with ExitStack() as stack:
         if arm == "lazy":
             original_specs = tool_spec.tool_specs
-            original_allowed = kernel_protocol.controller_allowed_for_session
+            original_allowed = turn_snapshot.controller_allowed_for_session
             original_context = answer_context.answer_context
-            original_execute = ExecutionDelegate._execute_research
+            original_execute = ResearchExecutor._execute_research
 
             def specs():
                 return {**original_specs(), PREPARE: preparation_spec()}
@@ -118,9 +118,9 @@ def treatment(arm):
                 return original_execute(self, call, **kwargs)
 
             stack.enter_context(patch.object(tool_spec, "tool_specs", specs))
-            stack.enter_context(patch.object(kernel_protocol, "controller_allowed_for_session", allowed))
+            stack.enter_context(patch.object(turn_snapshot, "controller_allowed_for_session", allowed))
             stack.enter_context(patch.object(answer_context, "answer_context", context))
-            stack.enter_context(patch.object(ExecutionDelegate, "_execute_research", execute))
+            stack.enter_context(patch.object(ResearchExecutor, "_execute_research", execute))
         elif arm == "full_control":
             from codey.research import revision_tools
 

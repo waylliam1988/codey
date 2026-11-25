@@ -12,7 +12,7 @@ from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codey.operations.edit_base import edit_base_text, symbol_read_refs
+from codey.operations.project.edit_base import edit_base_text, symbol_read_refs
 from codey.runtime.core import cancellation
 from codey.runtime.core.process_io import ProcessIO, ProcessOptions
 from codey.toolchain.runtime import ToolOutcome

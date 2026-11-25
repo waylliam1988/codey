@@ -7,8 +7,8 @@
 
 from __future__ import annotations
 
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import tools_from_specs
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -57,7 +57,7 @@ def test_snapshot_freezes_executor_binding_across_registry_swap():
         assert getattr(plan, "protocol_error", "") == "", f"frozen parse failed: {plan.protocol_error}"
         assert len(plan.calls) == 1
 
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
 
         results = execute_turn(
             session, list(plan.calls),
@@ -72,7 +72,7 @@ def test_snapshot_freezes_executor_binding_across_registry_swap():
 
 
 def test_registry_grant_change_only_affects_the_next_turn():
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.toolchain import tool_spec
 
     name = "snapshot_grant_probe"
@@ -142,7 +142,7 @@ def test_native_tools_derive_from_same_frozen_specs():
 
 
 def test_execute_turn_without_snapshot_still_runs():
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
 
     session = TaskSession(policy=_bind_policy(), task_kind="research", max_turns=2)
     results = execute_turn(

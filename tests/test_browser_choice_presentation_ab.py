@@ -10,15 +10,17 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Route
 
-from codey.operations.browser_references import BrowserReferences
-from codey.operations.declared_field_input import model_spec
-from codey.operations.kernel_protocol import ModelInputBinding, build_turn_snapshot, normalize_turn
+from codey.operations.browser.browser_references import BrowserReferences
+from codey.operations.kernel.kernel_protocol import ModelInputBinding, normalize_turn
+from codey.operations.project.declared_field_input import model_spec
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
-from codey.research.ledger import OpenedSource, ResearchLedger
-from codey.research.ledger_receipts import source_snapshot
+from codey.research.ledger import ResearchLedger
 from codey.research.passages import describe_window, restore_passages
+from codey.research.source_document import OpenedSource
+from codey.research.source_observation import source_snapshot
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_object, parse_json_object
 from tests.test_research_submission_handoff_production import install_http, requests

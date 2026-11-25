@@ -5,9 +5,10 @@ from dataclasses import replace
 import pytest
 
 from codey.operations.completion_gate import evaluate
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
@@ -82,7 +83,7 @@ def test_required_tool_check_uses_committed_receipt_and_recovers(tmp_path, monke
 
     monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *a, **kw: None)
     project, state, logdir = _dirs(tmp_path)
-    _, mutations, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project)
+    mutations, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project)
     policy = TaskPolicy(frozenset({"control", "web.read"}), required_checks=("tool_succeeded:open_url",))
     session = TaskSession(policy=policy)
     tools = ResearchTools(search=Backend(), store=None, changes=None)

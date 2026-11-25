@@ -10,7 +10,7 @@ from codey.codemode.navigation import TASK_SOURCE_TOOLS, resolve_task_navigation
 from codey.codemode.patch import PatchChild, PatchPreflightError, patch_summary
 from codey.codemode.types import ToolCatalogEntry
 from codey.codemode.verification import resolve_verification
-from codey.operations.browser_references import BrowserReferences
+from codey.operations.browser.browser_references import BrowserReferences
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.constants import STALE_READ_REFERENCE_CODE, STALE_READ_REFERENCE_ERROR
 from codey.toolchain.result_schema import validate_output
@@ -308,7 +308,7 @@ class CodeModeHost:
             raise ValueError(f"tool is not in the frozen catalog: {tool_name}")
         decoded_args = self._reference_args(index, tool_name, args)
         if tool_name == "browser_wait":
-            from codey.operations.browser_waits import complete_wait_args
+            from codey.operations.browser.browser_waits import complete_wait_args
 
             parameters = canonical_json_object(self._catalog[tool_name].parameters)
             properties = decode_json_object(parameters.get("properties", {}))
@@ -331,7 +331,7 @@ class CodeModeHost:
         if tool_name == "run":
             decoded_args = resolve_verification(decoded_args, canonical_json_object(self._catalog[tool_name].parameters))
         if tool_name == "edit" and "symbol" in decoded_args:
-            from codey.operations.edit_base import bind_symbol_read, symbol_read_refs
+            from codey.operations.project.edit_base import bind_symbol_read, symbol_read_refs
 
             decoded_args = bind_symbol_read(decoded_args, {
                 **self._symbol_reads, **symbol_read_refs(self._complete_reads, self._complete_reads),
@@ -342,7 +342,7 @@ class CodeModeHost:
                 decoded_args = self._json_edit_args(decoded_args)
             except (ValueError, TypeError, RecursionError) as exc:
                 return ToolResult(ok=False, call=ToolCall(tool_name, decoded_args), model_text=f"JSON field edit rejected: {exc}")
-        from codey.operations.browser_followups import query_click
+        from codey.operations.browser.browser_followups import query_click
 
         token = query_click.set(query)
         try:

@@ -211,9 +211,9 @@ def test_session_projection_never_shortens_native_call_id() -> None:
     import tempfile
     from pathlib import Path
 
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult
     from codey.runtime.observe.execution_evidence import ExecutionEvidence

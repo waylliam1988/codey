@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from codey.operations import kernel_prompt
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, TurnFinish
 from codey.runtime.core.models import ToolPlan, ToolResult

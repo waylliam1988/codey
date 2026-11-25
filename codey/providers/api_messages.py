@@ -30,7 +30,7 @@ from codey.providers.api_codec import GenerationSettings, allows_native_parallel
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, TurnFinish
 from codey.providers.error_classification import OutputLengthError
 from codey.providers.tool_images import materialize_messages
-from codey.toolchain.tool_spec import thaw_schema_value
+from codey.toolchain.spec_model import thaw_schema_value
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object, require_json_string
 from codey.types.protocol_window import ANTHROPIC_BLOCKS
 

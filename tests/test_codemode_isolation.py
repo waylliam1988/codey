@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 
 from codey.codemode.runtime import NodeWorkerRuntime
-from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
+from codey.codemode.types import ToolCatalogEntry
+from codey.protocols.codemode import CodeModeLimits
 
 
 @pytest.mark.parametrize("code", [

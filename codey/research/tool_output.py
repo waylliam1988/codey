@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from codey.knowledge.model import KnowledgeReference
 from codey.research.ledger import ResearchLedger
 from codey.research.passages import PassageDescriptor
-from codey.research.source_acquisition import SourceFailureCode
 from codey.types.json_value import JsonObject, canonical_json_object
+from codey.types.source_failure import SourceFailureCode
 
 
 @dataclass(frozen=True)

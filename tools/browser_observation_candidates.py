@@ -82,7 +82,7 @@ def observation_candidate(name: str) -> Iterator[None]:
 
     with ExitStack() as stack:
         if name in {"compact", "delta"}:
-            stack.enter_context(patch("codey.operations.kernel_context.task_result_context", result_context))
+            stack.enter_context(patch("codey.operations.kernel.kernel_context.task_result_context", result_context))
         elif name == "bounded_read":
             stack.enter_context(patch("codey.research.answer_context.fitting_full_read", bounded_read))
         elif name == "settle_8s":

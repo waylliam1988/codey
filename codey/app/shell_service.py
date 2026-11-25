@@ -24,9 +24,9 @@ from codey.app.approval_registry import ApprovalRegistry
 from codey.app.lifecycle import AppLifecycle
 from codey.app.run_registry import RunRegistry, RunSnapshot
 from codey.app.task_runtime import TaskRuntimeCoordinator
+from codey.app.task_state import AppTaskState
 from codey.completion.verification_policy import VerificationCandidate
 from codey.operations.task_context import safe_verification_candidates
-from codey.operations.task_state import TaskState
 from codey.policies.command_line import ShellSpec, resolve_shell
 from codey.policies.limits import SHELL_OUTPUT_LIMIT, SHELL_TIMEOUT
 from codey.policies.shell_analysis import ShellAnalysis, analyze_shell, bound_analysis, request_analysis
@@ -305,7 +305,7 @@ def mint_shell_ticket(
 
 
 def claim_shell_ticket(
-    ctx: TaskState,
+    ctx: AppTaskState,
     approval_id: str,
     *,
     timeout: int,

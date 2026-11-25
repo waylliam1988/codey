@@ -10,8 +10,8 @@ from codey.automation.browser_detail import observe_details, read_detail
 from codey.automation.browser_document import same_document
 from codey.automation.browser_query import QueryObservationError
 from codey.automation.browser_receipts import delivery
-from codey.operations import browser_followups
-from codey.operations.browser_upload import audit_upload_open, browser_delivered_source, matches_document
+from codey.operations.browser import browser_followups
+from codey.operations.browser.browser_upload import audit_upload_open, browser_delivered_source, matches_document
 from codey.research.source_reading import render_source_read
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.web_intent import source_url_key
@@ -27,8 +27,8 @@ from codey.types.json_value import JsonObject, decode_json_object, require_json_
 if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
     from codey.operations.completion_context import CompletionContext
-    from codey.operations.kernel_protocol import TurnSnapshot
-    from codey.operations.task_execution import ExecutionDelegate
+    from codey.operations.kernel.kernel_protocol import TurnSnapshot
+    from codey.operations.research.execution import ResearchExecutor
     from codey.operations.task_session import TaskSession
     from codey.toolchain.tool_spec import ToolSpec
 
@@ -74,8 +74,8 @@ def audit_record_regions(result: ToolResult, session: TaskSession, browser: Brow
                           document: JsonObject, *, native_context: str = "") -> ToolResult:
     """Bind observed ownership to offsets in this original formal source, without copying values."""
     from codey.policies.tool_requirement import parse_tool_success_check
-    from codey.research.ledger_receipts import source_observation
     from codey.research.source_document import SourceReadScope
+    from codey.research.source_observation import source_observation
 
     labels = tuple({rule.browser_text.context: None for check in session.policy.required_checks
                     if (rule := parse_tool_success_check(check)) is not None and rule.report_label
@@ -120,7 +120,7 @@ def _observed_document(session: TaskSession, browser: BrowserSession) -> JsonObj
 
 def offer_page_details(session: TaskSession, snapshot: TurnSnapshot,
                        browser: BrowserSession | None) -> tuple[TurnSnapshot, str]:
-    from codey.operations.kernel_protocol import refresh_snapshot_contract
+    from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
 
     if (browser is None or not _can_inspect(session) or snapshot.research_scope is None
             or not {"browser_read", "browser_click"} <= set(snapshot.nested_tool_names)
@@ -158,12 +158,12 @@ def offer_page_details(session: TaskSession, snapshot: TurnSnapshot,
 def offer_query_controls(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                          browser: BrowserSession | None) -> tuple[TurnSnapshot, str]:
     """Offer optional ordinary Research queries from the same formally read document."""
-    from codey.operations.browser_task_handoff import (
+    from codey.operations.browser.browser_task_handoff import (
         browser_continuation_handoff,
         confirmed_query_handoff,
         query_result_handoff,
     )
-    from codey.operations.kernel_protocol import offer_browser_call
+    from codey.operations.browser.turn_surface import offer_browser_call
 
     if (browser is None or not _can_inspect(session) or snapshot.research_scope is None
             or (document := _observed_document(session, browser)) is None
@@ -201,7 +201,7 @@ def selected_detail(session: TaskSession | None, browser: BrowserSession, call: 
     raise ValueError("This detail action is stale or no longer readable. Observe the current page before selecting again.")
 
 
-def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, call: ToolCall, *, turn: int,
+def read_browser_source(delegate: ResearchExecutor, browser: BrowserSession, call: ToolCall, *, spec: ToolSpec | None, turn: int,
                         tool_index: int) -> tuple[ToolResult, bool, int | None]:
     if not delegate._reserve_research_acquisition(call.name, turn, tool_index):
         return ToolResult(ok=False, call=call, model_text="ERROR: research acquisition budget exhausted"), False, None
@@ -211,8 +211,7 @@ def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, ca
     modal_result = False
     session = delegate.session
     if call.name == PAGE_DETAIL_TOOL:
-        specs = delegate._frozen_specs
-        page, document = selected_detail(delegate.session, browser, call, specs.get(call.name) if specs is not None else None)
+        page, document = selected_detail(session, browser, call, spec)
     else:
         pending = browser_followups.pending_click(session._memory_results, browser.document_identity()) if session is not None else None
         if pending is None or session is None:
@@ -231,7 +230,7 @@ def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, ca
                        and same_document(row.audit.get("query_wait_document"), document)]
             if not all(any(row.call.args == wait for row in settled) for wait in waits):
                 raise RuntimeError(browser_followups.PENDING + " Complete the declared wait first.")
-            from codey.operations.browser_waits import observed_link_outcome
+            from codey.operations.browser.browser_waits import observed_link_outcome
 
             modal_result = observed_link_outcome(session, query_ref, document)
             if modal_result:

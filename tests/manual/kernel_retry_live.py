@@ -13,7 +13,7 @@ from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 
-from codey.operations.kernel_driver import load_prepared_request
+from codey.operations.kernel.kernel_driver import load_prepared_request
 from codey.operations.task_loop import run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy

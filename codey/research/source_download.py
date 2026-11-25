@@ -6,9 +6,8 @@ import urllib.error
 import urllib.request
 from collections.abc import Mapping
 from email.message import Message
-from typing import cast
+from http.client import HTTPResponse
 from urllib.parse import urlparse
-from urllib.response import addinfourl
 
 from codey.policies.network import check_fetch_url
 from codey.research.extract import (
@@ -33,14 +32,9 @@ from codey.research.http_redirects import (
     redirect_target as _redirect_target,
 )
 from codey.research.pdf_extract import PDF_MAX_BYTES
-from codey.research.source_acquisition import (
-    DeliveryState,
-    SourceFailureCode,
-    combine_acquisitions,
-    http_failure_code,
-    with_attempt,
-)
+from codey.research.source_acquisition import DeliveryState, combine_acquisitions, http_failure_code, with_attempt
 from codey.runtime.core import cancellation
+from codey.types.source_failure import SourceFailureCode
 
 _FETCH_HTTP_TIMEOUT = 12
 _FETCH_HTTP_MAX_BYTES = 1024 * 1024
@@ -263,9 +257,11 @@ def _remaining_timeout(limit: float) -> float:
     return limit if deadline is None else min(limit, max(0.001, deadline - time.monotonic()))
 
 
-def _open_url_no_redirect(request: urllib.request.Request, *, timeout: float) -> addinfourl:
-    opener = build_no_redirect_opener()
-    return cast(addinfourl, opener.open(request, timeout=timeout))
+def _open_url_no_redirect(request: urllib.request.Request, *, timeout: float) -> HTTPResponse:
+    response: object = build_no_redirect_opener().open(request, timeout=timeout)
+    if not isinstance(response, HTTPResponse):
+        raise ValueError("HTTP source did not return an HTTP response")
+    return response
 
 def _pdf_download_sentinel(url: str, *, mime_type: str = "") -> dict[str, object]:
     return {"status": "ok",

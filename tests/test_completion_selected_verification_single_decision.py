@@ -270,14 +270,14 @@ def test_event_evidence_keeps_original_long_verification_identity(tmp_path):
 
 
 def test_real_receipt_restart_preserves_long_command_identity(tmp_path):
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.recovery import record_entry_policy
     from codey.runtime.core.models import ToolCall, ToolResult
     from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime, _recover_formal
 
     project, state, logdir = _dirs(tmp_path)
     session = make_session(project)
-    log, mutations, managed, store, deps, sink = _open_runtime(logdir, state, "s", "r", project)
+    mutations, managed, store, deps, sink = _open_runtime(logdir, state, "s", "r", project)
     current = store.current_state(str(project))
     session.set_workspace_state(current.revision, current.fingerprint)
     record_entry_policy(mutations, session_id="s", run_id="r", policy=session.policy, durable=mutations.durable)

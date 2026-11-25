@@ -69,7 +69,7 @@ class PersistedExecutedTamperedProvenanceRejectedTests(unittest.TestCase):
             self.assertEqual((rev, fp), (0, ""), f"tampered replay must be untrusted, got {(rev, fp)!r}")
 
     def test_tampered_payload_never_executes_executor(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.kernel_result import _call_args_digest
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.runtime.core.models import ToolCall

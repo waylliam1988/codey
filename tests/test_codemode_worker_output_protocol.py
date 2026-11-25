@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from codey.codemode.runtime import NodeWorkerRuntime
-from codey.codemode.types import CodeModeLimits
+from codey.protocols.codemode import CodeModeLimits
 
 
 @pytest.mark.parametrize("output", [

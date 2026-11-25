@@ -11,9 +11,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from codey.automation.browser_session import BrowserSession
-from codey.operations import kernel_protocol
-from codey.operations.kernel_context import KernelContext
-from codey.operations.kernel_protocol import TurnSnapshot
+from codey.operations.kernel import kernel_protocol
+from codey.operations.kernel.kernel_context import KernelContext
+from codey.operations.kernel.kernel_protocol import TurnSnapshot
 from codey.protocols.text_turn import DecodedTextTurn, TextError, TextRequest, TextRequests
 from codey.providers.base import AssistantTurn, ProviderToolResult
 from codey.providers.text_result_views import TextResultSpan

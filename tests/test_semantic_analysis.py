@@ -10,10 +10,10 @@ from queue import SimpleQueue
 import pytest
 
 from codey.codemode.kernel import build_execute_turn_executor
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain import semantic_definition as semantic

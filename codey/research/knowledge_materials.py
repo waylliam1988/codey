@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING
 
 from codey.knowledge.model import KnowledgeVersion
 from codey.knowledge.recall import KnowledgeAccess
-from codey.research.ledger import OpenedSource, SourceQuality
-from codey.research.ledger_receipts import source_snapshot
 from codey.research.passages import PassageDescriptor, describe_captured_window, passage_ref, restore_passages
+from codey.research.source_document import OpenedSource, SourceQuality
+from codey.research.source_observation import source_snapshot
 from codey.types.json_value import require_json_integer, require_json_string
 
 if TYPE_CHECKING:

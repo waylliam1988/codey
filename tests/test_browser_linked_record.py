@@ -7,7 +7,7 @@ import pytest
 
 from codey.automation.browser_contracts import RouteDecision
 from codey.automation.browser_session import BrowserSession
-from codey.operations.browser_linked_record import (
+from codey.operations.browser.browser_linked_record import (
     linked_record_progress,
     observed_first_record,
     requested_linked_record,

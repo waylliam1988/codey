@@ -29,7 +29,6 @@ from urllib.parse import quote
 
 from codey.policies.network import check_fetch_url
 from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import source_snapshot
 from codey.research.pdf_extract import (
     PDF_DEFAULT_PAGES,
     PDF_MAX_PAGES_PER_OPEN,
@@ -37,15 +36,10 @@ from codey.research.pdf_extract import (
     extract_pdf_document,
 )
 from codey.research.search_provenance import SearchAttempt, filter_site_results, provider_search_attempts
-from codey.research.source_acquisition import (
-    SourceFailureCode,
-    acquisition_observation,
-    combine_acquisitions,
-    source_failure_code,
-    with_attempt,
-)
+from codey.research.source_acquisition import acquisition_observation, combine_acquisitions, with_attempt
 from codey.research.source_connectors import is_valid_arxiv_id
 from codey.research.source_document import PublicationMetadata, SourceDocument, SourceReadScope
+from codey.research.source_observation import source_snapshot
 from codey.research.source_search import (
     SOURCE_SEARCH_DEFAULT_LIMIT,
     SourceSearchHit,
@@ -59,6 +53,7 @@ from codey.research.urls import parsed_url
 from codey.runtime.core import cancellation
 from codey.task.web_intent import source_url_key
 from codey.types.json_value import JsonObject
+from codey.types.source_failure import SourceFailureCode, source_failure_code
 
 OPEN_DEFAULT_LIMIT = 6000
 OPEN_MAX_LIMIT = 12000
@@ -410,7 +405,7 @@ class ResearchSourceGateway:
             if self._pdf_scan_needed(source.final_url):
                 scanned = self._pdf_search_snapshot(source.final_url)
                 if scanned is not None:
-                    from codey.research.ledger_receipts import source_observation
+                    from codey.research.source_observation import source_observation
 
                     _source, _text, page_map = source_observation(scanned)
                     snapshot = scanned

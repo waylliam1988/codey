@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from codey.operations.browser_text_report import BrowserMetadata, report_scope
+from codey.operations.browser.browser_text_report import BrowserMetadata, report_scope
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.types.json_value import JsonObject, decode_json_object

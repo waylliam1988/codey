@@ -7,7 +7,7 @@ from typing import Protocol
 
 import pytest
 
-from codey.operations.browser_text_report import BrowserMetadata, MetadataPending
+from codey.operations.browser.browser_text_report import BrowserMetadata, MetadataPending
 from codey.operations.completion_gate import GateVerdict
 from codey.operations.kernel_contracts import KernelResult, KernelRunRequest, KernelTransportDeps
 from codey.operations.provider_session import adapt_provider

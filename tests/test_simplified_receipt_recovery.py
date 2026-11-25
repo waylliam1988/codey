@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from codey.codemode.kernel import _simplified_failure
-from codey.operations.browser_copy import CAPTURE, CopyTarget, copy_turn
+from codey.operations.browser.browser_copy import CAPTURE, CopyTarget, copy_turn
 from codey.operations.kernel_prompt import _result_context
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_guidance import task_result_context

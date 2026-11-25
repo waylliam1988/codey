@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import contextlib
 import urllib.request
-from typing import Any
+from email.message import Message
+from typing import Protocol, runtime_checkable
 from urllib.parse import urljoin
 
 from codey.utils.refs import coerce_int
@@ -13,11 +14,12 @@ REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req: Any, fp: Any, code: Any, msg: Any, headers: Any, newurl: Any) -> None:
+    def redirect_request(self, req: urllib.request.Request, fp: object, code: int, msg: str,
+                         headers: Message, newurl: str) -> None:
         return None
 
 
-def build_no_redirect_opener() -> Any:
+def build_no_redirect_opener() -> urllib.request.OpenerDirector:
     return urllib.request.build_opener(NoRedirectHandler)
 
 
@@ -28,26 +30,36 @@ def is_redirect_status(status: object) -> bool:
         return False
 
 
-def redirect_target(current_url: str, headers: Any) -> str:
-    try:
-        location = headers.get("location") or headers.get("Location")
-    except AttributeError:
-        location = ""
-    return urljoin(current_url, str(location or "").strip()) if location else ""
+@runtime_checkable
+class _Headers(Protocol):
+    def get(self, key: str) -> object: ...
 
 
-def close_response(response: Any) -> None:
-    with contextlib.suppress(Exception):
-        response.close()
+@runtime_checkable
+class _Closable(Protocol):
+    def close(self) -> object: ...
 
 
-def response_charset(headers: Any) -> str:
+@runtime_checkable
+class _ContentCharset(Protocol):
+    def get_content_charset(self) -> str | None: ...
+
+
+def redirect_target(current_url: str, headers: object) -> str:
+    location = (headers.get("location") or headers.get("Location")) if isinstance(headers, _Headers) else None
+    return urljoin(current_url, str(location).strip()) if location else ""
+
+
+def close_response(response: object) -> None:
+    if isinstance(response, _Closable):
+        with contextlib.suppress(Exception):
+            response.close()
+
+
+def response_charset(headers: object) -> str:
     """Charset of an HTTP response, tolerating varied response objects."""
-    try:
-        charset = headers.get_content_charset()
-    except AttributeError:
-        charset = ""
-    return str(charset or "utf-8")
+    charset = headers.get_content_charset() if isinstance(headers, _ContentCharset) else None
+    return charset or "utf-8"
 
 
 __all__ = [

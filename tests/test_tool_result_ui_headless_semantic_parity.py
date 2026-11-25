@@ -7,8 +7,8 @@ import pytest
 
 from codey.app.event_payloads import machine_event_payload
 from codey.app.http_plumbing import write_sse_event
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.kernel_events import _emit_tool_results
-from codey.operations.kernel_execution import execute_turn
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult

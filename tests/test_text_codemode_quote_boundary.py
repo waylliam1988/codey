@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.tool_requirement import require_tool_success
 from codey.protocols.text_turn import TextError, TextRequests, decode_text_turn
 from tests.support.kernel_runtime import (

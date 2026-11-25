@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from codey.operations import kernel_provenance
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -104,7 +104,7 @@ def test_unconfirmed_edit_fact_survives_real_receipt_recovery(tmp_path):
 
     project, state, logs = _dirs(tmp_path)
     (project / "a.py").write_text("x = 1\n", encoding="utf-8")
-    _, _, _, store, _, sink = _open_runtime(logs, state, "s", "r", project)
+    _, _, store, _, sink = _open_runtime(logs, state, "s", "r", project)
     session = _new_session(project)
     base = store.current_state(project)
     session.set_workspace_state(base.revision, base.fingerprint)

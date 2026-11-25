@@ -2,11 +2,11 @@
 from dataclasses import dataclass
 
 from codey.codemode.json_edit import edit_guidance
-from codey.operations import kernel_prompt, kernel_protocol
-from codey.operations.browser_text_report import report_scope
-from codey.operations.browser_upload import upload_scope
+from codey.operations import kernel_prompt, turn_snapshot
+from codey.operations.browser.browser_text_report import report_scope
+from codey.operations.browser.browser_upload import upload_scope
 from codey.operations.completion_context import CompletionContextInput
-from codey.operations.kernel_protocol import TurnSnapshot
+from codey.operations.kernel.kernel_protocol import TurnSnapshot
 from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.project_verification import refresh_verification_candidates
 from codey.operations.task_session import TaskSession
@@ -24,7 +24,7 @@ class PreparedKernelTurn:
 def capture_turn_snapshot(session: TaskSession, *, native: bool = False) -> TurnSnapshot:
     """Refresh derived project choices before freezing a new, unsent request."""
     refresh_verification_candidates(session)
-    return kernel_protocol.build_turn_snapshot(session, native=native)
+    return turn_snapshot.build_turn_snapshot(session, native=native)
 
 
 def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: str,

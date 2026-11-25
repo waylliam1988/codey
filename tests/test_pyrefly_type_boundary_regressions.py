@@ -66,7 +66,7 @@ def test_execution_delegate_fails_closed_without_task_session(tmp_path: Path) ->
 def test_execution_delegate_edit_fails_closed_when_tools_disappear(tmp_path: Path) -> None:
     delegate = ExecutionDelegate(project_path=tmp_path)
     delegate.tool_fns = None
-    outcome = delegate._execute_edit(ToolCall("edit", {"path": "a.py", "content": "x = 1\n"}))
+    outcome = delegate.project_executor._execute_edit(ToolCall("edit", {"path": "a.py", "content": "x = 1\n"}))
     assert outcome.ok is False
     assert outcome.model_text == "ERROR: project tools unavailable"
     assert not (tmp_path / "a.py").exists()

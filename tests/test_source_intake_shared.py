@@ -4,8 +4,9 @@ from __future__ import annotations
 import pytest
 
 from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import restore_ledger_observation, source_observation
+from codey.research.ledger_receipts import restore_ledger_observation
 from codey.research.source_gateway import ResearchSourceGateway
+from codey.research.source_observation import source_observation
 from codey.research.source_reading import render_source_read
 from codey.research.tools import ResearchTools
 from codey.types.json_value import JsonObject

@@ -22,7 +22,7 @@ from tests.test_knowledge_repository import example
 
 
 def test_evidence_only_tool_receipts_do_not_request_parent_done_fields(tmp_path):
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
     from codey.runtime.core.models import ToolCall
 
@@ -383,7 +383,7 @@ def test_repeated_staged_update_receipts_restore_cumulative_proposals_after_comm
                 "evidence": [{"source_url": url, "excerpt": excerpt, "claim": "Serialized writer", "stance": "context"}]}
             if index:
                 args["id"] = staged.created_ids[0]
-            result, ok, _ = delegate._execute_research(ToolCall("knowledge_write", args))
+            result, ok, _ = delegate.research_executor._execute_research(ToolCall("knowledge_write", args))
             assert ok, result.model_text
             receipts.append(result.canonical)
         note_id = staged.created_ids[0]
@@ -421,8 +421,8 @@ def test_initial_research_failure_is_not_replaced_by_a_successor_error(tmp_path,
 
 
 def test_strict_research_can_read_long_tool_results_at_every_stage():
-    from codey.operations.kernel_protocol import controller_allowed_for_session
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import controller_allowed_for_session
 
     session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "knowledge.read"}), strict_research=True))
     assert "read_tool_result" in controller_allowed_for_session(session)

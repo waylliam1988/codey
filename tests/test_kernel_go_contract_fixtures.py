@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from codey.operations.kernel_driver import decode_provider_invocation
+from codey.operations.kernel.kernel_driver import decode_provider_invocation
 from codey.operations.project_completion_checks import _gap_for_latest_row
 from codey.providers.context_ledger import digest
 from codey.providers.request_codec import encode_provider_request

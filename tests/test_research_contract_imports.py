@@ -15,12 +15,12 @@ ROOT = Path(__file__).resolve().parents[1]
 def contract_surface() -> dict:
     from dataclasses import asdict
 
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import tools_from_specs
     from codey.research.tool_contract import TOOL_CONTRACTS
-    from codey.toolchain.tool_spec import thaw_schema_value
+    from codey.toolchain.spec_model import thaw_schema_value
 
     profiles = {}
     for purpose in ("ordinary", "evidence", "report"):

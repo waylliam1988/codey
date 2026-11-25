@@ -17,7 +17,7 @@ from pathlib import Path
 
 class DelegateRunBoolExitCodeRejectedTests(unittest.TestCase):
     def test_delegate_bool_exit_records_no_verification(self) -> None:
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall, ToolResult
@@ -44,7 +44,7 @@ class DelegateRunBoolExitCodeRejectedTests(unittest.TestCase):
             import unittest.mock as mock
 
             with mock.patch(
-                "codey.operations.kernel_execution._build_delegate", return_value=_FakeDelegate()
+                "codey.operations.kernel.kernel_execution._build_delegate", return_value=_FakeDelegate()
             ):
                 results = execute_turn(
                     session,

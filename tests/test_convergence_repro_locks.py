@@ -12,7 +12,7 @@ from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDep
 
 class BatchMismatchTests(unittest.TestCase):
     def test_mismatch_aborts_batch_and_preserves_receipt(self) -> None:
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall
@@ -79,7 +79,7 @@ class FakeFingerprintTests(unittest.TestCase):
 
 class ControllerFailureTests(unittest.TestCase):
     def test_controller_failure_is_fail_closed(self) -> None:
-        from codey.operations import kernel_protocol as proto
+        from codey.operations.kernel import kernel_protocol as proto
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
 
@@ -103,7 +103,7 @@ class ControllerFailureTests(unittest.TestCase):
             proto.controller_allowed_for_session = orig  # type: ignore[assignment]
 
     def test_guarded_slot_exception_does_not_allow(self) -> None:
-        from codey.operations import kernel_execution as kernel
+        from codey.operations.kernel import kernel_execution as kernel
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall
@@ -148,7 +148,7 @@ class ReadonlyNegationTests(unittest.TestCase):
 
 class CustomToolTests(unittest.TestCase):
     def test_register_parse_execute_complete(self) -> None:
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall

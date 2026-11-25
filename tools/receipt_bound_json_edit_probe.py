@@ -14,7 +14,8 @@ from typing import NoReturn
 from unittest.mock import patch
 
 from codey.codemode.runtime import DeliveryRecorder, NodeWorkerRuntime, ToolInvoker
-from codey.codemode.types import CodeModeLimits, CodeModeResult, DeliveryReference, ToolCatalogEntry
+from codey.codemode.types import CodeModeResult, DeliveryReference, ToolCatalogEntry
+from codey.protocols.codemode import CodeModeLimits
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 from tools import receipt_bound_edit_ab as ab
 from tools.completion_artifact_audit import EffectReceipt, tool_receipts

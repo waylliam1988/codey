@@ -150,8 +150,8 @@ def test_page_after_editing_an_inherited_message_matches_the_context(durable):
 def test_artifacts_are_only_resolved_when_their_entry_is_in_the_page(tmp_path, sqlite):
     from pathlib import Path
 
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from codey.runtime.write.checkpoint import operation_from_checkpoint

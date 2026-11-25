@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from codey.automation.browser_receipts import committed_results
-from codey.operations.browser_waits import wait_plan as upload_wait_plan
+from codey.operations.browser.browser_waits import wait_plan as upload_wait_plan
 from codey.operations.task_session import TaskSession
 from codey.policies.output_requirement import has_explanation
 from codey.policies.tool_requirement import (

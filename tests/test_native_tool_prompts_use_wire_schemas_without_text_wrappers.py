@@ -2,8 +2,8 @@
 import pytest
 
 from codey.operations.kernel_prompt import _repair_prompt, kernel_prompt_for_session
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolPlan
 
@@ -47,7 +47,8 @@ def test_native_final_answer_has_one_declared_transport_in_initial_and_repair():
 
 
 def test_nested_argument_error_uses_frozen_schema_without_unwrapping():
-    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.kernel.kernel_protocol import normalize_turn
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from codey.toolchain.tool_spec import ToolSpec, validate_args_against_spec, validate_args_with_spec
@@ -67,7 +68,8 @@ def test_nested_argument_error_uses_frozen_schema_without_unwrapping():
 
 
 def test_glob_type_error_delivers_its_canonical_parameter_guidance_without_coercion():
-    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.kernel.kernel_protocol import normalize_turn
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall
 

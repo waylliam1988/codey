@@ -6,7 +6,7 @@ from collections.abc import Callable
 from codey.providers.api_codec import GenerationSettings, allows_native_parallel_reads
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult, TurnFinish
 from codey.providers.error_classification import OutputLengthError, RequestPrepError
-from codey.toolchain.tool_spec import thaw_schema_value
+from codey.toolchain.spec_model import thaw_schema_value
 from codey.types.json_value import decode_json_object, parse_json_object
 from codey.types.protocol_window import RESPONSES_REASONING
 

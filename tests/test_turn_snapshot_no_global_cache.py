@@ -1,7 +1,7 @@
 """TurnSnapshot 必须贯穿发送/解析/执行，禁止全局缓存。"""
 from __future__ import annotations
 
-from codey.operations import kernel_protocol as proto
+from codey.operations.kernel import kernel_protocol as proto
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from tests.support.kernel_protocol_test_helpers import normalize_turn

@@ -8,7 +8,7 @@ import pytest
 from codey.memory.null import null_capabilities
 from codey.memory.service import MemoryService
 from codey.operations.context import RunWork
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.recovery import record_entry_policy
 from codey.operations.task_entry import run_entry_kernel
 from codey.operations.task_session import TaskSession
@@ -33,7 +33,7 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
 
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     project, state, logdir = _dirs(tmp_path)
-    _, mutations, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project, task_kind="research")
+    mutations, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project, task_kind="research")
     policy = TaskPolicy(frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}), strict_research=True)
     record_entry_policy(mutations, session_id="s", run_id="r", policy=policy, durable=sink.durable)
     live = TaskSession(policy, task_kind="research", task_text="Research helium supply", max_turns=8)
@@ -60,7 +60,7 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
                 research_tools=tools, managed_outputs=managed, session_id="s", intent_sink=sink)[0]
             assert result.ok, result.model_text
             if turn < 2 or acknowledged:
-                from codey.operations.kernel_protocol import build_turn_snapshot
+                from codey.operations.turn_snapshot import build_turn_snapshot
 
                 sink.bind_request(build_turn_snapshot(live), logical_turn=turn)
                 sink.request_context = replace(sink.request_context, effect_scope="task")

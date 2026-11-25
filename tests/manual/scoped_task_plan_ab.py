@@ -22,7 +22,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import NotRequired, TypedDict
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -33,6 +33,7 @@ import contextlib
 from codey.providers import controls as provider_controls
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.toolchain.runtime import list_directory
+from codey.types.json_value import JsonObject, canonical_json_object
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.workspace.map import (
     EXCLUDED_DIRS,
@@ -177,7 +178,7 @@ def cases(stockalarm: Path | None = None) -> dict[str, ProbeCase]:
             ),
             expected_paths=(
                 "codey/protocols/text_turn.py",
-                "codey/operations/kernel_protocol.py",
+                "codey/operations/kernel/kernel_protocol.py",
             ),
             expected_tests=(
                 "tests/test_text_turn_decoder_contract.py",
@@ -252,17 +253,17 @@ def _clip(value: object, limit: int = MAX_RAW_REPLY_CHARS) -> str:
     return text[:limit].rstrip() + "\n[truncated]"
 
 
-def _extract_json_object(text: str) -> dict[str, Any]:
+def _extract_json_object(text: str) -> JsonObject:
     decoder = json.JSONDecoder()
     for index, char in enumerate(text or ""):
         if char != "{":
             continue
         try:
+            value: object
             value, _end = decoder.raw_decode(text[index:])
-        except json.JSONDecodeError:
+            return canonical_json_object(value)
+        except ValueError:
             continue
-        if isinstance(value, dict):
-            return value
     return {}
 
 
@@ -300,7 +301,7 @@ def _test_paths_from_reply(text: str) -> tuple[str, ...]:
     return tuple(tests)
 
 
-def _plan_paths(plan: dict[str, Any]) -> tuple[str, ...]:
+def _plan_paths(plan: JsonObject) -> tuple[str, ...]:
     paths: list[str] = []
     scopes = plan.get("scopes")
     if not isinstance(scopes, list):
@@ -332,7 +333,62 @@ def _path_matches(candidate: str, expected: str) -> bool:
     return cand == exp or cand.endswith("/" + exp) or exp.endswith("/" + cand)
 
 
-def _score_paths(paths: tuple[str, ...], expected: tuple[str, ...]) -> dict[str, Any]:
+class TermScore(TypedDict):
+    hits: list[str]
+    hit_count: int
+    expected_total: int
+
+
+class PathScore(TermScore):
+    first_expected_rank: int | None
+    top1_hit: bool
+
+
+class Score(TypedDict):
+    paths: PathScore
+    tests: PathScore
+    terms: TermScore
+
+
+class ArmRow(TypedDict):
+    case: str
+    arm: str
+    project: str
+    tags: list[str]
+    task: str
+    expected_paths: list[str]
+    expected_tests: list[str]
+    expected_terms: list[str]
+    paths: list[str]
+    test_paths: list[str]
+    score: Score
+    ok: bool
+    elapsed_seconds: float
+    provider_seconds: float
+    sends: int
+    sent_chars: int
+    reply_chars: int
+    plan_scope_count: int
+    plan_paths: list[str]
+    raw_plan_reply: str
+    raw_selection_reply: str
+    provider: NotRequired[str]
+
+
+class ErrorRow(TypedDict):
+    provider: str
+    case: str
+    arm: str
+    error: str
+
+
+class Report(TypedDict):
+    provider: str
+    rows: list[ArmRow | ErrorRow]
+    summary: JsonObject
+
+
+def _score_paths(paths: tuple[str, ...], expected: tuple[str, ...]) -> PathScore:
     hits = []
     for item in expected:
         if any(_path_matches(path, item) for path in paths):
@@ -351,7 +407,7 @@ def _score_paths(paths: tuple[str, ...], expected: tuple[str, ...]) -> dict[str,
     }
 
 
-def _score_terms(text: str, expected_terms: tuple[str, ...]) -> dict[str, Any]:
+def _score_terms(text: str, expected_terms: tuple[str, ...]) -> TermScore:
     lower = (text or "").lower()
     hits = [term for term in expected_terms if term.lower() in lower]
     return {
@@ -534,7 +590,7 @@ def _score_result(
     paths: tuple[str, ...],
     test_paths: tuple[str, ...],
     text: str,
-) -> dict[str, Any]:
+) -> Score:
     return {
         "paths": _score_paths(paths, case.expected_paths),
         "tests": _score_paths(test_paths, case.expected_tests),
@@ -548,13 +604,14 @@ def run_arm(
     arm: str,
     *,
     timeout: float,
-) -> dict[str, Any]:
+) -> ArmRow:
     provider.new_chat()
     sends_before = provider.sends
     sent_before = provider.sent_chars
     reply_before = provider.reply_chars
     seconds_before = provider.seconds
     started = time.monotonic()
+    plan: JsonObject
 
     if arm == "current":
         prompt = _current_prompt(case)
@@ -592,6 +649,7 @@ def run_arm(
         test_paths=test_paths,
         text=combined_text,
     )
+    scopes = plan.get("scopes")
     return {
         "case": case.name,
         "arm": arm,
@@ -610,7 +668,7 @@ def run_arm(
         "sends": provider.sends - sends_before,
         "sent_chars": provider.sent_chars - sent_before,
         "reply_chars": provider.reply_chars - reply_before,
-        "plan_scope_count": len(plan.get("scopes") or []) if isinstance(plan, dict) else 0,
+        "plan_scope_count": len(scopes) if isinstance(scopes, list) else 0,
         "plan_paths": list(_plan_paths(plan)),
         "raw_plan_reply": _clip(plan_reply),
         "raw_selection_reply": _clip(reply),
@@ -628,49 +686,35 @@ def _arm_order(order: str) -> tuple[str, ...]:
 
 
 def _summarize_rows(
-    rows: list[dict[str, Any]],
+    rows: list[ArmRow | ErrorRow],
     *,
     arms: tuple[str, ...] = ARMS,
-) -> dict[str, Any]:
-    summary: dict[str, Any] = {
-        "completed_rows": len([row for row in rows if "error" not in row]),
-        "errors": len([row for row in rows if "error" in row]),
-        "by_arm": {},
-        "deltas_vs_current": {},
-    }
+) -> JsonObject:
+    completed = [row for row in rows if "score" in row]
+    by_arm: dict[str, dict[str, int | float]] = {}
     for arm in arms:
-        arm_rows = [row for row in rows if row.get("arm") == arm and "error" not in row]
-        summary["by_arm"][arm] = {
+        arm_rows = [row for row in completed if row["arm"] == arm]
+        by_arm[arm] = {
             "rows": len(arm_rows),
-            "ok": sum(1 for row in arm_rows if row.get("ok")),
+            "ok": sum(row["ok"] for row in arm_rows),
             "path_hits": sum(row["score"]["paths"]["hit_count"] for row in arm_rows),
             "test_hits": sum(row["score"]["tests"]["hit_count"] for row in arm_rows),
             "term_hits": sum(row["score"]["terms"]["hit_count"] for row in arm_rows),
-            "top1_path_hits": sum(1 for row in arm_rows if row["score"]["paths"]["top1_hit"]),
-            "sent_chars": sum(int(row.get("sent_chars") or 0) for row in arm_rows),
-            "provider_seconds": round(
-                sum(float(row.get("provider_seconds") or 0.0) for row in arm_rows),
-                3,
-            ),
+            "top1_path_hits": sum(row["score"]["paths"]["top1_hit"] for row in arm_rows),
+            "sent_chars": sum(row["sent_chars"] for row in arm_rows),
+            "provider_seconds": round(sum(row["provider_seconds"] for row in arm_rows), 3),
         }
-    current = summary["by_arm"].get("current")
+    current = by_arm.get("current")
+    deltas: dict[str, dict[str, int | float]] = {}
     if current is not None:
-        for arm in arms:
-            if arm == "current":
-                continue
-            other = summary["by_arm"].get(arm)
-            if other is None:
-                continue
-            delta: dict[str, Any] = {}
-            for key in ("ok", "path_hits", "test_hits", "term_hits", "top1_path_hits"):
-                delta[key] = other[key] - current[key]
-            delta["sent_chars"] = other["sent_chars"] - current["sent_chars"]
-            delta["provider_seconds"] = round(
-                other["provider_seconds"] - current["provider_seconds"],
-                3,
-            )
-            summary["deltas_vs_current"][arm] = delta
-    return summary
+        deltas = {
+            arm: {key: round(other[key] - current[key], 3)
+                  for key in ("ok", "path_hits", "test_hits", "term_hits",
+                              "top1_path_hits", "sent_chars", "provider_seconds")}
+            for arm, other in by_arm.items() if arm != "current"
+        }
+    return canonical_json_object({"completed_rows": len(completed), "errors": len(rows) - len(completed),
+                                  "by_arm": by_arm, "deltas_vs_current": deltas})
 
 
 def run_provider(
@@ -681,8 +725,8 @@ def run_provider(
     timeout: float,
     order: str,
     arms: tuple[str, ...],
-) -> dict[str, Any]:
-    rows: list[dict[str, Any]] = []
+) -> Report:
+    rows: list[ArmRow | ErrorRow] = []
     raw = None
     provider_controls.begin_task_context(f"scoped-task-plan-ab:{provider_id}")
     try:
@@ -693,6 +737,7 @@ def run_provider(
             ordered = tuple(arm for arm in ordered_arms if arm in arms)
             ordered += tuple(arm for arm in arms if arm not in ordered)
             for arm in ordered:
+                row: ArmRow | ErrorRow
                 try:
                     row = run_arm(provider, case, arm, timeout=timeout)
                     row["provider"] = provider_id
@@ -706,7 +751,7 @@ def run_provider(
                 rows.append(row)
                 status = (
                     "ERR"
-                    if "error" in row
+                    if "score" not in row
                     else (
                         f"paths={row['score']['paths']['hit_count']} "
                         f"tests={row['score']['tests']['hit_count']} "

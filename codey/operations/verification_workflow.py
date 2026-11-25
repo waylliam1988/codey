@@ -11,7 +11,7 @@ from codey.durable.model import TASK_TERMINAL_STATUSES, TaskCheckpoint
 from codey.durable.session import DurableSession
 from codey.durable.tool_task import ToolTaskInput, execution_effect_id
 from codey.knowledge.model import canonical_json
-from codey.operations.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
+from codey.operations.kernel.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
 from codey.operations.kernel_provenance import _kernel_workspace_identity_of
 from codey.operations.task_session import TaskSession
 from codey.operations.tool_tasks import owned_tool_task, tool_execution_result

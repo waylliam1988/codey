@@ -9,14 +9,15 @@ from pathlib import Path
 
 import pytest
 
+from codey.operations.research.execution import ResearchExecutor
 from codey.operations.task_execution import ExecutionDelegate
 from codey.policies.tool_requirement import require_tool_success
 from codey.providers.api_generation import AttemptObserver
 from codey.research.answer_contract import AnswerScope, digest, submit_answer, validate_submission
-from codey.research.ledger import OpenedSource
 from codey.research.passages import ReadPassage
 from codey.research.quote_slots import paragraph_quote_slots
 from codey.research.report_evidence import CLAIM_CHECK_VERSION, check_report_evidence, review_submission_issues
+from codey.research.source_document import OpenedSource
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
@@ -123,7 +124,7 @@ def test_production_handoff_requires_citable_read_on_current_document(
     workflow = case.startswith("workflow")
     scenario = case.removeprefix("workflow_")
     if scenario in {"lost_on_submit", "legacy_claim_receipt"}:
-        original = ExecutionDelegate._submit_research_answer
+        original = ResearchExecutor._submit_research_answer
         reloaded = False
 
         def submit(delegate: ExecutionDelegate, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
@@ -140,7 +141,7 @@ def test_production_handoff_requires_citable_read_on_current_document(
                 reloaded = True
             return outcome
 
-        monkeypatch.setattr(ExecutionDelegate, "_submit_research_answer", submit)
+        monkeypatch.setattr(ResearchExecutor, "_submit_research_answer", submit)
 
     def replies() -> Iterator[JsonObject]:
         assert_collecting(directory)

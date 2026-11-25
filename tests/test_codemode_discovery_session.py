@@ -12,12 +12,14 @@ from codey.codemode.catalog import (
     snapshot_catalog,
 )
 from codey.codemode.runtime import CodeModeHandle, CodeModeOutcome, CodeModeRequest, CodeModeSession, NodeWorkerRuntime
-from codey.codemode.types import CodeModeLimits, CodeModeResult, ToolCatalogEntry
+from codey.codemode.types import CodeModeResult, ToolCatalogEntry
+from codey.operations.kernel.kernel_protocol import refresh_snapshot_contract
 from codey.operations.kernel_prompt import _text_request_prompt
-from codey.operations.kernel_protocol import build_turn_snapshot, refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
+from codey.protocols.codemode import CodeModeLimits
 from codey.runtime.core import cancellation
 from codey.types.json_value import decode_json_object
 

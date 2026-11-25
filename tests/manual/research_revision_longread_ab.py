@@ -13,6 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from codey.operations.research.execution import ResearchExecutor
 from tests.manual import research_branch_review as branch
 from tests.manual import research_framework_comparison as framework
 from tests.manual import research_guidance_simplification_ab as shared
@@ -58,7 +59,8 @@ def revision_args(session, store, args, *, reject_noop=False):
 
 def revision_spec(spec):
     from codey.research.knowledge_schema import mutation_schema
-    from codey.toolchain.tool_spec import freeze_spec_parameters, thaw_schema_value
+    from codey.toolchain.spec_model import thaw_schema_value
+    from codey.toolchain.tool_spec import freeze_spec_parameters
 
     params = thaw_schema_value(dict(spec.parameters))
     # The experiment retains its original full-value control even after the
@@ -89,7 +91,8 @@ def flat_revision_args(session, store, args, *, reject_noop=False):
 
 
 def flat_revision_spec(spec):
-    from codey.toolchain.tool_spec import freeze_spec_parameters, thaw_schema_value
+    from codey.toolchain.spec_model import thaw_schema_value
+    from codey.toolchain.tool_spec import freeze_spec_parameters
 
     result = revision_spec(spec)
     params = thaw_schema_value(dict(result.parameters))
@@ -125,7 +128,8 @@ def explicit_creation_args(session, store, args):
 
 
 def explicit_creation_spec(spec):
-    from codey.toolchain.tool_spec import freeze_spec_parameters, thaw_schema_value
+    from codey.toolchain.spec_model import thaw_schema_value
+    from codey.toolchain.tool_spec import freeze_spec_parameters
 
     result = flat_revision_spec(spec)
     params = thaw_schema_value(dict(result.parameters))
@@ -197,13 +201,12 @@ def expanded_read(delegate, call, opened, provider):
 @contextmanager
 def treatment(arm):
     from codey.operations import provider_session
-    from codey.operations.task_execution import ExecutionDelegate
     from codey.research import answer_contract
 
     with ExitStack() as stack:
         if arm in {"revision", "revision_flat", "revision_flat_noop", "revision_visible", "revision_explicit_create"}:
             old_spec = answer_contract.answer_spec
-            old_commit = ExecutionDelegate._commit_research_knowledge
+            old_commit = ResearchExecutor._commit_research_knowledge
 
             def spec(value, scope):
                 result = old_spec(value, scope)
@@ -230,7 +233,7 @@ def treatment(arm):
                 return ToolResult(call=call, model_text=outcome.model_text, ok=outcome.ok), outcome.ok, None
 
             stack.enter_context(patch.object(answer_contract, "answer_spec", spec))
-            stack.enter_context(patch.object(ExecutionDelegate, "_commit_research_knowledge", commit))
+            stack.enter_context(patch.object(ResearchExecutor, "_commit_research_knowledge", commit))
             if arm in {"revision_flat", "revision_flat_noop", "revision_visible", "revision_explicit_create"}:
                 from codey.research import answer_context
 
@@ -243,7 +246,7 @@ def treatment(arm):
         if arm == "full_read":
             provider = None
             old_provider = provider_session.ObservedProvider
-            old_opened = ExecutionDelegate._opened_result
+            old_opened = ResearchExecutor._opened_result
 
             def observed(*args, **kwargs):
                 nonlocal provider
@@ -255,7 +258,7 @@ def treatment(arm):
                 return old_opened(self, call, output, url, **kwargs)
 
             stack.enter_context(patch.object(provider_session, "ObservedProvider", observed))
-            stack.enter_context(patch.object(ExecutionDelegate, "_opened_result", opened))
+            stack.enter_context(patch.object(ResearchExecutor, "_opened_result", opened))
         yield
 
 

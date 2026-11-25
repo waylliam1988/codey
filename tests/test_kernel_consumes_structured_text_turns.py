@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from codey.operations.kernel_protocol import normalize_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 

@@ -12,13 +12,14 @@ from codey.codemode.catalog import snapshot_catalog
 from codey.codemode.host import CodeModeHost
 from codey.completion.verification_policy import VerificationCandidate
 from codey.knowledge.model import canonical_json
-from codey.operations.browser_references import reference_spec
-from codey.operations.browser_task_handoff import _input_after_click, query_result_handoff
+from codey.operations.browser.browser_references import reference_spec
+from codey.operations.browser.browser_task_handoff import _input_after_click, query_result_handoff
 from codey.operations.completion_context import CompletionContext
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_preparation import capture_turn_snapshot
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn, refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
@@ -162,9 +163,9 @@ def test_successful_detail_navigation_does_not_suggest_resetting_the_task_source
 @pytest.mark.parametrize("state", ["ready", "not_repeated", "filled", "uncertain", "other_document", "disabled"])
 @pytest.mark.parametrize("role", ["textbox", "searchbox"])
 def test_natural_observation_recovery_does_not_require_a_declared_tool_sequence(state: str, role: str) -> None:
-    from codey.operations.browser_references import ObservedControl
-    from codey.operations.browser_task_handoff import observation_recovery_handoff
-    from codey.operations.kernel_protocol import offer_browser_tools
+    from codey.operations.browser.browser_references import ObservedControl
+    from codey.operations.browser.browser_task_handoff import observation_recovery_handoff
+    from codey.operations.browser.turn_surface import offer_browser_tools
 
     session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "browser.observe", "browser.interact"})),
                           task_text="Find the requested official documentation through this page.")
@@ -255,19 +256,6 @@ def test_source_only_task_binds_exact_url_and_preserves_read_options(native: boo
     assert calls[-1].args == plan.calls[0].args
     host.invoke("open_url", {"url": "https://example.org/another-authorized-source"})
     assert calls[-1].args == {"url": "https://example.org/another-authorized-source"}
-
-
-@pytest.mark.parametrize("version", [11, 12])
-def test_old_request_retains_source_contract(version: int) -> None:
-    session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "browser.observe", "browser.interact"})),
-        task_text="Read https://example.org/manual", required_source_urls=frozenset({"https://example.org/manual"}))
-    current = build_turn_snapshot(session)
-    legacy = refresh_snapshot_contract(replace(current, input_contract_version=11 if version == 11 else 12))
-    restored = restore_snapshot(snapshot_description(legacy))
-    spec = next(spec for spec in restored.model_specs if spec.name == "open_url")
-    assert "url" in spec.required and "target" not in dict(spec.parameters)
-    assert restored == replace(legacy, task_source_url=None)
-    assert restored.bound_source_url == current.bound_source_url
 
 
 @pytest.mark.parametrize("native", [False, True])
@@ -382,8 +370,6 @@ def test_file_source_readiness_also_gates_answered_reports_without_requiring_an_
     with pytest.raises(ValueError, match="declared_fields_unavailable"):
         submit_answer(pending, {"state": "answered", "markdown": "The invented balance was 999 units [e1]."})
     assert submit_answer(pending, {"state": "partial", "markdown": "The complete balance is not yet established [e1]."})["state"] == "partial"
-    legacy = AnswerScope.from_payload(replace(pending, schema_version=6).to_payload())
-    assert legacy.declared_fields_ready and submit_answer(legacy, proposal)["state"] == "answered"
     with pytest.raises(ValueError, match="declared_fields_ready"):
         AnswerScope.from_payload({**pending.to_payload(), "declared_fields_ready": "true"})
 
@@ -416,7 +402,7 @@ def test_actual_wire_project_check_selector_executes_the_configured_check(
     ("browser_select", "combobox"), ("browser_check", "checkbox"), ("browser_press", "textbox"),
     ("browser_hover", "button"), ("browser_inspect", "textbox")])
 def test_all_browser_ref_contracts_share_the_observed_selector(name: str, role: str) -> None:
-    from codey.operations.browser_references import ObservedControl
+    from codey.operations.browser.browser_references import ObservedControl
 
     refs = replace(binding(), controls=(ObservedControl("opaque-node-ref", role, "Requested control", "Record", "c0", False),))
     spec = spec_for_tool(name)

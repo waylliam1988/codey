@@ -6,7 +6,7 @@ import pytest
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.automation.browser_contracts import RouteDecision as Route
-from codey.operations.browser_copy import EXPIRED, CopyTurn, copy_target
+from codey.operations.browser.browser_copy import EXPIRED, CopyTurn, copy_target
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools.browser_experiment_sources import ResumableBrowserSearchProvider as BrowserSearchProvider
@@ -62,7 +62,7 @@ def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         def fail_identity(*_args: object, **_kwargs: object) -> tuple[int, str]:
             raise RuntimeError("injected post-write identity failure")
 
-        monkeypatch.setattr("codey.operations.kernel_execution.sync_workspace_state_after_edit", fail_identity)
+        monkeypatch.setattr("codey.operations.project.edit_settlement.sync_workspace_state_after_edit", fail_identity)
     if case in {"parent_return", "observe_return"}:
         original_lower = CopyTurn.lower
 

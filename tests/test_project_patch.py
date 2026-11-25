@@ -9,11 +9,15 @@ from codey.agents.request import AgentRequest
 from codey.agents.tools import AgentToolFns
 from codey.app.headless_runner import HeadlessAppContext
 from codey.codemode.kernel import build_execute_turn_executor
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot
-from codey.operations.project_instructions import INSTRUCTION_CHANGE, changed_instruction_target, instruction_handoff
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.project.project_instructions import (
+    INSTRUCTION_CHANGE,
+    changed_instruction_target,
+    instruction_handoff,
+)
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain import runtime
@@ -157,7 +161,7 @@ def test_directory_rule_versions_survive_snapshot_restore_and_detect_change_or_d
     bindings, text = instruction_handoff(tmp_path, ("package/file.py",), {})
     assert "applies under package" in text
     session = TaskSession(TaskPolicy(frozenset({"control", "project.write"})), project=str(tmp_path))
-    original = replace(build_turn_snapshot(session), input_contract_version=18, project_instructions=bindings)
+    original = replace(build_turn_snapshot(session), project_instructions=bindings)
     assert restore_snapshot(snapshot_description(original)) == original
     assert changed_instruction_target(tmp_path, "package/file.py", bindings) is None
     assert changed_instruction_target(tmp_path, "another/file.py", bindings) is None

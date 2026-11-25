@@ -6,8 +6,8 @@ from dataclasses import replace
 
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import prepare_completion_output
+from codey.operations.kernel.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
 from codey.operations.kernel_contracts import KernelDecision
-from codey.operations.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
 from codey.operations.task_session import TaskSession
 from codey.policies.output_requirement import is_output_check, schema_for
 from codey.policies.tool_requirement import parse_tool_success_check

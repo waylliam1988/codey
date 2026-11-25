@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from codey.operations.browser_next_step import next_browser_step
-from codey.operations.browser_task_handoff import browser_task_handoff
+from codey.operations.browser.browser_next_step import next_browser_step
+from codey.operations.browser.browser_task_handoff import browser_task_handoff
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import evaluate
-from codey.operations.declared_field_input import free_program_required
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.project.declared_field_input import free_program_required
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import parse_tool_success_check
 from codey.task.instruction_text import instruction_text

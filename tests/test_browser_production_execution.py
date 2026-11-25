@@ -11,9 +11,9 @@ from codey.automation.browser_contracts import RouteDecision as Route
 from codey.automation.browser_receipts import operation_receipts
 from codey.automation.browser_session import BrowserSession
 from codey.operations.kernel_facts import bind_source_identity, project_execution_record, project_result_observation
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_execution import ExecutionDelegate, build_research_tools
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.ledger import ResearchLedger
@@ -230,7 +230,7 @@ def test_codemode_browser_children_use_kernel_receipts_and_original_answer_scope
     production_browser: BrowserFixture, kind: str,
 ) -> None:
     from codey.codemode.kernel import build_execute_turn_executor
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.research.answer_contract import answer_scope
 
     previous, tools, _ = production_browser

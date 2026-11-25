@@ -7,7 +7,8 @@ import sys
 from dataclasses import replace
 
 from codey.providers.base import ProviderToolDefinition, tools_from_specs
-from codey.toolchain.tool_spec import spec_for_tool, thaw_schema_value
+from codey.toolchain.spec_model import thaw_schema_value
+from codey.toolchain.tool_spec import spec_for_tool
 
 WIRE_NAMES = {"list_dir": "ls", "read_file": "read", "grep": "search", "find_references": "references"}
 TRANSPORT_CONTRACT = "unavailable-read-shell-env-v2"

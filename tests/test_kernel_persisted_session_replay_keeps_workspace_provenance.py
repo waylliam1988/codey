@@ -125,11 +125,11 @@ def _recover_formal(project, state, logdir, session_id, run_id):
 class PersistedSessionReplayKeepsWorkspaceProvenanceTests(unittest.TestCase):
     def test_real_log_replay_bumps_exactly_once(self) -> None:
         from codey.operations import kernel_events as kev
-        from codey.operations import kernel_execution as ke
         from codey.operations.context import RunWork
-        from codey.operations.kernel_protocol import build_turn_snapshot
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_phases import hooks as hooks_mod
         from codey.operations.task_session import turn_effect_id
+        from codey.operations.turn_snapshot import build_turn_snapshot
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.runtime.observe.execution_evidence import ExecutionEvidence
         from codey.workspace.revision import WorkspaceRevisionStore

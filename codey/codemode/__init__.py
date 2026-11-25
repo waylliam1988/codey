@@ -1,6 +1,5 @@
 """Bounded programmatic tool composition for the Codey kernel."""
 
-from codey.codemode.protocol import parse_codemode_args, parse_codemode_text
 from codey.codemode.runtime import (
     CodeModeEvent,
     CodeModeHandle,
@@ -10,14 +9,8 @@ from codey.codemode.runtime import (
     CodeModeSession,
     NodeWorkerRuntime,
 )
-from codey.codemode.types import (
-    CodeModeDiagnostic,
-    CodeModeLimits,
-    CodeModeProgram,
-    CodeModeResult,
-    ToolCatalogEntry,
-    ToolCatalogSnapshot,
-)
+from codey.codemode.types import CodeModeDiagnostic, CodeModeResult, ToolCatalogEntry, ToolCatalogSnapshot
+from codey.protocols.codemode import CodeModeLimits, CodeModeProgram, parse_codemode_args, parse_codemode_text
 
 __all__ = [
     "CodeModeDiagnostic",

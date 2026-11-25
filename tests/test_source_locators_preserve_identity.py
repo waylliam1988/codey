@@ -54,13 +54,13 @@ def test_long_hit_is_opened_and_replayed_with_exact_target() -> None:
     tools = Tools(search=None, store=None, changes=None, ledger=ledger)
     delegate = ExecutionDelegate(session=task, research_tools=tools)
     call = ToolCall("source_search", {"url": url, "query": "q"})
-    result, ok, _ = delegate._execute_research(call)
+    result, ok, _ = delegate.research_executor._execute_research(call)
     assert ok is True
     record_facts_for_result(task, call, result, ok=True)
     fresh = session()
     record_facts_for_result(fresh, call, result, ok=True)
     assert fresh.hit_targets["h1"]["url"] == url
-    opened, ok, _ = ExecutionDelegate(session=fresh, research_tools=tools)._execute_research(
+    opened, ok, _ = ExecutionDelegate(session=fresh, research_tools=tools).research_executor._execute_research(
         ToolCall("open_hit", {"hit_id": "h1"}),
     )
     assert ok is True
@@ -79,7 +79,7 @@ def test_unrelated_ledger_source_cannot_replace_actual_open() -> None:
     ledger.record_open(unrelated, unrelated, "Unrelated", "other content")
     delegate = ExecutionDelegate(research_tools=ResearchTools(None, None, None, ledger=ledger))
     with pytest.raises(ValueError, match="missing research observation"):
-        delegate._opened_result(ToolCall("open_url", {"url": requested}), ResearchToolOutput("body", ok=True), requested, ledger=ledger, turn=1, tool_index=0)
+        delegate.research_executor._opened_result(ToolCall("open_url", {"url": requested}), ResearchToolOutput("body", ok=True), requested, ledger=ledger, turn=1, tool_index=0)
 
 
 def test_collision_after_500_characters_is_still_a_conflict() -> None:
@@ -111,7 +111,7 @@ def test_search_source_identity_comes_from_receipt_not_rendered_punctuation() ->
             return ResearchToolOutput(f"1. Official\n   {url}\n   See https://unrelated.example/a", ok=True)
     call = ToolCall("web_search", {"query": "official"})
     tools = Tools(None, None, None, ledger=ledger)
-    result, ok, _ = ExecutionDelegate(session=task, research_tools=tools)._execute_research(call)
+    result, ok, _ = ExecutionDelegate(session=task, research_tools=tools).research_executor._execute_research(call)
     assert ok is True
     record_facts_for_result(task, call, result, ok=True)
     assert task.search_results == {"r1": url}

@@ -10,8 +10,8 @@ import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from codey.research.ledger_receipts import source_observation
 from codey.research.passages import read_passage_refs
+from codey.research.source_observation import source_observation
 from codey.runtime.core import cancellation
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 from tools.browser_production_live_gate import HTML, URL, run_case, select_target

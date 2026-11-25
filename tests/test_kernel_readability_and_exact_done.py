@@ -14,7 +14,7 @@ from tests.support.kernel_runtime import run_task_kernel as run_test_kernel
 
 
 def test_kernel_has_one_loop_without_complexity_exemptions():
-    from codey.operations.kernel_driver import drive_kernel
+    from codey.operations.kernel.kernel_driver import drive_kernel
     entry = inspect.getsource(task_loop.run_task_kernel)
     assert "return drive_kernel(session, request)" in entry
     source = inspect.getsource(drive_kernel)

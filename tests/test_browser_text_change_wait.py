@@ -11,23 +11,20 @@ import pytest
 from codey.automation.browser_session import BrowserSession, BrowserToolOutput
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.knowledge.model import canonical_json
-from codey.operations import browser_waits
-from codey.operations.browser_resources import build_task_browser
-from codey.operations.browser_task_handoff import bind_browser_references, browser_task_handoff
+from codey.operations.browser import browser_waits
+from codey.operations.browser.browser_resources import build_task_browser
+from codey.operations.browser.browser_task_handoff import bind_browser_references, browser_task_handoff
+from codey.operations.browser.turn_surface import offer_browser_call, offer_browser_tools
 from codey.operations.completion_context import CompletionContext
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.kernel_progress import KernelProgress
-from codey.operations.kernel_protocol import (
-    build_turn_snapshot,
-    normalize_turn,
-    offer_browser_call,
-    offer_browser_tools,
-)
 from codey.operations.progress_comparison import progress_comparison
 from codey.operations.task_handoff import task_handoff
 from codey.operations.task_session import TaskSession
 from codey.operations.tool_tasks import run_tool_task
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
@@ -213,8 +210,8 @@ def test_navigation_comparison_preserves_visible_changes_and_arbitrary_program_v
                                        "controls_prior_timeout_recaptured", "controls_explicit_timeout_recaptured",
                                        "truncated_text", "declared_wait"])
 def test_control_wait_is_not_offered_after_the_next_control_is_already_observed(transition: str) -> None:
-    from codey.operations.browser_next_step import BrowserNextStep
-    from codey.operations.browser_task_handoff import browser_control_wait_handoff
+    from codey.operations.browser.browser_next_step import BrowserNextStep
+    from codey.operations.browser.browser_task_handoff import browser_control_wait_handoff
 
     session, document = recorded_snapshot()
     if transition == "controls_explicit_timeout_recaptured":

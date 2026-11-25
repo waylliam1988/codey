@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from codey.operations.research.execution import ResearchExecutor
 from codey.operations.task_execution import ExecutionDelegate
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -53,7 +54,7 @@ def test_handoff_and_repair_follow_current_browser_evidence(
                      if row.result.call.name == "browser_read")
 
     if case == "lost_after_submit":
-        original = ExecutionDelegate._submit_research_answer
+        original = ResearchExecutor._submit_research_answer
         reloaded = False
 
         def submit(delegate: ExecutionDelegate, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
@@ -64,7 +65,7 @@ def test_handoff_and_repair_follow_current_browser_evidence(
                 reloaded = True
             return outcome
 
-        monkeypatch.setattr(ExecutionDelegate, "_submit_research_answer", submit)
+        monkeypatch.setattr(ResearchExecutor, "_submit_research_answer", submit)
 
     def replies() -> Iterator[JsonObject]:
         nonlocal reads_before_retry

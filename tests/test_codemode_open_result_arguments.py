@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 
 from codey.codemode.kernel import build_execute_turn_executor
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult

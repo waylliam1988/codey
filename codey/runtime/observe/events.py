@@ -59,7 +59,7 @@ def _tool_identity(event: RunEvent, run_id: str) -> dict[str, str]:
     meta = _event_metadata(event)
     call_id = str(event.call.call_id or '')
     if event.call.name == 'codemode':
-        from codey.codemode.identity import parent_execution_id
+        from codey.runtime.core.codemode_identity import parent_execution_id
         call_id = parent_execution_id(run_id, event.turn, event.call)
     if not call_id:
         call_id = f'{event.turn}:{_safe_tool_index(meta.get("tool_index"))}'
@@ -268,7 +268,7 @@ def run_event_ui_payload(
             if isinstance(value := browser_execution.get(key), str):
                 payload[key] = value
     if "source_failure" in event.outcome.canonical:
-        from codey.research.source_acquisition import failure_event
+        from codey.types.source_failure import failure_event
 
         payload["failure"] = failure_event(event.outcome.canonical["source_failure"], run_id=run_id,
             session_id=session_id, call_id=event.call.call_id or f"{event.turn}:{tool_index}")

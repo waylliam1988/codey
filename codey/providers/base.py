@@ -79,8 +79,9 @@ class ProviderToolDefinition:
 
 
 def tools_from_specs(specs: tuple[ToolSpec, ...]) -> list[ProviderToolDefinition]:
+    from codey.toolchain.spec_model import _freeze_schema_value
     from codey.toolchain.tool_prompt import model_tool_description
-    from codey.toolchain.tool_spec import _freeze_schema_value, _schema_for_spec
+    from codey.toolchain.tool_spec import _schema_for_spec
 
     tools: list[ProviderToolDefinition] = []
     for spec in specs:

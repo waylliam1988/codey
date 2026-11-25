@@ -18,16 +18,20 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from unittest.mock import patch
 
-from codey.operations import kernel_context, kernel_protocol
-from codey.operations.kernel_context import KernelContext
-from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot, refresh_snapshot_contract
+from codey.operations import turn_snapshot
+from codey.operations.browser import turn_surface
+from codey.operations.kernel import kernel_context, kernel_protocol
+from codey.operations.kernel.kernel_context import KernelContext
+from codey.operations.kernel.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_guidance import task_result_context
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import KernelSessionView
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import _browser_body
 from codey.protocols.text_turn import DecodedTextTurn, decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolResult
+from codey.providers.task_prompt import TaskPromptSpan
 from codey.providers.text_result_views import TextResultSpan
 from codey.research.answer_contract import AnswerScope
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
@@ -158,7 +162,7 @@ def variant_payload(variant: Variant) -> JsonObject:
 
 @contextmanager
 def intervention(directory: Path, variant: Variant) -> Generator[None, None, None]:
-    build_original = kernel_protocol.build_turn_snapshot
+    build_original = turn_snapshot.build_turn_snapshot
     context_original = task_result_context
     freeze_original = KernelContext.freeze
 
@@ -211,7 +215,8 @@ def intervention(directory: Path, variant: Variant) -> Generator[None, None, Non
     def freeze(context: KernelContext, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int,
                prompt: str = "", messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                counters: RuntimeExecutionCounters | None = None, text_result_spans: tuple[TextResultSpan, ...] = (),
-               coding_context_prepared: bool = False, initial_source_batch: bool = False, handoff: str | None = None) -> None:
+               coding_context_prepared: bool = False, initial_source_batch: bool = False, handoff: str | None = None,
+               task_span: TaskPromptSpan | None = None) -> None:
         hints = []
         if variant.reference_guidance:
             hints.append(REFERENCE_GUIDANCE)
@@ -225,11 +230,11 @@ def intervention(directory: Path, variant: Variant) -> Generator[None, None, Non
             prompt += "\n\n" + "\n".join(hints)
         freeze_original(context, state, snapshot, turn=turn, prompt=prompt, messages=messages, acknowledge=acknowledge,
                         counters=counters, text_result_spans=text_result_spans, coding_context_prepared=coding_context_prepared,
-                        initial_source_batch=initial_source_batch, handoff=handoff)
+                        initial_source_batch=initial_source_batch, handoff=handoff, task_span=task_span)
 
-    with (patch.object(kernel_protocol, "offer_browser_tools", retain_browser_surface),
-          patch.object(kernel_protocol, "offer_browser_call", retain_browser_surface),
-          patch.object(kernel_protocol, "build_turn_snapshot", build),
+    with (patch.object(turn_surface, "offer_browser_tools", retain_browser_surface),
+          patch.object(turn_surface, "offer_browser_call", retain_browser_surface),
+          patch.object(turn_snapshot, "build_turn_snapshot", build),
           patch.object(kernel_protocol, "normalize_turn", normalize),
           patch.object(kernel_context, "task_result_context", context),
           patch.object(KernelContext, "freeze", freeze)):

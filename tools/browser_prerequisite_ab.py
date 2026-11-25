@@ -12,13 +12,13 @@ from unittest.mock import patch
 
 from codey.completion.contract import CHECK_FAIL, CHECK_PASS, CompletionCheck
 from codey.operations import completion_gate
-from codey.operations.browser_text_report import BrowserMetadata, MetadataPending
+from codey.operations.browser.browser_text_report import BrowserMetadata, MetadataPending
 from codey.operations.completion_inputs import CompletionCheckInput
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
 from codey.policies.tool_requirement import ToolObservation, _browser_body
 from codey.research.answer_contract import AnswerScope
-from codey.research.ledger_receipts import source_observation
+from codey.research.source_observation import source_observation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object, decode_json_value
 from tools import browser_production_live_gate as gate

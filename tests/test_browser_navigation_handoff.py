@@ -11,12 +11,12 @@ import pytest
 from codey.automation.browser_contracts import RouteDecision as Route
 from codey.automation.browser_document import same_document
 from codey.automation.browser_session import BrowserSession
-from codey.operations.browser_task_handoff import _call_handoff, browser_task_handoff
+from codey.operations.browser.browser_task_handoff import _call_handoff, browser_task_handoff
 from codey.operations.completion_context import CompletionContext
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string

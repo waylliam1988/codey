@@ -9,17 +9,19 @@ from pathlib import Path
 import pytest
 
 from codey.codemode.catalog import snapshot_catalog
-from codey.operations.browser_task_handoff import bind_browser_references, browser_task_handoff
+from codey.operations.browser.browser_task_handoff import bind_browser_references, browser_task_handoff
+from codey.operations.browser.turn_surface import offer_browser_tools
 from codey.operations.completion_context import CompletionContext
-from codey.operations.kernel_context import KernelContext
+from codey.operations.kernel.kernel_context import KernelContext
+from codey.operations.kernel.kernel_protocol import TurnSnapshot
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.kernel_prompt import _result_context
-from codey.operations.kernel_protocol import TurnSnapshot, build_turn_snapshot, offer_browser_tools
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.research_submission_handoff import research_browser_handoff
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.tool_requirement import require_tool_success
-from codey.research.ledger import OpenedSource
+from codey.research.source_document import OpenedSource
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object, require_json_string
 from tests.test_browser_failure_handoff import next_step, remember

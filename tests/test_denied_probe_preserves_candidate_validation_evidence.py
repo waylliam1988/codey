@@ -47,7 +47,7 @@ def test_denied_probe_then_stagnation_gets_actual_current_validation_and_complet
 
 @pytest.mark.parametrize('injected', [False, True])
 def test_runtime_refusal_survives_cold_receipt_replay_without_verification(tmp_path, injected):
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall
@@ -72,7 +72,7 @@ def test_runtime_refusal_survives_cold_receipt_replay_without_verification(tmp_p
 @pytest.mark.parametrize('via_delegate', [False, True])
 def test_executor_cannot_forge_preexecution_refusal_to_hide_missing_result(tmp_path, via_delegate):
     from codey.agents.tools import AgentToolFns
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult
@@ -140,7 +140,7 @@ def test_actual_run_with_lost_exit_still_blocks_and_reports_the_specific_gap(tmp
 @pytest.mark.parametrize('identity', ['old', 'missing'])
 def test_refusal_does_not_make_old_or_identity_missing_verification_current(tmp_path, identity):
     from codey.operations.completion_gate import evaluate
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.runtime.core.models import ToolCall
     from tests.test_kernel_unknown_verification_invalidates_success import make_session
 

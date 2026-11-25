@@ -48,7 +48,7 @@ def test_fixed_validator_consumes_terminal_receipt_once(tmp_path: Path, monkeypa
                     release.write_text("ready", encoding="utf-8")
                 return super().send(text, timeout)
 
-        provider = ReleasingCheck(VerificationCandidate(command, "."))
+        provider = ReleasingCheck((VerificationCandidate(command, "."),))
         evidence = ExecutionEvidence()
         result = run_task_kernel(runtime.session, request=KernelRunRequest(
             KernelTransportDeps(adapt_provider(provider), run_id="r", provider_id="test"),

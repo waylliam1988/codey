@@ -8,7 +8,7 @@ import pytest
 
 from codey.automation.browser_session import BrowserSession
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.operations.browser_resources import build_task_browser
+from codey.operations.browser.browser_resources import build_task_browser
 from codey.operations.research_resources import close_research_tools
 from codey.operations.task_session import TaskSession
 from codey.research.task_browser_source import TaskBrowserSource

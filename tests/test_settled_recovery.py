@@ -6,16 +6,17 @@ from pathlib import Path
 
 import pytest
 
-from codey.operations.browser_task_handoff import _previous_page_observation
-from codey.operations.edit_base import compact_symbol_retry
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.browser.browser_task_handoff import _previous_page_observation
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.kernel_progress import KernelProgress
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.progress_comparison import ProjectCheckComparison
+from codey.operations.project.edit_base import compact_symbol_retry
 from codey.operations.project_check_handoff import project_check_handoff
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TASK_POLICY_FILE_SCOPE_VERSION, TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, TurnFinish

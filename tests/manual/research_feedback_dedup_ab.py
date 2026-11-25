@@ -21,7 +21,8 @@ ERROR_RECEIPT = "Tool failed. The complete error appears in latest_error in the 
 
 @contextmanager
 def treatment(root, arm):
-    from codey.operations import kernel_context, task_guidance
+    from codey.operations import task_guidance
+    from codey.operations.kernel import kernel_context
     from codey.providers.base import render_result_metadata
     from codey.research import answer_context
     from codey.research.answer_contract import AnswerScope

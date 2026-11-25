@@ -4,12 +4,12 @@ import threading
 
 import pytest
 
+from codey.operations.kernel.kernel_driver import drive_provider_request
 from codey.operations.kernel_contracts import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
-from codey.operations.kernel_driver import drive_provider_request
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.provider_request import prepare_provider_request
 from codey.operations.provider_session import adapt_provider
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import (
     AssistantTurn,

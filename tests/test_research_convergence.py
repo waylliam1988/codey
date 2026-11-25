@@ -9,10 +9,11 @@ import pytest
 
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, STRICT_RESEARCH_REQUIRED_CHECKS, TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.research.answer_contract import AnswerScope
@@ -71,7 +72,7 @@ def test_invalid_auxiliary_action_never_writes_or_registers_plan(tmp_path: Path,
         delegate = ExecutionDelegate(session=session, research_tools=tools,
             research_scope=build_turn_snapshot(session).research_scope)
         questions, count = tools.ledger.questions, store.index.count()
-        result, ok, _ = delegate._execute_research(ToolCall(tool, {}))
+        result, ok, _ = delegate.research_executor._execute_research(ToolCall(tool, {}))
         assert not ok and not result.ok
         assert result.model_text.startswith("ERROR:")
         assert tools.ledger.questions == questions and store.index.count() == count
@@ -102,7 +103,7 @@ def test_scope_for_another_task_is_rejected_before_any_acquisition(tmp_path: Pat
         monkeypatch.setattr(tools.search, "search", unexpected_search)
         delegate = ExecutionDelegate(session=session, research_tools=tools,
                                      research_scope=AnswerScope("a" * 64, (), ()))
-        result, ok, _ = delegate._execute_research(ToolCall("web_search", {"query": "writer"}))
+        result, ok, _ = delegate.research_executor._execute_research(ToolCall("web_search", {"query": "writer"}))
         assert not ok and "another task" in result.model_text
         assert not tools.ledger.searches
     finally:
@@ -113,7 +114,7 @@ def test_complete_answer_submission_never_leaks_into_other_task_contracts(tmp_pa
     store, _, session, _ = setup(tmp_path)
     try:
         session.task_kind = "chat"
-        session.policy = TaskPolicy(session.policy.grants, strict_research=True)
+        session.policy = TaskPolicy(session.policy.grants)
         session.opened_sources = {"https://example.com/study"}
         session.evidence = [{"source": "https://example.com/study", "quote": "saved prior finding"}]
         snapshot = build_turn_snapshot(session)
@@ -139,7 +140,7 @@ def test_background_guidance_only_requests_fields_the_task_can_submit(
         return hits
     monkeypatch.setattr(store, "search", search)
     session.task_kind = kind
-    session.policy = TaskPolicy(session.policy.grants, strict_research=kind != "chat")
+    session.policy = TaskPolicy(session.policy.grants, strict_research=kind == "research")
     try:
         text = knowledge_background(tools, session, "writer")
     finally:

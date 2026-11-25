@@ -43,7 +43,7 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
     project, state, logdir = _dirs(directory)
     (project / "a.txt").write_text("AMBER-471\n", encoding="utf-8")
     (project / "b.txt").write_text("COBALT-923\n", encoding="utf-8")
-    _, mutations, managed, revisions, deps, sink = _open_runtime(logdir, state, "s", "r", project)
+    mutations, managed, revisions, deps, sink = _open_runtime(logdir, state, "s", "r", project)
     writing = case in {"write", "replace"}
     cancelling = case in {"cancel", "search_cancel"}
     searching = case.startswith("search_")

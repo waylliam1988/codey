@@ -5,7 +5,7 @@ from collections.abc import Callable
 from functools import partial
 from typing import TYPE_CHECKING
 
-from codey.operations.task_state import TaskSubmissionState
+from codey.app.task_state import TaskSubmissionState
 
 if TYPE_CHECKING:
     from codey.agents.request import AgentRequest
@@ -27,7 +27,7 @@ def build_task_deps(
 ) -> TaskRunDeps:
     # Resolve services only when a task starts; importing the app must not
     # initialize browser connections or load the research runtime.
-    from codey.app import consensus_service, review_service
+    from codey.app import consensus_service, review_service, sibling_probe
     from codey.app.context import REVIEW_FIX_TURNS, REVIEW_LOG_LINES
     from codey.operations import project_adapter
     from codey.operations.task_run import TaskRunDeps
@@ -53,4 +53,5 @@ def build_task_deps(
         review_fix_turns=REVIEW_FIX_TURNS,
         review_log_lines=REVIEW_LOG_LINES,
         connect_provider=connect_provider,
+        bind_provider_handlers=partial(sibling_probe.bind_provider_handlers, state),
     )

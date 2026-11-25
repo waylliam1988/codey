@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from codey.operations.completion_context import CompletionContext
-from codey.research.ledger import OpenedSource
 from codey.research.passages import ReadPassage
+from codey.research.source_document import OpenedSource
 from codey.types.json_value import JsonObject
 
 

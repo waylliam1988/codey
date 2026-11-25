@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from codey.operations.kernel_protocol import normalize_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
 
 QUESTION = {"question": "检查到什么程度？", "options": ["只收集用例", "实际运行测试"]}

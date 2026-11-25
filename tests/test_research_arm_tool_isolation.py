@@ -34,7 +34,7 @@ def _opened_session(*, denied=()):
 
 
 def test_baseline_arm_hides_source_search_after_open():
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.turn_snapshot import build_turn_snapshot
 
     snapshot = build_turn_snapshot(_opened_session(denied=("source_search",)), native=True)
     assert "open_url" in snapshot.tool_names
@@ -48,7 +48,7 @@ def test_baseline_arm_hides_source_search_after_open():
 
 
 def test_source_search_arm_shows_source_search_after_open():
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.turn_snapshot import build_turn_snapshot
 
     snapshot = build_turn_snapshot(_opened_session(), native=True)
     assert "source_search" in snapshot.tool_names
@@ -57,7 +57,7 @@ def test_source_search_arm_shows_source_search_after_open():
 
 
 def test_baseline_arm_rejects_forced_source_search_call():
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.turn_snapshot import build_turn_snapshot
 
     snapshot = build_turn_snapshot(_opened_session(denied=("source_search",)))
     plan = normalize_turn(

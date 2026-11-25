@@ -26,7 +26,7 @@ def _policy():
 class EditBumpFailureSingleSettlementDurableTests(unittest.TestCase):
     def test_bump_failure_with_durable_sink_does_not_raise_double_settle(self) -> None:
         from codey.durable import DurableSession
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_effects import KernelEffectSink
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
@@ -93,7 +93,7 @@ class EditBumpFailureSingleSettlementDurableTests(unittest.TestCase):
 
     def test_bump_failure_single_settlement_row_in_ledger(self) -> None:
         from codey.durable import DurableSession
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_effects import KernelEffectSink
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.runtime.core.models import ToolCall, ToolResult

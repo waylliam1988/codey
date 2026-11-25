@@ -20,6 +20,7 @@ from unittest.mock import patch
 from urllib.request import urlopen
 from uuid import uuid4
 
+from codey.operations import turn_snapshot
 from tests.manual import research_framework_comparison as framework
 from tests.manual.research_experiment_identity import freeze_experiment, verify_experiment
 from tests.manual.research_workflow_ablation import ablation as previous_ablation
@@ -83,7 +84,7 @@ def _edit_answer_spec(original, *, remove):
 def ablation(arm):
     if arm not in ARMS:
         raise ValueError(arm)
-    from codey.operations import kernel_prompt, kernel_protocol, knowledge_context
+    from codey.operations import kernel_prompt, knowledge_context
     from codey.research import answer_context, answer_contract
 
     with ExitStack() as stack:
@@ -133,13 +134,13 @@ def ablation(arm):
             "no_source_search": {"source_search"},
         }.get(arm)
         if hidden:
-            original_allowed = kernel_protocol.controller_allowed_for_session
+            original_allowed = turn_snapshot.controller_allowed_for_session
 
             def allowed(session):
                 names = original_allowed(session)
                 return tuple(name for name in names if name not in hidden) if answer_contract.whole_research(session) else names
 
-            stack.enter_context(patch.object(kernel_protocol, "controller_allowed_for_session", allowed))
+            stack.enter_context(patch.object(turn_snapshot, "controller_allowed_for_session", allowed))
         fields = {
             "no_navigation": ("source_locators",), "no_receipt_index": ("read_receipts",),
             "no_attempt_history": ("investigation_attempts",), "no_omitted_index": ("omitted_windows",),
@@ -154,7 +155,7 @@ def ablation(arm):
 
             stack.enter_context(patch.object(answer_context, "answer_context", view))
         if arm == "no_error_feedback":
-            from codey.operations import kernel_context
+            from codey.operations.kernel import kernel_context
 
             original_result = kernel_context.task_result_context
 

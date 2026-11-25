@@ -93,8 +93,8 @@ def test_deep_research_ab_prompt_arms_are_isolated() -> None:
                 if must_not_contain is not None:
                     assert must_not_contain not in first_prompt, f"{arm} 不应包含 deep_core 指导"
             # 工具范围经实际快照策略配置：同一 research 策略下可见工具一致，不由 codec 控制
-            from codey.operations.kernel_protocol import build_turn_snapshot
             from codey.operations.task_session import TaskSession
+            from codey.operations.turn_snapshot import build_turn_snapshot
             from codey.policies.task_policy import TaskPolicy
 
             policy = TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write", "knowledge.link"}))

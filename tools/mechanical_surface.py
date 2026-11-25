@@ -16,18 +16,13 @@ from unittest.mock import patch
 from codey.codemode import catalog as catalog_module
 from codey.codemode.runtime import DeliveryRecorder, NodeWorkerRuntime, ToolInvoker
 from codey.codemode.state import CodeModeStateStore
-from codey.codemode.types import (
-    CodeModeLimits,
-    CodeModeResult,
-    DeliveryReference,
-    ToolCatalogEntry,
-    ToolCatalogSnapshot,
-)
+from codey.codemode.types import CodeModeResult, DeliveryReference, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.operations import completion_output, kernel_control
 from codey.operations.completion_context import CompletionContext
 from codey.operations.task_session import TaskSession
 from codey.policies.requirement import RequirementEvaluation
 from codey.policies.tool_requirement import ToolObservation, ToolSuccessRequirement, argument_digest
+from codey.protocols.codemode import CodeModeLimits
 from codey.providers.base import ProviderToolDefinition
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult

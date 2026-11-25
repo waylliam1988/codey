@@ -10,15 +10,15 @@ from pathlib import Path
 import pytest
 
 from codey.codemode.kernel import build_execute_turn_executor
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.kernel_contracts import ToolExecutor
-from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_prompt import _browser_read_context, _result_context
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
 from codey.operations.tool_result_reader import read_tool_result
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
-from codey.research.ledger import OpenedSource
 from codey.research.passages import passage_ref
+from codey.research.source_document import OpenedSource
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object

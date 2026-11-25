@@ -19,6 +19,7 @@ from codey.automation.browser_session import BrowserSession
 from codey.codemode.host import CodeModeHost
 from codey.env_names import NATIVE_TOOLS_ENV
 from codey.operations import task_execution
+from codey.operations.browser.execution import BrowserExecutor
 from codey.operations.task_execution import ExecutionDelegate
 from codey.policies.browser_requirement import browser_receipt_tools
 from codey.policies.tool_requirement import (
@@ -153,7 +154,7 @@ def select_value(receipt: ToolResult, selector: JsonObject, url: str, *, table_p
 def field_binding(directory: Path, *, table_projection: str = TABLE,
                   expire_url: str | None = None) -> Generator[None, None, None]:
     invoke = CodeModeHost.invoke
-    execute = ExecutionDelegate._execute_browser_operation
+    execute = BrowserExecutor.execute_operation
     browser: BrowserSession | None = None
     expired = False
 
@@ -223,7 +224,7 @@ def field_binding(directory: Path, *, table_projection: str = TABLE,
     def receipt_tools(checks: tuple[str, ...]) -> frozenset[str]:
         return browser_receipt_tools(checks) | {"browser_read", "browser_eval"}
 
-    with (patch.object(ExecutionDelegate, "_execute_browser_operation", observe),
+    with (patch.object(BrowserExecutor, "execute_operation", observe),
           patch.object(task_execution, "browser_receipt_tools", receipt_tools),
           patch.object(CodeModeHost, "invoke", bind)):
         yield

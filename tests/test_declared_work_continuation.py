@@ -10,33 +10,34 @@ import pytest
 
 from codey.automation.browser_session import BrowserSession
 from codey.codemode.kernel import build_execute_turn_executor
-from codey.operations.browser_followups import click_followup_plan
-from codey.operations.browser_next_step import next_browser_step
-from codey.operations.browser_task_handoff import browser_task_handoff
+from codey.operations.browser.browser_followups import click_followup_plan
+from codey.operations.browser.browser_next_step import next_browser_step
+from codey.operations.browser.browser_task_handoff import browser_task_handoff
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import evaluate
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.kernel_prompt import working_context
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.research_submission_handoff import research_browser_handoff, research_submission_handoff
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.operations.work_status import work_status
 from codey.policies.browser_requirement import require_browser_research_sequence
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_browser_file_field, require_tool_success
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
-from codey.research.ledger import OpenedSource
+from codey.research.source_document import OpenedSource
 from codey.research.task_browser_source import TaskBrowserSource
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain import runtime as tool_runtime
 from codey.toolchain.constants import STALE_READ_REFERENCE_CODE
 from codey.toolchain.runtime import ToolOutcome
-from codey.toolchain.tool_spec import thaw_schema_value
+from codey.toolchain.spec_model import thaw_schema_value
 from codey.types.json_value import JsonObject, decode_json_object
 from codey.workspace.revision import WorkspaceRevisionStore
 
@@ -175,7 +176,7 @@ def test_complete_source_offers_frozen_path_only_input(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("navigation", [False, True])
 def test_fixed_copy_keeps_report_and_other_authorized_actions_available(tmp_path: Path, navigation: bool) -> None:
-    from codey.operations.kernel_protocol import offer_browser_tools
+    from codey.operations.browser.turn_surface import offer_browser_tools
 
     session, context = declared_session(tmp_path)
     if navigation:
@@ -420,10 +421,12 @@ def test_restored_copy_binding_cannot_expand_its_declared_paths(tmp_path: Path) 
     snapshot, _ = browser_task_handoff(session, build_turn_snapshot(session), context)
     payload = snapshot_description(snapshot)
     binding = decode_json_object(payload["input_binding"])
-    spec = decode_json_object(binding["model_spec"])
+    specs = payload["model_specs"]
+    assert isinstance(specs, list)
+    index = next(i for i, row in enumerate(specs) if decode_json_object(row)["name"] == binding["tool"])
+    spec = decode_json_object(specs[index])
     spec["parameters"] = [["path", {"type": "string", "enum": ["other.data"]}]]
-    binding["model_spec"] = spec
-    payload["input_binding"] = binding
+    specs[index] = spec
     with pytest.raises(ValueError, match="invalid captured declared-field"):
         restore_snapshot(payload)
 
@@ -566,8 +569,8 @@ def test_a_delivered_click_offers_a_formal_read_without_assuming_more_controls_a
 
 @pytest.mark.parametrize("repeated", [False, True])
 def test_repeated_missing_field_reads_reuse_observed_fill_choices_without_replaying_input(tmp_path: Path, repeated: bool) -> None:
-    from codey.operations.browser_references import BrowserReferences, ObservedControl
-    from codey.operations.browser_task_handoff import observation_recovery_handoff
+    from codey.operations.browser.browser_references import BrowserReferences, ObservedControl
+    from codey.operations.browser.browser_task_handoff import observation_recovery_handoff
     session, context = declared_session(tmp_path)
     assert context.browser_document is not None
     record(session, "browser_fill", {"ref":"current", "value":"Fuzhou"}, context.browser_document)

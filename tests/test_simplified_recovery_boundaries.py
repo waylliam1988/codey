@@ -7,8 +7,8 @@ import pytest
 
 from codey.codemode.kernel import _simplified_failure
 from codey.operations.kernel_prompt import _result_context
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import render_result_metadata, result_metadata_from_text
 from codey.providers.context_checkpoint import reduce_old_outputs, select_range

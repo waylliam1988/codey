@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from codey.operations.research.execution import ResearchExecutor
 from tests.support import research_partial_edit_candidate as partial
 
 _root = None
@@ -20,7 +21,6 @@ def treatment(arm):
             raise ValueError(arm)
         yield
         return
-    from codey.operations.task_execution import ExecutionDelegate
     from codey.research import answer_context, answer_contract
     from tests.manual.research_framework_comparison import read_json
 
@@ -33,7 +33,7 @@ def treatment(arm):
         loaded[path.stem] = runpy.run_path(str(path))
     with patch.object(answer_context, "_render_context", loaded["answer_context"]["_render_context"]), \
             patch.object(answer_contract, "answer_spec", loaded["answer_contract"]["answer_spec"]), \
-            patch.object(ExecutionDelegate, "_commit_research_knowledge",
+            patch.object(ResearchExecutor, "_commit_research_knowledge",
                          loaded["task_execution"]["ExecutionDelegate"]._commit_research_knowledge):
         yield
 

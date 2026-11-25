@@ -16,9 +16,9 @@ from typing import IO, Literal, Protocol
 
 from codey.codemode.catalog import build_catalog_snapshot, catalog_describe, catalog_search
 from codey.codemode.identity import rpc_child_admission, rpc_child_allocator, rpc_child_index
-from codey.codemode.protocol import CodeModeInputError, parse_codemode_args
 from codey.codemode.state import CodeModeStateStore
-from codey.codemode.types import CodeModeLimits, CodeModeProgram, CodeModeResult, DeliveryReference, ToolCatalogEntry
+from codey.codemode.types import CodeModeResult, DeliveryReference, ToolCatalogEntry
+from codey.protocols.codemode import CodeModeInputError, CodeModeLimits, CodeModeProgram, parse_codemode_args
 from codey.runtime.core import cancellation
 from codey.types.json_value import decode_json_object, parse_json_object
 

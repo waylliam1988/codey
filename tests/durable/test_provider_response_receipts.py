@@ -245,7 +245,7 @@ from pathlib import Path
 from tests.durable.test_provider_response_receipts import runtime
 from tests.support.provider_actions import ProviderActions
 from codey.operations.task_session import TaskSession
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 durable, mutations, outputs, sink = runtime(Path(sys.argv[1]), sqlite=True)
@@ -325,9 +325,9 @@ ProviderActions(Provider(), sink).send('inspect')
 @pytest.mark.parametrize("sqlite", [False, True])
 def test_history_projects_the_single_response_body_and_corruption_never_replays(tmp_path, sqlite):
     from codey.operations.generation_boundary import durable_generation_boundary_callback
-    from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_loop import KernelObservationDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
 
     durable, _, _, sink = runtime(tmp_path, sqlite=sqlite)

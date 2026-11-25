@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TARGETS = {
     "codey/runtime/core/operation_reducer.py": "next_runtime_action",
     "codey/runs/receipt.py": "task_receipt_from_payload",
-    "codey/operations/kernel_protocol.py": "normalize_turn",
+    "codey/operations/kernel/kernel_protocol.py": "normalize_turn",
 }
 
 

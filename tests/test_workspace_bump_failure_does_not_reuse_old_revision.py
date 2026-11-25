@@ -30,7 +30,7 @@ def _policy():
 class WorkspaceBumpFailureIdentityTests(unittest.TestCase):
     def test_bump_error_does_not_emit_old_revision_as_new(self) -> None:
         from codey.operations import kernel_events as kev
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.workspace.revision import workspace_fingerprint
@@ -86,7 +86,7 @@ class WorkspaceBumpFailureIdentityTests(unittest.TestCase):
 
     def test_missing_store_does_not_claim_new_revision(self) -> None:
         from codey.operations import kernel_events as kev
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -122,7 +122,7 @@ class WorkspaceBumpFailureIdentityTests(unittest.TestCase):
                 )
 
     def test_same_batch_edit_then_run_does_not_verify_after_bump_failure(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -174,7 +174,7 @@ class WorkspaceBumpFailureIdentityTests(unittest.TestCase):
 
     def test_consecutive_edits_each_carry_their_own_trusted_revision(self) -> None:
         from codey.operations import kernel_events as kev
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.workspace.revision import WorkspaceRevisionStore

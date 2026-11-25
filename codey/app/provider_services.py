@@ -19,8 +19,8 @@ from typing import Protocol, TypedDict, Unpack, runtime_checkable
 
 from codey.app.connection_status import ConnectionSnapshot
 from codey.app.provider_registry import ProviderRegistry
+from codey.app.task_state import AppTaskState
 from codey.automation.browser_worker import submit as submit_browser_task
-from codey.operations.task_state import TaskState
 from codey.providers.base import ChatProvider
 from codey.providers.capabilities import rank_providers
 from codey.providers.catalog import API_CONNECTIONS, DEFAULT_PROVIDER_ID, PROVIDER_LABELS  # noqa: F401
@@ -104,7 +104,7 @@ def borrow_open_provider(provider_id: str, owner_page: object) -> ChatProvider |
 
 
 def reviewer_candidates(
-    ctx: TaskState,
+    ctx: AppTaskState,
     writer_id: str,
     *,
     supervisor: ProviderSupervisor | None = None,
@@ -127,7 +127,7 @@ def reviewer_candidates(
 
 
 @contextmanager
-def use_model(ctx: TaskState, provider_id: str, model_id: str = "") -> Generator[None, None, None]:
+def use_model(ctx: AppTaskState, provider_id: str, model_id: str = "") -> Generator[None, None, None]:
     """Hold an exact model while a secondary operation owns it."""
     key = provider_id, model_id
     with ctx.lock:
@@ -165,7 +165,7 @@ def reset_provider_availability_cache() -> None:
     _note_availability_statuses({}, 0.0)
 
 
-def _schedule_web_probe(ctx: TaskState, allowed: set[str]) -> None:
+def _schedule_web_probe(ctx: AppTaskState, allowed: set[str]) -> None:
     """Probe browser-backed providers off the HTTP response path."""
     global _WEB_PROBE_RUNNING
     if not allowed:
@@ -211,7 +211,7 @@ def _schedule_web_probe(ctx: TaskState, allowed: set[str]) -> None:
     future.add_done_callback(complete)
 
 
-def provider_availability(ctx: TaskState) -> dict[str, bool]:
+def provider_availability(ctx: AppTaskState) -> dict[str, bool]:
     allowed = {pid for pid in PROVIDER_LABELS if ctx.providers.model_preferences.allows(pid)}
     if not allowed:
         return {pid: False for pid in PROVIDER_LABELS}
@@ -267,7 +267,7 @@ def provider_availability(ctx: TaskState) -> dict[str, bool]:
 
 
 def provider_availability_from_statuses(
-    ctx: TaskState,
+    ctx: AppTaskState,
     statuses: dict[str, bool],
 ) -> dict[str, bool]:
     supervisor = ctx.providers.supervisor
@@ -285,7 +285,7 @@ def provider_payload(statuses: dict[str, bool] | None = None) -> list[dict[str, 
     ]
 
 
-def provider_status_payload(ctx: TaskState) -> list[dict[str, object]]:
+def provider_status_payload(ctx: AppTaskState) -> list[dict[str, object]]:
     """Return a complete UI snapshot, scheduling API probes asynchronously."""
     coordinator: object = getattr(ctx, "connection_status", None)
     if coordinator is None:
@@ -356,7 +356,7 @@ def provider_failover_order(providers: ProviderRegistry) -> tuple[str, ...]:
     return providers.failover_order(lambda: provider_tab_availability(allowed=allowed))
 
 
-def open_provider_session(ctx: TaskState, provider_id: str = DEFAULT_PROVIDER_ID) -> ChatProvider:
+def open_provider_session(ctx: AppTaskState, provider_id: str = DEFAULT_PROVIDER_ID) -> ChatProvider:
     """Connect a provider and announce it on the session event stream."""
     run = ctx.current_run()
     selection = ctx.run_registry.api_selection_for(run.run_id) if run is not None else None
@@ -376,7 +376,7 @@ def open_provider_session(ctx: TaskState, provider_id: str = DEFAULT_PROVIDER_ID
     return provider
 
 
-def run_provider_warmup(ctx: TaskState, runner: WarmupRunner | None = None) -> None:
+def run_provider_warmup(ctx: AppTaskState, runner: WarmupRunner | None = None) -> None:
     if runner is None:
         runner = warm_provider_tabs
     try:
@@ -397,7 +397,7 @@ def run_provider_warmup(ctx: TaskState, runner: WarmupRunner | None = None) -> N
             return
 
 
-def start_provider_warmup(ctx: TaskState, runner: WarmupRunner | None = None, *, delay_s: float = 0.0) -> None:
+def start_provider_warmup(ctx: AppTaskState, runner: WarmupRunner | None = None, *, delay_s: float = 0.0) -> None:
     """Queue warmup; serve() passes a short delay to stay off the boot path."""
     import threading as _threading
 

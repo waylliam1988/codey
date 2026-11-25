@@ -102,7 +102,7 @@ class NormalizeParityTests(unittest.TestCase):
         self.assertEqual(native_plan.calls, [])
 
     def test_native_rejection_answers_every_call_id(self) -> None:
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.providers.base import AssistantTurn, ProviderToolCall
         from tests.support.kernel_protocol_test_helpers import normalize_turn
 
@@ -435,7 +435,7 @@ class HybridAndPlanningTests(unittest.TestCase):
         self.assertEqual(order, ["web_search", "open_url", "read_file", "edit", "run"])
 
     def test_readonly_planning_cannot_write(self) -> None:
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall
         from tests.support.kernel_protocol_test_helpers import normalize_turn
@@ -524,7 +524,7 @@ class RecoveryTests(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall
         from codey.workspace.revision import WorkspaceRevisionStore
@@ -586,7 +586,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(len(third), 4)
 
     def test_provider_switch_keeps_results(self) -> None:
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession, turn_effect_id
         from tests.support.kernel_protocol_test_helpers import normalize_turn
 

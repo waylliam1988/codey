@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 from codey.completion.contract import CHECK_FAIL, CHECK_PASS, CompletionCheck
 from codey.operations import completion_gate, research_completion_checks
-from codey.operations.browser_text_report import BrowserMetadata, MetadataPending
+from codey.operations.browser.browser_text_report import BrowserMetadata, MetadataPending
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_inputs import CompletionCheckInput
 from codey.operations.task_session import TaskSession

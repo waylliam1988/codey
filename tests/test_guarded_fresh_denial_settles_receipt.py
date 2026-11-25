@@ -17,7 +17,7 @@ def _policy():
 
 class GuardedFreshDenialSettlesReceiptTests(unittest.TestCase):
     def test_policy_denied_fresh_slot_settles(self) -> None:
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.runtime.core.models import ToolCall
 
@@ -37,7 +37,7 @@ class GuardedFreshDenialSettlesReceiptTests(unittest.TestCase):
         self.assertIn(identity, session.executed)
 
     def test_replay_never_rewrites_durable_receipt(self) -> None:
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.runtime.core.models import ToolCall
         from codey.runtime.effects.effect_records import compute_args_digest

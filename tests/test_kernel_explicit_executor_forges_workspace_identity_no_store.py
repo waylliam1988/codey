@@ -27,8 +27,8 @@ def _policy():
 class ExplicitExecutorForgesWorkspaceIdentityNoStoreTests(unittest.TestCase):
     def test_forged_audit_stripped_and_unconfirmed_edit_cannot_trigger_hook_bump(self) -> None:
         from codey.operations import kernel_events as kev
-        from codey.operations import kernel_execution as ke
         from codey.operations.context import RunWork
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_phases import hooks as hooks_mod
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult

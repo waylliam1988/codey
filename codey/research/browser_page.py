@@ -10,8 +10,9 @@ from playwright.sync_api import Page, Request, Response
 
 from codey.research import source_download
 from codey.research.extract import _fetch_page_failure_kind, _usable_fetch_page_text, extract_text, extract_title
-from codey.research.source_acquisition import SourceFailureCode, http_failure_code
+from codey.research.source_acquisition import http_failure_code
 from codey.runtime.core import cancellation
+from codey.types.source_failure import SourceFailureCode
 
 _CONTENT_RETRY_TIMEOUT = 3.0
 _CONTENT_RETRY_TICK = 0.2

@@ -13,10 +13,11 @@ from unittest import mock
 import pytest
 
 from codey.operations import kernel_transport
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import api_transport
 from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs

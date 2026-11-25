@@ -13,8 +13,9 @@ from unittest.mock import patch
 
 from codey.automation.browser_contracts import BrowserAction
 from codey.automation.browser_session import BrowserSession
-from codey.operations.kernel_context import KernelContext
-from codey.operations.kernel_protocol import TurnSnapshot
+from codey.operations.kernel.kernel_context import KernelContext
+from codey.operations.kernel.kernel_protocol import TurnSnapshot
+from codey.operations.research.execution import ResearchExecutor
 from codey.operations.task_execution import ExecutionDelegate
 from codey.policies.tool_requirement import _browser_body
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
@@ -155,8 +156,8 @@ def cites_post_click(browser: BrowserSession, click: Click | None, rows: tuple[T
 @contextmanager
 def readback_experiment(directory: Path, arm: Arm, case: natural.Case, *,
                         automatic_readback: bool = True, guidance: bool = True) -> Generator[None, None, None]:
-    execute, opened, submit = (ExecutionDelegate._execute_browser, ExecutionDelegate._execute_source_open,
-                               ExecutionDelegate._submit_research_answer)
+    execute, opened, submit = (ExecutionDelegate._execute_browser, ResearchExecutor._execute_source_open,
+                               ResearchExecutor._submit_research_answer)
     fetch, generate, freeze = BrowserSearchProvider.fetch, ExperimentProvider._generate, KernelContext.freeze
     record = record_id(case.question)
     active: BrowserSession | None = None
@@ -304,9 +305,9 @@ def readback_experiment(directory: Path, arm: Arm, case: natural.Case, *,
         yield
     else:
         with (patch.object(BrowserSearchProvider, "fetch", fetch_record),
-              patch.object(ExecutionDelegate, "_execute_source_open", source),
+              patch.object(ResearchExecutor, "_execute_source_open", source),
               patch.object(ExecutionDelegate, "_execute_browser", browser_call),
-              patch.object(ExecutionDelegate, "_submit_research_answer", submission),
+              patch.object(ResearchExecutor, "_submit_research_answer", submission),
               patch.object(ExperimentProvider, "_generate", send), patch.object(KernelContext, "freeze", prepare)):
             yield
 

@@ -152,7 +152,8 @@ def search_output_schema() -> dict[str, object]:
 def validate_output(name: str, schema: Mapping[str, object], value: object) -> None:
     """Use the existing tool schema validator for successful result values."""
     from codey.toolchain.schema_validation import _valid_custom_schema
-    from codey.toolchain.tool_spec import _check_spec_value_against_schema, thaw_schema_value
+    from codey.toolchain.spec_model import thaw_schema_value
+    from codey.toolchain.tool_spec import _check_spec_value_against_schema
     from codey.types.json_value import decode_json_value
 
     decode_json_value(value)
@@ -191,7 +192,7 @@ def schema_typescript(schema: Mapping[str, object]) -> str:
         return " | ".join(schema_typescript(item) for item in alternatives if isinstance(item, Mapping))
     values = schema.get("enum")
     if isinstance(values, (list, tuple)):
-        from codey.toolchain.tool_spec import thaw_schema_value
+        from codey.toolchain.spec_model import thaw_schema_value
 
         return " | ".join(json.dumps(thaw_schema_value(value), ensure_ascii=False, sort_keys=True) for value in values)
     kind = schema.get("type")

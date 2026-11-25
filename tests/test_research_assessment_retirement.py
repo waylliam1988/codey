@@ -5,9 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.provider_receipts import restore_snapshot
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.effects.replay_args import validate_replay_args_shape

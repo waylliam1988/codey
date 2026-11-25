@@ -20,7 +20,7 @@ from codey.agents.consensus import (
     run_consensus as run_consensus_core,
 )
 from codey.app import provider_services as providers
-from codey.operations.task_state import TaskState, TaskSubmissionState
+from codey.app.task_state import AppTaskState, TaskSubmissionState
 from codey.providers.base import ChatProvider
 from codey.providers.catalog import API_CONNECTIONS, PROVIDER_LABELS
 from codey.utils.object_fields import object_fields, sequence_items
@@ -46,7 +46,7 @@ def connect_consensus_provider(selected_provider: object, provider_id: str) -> C
     return providers.connect_existing_provider(provider_id)
 
 
-def _scoped_advisor(ctx: TaskState, selected_provider: object, provider_id: str, leases: ExitStack) -> ChatProvider:
+def _scoped_advisor(ctx: AppTaskState, selected_provider: object, provider_id: str, leases: ExitStack) -> ChatProvider:
     with ExitStack() as candidate:
         if provider_id in API_CONNECTIONS:
             from codey.providers.api_connections import capture_selection, open_selection
@@ -70,7 +70,7 @@ def _scoped_advisor(ctx: TaskState, selected_provider: object, provider_id: str,
 
 
 def run_consensus(
-    ctx: TaskState,
+    ctx: AppTaskState,
     *,
     selected_provider: ConsensusSender,
     selected_provider_id: str,

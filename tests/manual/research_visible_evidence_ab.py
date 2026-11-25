@@ -14,6 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from codey.operations.research.execution import ResearchExecutor
 from tests.manual import research_branch_review as branch
 from tests.manual import research_framework_comparison as framework
 from tests.manual import research_lazy_revision_ab as freezing
@@ -96,7 +97,6 @@ def fitting_context(session, ledger, scope, count, cap):
 
 @contextmanager
 def treatment(root: Path, arm: str, *, counter=None, context_window=32768, record=None):
-    from codey.operations import task_execution
     from codey.providers.api_provider import ApiProvider
     from codey.research import answer_context, answer_contract
     from codey.research.answer_contract import AnswerScope
@@ -107,7 +107,8 @@ def treatment(root: Path, arm: str, *, counter=None, context_window=32768, recor
                if (root / "baseline-control.py").exists() else baseline)
     with ExitStack() as stack:
         if arm in {"baseline", "original_control"}:
-            from codey.operations import kernel_context, task_guidance
+            from codey.operations import task_guidance
+            from codey.operations.kernel import kernel_context
 
             def old_view(session, ledger, scope, **_kwargs):
                 return control.answer_context(session, ledger, scope)
@@ -126,20 +127,20 @@ def treatment(root: Path, arm: str, *, counter=None, context_window=32768, recor
                             "source-reading action for more text. knowledge_read needs an exact stored id and revision.")
                 return result, ok, turn
 
-            original_read = task_execution.ExecutionDelegate._read_research_knowledge
+            original_read = ResearchExecutor._read_research_knowledge
             stack.enter_context(patch.object(answer_contract, "answer_scope", control.answer_scope))
             stack.enter_context(patch.object(answer_contract, "submit_answer", control.submit_answer))
             stack.enter_context(patch.object(answer_contract, "ANSWER_TOOLS", (
                 "web_search", "open_url", "open_result", "reopen_source", "open_hit", "source_search",
                 "knowledge_search", "knowledge_read", "knowledge_commit", "read_tool_result", "submit_research_answer", "ask_user")))
             stack.enter_context(patch.object(answer_context, "answer_context", old_view))
-            stack.enter_context(patch.object(task_execution.ExecutionDelegate, "_read_research_knowledge", old_read))
+            stack.enter_context(patch.object(ResearchExecutor, "_read_research_knowledge", old_read))
             for module in (kernel_context, task_guidance):
                 stack.enter_context(patch.object(module, "task_result_context", control.task_result_context))
         if arm == "direct":
             original_scope = control.answer_scope
             original_init = ApiProvider.__init__
-            original_read = task_execution.ExecutionDelegate._read_research_knowledge
+            original_read = ResearchExecutor._read_research_knowledge
             provider = None
             counts = {}
 
@@ -193,7 +194,7 @@ def treatment(root: Path, arm: str, *, counter=None, context_window=32768, recor
             stack.enter_context(patch.object(answer_contract, "ANSWER_TOOLS", tuple(
                 name for name in answer_contract.ANSWER_TOOLS if name != "read_tool_result")))
             stack.enter_context(patch.object(answer_context, "answer_context", view))
-            stack.enter_context(patch.object(task_execution.ExecutionDelegate, "_read_research_knowledge", read))
+            stack.enter_context(patch.object(ResearchExecutor, "_read_research_knowledge", read))
         yield
 
 

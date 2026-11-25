@@ -6,7 +6,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -16,6 +16,7 @@ import contextlib
 from codey.providers import controls as provider_controls
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.toolchain.runtime import list_directory
+from codey.types.json_value import JsonObject, parse_json_object
 from codey.workspace.map import (
     MAX_SYMBOL_FILE_BYTES,
     MAX_SYMBOL_MAP_CHARS,
@@ -48,7 +49,7 @@ CASES = (
         ),
         expected_paths=(
             "codey/protocols/text_turn.py",
-            "codey/operations/kernel_protocol.py",
+            "codey/operations/kernel/kernel_protocol.py",
             "tests/test_text_turn_decoder_contract.py",
         ),
     ),
@@ -115,7 +116,7 @@ def _prompt(case: ProbeCase, root: Path, *, arm: str) -> str:
     return "\n".join(parts)
 
 
-def _extract_json_object(text: str) -> dict[str, Any]:
+def _extract_json_object(text: str) -> JsonObject:
     start = text.find("{")
     while start >= 0:
         depth = 0
@@ -140,8 +141,8 @@ def _extract_json_object(text: str) -> dict[str, Any]:
                 if depth == 0:
                     raw = text[start : index + 1]
                     try:
-                        value = json.loads(raw)
-                    except json.JSONDecodeError:
+                        value = parse_json_object(raw)
+                    except ValueError:
                         break
                     return value if isinstance(value, dict) else {}
         start = text.find("{", start + 1)
@@ -163,7 +164,20 @@ def _paths_from_reply(text: str) -> tuple[str, ...]:
     return tuple(paths)
 
 
-def _score_paths(paths: tuple[str, ...], expected: tuple[str, ...]) -> dict[str, Any]:
+class PathScore(TypedDict):
+    hits: list[str]
+    hit_count: int
+    first_expected_rank: int | None
+    top1_hit: bool
+
+
+class ArmResult(TypedDict):
+    paths: list[str]
+    score: PathScore
+    raw_reply: str
+
+
+def _score_paths(paths: tuple[str, ...], expected: tuple[str, ...]) -> PathScore:
     expected_set = set(expected)
     path_set = set(paths)
     hits = tuple(path for path in expected if path in path_set)
@@ -232,17 +246,14 @@ def run_self_test() -> None:
 ARMS = ("baseline", "project_map", "symbol_map")
 
 
-def run_probe(root: Path, provider_id: str, port: int, cases: tuple[ProbeCase, ...]) -> dict[str, Any]:
-    results = []
+def run_probe(root: Path, provider_id: str, port: int, cases: tuple[ProbeCase, ...]) -> dict[str, object]:
+    results: list[tuple[ProbeCase, dict[str, ArmResult]]] = []
     provider_controls.begin_task_context(f"project-map-symbol-ab:{provider_id}")
     provider = None
     try:
         provider = connect_provider(provider_id, port=port)
         for case in cases:
-            case_result: dict[str, Any] = {
-                "case": case.name,
-                "expected_paths": list(case.expected_paths),
-            }
+            case_result: dict[str, ArmResult] = {}
             for label in ARMS:
                 provider.new_chat()
                 reply = provider.send(_prompt(case, root, arm=label), timeout=180)
@@ -253,7 +264,7 @@ def run_probe(root: Path, provider_id: str, port: int, cases: tuple[ProbeCase, .
                     "raw_reply": reply[:2000],
                 }
                 print(f"[{case.name}] {label}: {', '.join(paths) or '(no paths)'}")
-            results.append(case_result)
+            results.append((case, case_result))
     finally:
         try:
             if provider is not None:
@@ -262,7 +273,7 @@ def run_probe(root: Path, provider_id: str, port: int, cases: tuple[ProbeCase, .
             provider_controls.end_task_context()
 
     hits = {
-        arm: sum(item[arm]["score"]["hit_count"] for item in results)
+        arm: sum(item[arm]["score"]["hit_count"] for _, item in results)
         for arm in ARMS
     }
     top1 = {
@@ -271,7 +282,8 @@ def run_probe(root: Path, provider_id: str, port: int, cases: tuple[ProbeCase, .
     }
     return {
         "provider": provider_id,
-        "cases": results,
+        "cases": [{"case": case.name, "expected_paths": list(case.expected_paths), **items}
+                  for case, items in results],
         "summary": {
             "case_count": len(results),
             "hit_count": hits,

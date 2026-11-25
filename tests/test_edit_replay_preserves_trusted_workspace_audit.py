@@ -46,7 +46,7 @@ def _real_hooks_on_event(*, store, work, project, ignored=()):
 
 class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
     def test_memory_replay_keeps_audit_presentation_canonical_truncated(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
         from tests.recovery_test_helpers import replay_settled_result as _replay_settled_slot
@@ -129,8 +129,8 @@ class EditReplayPreservesTrustedWorkspaceAuditTests(unittest.TestCase):
 
     def test_edit_event_replay_event_bumps_once(self) -> None:
         from codey.operations import kernel_events as kev
-        from codey.operations import kernel_execution as ke
         from codey.operations.context import RunWork
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.runtime.core.models import ToolCall, ToolResult
         from codey.runtime.observe.execution_evidence import ExecutionEvidence

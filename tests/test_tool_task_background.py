@@ -26,14 +26,15 @@ from codey.durable.model import (
     valid_frozen_task_state,
 )
 from codey.durable.tool_task import execution_effect_id, tool_task_id
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import TurnSnapshot, build_turn_snapshot, normalize_turn
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import TurnSnapshot, normalize_turn
 from codey.operations.kernel_receipts import restore_result_receipt
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession, turn_effect_id
 from codey.operations.tool_task_delivery import active_tool_task_controls
 from codey.operations.tool_tasks import control_tool_task, run_tool_task, wait_tool_task
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -232,7 +233,7 @@ def test_guarded_full_read_update_reuses_existing_version_contract(runtime: Runt
 
 
 def test_failed_anchor_reoffers_definition_after_current_file_read(runtime: Runtime) -> None:
-    from codey.operations.edit_base import bound_symbol_retry, edit_anchor_retry
+    from codey.operations.project.edit_base import bound_symbol_retry, edit_anchor_retry
     from codey.providers.base import AssistantTurn, ProviderToolCall
 
     path = runtime.project / "worker.py"
@@ -573,7 +574,7 @@ def test_codemode_values_use_acceptance_union_and_completed_branch(runtime: Runt
 
 
 def test_formal_child_result_restores_verification_once(runtime: Runtime) -> None:
-    from codey.operations.kernel_context import KernelContext
+    from codey.operations.kernel.kernel_context import KernelContext
     from codey.operations.kernel_contracts import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
     from codey.providers.requests import ProviderRequest
     from codey.providers.transport import ProviderTransport

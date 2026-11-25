@@ -14,10 +14,10 @@ from codey.codemode.types import ToolCatalogEntry
 from codey.durable import DurableSession
 from codey.operations import completion_gate, completion_output
 from codey.operations.completion_context import CompletionContext
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.output_requirement import declaration
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
@@ -208,9 +208,9 @@ def test_same_mutation_id_reuses_result_and_changed_arguments_are_rejected(tool:
 def test_durable_missing_parameter_keeps_root_cause_when_prechecked(tmp_path: Path, enabled: bool) -> None:
     directories: tuple[Path, Path, Path] = _dirs(tmp_path)
     project, state, logdir = directories
-    runtime: tuple[object, RuntimeMutationLine, ManagedOutputStore, WorkspaceRevisionStore, object, KernelEffectSink] = (
+    runtime: tuple[RuntimeMutationLine, ManagedOutputStore, WorkspaceRevisionStore, object, KernelEffectSink] = (
         _open_runtime(logdir, state, "s", "r", project))
-    _, mutations, managed, revisions, _deps, sink = runtime
+    mutations, managed, revisions, _deps, sink = runtime
     durable = mutations.durable
     assert isinstance(durable, DurableSession)
     s = TaskSession(TaskPolicy(frozenset({"control", "project.read", "browser.observe"})), project=str(project))

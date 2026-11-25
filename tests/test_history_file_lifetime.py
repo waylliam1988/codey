@@ -12,9 +12,9 @@ from codey.app.context import AppContext
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.model import ArtifactRecord
 from codey.durable.provider_response import read_response_artifact
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.write.mutation_line import RuntimeMutationLine

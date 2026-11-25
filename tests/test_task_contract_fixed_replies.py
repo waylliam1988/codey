@@ -15,7 +15,8 @@ import pytest
 from codey.codemode.replay import DurableCodeModeReplay
 from codey.codemode.runtime import DeliveryRecorder, NodeWorkerRuntime, ToolInvoker
 from codey.codemode.state import CodeModeStateStore
-from codey.codemode.types import CodeModeLimits, CodeModeResult, DeliveryReference, ToolCatalogEntry
+from codey.codemode.types import CodeModeResult, DeliveryReference, ToolCatalogEntry
+from codey.protocols.codemode import CodeModeLimits
 from codey.types.json_value import JsonObject, decode_json_object, decode_json_value, parse_json_object
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import browser_prerequisite_ab as browser

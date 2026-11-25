@@ -5,12 +5,12 @@ import pytest
 
 from codey.automation.browser_session import BrowserSession
 from codey.operations.completion_context import CompletionContext
-from codey.operations.kernel_context import KernelContext
+from codey.operations.kernel.kernel_context import KernelContext
 from codey.operations.kernel_contracts import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.provider_session import adapt_provider
 from codey.operations.task_handoff import task_handoff
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.research.tools import ResearchTools
 from codey.task.web_intent import explicit_web_intent, source_requirements

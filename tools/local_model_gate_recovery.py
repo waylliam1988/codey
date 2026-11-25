@@ -18,6 +18,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from codey.app.headless_runner import HeadlessAppContext
+from codey.operations.project.execution import ProjectExecutor
 from codey.operations.project_adapter import run as agent_run
 from codey.operations.recovery import policy_from_durable_task
 from codey.operations.task_effects import KernelEffectSink
@@ -104,7 +105,7 @@ def _stage(directory: Path, stage: str, *, scripted: bool) -> int:
         capture_provider_failure=lambda *a, **k: None, is_git_repository=is_git_repository,
         review_fix_turns=0, review_log_lines=0,
     )
-    execute = ExecutionDelegate._execute_project
+    execute = ProjectExecutor.execute
     settle = KernelEffectSink.settle
 
     def observed_execute(self: ExecutionDelegate, call: ToolCall) -> tuple[ToolResult, bool, int | None]:
@@ -131,7 +132,7 @@ def _stage(directory: Path, stage: str, *, scripted: bool) -> int:
             os._exit(INTERRUPTED_EXIT)
 
     try:
-        with patch.object(ExecutionDelegate, "_execute_project", observed_execute), \
+        with patch.object(ProjectExecutor, "execute", observed_execute), \
              patch.object(KernelEffectSink, "settle", interrupted_settle):
             run_task_submission(deps, TaskSubmission(
                 session_id=SESSION_ID, run_id=RUN_ID, project=str(project), task=TASK,

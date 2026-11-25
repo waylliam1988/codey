@@ -20,6 +20,7 @@ from unittest.mock import patch
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.automation.browser_session import BrowserSession
 from codey.env_names import NATIVE_TOOLS_ENV
+from codey.operations.research.execution import ResearchExecutor
 from codey.operations.task_execution import ExecutionDelegate
 from codey.policies.tool_requirement import _browser_body
 from codey.research.tools import ResearchTools
@@ -135,7 +136,7 @@ def click_state(browser: BrowserSession, ref: str = "") -> JsonObject:
 
 @contextmanager
 def observe_execution(directory: Path) -> Generator[None]:
-    source_open = ExecutionDelegate._execute_source_open
+    source_open = ResearchExecutor._execute_source_open
     browser_action = ExecutionDelegate._execute_browser
 
     def opened(delegate: ExecutionDelegate, call: ToolCall, tools: ResearchTools, *, turn: int,
@@ -157,7 +158,7 @@ def observe_execution(directory: Path) -> Generator[None]:
                 "after": click_state(browser), "ok": ok})
         return result, ok, code
 
-    with (patch.object(ExecutionDelegate, "_execute_source_open", opened),
+    with (patch.object(ResearchExecutor, "_execute_source_open", opened),
           patch.object(ExecutionDelegate, "_execute_browser", clicked)):
         yield
 

@@ -66,7 +66,7 @@ class MixedBatchKernelStopsWithReceiptsTests(unittest.TestCase):
         # the kernel must not lose the original call id receipt.
         import tempfile
 
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
 
         with tempfile.TemporaryDirectory() as td:
             project = Path(td)

@@ -21,7 +21,7 @@ def _policy():
 
 class ExplicitExecutorDelegateUnavailableDeniesPathTraversalTests(unittest.TestCase):
     def test_delegate_unavailable_with_project_path_denies_explicit_executor(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall
 

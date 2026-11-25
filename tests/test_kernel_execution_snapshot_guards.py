@@ -2,9 +2,10 @@
 
 from dataclasses import replace
 
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall
 
@@ -28,8 +29,9 @@ def test_snapshot_cannot_accept_another_policy():
 
 def test_executor_rechecks_snapshot_availability_before_effect_intents():
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "web.read"}), strict_research=True))
+    session.model_tool_names = ("web_search",)
     snapshot = build_turn_snapshot(session)
-    invoked = []
+    invoked: list[str] = []
 
     class Sink:
         def begin_turn(self, *args, **kwargs):

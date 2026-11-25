@@ -7,7 +7,7 @@ from dataclasses import Field, dataclass, fields
 from typing import TYPE_CHECKING
 
 from codey.policies.tool_requirement import ToolObservation, ToolSuccessRequirement, _contains_value, report_read_scope
-from codey.research.ledger_receipts import source_observation
+from codey.research.source_observation import source_observation
 from codey.runtime.core.models import ToolResult
 from codey.types.json_value import (
     JsonObject,

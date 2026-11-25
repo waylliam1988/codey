@@ -20,20 +20,20 @@ from codey.codemode.replay import DurableCodeModeReplay
 from codey.codemode.runtime import NodeWorkerRuntime
 from codey.codemode.types import ToolCatalogEntry
 from codey.durable import DurableSession
-from codey.operations import completion_gate
+from codey.operations import completion_gate, turn_snapshot
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import prepare_completion_output
-from codey.operations.declared_field_input import free_program_required
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.project.declared_field_input import free_program_required
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.output_requirement import declaration
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import BrowserTextSelector, ToolSuccessRequirement, require_tool_success
 from codey.protocols.json_scanner import balanced_json_spans
-from codey.research.ledger import OpenedSource
-from codey.research.ledger_receipts import source_snapshot
+from codey.research.source_document import OpenedSource
+from codey.research.source_observation import source_snapshot
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.input_attachments import InputAttachmentStore
@@ -107,12 +107,11 @@ def test_configuration_installs_only_declared_mechanisms(tmp_path: Path, config:
     original = (CodeModeHost.invoke, ToolSuccessRequirement._observe_value, build_turn_snapshot,
                 tool_prompt.tool_repair_text, completion_gate._required_checks_verdict)
     with surface.prototype(tmp_path, "basic", config):
-        from codey.operations import kernel_protocol
 
         flags = surface.CONFIGS[config]
         assert (CodeModeHost.invoke is not original[0]) == flags.admission
         assert (ToolSuccessRequirement._observe_value is not original[1]) == flags.binding
-        assert (kernel_protocol.build_turn_snapshot is not original[2]) == flags.structured
+        assert (turn_snapshot.build_turn_snapshot is not original[2]) == flags.structured
         assert (tool_prompt.tool_repair_text is not original[3]) == flags.structured
         assert (completion_gate._required_checks_verdict is not original[4]) == flags.binding
     assert CodeModeHost.invoke is original[0] and ToolSuccessRequirement._observe_value is original[1]
@@ -183,9 +182,9 @@ def test_b1_default_enters_original_executor_and_keeps_explicit_value(tmp_path: 
 def test_b1_durable_invalid_parameter_reports_root_cause_without_child_intent(tmp_path: Path, config: str) -> None:
     directories: tuple[Path, Path, Path] = _dirs(tmp_path)
     project, state, logdir = directories
-    runtime: tuple[object, RuntimeMutationLine, ManagedOutputStore, WorkspaceRevisionStore, object, KernelEffectSink] = (
+    runtime: tuple[RuntimeMutationLine, ManagedOutputStore, WorkspaceRevisionStore, object, KernelEffectSink] = (
         _open_runtime(logdir, state, "s", "r", project))
-    _, mutations, managed, revisions, _deps, sink = runtime
+    mutations, managed, revisions, _deps, sink = runtime
     durable = mutations.durable
     assert isinstance(durable, DurableSession)
     s = TaskSession(TaskPolicy(frozenset({"control", "project.read", "browser.observe"})), project=str(project))
@@ -532,6 +531,12 @@ def test_receipt_delivery_uses_original_file_and_page_data(
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
 def test_b3_real_property_target_and_consistent_repair_wire(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from codey.providers.api_provider import ApiProvider
+
+    def summarize(_provider: ApiProvider, _messages: list[dict[str, object]], _deadline: float) -> str:
+        return "Continue the browser record task using its committed tool results."
+
+    monkeypatch.setattr("codey.providers.api_context.summarize_context", summarize)
     actions = browser_steps() + [step("token", "browser_property", {"name": "__contractToken"}),
                                  step("tabs", "browser_tab_list", {})]
     bad = plan(step("bad", "browser_property", {"name": "invalid;code"}))

@@ -8,7 +8,8 @@ import pytest
 
 from codey.codemode import runtime as codemode_runtime
 from codey.codemode.runtime import NodeWorkerRuntime
-from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
+from codey.codemode.types import ToolCatalogEntry
+from codey.protocols.codemode import CodeModeLimits
 from codey.runtime.core import cancellation
 
 
@@ -172,9 +173,9 @@ def test_codemode_inherits_the_earliest_task_deadline():
 
 
 def test_leaf_dispatch_holds_exclusivity_through_receipt_commit():
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -222,9 +223,9 @@ def test_leaf_dispatch_holds_exclusivity_through_receipt_commit():
 
 
 def test_queued_child_stop_settles_once_without_invoking_the_tool():
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -294,9 +295,9 @@ def test_stop_terminates_a_process_started_by_a_codemode_child(tmp_path, monkeyp
 
 
 def test_cancelled_replay_preserves_committed_result_without_reexecution():
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult
 

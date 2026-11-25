@@ -6,25 +6,21 @@ from dataclasses import replace
 import pytest
 
 from codey.automation.browser_session import BrowserSession
-from codey.operations.browser_task_handoff import bind_browser_references, browser_task_handoff
+from codey.operations.browser.browser_task_handoff import bind_browser_references, browser_task_handoff
+from codey.operations.browser.turn_surface import offer_browser_call, offer_browser_tools
 from codey.operations.completion_context import CompletionContext
+from codey.operations.kernel.kernel_protocol import TurnSnapshot, normalize_turn
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.kernel_protocol import (
-    TurnSnapshot,
-    build_turn_snapshot,
-    normalize_turn,
-    offer_browser_call,
-    offer_browser_tools,
-)
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.answer_context import answer_context
 from codey.research.answer_contract import answer_scope
-from codey.research.ledger_receipts import source_observation
 from codey.research.source_document import SourceReadScope
+from codey.research.source_observation import source_observation
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object

@@ -35,8 +35,8 @@ def test_readonly_request_does_not_create_project_directory(tmp_path):
 
 
 def test_explicit_source_executor_does_not_use_project_only_guard():
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel.kernel_execution import execute_turn
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.research.ledger import ResearchLedger
     from codey.runtime.core.models import ToolCall
 

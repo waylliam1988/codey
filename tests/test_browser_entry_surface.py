@@ -5,8 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.capabilities import BROWSER_CAPABILITIES as BROWSER
 from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.providers.base import AssistantTurn, ProviderToolCall
@@ -99,7 +100,7 @@ def test_default_browser_keeps_executable_project_entrypoints(native: bool) -> N
 def test_mixed_task_requires_real_project_write_after_a_successful_codemode_return(tmp_path: Path) -> None:
     from codey.codemode.kernel import build_execute_turn_executor
     from codey.operations.completion_gate import evaluate
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.runtime.core.models import ToolCall
     from codey.types.json_value import parse_json_object
     from codey.workspace.revision import WorkspaceRevisionStore

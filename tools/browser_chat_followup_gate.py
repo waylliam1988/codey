@@ -26,12 +26,15 @@ from unittest.mock import patch
 from codey.automation.browser_query import QueryObservationError
 from codey.automation.browser_session import BrowserSession
 from codey.codemode.kernel import CodeModeKernelExecutor
-from codey.operations import completion_gate, kernel_context, kernel_protocol, provider_receipts
-from codey.operations.browser_copy import committed_children
-from codey.operations.browser_text_report import BrowserMetadata, MetadataPending
-from codey.operations.browser_waits import wait_plan as upload_wait_plan
-from codey.operations.kernel_context import KernelContext
-from codey.operations.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
+from codey.operations import completion_gate, provider_receipts
+from codey.operations.browser import turn_surface
+from codey.operations.browser.browser_copy import committed_children
+from codey.operations.browser.browser_text_report import BrowserMetadata, MetadataPending
+from codey.operations.browser.browser_waits import wait_plan as upload_wait_plan
+from codey.operations.browser.execution import BrowserExecutor
+from codey.operations.kernel import kernel_context, kernel_protocol
+from codey.operations.kernel.kernel_context import KernelContext
+from codey.operations.kernel.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
 from codey.operations.kernel_tool_args import _invalid_plan
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_execution import ExecutionDelegate
@@ -367,7 +370,7 @@ def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
     assert isinstance(model_specs_property, SnapshotSpecsDescriptor)
     original_specs: Callable[[TurnSnapshot], tuple[ToolSpec, ...]] = model_specs_property.__get__
     original_freeze = KernelContext.freeze
-    original_execute = ExecutionDelegate._execute_browser_operation
+    original_execute = BrowserExecutor.execute_operation
     original_query_capture = BrowserSession.capture_query_result
     original_parent = CodeModeKernelExecutor.execute
     original_gate = completion_gate.evaluate
@@ -562,8 +565,8 @@ def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
 
     # Each arm offers only its own browser surface. The production offer is
     # already enabled on ordinary Chat, so it must stay out of this experiment.
-    with (patch.object(kernel_protocol, "offer_browser_tools", ab.retain_browser_surface),
-          patch.object(kernel_protocol, "offer_browser_call", ab.retain_browser_surface),
+    with (patch.object(turn_surface, "offer_browser_tools", ab.retain_browser_surface),
+          patch.object(turn_surface, "offer_browser_call", ab.retain_browser_surface),
           patch.object(TurnSnapshot, "model_specs", property(model_specs)),
           patch.object(provider_receipts, "snapshot_description", describe),
           patch.object(provider_receipts, "restore_snapshot", restore),
@@ -571,7 +574,7 @@ def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
           patch.object(KernelContext, "freeze", freeze), patch.object(kernel_protocol, "normalize_turn", normalize),
           patch.object(kernel_context, "task_result_context", context),
           patch.object(CodeModeKernelExecutor, "execute", run_parent),
-          patch.object(ExecutionDelegate, "_execute_browser_operation", execute_with_wait),
+          patch.object(BrowserExecutor, "execute_operation", execute_with_wait),
           patch.object(completion_gate, "evaluate", evaluate)):
         yield
 

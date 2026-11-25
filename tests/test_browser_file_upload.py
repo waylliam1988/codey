@@ -9,11 +9,11 @@ from codey.automation.browser_receipts import operation_receipts
 from codey.automation.browser_routes import route_policy
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.operations.execution_claims import validate_execution_claims
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.kernel_facts import project_execution_record
 from codey.operations.kernel_prompt import _result_context
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_execution import ExecutionDelegate
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.runtime.core.models import ToolCall
 from codey.storage.input_attachments import InputAttachmentStore
 from codey.storage.managed_outputs import ManagedOutputStore

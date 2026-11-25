@@ -13,8 +13,8 @@ import pytest
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.operations import kernel_prompt
-from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.token_accounting import ContextBudget
 from codey.runtime.core import shell_discovery

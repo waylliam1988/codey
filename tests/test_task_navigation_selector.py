@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -10,16 +9,12 @@ import pytest
 from codey.codemode.catalog import snapshot_catalog
 from codey.codemode.navigation import resolve_task_navigation
 from codey.knowledge.model import canonical_json
-from codey.operations.browser_task_handoff import handoff_call
-from codey.operations.kernel_protocol import (
-    TurnSnapshot,
-    build_turn_snapshot,
-    normalize_turn,
-    offer_browser_call,
-    refresh_snapshot_contract,
-)
-from codey.operations.provider_receipts import restore_snapshot, snapshot_description
+from codey.operations.browser.browser_task_handoff import handoff_call
+from codey.operations.browser.turn_surface import offer_browser_call
+from codey.operations.kernel.kernel_protocol import TurnSnapshot, normalize_turn
+from codey.operations.provider_receipts import TURN_SNAPSHOT_SCHEMA, restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
 from codey.protocols.text_turn import decode_text_turn
@@ -48,7 +43,7 @@ def offered(url: str = URL) -> tuple[TaskSession, TurnSnapshot]:
 def test_direct_selector_freezes_the_exact_source_and_preserves_other_navigation(native: bool, url: str) -> None:
     session, snapshot = offered(url)
     payload = snapshot_description(snapshot)
-    assert payload["schema_version"] == snapshot.input_contract_version
+    assert payload["schema_version"] == TURN_SNAPSHOT_SCHEMA
     restored = restore_snapshot(parse_json_object(canonical_json(payload)))
     assert restored == snapshot
     spec = next(spec for spec in restored.model_specs if spec.name == "browser_navigate")
@@ -75,18 +70,12 @@ def test_raw_url_and_ambiguous_arguments_are_rejected_before_an_effect(args: Jso
     assert plan.protocol_error and not plan.calls
 
 
-def test_legacy_request_keeps_url_contract_and_new_request_cannot_change_its_presentation() -> None:
+def test_captured_navigation_contract_rejects_inconsistent_presentation() -> None:
     _, current = offered()
-    legacy = refresh_snapshot_contract(replace(current, input_contract_version=11, task_source_url=None))
-    raw = snapshot_description(legacy)
-    assert raw["schema_version"] == 11
-    restored = restore_snapshot(parse_json_object(canonical_json(raw)))
-    assert restored == legacy and not restored.task_navigation_selector
-    plan = normalize_turn(decode_text_turn(canonical_json({"tool": "browser_navigate", "args": {"url": URL}})), snapshot=restored)
-    assert not plan.protocol_error and plan.calls[0].name == "browser_navigate"
-    incompatible = {**raw, "contract_text": snapshot_description(current)["contract_text"]}
+    raw = snapshot_description(current)
+    raw["contract_text"] = ""
     with pytest.raises(ValueError, match="contract text differs"):
-        restore_snapshot(incompatible)
+        restore_snapshot(raw)
 
 
 def test_no_unique_source_keeps_url_input_and_denied_navigation_stays_denied() -> None:

@@ -15,8 +15,9 @@ from codey.completion.verification import (
     coding_verification_state,
 )
 from codey.completion.verification_policy import VerificationCandidate, select_verification_plan
-from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn, offer_browser_call
-from codey.operations.project_delivery import (
+from codey.operations.browser.turn_surface import offer_browser_call
+from codey.operations.kernel.kernel_protocol import normalize_turn
+from codey.operations.project.project_delivery import (
     PAGE_AFTER_EDIT,
     SOURCE_BEFORE_EDIT,
     declared_edit_scope,
@@ -27,6 +28,7 @@ from codey.operations.project_delivery import (
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_entry import build_task_policy_for_entry
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.network import NetworkPolicy, NetworkStatus
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
@@ -112,7 +114,7 @@ def test_mixed_request_freezes_distinct_source_and_browser_selection() -> None:
     snapshot = offer_browser_call(build_turn_snapshot(session), session, "browser_navigate")
     restored = restore_snapshot(snapshot_description(snapshot))
     assert restored == snapshot
-    assert restored.task_navigation_url == page and restored.bound_source_url == source
+    assert restored.task_navigation_url == page and restored.task_source_url == source
     read = normalize_turn(decode_text_turn('{"tool":"open_url","args":{"target":"task"}}'), snapshot=restored)
     assert not read.protocol_error
     assert read.calls[0].args["url"] == source

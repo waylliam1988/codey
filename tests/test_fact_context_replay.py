@@ -10,11 +10,11 @@ from typing import Literal
 import pytest
 
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.operations import kernel_protocol
+from codey.operations import turn_snapshot
 from codey.operations.generation_boundary import durable_generation_boundary_callback
+from codey.operations.kernel.kernel_protocol import TurnSnapshot
 from codey.operations.kernel_contracts import ToolExecutor
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
 from codey.operations.provider_session import adapt_provider
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_guidance import task_result_context, task_working_context
@@ -26,6 +26,7 @@ from codey.operations.task_loop import (
     run_task_kernel,
 )
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import KernelSessionView
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolResult
 from codey.research.ledger import ResearchLedger
@@ -88,12 +89,12 @@ def test_cold_done_replays_legacy_receipts_and_optional_claims(
     tmp_path: Path, native: bool, historical_claims: bool, retry_success: bool, legacy: bool, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     if legacy:
-        build = kernel_protocol.build_turn_snapshot
+        build = turn_snapshot.build_turn_snapshot
 
         def captured(session: KernelSessionView, *, native: bool = False) -> TurnSnapshot:
             return claim_snapshot(build(session, native=native))
 
-        monkeypatch.setattr(kernel_protocol, "build_turn_snapshot", captured)
+        monkeypatch.setattr(turn_snapshot, "build_turn_snapshot", captured)
     durable, outputs, sink = runtime(tmp_path)
     policy = TaskPolicy(frozenset({"control", "project.verify", "web.read"}), sources_open_required=True,
                         required_checks=("research_sources_opened",))
@@ -212,7 +213,7 @@ def test_cold_done_replays_legacy_receipts_and_optional_claims(
 def test_context_queries_are_pure_and_use_receipt_state(
     name: str, scope: Literal["shell", "process"], status: str, code: int | None, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from codey.operations import kernel_execution
+    from codey.operations.kernel import kernel_execution
     from codey.operations.tool_result_reader import read_tool_result
     from codey.research.source_document import SourceDocument
     from codey.research.source_gateway import ResearchSourceGateway

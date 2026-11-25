@@ -43,7 +43,6 @@ if TYPE_CHECKING:
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.workspace.changes import ChangeTracker
 
-from codey.app.sibling_probe import bind_provider_handlers
 from codey.operations.context import RunFrame, RunWork
 from codey.operations.task_phases import (
     build_hooks,
@@ -133,6 +132,7 @@ class TaskRunDeps:
     runtime_effects: RuntimeEffectStore | None = None
     connect_provider: Callable[[str], ChatProvider] | None = None
     project_review: bool = True
+    bind_provider_handlers: Callable[[], None] | None = None
 
     @classmethod
     def from_submission_stores(
@@ -153,6 +153,7 @@ class TaskRunDeps:
         review_log_lines: int = 80,
         connect_provider: Callable[[str], ChatProvider] | None = None,
         project_review: bool = True,
+        bind_provider_handlers: Callable[[], None] | None = None,
     ) -> TaskRunDeps:
         """Assemble task dependencies from one explicit resource bundle."""
         return cls(
@@ -180,6 +181,7 @@ class TaskRunDeps:
             runtime_effects=stores.runtime_effects,
             connect_provider=connect_provider,
             project_review=project_review,
+            bind_provider_handlers=bind_provider_handlers,
         )
 
 
@@ -412,7 +414,8 @@ def _setup_run_state(deps: TaskRunDeps, request: TaskSubmission) -> tuple[_RunSe
         trace_sink = FailOpenPromptTrace(trace)
         project_config_result = load_project_config(request.project) if request.project else ProjectConfigLoadResult()
 
-        bind_provider_handlers(state)
+        if deps.bind_provider_handlers is not None:
+            deps.bind_provider_handlers()
         provider_controls.begin_task_context(session_id)
         task_context_started = True
         state.run_registry.set_last_provider_failure(None)

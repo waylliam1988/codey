@@ -8,17 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from codey.operations.declared_field_input import model_spec
+from codey.operations.browser.turn_surface import offer_browser_tools
+from codey.operations.kernel.kernel_protocol import ModelInputBinding, TurnSnapshot, normalize_turn
 from codey.operations.kernel_prompt import _text_request_prompt
-from codey.operations.kernel_protocol import (
-    ModelInputBinding,
-    TurnSnapshot,
-    build_turn_snapshot,
-    normalize_turn,
-    offer_browser_tools,
-)
+from codey.operations.project.declared_field_input import model_spec
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.research.ledger import ResearchLedger

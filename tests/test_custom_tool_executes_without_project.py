@@ -2,7 +2,7 @@ from codey.runtime.core.models import ToolCall, ToolResult
 
 
 def test_registered_custom_executor_runs_without_project() -> None:
-    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.tool_spec import register_custom_executor, register_custom_tool, unregister_custom_tool

@@ -25,17 +25,14 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.codemode import catalog as codemode_catalog
 from codey.codemode.runtime import DeliveryRecorder, NodeWorkerRuntime, ToolInvoker
 from codey.codemode.state import CodeModeStateStore
-from codey.codemode.types import (
-    CodeModeLimits,
-    CodeModeResult,
-    DeliveryReference,
-    ToolCatalogEntry,
-    ToolCatalogSnapshot,
-)
+from codey.codemode.types import CodeModeResult, DeliveryReference, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.env_names import NATIVE_TOOLS_ENV
-from codey.operations import kernel_protocol
-from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
+from codey.operations import turn_snapshot
+from codey.operations.kernel import kernel_protocol
+from codey.operations.kernel.kernel_protocol import TurnSnapshot
+from codey.operations.turn_snapshot import KernelSessionView
 from codey.policies.tool_requirement import require_tool_success
+from codey.protocols.codemode import CodeModeLimits
 from codey.runtime.core import cancellation
 from codey.toolchain.tool_spec import is_text_batch_tool
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object, require_json_integer
@@ -169,7 +166,7 @@ def prototype_helper(directory: Path, *, enabled: bool, helper: str = HELPER,
     execute = NodeWorkerRuntime.execute
     contract_digest = NodeWorkerRuntime.contract_digest
     declarations = codemode_catalog.render_declarations
-    build_snapshot = kernel_protocol.build_turn_snapshot
+    build_snapshot = turn_snapshot.build_turn_snapshot
 
     def probe_snapshot(session: KernelSessionView, *, native: bool = False) -> TurnSnapshot:
         return codemode_only_surface(build_snapshot(session, native=native))
@@ -213,7 +210,7 @@ def prototype_helper(directory: Path, *, enabled: bool, helper: str = HELPER,
 
     with ExitStack() as stack:
         stack.enter_context(patch.object(NodeWorkerRuntime, "execute", recorded_execute))
-        stack.enter_context(patch.object(kernel_protocol, "build_turn_snapshot", probe_snapshot))
+        stack.enter_context(patch.object(turn_snapshot, "build_turn_snapshot", probe_snapshot))
         if enabled:
             stack.enter_context(patch.object(NodeWorkerRuntime, "contract_digest", bound_contract_digest))
             stack.enter_context(patch.object(codemode_catalog, "render_declarations", helper_declarations))

@@ -42,7 +42,7 @@ def test_source_locator_guidance_uses_current_query_and_preserves_reused_ids():
     delegate = ExecutionDelegate(session=session, research_tools=Tools())
     call = ToolCall("source_search", {"url": "https://example.com/new", "query": "new"})
     for _ in range(2):
-        result, ok, _ = delegate._execute_research(call)
+        result, ok, _ = delegate.research_executor._execute_research(call)
         assert ok and list(result.canonical["hit_targets"]) == ["h2"]
         record_facts_for_result(session, call, result, ok=True)
         guidance = _result_context(result, session)
@@ -93,7 +93,7 @@ def test_source_search_canonical_replays_to_same_facts():
 
     delegate = ExecutionDelegate(session=session, research_tools=FakeSearch())
     call = ToolCall("source_search", {"url": "https://example.com/a", "query": "q"})
-    result, ok, exit_code = delegate._execute_research(call, turn=1, tool_index=0)
+    result, ok, exit_code = delegate.research_executor._execute_research(call, turn=1, tool_index=0)
     assert ok is True
     assert "h1" in result.model_text
     assert isinstance(result.canonical, dict)

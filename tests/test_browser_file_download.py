@@ -10,9 +10,9 @@ from codey.automation.browser_routes import route_policy
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.runtime import NodeWorkerRuntime
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.recovery import record_entry_policy
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.action import MAX_MANAGED_OUTPUT_BYTES, MAX_MANAGED_OUTPUTS_PER_RUN
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.storage.managed_outputs import ManagedOutputStore

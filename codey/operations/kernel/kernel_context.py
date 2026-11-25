@@ -13,8 +13,9 @@ from typing import TYPE_CHECKING, Protocol
 from codey.durable.model import ArtifactRecord, thaw_json
 from codey.knowledge.model import canonical_json
 from codey.operations import kernel_actions as wiring
-from codey.operations import kernel_events, kernel_prompt, kernel_protocol
-from codey.operations.edit_base import bound_symbol_retry, is_compact_symbol_retry
+from codey.operations import kernel_events, kernel_prompt
+from codey.operations.kernel import kernel_protocol
+from codey.operations.kernel.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
 from codey.operations.kernel_capabilities import KernelCapabilityView
 from codey.operations.kernel_contracts import (
     ClosingDecision,
@@ -27,8 +28,8 @@ from codey.operations.kernel_contracts import (
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_preparation import capture_turn_snapshot, prepare_kernel_turn
 from codey.operations.kernel_progress import KernelProgress, ProjectCheckCycle, project_check_cycle
-from codey.operations.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
 from codey.operations.kernel_trace import record_outbound, record_turn
+from codey.operations.project.edit_base import bound_symbol_retry, is_compact_symbol_retry
 from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.provider_request_context import ProviderRequestContext
 from codey.operations.task_guidance import task_result_context, task_working_context
@@ -126,8 +127,8 @@ class KernelContext:
 
         self.completion_context = replace(self.completion_context, resolve_quote=partial(resolve_receipt_quote,
             ReceiptReader(session, self.sink.managed_outputs, self.sink.session_id, self.sink.run_id), durable=self.durable))
-        from codey.operations.browser_progress import restore_browser_progress
-        from codey.operations.browser_resources import build_task_browser
+        from codey.operations.browser.browser_progress import restore_browser_progress
+        from codey.operations.browser.browser_resources import build_task_browser
         from codey.toolchain.tool_spec import tool_specs
 
         if ((session.policy.allows("web.read") and self.execution.research_tools is not None)
@@ -444,40 +445,13 @@ class KernelContext:
 
     def request_snapshot(self, snapshot: TurnSnapshot, *,
                          delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
-        """Finish tool narrowing before rendering results or request options."""
-        if self.transport.collect_memory_candidates and (self.native or self.capabilities.text_tool_format == "json_schema"):
-            from codey.operations.memory_candidate_transport import offer_memory_candidates
+        from codey.operations.kernel.request_preparation import prepare_request_snapshot
 
-            snapshot = offer_memory_candidates(snapshot)
-        browser = self.execution.browser_session
-        from codey.operations.browser_resources import resume_assistance_observation
-        from codey.operations.task_handoff import task_handoff
-        from codey.operations.tool_task_delivery import active_tool_task_controls
-        from codey.operations.verification_workflow import verification_workflow
-
-        question = decode_json_object(thaw_json(self.durable.task(self.sink.run_id).state.get("question", {})))
-        assistance = (resume_assistance_observation(browser, question.get("continuation", {}), self.session._memory_results)
-                      if question.get("state") == "answered" else "")
-        snapshot, workflow = verification_workflow(self.session, snapshot, self.durable, self.sink.run_id,
-            self.sink.managed_outputs, self.execution.workspace_revision_store,
-            ignored_paths=self.execution.workspace_ignored_paths)
-        snapshot, hint = task_handoff(self.session, snapshot, self.completion_context, browser,
-                                     delivered_results=delivered_results,
-                                     task_controls=active_tool_task_controls(self.durable, self.sink.run_id))
-        from codey.operations.edit_base import edit_anchor_retry
-
-        snapshot, edit_retry = edit_anchor_retry(self.session, snapshot, tuple(delivered_results))
-        instructions = ""
-        if self.execution.project_path is not None and "edit" in snapshot.inventory_names:
-            from codey.operations.project_delivery import declared_edit_target
-            from codey.operations.project_instructions import instruction_handoff
-
-            targets = self.session.policy.edit_scope or tuple(filter(None, (declared_edit_target(self.session.task_text),)))
-            bindings, instructions = instruction_handoff(
-                self.execution.project_path, (*targets, *self.session.read_files), self.session._memory_results)
-            version = snapshot.input_contract_version if snapshot.input_contract_version >= 18 else 18
-            snapshot = replace(snapshot, input_contract_version=version, project_instructions=bindings)
-        return snapshot, "\n\n".join(part for part in (assistance, instructions, edit_retry, hint, workflow) if part)
+        return prepare_request_snapshot(self.session, snapshot, self.execution, self.completion_context,
+            durable=self.durable, run_id=self.sink.run_id, managed_outputs=self.sink.managed_outputs,
+            collect_memory=self.transport.collect_memory_candidates
+                and (self.native or self.capabilities.text_tool_format == "json_schema"),
+            delivered_results=delivered_results)
 
     def freeze(self, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int, prompt: str = "",
                messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
@@ -656,47 +630,14 @@ class KernelContext:
                     coding_context_prepared=True, initial_source_batch=prefetched is not None, task_span=task_span)
 
     def prefetch_required_sources(self, snapshot: TurnSnapshot) -> bool:
-        from codey.operations.browser_detail import initial_query_access
-        from codey.operations.browser_task_handoff import initial_navigation
-        from codey.operations.browser_upload import upload_scope
-        from codey.operations.source_gaps import task_source_coverage
-        from codey.policies.tool_requirement import parse_tool_success_check
-        from codey.task.web_intent import explicit_web_intent, source_url_key
+        from codey.operations.research.acquisition_handoff import initial_source_calls
 
-        coverage = task_source_coverage(self.session, self.completion_context.research_ledger)
-        attempted = {source_url_key(url) for result in self.session._memory_results.values()
-                     if result.call.name == "open_url" and isinstance(url := result.call.args.get("url"), str)}
-        deferred = explicit_web_intent(self.session.task_text).deferred_urls
-        urls: list[str] = sorted(set(coverage.missing) - attempted - deferred) if "open_url" in snapshot.inventory_names else []
-        upload = upload_scope(self.session)
-        navigation = initial_navigation(self.session, snapshot)
-        # A requested browser navigation owns initial access to its page.
-        # Dedicated input bindings and explicit open_url requirements retain
-        # their existing initial source observations.
-        requires_open = snapshot.input_binding is not None or any(
-            (rule := parse_tool_success_check(check)) is not None and rule.tool == "open_url"
-            for check in self.session.policy.required_checks)
-        navigation_url = navigation.args.get("url") if navigation is not None else None
-        if navigation is not None and navigation.name == "codemode":
-            navigation_url = decode_json_object(navigation.args["inputs"]).get("url")
-        if isinstance(navigation_url, str) and source_url_key(navigation_url) in deferred:
-            navigation = None
-        calls = [ToolCall("open_url", {"url": url}, call_id=f"required-source:{index}")
-                 for index, url in enumerate(urls) if requires_open or not isinstance(navigation_url, str)
-                 or source_url_key(url) != source_url_key(navigation_url)]
-        if navigation is not None:
-            calls.append(navigation)
-        elif upload is not None and upload.navigate and upload.url in urls and "browser_navigate" in snapshot.inventory_names:
-            calls.append(ToolCall("browser_navigate", {"url": upload.url}, call_id="required-source:upload-page"))
+        calls = initial_source_calls(self.session, snapshot, self.completion_context.research_ledger,
+                                     self.execution.browser_session)
         if not calls:
             return False
-        browser = self.execution.browser_session
-        calls[-1] = initial_query_access(self.session, snapshot, browser, calls[-1])
-        # CodeMode aggregation hides this leaf from the model's outer catalog,
-        # while the frozen inventory still authorizes it for the runtime.
-        names: dict[str, None] = dict.fromkeys([*snapshot.tool_names, *[call.name for call in calls]])
-        runtime_snapshot = replace(snapshot, tool_names=tuple(names))
-        self._execute_calls(calls, runtime_snapshot, turn=0)
+        names = tuple(dict.fromkeys((*snapshot.tool_names, *(call.name for call in calls))))
+        self._execute_calls(calls, replace(snapshot, tool_names=names), turn=0)
         return True
 
     def interpret(self, state: RuntimeOperationState) -> None:
@@ -820,7 +761,7 @@ class KernelContext:
                     "project_write_busy" if isinstance(exc, ProjectWriteBusy) else "controller_failure"))
                 return None
         if state.leaf == operation_payload.LEAF_PLAN_READY:
-            query = self.conflict_followup(received.snapshot, calls, turn)
+            query = self._conflict_followup(received.snapshot, calls, turn)
             if query is not None:
                 # Acquire before any submission freezes the current evidence.
                 calls.insert(0, query)
@@ -834,39 +775,10 @@ class KernelContext:
         self._execute_calls(calls, received.snapshot, turn=turn)
         return None
 
-    def conflict_followup(self, snapshot: TurnSnapshot, calls: list[ToolCall], turn: int) -> ToolCall | None:
-        """Schedule host-selected acquisition only while the research surface is open."""
-        resources = self.execution.research_tools
-        if (resources is None or turn >= self.session.max_turns - 1 or "web_search" not in snapshot.tool_names
-                or not self.session.policy.strict_research
-                or not calls
-                or not all(call.name in {"save_finding", "save_inference", "open_url", "open_result", "source_search",
-                                         "submit_research_answer"}
-                           for call in calls)):
-            return None
-        from codey.research.evidence_gaps import conflict_search
-        from codey.research.questions import requires_question_ref
+    def _conflict_followup(self, snapshot: TurnSnapshot, calls: list[ToolCall], turn: int) -> ToolCall | None:
+        from codey.operations.research.acquisition_handoff import conflict_followup
 
-        limits = self.session.research_acquisition_limits
-        used = sum(value == "search" for value in self.session.research_acquisition_slots.values())
-        if (snapshot.research_scope is not None and snapshot.research_scope.primary_passages is not None
-                and any(call.name == "submit_research_answer" and call.args.get("state") == "answered" for call in calls)):
-            from codey.research.primary_sources import primary_acquisition
-
-            if primary := primary_acquisition(self.session, resources.ledger,
-                    missing_primary=not snapshot.research_scope.primary_passages,
-                    may_search=limits is None or used < limits[0], may_open="open_result" in snapshot.tool_names):
-                return primary
-        findings = (result.call for ref, result in self.session._memory_results.items()
-                    if ref in self.session.executed and result.ok and result.call.name == "save_finding")
-        candidate = conflict_search(resources.ledger, remaining_searches=1 if limits is None else limits[0] - used,
-                                    findings=findings)
-        if candidate is None:
-            return None
-        args = {"query": candidate["query"]}
-        if requires_question_ref(self.session):
-            args["question_ref"] = candidate["question_ref"]
-        return ToolCall("web_search", args)
+        return conflict_followup(self.session, self.execution.research_tools, snapshot, calls, turn)
 
     def _execute_calls(self, calls: list[ToolCall], snapshot: TurnSnapshot, *, turn: int) -> None:
         kernel_events._emit_tool_starts(self.observation.on_event, self.session, turn, calls)
@@ -998,7 +910,7 @@ class KernelContext:
                 tool_names=snapshot.tool_names, provider=self.provider)
         reminder = progress.repeat_feedback() if progress.warning_batch_id != action.delivery_batch_id else ""
         if reminder:
-            from codey.operations.browser_task_handoff import observation_recovery_handoff
+            from codey.operations.browser.browser_task_handoff import observation_recovery_handoff
             from codey.operations.progress_comparison import progress_comparison
 
             if any(progress_comparison(row, self.session._memory_results).browser_observation for row in results):

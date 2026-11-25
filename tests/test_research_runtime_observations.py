@@ -44,7 +44,7 @@ def test_view_reserves_questions_and_latest_references_and_marks_omissions():
 
 
 def test_ordinary_context_and_evidence_only_contract():
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.turn_snapshot import build_turn_snapshot
 
     session = TaskSession(TaskPolicy(frozenset({"control"})))
     assert task_working_context(session) == working_context(session)
@@ -79,7 +79,7 @@ def test_working_view_projects_saved_ledger_once():
 
 def test_unknown_property_repair_allows_correcting_keys_without_rewriting_source_values():
     from codey.operations.kernel_prompt import _repair_prompt
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.runtime.core.models import ToolPlan
 
     session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.write"})), task_kind="evidence_followup")

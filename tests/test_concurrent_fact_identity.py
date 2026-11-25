@@ -3,9 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from codey.operations.kernel_execution import _begin_pending_intents, execute_turn
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.kernel.kernel_execution import _begin_pending_intents, execute_turn
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.research.ledger import ResearchLedger
 from codey.research.source_document import SourceDocument, SourcePage
@@ -19,7 +19,7 @@ from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open
 @pytest.mark.parametrize("pdf", [False, True])
 def test_serial_source_children_survive_receipt_restart(tmp_path, pdf):
     project, state, logdir = _dirs(tmp_path)
-    _, _, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project, task_kind="research")
+    _, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project, task_kind="research")
     policy = TaskPolicy(grants=frozenset({"control", "web.read"}))
     session = TaskSession(policy=policy, task_kind="research")
     ledger = ResearchLedger()
@@ -99,7 +99,7 @@ def test_serial_source_children_survive_receipt_restart(tmp_path, pdf):
         if not pdf:
             from codey.operations.task_execution import ExecutionDelegate
 
-            assert ExecutionDelegate(session=restored)._resolve_alias_url(
+            assert ExecutionDelegate(session=restored).research_executor._resolve_alias_url(
                 "reopen_source", {"source_id": "s1"}) == completed[0]
         assert restored_ledger.source_pages_for_url(a) == ledger.source_pages_for_url(a)
         assert restored_ledger.source_text_for_url(a) == ledger.source_text_for_url(a)
@@ -114,7 +114,7 @@ def test_identical_native_codemode_parents_have_distinct_children(tmp_path):
     from codey.codemode.kernel import build_execute_turn_executor
 
     project, state, logdir = _dirs(tmp_path)
-    _, _, _, _, deps, sink = _open_runtime(logdir, state, "s", "r", project)
+    _, _, _, deps, sink = _open_runtime(logdir, state, "s", "r", project)
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read"})))
     snapshot = build_turn_snapshot(session)
     children = []
@@ -227,7 +227,7 @@ def test_pdf_overlap_uses_observation_time_and_delta_not_replay_order(reverse):
     assert restored.source_text_for_url(url) == "new page\n\nsecond page"
     assert restored.page_was_read(url, 1)
     view = ExecutionDelegate(session=TaskSession(policy=None),
-                             research_tools=SimpleNamespace(ledger=restored, browser_session=None))._observation_tools(source_read=True)
+                             research_tools=SimpleNamespace(ledger=restored, browser_session=None)).research_executor._observation_tools(source_read=True)
     assert view.ledger.opened_sources == restored.opened_sources
     assert view.ledger.source_text_for_url(url) == ""
     assert view.ledger.read_passages == {}

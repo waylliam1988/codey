@@ -9,18 +9,15 @@ state, never from substring matching or model-supplied parameters.
 
 from __future__ import annotations
 
-import contextlib
-import copy
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING
 
-from codey.automation.browser_contracts import BrowserAction
-from codey.automation.browser_document import same_document
-from codey.automation.browser_receipts import delivery
-from codey.operations import browser_followups, browser_text_report, browser_upload
-from codey.operations.browser_detail import audit_browser_open, read_browser_source
+from codey.operations.browser.browser_detail import read_browser_source
+from codey.operations.browser.execution import BrowserExecutor
+from codey.operations.project.execution import ProjectExecutor
+from codey.operations.research.execution import ResearchExecutor
 from codey.operations.research_resources import (
     bind_browser_session as bind_browser_session,
 )
@@ -30,50 +27,23 @@ from codey.operations.research_resources import (
 from codey.operations.research_resources import (
     close_research_tools as close_research_tools,
 )
-from codey.operations.research_submission_handoff import traces_workflow_document
-from codey.policies.browser_requirement import PAGE_TRANSITIONS, browser_receipt_tools
-from codey.policies.tool_requirement import has_browser_field_bindings
-from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import ledger_observation, source_search_observation
-from codey.runtime.core import cancellation
-from codey.runtime.core.execution_record import HitTarget
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.toolchain.constants import PAGE_DETAIL_TOOL
-from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG, SOURCE_READ_TOOL_NAMES, is_source_read_tool
 from codey.types.json_value import (
     JsonObject,
-    JsonValue,
-    ToolArgs,
-    decode_json_object,
-    encode_transport_value,
-    require_json_integer,
-    require_json_string,
 )
-from codey.types.tool_image import ToolImageRef
 
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
     from codey.agents.tools import AgentToolFns
-    from codey.automation.browser_session import BrowserSession, BrowserToolOutput
+    from codey.automation.browser_session import BrowserSession
     from codey.durable.session import DurableSession
     from codey.operations.kernel_contracts import ToolExecutor
     from codey.operations.task_session import TaskSession
     from codey.policies.action import ActionPolicyDecision
     from codey.research.answer_contract import AnswerScope
-    from codey.research.output_receipts import _Outcome
-    from codey.research.receipt_types import SourceSearchObservation
     from codey.storage.managed_outputs import ManagedOutputStore
-    from codey.toolchain.runtime import ToolOutcome
     from codey.toolchain.tool_spec import ToolSpec
-from codey.research.tools import ResearchToolOutput, ResearchTools
-
-
-class _SerializableRecord(Protocol):
-    def to_dict(self) -> object: ...
-
-
-def _record_payload(record: _SerializableRecord) -> JsonObject:
-    return decode_json_object(record.to_dict())
+from codey.research.tools import ResearchTools
 
 
 def effective_project_profile(permission_profile: object) -> str:
@@ -86,21 +56,6 @@ def effective_project_profile(permission_profile: object) -> str:
     """
     return "coding_writer" if str(permission_profile or "") == "research" else str(
         permission_profile or "coding_writer")
-
-
-def _tool_result(call: ToolCall, outcome: ToolOutcome | _Outcome) -> ToolResult:
-    audit = dict(outcome.audit)
-    # Tool implementations cannot classify a request as a runtime guard refusal.
-    audit.pop("execution_disposition", None)
-    if call.name == "edit":
-        audit["changed"] = outcome.changed
-    return ToolResult(
-        ok=outcome.ok is True, call=call, model_text=str(outcome.model_text or ""),
-        truncated=outcome.truncated,
-        presentation=dict(outcome.presentation),
-        audit=audit,
-        canonical=dict(outcome.canonical),
-    )
 
 
 @dataclass(frozen=True)
@@ -141,7 +96,6 @@ class ExecutionDelegate:
         self.tool_fns: AgentToolFns | None = tool_fns
         self.research_tools = research_tools
         self.browser_session = browser_session or (research_tools.browser_session if research_tools is not None else None)
-        self._browser_wait_document = browser_wait_document
         self.permission_profile = (permission_profile or "coding_writer")
         self.approval_available = approval_available
         self.change_tracker = change_tracker
@@ -153,6 +107,10 @@ class ExecutionDelegate:
         self._custom_executors = custom_executors
         self._research_scope = research_scope
         self.durable = durable
+        self.browser_executor = BrowserExecutor(session=session, browser_session=self.browser_session,
+            wait_document=browser_wait_document, permission_profile=self.permission_profile,
+            managed_outputs=managed_outputs, session_id=session_id, run_id=run_id,
+            trace_research=research_scope is not None, read_source=self.read_browser_source)
         if self.tool_fns is None and self.project_path is not None:
             from codey.agents.tools import build_project_tool_fns
 
@@ -160,10 +118,18 @@ class ExecutionDelegate:
                 state_home=managed_outputs.root.parent if managed_outputs is not None else None,
             )
 
-    def _research_resources(self) -> ResearchTools:
-        if self.research_tools is None:
-            raise ValueError("research tools unavailable")
-        return self.research_tools
+        self.project_executor = ProjectExecutor(session=session, project_path=self.project_path,
+            tool_fns=self.tool_fns, browser_session=self.browser_session, change_tracker=change_tracker,
+            permission_profile=self._project_permission_profile(), check_policy=self.check_policy)
+        self.research_executor = ResearchExecutor(session=session, research_tools=research_tools,
+            browser_session=self.browser_session, research_scope=research_scope, managed_outputs=managed_outputs,
+            session_id=session_id, run_id=run_id, permission_profile=self.permission_profile)
+
+    def read_browser_source(self, browser: BrowserSession, call: ToolCall, *, turn: int,
+                            tool_index: int) -> tuple[ToolResult, bool, int | None]:
+        return read_browser_source(self.research_executor, browser, call,
+            spec=self._resolve_spec(call.name) if self._frozen_specs is not None else None,
+            turn=turn, tool_index=tool_index)
 
     def _resolve_spec(self, name: str) -> ToolSpec | None:
         lowered = (name or "").strip().lower()
@@ -222,14 +188,7 @@ class ExecutionDelegate:
             executor = ""
         if executor == "receipt":
             if name in {"read_data", "calculate"}:
-                from codey.research.calculation import calculate, read_data
-
-                assert self.session is not None
-                try:
-                    value = calculate(call.args, self.session) if name == "calculate" else read_data(call.args, self.session, self._research_scope)
-                    result = ToolResult(call, str(value), ok=True, canonical={"value": value})
-                except (ValueError, KeyError, IndexError, ArithmeticError) as exc:
-                    result = ToolResult(call, "Calculation rejected: " + str(exc), ok=False)
+                result = self.research_executor.calculate(call)
                 return result, result.ok, None
             from codey.operations.tool_result_reader import ReceiptReader, read_tool_result
 
@@ -238,13 +197,11 @@ class ExecutionDelegate:
                                       call, durable=self.durable)
             return result, result.ok, None
         if executor == "project":
-            return self._execute_project(call)
+            return self.project_executor.execute(call)
         if executor == "browser":
             return self._execute_browser(call, turn=turn, tool_index=tool_index)
         if executor in {"source", "knowledge"}:
-            if not self._reserve_research_acquisition(name, turn, tool_index):
-                return ToolResult(ok=False, call=call, model_text="ERROR: research acquisition budget exhausted"), False, None
-            return self._execute_research(call, turn=turn, tool_index=tool_index)
+            return self.research_executor.execute(call, turn=turn, tool_index=tool_index)
         # Third-task tools run via the frozen turn binding when present,
         # otherwise the live registry.
         try:
@@ -266,206 +223,14 @@ class ExecutionDelegate:
 
     def _execute_browser(self, call: ToolCall, *, turn: int,
                          tool_index: int) -> tuple[ToolResult, bool, int | None]:
-        check = self._policy_check(call)
+        check = self.check_policy(call)
         if check.denied:
             from codey.operations.kernel_result import policy_denial_result
 
             return policy_denial_result(call, check.message, reason_code=check.reason_code), False, None
-        browser = self.browser_session
-        if browser is None:
-            return ToolResult(ok=False, call=call, model_text="ERROR: browser session unavailable"), False, None
-        try:
-            assert self.session is not None
-            with self.session.projection_lock:
-                browser.prepare_from_receipts(tuple(self.session._memory_results.values()))
-            checks = self.session.policy.required_checks
-            from codey.operations.browser_copy import CAPTURE
+        return self.browser_executor.execute(call, turn=turn, tool_index=tool_index)
 
-            trace_document = (call.name in browser_receipt_tools(checks)
-                              or self.session.task_kind in {"chat", "hybrid"}
-                              or traces_workflow_document(self.session, call.name)
-                              or self._research_scope is not None
-                              or (call.name in browser_text_report.METADATA_TOOLS and browser_text_report.report_scope(self.session) is not None)
-                              or (call.name in browser_upload.UPLOAD_RECEIPTS and browser_upload.upload_scope(self.session) is not None)
-                              or call.name in {"browser_click", "browser_screenshot", "browser_snapshot", "browser_locate", "browser_inspect"}
-                              or (call.name == "browser_eval" and call.args.get("code") == CAPTURE) or
-                              (call.name in {"browser_eval", "browser_read"} and has_browser_field_bindings(checks, tool=call.name)))
-            transition = call.name in PAGE_TRANSITIONS
-            before = browser.document_identity() if trace_document and not transition else None
-            if call.name == "browser_click" and isinstance(ref := call.args.get("ref"), str):
-                prior = browser_followups.prior_single_click(self.session.task_text, self.session._memory_results, ref, before)
-                if prior:
-                    return ToolResult(call, f"Click {prior} was already dispatched under the user's once-only instruction. "
-                                      "Wait or observe the current page without repeating this control.", ok=False,
-                                      canonical={"value": {"delivery": "not_delivered", "prior_click": prior}}), False, None
-            result, ok, code = self._execute_browser_operation(browser, call, turn=turn, tool_index=tool_index)
-            if trace_document and (transition or before is not None):
-                try:
-                    after = browser.document_identity()
-                except (RuntimeError, ValueError, OSError) as exc:
-                    after = None
-                    result = replace(result, audit={**result.audit, "browser_observation_error": str(exc)})
-                if after is not None and (transition or same_document(before, after)):
-                    result = replace(result, audit={**result.audit, "browser_document": after})
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception as exc:
-            result, ok, code = ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}"), False, None
-        try:
-            binding = browser.resource_binding()
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception as exc:
-            return replace(result, ok=False, model_text=result.model_text + f"\nERROR: browser resource identity unavailable: {exc}"), False, code
-        if binding is not None:
-            result = replace(result, audit={**result.audit, "browser_resource": binding})
-        return result, ok, code
-
-    def _execute_browser_operation(self, browser: BrowserSession, call: ToolCall, *, turn: int,
-                                   tool_index: int) -> tuple[ToolResult, bool, int | None]:
-        try:
-            if call.name in {"browser_read", PAGE_DETAIL_TOOL}:
-                return read_browser_source(self, browser, call, turn=turn, tool_index=tool_index)
-            output = self._browser_action(browser, call)
-            images = self._persist_browser_image(output) if call.name == "browser_screenshot" and output.ok else ()
-            if self.session is not None:
-                from codey.operations.browser_references import reference_failure
-
-                output = reference_failure(output, self.session._memory_results)
-            value = dict(output.observation)
-            baseline = value.pop("query_baseline", None)
-            link_origin = value.pop("link_origin", None)
-            value["text"] = value.get("text", output.model_text)
-            audit: JsonObject = {"query_baseline": baseline} if baseline is not None else {}
-            if link_origin is not None:
-                audit["link_origin"] = link_origin
-            if (call.name == "browser_wait" and output.ok and self.session is not None
-                    and browser_followups.pending_click(self.session._memory_results, browser.document_identity()) is not None):
-                audit["query_wait_document"] = browser.document_identity()
-            result = ToolResult(ok=output.ok, call=call, model_text=output.model_text,
-                                canonical={"value": value}, audit=audit, images=images)
-            return result, result.ok, None
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception as exc:
-            return ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}"), False, None
-
-    def _browser_action(self, browser: BrowserSession, call: ToolCall) -> BrowserToolOutput:
-        args = call.args
-        ref = str(args.get("ref") or "")
-        if call.name == "browser_snapshot":
-            file_inputs_only = args.get("file_inputs_only") is True
-            if file_inputs_only:
-                browser_upload.verified_upload_document(self.session, browser)
-            return browser.snapshot(max_elements=require_json_integer(args.get("max_elements", 80), "max_elements"),
-                                    max_text=require_json_integer(args.get("max_text", 12000), "max_text"),
-                                    file_inputs_only=file_inputs_only,
-                                    scope_ref=require_json_string(args.get("scope_ref", ""), "scope_ref"),
-                                    selector=require_json_string(args.get("selector", ""), "selector"),
-                                    base_revision=require_json_integer(args["base_revision"], "base_revision") if "base_revision" in args else None)
-        if call.name == "browser_click":
-            from codey.automation.browser_session import BrowserToolOutput
-            from codey.operations.browser_linked_record import linked_record_click_allowed
-            from codey.operations.browser_waits import observed_link_outcome, pending_link_click
-
-            document = browser.document_identity() if self.session is not None else None
-            if self.session is not None and not linked_record_click_allowed(self.session, ref, document):
-                return BrowserToolOutput("The click is outside the verified first record or was already delivered.", False,
-                    {"action": "click", "ref": ref, "delivery": "not_delivered"})
-            if self.session is not None and (prior := pending_link_click(self.session, ref, document)):
-                return BrowserToolOutput("The link click was already delivered. Observe the current document.",
-                    False, {"action": "click", "ref": ref, "delivery": "not_delivered", "prior_click": prior})
-            if (self.session is not None and (pending := browser_followups.pending_click(
-                    self.session._memory_results, document)) is not None
-                    and not observed_link_outcome(self.session, pending[0], document)
-                    and browser.matches_query_control(ref, decode_json_object(pending[1].audit["query_baseline"]))):
-                message = (browser_followups.UNCERTAIN if delivery(pending[1]) == "uncertain"
-                           else browser_followups.PENDING)
-                return BrowserToolOutput(message, False, {"action": "click", "ref": ref, "delivery": "not_delivered"})
-            return browser.click(ref, query=browser_followups.query_click.get(),
-                                 result_ref=require_json_string(args.get("result_ref", ""), "result_ref"))
-        if call.name == "browser_fill":
-            return browser.fill(ref, str(args.get("value") or ""))
-        if call.name == "browser_scroll":
-            return browser.action(BrowserAction.SCROLL, args)
-        if call.name == "browser_wait":
-            if args.get("condition") in {"text_changed", "controls_changed"}:
-                return self._wait_for_observed_text(browser, call)
-            if args.get("condition") == "new_document" and args.get("value"):
-                from codey.operations.browser_waits import clicked_link_origin
-
-                origin = clicked_link_origin(self.session, require_json_string(args["value"], "click receipt"))
-                return browser.wait("new_document", "", require_json_integer(args["timeout_ms"], "timeout_ms"),
-                                    expected_document=origin)
-            if self._browser_wait_document is not None:
-                return browser.wait(str(args.get("condition") or ""), str(args.get("value") or ""),
-                    require_json_integer(args.get("timeout_ms"), "timeout_ms"),
-                    expected_document=self._browser_wait_document)
-            return browser.wait(str(args.get("condition") or ""), str(args.get("value") or ""),
-                                require_json_integer(args.get("timeout_ms"), "timeout_ms"))
-        if call.name == "browser_navigate":
-            return browser.navigate(str(args.get("url") or ""))
-        if call.name == "browser_eval":
-            return browser.evaluate(str(args.get("code") or ""))
-        if call.name == "browser_tab_list":
-            return browser.tab_list()
-        if call.name == "browser_tab_new":
-            return browser.tab_new(str(args.get("url") or ""))
-        if call.name == "browser_tab_switch":
-            return browser.tab_switch(require_json_integer(args.get("index"), "index"))
-        if call.name == "browser_upload":
-            return browser_upload.select_attachment(self.session, browser, self.managed_outputs, self.session_id, args)
-        if call.name == "browser_download":
-            return self._browser_download(browser, ref)
-        return browser.action(BrowserAction(call.name.removeprefix("browser_")), args)
-
-    def _wait_for_observed_text(self, browser: BrowserSession, call: ToolCall) -> BrowserToolOutput:
-        from codey.operations.browser_waits import snapshot_wait_baseline
-
-        if self.session is None:
-            raise ValueError("text_changed requires the original task receipts")
-        condition = require_json_string(call.args.get("condition"), "condition")
-        baseline, document = snapshot_wait_baseline(self.session, require_json_string(call.args.get("value"), "value"), condition)
-        if self._browser_wait_document is not None and not same_document(self._browser_wait_document, document):
-            raise ValueError("text_changed snapshot does not belong to the original background wait document")
-        timeout_ms = require_json_integer(call.args.get("timeout_ms"), "timeout_ms")
-        if condition == "controls_changed":
-            if not isinstance(baseline, list):
-                raise ValueError("controls_changed requires observed controls")
-            return browser.wait_for_control_change(baseline, document, timeout_ms)
-        return browser.wait_for_text_change(require_json_string(baseline, "baseline text"), document, timeout_ms)
-
-    def _persist_browser_image(self, output: BrowserToolOutput) -> tuple[ToolImageRef, ...]:
-        if self.managed_outputs is None or not self.session_id or not self.run_id:
-            raise ValueError("task-scoped image storage unavailable")
-        image = decode_json_object(output.observation["image"])
-        stored = self.managed_outputs.write_binary_artifact(session_id=self.session_id, run_id=self.run_id,
-            raw=output.binary, permission_profile=self.permission_profile)
-        if image["sha256"] != stored.sha256:
-            raise ValueError("captured image changed during persistence")
-        return (ToolImageRef(str(self.managed_outputs.root.parent), self.session_id, self.run_id, stored.handle,
-            stored.sha256, stored.stored_bytes, require_json_integer(image["width"], "width"),
-            require_json_integer(image["height"], "height"), require_json_string(image["observation_ref"], "observation_ref")),)
-
-    def _browser_download(self, browser: BrowserSession, ref: str) -> BrowserToolOutput:
-        if self.managed_outputs is None or not self.session_id or not self.run_id:
-            raise ValueError("task-scoped download storage unavailable")
-        output = browser.download(ref)
-        if not output.ok:
-            return output
-        try:
-            stored = self.managed_outputs.write_binary_artifact(
-                session_id=self.session_id, run_id=self.run_id,
-                raw=output.binary, permission_profile=self.permission_profile)
-        except (OSError, ValueError) as exc:
-            return replace(output, ok=False, model_text=f"ERROR: download delivered but persistence failed: {exc}",
-                           observation={"action": "download", "delivery": "delivered", "storage": "failed"})
-        return replace(output, model_text=f"Download retained: {output.observation['suggested_filename']} "
-                       f"({stored.stored_bytes} bytes, SHA256 {stored.sha256})",
-                       observation={**output.observation, "path": str(stored.path), "handle": stored.handle,
-                                    "bytes": stored.stored_bytes, "sha256": stored.sha256})
-
-    def _policy_check(self, call: ToolCall) -> ProjectPolicyCheck:
+    def check_policy(self, call: ToolCall) -> ProjectPolicyCheck:
         """Keep machine-readable denial separate from its explanation."""
 
         spec = self._resolve_spec(call.name)
@@ -521,644 +286,5 @@ class ExecutionDelegate:
 
     def _project_permission_profile(self) -> str:
         return effective_project_profile(self.permission_profile)
-
-    def _execute_project(self, call: ToolCall) -> tuple[ToolResult, bool, int | None]:
-        if self.project_path is None:
-            return ToolResult(ok=False, call=call, model_text="ERROR: project path unavailable"), False, None
-        if self.tool_fns is None:
-            return ToolResult(ok=False, call=call, model_text="ERROR: project tools unavailable"), False, None
-        project_path = self.project_path
-        check = self._policy_check(call)
-        if check.denied:
-            from codey.operations.kernel_result import policy_denial_result
-
-            result = policy_denial_result(call, check.message, reason_code=check.reason_code)
-            return result, False, None
-        name = (call.name or "").strip().lower()
-        runtime_name = {"list_dir": "ls", "read_file": "read", "grep": "search",
-                        "find_references": "references"}.get(name, name)
-        try:
-            if name == "syntax_query":
-                from codey.toolchain.syntax_query import syntax_query
-
-                result = _tool_result(call, syntax_query(project_path,
-                    require_json_string(call.args.get("path"), "path"), require_json_string(call.args.get("node_type"), "node_type"),
-                    limit=require_json_integer(call.args.get("limit", 40), "limit")))
-                return result, result.ok, None
-            if name == "workspace_diff":
-                from codey.workspace.changes import ChangeTracker
-                from codey.workspace.task_changes import collect_task_changes
-
-                tracker = self.change_tracker
-                if not isinstance(tracker, ChangeTracker):
-                    result = ToolResult(call, "Workspace snapshot is unavailable for this task.", ok=False)
-                    return result, False, None
-                payload = decode_json_object(collect_task_changes(project_path, tracker))
-                ok = payload.get("ok") is True
-                result = ToolResult(call, str(payload.get("diff") or payload.get("error") or "No task-owned changes."),
-                                    ok=ok, canonical={"workspace_changes": payload})
-                return result, ok, None
-            if name == "semantic_definition":
-                from codey.toolchain.semantic_definition import semantic_definition
-
-                result = _tool_result(call, semantic_definition(project_path,
-                    require_json_string(call.args.get("path"), "path"), require_json_integer(call.args.get("line", 1), "line"),
-                    require_json_string(call.args.get("symbol", ""), "symbol"),
-                    operation=require_json_string(call.args.get("operation", "definition"), "operation"),
-                    new_name=require_json_string(call.args.get("new_name", ""), "new_name")))
-                return result, result.ok, None
-            if runtime_name in {"ls", "read", "search", "references"}:
-                from codey.agents.tool_execution import execute_information_tool_call
-
-                outcome = execute_information_tool_call(
-                    project_path, self.tool_fns,
-                    ToolCall(runtime_name, dict(call.args or {})),
-                )
-                result = _tool_result(call, outcome)
-                return result, result.ok, None
-            if name == "edit":
-                outcome = self._execute_edit(call)
-                result = _tool_result(call, outcome)
-                return result, result.ok, None
-            if name == "run":
-                from dataclasses import replace
-
-                from codey.toolchain.command_output import output_tail, tail_lines
-
-                tail = tail_lines((call.args or {}).get("output_tail_lines"))
-                outcome = self.tool_fns.execute_run_command(
-                    project_path, str((call.args or {}).get("path", ".") or "."),
-                    str((call.args or {}).get("command", "") or ""),
-                    permission_profile=self._project_permission_profile(), phase="writer",
-                    tool_id=call.call_id,
-                )
-                if tail is not None:
-                    outcome = replace(outcome, model_text=f"Exit code: {outcome.exit_code}\n" + output_tail(outcome.model_text, tail),
-                                      presentation={**outcome.presentation, "output_tail_lines": tail})
-                result = _tool_result(call, outcome)
-                return result, result.ok, outcome.exit_code
-        except Exception as exc:
-            result = ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}")
-            return result, False, None
-        result = ToolResult(ok=False, call=call, model_text=f"ERROR: unsupported project tool {name}")
-        return result, False, None
-
-    def _execute_edit(self, call: ToolCall) -> ToolOutcome:
-        from codey.agents.protocol import canonical_project_path
-        from codey.agents.tool_execution import read_before_edit_outcome
-        from codey.toolchain.runtime import ToolOutcome, replacement_blocks, safe_join
-
-        if self.project_path is None:
-            return ToolOutcome.error("project path unavailable")
-        if self.tool_fns is None:
-            return ToolOutcome.error("project tools unavailable")
-        project_path = self.project_path
-        args = dict(call.args or {})
-        path = str(args.get("path", "") or "")
-        try:
-            canonical = canonical_project_path(project_path, path)
-            safe_join(project_path, canonical)
-        except ValueError:
-            return ToolOutcome.error("workspace_escape: path escapes project root")
-        if "browser_source" in args:
-            prepared = self._browser_copy_content(path, canonical, args)
-            if isinstance(prepared, ToolOutcome):
-                return prepared
-            from codey.workspace.paths import content_hash
-
-            outcome = self._write_content(project_path, path, canonical, {**args, "content": prepared})
-            return (replace(outcome, audit={**outcome.audit, "browser_copy_content_hash": content_hash(prepared)})
-                    if outcome.ok else outcome)
-        if args.get("declared_fields") is True:
-            return self._declared_field_edit(project_path, path, canonical, args)
-        symbol_only = "symbol" in args
-        if symbol_only:
-            from codey.operations.edit_base import symbol_edit_args
-
-            try:
-                args = symbol_edit_args(self.session, project_path, canonical, args)
-            except ValueError as exc:
-                return ToolOutcome.error(str(exc))
-        if "content" in args:
-            return self._write_content(project_path, path, canonical, args, symbol_only=symbol_only)
-        from codey.operations.file_field_binding import file_rules
-
-        if self.session is not None and file_rules(self.session.policy.required_checks, canonical):
-            return ToolOutcome.error("Receipt-bound fields require content or declared_fields=true with a complete version-bound read")
-        guard = read_before_edit_outcome(
-            project_path, path, set(self.session.read_files) if self.session is not None else set(),
-        )
-        if guard is not None:
-            return guard
-        # Canonical protocol only: replacements with old_string/new_string.
-        # Top-level aliases are rejected before any file write.
-        for legacy in ("search", "replace"):
-            if legacy in args:
-                return ToolOutcome.error(f"edit rejects legacy alias: {legacy}")
-        try:
-            edit_blocks = replacement_blocks(args.get("replacements"))
-        except ValueError as exc:
-            return ToolOutcome.error(str(exc))
-        if self.change_tracker is not None:
-            self.change_tracker.capture_before(path)
-        from codey.operations.project_delivery import documented_record_fields, record_field_error
-
-        version = args.get("expected_version")
-        fields = documented_record_fields(self.session, canonical)
-        from codey.operations.python_edit_assistance import python_edit_transform, render_python_edit
-
-        transform = python_edit_transform(self.session, project_path, canonical) if not fields else None
-        if isinstance(version, str) or fields or transform is not None:
-            from codey.toolchain.runtime import edit_file_at_version
-
-            def validator(content: str) -> str:
-                return record_field_error(canonical, fields, content)
-
-            outcome = edit_file_at_version(project_path, path, edit_blocks, version=version if isinstance(version, str) else "",
-                                           validate_content=validator if fields else None, transform_content=transform)
-            outcome = render_python_edit(outcome)
-        else:
-            outcome = self.tool_fns.edit_file(project_path, path, edit_blocks)
-        if outcome.ok and outcome.changed and self.change_tracker is not None:
-            self.change_tracker.capture_after(path)
-        return outcome
-
-    def _declared_field_edit(self, project: Path, path: str, canonical: str, args: ToolArgs) -> ToolOutcome:
-        from codey.operations.edit_base import edit_base_text
-        from codey.operations.file_field_binding import bound_content
-        from codey.toolchain.runtime import ToolOutcome
-
-        if self.session is None or self.browser_session is None:
-            return ToolOutcome.error("Receipt-bound file fields require the authorized browser session")
-        baseline = edit_base_text(self.session, project, canonical,
-                                  require_json_string(args.get("base_result_ref"), "base_result_ref"))
-        prepared = bound_content(self.session, canonical, baseline, self.browser_session.document_identity())
-        return self._write_content(project, path, canonical, {**args, "content": prepared})
-
-    def _write_content(self, project: Path, path: str, canonical: str, args: ToolArgs, *,
-                       symbol_only: bool = False) -> ToolOutcome:
-        from codey.operations.edit_base import content_edit_version
-
-        assert self.tool_fns is not None
-        version = content_edit_version(self.session, project, canonical, args)
-        if self.change_tracker is not None:
-            self.change_tracker.capture_before(path)
-        content = str(args.get("content") or "")
-        from codey.operations.file_field_binding import validate_content
-        from codey.operations.project_delivery import documented_record_fields, record_field_error
-
-        if self.session is not None:
-            fields = documented_record_fields(self.session, canonical)
-            error = (record_field_error(canonical, fields, content) if fields else "") or validate_content(
-                self.session.policy.required_checks, canonical, content,
-                self.session.executed, self.session._memory_results,
-                self.browser_session.document_identity() if self.browser_session is not None else None)
-            if error:
-                from codey.toolchain.runtime import ToolOutcome
-
-                return ToolOutcome.error(error, error_code="file_field_mismatch")
-        assistance: JsonObject = {}
-        if symbol_only:
-            from codey.operations.edit_base import edit_base_text
-            from codey.operations.python_edit_assistance import python_edit_transform
-
-            if transform := python_edit_transform(self.session, project, canonical, allow_import=False):
-                original = edit_base_text(self.session, project, canonical,
-                                          require_json_string(args["base_result_ref"], "base_result_ref"))
-                content, assistance = transform(original, content)
-        outcome = (self.tool_fns.write_file(project, path, content) if version is None else
-                   self.tool_fns.write_file(project, path, content, expected_version=version))
-        if assistance and outcome.ok:
-            from codey.operations.python_edit_assistance import render_python_edit
-
-            outcome = render_python_edit(replace(outcome, audit={**outcome.audit, **assistance}))
-        if outcome.ok and outcome.changed and self.change_tracker is not None:
-            self.change_tracker.capture_after(path)
-        return outcome
-
-    def _browser_copy_content(self, path: str, canonical: str, args: ToolArgs) -> str | ToolOutcome:
-        from codey.codemode.json_edit import JsonNumber, replace_json_fields
-        from codey.operations.browser_copy import CAPTURE, EXPIRED, captured_data, copy_target, copy_turn, select_source
-        from codey.operations.edit_base import edit_base_text
-        from codey.task.web_intent import source_url_key
-        from codey.toolchain.runtime import ToolOutcome
-
-        session, browser, project = self.session, self.browser_session, self.project_path
-        if session is None or browser is None or project is None:
-            return ToolOutcome.error("Browser copy requires a project and an authorized browser.")
-        target = copy_target(session.task_text)
-        if target is None or path != target.path or canonical != target.path:
-            return ToolOutcome.error("Browser copy cannot write outside the task's target.")
-        source = decode_json_object(args["browser_source"])
-        ref = require_json_string(source.get("ref"), "browser source reference")
-        with session.projection_lock:
-            results = dict(session._memory_results)
-        browser.prepare_from_receipts(results.values())
-        current = copy_turn(target, session.task_text, results)
-        receipt = results.get(ref)
-        document = browser.document_identity()
-        if (current.ref != ref or current.phase != "edit" or receipt is None or document is None
-                or source_url_key(str(document.get("url") or "")) != source_url_key(target.url)
-                or receipt.audit.get("browser_document") != document):
-            return ToolOutcome.error("The browser observation is no longer current. Observe the authorized page again.", error_code=EXPIRED)
-        data = captured_data(receipt)
-        if data is None:
-            return ToolOutcome.error("The browser observation is incomplete. Observe the page again.", error_code=EXPIRED)
-        fresh = browser.evaluate(CAPTURE)
-        if (not fresh.ok or fresh.observation.get("truncated") is not False
-                or fresh.observation.get("value") != data or browser.document_identity() != document):
-            return ToolOutcome.error("The webpage data changed. Observe the authorized page again.", error_code=EXPIRED)
-        selectors = (decode_json_object(source["selectors"]) if target.additional_fields else
-                     {target.field: source["selector"]})
-        if set(selectors) != {field for field, _ in target.fields}:
-            return ToolOutcome.error("Select exactly the fields declared by the task.")
-        changes: dict[str, JsonValue | JsonNumber] = {}
-        for field, value_type in target.fields:
-            selector = decode_json_object(selectors[field])
-            if current.business_key and "key" in selector and selector["key"] != current.business_key:
-                return ToolOutcome.error("Select the row key specified by the task.")
-            changes[field] = select_source(data, selector, value_type)
-        baseline = edit_base_text(session, project, canonical, require_json_string(args["base_result_ref"], "base_result_ref"))
-        return replace_json_fields(baseline, changes)
-
-    def _opened_result(self, call: ToolCall, opened: ResearchToolOutput, url: str, *, ledger: ResearchLedger, turn: int,
-                       tool_index: int) -> tuple[ToolResult, bool, int | None]:
-        model_text = opened.model_text
-        if not opened.ok:
-            canonical: JsonObject = {"source_failure": {"url": url, "detail": model_text, "code": opened.failure_code}}
-            if opened.acquisition:
-                canonical["source_acquisition"] = opened.acquisition
-            return ToolResult(ok=False, call=call, model_text=model_text,
-                              canonical=canonical), False, None
-        if not isinstance(ledger, ResearchLedger):
-            raise ValueError("successful source read requires a research ledger observation")
-        from codey.research.answer_contract import AnswerScope
-
-        if isinstance(self._research_scope, AnswerScope):
-            from codey.research.answer_context import fitting_full_read
-
-            resources = self._research_resources()
-            assert self.session is not None
-            opened = fitting_full_read(self.session, resources.ledger,
-                                       call, opened, provider=resources.context_provider)
-            model_text = opened.model_text
-        observation = opened.read_observation or ledger_observation(ledger, "open", url=url)
-        from codey.research.output_receipts import maybe_externalize_output
-
-        title = next((line.removeprefix("Title: ") for line in model_text.splitlines()
-                      if line.startswith("Title: ")), "")
-        outcome = maybe_externalize_output(
-            store=self.managed_outputs, session_id=self.session_id, run_id=self.run_id,
-            permission_profile=self.permission_profile, call=call,
-            output=opened.receipt_text or model_text, ok=opened.ok,
-            turn=turn, tool_index=tool_index, presentation_result=title,
-            model_text_override=model_text,
-        )
-        base = _tool_result(call, outcome)
-        merged = dict(base.canonical)
-        merged["research_observation"] = observation
-        if opened.acquisition:
-            merged["source_acquisition"] = opened.acquisition
-        if opened.read_passages:
-            merged["read_passages"] = list(opened.read_passages)
-        result = ToolResult(
-            ok=base.ok, call=base.call, model_text=base.model_text, truncated=base.truncated,
-            presentation=dict(base.presentation) if isinstance(base.presentation, dict) else {},
-            audit=dict(base.audit) if isinstance(base.audit, dict) else {},
-            canonical=merged,
-        )
-        return result, True, None
-
-    def _observation_tools(self, *, source_read: bool = False) -> ResearchTools:
-        # Acquisition mutates a temporary ledger. Only the committed result
-        # receipt may publish it into the run's formal projection.
-        tools = copy.copy(self._research_resources())
-        from codey.research.answer_contract import AnswerScope
-
-        tools.coherent_passages = isinstance(self._research_scope, AnswerScope)
-        # Per-call presentation follows the admitted request, including replay.
-        tools.evidence_only = self.session is not None and self.session.task_kind == "evidence_followup"
-        tools.finding_report = (self.session is not None and self.session.task_kind == "research"
-                                and self.session.policy.strict_research)
-        tools.answer_submission = self._research_scope is not None
-        ledger = tools.ledger
-        # Acquisition keeps source version metadata for monotonic timestamps,
-        # while the receipt still starts without stale bodies or passages.
-        with self.session.projection_lock if self.session is not None else contextlib.nullcontext():
-            tools.ledger = ledger.clone_for_acquisition() if source_read else ledger.clone()
-        tools.sources_read = {url for source in ledger.opened_sources
-                              for url in (source.requested_url, source.final_url)}
-        tools.search_result_urls = {hit.url for search in ledger.searches for hit in search.results}
-        return tools
-
-    def _reserve_research_acquisition(self, name: str, turn: int, tool_index: int) -> bool:
-        if self.session is not None and self.session.research_acquisition_limits is not None:
-            category = "search" if name == "web_search" else "open" if is_source_read_tool(name) else ""
-            if category:
-                with self.session.projection_lock:
-                    slots = self.session.research_acquisition_slots
-                    limit = self.session.research_acquisition_limits[0 if category == "search" else 1]
-                    # Rebuilt from receipts on restore, plus in-flight slots.
-                    # Failed acquisitions consume budget too.
-                    previous = {key for key, kind in slots.items() if kind == category}
-                    if (turn, tool_index) not in previous and len(previous) >= limit:
-                        return False
-                    slots[(turn, tool_index)] = category
-        return True
-
-    def _research_call_denial(self, call: ToolCall) -> tuple[ToolResult, bool, int | None] | None:
-        from codey.operations.kernel_result import policy_denial_result
-        from codey.research.answer_contract import digest
-
-        try:
-            if self._research_scope is not None:
-                scope = self._research_scope
-                if self.session is None or scope.task_digest != digest(self.session.task_text):
-                    raise ValueError("research scope belongs to another task")
-        except ValueError as exc:
-            return policy_denial_result(call, str(exc), reason_code="research_scope_denied"), False, None
-        return None
-
-    def _execute_research(self, call: ToolCall, *, turn: int = 0,
-                          tool_index: int = 0) -> tuple[ToolResult, bool, int | None]:
-        name = (call.name or "").strip().lower()
-        tools = self._observation_tools(source_read=name in SOURCE_READ_TOOL_NAMES)
-        args = dict(call.args or {})
-        try:
-            denied = self._research_call_denial(call)
-            if denied is not None:
-                return denied
-            if name == "research_plan":
-                return self._record_research_plan(call, tools)
-            if name == "submit_research_answer":
-                return self._submit_research_answer(call, tools)
-            if name == "web_search":
-                from codey.research.text_args import first_text_arg
-
-                outcome = tools.web_search(first_text_arg(args, "query"))
-                canonical: JsonObject = {}
-                ledger = tools.ledger
-                if outcome.ok:
-                    if not isinstance(ledger, ResearchLedger):
-                        raise ValueError("successful search requires a research ledger observation")
-                    canonical["research_observation"] = ledger_observation(ledger, name)
-                else:
-                    from codey.research.search_provenance import provider_search_attempts
-
-                    canonical["search_attempts"] = encode_transport_value(provider_search_attempts(tools.search))
-                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
-            if name in SOURCE_READ_TOOL_NAMES:
-                return self._execute_source_open(call, tools, turn=turn, tool_index=tool_index)
-            if name == "source_search":
-                query = str(args.get("query") or "")
-                url = str(args.get("url") or "")
-                if not url and str(args.get("source_id") or ""):
-                    url = self._resolve_alias_url("reopen_source", {"source_id": args.get("source_id")}) or ""
-                outcome = tools.source_search(url, query, args.get("limit", 6))
-                if outcome.ok:
-                    ledger = tools.ledger
-                    if not isinstance(ledger, ResearchLedger):
-                        raise ValueError("successful source search requires a research ledger observation")
-                    observation = ledger_observation(ledger, name)
-                    text, mapping = self._build_hit_mapping(source_search_observation(observation))
-                    hit_canonical: dict[str, object] = {"hit_targets": mapping, "research_observation": observation}
-                    return (
-                        ToolResult(ok=outcome.ok, call=call, model_text=text, canonical=hit_canonical),
-                        True, None,
-                    )
-                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
-            if name == "knowledge_search":
-                from codey.research.text_args import first_text_arg
-
-                outcome = tools.knowledge_search(first_text_arg(args, "query"),
-                                                 depth=require_json_integer(args.get("depth", 1), "depth"))
-                search_canonical = ({"knowledge_search_empty": True}
-                    if outcome.ok and outcome.knowledge_search_empty is True else {})
-                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text,
-                                  canonical=search_canonical), outcome.ok, None
-            if name == "knowledge_read":
-                return self._read_research_knowledge(call, tools)
-            if name == "knowledge_commit":
-                return self._commit_research_knowledge(call, tools)
-            if name in {"knowledge_write", "save_finding", "save_inference"}:
-                return self._execute_research_write(call, tools)
-            if name == "knowledge_link":
-                links_before = tools.links_created
-                outcome = tools.knowledge_link(str(args.get("src") or ""), str(args.get("dst") or ""),
-                                            str(args.get("kind") or "relates"))
-                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text,
-                    canonical={"knowledge_links_created": tools.links_created - links_before}), outcome.ok, None
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception as exc:
-            return ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}"), False, None
-        return ToolResult(ok=False, call=call, model_text=f"ERROR: unknown research tool {name}"), False, None
-
-    def _execute_source_open(self, call: ToolCall, tools: ResearchTools, *, turn: int,
-                             tool_index: int) -> tuple[ToolResult, bool, int | None]:
-        from codey.operations.source_execution import open_source
-        from codey.research.source_snapshots import SourceSnapshotUnavailable
-
-        if call.name == "open_url":
-            url = str(call.args.get("url") or "")
-        else:
-            url = self._resolve_alias_url(call.name, dict(call.args))
-            if not url:
-                field = _CONTROLLER_ALIAS_ID_ARG[call.name][1]
-                detail = f"ERROR: unknown {call.name} id. Use {field} from the observed references. "
-                detail += "A tool result_ref or out_ artifact handle is not a source locator."
-                return ToolResult(ok=False, call=call, model_text=detail), False, None
-        target = (self.session.hit_targets.get(str(call.args.get("hit_id") or "").lower())
-                  if call.name == "open_hit" and self.session is not None else None)
-        try:
-            opened = open_source(call, tools, self._research_resources().ledger, url, target)
-        except SourceSnapshotUnavailable as exc:
-            opened = ResearchToolOutput(f"ERROR: {exc}", ok=False, failure_code="snapshot_unavailable")
-        result, ok, code = self._opened_result(call, opened, url, ledger=tools.ledger, turn=turn, tool_index=tool_index)
-        result = audit_browser_open(result, self.session, self.browser_session, url)
-        return result, ok, code
-
-    def _commit_research_knowledge(self, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
-        outcome = tools.knowledge_commit(call.args)
-        return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
-
-    def _read_research_knowledge(self, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
-        from codey.research.answer_contract import AnswerScope
-        from codey.research.questions import question_ref
-
-        args = call.args
-        identity = str(args.get("id") or "")
-        revision = require_json_integer(args["revision"], "revision") if args.get("revision") is not None else None
-        outcome = tools.knowledge_read(identity, revision=revision, question_ref=question_ref(args, tools.ledger),
-                                       offset=require_json_integer(args.get("offset", 0), "offset"),
-                                       limit=require_json_integer(args.get("limit", 6000), "limit"),
-                                       whole_answer=isinstance(self._research_scope, AnswerScope))
-        text = outcome.model_text
-        if not outcome.ok and isinstance(self._research_scope, AnswerScope):
-            if identity in tools.ledger.read_passages:
-                text = ("ERROR: this id names a task-read passage, not stored knowledge. "
-                        "Cite its existing [eN] label directly. knowledge_read needs an exact stored id and revision.")
-            elif self.session is not None and identity in self.session.source_ids:
-                text = ("ERROR: this id is a source locator, not stored knowledge. "
-                        "Use the existing [eN] evidence, or the displayed source-reading action for unread text. "
-                        "knowledge_read needs an exact stored id and revision.")
-        canonical: dict[str, object] = {
-            "research_reference_bindings": {k: _record_payload(v) for k, v in tools.ledger.references.items()}} if outcome.ok else {}
-        if outcome.ok and outcome.knowledge_read_versions:
-            canonical["knowledge_read_versions"] = [
-                {"id": ref.target, "revision": ref.revision} for ref in outcome.knowledge_read_versions]
-        if outcome.ok and outcome.read_passages:
-            canonical.update(research_observation=outcome.read_observation, read_passages=list(outcome.read_passages))
-        return ToolResult(ok=outcome.ok, call=call, model_text=text, canonical=canonical), outcome.ok, None
-
-    def _record_research_plan(self, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
-        outcome = tools.research_plan(call.args.get("questions"))
-        canonical = {"research_observation": outcome.read_observation} if outcome.ok else {}
-        return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
-
-    def _submit_research_answer(self, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
-        from codey.research.answer_contract import AnswerScope, submit_answer
-        from codey.research.primary_sources import PRIMARY_ACQUISITION_IDS
-
-        if not isinstance(self._research_scope, AnswerScope):
-            raise ValueError("submit_research_answer requires an original frozen whole-answer scope")
-        last = next(reversed(self.session._memory_results.items()), None) if self.session is not None else None
-        if (last is not None and last[1].call.call_id in PRIMARY_ACQUISITION_IDS and last[1].ok
-                and last[0] not in self._research_scope.attempt_refs and call.args.get("state") == "answered"):
-            raise ValueError("first_party_followup_available: review the just-acquired source results before submitting.")
-        declared = submit_answer(self._research_scope, call.args, passages=tools.ledger.read_passages)
-        from codey.research.report_evidence import (
-            CLAIM_CHECK_VERSION,
-            check_report_evidence,
-            exhausted_review_answer,
-            research_review_key,
-            review_submission_issues,
-        )
-
-        evidence_check = check_report_evidence(declared, tools.ledger.read_passages, claim_check_version=CLAIM_CHECK_VERSION)
-        issues = review_submission_issues(declared, evidence_check, tools.ledger.read_passages)
-        resolution: dict[str, object] = {}
-        if issues:
-            issue = issues[0]
-            prior_reviews = self.session._memory_results.values() if self.session is not None else ()
-            fallback = exhausted_review_answer(self._research_scope, issue,
-                tuple(result.canonical.get("research_review_key") for result in prior_reviews))
-            if fallback is None:
-                feedback = (f"Research submission needs review. The draft says {issue['claim']!r}. "
-                            f"Its cited [{issue['label']}] says {issue['original']!r}. "
-                            "Reconcile the claim with the cited original, cite other evidence that supports it, "
-                            "or describe the unresolved point and submit the supported parts.")
-                return ToolResult(call, feedback, ok=False, canonical={"research_submission_issue": issue,
-                    "research_review_key": research_review_key(issue)}), False, None
-            declared = fallback
-            resolution["research_review_exhausted"] = issue
-            evidence_check = check_report_evidence(declared, tools.ledger.read_passages, claim_check_version=CLAIM_CHECK_VERSION)
-        if self.session is not None:
-            from codey.research.browser_result_evidence import validate_current_result
-
-            validate_current_result(self.session.executed, self.session._memory_results,
-                declared["markdown"], declared["state"], self._research_scope.aliases)
-        return ToolResult(call, "Whole answer recorded. The application will validate and publish this submission.",
-                          ok=True, canonical={**resolution, "research_submission": declared,
-                                              "research_evidence_check": evidence_check}), True, None
-
-    def _execute_research_write(self, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
-        name, args = call.name, dict(call.args or {})
-        if name == "save_finding" and self.session is not None:
-            from codey.research.finding_stage import finding_stage_error
-
-            if error := finding_stage_error(self.session, args):
-                return ToolResult(call, error, ok=False), False, None
-        before = len(tools.ledger.evidence_items)
-        created_before, updated_before = set(tools.created_ids), set(tools.updated_ids)
-        links_before = tools.links_created
-        lowered, problem = (self._lower_finding_source(args) if name == "save_finding" else
-                            (args, "") if name == "save_inference" else self._lower_knowledge_sources(args))
-        if problem:
-            return ToolResult(ok=False, call=call, model_text=f"ERROR: {problem}"), False, None
-        outcome = (tools.save_finding(lowered) if name == "save_finding" else
-                   tools.save_inference(lowered) if name == "save_inference" else tools.knowledge_write(lowered))
-        if not outcome.ok:
-            return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), False, None
-        evidence = self._ledger_evidence(before, tools.ledger)
-        evidence_canonical: dict[str, object] = {"evidence_items": evidence}
-        if name in {"save_finding", "save_inference"}:
-            evidence_canonical["research_reference_bindings"] = {k: _record_payload(v) for k, v in tools.ledger.references.items()}
-        evidence_canonical["knowledge_links_created"] = tools.links_created - links_before
-        proposals: list[object] = []
-        created = [item for item in tools.created_ids if item not in created_before]
-        target = str(lowered.get("id") or "")
-        changed = [item for item in tools.updated_ids if item not in updated_before]
-        if target in tools.updated_ids:
-            changed.append(target)
-        updated = list({item: None for item in changed})
-        evidence_canonical["knowledge_notes"] = {
-            "created": created,
-            "updated": updated,
-            "proposals": proposals,
-        }
-        affected = list({item: None for item in (*created, *updated)})
-        self._staged_note_receipt(tools, affected, proposals, evidence_canonical)
-        ledger = tools.ledger
-        if isinstance(ledger, ResearchLedger) and name != "save_inference":
-            evidence_canonical["research_observation"] = ledger_observation(ledger, name, evidence_start=before)
-        return (
-            ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=evidence_canonical),
-            True, None,
-        )
-
-    @staticmethod
-    def _staged_note_receipt(tools: ResearchTools, created: list[str], proposals: list[object], canonical: dict[str, object]) -> None:
-        from codey.providers.response_record import json_value
-        from codey.research.staging import StagedKnowledgeStore
-
-        store = tools.store
-        if isinstance(store, StagedKnowledgeStore):
-            proposals.extend(json_value(store._staged_notes[identity]) for identity in created)
-            canonical["knowledge_bases"] = {identity: store._staged_bases[identity] for identity in created}
-            canonical["knowledge_batches"] = {
-                identity: {"commit_id": batch[0], "mutations": [
-                    {"value": _record_payload(mutation.value), "expected_revision": mutation.expected_revision}
-                    for mutation in batch[1]]}
-                for identity, batch in store._staged_knowledge.items() if identity in created
-            }
-
-    def _lower_knowledge_sources(self, args: ToolArgs) -> tuple[ToolArgs, str]:
-        from codey.operations.source_execution import lower_knowledge_sources
-
-        return lower_knowledge_sources(self.session, args)
-
-    def _lower_finding_source(self, args: ToolArgs) -> tuple[ToolArgs, str]:
-        # The selected passage owns the source identity. An explicitly supplied
-        # source is only an assertion to validate, including frozen older calls.
-        if "source_ref" not in args:
-            return args, ""
-        reference = args.get("source_ref")
-        sources: dict[str, str] = dict(self.session.source_ids) if self.session is not None else {}
-        if not isinstance(reference, str) or reference not in sources:
-            return {}, "source_ref must be an exact opened source reference: " + ", ".join(sources)
-        return {**args, "source_ref": sources[reference]}, ""
-
-    def _resolve_alias_url(self, alias: str, args: ToolArgs) -> str:
-        from codey.operations.source_execution import resolve_alias_url
-
-        return resolve_alias_url(self.session, alias, args)
-
-    def _build_hit_mapping(self, observation: SourceSearchObservation) -> tuple[str, dict[str, HitTarget]]:
-        from codey.research.source_locators import build_hit_mapping
-
-        return build_hit_mapping(observation, self.session.hit_targets if self.session is not None else {})
-
-    def _ledger_evidence(self, before: int, ledger: ResearchLedger) -> list[dict[str, str]]:
-        items = list(ledger.evidence_items)
-        fresh = items[before:] if before >= 0 else items
-        evidence: list[dict[str, str]] = []
-        for item in fresh:
-            url = item.source_url.strip()
-            excerpt = item.excerpt.strip()
-            if url and excerpt:
-                evidence.append({"source_url": url, "excerpt": excerpt[:600]})
-        return evidence
-
 
 __all__ = ["ExecutionDelegate", "build_research_tools", "close_research_tools"]

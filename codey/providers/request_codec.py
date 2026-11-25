@@ -24,7 +24,7 @@ from codey.providers.requests import (
 from codey.providers.response_record import json_value
 from codey.providers.task_prompt import TaskPromptSpan
 from codey.providers.text_result_views import decode_text_result_spans
-from codey.toolchain.tool_spec import _freeze_schema_value
+from codey.toolchain.spec_model import _freeze_schema_value
 from codey.types.json_value import (
     JsonObject,
     JsonValue,

@@ -9,7 +9,7 @@ from typing import Protocol
 from codey.agents.runaway_guard import attempt_record, should_block_or_remind
 from codey.agents.state import SeenInfoLRU, ToolAttemptRecord, seen_info_key
 from codey.knowledge.model import canonical_json
-from codey.operations.browser_completion import complete_snapshot_text
+from codey.operations.browser.browser_completion import complete_snapshot_text
 from codey.operations.kernel_provenance import _kernel_workspace_identity_of
 from codey.operations.progress_comparison import EFFECT_OBSERVATIONS, ProjectCheckComparison, progress_comparison
 from codey.runtime.core.models import ToolCall, ToolResult

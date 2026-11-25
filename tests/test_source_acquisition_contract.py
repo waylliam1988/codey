@@ -12,13 +12,14 @@ from codey.operations.kernel_facts import project_result_observation, record_fac
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.ledger import ResearchLedger
-from codey.research.source_acquisition import acquisition_observation, attempt, failure_event, with_attempt
+from codey.research.source_acquisition import acquisition_observation, attempt, with_attempt
 from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.observe.events import RunEvent, run_event_ui_payload
 from codey.toolchain.runtime import ToolOutcome
 from codey.toolchain.tool_spec import spec_for_tool
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
+from codey.types.source_failure import failure_event
 from tests.support.receipt_fixtures import inspect_receipt_facts
 from tests.support.session_projection import restore_task_session
 from tests.test_chat_web_provider import Browser
@@ -107,7 +108,7 @@ def test_search_target_cannot_change_version_or_offset_independently(monkeypatch
     tools = ResearchTools(StaticSource("html"), None, None)
     assert tools.open_url(URL).ok
     call = ToolCall("source_search", {"url": URL, "query": "measured"})
-    original, ok, _ = ExecutionDelegate(session=session, research_tools=tools)._execute_research(call)
+    original, ok, _ = ExecutionDelegate(session=session, research_tools=tools).research_executor._execute_research(call)
     assert ok
     for key, changed in (("offset", 1), ("text_hash", "b" * 16)):
         canonical = copy.deepcopy(dict(original.canonical))

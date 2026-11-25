@@ -18,24 +18,25 @@ from playwright.sync_api import sync_playwright
 from codey.automation.browser_contracts import RouteDecision as Route
 from codey.automation.browser_session import BrowserToolOutput
 from codey.codemode.kernel import build_execute_turn_executor
-from codey.operations.browser_followups import click_followup_plan
-from codey.operations.browser_task_handoff import browser_task_handoff, initial_navigation
-from codey.operations.browser_text_report import BrowserMetadata, MetadataPending, observe_metadata, report_scope
+from codey.operations.browser.browser_followups import click_followup_plan
+from codey.operations.browser.browser_task_handoff import browser_task_handoff, initial_navigation
+from codey.operations.browser.browser_text_report import (
+    BrowserMetadata,
+    MetadataPending,
+    observe_metadata,
+    report_scope,
+)
+from codey.operations.browser.turn_surface import offer_browser_call, offer_browser_tools
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import prepare_completion_output
-from codey.operations.kernel_context import KernelContext
+from codey.operations.kernel.kernel_context import KernelContext
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import TurnSnapshot, normalize_turn
 from codey.operations.kernel_contracts import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
-from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_facts import project_execution_record
-from codey.operations.kernel_protocol import (
-    TurnSnapshot,
-    build_turn_snapshot,
-    normalize_turn,
-    offer_browser_call,
-    offer_browser_tools,
-)
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import parse_tool_success_check, require_tool_success
 from codey.protocols.text_turn import decode_text_turn

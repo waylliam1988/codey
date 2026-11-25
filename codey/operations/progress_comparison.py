@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from codey.automation.browser_document import same_document
 from codey.completion.verification_policy import _command_family
-from codey.operations.browser_followups import NAVIGATE
+from codey.operations.browser.browser_followups import NAVIGATE
 from codey.operations.kernel_provenance import _kernel_workspace_identity_of
 from codey.operations.tool_result_reader import ReceiptReader, resolve_result_output
 from codey.runtime.core.execution_receipt import execution_receipt
@@ -255,7 +255,7 @@ def _encoded(value: JsonValue) -> str:
 
 
 def _read_value(result: ToolResult) -> JsonObject:
-    from codey.research.ledger_receipts import source_observation
+    from codey.research.source_observation import source_observation
 
     source, text, _pages = source_observation(result.canonical["research_observation"])
     windows: list[JsonValue] = []
@@ -430,7 +430,7 @@ def _observation_program(result: ToolResult, receipts: Mapping[str, ToolResult])
 
 def reload_snapshot(result: ToolResult, result_ref: str) -> JsonObject | None:
     """Compare a complete observation in a document proven to come from the fixed wrapper."""
-    from codey.operations.browser_references import BrowserReferences
+    from codey.operations.browser.browser_references import BrowserReferences
 
     raw = result.canonical.get("value")
     if not isinstance(raw, dict):

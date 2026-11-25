@@ -20,14 +20,9 @@ from unittest.mock import patch
 
 from codey.codemode import catalog as codemode_catalog
 from codey.codemode.runtime import DeliveryRecorder, NodeWorkerRuntime, ToolInvoker
-from codey.codemode.types import (
-    CodeModeLimits,
-    CodeModeResult,
-    DeliveryReference,
-    ToolCatalogEntry,
-    ToolCatalogSnapshot,
-)
+from codey.codemode.types import CodeModeResult, DeliveryReference, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.policies.network import check_fetch_url
+from codey.protocols.codemode import CodeModeLimits
 from codey.task.web_intent import explicit_web_intent, source_url_key
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer
 from tools.browser_production_live_gate import run_case, select_target

@@ -6,8 +6,18 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from codey.codemode.json_edit import JsonNumber, replace_json_fields
-from codey.operations.browser_text_report import BrowserMetadata, MetadataPending, observe_metadata, report_scope
-from codey.operations.browser_upload import UploadEvidence, bound_upload_explanation, upload_evidence, upload_scope
+from codey.operations.browser.browser_text_report import (
+    BrowserMetadata,
+    MetadataPending,
+    observe_metadata,
+    report_scope,
+)
+from codey.operations.browser.browser_upload import (
+    UploadEvidence,
+    bound_upload_explanation,
+    upload_evidence,
+    upload_scope,
+)
 from codey.operations.completion_context import CompletionContext
 from codey.operations.task_session import TaskSession
 from codey.policies.output_requirement import has_explanation, is_output_check, schema_for

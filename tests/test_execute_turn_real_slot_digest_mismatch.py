@@ -18,7 +18,7 @@ from pathlib import Path
 
 class ExecuteTurnRealSlotDigestMismatchTests(unittest.TestCase):
     def test_mismatch_on_real_slot_executes_nothing_and_keeps_receipt(self) -> None:
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession, turn_effect_id
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall, ToolResult

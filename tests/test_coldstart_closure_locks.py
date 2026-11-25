@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import unittest
 
+from codey.operations import turn_snapshot
 from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
 
 
@@ -61,7 +62,7 @@ class WorkspaceFingerprintStaleTests(unittest.TestCase):
             calls = [
                 '{"tool":"read_file","args":{"path":"a.txt"}}',
         '{"tool":"edit","args":{"path":"a.txt","replacements":[{"old_string":"hello","new_string":"hello world"}]}}',
-                '{"tool":"run","args":{"path":".","command":"python -m py_compile a.txt"}}',
+                '{"tool":"run","args":{"path":".","command":"python -m py_compile a.txt","run_in_background":false}}',
                 '{"tool":"done","args":{"summary":"fixed"}}',
             ]
             state = {"i": 0}
@@ -214,6 +215,7 @@ class ProjectChangesRequiredChainTests(unittest.TestCase):
     def test_requires_changes_without_write_is_config_conflict(self) -> None:
         """Entry declaring must-change without write permission must fail fast."""
         from codey.operations import task_entry as um
+        from codey.policies.task_policy import TaskPolicy
         from codey.task.model import TaskSubmission
 
         submission = TaskSubmission(
@@ -221,7 +223,7 @@ class ProjectChangesRequiredChainTests(unittest.TestCase):
             continue_task=False, provider_id="local", intent="hybrid",
             requested_capabilities=(), strict_research=True, project_changes_required=True,
         )
-        policy = um.build_task_policy_for_entry(submission, "hybrid")
+        policy = TaskPolicy(frozenset({"control", "project.read"}))
         with self.assertRaisesRegex(RuntimeError, "without project.write"):
             um._entry_check_conflict(policy, submission, "hybrid")
 
@@ -271,7 +273,6 @@ class ToolSpecValidationTests(unittest.TestCase):
 class SnapshotFailClosedTests(unittest.TestCase):
     def test_snapshot_build_failure_does_not_fallback(self) -> None:
         """Snapshot import failure must terminate the turn, not show stale tools."""
-        from codey.operations import kernel_protocol
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
 
@@ -289,11 +290,11 @@ class SnapshotFailClosedTests(unittest.TestCase):
             # Both protocols use the single snapshot entry; failed selection
             # cannot fall back to a policy-wide prompt renderer.
             with self.assertRaises(RuntimeError, msg="snapshot failure must not fallback"):
-                kernel_protocol.build_turn_snapshot(TaskSession(policy), native=False)
+                turn_snapshot.build_turn_snapshot(TaskSession(policy), native=False)
             # The single snapshot entry builds JSON + native from the same
             # frozen source; any failure raises instead of stale fallback.
             with self.assertRaises(RuntimeError, msg="native snapshot failure must not fallback"):
-                kernel_protocol.build_turn_snapshot(
+                turn_snapshot.build_turn_snapshot(
                     TaskSession(policy), native=True,
                 )
         finally:

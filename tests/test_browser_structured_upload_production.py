@@ -41,8 +41,8 @@ def test_observed_file_controls_are_selected_without_model_javascript(
     identity = str(attachment["id"])
     directory = tmp_path / "run"
     if case == "parent_return":
-        from codey.operations import kernel_protocol
-        from codey.operations.browser_upload import lower_upload_action
+        from codey.operations.browser.browser_upload import lower_upload_action
+        from codey.operations.kernel import kernel_protocol
 
         original_lower = lower_upload_action
 

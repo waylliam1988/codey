@@ -61,7 +61,7 @@ class KernelRecoveryTriStateTests(unittest.TestCase):
         self.assertTrue(str(result.message or "").strip() != "")
 
     def test_failed_precheck_emits_failed_results_without_executor(self) -> None:
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
 
@@ -77,7 +77,7 @@ class KernelRecoveryTriStateTests(unittest.TestCase):
             "codey.operations.kernel_recovery.delivered_slot_typed",
             side_effect=RuntimeError("delivery boom"),
         ), mock.patch(
-            "codey.operations.kernel_execution.delivered_slot_typed",
+            "codey.operations.kernel.kernel_execution.delivered_slot_typed",
             side_effect=RuntimeError("delivery boom"),
         ):
             # Pre-check outage with a non-empty delivered map must fail the

@@ -348,7 +348,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         # test (test_convergence_repro_locks batch-abort, no receipt overwrite).
         # This placeholder keeps the behavior category (no execution on batch
         # failure) via the new entry.
-        from codey.operations.kernel_execution import execute_turn
+        from codey.operations.kernel.kernel_execution import execute_turn
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
         from codey.runtime.core.models import ToolCall
@@ -407,7 +407,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         with paused_batch(self.project_dir / "restart") as fixture:
             effects = fixture.durable.effects("r")
             sends = list(fixture.events)
-            with patch("codey.operations.kernel_context.KernelContext.restore_facts", side_effect=ValueError("corrupt receipt")):
+            with patch("codey.operations.kernel.kernel_context.KernelContext.restore_facts", side_effect=ValueError("corrupt receipt")):
                 result = run_task_kernel(fixture.session(), request=fixture.request)
             self.assertFalse(result.completed)
             self.assertEqual(fixture.events, sends)
@@ -478,7 +478,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         with paused_batch(self.project_dir / "restart") as fixture:
             effects = fixture.durable.effects("r")
             sends = list(fixture.events)
-            with patch("codey.operations.kernel_context.KernelContext.restore_facts", side_effect=ValueError("corrupt receipt")):
+            with patch("codey.operations.kernel.kernel_context.KernelContext.restore_facts", side_effect=ValueError("corrupt receipt")):
                 result = run_task_kernel(fixture.session(), request=fixture.request)
             self.assertFalse(result.completed)
             self.assertEqual(fixture.events, sends)
@@ -757,7 +757,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         with paused_batch(self.project_dir / "restart") as fixture:
             effects = fixture.durable.effects("r")
             sends = list(fixture.events)
-            with patch("codey.operations.kernel_context.KernelContext.restore_facts", side_effect=ValueError("corrupt receipt")):
+            with patch("codey.operations.kernel.kernel_context.KernelContext.restore_facts", side_effect=ValueError("corrupt receipt")):
                 result = run_task_kernel(fixture.session(), request=fixture.request)
             self.assertFalse(result.completed)
             self.assertEqual(fixture.events, sends)
@@ -881,7 +881,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
             ),
         )
         executor = Mock(side_effect=AssertionError("planning-only effects must not replay"))
-        with patch("codey.operations.kernel_execution.execute_turn", executor):
+        with patch("codey.operations.kernel.kernel_execution.execute_turn", executor):
             recovery = inspect_receipt_facts(
                 SimpleNamespace(
                     state=SimpleNamespace(durable=self.durable),
@@ -932,7 +932,7 @@ class AgentEffectSandwichTests(unittest.TestCase):
         )
 
         executor = Mock(side_effect=AssertionError("invalid replay args must not execute"))
-        with patch("codey.operations.kernel_execution.execute_turn", executor):
+        with patch("codey.operations.kernel.kernel_execution.execute_turn", executor):
             recovery = inspect_receipt_facts(
                 SimpleNamespace(
                     state=SimpleNamespace(durable=self.durable),

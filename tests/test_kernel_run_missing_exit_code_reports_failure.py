@@ -18,7 +18,7 @@ def _policy():
 
 class MissingExitCodeReportsFailureTests(unittest.TestCase):
     def _run_once(self):
-        from codey.operations import kernel_execution as ke
+        from codey.operations.kernel import kernel_execution as ke
         from codey.operations.task_session import TaskSession
         from codey.runtime.core.models import ToolCall, ToolResult
 

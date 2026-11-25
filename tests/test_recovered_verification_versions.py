@@ -123,9 +123,9 @@ def test_production_recovery_restores_version_proof_only_for_same_workspace(tmp_
 
 
 def test_explicit_run_executor_receives_kernel_workspace_proof(tmp_path):
-    from codey.operations.kernel_execution import execute_turn
-    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.kernel.kernel_execution import execute_turn
     from codey.operations.kernel_provenance import _kernel_workspace_identity_of
+    from codey.operations.turn_snapshot import build_turn_snapshot
 
     (tmp_path / "app.py").write_text("verified\n")
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.verify"})),

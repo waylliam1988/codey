@@ -6,8 +6,8 @@ from collections.abc import Iterator
 import pytest
 
 from codey.app.event_payloads import browser_event_payload, machine_event_payload
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.kernel_events import _emit_tool_results
-from codey.operations.kernel_execution import execute_turn
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -24,7 +24,7 @@ class Clock:
 
 
 def test_browser_effect_duration_excludes_worker_uptime_and_replay_does_not_retime_it(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("codey.operations.kernel_execution.time", Clock())
+    monkeypatch.setattr("codey.operations.kernel.kernel_execution.time", Clock())
     session = TaskSession(TaskPolicy(frozenset({"control", "browser.interact"})))
     calls = [ToolCall("browser_click", {"ref": "observed"}, "first"),
              ToolCall("browser_click", {"ref": "observed"}, "second")]

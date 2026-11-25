@@ -8,17 +8,13 @@ from pathlib import Path
 import pytest
 
 from codey.codemode.kernel import build_execute_turn_executor
-from codey.operations import kernel_protocol
-from codey.operations.browser_copy import CAPTURE, CopyTurn
-from codey.operations.kernel_execution import execute_turn
-from codey.operations.kernel_protocol import (
-    TurnSnapshot,
-    build_turn_snapshot,
-    normalize_turn,
-    refresh_snapshot_contract,
-)
+from codey.operations.browser.browser_copy import CAPTURE, CopyTurn
+from codey.operations.kernel import turn_inputs
+from codey.operations.kernel.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_protocol import TurnSnapshot, normalize_turn, refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
@@ -123,7 +119,10 @@ def test_copy_only_requests_unbound_source_fields_and_restores_them(key: str) ->
 def test_changed_copy_definition_without_matching_contract_text_is_rejected(old_field: str) -> None:
     payload = snapshot_description(copy_snapshot(table=True))
     binding = decode_json_object(payload["input_binding"])
-    spec = decode_json_object(binding["model_spec"])
+    specs = payload["model_specs"]
+    assert isinstance(specs, list)
+    index = next(i for i, row in enumerate(specs) if decode_json_object(row)["name"] == binding["tool"])
+    spec = decode_json_object(specs[index])
     parameters = spec["parameters"]
     assert isinstance(parameters, list)
     if old_field == "target":
@@ -141,7 +140,7 @@ def test_changed_copy_definition_without_matching_contract_text_is_rejected(old_
         source["properties"] = properties
         source["required"] = ["key_column", "key", "column"]
         parameters[0] = ["source", source]
-    payload["input_binding"] = {**binding, "model_spec": spec}
+    specs[index] = spec
     with pytest.raises(ValueError, match="contract text differs"):
         restore_snapshot(payload)
 
@@ -164,7 +163,7 @@ def test_fixed_template_syntax_failure_uses_the_model_contract(
     def broken_template(_args: JsonObject, _checks: tuple[str, ...] = ()) -> JsonObject:
         return {"code": "return (", "inputs": {}}
 
-    monkeypatch.setattr(kernel_protocol, "lower_upload_action", broken_template)
+    monkeypatch.setattr(turn_inputs, "lower_upload_action", broken_template)
     plan = normalize_turn(AssistantTurn(tool_calls=(
         ProviderToolCall("original", "codemode", {"upload": {"action": "observe"}}),
     )), snapshot=snapshot)
@@ -206,10 +205,13 @@ def test_copy_observation_is_detached_and_readonly_between_uses() -> None:
 def test_restored_binding_cannot_change_authorization() -> None:
     payload = snapshot_description(upload_snapshot())
     binding = decode_json_object(payload["input_binding"])
-    spec = decode_json_object(binding["model_spec"])
+    specs = payload["model_specs"]
+    assert isinstance(specs, list)
+    index = next(i for i, row in enumerate(specs) if decode_json_object(row)["name"] == binding["tool"])
+    spec = decode_json_object(specs[index])
     spec["grant"] = "project.write"
-    payload["input_binding"] = {**binding, "model_spec": spec}
-    with pytest.raises(ValueError, match="binding"):
+    specs[index] = spec
+    with pytest.raises(ValueError, match="authority"):
         restore_snapshot(payload)
 
 

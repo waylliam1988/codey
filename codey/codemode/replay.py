@@ -161,7 +161,7 @@ class CodeModeRepairContext:
 
     def resolve_browser_ref(self, position: int, tool_name: str, selector: JsonValue) -> str:
         """Resolve a repair from the original observed ref, never the new page."""
-        from codey.operations.browser_references import BrowserReferences
+        from codey.operations.browser.browser_references import BrowserReferences
         from codey.types.json_value import decode_json_object
 
         expected = self._child(position)

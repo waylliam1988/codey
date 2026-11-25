@@ -9,9 +9,9 @@ import pytest
 
 from codey.policies.network import check_fetch_url
 from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import source_observation
 from codey.research.source_document import PublicationMetadata
 from codey.research.source_gateway import ResearchSourceGateway
+from codey.research.source_observation import source_observation
 from codey.runtime.core.cancellation import TaskCancelled
 from codey.types.json_value import JsonObject, decode_json_object
 

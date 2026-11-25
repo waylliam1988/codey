@@ -116,7 +116,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("codey.providers.web_drivers.stepfun", imports)
         self.assertNotIn("codey.providers.web_drivers.glm", imports)
         self.assertNotIn("codey.providers", imports)
-        self.assertIn("codey.operations.kernel_driver", imports)
+        self.assertIn("codey.operations.kernel.kernel_driver", imports)
 
     def test_task_kernel_keeps_protocol_and_execution_owners_at_the_boundary(self) -> None:
         path = ROOT / "codey" / "operations" / "task_loop.py"
@@ -127,7 +127,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         }
 
         self.assertEqual(imports_with_forbidden_prefixes(path, forbidden), [])
-        self.assertIn("codey.operations.kernel_driver", imports)
+        self.assertIn("codey.operations.kernel.kernel_driver", imports)
         self.assertIn("codey.operations.kernel_contracts", imports)
 
     def test_runtime_package_does_not_import_business_layers(self) -> None:
@@ -1870,6 +1870,24 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertEqual(readers, allowed_readers)
 
 
+    def test_kernel_layers_do_not_import_their_callers(self) -> None:
+        from tools.kernel_import_audit import module_paths, scan_imports
+
+        forbidden = (
+            ("codey.durable", "codey.runtime"),
+            ("codey.operations", "codey.app"),
+            ("codey.research", "codey.operations"),
+            ("codey.runtime", "codey.codemode"),
+            ("codey.runtime", "codey.research"),
+        )
+        edges = scan_imports(module_paths(ROOT))
+        self.assertEqual([
+            edge for edge in edges
+            if any((edge.source == source or edge.source.startswith(source + "."))
+                   and (edge.target == target or edge.target.startswith(target + "."))
+                   for source, target in forbidden)
+        ], [])
+
     def test_runtime_has_no_top_level_import_cycles(self) -> None:
         from tools.kernel_import_audit import module_paths, scan_imports, static_report
 
@@ -2140,10 +2158,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # facts owners must be imported from their canonical homes in tests;
         # importing privates via ``kernel_execution`` is forbidden even when
         # the name still exists as an internal import.
-        import codey.operations.kernel_execution as ke
+        import codey.operations.kernel.kernel_execution as ke
 
         self.assertEqual(set(getattr(ke, "__all__", ())), {"execute_turn"})
-        source = (ROOT / "codey" / "operations" / "kernel_execution.py").read_text(encoding="utf-8")
+        source = (ROOT / "codey" / "operations" / "kernel" / "kernel_execution.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         reexported: set[str] = set()
         for node in ast.walk(tree):
@@ -2180,7 +2198,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             ROOT / "codey" / "operations" / "kernel_result.py",
             ROOT / "codey" / "operations" / "kernel_provenance.py",
             ROOT / "codey" / "operations" / "kernel_recovery.py",
-            ROOT / "codey" / "operations" / "kernel_execution.py",
+            ROOT / "codey" / "operations" / "kernel" / "kernel_execution.py",
         ):
             source = path.read_text(encoding="utf-8")
             with self.subTest(path=path.name):

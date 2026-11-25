@@ -101,7 +101,7 @@ class SnapshotFailClosedTests(unittest.TestCase):
         events = []
         replies = iter(['{"tool":"read_file","args":{"path":"a.py"}}',
                         '{"tool":"done","args":{"summary":"done"}}'])
-        build = __import__("codey.operations.kernel_protocol", fromlist=["build_turn_snapshot"]).build_turn_snapshot
+        build = __import__("codey.operations.turn_snapshot", fromlist=["build_turn_snapshot"]).build_turn_snapshot
 
         def snapshot(*args, **kwargs):
             events.append("snapshot")
@@ -116,7 +116,7 @@ class SnapshotFailClosedTests(unittest.TestCase):
             return ToolResult(ok=True, call=call, model_text="a.py content")
 
         session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.read"})), max_turns=2)
-        with mock.patch.object(__import__("codey.operations.kernel_protocol", fromlist=["build_turn_snapshot"]), "build_turn_snapshot", snapshot):
+        with mock.patch.object(__import__("codey.operations.turn_snapshot", fromlist=["build_turn_snapshot"]), "build_turn_snapshot", snapshot):
             result = run_test_kernel(
                          session,
                          request=KernelRunRequest(

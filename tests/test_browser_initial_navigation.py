@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from codey.operations.browser_task_handoff import initial_navigation
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.browser.browser_task_handoff import initial_navigation
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import parse_tool_success_check, require_tool_success
 from codey.runtime.core.models import ToolCall, ToolResult

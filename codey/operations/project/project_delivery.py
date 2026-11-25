@@ -15,11 +15,11 @@ from codey.automation.browser_receipts import (
     page_effect_possible,
 )
 from codey.completion.contract import CompletionCheck
-from codey.operations.browser_references import BrowserReferences
+from codey.operations.browser.browser_references import BrowserReferences
 from codey.operations.kernel_provenance import _kernel_workspace_identity_of
 from codey.policies.network import check_fetch_url
 from codey.research.browser_result_evidence import complete_page_passages
-from codey.research.ledger_receipts import source_observation
+from codey.research.source_observation import source_observation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.instruction_text import instruction_text, quoted_value
 from codey.task.web_intent import LIVE_RECORD_ACTION, explicit_web_intent, source_url_key

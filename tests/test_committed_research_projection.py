@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel.kernel_execution import execute_turn
 from codey.operations.recovery import record_entry_policy
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
@@ -36,7 +36,7 @@ class Backend:
 
 def runtime(tmp_path, monkeypatch):
     project, state, logdir = _dirs(tmp_path)
-    _, mutations, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project)
+    mutations, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project)
     policy = TaskPolicy(frozenset({"control", "web.read"}))
     record_entry_policy(mutations, session_id="s", run_id="r", policy=policy, durable=mutations.durable)
     session = TaskSession(policy=policy)
@@ -141,7 +141,7 @@ def test_knowledge_acquisition_view_uses_restored_ledger_not_stale_caches():
     tools = ResearchTools(search=Backend(), store=None, changes=None)
     tools.ledger.record_open(URL, FINAL, "Restored", "body")
     tools.sources_read.add("https://example.com/uncommitted")
-    view = ExecutionDelegate(research_tools=tools)._observation_tools()
+    view = ExecutionDelegate(research_tools=tools).research_executor._observation_tools()
     assert view._source_problem([URL, FINAL]) is None
     assert view._source_problem(["https://example.com/uncommitted"]) is not None
     assert tools.sources_read == {"https://example.com/uncommitted"}
