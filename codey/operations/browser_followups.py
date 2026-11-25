@@ -76,9 +76,12 @@ def _observed_click_name(results: Mapping[str, ToolResult], ref: str, document: 
         value = row.canonical.get("value")
         elements = value.get("elements") if isinstance(value, dict) else None
         if isinstance(elements, list):
-            for control in elements:
-                if isinstance(control, dict) and control.get("ref") == ref and isinstance(name := control.get("name"), str):
-                    return " ".join(name.casefold().split())
+            rows: list[object] = elements
+            for entry in rows:
+                if isinstance(entry, dict):
+                    control: Mapping[str, object] = entry
+                    if control.get("ref") == ref and isinstance(name := control.get("name"), str):
+                        return " ".join(name.casefold().split())
     return ""
 
 

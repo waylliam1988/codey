@@ -1,6 +1,7 @@
 """Match declared browser wait predicates to executable leaf arguments."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
@@ -35,31 +36,44 @@ def pending_link_click(session: TaskSession, ref: str, document: JsonObject | No
                               include_failed=frozenset({"browser_wait"}))
     for _, wait in reversed(waits):
         reference = wait.call.args.get("value")
-        value = wait.canonical.get("value")
+        raw = wait.canonical.get("value")
+        if not isinstance(raw, dict):
+            continue
+        value: Mapping[str, object] = raw
         if (wait.ok or wait.call.args.get("condition") != "new_document" or not isinstance(reference, str)
-                or not isinstance(value, dict) or value.get("reason") != "timeout"):
+                or value.get("reason") != "timeout"):
             continue
         click = session._memory_results.get(reference)
         if (reference in session.executed and click is not None and click.ok and click.call.name == "browser_click"
                 and isinstance(prior_ref := click.call.args.get("ref"), str)
-                and normalize_element_ref(prior_ref) == normalize_element_ref(ref)
-                and isinstance(origin := click.audit.get("link_origin"), dict)
-                and document is not None and origin.get("url") == document.get("url")
-                and same_document(origin, document)):
-            return "" if observed_link_outcome(session, reference, document) else reference
+                and normalize_element_ref(prior_ref) == normalize_element_ref(ref)):
+            raw_origin = click.audit.get("link_origin")
+            if isinstance(raw_origin, dict):
+                origin: Mapping[str, object] = raw_origin
+                if document is not None and origin.get("url") == document.get("url") and same_document(raw_origin, document):
+                    return "" if observed_link_outcome(session, reference, document) else reference
     return ""
 
 
 def _modal_ids(result: ToolResult) -> set[str] | None:
-    value = result.canonical.get("value")
-    if not isinstance(value, dict) or value.get("elements_truncated") is not False:
+    raw = result.canonical.get("value")
+    if not isinstance(raw, dict):
         return None
+    value: Mapping[str, object] = raw
     scope, contexts = value.get("scope"), value.get("contexts")
-    if (not isinstance(scope, dict) or scope.get("root_ref") != "" or scope.get("selector") != ""
-            or not isinstance(contexts, list)):
+    if value.get("elements_truncated") is not False or not isinstance(scope, dict) or not isinstance(contexts, list):
         return None
-    return {identity for row in contexts if isinstance(row, dict) and row.get("kind") in {"dialog", "alertdialog"}
-            and isinstance(identity := row.get("id"), str)}
+    bounds: Mapping[str, object] = scope
+    if bounds.get("root_ref") != "" or bounds.get("selector") != "":
+        return None
+    rows: list[object] = contexts
+    identities: set[str] = set()
+    for row in rows:
+        if isinstance(row, dict):
+            context: Mapping[str, object] = row
+            if context.get("kind") in ("dialog", "alertdialog") and isinstance(identity := context.get("id"), str):
+                identities.add(identity)
+    return identities
 
 
 def observed_link_outcome(session: TaskSession, click: str, document: JsonObject | None, *,

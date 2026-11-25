@@ -4780,19 +4780,19 @@
       "id": "Q084B",
       "responsibility": "Browser action progress, next steps, and waits",
       "files": ["codey/operations/browser_completion.py", "codey/operations/browser_next_step.py", "codey/operations/browser_followups.py", "codey/operations/browser_waits.py"],
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "followups": [
-        "Q035C: two baseline failures in test_browser_execution_defaults.py. Check whether the declared navigation should read before snapshotting and whether the current document is gated by original fill and click receipts before suggesting the declared wait. Both failures reproduce with the original Code Mode host and do not invoke it. Coordinate with Q084C if implementation ownership is in task handoff."
-      ]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/operations/browser_completion.py", "codey/operations/browser_next_step.py", "codey/operations/browser_followups.py", "codey/operations/browser_waits.py"],
+      "verified_files": ["codey/operations/browser_completion.py", "codey/operations/browser_next_step.py", "codey/operations/browser_followups.py", "codey/operations/browser_waits.py"],
+      "tests": ["tests/test_browser_execution_defaults.py", "tests/test_receipt_dependency_regressions.py", "tests/test_browser_text_change_wait.py", "tests/test_browser_handoff_next_steps.py", "tests/test_browser_click_plan.py", "tests/test_browser_query_binding.py"],
+      "result": "Declared wait guidance uses committed action receipts on the current document. A formerly failing reload regression passes. The expanded 114-case group and final 40-case recheck passed, with the unrelated navigation-order test routed to Q084C. Strict Any and production gates passed."
     },
     {
       "id": "Q084C",
       "responsibility": "Browser task and continuation handoff",
       "files": ["codey/operations/browser_task_handoff.py"],
       "status": "not_started", "reviewed_files": [], "verified_files": [],
-      "tests": ["tests/test_browser_handoff_next_steps.py", "tests/test_browser_execution_defaults.py"]
+      "tests": ["tests/test_browser_handoff_next_steps.py", "tests/test_browser_execution_defaults.py"],
+      "followups": ["The old initial navigation test expects navigate, read, snapshot. Commit 06640d73 deliberately changed the production program to navigate, snapshot, read, and NAVIGATE_VERIFY uses that order as well. Make the current contract explicit before adapting the original assertion."]
     },
     {
       "id": "Q084D",

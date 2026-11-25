@@ -73,8 +73,14 @@ def _matching_waits(args: JsonObject, rows: list[tuple[str, ToolResult]], url: s
 def _declared_page_actions_ready(rules: tuple[ToolSuccessRequirement, ...], stage: int, *,
                                   records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],
                                   document: JsonObject) -> bool:
-    return all(rule.observe(records, results=results, browser_document=document).evaluation.passed
-               for rule in rules if rule.tool in PAGE_ACTIONS and rule.stage in {0, stage})
+    actions = tuple(rule for rule in rules if rule.tool in PAGE_ACTIONS and rule.stage in {0, stage})
+    if not actions:
+        return True
+    current = {ref for ref, result in committed_results(records, results, PAGE_ACTIONS)
+               if same_document(result.audit.get("browser_document"), document)}
+    eligible = {ref: record for ref, record in records.items()
+                if record["name"] not in PAGE_ACTIONS or ref in current}
+    return all(rule.observe(eligible, results=results, browser_document=document).evaluation.passed for rule in actions)
 
 
 def _declared_reads_ready(rules: tuple[ToolSuccessRequirement, ...], reads: set[str], *,
