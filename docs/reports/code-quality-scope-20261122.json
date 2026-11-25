@@ -477,6 +477,9 @@
         "Q086",
         "Q087",
         "Q088",
+        "Q088B",
+        "Q088C",
+        "Q088D",
         "Q089",
         "Q090",
         "Q091",
@@ -4854,23 +4857,45 @@
       "result": "Verified the four production files. The experiment now leaves empty and locator-only output intact and preserves the exact admitted row bytes when rewriting full guidance. Its typed driver retains alternate worker dispatch and matrix resume. All 118 unique targeted tests and production gates passed."
     },
     {
-      "responsibility": "codey/operations: context and checkpoint boundaries",
+      "responsibility": "Completion input conversion and project instruction context",
       "files": [
         "codey/operations/completion_context.py",
         "codey/operations/completion_context_codec.py",
         "codey/operations/project_prompt_context.py",
-        "codey/operations/kernel_context.py",
-        "codey/operations/provider_request_context.py",
-        "codey/operations/context.py",
-        "codey/operations/conversation_window.py",
-        "codey/operations/project_completion_context.py",
         "codey/operations/project_instructions.py"
       ],
       "id": "Q088",
+      "status": "completed_changed",
+      "reviewed_files": ["codey/operations/completion_context.py", "codey/operations/completion_context_codec.py", "codey/operations/project_prompt_context.py", "codey/operations/project_instructions.py"],
+      "verified_files": ["codey/operations/completion_context.py", "codey/operations/completion_context_codec.py", "codey/operations/project_prompt_context.py", "codey/operations/project_instructions.py"],
+      "tests": ["tests/test_completion_context_receipt_inputs.py", "tests/test_completion_input_contracts.py", "tests/test_prepared_coding_context_is_immutable.py", "tests/test_project_patch.py", "tests/test_source_completion_contract.py", "tests/test_research_submission_handoff_production.py"],
+      "reviewed_support": ["tests/test_completion_context_receipt_inputs.py"],
+      "result": "The mapping and attribute boundary retains document identity and quotation resolution, rejects malformed resources, and detaches the document. All 75 unique targeted tests, whole-file strict Any, Ruff and production gates passed."
+    },
+    {
+      "id": "Q088B",
+      "responsibility": "Run context, provider request context, and conversation window activation",
+      "files": ["codey/operations/context.py", "codey/operations/provider_request_context.py", "codey/operations/conversation_window.py"],
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 90,
+      "followups": ["Q026 routed the Writer activation counter in tests/test_project_auto_local_review_lifecycle.py. Verify durable-window activation with current fixtures before changing assertions; unresolved review dispatch remains with Q027/Q090."]
+    },
+    {
+      "id": "Q088C",
+      "responsibility": "Shared kernel context and durable event wiring",
+      "files": ["codey/operations/kernel_context.py"],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": []
+    },
+    {
+      "id": "Q088D",
+      "responsibility": "Project completion context and runtime checkpoint coordination",
+      "files": ["codey/operations/project_completion_context.py"],
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
       "followups": [
         "Q008 callback trace: managed_tool_fns.run_command returns Any at line 247; actual paths return ToolOutcome but surrounding file not fully governed. Retain whole-file Any obligation in owner batch."
       ]
@@ -10165,6 +10190,11 @@
       "batch": "Q084",
       "replacement": ["Q084", "Q084B", "Q084C", "Q084D"],
       "reason": "Result reports, action and wait progress, continuation handoff, and page resources have distinct tests. All ten production files retain one owner."
+    },
+    {
+      "batch": "Q088",
+      "replacement": ["Q088", "Q088B", "Q088C", "Q088D"],
+      "reason": "Completion inputs, window activation, shared kernel orchestration and project checkpoint coordination have distinct entry points. The kernel and checkpoint files require independent review. All nine files retain one owner."
     },
     {
       "commit": "64bd6337",

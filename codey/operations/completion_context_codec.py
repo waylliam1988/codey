@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import fields, replace
+from collections.abc import Callable, Mapping
+from dataclasses import Field, fields, replace
 from typing import TypeVar
 
 from codey.completion.engine import CompletionEvidence
@@ -14,9 +14,10 @@ from codey.operations.completion_context import CompletionContext
 from codey.operations.research_prerequisites import ResearchPrerequisiteFacts
 from codey.operations.task_session import TaskSession
 from codey.research.ledger import ResearchLedger
+from codey.research.passages import ReadPassage
 from codey.research.staging import StagedKnowledgeStore
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
-from codey.types.json_value import require_json_boolean, require_json_string
+from codey.types.json_value import decode_json_object, require_json_boolean, require_json_string
 
 T = TypeVar("T")
 
@@ -35,12 +36,29 @@ def _strings(value: object, field: str) -> tuple[str, ...]:
     return tuple(require_json_string(item, field) for item in value)
 
 
+def _quote_resolver(value: object) -> Callable[[str], ReadPassage] | None:
+    if value is None:
+        return None
+    if not callable(value):
+        raise ValueError("completion resolve_quote must be callable")
+    resolver: Callable[[str], object] = value
+
+    def resolve(reference: str) -> ReadPassage:
+        passage = resolver(reference)
+        if not isinstance(passage, ReadPassage):
+            raise ValueError("completion resolve_quote must return a ReadPassage")
+        return passage
+
+    return resolve
+
+
 def decode_completion_context(value: object, *, ignored_paths: tuple[str, ...] = ()) -> CompletionContext:
     if value is None:
         return CompletionContext(workspace_ignored_paths=ignored_paths)
     if isinstance(value, CompletionContext):
         return replace(value, workspace_ignored_paths=ignored_paths) if ignored_paths else value
-    known = tuple(item.name for item in fields(CompletionContext))
+    context_fields: tuple[Field[object], ...] = fields(CompletionContext)
+    known = tuple(item.name for item in context_fields)
     row: dict[str, object] = {}
     if isinstance(value, Mapping):
         for key, item in value.items():
@@ -52,7 +70,8 @@ def decode_completion_context(value: object, *, ignored_paths: tuple[str, ...] =
         # Fixed historical attribute surface, never a generic core accessor.
         for key in known:
             if hasattr(value, key):
-                row[key] = getattr(value, key)
+                attribute: object = getattr(value, key)
+                row[key] = attribute
     analysis = row.get("analysis_run_payloads", ())
     if not isinstance(analysis, (tuple, list)):
         raise ValueError("completion analysis_run_payloads must be a sequence")
@@ -69,6 +88,7 @@ def decode_completion_context(value: object, *, ignored_paths: tuple[str, ...] =
     prerequisites = row.get("research_prerequisites")
     if isinstance(prerequisites, TaskSession):
         prerequisites = ResearchPrerequisiteFacts.capture(prerequisites)
+    document = row.get("browser_document")
     return CompletionContext(
         run_id=require_json_string(row.get("run_id", ""), "run_id"),
         task=require_json_string(row.get("task", ""), "task"),
@@ -89,4 +109,6 @@ def decode_completion_context(value: object, *, ignored_paths: tuple[str, ...] =
         scope_files=_strings(row.get("scope_files", ()), "scope_files"),
         task_changed=changed,
         checkpoint_green=require_json_boolean(row.get("checkpoint_green", False), "checkpoint_green"),
+        browser_document=decode_json_object(document) if document is not None else None,
+        resolve_quote=_quote_resolver(row.get("resolve_quote")),
     )

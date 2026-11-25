@@ -93,8 +93,8 @@ def instruction_handoff(root: Path, read_files: Iterable[str], receipts: Mapping
     for result in reversed(tuple(receipts.values())):
         raw = result.canonical.get(INSTRUCTION_CHANGE)
         if isinstance(raw, list):
-            targets.update(dict.fromkeys(target for target in raw if isinstance(target, str)))
-    targets.update(dict.fromkeys(sorted(read_files)))
+            targets.update({target: None for target in raw if isinstance(target, str)})
+    targets.update({target: None for target in sorted(read_files)})
     docs: dict[str, ProjectInstruction] = {doc.name: doc for doc in load_project_instructions(root)}
     for target in targets:
         try:
