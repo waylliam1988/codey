@@ -21,6 +21,8 @@ from codey.memory.codec import (
     trace_for_item,
 )
 from codey.memory.contracts import (
+    LEGACY_MEMORY_MAINTENANCE_POLICY_VERSION,
+    MEMORY_MAINTENANCE_POLICY_VERSION,
     DeleteResult,
     DeleteScopeRequest,
     MemoryChange,
@@ -188,8 +190,13 @@ class GhostMemory:
              "evaluation_refs": list(change.evaluation_refs)}, (change.source_ref,))
 
     def maintain_batch(self, request: MemoryMaintenanceRequest) -> MemoryMaintenanceResult:
-        self._command("memory.maintenance_batch", request.operation_id, "user", request.as_of,
-            {"max_items": request.max_items, "cursor": request.cursor, "policy_version": request.policy_version}, (request.operation_id,))
+        payload: JsonObject = {"max_items": request.max_items, "cursor": request.cursor, "policy_version": request.policy_version}
+        event = MemoryEvent(request.operation_id, "memory.maintenance_batch", request.as_of, "", "", "", "user",
+                            payload, (request.operation_id,))
+        legacy_retry = None
+        if request.policy_version == MEMORY_MAINTENANCE_POLICY_VERSION:
+            legacy_retry = replace(event, payload={**payload, "policy_version": LEGACY_MEMORY_MAINTENANCE_POLICY_VERSION})
+        self.database.append(event, project_event, legacy_retry=legacy_retry)
         with self.database.connect() as connection:
             result = load(connection, "maintenance", request.operation_id)
         if result is None:

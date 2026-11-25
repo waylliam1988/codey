@@ -1991,3 +1991,17 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - `python -m mypy codey/ghost/storage.py codey/ghost/controls.py tests/test_memory_completion.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated`、同三文件 Ruff、全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - 并行提交 `64bd6337` 新增 `verification_workflow.py` 与 `quote_slots.py`，分别纳入 Q090 与 Q156。该提交还改变 Q036 已验证的 `verification.py`，将该文件单列 Q036B 并重新验证，原批另两个文件保留完成记录。
 - Q066 完成。累计完成 114/362 批，完成批覆盖 197/1011 个生产文件，另有 14 批部分完成。随后处理被并行提交影响的 Q036B，再恢复 Q066B。
+
+### Q036B Code Mode 项目检查绑定
+
+- Q066 已提交 `6ca2a0cd`。复核 `64bd6337` 改动后的 `codey/codemode/verification.py`。通过 `python -` 验证单项选择器和嵌套选择器绑定同一命令、目录及前后台模式，拒绝不匹配的选择器、目录和模式，并保留未限制命令以及同目录同命令的兼容输入。探针退出 0。
+- 在 `D:\codey` 执行 `python -m pytest -q tests/test_codemode_source_preflight.py tests/test_p0_mixed_workflow.py tests/test_tool_task_next_stage.py::test_declared_verification_waits_for_same_diagnostic_cleanup tests/test_tool_task_next_stage.py::test_recovery_orders_child_and_parent_checks_by_settlement tests/test_tool_task_next_stage.py::test_unknown_latest_check_removes_previously_projected_success --tb=short -o faulthandler_timeout=50`，97 passed、无失败或跳过、退出 0。自然语言混合流程超过 50 秒时输出诊断栈，随后正常完成，整组耗时 180.81 秒。工作流文件本身及其其余调用方随 Q090 审查。
+- `python -m mypy codey/codemode/verification.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 与 `ruff check codey/codemode/verification.py` 均退出 0。Q036B 完成，无源码变更。累计完成 115/362 批，完成批覆盖 198/1011 个生产文件，另有 14 批部分完成。下一批为 Q066B Ghost 家族、学习及冲突规则。
+
+### Q066B Ghost 家族、学习及冲突规则
+
+- 完整检查 `families.py`、`learning.py` 和 `conflicts.py`。预测复盘先筛时间窗口，再选取最新匹配观测。同一时刻的不同 ISO 8601 表示应产生相同判断。修改前执行 `python -m pytest -q tests/test_memory_learning_targets.py::test_due_review_selects_the_latest_matching_observation_by_instant --tb=short`，旧观测写成 `2026-11-20T01:00:00+08:00` 时被选中，写成等价的 UTC 时正确选择 `18:00Z` 观测。1 failed、1 passed、退出 1。
+- 新维护事件按 UTC 时刻排序，`memory-v3` 事件继续使用其记录时的规则，以便重放后续引用其提案的决定。调度器将维护版本纳入操作身份。存储在同一事务内核对旧版重试与已记录内容，只有版本差异时复用结果，其他参数差异继续拒绝。最终 `python -m pytest -q tests/test_memory_learning_targets.py::test_due_review_selects_observation_using_recorded_policy --tb=short` 为 3 passed、退出 0，涵盖原两组输入、确认旧提案、重建及压缩后的重试。首次验证旧提案时 fixture 完成整批并压缩，导致同时间的后续决定超出窗口，已改为未完成批次，以便实际重放旧事件与决定。初版修复也曾拒绝以新默认版本重试历史操作，补齐兼容后同用例通过。
+- 在 `D:\codey` 的直接基线 30 passed。最终执行 `python -m pytest -q tests/test_memory_feedback.py tests/test_memory_learning_targets.py tests/test_memory_plasticity.py tests/test_memory_completion.py tests/test_memory_lifecycle.py tests/test_memory_integrity.py tests/test_memory_maintenance_runtime.py tests/test_memory_boundary.py tests/test_memory_adaptation_flow.py --tb=short`，136 passed、无失败或跳过、退出 0。含家族晋级、同域冲突、维护调度、损坏回放保护及 Q066 的压缩交互。
+- 对 `codey/ghost/{families,learning,conflicts,maintenance,backend,storage}.py`、`codey/app/memory_maintenance.py`、`codey/memory/contracts.py`、`tests/test_memory_learning_targets.py` 执行完整文件的严格 Any 和 Ruff，均退出 0。用保序字典去重清除学习文件 2 条隐式 Any 诊断。`python -m mypy codey --python-version 3.11` 检查 765 文件，`pyrefly check codey --python-version 3.11` 为 0 errors（35 suppressed、164 warnings 未展示），`ty check codey --python-version 3.11` 和 `python -m tools.kernel_type_precision_gate` 均退出 0。
+- Q066B 完成。累计完成 116/362 批，完成批覆盖 201/1011 个生产文件，另有 14 批部分完成。跨批仅重验修改所需的维护、存储与公开合同边界。下一批 Q066C 补齐事件投影及维护保留范围。

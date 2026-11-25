@@ -6,7 +6,13 @@ from pathlib import Path
 import pytest
 
 from codey.memory.codec import digest
-from codey.memory.contracts import MemoryFeedback, MemoryMaintenanceRequest, MemoryPrediction
+from codey.memory.contracts import (
+    MemoryDecision,
+    MemoryFeedback,
+    MemoryMaintenanceRequest,
+    MemoryPrediction,
+    MemoryRetentionPolicy,
+)
 from tests.test_memory_boundary import NOW, SCOPE, backend, event
 from tests.test_memory_lifecycle import EXPIRED, LATER, confirm
 
@@ -48,6 +54,59 @@ def test_due_behavior_review_updates_only_from_matching_exposure(tmp_path: Path)
     assert store.export_state() == before
 
 
+@pytest.mark.parametrize(("older_at", "policy_version", "expected_observation", "expected_outcome"), [
+    ("2026-11-20T01:00:00+08:00", None, "newer", "supported"),
+    ("2026-11-19T17:00:00+00:00", None, "newer", "supported"),
+    ("2026-11-20T01:00:00+08:00", "memory-v3", "older", "contradicted"),
+])
+def test_due_review_selects_observation_using_recorded_policy(
+    tmp_path: Path, older_at: str, policy_version: str | None, expected_observation: str, expected_outcome: str,
+) -> None:
+    store = backend(tmp_path)
+    confirm(store, "pref")
+    item = store.records((SCOPE,))[0].item
+    confirm(store, "other", text="Use concise examples")
+    store.predict(MemoryPrediction("p", "pref", SCOPE, "Use Python examples", "helpful", ("user:p",), NOW, LATER,
+                                   "behavior", "code_fence_language", "python"))
+    for observation_id, observed_at, language in (
+        ("older", older_at, "rust"),
+        ("newer", "2026-11-19T18:00:00+00:00", "python"),
+    ):
+        request_ref = "request:" + observation_id
+        store.observe(replace(event(observation_id), occurred_at=observed_at, run_id=observation_id, payload={
+            "user_text": "Example", "assistant_text": language,
+            "exposures": [{"id": observation_id, "item_id": "pref", "item_version": digest(item.to_payload()),
+                           "source_ref": request_ref}],
+            "behaviors": [{"id": observation_id, "run_id": observation_id, "request_ref": request_ref,
+                           "kind": "code_fence_language", "value": language}],
+        }))
+
+    request = MemoryMaintenanceRequest("review:due", EXPIRED, max_items=1)
+    if policy_version is not None:
+        request = replace(request, policy_version=policy_version)
+    result = store.maintain_batch(request)
+    assert not result.complete
+    predictions = store.export_state()["predictions"]
+    assert isinstance(predictions, list) and isinstance(predictions[0], dict)
+    assert predictions[0]["feedback_id"] == expected_observation
+    assert predictions[0]["status"] == expected_outcome
+    if policy_version == "memory-v3":
+        proposal, = store.proposals(SCOPE)
+        store.decide(MemoryDecision(proposal.proposal_id, proposal.version, True, "user:review-confirm", EXPIRED))
+    before = store.export_state()
+    assert store.maintain_batch(request) == result
+    if policy_version == "memory-v3":
+        retry = MemoryMaintenanceRequest(request.operation_id, EXPIRED, max_items=1)
+        assert store.maintain_batch(retry) == result
+        with pytest.raises(ValueError, match="different content"):
+            store.maintain_batch(replace(retry, max_items=2))
+    store.rebuild()
+    assert store.export_state() == before
+    if policy_version == "memory-v3":
+        store.compact(MemoryRetentionPolicy(), as_of=EXPIRED)
+        assert store.maintain_batch(retry) == result
+
+
 def test_repair_credit_requires_real_check_and_exact_revision(tmp_path: Path) -> None:
     store = backend(tmp_path)
     store.observe(replace(event("facts"), kind="task.failed", payload={"outcomes": [
@@ -74,8 +133,6 @@ def test_repair_credit_requires_real_check_and_exact_revision(tmp_path: Path) ->
 
 def test_user_prediction_matches_behavior_only_at_its_exposed_request(tmp_path: Path) -> None:
     store = backend(tmp_path)
-    from codey.memory.contracts import MemoryDecision
-
     store.observe(replace(event("user-pref"), kind="memory.proposed", scope="user",
         payload={"kind": "preference", "text": "Use Python examples"}))
     proposal, = store.proposals("user")

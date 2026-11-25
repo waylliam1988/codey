@@ -3779,11 +3779,11 @@
       "responsibility": "Code Mode project check selection and command binding",
       "files": ["codey/codemode/verification.py"],
       "id": "Q036B",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
+      "status": "completed_unchanged",
+      "reviewed_files": ["codey/codemode/verification.py"],
+      "verified_files": ["codey/codemode/verification.py"],
       "tests": ["tests/test_codemode_source_preflight.py", "tests/test_p0_mixed_workflow.py", "tests/test_tool_task_next_stage.py"],
-      "followups": ["64bd6337 replaced verification shape and command binding logic after Q036. Review the changed source and rerun check-selection, workflow and whole-file type verification."]
+      "result": "Reverified the source changed by 64bd6337. Whole-file strict Any and Ruff, 97 scoped tests, and a direct binding probe passed."
     },
     {
       "responsibility": "Code Mode input decoding, bounds and source diagnostics",
@@ -4415,10 +4415,12 @@
       "responsibility": "Ghost memory families, learning and conflict rules",
       "files": ["codey/ghost/families.py", "codey/ghost/learning.py", "codey/ghost/conflicts.py"],
       "id": "Q066B",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "tests": ["tests/test_memory_feedback.py", "tests/test_memory_learning_targets.py", "tests/test_memory_plasticity.py"]
+      "status": "completed_changed",
+      "reviewed_files": ["codey/ghost/families.py", "codey/ghost/learning.py", "codey/ghost/conflicts.py"],
+      "verified_files": ["codey/ghost/families.py", "codey/ghost/learning.py", "codey/ghost/conflicts.py"],
+      "tests": ["tests/test_memory_feedback.py", "tests/test_memory_learning_targets.py", "tests/test_memory_plasticity.py", "tests/test_memory_completion.py", "tests/test_memory_lifecycle.py", "tests/test_memory_integrity.py", "tests/test_memory_maintenance_runtime.py", "tests/test_memory_boundary.py", "tests/test_memory_adaptation_flow.py"],
+      "reviewed_support": ["tests/test_memory_learning_targets.py"],
+      "result": "New maintenance events select the latest attributable observation by UTC instant. Legacy events retain their replay semantics, and identical prior operations remain retryable before and after compaction. The changed maintenance and storage boundaries passed strict Any, 136 scoped tests and all production gates."
     },
     {
       "responsibility": "Ghost event projection and retention",

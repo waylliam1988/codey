@@ -88,8 +88,9 @@ def _contextual_correction(connection: sqlite3.Connection, event: MemoryEvent, r
             or context != "project" or not scope.startswith("project:") or old.scope not in {"user", scope}):
         return
     identity = "correction-candidate:" + event.event_id
-    refs = tuple(dict.fromkeys((*event.provenance, request_ref)))
-    item = MemoryItem(identity, "preference", text, scope, tuple(dict.fromkeys((*old.source_refs, *refs))),
+    refs = tuple({ref: None for ref in (*event.provenance, request_ref)})
+    item_refs = tuple({ref: None for ref in (*old.source_refs, *refs)})
+    item = MemoryItem(identity, "preference", text, scope, item_refs,
                       event.occurred_at, slot=old.slot, context=context, value=correction.value)
     save(connection, "proposals", identity, scope, {"item": item.to_payload(), "decision": "",
         "control_scopes": list(unique_scopes(("user", scope, *record.control_scopes))),
@@ -198,7 +199,7 @@ def _validate_observation(connection: sqlite3.Connection, prediction: JsonObject
         raise ValueError("observation has no matching versioned exposure")
 
 
-def review_due(connection: sqlite3.Connection, event: MemoryEvent) -> None:
+def review_due(connection: sqlite3.Connection, event: MemoryEvent, *, legacy_order: bool = False) -> None:
     from dataclasses import replace
 
     from codey.ghost.storage import texts
@@ -231,7 +232,11 @@ def review_due(connection: sqlite3.Connection, event: MemoryEvent) -> None:
                 except ValueError:
                     continue
             matches.append(row)
-        matches.sort(key=lambda row: str(row.get("occurred_at", row.get("at"))))
+        # Old events may have later decisions that refer to their original review proposals.
+        if legacy_order:
+            matches.sort(key=lambda row: str(row.get("occurred_at", row.get("at"))))
+        else:
+            matches.sort(key=lambda row: timestamp(require_json_string(row.get("occurred_at", row.get("at")), "observed_at")))
         observed = matches[-1] if matches else None
         actual = observed.get("rating" if target == "feedback" else "value") if observed else None
         expected = prediction.get("expected_rating" if target == "feedback" else "expected_value")

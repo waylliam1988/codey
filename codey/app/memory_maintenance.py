@@ -11,7 +11,7 @@ from codey.app.memory_extraction import ExtractResponse, extract_session_candida
 from codey.app.memory_setup import observe_terminal
 from codey.durable.session import DurableSession
 from codey.knowledge.store import KnowledgeStore
-from codey.memory.contracts import MemoryEvent, MemoryMaintenanceRequest
+from codey.memory.contracts import MEMORY_MAINTENANCE_POLICY_VERSION, MemoryEvent, MemoryMaintenanceRequest
 from codey.memory.service import MemoryService
 from codey.storage.managed_outputs import ManagedOutputStore
 
@@ -91,6 +91,6 @@ class MemoryMaintenance:
         logical_time = datetime.fromtimestamp(bucket, instant.tzinfo).isoformat()
         cursor = self.memory.maintenance_cursor()
         result = self.memory.maintain_batch(MemoryMaintenanceRequest(
-            "maintenance:v3:" + logical_time + ":" + cursor, logical_time, 100, cursor))
+            f"maintenance:{MEMORY_MAINTENANCE_POLICY_VERSION}:{logical_time}:{cursor}", logical_time, 100, cursor))
         return time.monotonic() + (
             self.interval if not extracted and result.complete and len(records) < 100 and knowledge_caught_up else 0.1)

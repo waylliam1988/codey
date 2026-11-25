@@ -133,8 +133,9 @@ class GhostDatabase:
         finally:
             connection.close()
 
-    def append(self, event: MemoryEvent, project: ProjectEvent) -> None:
+    def append(self, event: MemoryEvent, project: ProjectEvent, *, legacy_retry: MemoryEvent | None = None) -> None:
         value = canonical(event_payload(event))
+        legacy_value = canonical(event_payload(legacy_retry)) if legacy_retry is not None else value
         with self.connect(write=True) as connection:
             base_rows = texts(connection.execute("SELECT payload FROM recovery_base WHERE id = 1"))
             if base_rows:
@@ -142,7 +143,7 @@ class GhostDatabase:
                 identities = _retained_identities(base.get("identities"))
                 retired = identities.get(event.event_id)
                 if retired is not None:
-                    if retired != hashlib.sha256(value.encode()).hexdigest():
+                    if all(retired != hashlib.sha256(candidate.encode()).hexdigest() for candidate in (value, legacy_value)):
                         raise ValueError("memory event identity already names different content")
                     return
                 retired_before = require_json_string(base.get("retired_before"), "retired_before")
@@ -153,7 +154,7 @@ class GhostDatabase:
                     return
             previous = texts(connection.execute("SELECT event_json FROM events WHERE event_id = ?", (event.event_id,)))
             if previous:
-                if previous[0] != value:
+                if previous[0] not in (value, legacy_value):
                     raise ValueError("memory event identity already names different content")
                 return
             head = parse_json_object(texts(connection.execute("SELECT payload FROM journal_head WHERE id = 1"))[0])
