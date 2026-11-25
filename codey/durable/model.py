@@ -59,13 +59,16 @@ def valid_frozen_task_state(previous: Mapping[str, object], current: Mapping[str
                     for key in FROZEN_TASK_STATE_KEYS))
 
 
-def _validate_task_scheduler_state(state: Mapping[str, object]) -> None:
-    if state.get("execution_kind", "model") not in {"model", "tool"}:
+def _validate_task_scheduler_state(task_id: str, state: Mapping[str, object]) -> None:
+    execution_kind = state.get("execution_kind", "model")
+    if execution_kind not in {"model", "tool"}:
         raise ValueError("unknown task execution kind")
-    if state.get("execution_kind") == "tool":
-        from codey.durable.tool_task import ToolTaskInput
+    expected_tool_task_id = None
+    if execution_kind == "tool":
+        from codey.durable.tool_task import ToolTaskInput, tool_task_id
 
-        ToolTaskInput.from_payload(state.get("tool_input"))
+        tool_input = ToolTaskInput.from_payload(state.get("tool_input"))
+        expected_tool_task_id = tool_task_id(tool_input.origin_effect_id)
         if not state.get("owner_task_id"):
             raise ValueError("tool task requires an owner")
     owner = state.get("owner_task_id")
@@ -85,6 +88,8 @@ def _validate_task_scheduler_state(state: Mapping[str, object]) -> None:
     abandon = state.get("abandon_on_restart", False)
     if type(abandon) is not bool:
         raise ValueError("abandon_on_restart must be boolean")
+    if expected_tool_task_id is not None and task_id != expected_tool_task_id:
+        raise ValueError("tool task identity differs from its original effect")
 
 
 def _validate_workflow_state(state: Mapping[str, object]) -> None:
@@ -349,8 +354,9 @@ def _validate_json(value: object) -> None:
 def _freeze_json(value: object) -> object:
     if isinstance(value, Mapping):
         return MappingProxyType({str(key): _freeze_json(item) for key, item in value.items()})
-    if isinstance(value, list):
-        return tuple(_freeze_json(item) for item in value)
+    if isinstance(value, (list, tuple)):
+        items: list[object] | tuple[object, ...] = value
+        return tuple(_freeze_json(item) for item in items)
     return value
 
 
@@ -787,12 +793,7 @@ class TaskCheckpoint:
         state = _thaw_object(self.state)
         _validate_json(provider_snapshot)
         _validate_json(state)
-        _validate_task_scheduler_state(state)
-        if self.execution_kind == "tool":
-            from codey.durable.tool_task import ToolTaskInput, tool_task_id
-
-            if self.task_id != tool_task_id(ToolTaskInput.from_payload(state["tool_input"]).origin_effect_id):
-                raise ValueError("tool task identity differs from its original effect")
+        _validate_task_scheduler_state(self.task_id, state)
         _validate_workflow_state(state)
         attempt = state.get("attempt_number", 0)
         token = state.get("attempt_token", "")
