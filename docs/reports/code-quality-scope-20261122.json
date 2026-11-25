@@ -4369,10 +4369,11 @@
         "codey/durable/questions.py"
       ],
       "id": "Q064",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/questions.py"],
+      "verified_files": ["codey/durable/questions.py"],
+      "tests": ["tests/durable/test_question_authority.py", "tests/durable/test_suspension.py", "tests/test_question_route_actions.py", "tests/test_conversation_questions.py", "tests/durable/test_operation_control_actions.py::test_question_survives_notification_failure_before_protocol_acknowledgement", "tests/test_task_input_contract.py::test_a_durable_pending_question_blocks_admission_with_its_original_identity", "tests/test_conversation_question_http.py"],
+      "result": "Enforced task conversation ownership on question admission, reused frozen checkpoint decoding, and typed the store and transaction callbacks. 33 scoped tests including HTTP restart and retry passed."
     },
     {
       "responsibility": "codey/ghost: package entry and composition",
