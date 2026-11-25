@@ -1,8 +1,8 @@
 {
   "baseline": "7555d4887d5a9a73b149e098312a0917f4a5b2b0",
-  "source_count": 1009,
+  "source_count": 1011,
   "region_count": 40,
-  "batch_count": 356,
+  "batch_count": 362,
   "classification": "tracked owned runtime/source and tools; tests/config are validation support; dependencies/build/caches ignored; no runtime assets or vendor code governed",
   "limitations": "AST imports are routing hints only; dynamic references, interface contracts, tests and semantic grouping must be checked at batch entry; refine oversized families with recorded reasons without dropping files",
   "regions": [
@@ -208,6 +208,7 @@
         "Q035D",
         "Q035E",
         "Q036",
+        "Q036B",
         "Q037",
         "Q037B",
         "Q037C",
@@ -325,6 +326,8 @@
         "Q055",
         "Q056",
         "Q057",
+        "Q057B",
+        "Q057C",
         "Q058",
         "Q059",
         "Q060",
@@ -364,6 +367,9 @@
       "batches": [
         "Q065",
         "Q066",
+        "Q066B",
+        "Q066C",
+        "Q066D",
         "Q067",
         "Q068"
       ],
@@ -450,7 +456,7 @@
     },
     {
       "path": "codey/operations",
-      "source_count": 121,
+      "source_count": 122,
       "batches": [
         "Q083",
         "Q084",
@@ -720,7 +726,7 @@
     },
     {
       "path": "codey/research",
-      "source_count": 99,
+      "source_count": 100,
       "batches": [
         "Q152",
         "Q153",
@@ -3759,16 +3765,25 @@
       "responsibility": "codey/codemode: completion review and edit validation",
       "files": [
         "codey/codemode/json_edit.py",
-        "codey/codemode/shape_repair.py",
-        "codey/codemode/verification.py"
+        "codey/codemode/shape_repair.py"
       ],
       "id": "Q036",
       "status": "completed_changed",
-      "reviewed_files": ["codey/codemode/json_edit.py", "codey/codemode/shape_repair.py", "codey/codemode/verification.py"],
-      "verified_files": ["codey/codemode/json_edit.py", "codey/codemode/shape_repair.py", "codey/codemode/verification.py"],
+      "reviewed_files": ["codey/codemode/json_edit.py", "codey/codemode/shape_repair.py"],
+      "verified_files": ["codey/codemode/json_edit.py", "codey/codemode/shape_repair.py"],
       "tests": ["tests/test_codemode_json_nesting.py", "tests/test_codemode_json_edit.py", "tests/test_codemode_source_preflight.py", "tests/test_p0_mixed_workflow.py"],
       "reviewed_support": ["tests/test_codemode_json_nesting.py"],
       "result": "Whole-document JSON reading and editing normalize decoder recursion failure as ValueError. Type the shape edit ordering key. Ninety scoped tests passed after deduplication. Scoped strict Any, Ruff and all production gates passed."
+    },
+    {
+      "responsibility": "Code Mode project check selection and command binding",
+      "files": ["codey/codemode/verification.py"],
+      "id": "Q036B",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/test_codemode_source_preflight.py", "tests/test_p0_mixed_workflow.py", "tests/test_tool_task_next_stage.py"],
+      "followups": ["64bd6337 replaced verification shape and command binding logic after Q036. Review the changed source and rerun check-selection, workflow and whole-file type verification."]
     },
     {
       "responsibility": "Code Mode input decoding, bounds and source diagnostics",
@@ -4381,28 +4396,47 @@
         "codey/ghost/__init__.py"
       ],
       "id": "Q065",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 0
+      "status": "completed_unchanged",
+      "reviewed_files": ["codey/ghost/__init__.py"],
+      "verified_files": ["codey/ghost/__init__.py"],
+      "result": "Package import loads no Ghost implementation module and starts no threads. Fresh import, strict Any, and Ruff passed."
     },
     {
-      "responsibility": "codey/ghost: shared contracts and module services",
-      "files": [
-        "codey/ghost/backend.py",
-        "codey/ghost/controls.py",
-        "codey/ghost/projection.py",
-        "codey/ghost/storage.py",
-        "codey/ghost/families.py",
-        "codey/ghost/learning.py",
-        "codey/ghost/maintenance.py",
-        "codey/ghost/conflicts.py"
-      ],
+      "responsibility": "Ghost SQLite storage, replay and scope controls",
+      "files": ["codey/ghost/storage.py", "codey/ghost/controls.py"],
       "id": "Q066",
+      "status": "completed_changed",
+      "reviewed_files": ["codey/ghost/storage.py", "codey/ghost/controls.py"],
+      "verified_files": ["codey/ghost/storage.py", "codey/ghost/controls.py"],
+      "tests": ["tests/test_memory_completion.py", "tests/test_memory_integrity.py", "tests/test_memory_lifecycle.py", "tests/test_memory_maintenance_runtime.py", "tests/test_memory_boundary.py"],
+      "result": "Kept retained command digests in journal order across compactions and read both legacy and ordered recovery bases. 98 scoped tests and all type gates passed."
+    },
+    {
+      "responsibility": "Ghost memory families, learning and conflict rules",
+      "files": ["codey/ghost/families.py", "codey/ghost/learning.py", "codey/ghost/conflicts.py"],
+      "id": "Q066B",
       "status": "not_started",
       "reviewed_files": [],
       "verified_files": [],
-      "candidate_test_count": 3
+      "tests": ["tests/test_memory_feedback.py", "tests/test_memory_learning_targets.py", "tests/test_memory_plasticity.py"]
+    },
+    {
+      "responsibility": "Ghost event projection and retention",
+      "files": ["codey/ghost/projection.py", "codey/ghost/maintenance.py"],
+      "id": "Q066C",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/test_memory_integrity.py", "tests/test_memory_maintenance_runtime.py"]
+    },
+    {
+      "responsibility": "Ghost backend composition and memory API",
+      "files": ["codey/ghost/backend.py"],
+      "id": "Q066D",
+      "status": "not_started",
+      "reviewed_files": [],
+      "verified_files": [],
+      "tests": ["tests/test_memory_boundary.py", "tests/test_memory_adaptation_flow.py"]
     },
     {
       "responsibility": "codey/ghost: shared contracts and module services",
@@ -4730,7 +4764,8 @@
         "codey/operations/project_completion_flow.py",
         "codey/operations/project_review_phase.py",
         "codey/operations/project_delivery.py",
-        "codey/operations/project_check_handoff.py"
+        "codey/operations/project_check_handoff.py",
+        "codey/operations/verification_workflow.py"
       ],
       "id": "Q090",
       "status": "not_started",
@@ -5681,6 +5716,7 @@
         "codey/research/answer_archive.py",
         "codey/research/answer_contract.py",
         "codey/research/answer_report.py",
+        "codey/research/quote_slots.py",
         "codey/research/answer_values.py",
         "codey/research/report_values.py",
         "codey/research/answer_fields.py",
@@ -9957,6 +9993,20 @@
       "batch": "Q054",
       "replacement": ["Q054", "Q054B", "Q054C", "Q054D", "Q054E"],
       "reason": "Approval, external effect, submission, task transition and tool-task input contracts have independently verifiable boundaries. All eight files retain one owner."
+    },
+    {
+      "batch": "Q057",
+      "replacement": ["Q057", "Q057B", "Q057C"],
+      "reason": "Split history index and paging, conversation mutations, and session transaction boundaries."
+    },
+    {
+      "batch": "Q066",
+      "replacement": ["Q066", "Q066B", "Q066C", "Q066D"],
+      "reason": "Verify storage and controls, learning rules, projections and backend composition in dependency order."
+    },
+    {
+      "commit": "64bd6337",
+      "reason": "Add verification_workflow.py to Q090 and quote_slots.py to Q156. Reopen only the changed Code Mode verification source as Q036B. The two other Q036 files retain prior review credit."
     }
   ]
 }

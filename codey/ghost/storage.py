@@ -77,6 +77,23 @@ def save(connection: sqlite3.Connection, collection: str, identity: str, scope: 
     )
 
 
+def _retained_identities(value: JsonValue) -> dict[str, str]:
+    if isinstance(value, dict):
+        # Version 1 preserved the hashes but did not store their journal order.
+        return {identity: require_json_string(digest, "event digest") for identity, digest in value.items()}
+    if not isinstance(value, list):
+        raise ValueError("invalid retained memory event identities")
+    identities: dict[str, str] = {}
+    for pair in value:
+        if not isinstance(pair, list) or len(pair) != 2:
+            raise ValueError("invalid retained memory event identity")
+        identity = require_json_string(pair[0], "event identity")
+        if identity in identities:
+            raise ValueError("duplicate retained memory event identity")
+        identities[identity] = require_json_string(pair[1], "event digest")
+    return identities
+
+
 class GhostDatabase:
     def __init__(self, host: MemoryHost) -> None:
         self.host = host
@@ -122,7 +139,7 @@ class GhostDatabase:
             base_rows = texts(connection.execute("SELECT payload FROM recovery_base WHERE id = 1"))
             if base_rows:
                 base = self._base(base_rows[0])
-                identities = decode_json_object(base.get("identities"))
+                identities = _retained_identities(base.get("identities"))
                 retired = identities.get(event.event_id)
                 if retired is not None:
                     if retired != hashlib.sha256(value.encode()).hexdigest():
@@ -198,7 +215,7 @@ class GhostDatabase:
     def _base(text: str) -> JsonObject:
         base = parse_json_object(text)
         expected = base.pop("checksum", None)
-        if expected != hashlib.sha256(canonical(base).encode()).hexdigest() or base.get("schema_version") != 1:
+        if expected != hashlib.sha256(canonical(base).encode()).hexdigest() or base.get("schema_version") not in (1, 2):
             raise ValueError("memory recovery base is corrupt")
         if base.get("projector_version") != 3:
             raise ValueError("unsupported memory projector recovery version")
@@ -209,17 +226,19 @@ class GhostDatabase:
             raise ValueError("retained event count cannot be negative")
         # Verify before touching the recovery base. Retention has already been
         # committed as an ordinary deterministic event.
-        verified = self.rebuild(project)
+        self.rebuild(project)
         with self.connect(write=True) as connection:
             head = parse_json_object(texts(connection.execute("SELECT payload FROM journal_head WHERE id = 1"))[0])
             prior_rows = texts(connection.execute("SELECT payload FROM recovery_base WHERE id = 1"))
             prior = self._base(prior_rows[0]) if prior_rows else None
-            identities = decode_json_object(prior.get("identities")) if prior else {}
-            for text in texts(connection.execute("SELECT event_json FROM events ORDER BY sequence DESC LIMIT ?", (keep_events,))):
+            identities = _retained_identities(prior.get("identities")) if prior else {}
+            latest = texts(connection.execute("SELECT event_json FROM events ORDER BY sequence DESC LIMIT ?", (keep_events,)))
+            for text in reversed(latest):
                 identities[event_from_text(text).event_id] = hashlib.sha256(text.encode()).hexdigest()
             # Keep a bounded retry window. Older task inputs are additionally
             # excluded by the intake floor, including after Core backfill.
-            identities = dict(list(identities.items())[-keep_events:]) if keep_events else {}
+            latest_identities: list[tuple[str, str]] = list(identities.items())[-keep_events:] if keep_events else []
+            retained: list[JsonValue] = [[identity, digest] for identity, digest in latest_identities]
             raw: list[object] = connection.execute(
                 "SELECT collection, identity, scope, payload FROM projections ORDER BY collection, identity").fetchall()
             records: list[JsonValue] = []
@@ -236,9 +255,9 @@ class GhostDatabase:
             payloads = [decode_json_object(value)["payload"] for value in records]
             state_digest = hashlib.sha256(canonical({"records": payloads}).encode()).hexdigest()
             verified = MemoryRebuildResult(require_json_integer(head.get("sequence"), "sequence"), state_digest)
-            base: JsonObject = {"schema_version": 1, "projector_version": 3, "sequence": head.get("sequence"),
+            base: JsonObject = {"schema_version": 2, "projector_version": 3, "sequence": head.get("sequence"),
                 "journal_digest": head.get("digest"), "state_digest": state_digest, "records": records,
-                "identities": identities, "intake_before": as_of, "retired_before": retired_before}
+                "identities": retained, "intake_before": as_of, "retired_before": retired_before}
             base["checksum"] = hashlib.sha256(canonical(base).encode()).hexdigest()
             connection.execute("INSERT INTO recovery_base VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", (canonical(base),))
             connection.execute("DELETE FROM events")

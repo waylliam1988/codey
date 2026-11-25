@@ -1977,3 +1977,17 @@ Q024C 生产修复已提交：`82cfb5e6`（fix(approvals): release worker admiss
 - 改用具体 DurableSession、任务检查点和事务回调类型，复用持久层的解冻实现，保留问题、选项及续跑载荷的公开字典形状。最初直接组 20 passed。在 `D:\codey` 执行 `python -m pytest -q tests/durable/test_question_authority.py tests/durable/test_suspension.py tests/test_question_route_actions.py tests/test_conversation_questions.py tests/durable/test_operation_control_actions.py::test_question_survives_notification_failure_before_protocol_acknowledgement --tb=short`，22 passed。执行 `python -m pytest -q tests/test_task_input_contract.py::test_a_durable_pending_question_blocks_admission_with_its_original_identity --tb=short`，1 passed。执行 `python -m pytest -q tests/test_conversation_question_http.py --tb=short`，10 passed，覆盖两种提供者协议、重启、提前回答及重试。三组均退出 0，无失败或跳过。
 - `python -m mypy codey/durable/questions.py tests/durable/test_question_authority.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 退出 0，生产文件原有 129 条诊断。同两文件 Ruff 与 Pyrefly、全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
 - Q064 完成。累计完成 112/358 批，完成批覆盖 195/1009 个生产文件，另有 14 批部分完成。下一批 Q065 为 Ghost 包入口。
+
+### Q065 Ghost 包入口
+
+- Q064 已提交 `42b5e0e8`。完整检查 `codey/ghost/__init__.py`，仅含包说明。用 `python -` 在新进程检查导入路径、Ghost 子模块加载及线程列表，退出 0。`python -m mypy codey/ghost/__init__.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated` 和 `ruff check codey/ghost/__init__.py` 均退出 0。未运行 pytest，实际实现交由所属批次。
+- Q065 完成，无源码变更。按 Ghost 实现的依赖顺序将 Q066 八个文件分成 SQLite 存储与控制、家族与学习规则、事件投影与保留、后端入口四批。全部文件仍在队列。累计完成 113/361 批，完成批覆盖 196/1009 个生产文件，另有 14 批部分完成。进度随下一次提交保留。
+
+### Q066 Ghost SQLite 存储与范围控制
+
+- 完整检查 `storage.py` 与 `controls.py`。压缩保留最近指定数量的命令身份供重试。连续两次压缩时，原版从排序 JSON 对象恢复旧 ID，错误淘汰提交更晚的 `a-recent`。运行 `python -m pytest -q tests/test_memory_completion.py::test_repeated_compaction_retains_the_most_recent_command_identities --tb=short`，旧版拒绝该重试，1 failed、退出 1。使用有序身份数组写入恢复基点 v2，并按提交顺序合并日志尾部。同用例 1 passed、退出 0，较旧 ID 正确离开窗口，更近的重试保持无副作用。
+- 继续读取恢复基点 v1 并验证校验和。通过 `python -` 用 `64bd6337` 的原存储实现生成 v1 文件，在当前实现验证重试、重建和再压缩为 v2，退出 0。v1 只存储 ID 到摘要的映射，旧记录的实际先后无法从 v1 恢复，新日志和新恢复基点保留顺序。
+- 在 `D:\codey` 的双文件基线 38 passed。执行 `python -m pytest -q tests/test_memory_completion.py tests/test_memory_integrity.py tests/test_memory_lifecycle.py --tb=short`，61 passed。执行 `python -m pytest -q tests/test_memory_maintenance_runtime.py tests/test_memory_boundary.py --tb=short`，37 passed。两组均退出 0、无失败或跳过。最后类型注解后重跑三个压缩相关节点为 4 passed，与上述用例重复。
+- `python -m mypy codey/ghost/storage.py codey/ghost/controls.py tests/test_memory_completion.py --python-version 3.11 --strict --follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-decorated`、同三文件 Ruff、全生产 mypy 765 文件、Pyrefly 0 errors（35 suppressed、164 warnings 未展示）、ty 和 kernel_type_precision_gate 均退出 0。
+- 并行提交 `64bd6337` 新增 `verification_workflow.py` 与 `quote_slots.py`，分别纳入 Q090 与 Q156。该提交还改变 Q036 已验证的 `verification.py`，将该文件单列 Q036B 并重新验证，原批另两个文件保留完成记录。
+- Q066 完成。累计完成 114/362 批，完成批覆盖 197/1011 个生产文件，另有 14 批部分完成。随后处理被并行提交影响的 Q036B，再恢复 Q066B。

@@ -16,6 +16,7 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.app.memory_routes import memory_action
 from codey.memory.codec import digest
 from codey.memory.contracts import (
+    MemoryControl,
     MemoryEvaluation,
     MemoryEvent,
     MemoryFamilyChange,
@@ -28,7 +29,7 @@ from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ChatProvider
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 from tests.test_memory_boundary import NOW, SCOPE, backend, event
-from tests.test_memory_lifecycle import EXPIRED, confirm
+from tests.test_memory_lifecycle import EXPIRED, LATER, confirm
 
 
 @pytest.mark.parametrize("protocol", ["text", "openai-completions", "openai-responses"])
@@ -207,10 +208,27 @@ def test_snapshot_rejects_stale_commands_outside_retained_retry_window(tmp_path:
     store = backend(tmp_path)
     confirm(store, "keep")
     store.compact(MemoryRetentionPolicy(keep_events=0), as_of=EXPIRED)
-    from codey.memory.contracts import MemoryControl
 
     with pytest.raises(ValueError, match="retry window"):
         store.set_control(MemoryControl(SCOPE, "admit_hints", False, "old:command", NOW))
+
+
+def test_repeated_compaction_retains_the_most_recent_command_identities(tmp_path: Path) -> None:
+    store = backend(tmp_path)
+    policy = MemoryRetentionPolicy(keep_events=4)
+    oldest = MemoryControl(SCOPE, "admit_hints", False, "z-oldest", NOW)
+    recent = MemoryControl(SCOPE, "admit_hints", True, "a-recent", NOW)
+    store.set_control(oldest)
+    store.set_control(recent)
+    store.compact(policy, as_of=LATER)
+    store.set_control(MemoryControl(SCOPE, "admit_hints", False, "middle", "2026-11-21T12:00:00+00:00"))
+    compacted = store.compact(policy, as_of=EXPIRED)
+
+    reopened = backend(tmp_path)
+    reopened.set_control(recent)
+    assert reopened.rebuild() == compacted
+    with pytest.raises(ValueError, match="retry window"):
+        reopened.set_control(oldest)
 
 
 @pytest.mark.parametrize("operation", ["install", "truncate"])
