@@ -4282,19 +4282,25 @@
         "codey/durable/sqlite_history.py"
       ],
       "id": "Q058",
-      "status": "partial_follow_up",
+      "status": "completed_changed",
       "reviewed_files": [
-        "codey/durable/history_lifetime.py"
+        "codey/durable/history_lifetime.py",
+        "codey/durable/input_receipts.py",
+        "codey/durable/sqlite_history.py"
       ],
       "verified_files": [
-        "codey/durable/history_lifetime.py"
+        "codey/durable/history_lifetime.py",
+        "codey/durable/input_receipts.py",
+        "codey/durable/sqlite_history.py"
       ],
-      "candidate_test_count": 0,
       "tests": [
+        "tests/durable/test_history_storage_paging.py",
+        "tests/durable/test_history_snapshot_paging.py",
+        "tests/durable/test_display_index.py",
         "tests/test_history_file_lifetime.py",
         "tests/durable/test_conversation_delete_commit.py"
       ],
-      "result": "Only HistoryLifetime full-file review completed at Q019 required locking boundary: read/exclusive order and fail-fast nested admission retained, strictAny/Pyrefly/ty/Ruff0. Its three explicit lifetime tests (cross-process deletion waiting, nested control read rejecting deletion instead of deadlock, physical cleanup waiting for selected provider file) and shared Q019 deletion regressions pass. No source changes. input_receipts.py/sqlite_history.py remain unreviewed/unverified; entire batch partial."
+      "result": "Reused typed SQLite row readers and shared history metadata construction. Verified read-only original admission receipts and 48 history tests. Carried forward the completed HistoryLifetime review from Q019 and repeated its three lifetime tests."
     },
     {
       "responsibility": "codey/durable: completion review and edit validation",
