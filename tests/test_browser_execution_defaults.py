@@ -185,7 +185,7 @@ def test_formal_wait_return_repair_keeps_original_timeout_without_redelivery() -
     assert len(delivered) == 1
 
 
-def test_research_declared_navigation_precedes_read_and_controls() -> None:
+def test_research_declared_navigation_observes_controls_before_reading() -> None:
     session = TaskSession(TaskPolicy(GRANTS, strict_research=True,
         required_checks=(require_tool_success('browser_navigate'),)), task_kind='research',
         task_text=f'Read the record.\n{URL}', required_source_urls=frozenset({URL}))
@@ -194,7 +194,7 @@ def test_research_declared_navigation_precedes_read_and_controls() -> None:
     assert call is not None and call.name == 'codemode'
     code = call.args['code']
     assert isinstance(code, str)
-    assert code.index('browser_navigate') < code.index('browser_read') < code.index('browser_snapshot')
+    assert code.index('browser_navigate') < code.index('browser_snapshot') < code.index('browser_read')
 
 
 def test_reloaded_document_does_not_inherit_old_fill_and_click_progress() -> None:

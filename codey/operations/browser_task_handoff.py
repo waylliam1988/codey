@@ -424,8 +424,9 @@ def _record_controls(value: JsonObject) -> list[str]:
     for region in regions[:6]:
         same_record = [row for row in controls if row.get("context_id") == region.get("id")]
         if same_record:
-            links = [{"name": row.get("name"), "ref": row.get("ref")} for row in same_record]
-            lines.append(json.dumps({"record": region, "links": links}, ensure_ascii=False))
+            links: list[JsonValue] = [{"name": row.get("name"), "ref": row.get("ref")} for row in same_record]
+            description: JsonObject = {"record": region, "links": links}
+            lines.append(json.dumps(description, ensure_ascii=False))
     return lines
 
 
@@ -496,8 +497,9 @@ def _settled_post_click_wait(
                 or order[ref] <= max(order[baseline], order[click_ref])
                 or not same_document(wait.audit.get("browser_document"), document) or not isinstance(outcome, dict)):
             continue
-        matched = wait.ok and outcome.get("matched") is True
-        timed_out = not wait.ok and outcome.get("matched") is False and outcome.get("reason") == "timeout"
+        result: Mapping[str, object] = outcome
+        matched = wait.ok and result.get("matched") is True
+        timed_out = not wait.ok and result.get("matched") is False and result.get("reason") == "timeout"
         if matched or timed_out:
             return ref, baseline, order[ref] < order[current_ref]
     return None

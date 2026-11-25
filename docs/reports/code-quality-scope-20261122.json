@@ -4790,9 +4790,10 @@
       "id": "Q084C",
       "responsibility": "Browser task and continuation handoff",
       "files": ["codey/operations/browser_task_handoff.py"],
-      "status": "not_started", "reviewed_files": [], "verified_files": [],
-      "tests": ["tests/test_browser_handoff_next_steps.py", "tests/test_browser_execution_defaults.py"],
-      "followups": ["The old initial navigation test expects navigate, read, snapshot. Commit 06640d73 deliberately changed the production program to navigate, snapshot, read, and NAVIGATE_VERIFY uses that order as well. Make the current contract explicit before adapting the original assertion."]
+      "status": "completed_changed", "reviewed_files": ["codey/operations/browser_task_handoff.py"], "verified_files": ["codey/operations/browser_task_handoff.py"],
+      "tests": ["tests/test_browser_execution_defaults.py", "tests/test_browser_initial_navigation.py", "tests/test_browser_failed_source_retention.py", "tests/test_browser_handoff_next_steps.py", "tests/test_browser_linked_record.py", "tests/test_browser_navigation_continuation.py"],
+      "reviewed_support": ["tests/test_browser_execution_defaults.py"],
+      "result": "The documented navigation contract preserves a control snapshot even when formal reading fails. Updated the old order assertion and typed handoff values. The 108-case navigation and 70-case final handoff groups passed, as did all production gates."
     },
     {
       "id": "Q084D",
