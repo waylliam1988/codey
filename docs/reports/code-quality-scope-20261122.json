@@ -4357,10 +4357,11 @@
         "codey/durable/provider_response.py"
       ],
       "id": "Q063",
-      "status": "not_started",
-      "reviewed_files": [],
-      "verified_files": [],
-      "candidate_test_count": 2
+      "status": "completed_changed",
+      "reviewed_files": ["codey/durable/provider_response.py"],
+      "verified_files": ["codey/durable/provider_response.py"],
+      "tests": ["tests/durable/test_provider_response_receipts.py", "tests/durable/test_provider_context_authority.py", "tests/test_reasoning_cold_history.py", "tests/test_history_file_lifetime.py"],
+      "result": "Contained dynamic JSON at the artifact boundary. Verified historical tool and reasoning projection, corrupted receipts and read lifetimes. 40 scoped tests and all type gates passed."
     },
     {
       "responsibility": "codey/durable: answer and report projection",

@@ -88,4 +88,5 @@ def read_response_artifact(record: ArtifactRecord) -> object:
     raw = path.read_bytes()
     if hashlib.sha256(raw).hexdigest() != record.sha256:
         raise ValueError("registered response artifact digest mismatch")
-    return json.loads(raw.decode("utf-8"))
+    decoded: object = json.loads(raw.decode("utf-8"))
+    return decoded
