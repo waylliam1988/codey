@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import pytest
+from playwright.sync_api import Locator, Page
 
 from codey import __version__
 from codey.agents.consensus import ConsensusAdvice, ConsensusResult
@@ -3599,8 +3600,9 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_state_pauses_for_control_teaching_and_resumes_with_captured_control(self) -> None:
         state = server.AppContext()
+        self.addCleanup(state.close)
         events = state.subscribe()
-        page = mock.Mock()
+        page = mock.Mock(spec=Page)
         page.url = "https://chat.qwen.ai/"
         request = provider_controls.ControlTeachRequest(
             provider_id="qwen",
@@ -3613,7 +3615,7 @@ class SessionThreadingTests(unittest.TestCase):
             fingerprint={"tag": "button", "role": "button", "text": "Send"},
             current_selector='[data-session-teach-current="token"]',
         )
-        button = mock.Mock()
+        button = mock.Mock(spec=Locator)
 
         with (
             mock.patch.object(provider_controls, "start_click_capture", return_value="token") as start,
@@ -3622,13 +3624,19 @@ class SessionThreadingTests(unittest.TestCase):
         ):
             slot: list[object] = []
             thread = threading.Thread(
-                target=lambda: slot.append(sibling_probe.handle_control_teach(state, request))
+                target=lambda: slot.append(sibling_probe.handle_control_teach(state, request)),
+                daemon=True,
             )
             thread.start()
-            emitted = events.get(timeout=1)
-            pending_id = emitted["id"]
-            self.assertTrue(state.resume_pending_teach(pending_id))
-            thread.join(timeout=1)
+            try:
+                emitted = events.get(timeout=3)
+                pending_id = emitted["id"]
+                self.assertTrue(state.resume_pending_teach(pending_id))
+                thread.join(timeout=3)
+                self.assertFalse(thread.is_alive(), "teaching did not return after Resume")
+            finally:
+                state.cancel_pending_teach()
+                thread.join(timeout=3)
 
         self.assertEqual(slot, [button])
         self.assertEqual(emitted["type"], "teach_request")
@@ -5878,7 +5886,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
             mock.patch.object(provider_services, "connect_existing_provider", return_value=reviewer),
         ):
-            _run_task("session-1", td, "task", 8, False, "deepseek", "project")
+            _run_task("session-1", td, "task", 8, False, "deepseek", "project", review_policy="require_web")
 
         self.assertEqual(states, [(False, False)])
 
