@@ -50,7 +50,7 @@ def observation() -> BrowserReferences:
     return BrowserReferences.observe("snapshot", {"complete": True, "elements_truncated": False,
         "generation": 1, "elements": controls, "contexts": [
             {"id": "current", "label": "Current"}, {"id": "archive", "label": "Archive"}]},
-        {"target_id": "tab", "loader_id": "doc", "url": URL})
+        {"frame_id": "main", "target_id": "tab", "loader_id": "doc", "url": URL})
 
 
 def test_cards_keep_all_contexts_without_selecting_a_business_target() -> None:

@@ -62,7 +62,24 @@ class ExecutionReceipt:
     output_ref: ExecutionOutputReference | None = None
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, object]) -> ExecutionReceipt:
+    def from_facts(cls, payload: Mapping[str, object]) -> ExecutionReceipt:
+        fields = {"status", "exit_code", "exit_code_scope", "truncated", "capture_truncated", "execution_id",
+                  "full_output_retained", "full_output_recoverable", "output_ref"}
+        if set(payload) != fields:
+            raise ValueError("invalid execution receipt fields")
+        result = cls.from_shell_result(payload)
+        recoverable = require_json_boolean(payload["full_output_recoverable"], "full_output_recoverable")
+        if recoverable != result.full_output_recoverable:
+            raise ValueError("execution receipt recoverability differs from its facts")
+        if result.full_output_retained and result.output_ref is None:
+            raise ValueError("retained execution output requires its original reference")
+        if result.output_ref is not None and result.output_ref.execution_id != result.execution_id:
+            raise ValueError("execution output reference differs from receipt identity")
+        return result
+
+    @classmethod
+    def from_shell_result(cls, payload: Mapping[str, object]) -> ExecutionReceipt:
+        """Interpret the immediate shell runner's outcome at the write boundary."""
         code = payload.get("exit_code")
         if code is not None and type(code) is not int:
             raise ValueError("execution exit_code must be an integer or null")
@@ -81,7 +98,7 @@ class ExecutionReceipt:
             execution_id=require_json_string(payload.get("execution_id", ""), "execution_id"),
             exit_code_scope="process" if scope == "process" else "shell",
             full_output_retained=require_json_boolean(payload.get("full_output_retained", False), "full_output_retained"),
-            output_ref=ExecutionOutputReference.from_payload(payload["output_ref"]) if "output_ref" in payload else None,
+            output_ref=ExecutionOutputReference.from_payload(payload["output_ref"]) if payload.get("output_ref") is not None else None,
         )
 
     @property
@@ -90,16 +107,14 @@ class ExecutionReceipt:
                 and (not self.truncated or self.full_output_retained))
 
     def facts(self) -> JsonObject:
-        facts: JsonObject = {"status": self.status, "exit_code": self.exit_code, "exit_code_scope": self.exit_code_scope,
+        return {"status": self.status, "exit_code": self.exit_code, "exit_code_scope": self.exit_code_scope,
                 "truncated": self.truncated, "capture_truncated": self.capture_truncated,
                 "execution_id": self.execution_id, "full_output_retained": self.full_output_retained,
-                "full_output_recoverable": self.full_output_recoverable}
-        if self.output_ref is not None:
-            facts["output_ref"] = self.output_ref.facts()
-        return facts
+                "full_output_recoverable": self.full_output_recoverable,
+                "output_ref": self.output_ref.facts() if self.output_ref is not None else None}
 
     def audit_facts(self) -> JsonObject:
-        """Compatibility fields derived from the same execution observation."""
+        """Diagnostic projection of the recorded execution."""
         return {"exit_code": self.exit_code, "exit_code_scope": self.exit_code_scope,
                 "execution_id": self.execution_id, "capture_truncated": self.capture_truncated,
                 "full_output_retained": self.full_output_retained}
@@ -124,19 +139,10 @@ class ExecutionReceipt:
 
 
 def execution_receipt(result: ToolResult) -> ExecutionReceipt | None:
-    """Decode canonical facts, or the explicit legacy audit representation."""
-    if result.call.name not in {"shell", "run"}:
+    """Read execution facts committed by the executor."""
+    if result.call.name not in {"shell", "run"} or "execution" not in result.canonical:
         return None
-    execution = result.canonical.get("execution")
-    if isinstance(execution, dict):
-        return ExecutionReceipt.from_payload(execution)
-    if "execution" in result.canonical:
+    execution = result.canonical["execution"]
+    if not isinstance(execution, dict):
         raise ValueError("canonical execution facts must be an object")
-    if "exit_code" not in result.audit:
-        return None
-    code = result.audit["exit_code"]
-    return ExecutionReceipt.from_payload({"status": "exit" if type(code) is int else "unknown",
-        "exit_code": code, "exit_code_scope": "process" if result.call.name == "run" else "shell",
-        "truncated": result.truncated, "capture_truncated": result.audit.get("capture_truncated", False),
-        "execution_id": result.audit.get("execution_id", ""),
-        "full_output_retained": result.audit.get("full_output_retained", False)})
+    return ExecutionReceipt.from_facts(execution)

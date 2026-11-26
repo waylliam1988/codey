@@ -270,13 +270,8 @@ def source_requirements(task: str) -> dict[str, object]:
 
 
 def restored_source_requirements(state: Mapping[str, object]) -> frozenset[str]:
-    """Decode the entry snapshot; legacy tasks use their stored original input."""
-    if "source_requirements" not in state:
-        task = state.get("input_text", state.get("task", ""))
-        if not isinstance(task, str):
-            raise ValueError("original source requirement input must be text")
-        return explicit_web_intent(task, source_lines=False).urls
-    payload = canonical_json_object(state["source_requirements"])
+    """Read the original source requirements frozen at admission."""
+    payload = canonical_json_object(state.get("source_requirements"))
     if (set(payload) != {"version", "required_urls"}
             or type(payload["version"]) is not int or payload["version"] != 1):
         raise ValueError("invalid source requirement snapshot")

@@ -10,32 +10,25 @@ def normalize_element_ref(ref: str) -> str:
     return ref[1:-1] if ref.startswith("[") and ref.endswith("]") else ref
 
 
-def _identity(value: object) -> tuple[str, str, str] | None:
+def document_identity(value: object) -> tuple[str, str, str] | None:
     if not isinstance(value, dict):
         return None
     document = decode_json_object(value)
-    loader, target, frame = document.get('loader_id'), document.get('target_id', ''), document.get('frame_id', '')
-    if not isinstance(loader, str) or not loader or not isinstance(target, str) or not isinstance(frame, str):
+    loader, target, frame = document.get('loader_id'), document.get('target_id'), document.get('frame_id')
+    if not isinstance(loader, str) or not loader or not isinstance(target, str) or not target or not isinstance(frame, str) or not frame:
         return None
     return target, frame, loader
 
 
 def same_document(left: object, right: object) -> bool:
-    before, after = _identity(left), _identity(right)
-    return before is not None and after is not None and _same_identity(before, after)
-
-
-def _same_identity(before: tuple[str, str, str], after: tuple[str, str, str]) -> bool:
-    # Historical receipts lack target_id. Preserve their loader binding rather
-    # than treating the newly recorded target field as a navigation.
-    return (before[2] == after[2] and (not before[0] or not after[0] or before[0] == after[0])
-            and (not before[1] or not after[1] or before[1] == after[1]))
+    before, after = document_identity(left), document_identity(right)
+    return before is not None and after is not None and before == after
 
 
 def document_changed(left: object, right: object) -> bool:
     """Missing identity cannot prove that an unsettled action changed documents."""
-    before = _identity(left)
+    before = document_identity(left)
     if before is None:
         return False
-    after = _identity(right)
-    return after is not None and not _same_identity(before, after)
+    after = document_identity(right)
+    return after is not None and before != after

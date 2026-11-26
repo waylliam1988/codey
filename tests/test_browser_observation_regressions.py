@@ -225,14 +225,14 @@ def test_citing_only_the_neighbor_passage_cannot_support_target_facts(
 
 
 def test_pending_identity_uses_targets_and_loaders_and_preserves_unknown_history() -> None:
-    original: JsonObject = {'target_id': 'tab-1', 'loader_id': 'document-1', 'url': URL}
+    original: JsonObject = {'frame_id': 'main', 'target_id': 'tab-1', 'loader_id': 'document-1', 'url': URL}
     pushed: JsonObject = {**original, 'url': URL + '?query=1'}
     other_target: JsonObject = {**original, 'target_id': 'tab-2'}
     reload: JsonObject = {**original, 'loader_id': 'document-2'}
     assert same_document(original, pushed) and not document_changed(original, pushed)
     assert document_changed(original, other_target) and document_changed(original, reload)
     assert not same_document(None, None) and not document_changed(original, None)
-    assert same_document({'loader_id': 'document-1', 'url': URL}, pushed)
+    assert not same_document({'loader_id': 'document-1', 'url': URL}, pushed)
 
 
 def test_chat_completion_refreshes_live_identity_for_an_unconfirmed_query(

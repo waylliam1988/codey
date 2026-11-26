@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NotRequired, Protocol, TypedDict
 
@@ -44,6 +44,9 @@ class StopSignal(Protocol):
     def is_set(self) -> bool: ...
 
 
+KERNEL_RESULT_SCHEMA_VERSION = 2
+
+
 class KernelResultPayload(TypedDict):
     schema_version: int
     completed: bool
@@ -66,7 +69,7 @@ class KernelResult:
     research_report: AnswerReport | None = None
 
     def to_payload(self) -> KernelResultPayload:
-        return {"schema_version": 2, "completed": self.completed, "summary": self.summary,
+        return {"schema_version": KERNEL_RESULT_SCHEMA_VERSION, "completed": self.completed, "summary": self.summary,
                 "turns": self.turns, "stop_reason": self.stop_reason, "delivery": self.delivery,
                 "proof": self.proof.to_payload() if self.proof is not None else None,
                 "research_report": self.research_report.to_payload() if self.research_report is not None else None}
@@ -75,20 +78,11 @@ class KernelResult:
 def result_from_payload(payload: object) -> KernelResult:
     from codey.completion.contract import _proof_from_payload
 
-    legacy = {"completed", "summary", "turns", "stop_reason", "proof", "delivery"}
-    current = legacy | {"research_report"}
-    if not isinstance(payload, dict):
-        raise ValueError("invalid persisted kernel result")
-    fields: Mapping[object, object] = payload
-    if set(fields) == legacy:
-        payload = {**fields, "research_report": None}
-    elif set(fields) == current | {"schema_version"}:
-        if type(fields["schema_version"]) is not int or fields["schema_version"] != 2:
-            raise ValueError("unknown persisted kernel result version")
-        payload = {key: value for key, value in fields.items() if key != "schema_version"}
     payload = decode_json_object(payload)
-    if set(payload) != current:
+    if set(payload) != KernelResultPayload.__required_keys__:
         raise ValueError("invalid persisted kernel result")
+    if require_json_integer(payload["schema_version"], "kernel result version") != KERNEL_RESULT_SCHEMA_VERSION:
+        raise ValueError("unknown persisted kernel result version")
     completed = require_json_boolean(payload["completed"], "completed")
     summary = require_json_string(payload["summary"], "summary")
     turns = require_json_integer(payload["turns"], "turns")
@@ -119,8 +113,6 @@ class RetryDecision(TypedDict):
     purpose: Literal["retry"]
     prompt: str
     error: str
-    # Only schema v1 decisions carry a pending observation; new writes use the checkpoint.
-    counters: NotRequired[dict[str, object]]
     error_source: NotRequired[str]
     error_type: NotRequired[str]
 
@@ -182,9 +174,6 @@ class KernelExecutionDeps:
     """Tool, project, and workspace resources for one kernel run."""
 
     executors: Mapping[str, ToolExecutor] | None = None
-    # Durable intent submission is an execution prerequisite. The observation
-    # location remains temporarily accepted for compatibility with older
-    # callers; production builders should populate this field.
     intent_sink: KernelEffectSink | None = None
     project_path: Path | None = None
     tool_fns: AgentToolFns | None = None
@@ -200,7 +189,6 @@ class KernelExecutionDeps:
 class KernelObservationDeps:
     """Completion, recovery, and event sinks for one kernel run."""
 
-    intent_sink: KernelEffectSink | None = None
     completion_context: CompletionContextInput | None = None
     on_event: Callable[[RunEvent], None] | None = None
     on_shell_request: Callable[[ShellApprovalRequest], None] | None = None
@@ -221,10 +209,3 @@ class KernelRunRequest:
     execution: KernelExecutionDeps = KernelExecutionDeps()
     observation: KernelObservationDeps = KernelObservationDeps()
     task_guidance: str = ""
-
-    def __post_init__(self) -> None:
-        # Legacy construction is normalized once. Execution owns the sink;
-        # the observation record held by a run never retains a second owner.
-        if self.observation.intent_sink is not None:
-            object.__setattr__(self, "execution", replace(self.execution, intent_sink=self.observation.intent_sink))
-            object.__setattr__(self, "observation", replace(self.observation, intent_sink=None))

@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
 REQUEST_KIND = "provider_request"
 RESPONSE_KIND = "provider_response"
+PROVIDER_ARTIFACT_VERSIONS = {REQUEST_KIND: 2, RESPONSE_KIND: 1}
 TURN_SNAPSHOT_SCHEMA = 23
 
 
@@ -68,13 +69,13 @@ def restore_context(payload: object) -> tuple[str, tuple[ContextCandidate, ...]]
 
 def write_provider_artifact(store: ManagedOutputStore, *, session_id: str, run_id: str,
                             effect_id: str, kind: str, payload: object) -> ArtifactRecord:
-    if kind not in {REQUEST_KIND, RESPONSE_KIND}:
+    if kind not in PROVIDER_ARTIFACT_VERSIONS:
         raise ValueError("unknown provider artifact kind")
     # A request may be frozen before its external intent is admitted. Its
     # task owns this one body; the later effect references it. Responses are
     # still owned by the already-admitted effect.
     prepared = kind == REQUEST_KIND
-    envelope = {"schema_version": 2 if prepared else 1, "kind": kind, "effect_id": effect_id, "payload": payload}
+    envelope = {"schema_version": PROVIDER_ARTIFACT_VERSIONS[kind], "kind": kind, "effect_id": effect_id, "payload": payload}
     ref = store.write_json_artifact(session_id=session_id, run_id=run_id, payload=envelope)
     return store.json_artifact_record(ref, owner_task_id=run_id, owner_effect_id=None if prepared else effect_id,
                                       metadata={"kind": kind})
@@ -82,7 +83,7 @@ def write_provider_artifact(store: ManagedOutputStore, *, session_id: str, run_i
 
 def read_provider_artifact(store: ManagedOutputStore, record: ArtifactRecord, *, kind: str,
                            session_id: str, run_id: str, effect_id: str) -> JsonObject:
-    if record.owner_task_id != run_id or record.metadata.get("kind") != kind:
+    if kind not in PROVIDER_ARTIFACT_VERSIONS or record.owner_task_id != run_id or record.metadata.get("kind") != kind:
         raise RuntimeEffectError("provider artifact ownership mismatch")
     raw_ref = thaw_json(record.metadata.get("ref"))
     if not isinstance(raw_ref, dict):
@@ -98,13 +99,21 @@ def read_provider_artifact(store: ManagedOutputStore, record: ArtifactRecord, *,
     payload: dict[object, object] = raw_payload
     if (set(payload) != {"schema_version", "kind", "effect_id", "payload"}
             or type(payload["schema_version"]) is not int
-            or payload["schema_version"] not in ({1, 2} if kind == REQUEST_KIND else {1})
+            or payload["schema_version"] != PROVIDER_ARTIFACT_VERSIONS[kind]
             or payload["kind"] != kind or payload["effect_id"] != effect_id):
         raise RuntimeEffectError("provider artifact envelope mismatch")
-    expected_owner = None if kind == REQUEST_KIND and payload["schema_version"] == 2 else effect_id
+    expected_owner = None if kind == REQUEST_KIND else effect_id
     if record.owner_effect_id != expected_owner:
         raise RuntimeEffectError("provider artifact ownership mismatch")
-    return decode_json_object(payload["payload"])
+    body = decode_json_object(payload["payload"])
+    if kind == REQUEST_KIND:
+        from codey.operations.provider_request_context import PROVIDER_CONTEXT_FIELDS
+        from codey.providers.request_codec import PROVIDER_INVOCATION_FIELDS
+
+        required = PROVIDER_INVOCATION_FIELDS | {"admission"}
+        if set(body) not in (required, required | PROVIDER_CONTEXT_FIELDS):
+            raise RuntimeEffectError("invalid frozen provider request fields")
+    return body
 
 
 def request_artifact_for_effect(durable: DurableSession, effect: RuntimeEffectProjection) -> ArtifactRecord:

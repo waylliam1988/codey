@@ -29,7 +29,7 @@ from tools.completion_artifact_audit import tool_receipts
 FIXTURE = Path(__file__).parent / "fixtures" / "browser_handoff_failure_replies_20261114.json"
 GRANTS = frozenset({"control", "project.read", "project.write", "web.read", "browser.observe",
                     "browser.interact", "browser.effect"})
-DOCUMENT: JsonObject = {"target_id": "task-tab", "loader_id": "task-document", "url": URL}
+DOCUMENT: JsonObject = {"frame_id": "main", "target_id": "task-tab", "loader_id": "task-document", "url": URL}
 
 
 def original_reply(case: str) -> str:

@@ -60,6 +60,7 @@ from codey.runtime.core.operation_payload import (
     _text,
 )
 from codey.runtime.core.outcome import OperationOutcome, operation_outcome_from_stop_reason
+from codey.runtime.core.progress import DEFAULT_PROGRESS_LIMIT, ProgressSnapshot
 from codey.storage.local_store import project_key, session_key
 
 _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
@@ -197,6 +198,7 @@ def new_operation_state(
     task_kind: str = "task",
     task_policy: dict[str, object] | None = None,
     model_selection: dict[str, object] | None = None,
+    progress_limit: int | None = None,
 ) -> RuntimeOperationState:
     session = _canonical_id(session_id)
     run = _canonical_id(run_id)
@@ -216,6 +218,10 @@ def new_operation_state(
         task_kind=_text(task_kind, "task_kind"),
         task_policy=_parse_task_policy(task_policy),
         model_selection=_parse_model_selection(model_selection),
+        counters=RuntimeExecutionCounters(progress=ProgressSnapshot(
+            limit=progress_limit if progress_limit is not None else (
+                5 if task_kind == "research" else DEFAULT_PROGRESS_LIMIT),
+        )),
     )
 
 
@@ -262,7 +268,7 @@ def mark_writer_running(
             raise RuntimeOperationTransitionError("research invocation requires its settled predecessor")
         return _transition(state, LEAF_WRITER_RUNNING, writer_attempt=attempt,
                            turns_used=_count(state.turns_used + state.logical_turn, "turns_used", maximum=state.turn_budget),
-                           counters=RuntimeExecutionCounters(), logical_turn=0, stop_reason="",
+                           counters=RuntimeExecutionCounters(progress=ProgressSnapshot(limit=state.counters.progress.limit)), logical_turn=0, stop_reason="",
                            work_ref="", request_ref="", response_ref="")
     if state.leaf in _PENDING_LEAVES - {LEAF_TOOL_DELIVERY_PENDING}:
         if state.driver != DRIVER_WRITER or state.provider_id != provider or state.writer_attempt != attempt:
@@ -279,7 +285,7 @@ def mark_writer_running(
             raise RuntimeOperationTransitionError("writer restart requires a new attempt after done before final proof")
         return _transition(state, LEAF_WRITER_RUNNING, provider_id=provider,
                            writer_attempt=attempt, turns_used=state.turns_used, stop_reason="",
-                           counters=RuntimeExecutionCounters(), logical_turn=0)
+                           counters=RuntimeExecutionCounters(progress=ProgressSnapshot(limit=state.counters.progress.limit)), logical_turn=0)
     if state.leaf in {LEAF_WRITER_RUNNING, LEAF_TOOL_DELIVERY_PENDING}:
         # Rebinding a writer changes transport metadata, never acknowledges
         # delivery or restarts the task state machine.
@@ -318,7 +324,7 @@ def mark_candidate_validation_running(
         raise RuntimeOperationTransitionError("stopped candidate validation admission is unavailable")
     return _transition(state, LEAF_REPAIR_RUNNING if repair else LEAF_WRITER_RUNNING,
                        writer_attempt=attempt, candidate_validation_attempted=True, stop_reason="",
-                       counters=RuntimeExecutionCounters(), logical_turn=0)
+                       counters=RuntimeExecutionCounters(progress=ProgressSnapshot(limit=state.counters.progress.limit)), logical_turn=0)
 
 
 def mark_writer_settled(
@@ -415,6 +421,8 @@ def advance_execution(
     if work_ref is not None:
         updates["work_ref"] = _text(work_ref, "work_ref", allow_empty=True)
     if counters is not None:
+        if counters.progress.limit != state.counters.progress.limit:
+            raise RuntimeOperationTransitionError("admitted progress budget is immutable")
         updates["counters"] = counters
     if leaf in _PENDING_LEAVES:
         updates["driver"] = state.driver or (DRIVER_REPAIR if _is_repair_leaf(state.leaf, state.driver) else DRIVER_WRITER)
@@ -545,7 +553,7 @@ def mark_repair_running(
         LEAF_REPAIR_RUNNING,
         provider_id=_text(provider_id, "provider_id"),
         repair_rounds=state.repair_rounds + 1,
-        counters=RuntimeExecutionCounters(), logical_turn=0,
+        counters=RuntimeExecutionCounters(progress=ProgressSnapshot(limit=state.counters.progress.limit)), logical_turn=0,
     )
 
 

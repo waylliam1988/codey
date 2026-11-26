@@ -17,7 +17,7 @@ from codey.operations.project.project_check_handoff import project_check_handoff
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot
-from codey.policies.task_policy import TASK_POLICY_FILE_SCOPE_VERSION, TaskPolicy
+from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, TurnFinish
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -34,7 +34,7 @@ def test_recovery_checks_committed_progress_and_preserves_global_bound() -> None
     counters = initial.with_length_continuation(3)
     assert counters is not None
     assert counters.with_length_continuation(4) is None
-    recovered = replace(counters, progress=ProgressSnapshot(schema_version=4, last_batch_id="write", recovery_progress_turn=5))
+    recovered = replace(counters, progress=ProgressSnapshot(last_batch_id="write", recovery_progress_turn=5))
     second = recovered.with_length_continuation(7)
     assert second is not None and admit_request_counters(recovered, second) == second
     assert second.with_length_continuation(8) is None
@@ -46,7 +46,8 @@ def test_recovery_checks_committed_progress_and_preserves_global_bound() -> None
     ended = replace(third, progress=replace(third.progress, last_batch_id="fresh", recovery_progress_turn=10))
     assert ended.with_length_continuation(11) is None
     old = {key: value for key, value in initial.to_payload().items() if key != "length_continuations"}
-    assert RuntimeExecutionCounters.from_payload({**old, "length_continuation_used": True}).length_continuations == (0,)
+    with pytest.raises(RuntimeOperationTransitionError, match="counters"):
+        RuntimeExecutionCounters.from_payload({**old, "length_continuation_used": True})
 
 
 def test_web_recovery_progress_uses_new_original_passages_instead_of_repeated_reads() -> None:
@@ -82,7 +83,7 @@ def test_web_recovery_ignores_document_and_ref_churn_when_observed_text_is_ident
             canonical={"value": {"page_url": "https://example.org/museum", "text": text, "complete": False,
                                  "text_truncated": text_truncated, "elements_truncated": True,
                                  "elements": [{"ref": f"control-{turn}"}]}},
-            audit={"browser_document": {"loader_id": str(turn)}})
+            audit={"browser_document": {"target_id": "tab", "frame_id": "main", "loader_id": str(turn)}})
         progress.observe([page], session, batch_id=str(turn))
 
     snapshot(2, "Opening hours")
@@ -193,7 +194,7 @@ def test_python_edit_uses_only_an_unambiguous_observed_import(tmp_path: Path, so
     if source_kind == "ambiguous":
         observed.append("alternate.py")
     session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "project.write"}),
-                                     version=TASK_POLICY_FILE_SCOPE_VERSION, edit_scope=(path,)),
+                                     edit_scope=(path,)),
                           task_kind="project", project=str(tmp_path))
     calls = [ToolCall("read_file", {"path": path}) for path in observed]
     assert all(row.ok for row in execute_turn(session, calls, turn=1, project_path=tmp_path, run_id="read"))

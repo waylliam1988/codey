@@ -37,7 +37,7 @@ def approval_notifier(durable: DurableSession, outputs: ManagedOutputStore, sess
 
 
 def admit(durable: DurableSession, *, run_id: str, session_id: str, task: str, provider_id: str,
-          max_turns: int, task_kind: str = 'project') -> RuntimeMutationLine:
+          max_turns: int, task_kind: str = 'project', progress_limit: int | None = None) -> RuntimeMutationLine:
     try:
         checkpoint = durable.task(run_id)
     except KeyError:
@@ -50,19 +50,19 @@ def admit(durable: DurableSession, *, run_id: str, session_id: str, task: str, p
     mutations = RuntimeMutationLine(durable=durable)
     if operation_from_checkpoint(durable.task(run_id), session_id) is None:
         mutations.accept_operation(session_id=session_id, run_id=run_id, provider_id=provider_id,
-            turn_budget=max_turns, max_repair_rounds=1, task_kind=task_kind)
+            turn_budget=max_turns, max_repair_rounds=1, task_kind=task_kind, progress_limit=progress_limit)
         mutations.mark_writer_running(session_id, run_id, provider_id=provider_id)
     return mutations
 
 
 @contextmanager
 def runtime(*, session_id: str = 'test-session', run_id: str = 'test-run', task: str = 'test task',
-            provider_id: str = 'test', max_turns: int = 4, task_kind: str = 'project') -> Generator[KernelEffectSink, None, None]:
+            provider_id: str = 'test', max_turns: int = 4, task_kind: str = 'project', progress_limit: int | None = None) -> Generator[KernelEffectSink, None, None]:
     with tempfile.TemporaryDirectory() as temporary:
         durable = DurableSession(TemporarySQLiteStore())
         try:
             mutations = admit(durable, run_id=run_id, session_id=session_id, task=task, provider_id=provider_id,
-                              max_turns=max_turns, task_kind=task_kind)
+                              max_turns=max_turns, task_kind=task_kind, progress_limit=progress_limit)
             yield KernelEffectSink(mutations, session_id=session_id, run_id=run_id, provider_id=provider_id,
                                    durable=durable, managed_outputs=ManagedOutputStore(Path(temporary)))
         finally:
@@ -81,7 +81,7 @@ def run_task_kernel(session: TaskSession, *, request: KernelRunRequest, session_
         return run(session, request=request)
     with runtime(session_id=session_id, run_id=request.transport.run_id or 'test-run',
                  task=request.transport.user_task or 'test task', provider_id=request.transport.provider_id or 'test',
-                 max_turns=session.max_turns, task_kind=session.task_kind) as actual:
+                 max_turns=session.max_turns, task_kind=session.task_kind, progress_limit=request.transport.stagnant_turns) as actual:
         request = replace(request, transport=replace(request.transport, run_id=actual.run_id),
             execution=replace(request.execution, intent_sink=actual), observation=replace(request.observation,
                 on_boundary=durable_generation_boundary_callback(durable=actual.durable,
@@ -101,7 +101,7 @@ def run_agent(request: AgentRequest) -> RunResult:
         provider_id = request.provider_id or 'test'
         try:
             mutations = request.runtime_mutations or admit(durable, run_id=run_id, session_id=session_id,
-                task=request.task, provider_id=provider_id, max_turns=request.max_turns)
+                task=request.task, provider_id=provider_id, max_turns=request.max_turns, progress_limit=request.stagnant_turns)
             outputs = request.managed_outputs or ManagedOutputStore(Path(temporary))
             return run(replace(request, durable=durable, runtime_mutations=mutations,
                 session_id=session_id, run_id=run_id, provider_id=provider_id, managed_outputs=outputs,

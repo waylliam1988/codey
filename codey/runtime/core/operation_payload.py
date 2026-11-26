@@ -55,16 +55,10 @@ class RuntimeExecutionCounters:
     @classmethod
     def from_payload(cls, value: object) -> RuntimeExecutionCounters:
         if (not isinstance(value, dict)
-                or set(value) not in ({"invalid_turns", "length_continuation_used", "closing_round", "progress"},
-                                      {"invalid_turns", "length_continuations", "closing_round", "progress"})
+                or set(value) != {"invalid_turns", "length_continuations", "closing_round", "progress"}
                 or type(value["invalid_turns"]) is not int or type(value["closing_round"]) is not int):
             raise RuntimeOperationTransitionError("invalid operation execution counters")
-        lengths: object = value.get("length_continuations")
-        if "length_continuation_used" in value:
-            if type(legacy := value["length_continuation_used"]) is not bool:
-                raise RuntimeOperationTransitionError("invalid legacy continuation")
-            legacy_lengths: list[int] = [0] if legacy else []
-            lengths = legacy_lengths
+        lengths: object = value["length_continuations"]
         if not isinstance(lengths, list) or len(lengths) > MAX_LENGTH_CONTINUATIONS:
             raise RuntimeOperationTransitionError("invalid length continuations")
         try:

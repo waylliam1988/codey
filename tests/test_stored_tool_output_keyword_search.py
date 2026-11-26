@@ -14,16 +14,16 @@ from codey.toolchain.tool_spec import _all_specs
 
 def make_delegate(text, tmp_path=None):
     session = TaskSession(policy=SimpleNamespace(allows=lambda _: True))
-    audit = {"exit_code": 1}
+    canonical = {}
     store = None
     if tmp_path is not None:
         store = ManagedOutputStore(tmp_path)
         ref = store.write_tool_output(session_id="s", run_id="r", tool_id="execution-1",
             permission_profile="coding_writer", tool_name="run", display_ref="tests", text=text)
         assert ref is not None
-        audit["managed_output"] = {"handle": ref.handle, "sha256": ref.sha256}
+        canonical["managed_output"] = {"handle": ref.handle, "sha256": ref.sha256}
     session._memory_results["execution-1"] = ToolResult(ToolCall("run", {}),
-        "bounded preview" if store else text, ok=False, audit=audit)
+        "bounded preview" if store else text, ok=False, canonical=canonical)
     return ExecutionDelegate(session=session, managed_outputs=store, session_id="s", run_id="r")
 
 

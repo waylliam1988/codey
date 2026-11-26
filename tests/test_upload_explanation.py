@@ -18,7 +18,7 @@ from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, parse_json_object
 
 URL = "https://example.com/upload"
-DOCUMENT: JsonObject = {"url": URL, "loader_id": "loader-1"}
+DOCUMENT: JsonObject = {"target_id": "tab", "frame_id": "main", "url": URL, "loader_id": "loader-1"}
 EVIDENCE = UploadEvidence("report.csv", "a" * 64, "", "selection-1", "")
 
 

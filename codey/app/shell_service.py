@@ -86,7 +86,7 @@ def shell_result_content(*, command: str, result: Mapping[str, object], approved
     from codey.agents.shell_approval import shell_command_text
     from codey.runtime.core.execution_receipt import ExecutionReceipt
 
-    receipt = ExecutionReceipt.from_payload(result).bounded()
+    receipt = ExecutionReceipt.from_shell_result(result).bounded()
     decision = "approved" if approved else "NOT executed, denied by user"
     return f"Shell result ({decision}): {shell_command_text(command)}\n{receipt.render()}"
 
@@ -122,7 +122,7 @@ def shell_result_row(
 
         count = tail_lines(tool_args.get("output_tail_lines"))
         model_result = {**result, "output": output_tail(str(result.get("output") or ""), count)}
-    receipt = ExecutionReceipt.from_payload(result).bounded()
+    receipt = ExecutionReceipt.from_shell_result(result).bounded()
     ok = approved and result.get("ok") is True and result.get("status") != "denied"
     call = ToolCall(
         name=str(pending.get("tool_name") or "shell"),

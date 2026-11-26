@@ -76,8 +76,8 @@ def runtime(tmp_path: Path) -> tuple[DurableSession, ManagedOutputStore, KernelE
 def request_for(durable: DurableSession, sink: KernelEffectSink, provider: object,
                 *, executors: Mapping[str, ToolExecutor]) -> KernelRunRequest:
     return KernelRunRequest(transport=KernelTransportDeps(provider=adapt_provider(provider), run_id="r", provider_id="local"),
-        execution=KernelExecutionDeps(executors=executors),
-        observation=KernelObservationDeps(intent_sink=sink, propagate_provider_failure=True,
+        execution=KernelExecutionDeps(intent_sink=sink, executors=executors),
+        observation=KernelObservationDeps(propagate_provider_failure=True,
             on_boundary=durable_generation_boundary_callback(durable=durable, session_id="s", task_id="r", sink=sink)))
 
 

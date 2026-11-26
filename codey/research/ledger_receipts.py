@@ -50,9 +50,6 @@ def search_observation(observation: object) -> SearchRecord:
     if set(observation) != {"search"}:
         raise ValueError("missing or invalid search observation")
     search = observation["search"]
-    if isinstance(search, dict) and "version" not in search:
-        search.setdefault("attempts", [])  # Legacy receipts did not observe search provenance.
-        search.update(version=2, state="unknown", failure_kind="")
     row = _record_fields(search, SearchRecord)
     if require_json_integer(row["version"], "search version") != 2:
         raise ValueError("unsupported search record version")
@@ -152,15 +149,10 @@ def restore_ledger_observation(ledger: ResearchLedger, observation: JsonObject) 
     if not isinstance(observation, dict):
         raise ValueError("research observation must be an object")
     keys = set(observation)
-    if keys in ({"questions"}, {"questions", "question_details"}) or observation.get("schema_version") in (2, 3):
+    if keys == {"questions"}:
         from codey.research.questions import question_plan
 
-        questions = observation["questions"]
-        if observation.get("schema_version") in (2, 3):
-            if not isinstance(questions, list) or any(not isinstance(row, dict) for row in questions):
-                raise ValueError("invalid question observations")
-            questions = [row["text"] for row in questions if isinstance(row, dict)]
-        ledger.questions = question_plan(questions, ledger.questions)
+        ledger.questions = question_plan(observation["questions"], ledger.questions)
     elif keys == {"search"}:
         ledger.searches.append(search_observation(observation))
     elif keys == {"source_search"}:

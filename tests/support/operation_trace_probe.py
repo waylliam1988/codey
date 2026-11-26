@@ -137,7 +137,7 @@ def observe_trace(
     durable.start_task("trace-run", state=dict(durable.task("trace-run").state))
     line = RuntimeMutationLine(durable=durable)
     line.accept_operation(session_id="trace-session", run_id="trace-run", provider_id="scripted",
-                          turn_budget=max_turns, max_repair_rounds=1, task_kind="project")
+                          turn_budget=max_turns, max_repair_rounds=1, progress_limit=stagnant_turns, task_kind="project")
     line.mark_writer_running("trace-session", "trace-run", provider_id="scripted")
     sink = KernelEffectSink(line, session_id="trace-session", run_id="trace-run", provider_id="scripted",
                             durable=durable,
@@ -194,8 +194,8 @@ def observe_trace(
         result = run_task_kernel(session, request=KernelRunRequest(
             transport=KernelTransportDeps(provider=adapt_provider(provider), run_id="trace-run",
                 provider_id="scripted", user_task="inspect a.py", stop_flag=stop, stagnant_turns=stagnant_turns),
-            execution=KernelExecutionDeps(executors={"read_file": execute}, project_path=project),
-            observation=KernelObservationDeps(intent_sink=sink, on_event=event, on_boundary=at_boundary,
+            execution=KernelExecutionDeps(intent_sink=sink, executors={"read_file": execute}, project_path=project),
+            observation=KernelObservationDeps(on_event=event, on_boundary=at_boundary,
                 on_shell_request=approval if shell_approval else None),
         ))
     elapsed = time.perf_counter() - started

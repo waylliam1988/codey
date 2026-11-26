@@ -59,7 +59,7 @@ def test_modified_managed_output_does_not_return_unverified_bytes(tmp_path):
     assert ref
     session = TaskSession(policy=SimpleNamespace(allows=lambda _: True))
     session._memory_results["exec-17"] = ToolResult(ToolCall("run", {}), "excerpt", ok=False,
-        audit={"managed_output": {"handle": ref.handle, "sha256": ref.sha256, "original_sha256": ref.original_sha256,
+        canonical={"managed_output": {"handle": ref.handle, "sha256": ref.sha256, "original_sha256": ref.original_sha256,
                                  "original_bytes": ref.original_bytes, "stored_bytes": ref.stored_bytes, "stored_truncated": False}})
     ref.path.write_text("tampered", encoding="utf-8")
     delegate = ExecutionDelegate(session=session, managed_outputs=store, session_id="s", run_id="r")

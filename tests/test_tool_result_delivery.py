@@ -17,8 +17,8 @@ def restart_request(runtime, provider=None):
     from codey.operations.generation_boundary import durable_generation_boundary_callback
     return replace(runtime.request,
         transport=replace(runtime.request.transport, provider=provider or runtime.request.transport.provider),
-        observation=replace(runtime.request.observation, intent_sink=sink,
-            on_boundary=durable_generation_boundary_callback(durable=sink.durable, session_id=sink.session_id,
+        execution=replace(runtime.request.execution, intent_sink=sink),
+        observation=replace(runtime.request.observation, on_boundary=durable_generation_boundary_callback(durable=sink.durable, session_id=sink.session_id,
                                                              task_id=sink.run_id, sink=sink)))
 
 

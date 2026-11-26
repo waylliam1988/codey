@@ -50,26 +50,22 @@ class ResolvedOutput:
 def resolve_result_output(context: ReceiptReaderContext, result: ToolResult) -> ResolvedOutput:
     """Choose one authoritative output; never recover by executing a tool."""
     execution = execution_receipt(result)
-    capture = execution.capture_truncated if execution is not None else result.audit.get("capture_truncated") is True
+    capture = execution is not None and execution.capture_truncated
     ref = execution.output_ref if execution is not None else None
-    # Historical receipts bind retained output with these explicit flags.
-    # A diagnostic execution ID on its own is not an external output binding.
-    legacy = (execution is not None and bool(execution.execution_id) and result.truncated
-              and (execution.full_output_retained or execution.capture_truncated))
-    if ref is not None or legacy:
+    if ref is not None:
         if context.managed_outputs is None:
             raise ValueError("execution output store unavailable")
         assert execution is not None
-        identity = ref.execution_id if ref is not None else execution.execution_id
+        identity = ref.execution_id
         if execution.execution_id != identity:
             raise ValueError("execution output reference differs from receipt identity")
-        if ref is not None and (ref.session_id != context.session_id or ref.run_id != context.run_id):
+        if ref.session_id != context.session_id or ref.run_id != context.run_id:
             raise ValueError("execution output belongs to another task")
         snapshot = ExecutionOutputStore.read_existing(context.managed_outputs.root.parent, identity)
         if snapshot["session_id"] != context.session_id or snapshot["run_id"] != context.run_id:
             raise ValueError("execution output belongs to another task")
         actual = ExecutionOutputReference.from_snapshot(snapshot)
-        if ref is not None and actual != ref:
+        if actual != ref:
             raise ValueError("execution output digest or revision differs from receipt")
         if execution.exit_code is not None and snapshot["exit_code"] != execution.exit_code:
             raise ValueError("execution output exit code differs from receipt")
@@ -81,7 +77,7 @@ def resolve_result_output(context: ReceiptReaderContext, result: ToolResult) -> 
         incomplete = capture or not complete
         return ResolvedOutput(text, "execution", actual.facts(), result.truncated, capture,
                               stored_truncated, complete, incomplete, not incomplete)
-    managed = result.audit.get("managed_output")
+    managed = result.canonical.get("managed_output")
     if managed is not None:
         if not isinstance(managed, dict) or context.managed_outputs is None:
             raise ValueError("stored output unavailable")

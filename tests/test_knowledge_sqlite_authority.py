@@ -7,13 +7,15 @@ from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 
 
-def test_migration_restart_export_and_rebuild_have_one_authority(tmp_path):
+def test_explicit_import_restart_export_and_rebuild_have_one_authority(tmp_path):
     note = KnowledgeNote(id="legacy", title="Legacy", body="Original", aliases=["别名"])
     path = tmp_path / "notes" / "legacy.md"
     path.parent.mkdir()
     path.write_text(note.to_markdown(), encoding="utf-8")
     store = KnowledgeStore(tmp_path)
     try:
+        assert store.read_note(note.id) is None
+        store.import_markdown(path.read_text(encoding="utf-8"))
         assert store.read_note(note.id).aliases == ["别名"]
         store.write_note(replace(note, body="Revised"))
         path.write_text(note.to_markdown(), encoding="utf-8")

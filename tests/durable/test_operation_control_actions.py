@@ -21,8 +21,8 @@ from tests.durable.test_provider_response_receipts import runtime
 
 def request_for(durable, sink, provider, *, on_event=None, executors=None):
     return KernelRunRequest(transport=KernelTransportDeps(provider=provider, run_id="r", provider_id="local"),
-        execution=KernelExecutionDeps(executors=executors),
-        observation=KernelObservationDeps(intent_sink=sink, on_event=on_event, propagate_provider_failure=True,
+        execution=KernelExecutionDeps(intent_sink=sink, executors=executors),
+        observation=KernelObservationDeps(on_event=on_event, propagate_provider_failure=True,
             on_boundary=durable_generation_boundary_callback(durable=durable, session_id="s", task_id="r", sink=sink)))
 
 

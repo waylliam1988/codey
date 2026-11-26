@@ -7,7 +7,7 @@ from dataclasses import dataclass, fields
 from typing import Protocol, runtime_checkable
 from urllib.parse import parse_qs, urlsplit
 
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer, require_json_string
+from codey.types.json_value import JsonObject, decode_json_object, require_json_integer, require_json_string
 from codey.utils.refs import normalize_text
 
 _SITE = re.compile(r'(?<!\S)site:([^\s"\'()]+)', re.IGNORECASE)
@@ -89,13 +89,6 @@ def query_consistency(final_url: str, query: str) -> bool | None:
 
 def decode_search_attempt(value: object) -> SearchAttempt:
     row = decode_json_object(value)
-    if "version" not in row:
-        legacy = {item.name for item in fields(SearchAttempt)} - {
-            "version", "state", "effective_query", "coverage", "detail", "diagnostics"}
-        if set(row) != legacy:
-            raise ValueError("invalid legacy search provenance")
-        row = {**row, "version": 2, "state": "unknown", "effective_query": "", "coverage": "web",
-               "detail": "", "diagnostics": list[JsonValue]()}
     if set(row) != {item.name for item in fields(SearchAttempt)}:
         raise ValueError("invalid search provenance")
     if require_json_integer(row["version"], "search version") != 2:

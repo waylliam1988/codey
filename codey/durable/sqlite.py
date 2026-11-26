@@ -35,7 +35,7 @@ from codey.durable.model import (
     SubmissionUpdate,
     TaskCheckpoint,
     TaskStatus,
-    migrate_checkpoint_phase,
+    require_checkpoint_version,
     same_submission,
     thaw_json,
     valid_cancellation_cleanup,
@@ -69,6 +69,7 @@ from codey.durable.timeline import (
     execution_payload,
     public_commit_payload,
     settlement_histories,
+    timeline_task_rows,
     transition_from_payload,
 )
 from codey.storage.file_lock import acquire_lease
@@ -566,14 +567,7 @@ class SQLiteDurableStore:
             history: list[TaskTransition] = []
             for row in rows:
                 raw = _object(row, "workflow")
-                task_rows = raw.get("tasks")
-                matches = (
-                    isinstance(task_rows, list)
-                    and any(object_fields(item) and item.get("task_id") == task_id for item in task_rows)
-                )
-                legacy_task = raw.get("task")
-                legacy_match = object_fields(legacy_task) and legacy_task.get("task_id") == task_id
-                if matches or legacy_match:
+                if raw and any(task.get("task_id") == task_id for task in timeline_task_rows(raw)):
                     history.append(transition_from_payload(_integer(row, "seq"), raw, task_id))
             return tuple(history)
 
@@ -818,7 +812,8 @@ def _validate_existing_task(
         raise CommitConflict("task identity is immutable")
     if not valid_frozen_task_state(previous_state, task.state):
         raise CommitConflict("admitted task state is immutable")
-    previous_phase, _version = migrate_checkpoint_phase(_text(row, "phase"), _integer(row, "schema_version"))
+    require_checkpoint_version(_integer(row, "schema_version"))
+    previous_phase = _text(row, "phase")
     consumed = valid_input_consumption(previous_phase, _text(row, "status"), previous_state, task)
     if not consumed and not valid_task_transition(previous_phase, task.phase):
         raise CommitConflict(f"invalid task phase transition: {previous_phase} -> {task.phase}")

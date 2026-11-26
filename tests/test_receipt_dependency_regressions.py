@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Literal
 
 import pytest
 
@@ -40,42 +39,26 @@ def test_real_5796b29d_snapshot_is_preserved_but_rejected_by_current_runtime() -
     assert fixture.read_bytes() == original
 
 
-@pytest.mark.parametrize("version", [1, 2, 3, 4])
-def test_control_presentation_versions_are_explicit_and_tampering_cannot_select_another_contract(version: Literal[1, 2, 3, 4]) -> None:
+@pytest.mark.parametrize("version", [1, 2, 3, 5, None])
+def test_frozen_turn_rejects_other_control_presentations(version: int | None) -> None:
     from codey.operations.browser.turn_surface import offer_browser_tools
     from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
     from tests.test_browser_result_adoption_ab import session_with_snapshot
 
     session = session_with_snapshot()
-    references = replace(binding(), presentation_version=version)
+    references = binding()
     offered = offer_browser_tools(build_turn_snapshot(session), session)
     snapshot = refresh_snapshot_contract(replace(offered, browser=replace(offered.browser, references=references)))
     payload = snapshot_description(snapshot)
     assert restore_snapshot(payload) == snapshot
     raw = decode_json_object(payload["browser_references"])
-    raw["presentation_version"] = 2 if version == 1 else 1
+    if version is None:
+        del raw["presentation_version"]
+    else:
+        raw["presentation_version"] = version
     payload["browser_references"] = raw
-    with pytest.raises(ValueError, match="contract text differs"):
+    with pytest.raises(ValueError, match="control (presentation version|binding)"):
         restore_snapshot(payload)
-    raw["presentation_version"] = 5
-    with pytest.raises(ValueError, match="presentation version"):
-        restore_snapshot(payload)
-
-
-def test_unversioned_d379cc63_control_presentation_restores_as_choices() -> None:
-    from codey.operations.browser.turn_surface import offer_browser_tools
-    from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
-    from tests.test_browser_result_adoption_ab import session_with_snapshot
-
-    session = session_with_snapshot()
-    offered = offer_browser_tools(build_turn_snapshot(session), session)
-    references = replace(binding(), presentation_version=2)
-    snapshot = refresh_snapshot_contract(replace(offered, browser=replace(offered.browser, references=references)))
-    payload = snapshot_description(snapshot)
-    raw = decode_json_object(payload["browser_references"])
-    raw.pop("presentation_version")
-    payload["browser_references"] = raw
-    assert restore_snapshot(payload) == snapshot
 
 
 @pytest.mark.parametrize("stage", [0, 1])

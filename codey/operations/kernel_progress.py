@@ -103,18 +103,15 @@ def _source_observations(result: ToolResult, receipts: Mapping[str, ToolResult])
 
 class KernelProgress:
     def __init__(self, stagnant_turns: int | None = None, *, snapshot: ProgressSnapshot | None = None) -> None:
-        requested_limit = max(1, stagnant_turns) if stagnant_turns is not None else 4
-        snapshot = snapshot or ProgressSnapshot(limit=requested_limit)
-        if snapshot.last_batch_id and requested_limit != snapshot.limit:
-            raise ValueError("progress budget differs from the admitted operation")
-        self.limit = snapshot.limit if snapshot.last_batch_id else requested_limit
+        if snapshot is None:
+            snapshot = ProgressSnapshot() if stagnant_turns is None else ProgressSnapshot(limit=max(1, stagnant_turns))
+        self.limit = snapshot.limit
         self.seen = SeenInfoLRU()
         for key in snapshot.seen:
             self.seen.add(key)
         self.attempts: deque[ToolAttemptRecord] = deque(snapshot.attempts, maxlen=16)
         self.idle = snapshot.idle
         self.last_batch_id = snapshot.last_batch_id
-        self.schema_version = snapshot.schema_version
         self.repair_failure_key = snapshot.repair_failure_key
         self.repair_rejections = snapshot.repair_rejections
         self.warned_check_cycle = snapshot.warned_check_cycle
@@ -124,7 +121,7 @@ class KernelProgress:
 
     def snapshot(self) -> ProgressSnapshot:
         return ProgressSnapshot(self.limit, self.seen.keys(), tuple(self.attempts), self.idle, self.last_batch_id,
-                                self.schema_version, self.repair_failure_key, self.repair_rejections,
+                                self.repair_failure_key, self.repair_rejections,
                                 self.warned_check_cycle, self.warning_batch_id, self.check_cycle_repeated,
                                 self.recovery_progress_turn)
 
@@ -195,7 +192,6 @@ class KernelProgress:
             self.check_cycle_repeated = self.warned_check_cycle == cycle and self.warning_batch_id != batch_id
             if not self.check_cycle_repeated:
                 self.warned_check_cycle, self.warning_batch_id = cycle, batch_id
-            self.schema_version = max(self.schema_version, 3)
         elif progress:
             self.warned_check_cycle, self.warning_batch_id, self.check_cycle_repeated = "", "", False
 
@@ -249,7 +245,6 @@ class KernelProgress:
         self.last_batch_id = batch_id
         if batch_id and recovered_progress and session.turn > self.recovery_progress_turn:
             self.recovery_progress_turn = session.turn
-            self.schema_version = 4
         self._commit_check_observation(batch_id=batch_id, cycle=check_cycle, progress=check_moved)
         # A newly changed file or genuinely new output must never be stopped
         # merely because its call arguments appeared earlier in the session.
@@ -268,16 +263,13 @@ class KernelProgress:
         call = ToolCall("done", args)
         result = ToolResult(call, failure_key or feedback, ok=False)
         record = attempt_record(call, result, turn=session.turn, edit_epoch=max([0, *session.edited_files.values()]))
-        repeats = sum(previous.tool == "done" and previous.result_fp == record.result_fp for previous in self.attempts)
         self.attempts.append(record)
         novel = self.seen.add(seen_info_key("done", record.call_fp, feedback))
         self.idle = 0 if novel else self.idle + 1
         if failure_key:
-            previous = self.repair_rejections if self.repair_failure_key == failure_key else (
-                repeats if self.schema_version == 1 else 0)
+            previous = self.repair_rejections if self.repair_failure_key == failure_key else 0
             self.repair_failure_key = failure_key
             self.repair_rejections = min(self.limit, previous + 1)
-            self.schema_version = max(self.schema_version, 2)
             self.idle = max(self.idle, self.repair_rejections)
         else:
             self.repair_failure_key = ""

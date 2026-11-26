@@ -146,7 +146,8 @@ def approved_shell(root, receipt, *, call_id="original-shell", command_change=No
         mutations = RuntimeMutationLine(durable=durable)
         sink = KernelEffectSink(mutations, session_id="s", run_id="r", provider_id="local", durable=durable,
                                 managed_outputs=outputs)
-        request = replace(request, observation=replace(request.observation, intent_sink=sink, on_shell_request=None,
+        request = replace(request, execution=replace(request.execution, intent_sink=sink),
+        observation=replace(request.observation, on_shell_request=None,
             on_boundary=durable_generation_boundary_callback(durable=durable, session_id="s", task_id="r", sink=sink)))
         yield SimpleNamespace(durable=durable, sink=sink, outputs=outputs, request=request,
                               events=events, session=session, initial=first)

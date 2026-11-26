@@ -453,7 +453,7 @@ class TruncationPropagationTests(unittest.TestCase):
                     run_id="r",
                 )
                 # Read the on-disk metadata before the directory exits.
-                managed = outcome.audit["managed_output"]
+                managed = outcome.canonical["managed_output"]
                 stored = _json.loads(
                     store.metadata_path_for(
                         "s", "r", str(managed["handle"])

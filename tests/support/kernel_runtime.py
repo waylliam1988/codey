@@ -68,7 +68,8 @@ def run_task_kernel(session, *, request, session_id="test-session"):
         mutations = RuntimeMutationLine(durable=durable)
         provider_id = str(request.transport.provider_id or "test")
         mutations.accept_operation(session_id=session_id, run_id=run_id, provider_id=provider_id,
-            turn_budget=session.max_turns, max_repair_rounds=1, task_kind=session.task_kind)
+            turn_budget=session.max_turns, max_repair_rounds=1, task_kind=session.task_kind,
+            progress_limit=request.transport.stagnant_turns)
         mutations.mark_writer_running(session_id, run_id, provider_id=provider_id)
         outputs = ManagedOutputStore(Path(temporary))
         actual_sink = KernelEffectSink(mutations, session_id=session_id, run_id=run_id, provider_id=provider_id,
@@ -92,7 +93,8 @@ def run_task_kernel(session, *, request, session_id="test-session"):
 
         request = replace(request,
             transport=replace(request.transport, run_id=run_id),
-            observation=replace(request.observation, intent_sink=actual_sink, on_boundary=on_boundary,
+            execution=replace(request.execution, intent_sink=actual_sink),
+            observation=replace(request.observation, on_boundary=on_boundary,
                 on_shell_request=approval_notifier(durable, outputs, session_id, run_id, request.observation.on_shell_request)))
         try:
             return run(session, request=request)
@@ -127,7 +129,7 @@ def run_agent(request: AgentRequest) -> RunResult:
             mutations = request.runtime_mutations or RuntimeMutationLine(durable=durable)
             if operation_from_checkpoint(durable.task(run_id), session_id) is None:
                 mutations.accept_operation(session_id=session_id, run_id=run_id, provider_id=provider_id,
-                    turn_budget=request.max_turns, max_repair_rounds=1)
+                    turn_budget=request.max_turns, max_repair_rounds=1, progress_limit=request.stagnant_turns)
                 mutations.mark_writer_running(session_id, run_id, provider_id=provider_id)
             outputs = request.managed_outputs or ManagedOutputStore(Path(temporary))
             return run(replace(request, run_id=run_id, session_id=session_id, provider_id=provider_id,

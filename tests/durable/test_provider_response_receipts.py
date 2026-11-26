@@ -24,14 +24,14 @@ from tests.support.provider_actions import ProviderActions
 from tests.support.sqlite_store import TemporarySQLiteStore
 
 
-def runtime(tmp_path, *, sqlite=False, task_kind="chat", turn_budget=4):
+def runtime(tmp_path, *, sqlite=False, task_kind="chat", turn_budget=4, progress_limit=None):
     durable = DurableSession(SQLiteDurableStore(tmp_path / "runtime.sqlite") if sqlite else TemporarySQLiteStore())
     durable.admit_input(conversation_id="s", request_id="input", task_id="r", text="inspect", provider_snapshot={})
     durable.claim_task("r")
     durable.start_task("r", state=dict(durable.task("r").state))
     mutations = RuntimeMutationLine(durable=durable)
     mutations.accept_operation(session_id="s", run_id="r", provider_id="local", turn_budget=turn_budget, max_repair_rounds=1,
-                               task_kind=task_kind)
+                               task_kind=task_kind, progress_limit=progress_limit)
     mutations.mark_writer_running("s", "r", provider_id="local")
     outputs = ManagedOutputStore(tmp_path)
     sink = KernelEffectSink(mutations, session_id="s", run_id="r", provider_id="local", durable=durable,
@@ -311,8 +311,8 @@ ProviderActions(Provider(), sink).send('inspect')
     try:
         result = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control", "project.read"})), max_turns=4),
             request=KernelRunRequest(transport=KernelTransportDeps(provider=Provider(),
-                provider_id="local", run_id="r"), execution=KernelExecutionDeps(executors={"read_file": read}),
-                observation=KernelObservationDeps(intent_sink=sink, on_boundary=durable_generation_boundary_callback(
+                provider_id="local", run_id="r"), execution=KernelExecutionDeps(intent_sink=sink, executors={"read_file": read}),
+                observation=KernelObservationDeps(on_boundary=durable_generation_boundary_callback(
                     durable=durable, session_id="s", task_id="r", sink=sink))))
         assert result.completed and result.turns == 3, result
         assert order == (["execute", "request", "acknowledge"] if native else ["execute", "request"])
@@ -325,7 +325,13 @@ ProviderActions(Provider(), sink).send('inspect')
 @pytest.mark.parametrize("sqlite", [False, True])
 def test_history_projects_the_single_response_body_and_corruption_never_replays(tmp_path, sqlite):
     from codey.operations.generation_boundary import durable_generation_boundary_callback
-    from codey.operations.task_loop import KernelObservationDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
+    from codey.operations.task_loop import (
+        KernelExecutionDeps,
+        KernelObservationDeps,
+        KernelRunRequest,
+        KernelTransportDeps,
+        run_task_kernel,
+    )
     from codey.operations.task_session import TaskSession
     from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
@@ -351,7 +357,8 @@ def test_history_projects_the_single_response_body_and_corruption_never_replays(
         provider.reset_mock()
         result = run_task_kernel(session, request=KernelRunRequest(
             transport=KernelTransportDeps(provider=provider, provider_id="local", run_id="r"),
-            observation=KernelObservationDeps(intent_sink=sink, on_boundary=durable_generation_boundary_callback(
+            execution=KernelExecutionDeps(intent_sink=sink),
+            observation=KernelObservationDeps(on_boundary=durable_generation_boundary_callback(
                 durable=durable, session_id="s", task_id="r", sink=sink))))
         assert not result.completed and "digest" in result.summary
         assert provider.send.call_count == provider.send_turn.call_count == provider.send_tool_results.call_count == 0

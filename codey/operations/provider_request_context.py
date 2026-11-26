@@ -23,6 +23,12 @@ if TYPE_CHECKING:
     from codey.operations.kernel.turn_contract import TurnSnapshot
 
 
+PROVIDER_CONTEXT_FIELDS = frozenset({
+    "logical_turn", "snapshot", "window", "context", "effect_scope", "close_reply",
+    "delivery_purpose", "work_ref", "source_response_ref", "tool_task_notifications", "memory_traces",
+})
+
+
 @dataclass(frozen=True)
 class ProviderRequestContext:
     logical_turn: int
@@ -55,20 +61,22 @@ class ProviderRequestContext:
         from codey.operations.provider_receipts import restore_context, restore_snapshot
 
         row = decode_json_object(value)
-        turn = require_json_integer(row.get("logical_turn"), "logical_turn")
+        if not set(row) >= PROVIDER_CONTEXT_FIELDS:
+            raise ValueError("invalid frozen provider request context fields")
+        turn = require_json_integer(row["logical_turn"], "logical_turn")
         if turn < 1:
             raise ValueError("provider logical turn must be positive")
         text, sources = restore_context(row.get("context"))
-        traces = row.get("memory_traces", [])
+        traces = row["memory_traces"]
         if not isinstance(traces, list):
             raise ValueError("invalid frozen memory trace")
-        window = row.get("window")
+        window = row["window"]
         return cls(turn, restore_snapshot(row.get("snapshot")),
             None if window is None else ProtocolWindowRef.from_payload(window), text, sources,
             require_json_string(row.get("effect_scope"), "effect_scope"),
             require_json_boolean(row.get("close_reply"), "close_reply"),
-            require_json_string(row.get("delivery_purpose", ""), "delivery_purpose"),
-            require_json_string(row.get("work_ref", ""), "work_ref"),
-            require_json_string(row.get("source_response_ref", ""), "source_response_ref"),
-            tuple(require_json_strings(row.get("tool_task_notifications", []), "tool_task_notifications")),
+            require_json_string(row["delivery_purpose"], "delivery_purpose"),
+            require_json_string(row["work_ref"], "work_ref"),
+            require_json_string(row["source_response_ref"], "source_response_ref"),
+            tuple(require_json_strings(row["tool_task_notifications"], "tool_task_notifications")),
             tuple(trace_from_payload(value) for value in traces))

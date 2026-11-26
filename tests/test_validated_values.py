@@ -102,13 +102,10 @@ def test_report_decoder_keeps_rejecting_corrupt_wire(changes: Mapping[str, objec
 
 
 @pytest.mark.parametrize("changes", [
-    {"limit": 0}, {"limit": True}, {"idle": -1}, {"schema_version": 5}, {"last_batch_id": "x" * 241},
+    {"limit": 0}, {"limit": True}, {"idle": -1}, {"last_batch_id": "x" * 241},
     {"repair_failure_key": "failure"}, {"repair_rejections": 1},
-    {"schema_version": 1, "repair_failure_key": "failure", "repair_rejections": 1},
-    {"schema_version": 2, "warned_check_cycle": "cycle", "warning_batch_id": "batch"},
-    {"schema_version": 3, "recovery_progress_turn": 1, "last_batch_id": "batch"},
-    {"schema_version": 4, "recovery_progress_turn": 1},
-    {"schema_version": 3, "warned_check_cycle": "cycle", "warning_batch_id": "batch",
+    {"recovery_progress_turn": 1},
+    {"warned_check_cycle": "cycle", "warning_batch_id": "batch",
      "last_batch_id": "batch", "check_cycle_repeated": True},
     {"seen": (("run", "read", "bad"),)},
     {"seen": (("run", "read", "a" * 24),) * 2},
@@ -136,20 +133,40 @@ def test_counters_reject_invalid_replacement(changes: Mapping[str, object]) -> N
         replace(RuntimeExecutionCounters(), **changes)
 
 
-@pytest.mark.parametrize("version", [1, 2, 3, 4])
-def test_progress_wire_roundtrips_all_supported_versions(version: int) -> None:
-    snapshot = ProgressSnapshot(seen=(("run", "read", "a" * 24),), schema_version=version)
+def test_current_progress_and_counter_roundtrip() -> None:
+    snapshot = ProgressSnapshot(seen=(("run", "read", "a" * 24),),
+                                repair_failure_key="report", repair_rejections=1,
+                                last_batch_id="batch", recovery_progress_turn=2)
+    assert snapshot.to_payload()["schema_version"] == 4
     assert ProgressSnapshot.from_payload(snapshot.to_payload()) == snapshot
-    counters = RuntimeExecutionCounters(progress=snapshot)
+    counters = RuntimeExecutionCounters(progress=snapshot, length_continuations=(1, 3))
     assert RuntimeExecutionCounters.from_payload(counters.to_payload()) == counters
 
 
-def test_legacy_counter_wire_is_still_decoded() -> None:
-    payload: dict[str, object] = {"invalid_turns": 0, "length_continuation_used": True,
-                                  "closing_round": 0, "progress": ProgressSnapshot().to_payload()}
-    counters = RuntimeExecutionCounters.from_payload(payload)
-    assert counters.length_continuations == (0,)
-    assert "length_continuation_used" not in counters.to_payload()
+@pytest.mark.parametrize("version", [1, 2, 3, 5, None, True])
+def test_progress_rejects_old_missing_and_unknown_versions(version: object) -> None:
+    payload = ProgressSnapshot().to_payload()
+    if version is None:
+        del payload["schema_version"]
+    else:
+        payload["schema_version"] = version
+    with pytest.raises(ValueError, match="version"):
+        ProgressSnapshot.from_payload(payload)
+
+
+def test_current_progress_rejects_missing_fact() -> None:
+    payload = ProgressSnapshot().to_payload()
+    del payload["repair_rejections"]
+    with pytest.raises(ValueError, match="shape"):
+        ProgressSnapshot.from_payload(payload)
+
+
+def test_legacy_counter_wire_is_rejected() -> None:
+    payload = RuntimeExecutionCounters().to_payload()
+    del payload["length_continuations"]
+    payload["length_continuation_used"] = True
+    with pytest.raises(RuntimeOperationTransitionError, match="counters"):
+        RuntimeExecutionCounters.from_payload(payload)
 
 
 def test_report_record_wire_remains_a_plain_json_object() -> None:

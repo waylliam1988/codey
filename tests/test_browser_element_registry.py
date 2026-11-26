@@ -13,7 +13,7 @@ from codey.types.json_value import JsonObject, require_json_string
 from tests.test_browser_context_delivery import URL, elements, install
 from tests.test_browser_context_delivery import production_browser as production_browser
 
-DOCUMENT: JsonObject = {"target_id": "page", "loader_id": "document", "url": URL}
+DOCUMENT: JsonObject = {"frame_id": "main", "target_id": "page", "loader_id": "document", "url": URL}
 
 
 def test_registry_reuses_only_the_same_document_node_and_semantics() -> None:

@@ -15,6 +15,7 @@ from codey.knowledge.model import canonical_json
 from codey.operations import kernel_actions as wiring
 from codey.operations import kernel_events, kernel_prompt
 from codey.operations.kernel import kernel_protocol
+from codey.operations.kernel.decision_codec import KERNEL_DECISION_SCHEMA_VERSION, validate_decision
 from codey.operations.kernel.kernel_protocol import ReceivedProviderTurn
 from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.kernel_capabilities import KernelCapabilityView
@@ -94,9 +95,6 @@ class KernelContext:
     def __init__(self, session: TaskSession, request: KernelRunRequest) -> None:
         self.session, self.request = session, request
         self.transport, self.execution, self.observation = request.transport, request.execution, request.observation
-        # Compatibility callers replace the observation sink during restart;
-        # production builders place it in execution. Prefer an explicitly
-        # supplied observation replacement when both are present.
         admitted_sink: KernelEffectSink | None = self.execution.intent_sink
         if admitted_sink is None:
             raise ValueError("kernel execution requires an admitted durable operation and managed output storage")
@@ -243,11 +241,12 @@ class KernelContext:
             text, ok, code = payload["model_text"], payload["ok"], payload["exit_code"]
         from codey.runtime.core.execution_receipt import ExecutionReceipt
 
-        execution = ExecutionReceipt.from_payload(payload["execution"]) if payload is not None else None
+        execution = (ExecutionReceipt.from_facts(payload["execution"]) if payload is not None
+                     else ExecutionReceipt("cancelled", None, "",
+                         exit_code_scope="process" if call.name == "run" else "shell"))
         result = ToolResult(call, text, ok=ok,
             truncated=payload["truncated"] if payload is not None else False,
-            audit=execution.audit_facts() if execution is not None else {"exit_code": code},
-            canonical={"execution": execution.facts()} if execution is not None else {})
+            audit=execution.audit_facts(), canonical={"execution": execution.facts()})
         receipt = RuntimeEffectSettlement(effect_id=effect.intent.effect_id, effect_category="tool_call",
             session_id=self.sink.session_id, run_id=self.sink.run_id, status="ok" if ok else "error",
             error_code="" if ok else "cancelled" if payload is None else payload["error_code"] or "shell_error",
@@ -263,7 +262,7 @@ class KernelContext:
         if data is not None and (not state.work_ref or self.decision(state) != data):
             ref = self.sink.managed_outputs.write_json_artifact(
                 session_id=self.sink.session_id, run_id=self.sink.run_id,
-                payload={"schema_version": 2, "kind": "kernel_decision", "data": data})
+                payload={"schema_version": KERNEL_DECISION_SCHEMA_VERSION, "kind": "kernel_decision", "data": data})
             artifact = self.sink.managed_outputs.json_artifact_record(ref, owner_task_id=self.sink.run_id, owner_effect_id=None,
                                                                     metadata={"kind": "kernel_decision"})
         self.sink.mutations.advance_execution(self.sink.session_id, self.sink.run_id, expected=state,
@@ -281,12 +280,9 @@ class KernelContext:
         raw_envelope: object = self.sink.managed_outputs.read_json_artifact(dict[str, object](raw))
         envelope = decode_json_object(raw_envelope)
         if (not isinstance(envelope, dict) or set(envelope) != {"schema_version", "kind", "data"}
-                or type(envelope["schema_version"]) is not int or envelope["schema_version"] not in (1, 2)
                 or envelope["kind"] != "kernel_decision"
                 or not isinstance(envelope["data"], dict)):
             raise RecoveryFailed("invalid kernel decision")
-        from codey.operations.kernel.decision_codec import validate_decision
-
         try:
             decision: KernelDecision = validate_decision(
                 envelope["data"], schema_version=envelope["schema_version"])
@@ -610,7 +606,6 @@ class KernelContext:
             require_all=not self.attempt_gate_bound, admit_hints=self.transport.admit_hints)
         if not self.attempt_gate_bound:
             record_outbound(self.observation.trace_recorder, prompt, admission=admission)
-        progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)
         task = str(self.transport.user_task or self.session.task_text or "").strip()
         task_span = (TaskPromptSpan.for_task(self.sink.run_id, task, retry=False)
                      if self.request_scoped_context and self.capabilities.request_scoped_tool_context else None)
@@ -622,7 +617,6 @@ class KernelContext:
                 research_scope=snapshot.research.scope, tool_names=snapshot.tool_names,
                 provider=self.provider)) if part)
         self.freeze(state, snapshot, turn=turn, prompt=prompt, handoff=handoff,
-                    counters=replace(state.counters, progress=progress.snapshot()),
                     coding_context_prepared=True, initial_source_batch=prefetched is not None, task_span=task_span)
 
     def prefetch_required_sources(self, snapshot: TurnSnapshot) -> bool:
@@ -806,7 +800,7 @@ class KernelContext:
             raise RecoveryFailed("progress observation requires operation state")
         self.session.turn = state.turn
         previous = state.counters.progress
-        progress = KernelProgress(self.transport.stagnant_turns, snapshot=previous)
+        progress = KernelProgress(snapshot=previous)
         facts, cycle = self._project_check_observations(results)
         progress.observe(results, self.session, batch_id=action.delivery_batch_id,
                          check_facts=facts, check_cycle=cycle.key if cycle is not None else "")
@@ -877,7 +871,7 @@ class KernelContext:
                 and submitted_answer(self.session) is not None):
             self.advance(state, operation_payload.LEAF_COMPLETION_PENDING)
             return
-        progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)
+        progress = KernelProgress(snapshot=state.counters.progress)
         cancelled = self.cancelled()
         if cancelled or turn >= self.session.max_turns or progress.stopped:
             reason = "stopped" if cancelled else "max_turns" if turn >= self.session.max_turns else "no_progress"

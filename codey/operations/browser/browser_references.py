@@ -4,8 +4,9 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Literal, TypeAlias
+from typing import TYPE_CHECKING
 
+from codey.automation.browser_document import document_identity
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters
 from codey.types.json_value import (
@@ -21,7 +22,7 @@ from codey.types.json_value import (
 if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserToolOutput
 
-ControlPresentationVersion: TypeAlias = Literal[1, 2, 3, 4]
+CONTROL_PRESENTATION_VERSION = 4
 
 
 def _label(value: str) -> str:
@@ -48,10 +49,9 @@ class BrowserReferences:
     document_json: str
     generation: int
     controls: tuple[ObservedControl, ...]
-    presentation_version: ControlPresentationVersion = 4
 
     def __post_init__(self) -> None:
-        if (not self.receipt_ref or self.generation < 0 or not parse_json_object(self.document_json)
+        if (not self.receipt_ref or self.generation < 0 or document_identity(parse_json_object(self.document_json)) is None
                 or any(not row.ref or not row.role for row in self.controls)
                 or len({row.ref for row in self.controls}) != len(self.controls)):
             raise ValueError("Invalid frozen browser control identity.")
@@ -99,24 +99,21 @@ class BrowserReferences:
         for row in self.controls:
             if row.disabled:
                 continue
-            if self.presentation_version >= 3:
-                if action == "browser_fill" and row.role not in {"textbox", "combobox", "searchbox"}:
-                    continue
-                if action == "browser_click" and row.role in {"textbox", "searchbox", "file_input"}:
-                    continue
-                if self.presentation_version >= 4:
-                    if action == "browser_upload" and row.role != "file_input":
-                        continue
-                    if action == "browser_select" and row.role not in {"combobox", "listbox"}:
-                        continue
-                    if action == "browser_check" and row.role not in {"checkbox", "radio", "switch"}:
-                        continue
+            if action == "browser_fill" and row.role not in {"textbox", "combobox", "searchbox"}:
+                continue
+            if action == "browser_click" and row.role in {"textbox", "searchbox", "file_input"}:
+                continue
+            if action == "browser_upload" and row.role != "file_input":
+                continue
+            if action == "browser_select" and row.role not in {"combobox", "listbox"}:
+                continue
+            if action == "browser_check" and row.role not in {"checkbox", "radio", "switch"}:
+                continue
             base: JsonObject = {"role": row.role, "name": row.name}
             for selector in (base, {**base, "context": row.context}):
                 if len(self._matches(selector)) == 1 and selector not in choices:
                     choices.append(selector)
-                    if self.presentation_version >= 3:
-                        break
+                    break
         return choices
 
     def resolve(self, selector: JsonValue) -> str:
@@ -133,21 +130,16 @@ class BrowserReferences:
 
     def payload(self) -> JsonObject:
         return {"receipt_ref": self.receipt_ref, "document_json": self.document_json, "generation": self.generation,
-                "controls": [row.payload() for row in self.controls], "presentation_version": self.presentation_version}
+                "controls": [row.payload() for row in self.controls], "presentation_version": CONTROL_PRESENTATION_VERSION}
 
     @classmethod
     def restore(cls, raw: JsonValue) -> BrowserReferences:
         row = decode_json_object(raw)
-        expected = {"receipt_ref", "document_json", "generation", "controls"}
-        if set(row) not in (expected, expected | {"presentation_version"}) or not isinstance(row["controls"], list):
+        expected = {"receipt_ref", "document_json", "generation", "controls", "presentation_version"}
+        if set(row) != expected or not isinstance(row["controls"], list):
             raise ValueError("Invalid frozen browser control binding.")
-        raw_version = require_json_integer(row.get("presentation_version", 2), "control presentation version")
-        presentation_version: ControlPresentationVersion
-        match raw_version:
-            case 1 | 2 | 3 | 4:
-                presentation_version = raw_version
-            case _:
-                raise ValueError("Unsupported frozen browser control presentation version.")
+        if require_json_integer(row["presentation_version"], "control presentation version") != CONTROL_PRESENTATION_VERSION:
+            raise ValueError("Unsupported frozen browser control presentation version.")
         controls: list[ObservedControl] = []
         for raw_control in row["controls"]:
             control = decode_json_object(raw_control)
@@ -160,44 +152,25 @@ class BrowserReferences:
                 require_json_boolean(control["disabled"], "disabled")))
         return cls(require_json_string(row["receipt_ref"], "receipt_ref"),
                    require_json_string(row["document_json"], "document_json"),
-                   require_json_integer(row["generation"], "generation"), tuple(controls), presentation_version)
+                   require_json_integer(row["generation"], "generation"), tuple(controls))
 
 
 def reference_spec(spec: ToolSpec, references: BrowserReferences | None) -> ToolSpec:
     """The same ref union serves the outer interface and CodeMode catalog."""
-    if (references is None or spec.executor != "browser" or "ref" not in dict(spec.parameters)
-            or references.presentation_version < 4 and spec.name not in {"browser_fill", "browser_click"}):
+    if references is None or spec.executor != "browser" or "ref" not in dict(spec.parameters):
         return spec
     choices = references.choices(spec.name)
     selector: JsonObject = {"type": "object", "properties": {
         "role": {"type": "string", "minLength": 1}, "name": {"type": "string"}, "context": {"type": "string"}},
         "required": ["role", "name"], "additionalProperties": False}
-    if references.presentation_version == 1:
-        # Decode the original presentation through the same frozen identity and
-        # execution contract. This does not install an older executor.
-        return freeze_spec_parameters(replace(spec, parameters=tuple(
-            (key, {"anyOf": [schema, selector]}) if key == "ref" else (key, schema) for key, schema in spec.parameters),
-            description=spec.description + " Choose ref as the observed string or {role,name,context?} from the current "
-            "frozen snapshot. Context is its observed label. Descriptions must match exactly one control; "
-            "for duplicate context labels use the actual string ref."))
     selector["enum"] = choices
     example = " Example ref argument: " + json.dumps(choices[0], ensure_ascii=False) if choices else ""
-    if references.presentation_version >= 3:
-        return freeze_spec_parameters(replace(spec, parameters=tuple(
-            (key, {"anyOf": [selector, schema]} if choices else schema) if key == "ref" else (key, schema)
-            for key, schema in spec.parameters), json_examples=(),
-            description=spec.description + " Select a complete observed role/name/context choice. "
-            "A raw ref is available for controls observed inside CodeMode. "
-            "Copy only ref, never a display row. Reobserve when the target is absent." + example))
     return freeze_spec_parameters(replace(spec, parameters=tuple(
         (key, {"anyOf": [selector, schema]} if choices else schema) if key == "ref" else (key, schema)
-        for key, schema in spec.parameters),
-        json_examples=(),
-        description=spec.description + " Prefer a complete structured ref choice from the current frozen observation. "
-        "Each offered combination selects exactly one enabled control. A string ref remains available for "
-        "observed controls, including fresh refs acquired within a program or duplicate context labels. "
-        "Copy only the ref field, never a whole display row. If the target is absent or controls are truncated, "
-        "observe again or expand browser_snapshot before choosing; execution still verifies the original node." + example))
+        for key, schema in spec.parameters), json_examples=(),
+        description=spec.description + " Select a complete observed role/name/context choice. "
+        "A raw ref is available for controls observed inside CodeMode. "
+        "Copy only ref, never a display row. Reobserve when the target is absent." + example))
 
 
 def reference_failure(output: BrowserToolOutput, results: Mapping[str, ToolResult]) -> BrowserToolOutput:

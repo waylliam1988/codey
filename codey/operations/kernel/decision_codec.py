@@ -11,27 +11,27 @@ from codey.operations.kernel_contracts import (
     RetryDecision,
     result_from_payload,
 )
-from codey.runtime.core.operation_payload import RuntimeExecutionCounters
 from codey.types.json_value import decode_json_object, require_json_integer, require_json_string
 
 if TYPE_CHECKING:
     from codey.operations.task_session import TaskSession
 
 
-def validate_decision(payload: object, *, schema_version: object = 2) -> KernelDecision:
+KERNEL_DECISION_SCHEMA_VERSION = 2
+
+
+def validate_decision(payload: object, *, schema_version: object = KERNEL_DECISION_SCHEMA_VERSION) -> KernelDecision:
     """Decode committed facts to a finite decision without whole-object casts."""
-    if type(schema_version) is not int or schema_version not in (1, 2):
+    if type(schema_version) is not int or schema_version != KERNEL_DECISION_SCHEMA_VERSION:
         raise ValueError("unsupported control decision schema")
     row = decode_json_object(payload)
     purpose = row.get("purpose")
     if purpose == "retry":
-        required = {"purpose", "prompt", "error"} | ({"counters"} if schema_version == 1 else set())
+        required = {"purpose", "prompt", "error"}
         if set(row) not in (required, required | {"error_source", "error_type"}):
             raise ValueError("invalid retry decision")
         retry = RetryDecision(purpose="retry", prompt=require_json_string(row["prompt"], "prompt"),
                               error=require_json_string(row["error"], "error"))
-        if schema_version == 1:
-            retry["counters"] = RuntimeExecutionCounters.from_payload(row["counters"]).to_payload()
         if "error_source" in row:
             retry["error_source"] = require_json_string(row["error_source"], "error_source")
             retry["error_type"] = require_json_string(row["error_type"], "error_type")

@@ -78,7 +78,7 @@ def test_different_page_without_404_receipts_does_not_trigger_navigation_recover
     snapshot = build_turn_snapshot(session)
     browser = BrowserSession()
     def document() -> JsonObject:
-        return {"url": "https://example.com/wrong_record", "loader_id": "wrong"}
+        return {"target_id": "tab", "frame_id": "main", "url": "https://example.com/wrong_record", "loader_id": "wrong"}
     monkeypatch.setattr(browser, "document_identity", document)
     try:
         offered, hint = task_handoff(session, snapshot, CompletionContext(), browser)

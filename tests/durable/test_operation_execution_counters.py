@@ -33,7 +33,7 @@ from tests.durable.test_provider_response_receipts import runtime as receipt_run
 
 
 class ReceiptRuntime(Protocol):
-    def __call__(self, root: Path, /, *, sqlite: bool = False) -> tuple[
+    def __call__(self, root: Path, /, *, sqlite: bool = False, progress_limit: int | None = None) -> tuple[
             DurableSession, RuntimeMutationLine, ManagedOutputStore, KernelEffectSink]: ...
 
 
@@ -65,7 +65,7 @@ def _kernel(path: Path, *, mode: str, reopen: bool = False, crash_at: int = 0) -
     if reopen:
         durable, line, sink = _reopen(path)
     else:
-        durable, line, _, sink = runtime(path, sqlite=True)
+        durable, line, _, sink = runtime(path, sqlite=True, progress_limit=2)
     calls: list[str] = []
 
     class Provider:
@@ -106,9 +106,9 @@ def _kernel(path: Path, *, mode: str, reopen: bool = False, crash_at: int = 0) -
     try:
         result = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control", "project.read"})), max_turns=1 if mode == "closing" else 4),
             request=KernelRunRequest(transport=KernelTransportDeps(provider=adapt_provider(Provider()),
-                provider_id="local", run_id="r", stagnant_turns=2), execution=KernelExecutionDeps(
+                provider_id="local", run_id="r", stagnant_turns=2), execution=KernelExecutionDeps(intent_sink=sink,
                     executors={"read_file": lambda call: ToolResult(call, "same", ok=True)}),
-                observation=KernelObservationDeps(intent_sink=sink, on_boundary=durable_generation_boundary_callback(
+                observation=KernelObservationDeps(on_boundary=durable_generation_boundary_callback(
                     durable=durable, session_id="s", task_id="r", sink=sink))))
         return result, calls, sink.counters()
     finally:

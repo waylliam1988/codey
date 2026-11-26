@@ -759,7 +759,7 @@ def test_open_url_full_text_receipt(tmp_path: Path) -> None:
         ok=True,
     )
     assert result.truncated is True
-    managed = result.audit["managed_output"]
+    managed = result.canonical["managed_output"]
     assert managed["original_bytes"] == len(full.encode("utf-8"))
     # The model sees the window, the store keeps the full text.
     assert len(result.model_text.encode("utf-8")) < len(full.encode("utf-8"))

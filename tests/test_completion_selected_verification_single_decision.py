@@ -242,7 +242,7 @@ def test_long_verification_identity_is_never_a_display_clip(tmp_path, field):
 
 
 def test_long_commands_do_not_merge_failed_and_successful_observations(tmp_path):
-    from codey.operations.project_completion_checks import _latest_observations_by_key
+    from codey.runtime.core.verification_observation import latest_verification_observations, verification_observations
 
     session = make_session(tmp_path)
     prefix = "python -m pytest " + " " * 550
@@ -251,7 +251,7 @@ def test_long_commands_do_not_merge_failed_and_successful_observations(tmp_path)
         session.record_verification(command, 1, passed, exit_code=0 if passed else 1,
                                     workspace_revision=session.workspace_revision,
                                     workspace_fingerprint=session.workspace_fingerprint)
-    selected = _latest_observations_by_key(session.verifications, 1)
+    selected = latest_verification_observations(verification_observations(session.verifications), 1)
     assert set(selected) == {(first.strip(), "."), (second.strip(), ".")}
     assert selected[(first.strip(), ".")].outcome.succeeded is False
     assert selected[(second.strip(), ".")].outcome.succeeded is True

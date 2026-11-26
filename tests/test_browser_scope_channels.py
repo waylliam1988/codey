@@ -168,16 +168,16 @@ def test_range_mapping_is_unique_and_verified_in_the_source_receipt(text: str, t
         source_observation({**observation, 'source': raw_source})
 
 
-def test_pre_scope_source_receipts_remain_readable() -> None:
+def test_pre_scope_source_receipts_are_rejected() -> None:
     document = SourceDocument.html(requested_url=URL, final_url=URL, title='Old receipt', text='Original body.')
     observation = document_snapshot(document)
     source = decode_json_object(observation['source'])
     del source['read_scope']
     legacy: JsonObject = {**observation, 'source': source}
-    assert snapshot_document(legacy).read_scope is None
-    restored = ResearchLedger()
-    restore_ledger_observation(restored, legacy)
-    assert restored.source_text_for_url(URL) == document.text
+    with pytest.raises(ValueError, match="OpenedSource observation fields"):
+        snapshot_document(legacy)
+    with pytest.raises(ValueError, match="OpenedSource observation fields"):
+        restore_ledger_observation(ResearchLedger(), legacy)
 
 
 def test_initial_extension_continuation_and_recovery_use_the_actual_source_version() -> None:

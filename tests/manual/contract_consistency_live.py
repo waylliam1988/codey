@@ -129,12 +129,12 @@ def probe(directory: Path, *, base_url: str, model: str, protocol: str, case: st
             result = run_task_kernel(session, request=KernelRunRequest(
                 transport=KernelTransportDeps(provider=provider, run_id="r",
                     effect_scope="task", provider_id="local", user_task=task, stop_flag=stop),
-                execution=KernelExecutionDeps(
+                execution=KernelExecutionDeps(intent_sink=sink,
                     project_path=project,
                     workspace_revision_store=revisions,
                     permission_profile="coding_writer" if writing else "planning_readonly",
                 ),
-                observation=KernelObservationDeps(intent_sink=sink, on_event=observe,
+                observation=KernelObservationDeps(on_event=observe,
                     on_boundary=durable_generation_boundary_callback(durable=sink.durable,
                         session_id=sink.session_id, task_id=sink.run_id, sink=sink)),
             ))

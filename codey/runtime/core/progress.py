@@ -13,6 +13,8 @@ from codey.types.json_value import (
 
 MAX_INFORMATION_KEYS = 256
 MAX_PROGRESS_ATTEMPTS = 16
+PROGRESS_SCHEMA_VERSION = 4
+DEFAULT_PROGRESS_LIMIT = 4
 
 
 @dataclass(frozen=True)
@@ -37,12 +39,11 @@ class ToolAttemptRecord:
 
 @dataclass(frozen=True)
 class ProgressSnapshot:
-    limit: int = 4
+    limit: int = DEFAULT_PROGRESS_LIMIT
     seen: tuple[tuple[str, str, str], ...] = ()
     attempts: tuple[ToolAttemptRecord, ...] = ()
     idle: int = 0
     last_batch_id: str = ""
-    schema_version: int = 1
     repair_failure_key: str = ""
     repair_rejections: int = 0
     warned_check_cycle: str = ""
@@ -54,9 +55,6 @@ class ProgressSnapshot:
         limit = require_json_integer(self.limit, "progress limit")
         idle = require_json_integer(self.idle, "progress idle")
         batch_id = require_json_string(self.last_batch_id, "last_batch_id")
-        version = require_json_integer(self.schema_version, "progress snapshot version")
-        if version not in (1, 2, 3, 4):
-            raise ValueError("invalid progress snapshot version")
         if limit < 1 or idle < 0 or len(batch_id) > 240:
             raise ValueError("invalid progress counts or batch identity")
         failure_key = require_json_string(self.repair_failure_key, "repair_failure_key")
@@ -71,12 +69,6 @@ class ProgressSnapshot:
                 or recovery_turn < 0 or recovery_turn and not batch_id
                 or repeated and (not warning_batch or warning_batch == batch_id)):
             raise ValueError("invalid project check cycle observation")
-        if version < 2 and (failure_key or rejections):
-            raise ValueError("repair observations require progress schema v2")
-        if version < 3 and (check_cycle or warning_batch or repeated):
-            raise ValueError("project check observations require progress schema v3")
-        if version < 4 and recovery_turn:
-            raise ValueError("recovery progress requires progress schema v4")
         if (not isinstance(self.seen, tuple) or len(self.seen) > MAX_INFORMATION_KEYS
                 or not isinstance(self.attempts, tuple) or len(self.attempts) > MAX_PROGRESS_ATTEMPTS):
             raise ValueError("progress snapshot exceeds its bounded history")
@@ -91,43 +83,41 @@ class ProgressSnapshot:
             raise ValueError("invalid progress attempt")
 
     def to_payload(self) -> dict[str, object]:
-        payload: dict[str, object] = {"limit": self.limit, "seen": [list(key) for key in self.seen],
-                "attempts": [asdict(record) for record in self.attempts],
-                "idle": self.idle, "last_batch_id": self.last_batch_id}
-        if self.schema_version >= 2:
-            payload.update(schema_version=self.schema_version, repair_failure_key=self.repair_failure_key,
-                           repair_rejections=self.repair_rejections)
-        if self.schema_version >= 3:
-            payload.update(warned_check_cycle=self.warned_check_cycle, warning_batch_id=self.warning_batch_id,
-                           check_cycle_repeated=self.check_cycle_repeated)
-        if self.schema_version == 4:
-            payload["recovery_progress_turn"] = self.recovery_progress_turn
-        return payload
+        return {
+            "schema_version": PROGRESS_SCHEMA_VERSION,
+            "limit": self.limit,
+            "seen": [list(key) for key in self.seen],
+            "attempts": [asdict(record) for record in self.attempts],
+            "idle": self.idle,
+            "last_batch_id": self.last_batch_id,
+            "repair_failure_key": self.repair_failure_key,
+            "repair_rejections": self.repair_rejections,
+            "warned_check_cycle": self.warned_check_cycle,
+            "warning_batch_id": self.warning_batch_id,
+            "check_cycle_repeated": self.check_cycle_repeated,
+            "recovery_progress_turn": self.recovery_progress_turn,
+        }
 
     @classmethod
     def from_payload(cls, value: object) -> ProgressSnapshot:
         row = decode_json_object(value)
-        version = require_json_integer(row.get("schema_version", 1), "progress snapshot version")
-        fields = {"limit", "seen", "attempts", "idle", "last_batch_id"}
-        if version not in (1, 2, 3, 4):
+        if require_json_integer(row.get("schema_version"), "progress snapshot version") != PROGRESS_SCHEMA_VERSION:
             raise ValueError("invalid progress snapshot version")
-        if version >= 2:
-            fields.update(("schema_version", "repair_failure_key", "repair_rejections"))
-        if version >= 3:
-            fields.update(("warned_check_cycle", "warning_batch_id", "check_cycle_repeated"))
-        if version == 4:
-            fields.add("recovery_progress_turn")
-        if set(row) != fields:
+        if set(row) != {
+            "schema_version", "limit", "seen", "attempts", "idle", "last_batch_id",
+            "repair_failure_key", "repair_rejections", "warned_check_cycle", "warning_batch_id",
+            "check_cycle_repeated", "recovery_progress_turn",
+        }:
             raise ValueError("invalid progress snapshot shape")
         limit = require_json_integer(row["limit"], "progress limit")
         idle = require_json_integer(row["idle"], "progress idle")
         batch_id = require_json_string(row["last_batch_id"], "last_batch_id")
-        failure_key = require_json_string(row.get("repair_failure_key", ""), "repair_failure_key")
-        rejections = require_json_integer(row.get("repair_rejections", 0), "repair_rejections")
-        check_cycle = require_json_string(row.get("warned_check_cycle", ""), "warned_check_cycle")
-        warning_batch = require_json_string(row.get("warning_batch_id", ""), "warning_batch_id")
-        repeated = require_json_boolean(row.get("check_cycle_repeated", False), "check_cycle_repeated")
-        recovery_turn = require_json_integer(row.get("recovery_progress_turn", 0), "recovery progress turn")
+        failure_key = require_json_string(row["repair_failure_key"], "repair_failure_key")
+        rejections = require_json_integer(row["repair_rejections"], "repair_rejections")
+        check_cycle = require_json_string(row["warned_check_cycle"], "warned_check_cycle")
+        warning_batch = require_json_string(row["warning_batch_id"], "warning_batch_id")
+        repeated = require_json_boolean(row["check_cycle_repeated"], "check_cycle_repeated")
+        recovery_turn = require_json_integer(row["recovery_progress_turn"], "recovery progress turn")
         raw_seen, raw_attempts = row["seen"], row["attempts"]
         if (not isinstance(raw_seen, list) or len(raw_seen) > MAX_INFORMATION_KEYS
                 or not isinstance(raw_attempts, list) or len(raw_attempts) > MAX_PROGRESS_ATTEMPTS):
@@ -152,5 +142,5 @@ class ProgressSnapshot:
                 require_json_boolean(record["changed"], "changed"),
                 turn, edit_epoch,
             ))
-        return cls(limit, tuple(seen), tuple(attempts), idle, batch_id, version, failure_key, rejections,
+        return cls(limit, tuple(seen), tuple(attempts), idle, batch_id, failure_key, rejections,
                    check_cycle, warning_batch, repeated, recovery_turn)

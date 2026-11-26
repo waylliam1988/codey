@@ -144,10 +144,10 @@ def test_scalar_metadata_binding_requires_the_current_document(
         answer_pointer="/field", result_pointer=pointer))
     assert rule is not None
     session = TaskSession(TaskPolicy(GRANTS))
-    document: JsonObject = {"loader_id": "first", "url": URL}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "loader_id": "first", "url": URL}
     remember(session, "metadata", ToolCall(tool, args, "metadata"), value, document)
     assert rule.observe(session.executed, results=session._memory_results, browser_document=document).evaluation.passed
-    documents: tuple[JsonObject | None, ...] = (None, {"loader_id": "reloaded", "url": URL})
+    documents: tuple[JsonObject | None, ...] = (None, {"target_id": "tab", "frame_id": "main", "loader_id": "reloaded", "url": URL})
     for current in documents:
         observation = rule.observe(session.executed, results=session._memory_results, browser_document=current)
         assert observation.evaluation.reason_code == "observation_selector_unavailable"
@@ -158,7 +158,7 @@ def test_metadata_conflict_requires_recovery_instead_of_another_execution() -> N
     rule = parse_tool_success_check(require_tool_success("browser_eval", arguments={"code": "window.token"},
         answer_pointer="/token", result_pointer="/value"))
     assert rule is not None
-    document: JsonObject = {"loader_id": "current", "url": URL}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "loader_id": "current", "url": URL}
     for identity in ("first", "different"):
         remember(session, identity, ToolCall("browser_eval", {"code": "window.token"}, identity),
                  {"value": identity, "truncated": False}, document)
@@ -169,7 +169,7 @@ def test_metadata_conflict_requires_recovery_instead_of_another_execution() -> N
 @pytest.mark.parametrize("state", ["fresh", "generation", "document", "truncated", "multiple"])
 def test_download_candidates_require_current_complete_snapshot(state: str) -> None:
     session = TaskSession(TaskPolicy(GRANTS, required_checks=(require_tool_success("browser_download"),)), task_kind="chat")
-    document: JsonObject = {"loader_id": "current", "url": URL}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "loader_id": "current", "url": URL}
     value: JsonObject = {"generation": 2, "complete": state != "truncated", "elements_truncated": False,
         "elements": [{"name": "First", "ref": "real-first", "role": "link", "disabled": False}]}
     if state == "multiple":
@@ -177,7 +177,7 @@ def test_download_candidates_require_current_complete_snapshot(state: str) -> No
         assert isinstance(elements, list)
         elements.append({"name": "Second", "ref": "real-second", "role": "button", "disabled": False})
     remember(session, "snapshot", ToolCall("browser_snapshot", {}, "snapshot"), value,
-             {"loader_id": "old", "url": URL} if state == "document" else document)
+             {"target_id": "tab", "frame_id": "main", "loader_id": "old", "url": URL} if state == "document" else document)
     _, hint = browser_task_handoff(session, build_turn_snapshot(session), CompletionContext(browser_document=document),
                                   3 if state == "generation" else 2)
     if state in {"generation", "document", "truncated"}:
@@ -242,7 +242,7 @@ def test_text_metadata_pending_uses_the_same_reason_and_exact_expression() -> No
         "用 browser_eval 读取 window.token，用 browser_tab_list 获取当前标签页 URL；报告 token 和 URL。"))
     scope = report_scope(session)
     assert scope is not None
-    document: JsonObject = {"url": URL, "loader_id": "current"}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "url": URL, "loader_id": "current"}
     pending = observe_metadata(scope, session.executed, session._memory_results, document)
     assert isinstance(pending, MetadataPending) and pending.call == ToolCall("browser_tab_list", {})
     remember(session, "tabs", ToolCall("browser_tab_list", {}, "tabs"), {"page_url": URL}, document)

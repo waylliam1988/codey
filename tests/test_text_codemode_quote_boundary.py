@@ -91,12 +91,12 @@ def test_original_loop_repairs_recorded_escape_failure_then_searches_exact_quote
     result = run_task_kernel(runtime.state, request=KernelRunRequest(
         transport=KernelTransportDeps(provider=provider, run_id="r",
             provider_id="local", effect_scope="task", user_task="Search exact quoted text and return JSON."),
-        execution=KernelExecutionDeps(
+        execution=KernelExecutionDeps(intent_sink=runtime.sink,
             project_path=runtime.project,
             workspace_revision_store=runtime.revisions,
             permission_profile="planning_readonly",
         ),
-        observation=KernelObservationDeps(intent_sink=runtime.sink),
+        observation=KernelObservationDeps(),
     ))
     assert result.completed and json.loads(result.summary) == json.loads(correct) and provider.step == 3
     leaf = next(row for row in runtime.state._memory_results.values() if row.call.name == "grep")

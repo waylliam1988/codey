@@ -222,9 +222,8 @@ def test_new_claim_checks_only_cover_the_matching_part_and_cited_version() -> No
                 "Revision 1 supports high flow [e2].\n"
                 "This conclusion applies to all previous versions.")
     submission = submit_answer(scope, {"state": "answered", "markdown": markdown})
-    legacy = check_report_evidence(submission, passages)
-    report = check_report_evidence(submission, passages, claim_check_version=CLAIM_CHECK_VERSION)
-    assert legacy == {key: report[key] for key in legacy}
+    report = check_report_evidence(submission, passages)
+    assert report["claim_check_version"] == CLAIM_CHECK_VERSION
     checks = report["claim_checks"]
     assert isinstance(checks, list)
     rows = [decode_json_object(check) for check in checks]
@@ -261,7 +260,7 @@ def test_review_flags_only_aligned_quantitative_conflicts(original: str, claim: 
     passages = {passage.ref: passage}
     scope = AnswerScope(digest("task"), (("e1", passage.ref),), ("attempt",))
     submission = submit_answer(scope, {"state": "answered", "markdown": f"{claim} [e1]."})
-    report = check_report_evidence(submission, passages, claim_check_version=CLAIM_CHECK_VERSION)
+    report = check_report_evidence(submission, passages)
     issues = review_submission_issues(submission, report, passages)
     if problem:
         issue, = issues

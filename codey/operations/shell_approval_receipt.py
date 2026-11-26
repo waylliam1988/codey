@@ -62,7 +62,7 @@ def resolve_shell_approval(durable: ApprovalReader, outputs: ManagedOutputStore,
     result = decode_json_object(outputs.read_json_artifact({"session_id": record.conversation_id, "run_id": record.task_id,
         "handle": result_ref, "sha256": result_digest, "schema_version": 1}))
     ok = require_json_boolean(result.get("ok"), "ok") and str(record.status) == "execution_settled"
-    receipt = ExecutionReceipt.from_payload(result).bounded()
+    receipt = ExecutionReceipt.from_shell_result(result).bounded()
     return {"call_id": command["call_id"], "tool_name": command["tool_name"], "tool_args": command["tool_args"],
             "command": command["command"], "cwd": command["cwd"], "model_text": receipt.render(),
             "ok": ok, "exit_code": receipt.exit_code, "error_code": receipt.status,

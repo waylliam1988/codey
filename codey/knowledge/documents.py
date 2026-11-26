@@ -41,20 +41,6 @@ class KnowledgeDocuments:
             ):
                 conn.execute(sql)
 
-    def initialized(self) -> bool:
-        marker: object = self.index._read_conn().execute(
-            "SELECT 1 FROM knowledge_meta WHERE key='documents_initialized'"
-        ).fetchone()
-        return marker is not None
-
-    def initialize(self, notes: list[tuple[KnowledgeNote, str]]) -> None:
-        with self.index.transaction() as conn:
-            if self.initialized():
-                return
-            for note, path in notes:
-                self.write(note, path, reason="legacy_import")
-            conn.execute("INSERT INTO knowledge_meta VALUES('documents_initialized','1')")
-
     def answer_reference(self, identity: str, revision: int) -> tuple[str, int, str] | None:
         rows: list[_DocumentRow] = self.index._read_conn().execute(
             "SELECT v.id, v.revision, v.payload FROM note_knowledge_refs AS r "

@@ -16,22 +16,14 @@ TASK_PHASE_TRANSITIONS: Mapping[str, frozenset[str]] = MappingProxyType({
 })
 
 TASK_CHECKPOINT_SCHEMA_VERSION = 2
-_V1_EXECUTION_PHASES = frozenset({
-    "provider_prepared", "assistant_intent_committed", "assistant_response_pending",
-    "assistant_response_unknown", "tool_intent_committed", "tool_effect_running",
-    "tool_outcome_ready", "effect_unknown", "verification_pending",
-})
 
 
-def migrate_checkpoint_phase(phase: str, schema_version: int) -> tuple[str, int]:
-    """Versioned format migration; operation/effects retain execution facts."""
-    if type(schema_version) is not int or schema_version not in {1, TASK_CHECKPOINT_SCHEMA_VERSION}:
+def require_checkpoint_version(schema_version: object) -> int:
+    if type(schema_version) is not int or schema_version != TASK_CHECKPOINT_SCHEMA_VERSION:
         raise ValueError(f"unsupported task checkpoint schema: {schema_version!r}")
-    if schema_version == 1 and phase in _V1_EXECUTION_PHASES:
-        return "running", TASK_CHECKPOINT_SCHEMA_VERSION
-    if phase not in TASK_PHASE_TRANSITIONS:
-        raise ValueError(f"unknown task phase: {phase}")
-    return phase, TASK_CHECKPOINT_SCHEMA_VERSION
+    return TASK_CHECKPOINT_SCHEMA_VERSION
+
+
 FROZEN_TASK_STATE_KEYS = (
     "execution_kind",
     "tool_input",

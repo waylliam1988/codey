@@ -197,12 +197,12 @@ def test_bound_answer_is_assembled_without_model_repair_or_repeating_tools(runti
     result = run_task_kernel(runtime.state, request=KernelRunRequest(
         transport=KernelTransportDeps(provider=provider, run_id="r",
             provider_id="local", effect_scope="task", user_task="Read both files and report their first lines."),
-        execution=KernelExecutionDeps(
+        execution=KernelExecutionDeps(intent_sink=runtime.sink,
             project_path=runtime.project,
             workspace_revision_store=runtime.revisions,
             permission_profile="planning_readonly",
         ),
-        observation=KernelObservationDeps(intent_sink=runtime.sink),
+        observation=KernelObservationDeps(),
     ))
     assert result.completed and result.summary == correct
     assert provider.step == 2

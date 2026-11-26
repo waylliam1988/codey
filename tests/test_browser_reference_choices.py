@@ -64,8 +64,6 @@ def test_action_choices_are_compact_and_do_not_offer_clicking_the_input() -> Non
     assert len(refs.choices()) == len(refs.controls)
     assert all(isinstance(choice, dict) and choice["role"] == "textbox" for choice in refs.choices("browser_fill"))
     assert all(isinstance(choice, dict) and choice["role"] != "textbox" for choice in refs.choices("browser_click"))
-    legacy = replace(refs, presentation_version=2)
-    assert len(legacy.choices()) > len(refs.choices())
 
 
 @pytest.mark.parametrize("same_context", [False, True])

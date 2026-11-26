@@ -129,13 +129,12 @@ def test_native_delivery_records_effect_and_batch(tmp_path: Path) -> None:
                     user_task="read app",
                     context_text="",
                 ),
-                execution=KernelExecutionDeps(
+                execution=KernelExecutionDeps(intent_sink=sink,
                     executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
                     project_path=tmp_path,
                 ),
                 observation=KernelObservationDeps(
-                    intent_sink=sink,
-                ),
+                    ),
             ),
         )
     assert result.stop_reason == "done"
@@ -324,13 +323,12 @@ def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> Non
                     user_task="read app",
                     context_text="",
                 ),
-                execution=KernelExecutionDeps(
+                execution=KernelExecutionDeps(intent_sink=sink,
                     executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
                     project_path=tmp_path,
                 ),
                 observation=KernelObservationDeps(
-                    intent_sink=sink,
-                ),
+                    ),
             ),
         )
     assert not result.completed
@@ -364,8 +362,8 @@ def test_recovered_native_delivery_marks_delivered(tmp_path: Path) -> None:
 
     def request(provider):
         return KernelRunRequest(transport=KernelTransportDeps(provider=provider, provider_id="local", run_id="r"),
-            execution=KernelExecutionDeps(project_path=tmp_path, executors={"read_file": lambda call: ToolResult(call, "hello", ok=True)}),
-            observation=KernelObservationDeps(intent_sink=sink, on_boundary=durable_generation_boundary_callback(
+            execution=KernelExecutionDeps(intent_sink=sink, project_path=tmp_path, executors={"read_file": lambda call: ToolResult(call, "hello", ok=True)}),
+            observation=KernelObservationDeps(on_boundary=durable_generation_boundary_callback(
                 durable=durable, session_id="s", task_id="r", sink=sink)))
 
     def committed(*_args):

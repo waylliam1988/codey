@@ -171,13 +171,12 @@ def test_strict_ledger_overflow_does_not_retry_same_batch(tmp_path: Path) -> Non
                     user_task="read app",
                     context_text="",
                 ),
-                execution=KernelExecutionDeps(
+                execution=KernelExecutionDeps(intent_sink=sink,
                     executors={"read_file": lambda call: ToolResult(ok=True, call=call, model_text="hello")},
                     project_path=tmp_path,
                 ),
                 observation=KernelObservationDeps(
-                    intent_sink=sink,
-                ),
+                    ),
             ),
         )
     assert not result.completed

@@ -9,7 +9,6 @@ from typing import NotRequired, TypedDict
 from codey.utils.research_coverage import CoverageRow
 
 _BOUNDARY = re.compile(r"[\n,;!?\u3002\uff0c\uff1b\uff01\uff1f]+|\.(?=\s|$)")
-_LEGACY_SENTENCE_BOUNDARY = re.compile(r"[\n!?\u3002\uff01\uff1f]+|\.(?=\s|$)")
 _CLOSERS = r'''["'’”»）)\]】》」』}]*'''
 _SENTENCE_BOUNDARY = re.compile(r"(?:[\n!?\u3002\uff01\uff1f]+|\.(?=" + _CLOSERS + r"(?:\s|$)))" + _CLOSERS)
 # Full matches only: any substantive clause or unrecognized modifier keeps the
@@ -48,13 +47,11 @@ class ReportRequirement(TaskRequirement):
     constraints: ReportConstraints
 
 
-def text_units(text: str, *, sentences: bool = False, legacy_sentence_boundaries: bool = False) -> list[TextUnit]:
+def text_units(text: str, *, sentences: bool = False) -> list[TextUnit]:
     """Retain original offsets, punctuation and whitespace without semantic inference."""
     rows: list[TextUnit] = []
     start = 0
     boundary = _SENTENCE_BOUNDARY if sentences else _BOUNDARY
-    if sentences and legacy_sentence_boundaries:
-        boundary = _LEGACY_SENTENCE_BOUNDARY
     for end in [*(match.end() for match in boundary.finditer(text)), len(text)]:
         span = text[start:end]
         if span.strip():

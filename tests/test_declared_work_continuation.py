@@ -70,7 +70,7 @@ def declared_session(project: Path) -> tuple[TaskSession, CompletionContext]:
         task_text=f"Copy the declared fields from {URL} to ledger.data.",
         project=str(project), project_changes_required=True, verification_forbidden=True,
         required_source_urls=frozenset({URL}))
-    document: JsonObject = {"url": URL, "loader_id": "current"}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "url": URL, "loader_id": "current"}
     record(session, "browser_read", {}, document, body="Amount: 173.25 units.")
     (project / "ledger.data").write_text('{"balance":0,"keep":"00017"}\n', encoding="utf-8")
     return session, CompletionContext(project=str(project), browser_document=document)
@@ -97,7 +97,7 @@ def test_fixed_copy_uses_only_a_completely_read_query_region(tmp_path: Path, cov
     audit: JsonObject = {**decode_json_object(receipt.audit), "query_click": "settled-click",
         "query_region": {"text": region, "visible": True}}
     if coverage == "wrong_document":
-        audit["browser_document"] = {"url": URL, "loader_id": "other-document"}
+        audit["browser_document"] = {"target_id": "tab", "frame_id": "main", "url": URL, "loader_id": "other-document"}
     session._memory_results[ref] = replace(receipt, truncated=coverage == "truncated", audit=audit,
         canonical={**receipt.canonical, "read_passages": [{"ref": "scoped-passage", "start": start,
             "end": end - 1 if coverage == "partial" else end}]})
@@ -210,7 +210,7 @@ def test_binding_requires_complete_source_and_the_declared_edit_mode(tmp_path: P
         session._memory_results["receipt-0"] = ToolResult(result.call, result.model_text, ok=True,
             canonical=result.canonical, audit=result.audit, truncated=True)
     elif case == "old_document":
-        context = replace(context, browser_document={"url": URL, "loader_id": "replacement"})
+        context = replace(context, browser_document={"target_id": "tab", "frame_id": "main", "url": URL, "loader_id": "replacement"})
     snapshot, _ = browser_task_handoff(session, build_turn_snapshot(session), context)
     assert snapshot.input_binding is None
 
@@ -235,7 +235,7 @@ def test_current_file_and_required_changes_share_completion_judgment(tmp_path: P
 def test_action_click_continues_declared_sequence_without_navigation(url: str, condition: str, value: str) -> None:
     checks = (require_browser_research_sequence(url=url, condition=condition, value=value),)
     session = TaskSession(TaskPolicy(GRANTS, required_checks=checks), task_kind="research")
-    document: JsonObject = {"url": url, "loader_id": "current"}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "url": url, "loader_id": "current"}
     names = {"browser_wait", "browser_read", "browser_snapshot"}
     record(session, "browser_click", {"ref": "current", "purpose": "action"}, document)
     step = next_browser_step(checks, records=session.executed, results=session._memory_results,
@@ -259,11 +259,11 @@ def test_wait_stages_and_documents_do_not_share_receipts() -> None:
     checks = tuple(require_tool_success("browser_wait", arguments={"condition": "text", "value": value},
         after="page_actions", stage=stage) for stage, value in ((1, "Prepared"), (2, "Submitted")))
     session = TaskSession(TaskPolicy(GRANTS, required_checks=checks))
-    document: JsonObject = {"url": URL, "loader_id": "current"}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "url": URL, "loader_id": "current"}
     record(session, "browser_click", {}, document)
     record(session, "browser_wait", {"condition": "text", "value": "Prepared", "timeout_ms": 5000}, document)
     record(session, "browser_click", {}, document)
-    other: JsonObject = {"url": URL, "loader_id": "other"}
+    other: JsonObject = {"target_id": "tab", "frame_id": "main", "url": URL, "loader_id": "other"}
     record(session, "browser_wait", {"condition": "text", "value": "Submitted", "timeout_ms": 5000}, other)
     step = next_browser_step(checks, records=session.executed, results=session._memory_results,
         document=document, names={"browser_wait", "browser_read", "browser_snapshot"})
@@ -358,7 +358,7 @@ def test_ambiguous_page_plans_defer_to_the_current_declared_document() -> None:
     names = {"browser_wait", "browser_read", "browser_snapshot"}
     assert "result" not in click_followup_plan(checks, names).plans
     session = TaskSession(TaskPolicy(GRANTS, required_checks=checks))
-    document: JsonObject = {"url": second, "loader_id": "second"}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "url": second, "loader_id": "second"}
     record(session, "browser_click", {}, document)
     step = next_browser_step(checks, records=session.executed, results=session._memory_results,
                              document=document, names=names)
@@ -368,7 +368,7 @@ def test_ambiguous_page_plans_defer_to_the_current_declared_document() -> None:
 def test_partial_declaration_resumes_after_a_settled_explicit_wait() -> None:
     checks = (require_tool_success("browser_wait"), require_tool_success("browser_read", after="browser_wait"))
     session = TaskSession(TaskPolicy(GRANTS, required_checks=checks))
-    document: JsonObject = {"url": URL, "loader_id": "current"}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "url": URL, "loader_id": "current"}
     names = {"browser_wait", "browser_read", "browser_snapshot"}
     record(session, "browser_click", {}, document)
     step = next_browser_step(checks, records=session.executed, results=session._memory_results,
@@ -382,7 +382,7 @@ def test_partial_declaration_resumes_after_a_settled_explicit_wait() -> None:
 
 def test_free_exploration_and_uncertain_delivery_preserve_model_decisions() -> None:
     session = TaskSession(TaskPolicy(GRANTS))
-    document: JsonObject = {"url": URL, "loader_id": "current"}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "url": URL, "loader_id": "current"}
     names = {"browser_wait", "browser_read", "browser_snapshot"}
     ref = record(session, "browser_click", {}, document)
     assert next_browser_step((), records=session.executed, results=session._memory_results,
@@ -435,7 +435,7 @@ def test_ordered_wait_does_not_preempt_the_first_observation_or_navigation_recov
     checks = (require_tool_success("browser_wait", arguments={"condition": "text", "value": "Ready"},
                                    after="page_actions", stage=1),)
     session = TaskSession(TaskPolicy(GRANTS, required_checks=checks))
-    document: JsonObject = {"url": URL, "loader_id": "current"}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "url": URL, "loader_id": "current"}
     record(session, "browser_navigate", {"url": URL}, document)
     names = {"browser_wait", "browser_read", "browser_snapshot"}
     assert next_browser_step(checks, records=session.executed, results=session._memory_results,
@@ -476,7 +476,7 @@ def test_strict_research_resumes_each_declared_stage_and_submits_its_latest_pass
         require_tool_success("browser_read", after="browser_wait", stage=stage)))
     session = TaskSession(TaskPolicy(GRANTS | {"knowledge.write"}, strict_research=True, required_checks=checks), task_kind="research",
                           task_text=f"Read both declared stages on {URL}.", required_source_urls=frozenset({URL}))
-    document: JsonObject = {"url": URL, "loader_id": "current"}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "url": URL, "loader_id": "current"}
     context = CompletionContext(browser_document=document)
     for stage, value in ((1, "Prepared"), (2, "Submitted")):
         record(session, "browser_click", {"purpose": "action"}, document)
@@ -506,7 +506,7 @@ def test_research_continuation_repeats_wait_after_evidence_is_invalidated(mutati
                require_tool_success("browser_read", after="browser_wait")) if workflow else
               (require_browser_research_sequence(url=URL, condition="text", value="Ready"),))
     session = TaskSession(TaskPolicy(GRANTS, required_checks=checks))
-    document: JsonObject = {"url": URL, "loader_id": "current"}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "url": URL, "loader_id": "current"}
     names = {"browser_wait", "browser_read", "browser_snapshot"}
     record(session, "browser_click", {}, document)
     record(session, "browser_wait", {"condition": "text", "value": "Ready", "timeout_ms": 5000}, document)
@@ -532,7 +532,7 @@ def test_settled_wait_uses_declared_predicate_instead_of_the_generated_default_t
                   require_tool_success("browser_wait", arguments=arguments, after="page_actions"),
                   require_tool_success("browser_read", after="browser_wait")))
     session = TaskSession(TaskPolicy(GRANTS, required_checks=checks))
-    document: JsonObject = {"url": URL, "loader_id": "current"}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "url": URL, "loader_id": "current"}
     record(session, "browser_click", {}, document)
     record(session, "browser_wait", {"condition": "text", "value": "Ready", "timeout_ms": 8000}, document)
     step = next_browser_step(checks, records=session.executed, results=session._memory_results,

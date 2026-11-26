@@ -33,12 +33,13 @@ def _outcome(
         "command_finished_at": "2026-08-22T08:00:01.000Z",
         "command_duration_ms": 1000,
     }
+    canonical: dict[str, object] = {}
     if managed_output:
-        audit["managed_output"] = managed_output
+        canonical["managed_output"] = managed_output
     return ToolOutcome(
         f"exit {exit_code}: pytest -q\n1 passed",
         ok,
-        audit=audit,
+        canonical=canonical, audit=audit,
         exit_code=exit_code,
     )
 

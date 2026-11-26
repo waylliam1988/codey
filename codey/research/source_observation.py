@@ -29,10 +29,6 @@ def _record_fields(value: object, model: type[object]) -> JsonObject:
     if not isinstance(value, dict):
         raise ValueError(f"invalid {model.__name__} observation fields")
     row = canonical_json_object(value)
-    if model is OpenedSource:
-        row.setdefault("read_scope", None)
-        row.setdefault("publication", None)
-        row.setdefault("pdf_sha256", "")
     if not is_dataclass(model):
         raise TypeError("observation model must be a dataclass")
     source_fields: tuple[Field[object], ...] = fields(model)

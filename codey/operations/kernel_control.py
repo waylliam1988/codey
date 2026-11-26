@@ -23,7 +23,6 @@ from codey.providers.base import AssistantTurn, ProviderToolResult
 from codey.providers.task_prompt import TASK_HEADING, TaskPromptSpan
 from codey.runtime.core import operation_payload
 from codey.runtime.core.operation_payload import (
-    RuntimeExecutionCounters,
     RuntimeOperationState,
 )
 from codey.runtime.log.session_view import SessionView
@@ -145,7 +144,7 @@ def _reject_completion(context: KernelContext, state: RuntimeOperationState, fol
     from codey.research.answer_contract import submitted_answer
     from codey.research.task_mode import whole_research
 
-    progress = KernelProgress(context.transport.stagnant_turns, snapshot=state.counters.progress)
+    progress = KernelProgress(snapshot=state.counters.progress)
     research = whole_research(context.session)
     proposal = (canonical_json_object(submitted_answer(context.session) or {}) if research else
                 context.session.last_done_args)
@@ -231,26 +230,16 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         # process-local caches cannot decide its available tools or evidence.
         context.restore_facts()
         turn = received.logical_turn
-        counters = state.counters
-        if "counters" in decision:
-            # v1 protocol/length retries deferred their observation until admission;
-            # completion rejections already committed it. Preserve both histories,
-            # permitting only the single observation the old writer could make.
-            pending = RuntimeExecutionCounters.from_payload(decision["counters"])
-            if pending not in (counters, replace(counters, invalid_turns=counters.invalid_turns + 1),
-                               counters.with_length_continuation(0)):
-                raise ValueError("legacy retry counters do not describe one pending observation")
-            counters = pending
         from codey.operations.kernel_progress import KernelProgress
 
-        if KernelProgress(context.transport.stagnant_turns, snapshot=state.counters.progress).stopped:
+        if KernelProgress(snapshot=state.counters.progress).stopped:
             context.close(state, KernelResult(False,
                 "Stopped after repeated rejected completion proposals without progress.\n\n"
                 + decision["prompt"] + "\n\nUnaccepted draft:\n" + context.session.last_done_text,
-                turn, "no_progress"), counters=counters)
+                turn, "no_progress"))
             return
         if turn >= context.session.max_turns and not (context.native and ids):
-            context.close(state, KernelResult(False, context.session.last_done_text or "max turns reached", turn, "max_turns"), counters=counters)
+            context.close(state, KernelResult(False, context.session.last_done_text or "max turns reached", turn, "max_turns"))
             return
         from codey.operations.task_guidance import task_working_context
 
@@ -273,7 +262,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
             if decision["error"]:
                 messages[-1] = replace(messages[-1], user_content=prompt)
         context.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages,
-                       counters=counters, handoff=handoff, task_span=task_span)
+                       handoff=handoff, task_span=task_span)
         return
     if decision["purpose"] == "question":
         from codey.durable.questions import DurableUserQuestionStore

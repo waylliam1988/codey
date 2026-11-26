@@ -468,8 +468,8 @@ def test_repair_after_durable_restore_reuses_the_original_child_receipt(tmp_path
         fresh,
         KernelRunRequest(
             transport=KernelTransportDeps(provider=adapt_provider(_AckProvider()), provider_id="local", run_id="r"),
-            execution=KernelExecutionDeps(project_path=project, workspace_revision_store=revisions),
-            observation=KernelObservationDeps(intent_sink=reopened_sink),
+            execution=KernelExecutionDeps(intent_sink=reopened_sink, project_path=project, workspace_revision_store=revisions),
+            observation=KernelObservationDeps(),
         ),
     ).restore_facts()
     (project / "a.py").write_text("V2\n", encoding="utf-8")

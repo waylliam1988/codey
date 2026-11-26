@@ -818,11 +818,10 @@ def test_shell_approval_records_turn_intent_before_notifying_user(tmp_path: Path
                     provider=adapt_provider(Provider()),
                     run_id=sink.run_id, provider_id=sink.provider_id,
                 ),
-                execution=KernelExecutionDeps(
+                execution=KernelExecutionDeps(intent_sink=sink,
                     project_path=tmp_path,
                 ),
                 observation=KernelObservationDeps(
-                    intent_sink=sink,
                     on_shell_request=approval_notifier(sink.durable, sink.managed_outputs, sink.session_id,
                         sink.run_id, lambda _approval: order.append("approval")),
                 ),
@@ -879,11 +878,10 @@ def test_kernel_records_intent_before_project_tool_execution(tmp_path: Path) -> 
                 transport=KernelTransportDeps(
                     provider=adapt_provider(Provider()), run_id=sink.run_id, provider_id=sink.provider_id,
                 ),
-                execution=KernelExecutionDeps(
+                execution=KernelExecutionDeps(intent_sink=sink,
                     project_path=tmp_path,
                 ),
                 observation=KernelObservationDeps(
-                    intent_sink=sink,
                     on_event=lambda event: observed.append(event.kind),
                 ),
             ),
@@ -957,12 +955,11 @@ def test_production_kernel_persists_tool_and_delivery_receipts(tmp_path: Path) -
                 provider=adapt_provider(Provider()),
                 run_id="r",
             ),
-            execution=KernelExecutionDeps(
+            execution=KernelExecutionDeps(intent_sink=sink,
                 project_path=tmp_path,
             ),
             observation=KernelObservationDeps(
-                intent_sink=sink,
-            ),
+                ),
         ),
     )
     assert outcome.stop_reason == "done"
@@ -1388,7 +1385,7 @@ def test_unified_writer_keeps_managed_output_receipt_in_event(tmp_path: Path) ->
     def command(*_args: object) -> ToolOutcome:
         return ToolOutcome(
             "test output", True, exit_code=0, truncated=True,
-            audit={"managed_output": {
+            canonical={"managed_output": {
                 "handle": managed.handle, "original_bytes": managed.original_bytes,
                 "stored_bytes": managed.stored_bytes, "sha256": managed.sha256,
             }},
@@ -1441,7 +1438,7 @@ def test_unified_research_externalizes_large_opened_source(tmp_path: Path) -> No
                               research_tools=research_tools, managed_outputs=outputs,
                               session_id="s", run_id="r", turn=1)[0]
         assert result.ok, result.model_text
-        assert str(decode_json_object(result.audit["managed_output"])["handle"]).startswith("out_")
+        assert str(decode_json_object(result.canonical["managed_output"])["handle"]).startswith("out_")
         assert len(result.model_text) < 30_000
         assert result.canonical["read_passages"]
     finally:

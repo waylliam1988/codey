@@ -36,16 +36,14 @@ from codey.providers.snapshot import capture_provider_selection, provider_snapsh
 from codey.reviews.review_policy import load_review_policy
 from codey.task.kind import resolve_task_kind_values
 from codey.task.model import (
-    EditUserMessage,
     HandoffRun,
     ModelHandoffRejected,
     ResolveShellApproval,
-    ResumeRun,
-    StartTask,
     TaskInput,
     TaskSubmission,
+    task_input_from_payload,
+    task_submission_state,
 )
-from codey.types.json_value import decode_json_object, require_json_boolean, require_json_integer, require_json_string
 from codey.utils.object_fields import object_fields
 from codey.workspace.task_changes import collect_task_changes
 
@@ -97,7 +95,6 @@ def run_task(
     project_changes_required: bool = False,
     denied_capabilities: tuple[str, ...] = (),
     previous_run_id: str = "",
-    initial_shell_results: tuple[dict[str, object], ...] = (),
     input: TaskInput | None = None,
     *,
     get_state: Callable[[], TaskSubmissionState],
@@ -213,7 +210,6 @@ def run_task(
                     project_changes_required=project_changes_required,
                     denied_capabilities=tuple(denied_capabilities or ()),
                     previous_run_id=(previous_run_id or ""),
-                    initial_shell_results=tuple(initial_shell_results or ()),
                     review_source_run_id=review_source_run_id,
                     model_selection=_model_payload(model_selection),
                     input=input,
@@ -244,7 +240,6 @@ def submit_task(
     project_changes_required: bool = False,
     denied_capabilities: tuple[str, ...] = (),
     previous_run_id: str = "",
-    initial_shell_results: tuple[dict[str, object], ...] = (),
     *,
     get_state: Callable[[], TaskSubmissionState],
     abort_if_stopped: bool = False,
@@ -322,6 +317,16 @@ def submit_task(
         reserved_run_id = str(reserved.run_id)
         if admitted_selection is not None:
             state.task_runtime.bind_api_selection(reserved.run_id, admitted_selection)
+    submission = TaskSubmission(
+        session_id=session_id, project=project, task=task, max_turns=max_turns, continue_task=continue_task,
+        provider_id=provider_id, intent=intent, run_id=reserved_run_id,
+        requested_capabilities=tuple(requested_capabilities or ()), strict_research=strict_research,
+        sources_open_required=sources_open_required, project_changes_required=project_changes_required,
+        required_tools=required_tools, denied_capabilities=tuple(denied_capabilities or ()),
+        previous_run_id=previous_run_id or "", review_source_run_id=review_source_run_id,
+        model_selection=_model_payload(admitted_selection), input=input, output_format=output_format,
+        output_schema=output_schema,
+    )
     try:
         state.durable.admit_input(
             conversation_id=session_id,
@@ -334,26 +339,8 @@ def submit_task(
                 provider_session_id=state.providers.sessions_snapshot().get(provider_id, ""),
             ),
             task_state={
-                "project": project,
-                "task": task,
-                "max_turns": max_turns,
-                "continue_task": continue_task,
-                "provider_id": provider_id,
-                "intent": intent,
-                "task_kind": resolve_task_kind_values(project, intent),
-                "requested_capabilities": list(requested_capabilities),
-                "strict_research": strict_research,
-                "sources_open_required": sources_open_required,
-                "project_changes_required": project_changes_required,
-                "required_tools": list(required_tools),
-                "denied_capabilities": list(denied_capabilities),
-                "previous_run_id": previous_run_id,
-                "initial_shell_results": list(initial_shell_results),
-                "review_source_run_id": review_source_run_id,
-                "model_selection": _model_payload(admitted_selection),
-                "input": _task_input_payload(input),
+                **task_submission_state(submission, task_kind=resolve_task_kind_values(project, intent)),
                 **({"message_metadata": message_metadata} if message_metadata else {}),
-                "output_format": output_format, "output_schema": output_schema,
             },
             tool_results=shell_tool_results,
         )
@@ -367,7 +354,6 @@ def submit_task(
         state.task_runtime.claim_worker(reserved.run_id)
         requested: tuple[str, ...] = tuple(requested_capabilities or ())
         denied: tuple[str, ...] = tuple(denied_capabilities or ())
-        shell_results: tuple[dict[str, object], ...] = tuple(initial_shell_results or ())
         accepted = submit_browser_task(
             run_task,
             session_id,
@@ -384,8 +370,7 @@ def submit_task(
             project_changes_required=project_changes_required,
             denied_capabilities=denied,
             previous_run_id=(previous_run_id or ""),
-            initial_shell_results=shell_results,
-            input=input,
+            input=submission.resolved_input(),
             get_state=lambda: state,
             review_policy=review_policy,
             review_source_run_id=review_source_run_id,
@@ -451,22 +436,6 @@ def _release_unstarted_admission(state: TaskSubmissionState, run_id: str, *, exi
             state.task_runtime.release_unstarted_run(run_id)
 
 
-def _task_input_payload(input: TaskInput | None) -> dict[str, object] | None:
-    if isinstance(input, EditUserMessage):
-        return {"kind": "edit_user_message", "entry_id": input.entry_id, "text": input.text,
-                "expected_revision": input.expected_revision}
-    if isinstance(input, StartTask):
-        return {"kind": "start_task", "text": input.text}
-    if isinstance(input, ResumeRun):
-        return {"kind": "resume_run", "source_run_id": input.source_run_id, "instruction": input.instruction}
-    if isinstance(input, HandoffRun):
-        return {"kind": "handoff_run", "source_run_id": input.source_run_id, "instruction": input.instruction,
-                "observe_only": input.observe_only}
-    if isinstance(input, ResolveShellApproval):
-        return {"kind": "resolve_shell_approval", "approval_id": input.approval_id}
-    return None
-
-
 def dispatch_durable_task(checkpoint: object, *, state: TaskSubmissionState) -> bool:
     """Resume one durable checkpoint after admission or process restart."""
     with state.task_runtime.spawn_line():
@@ -498,6 +467,15 @@ def _dispatch_durable_task(checkpoint: object, *, state: TaskSubmissionState) ->
     provider_id = str(stored.get("provider_id") or checkpoint.provider_snapshot.get("provider_id") or "")
     if not task or not provider_id:
         raise ValueError("accepted durable task is missing dispatch identity")
+    model_payload = stored.get("model_selection")
+    model_selection = None
+    if isinstance(model_payload, dict) and model_payload:
+        from codey.runtime.core.api_selection import ApiRunSelection
+
+        model_selection = ApiRunSelection.from_payload(model_payload)
+    input_value = task_input_from_payload(stored["resume_input"] if "resume_input" in stored else stored["input"])
+    max_turns_raw = stored.get("max_turns")
+    max_turns = max_turns_raw if type(max_turns_raw) is int else 8
     with state.durable.control_line():
         active = state.active_run_for(session_id=session_id)
         if active is None:
@@ -513,15 +491,6 @@ def _dispatch_durable_task(checkpoint: object, *, state: TaskSubmissionState) ->
         elif active.run_id != task_id:
             return False
         state.task_runtime.claim_worker(task_id)
-    model_payload = stored.get("model_selection")
-    model_selection = None
-    if isinstance(model_payload, dict) and model_payload:
-        from codey.runtime.core.api_selection import ApiRunSelection
-
-        model_selection = ApiRunSelection.from_payload(model_payload)
-    input_value = _task_input_from_payload(stored.get("resume_input", stored.get("input")))
-    max_turns_raw = stored.get("max_turns")
-    max_turns = max_turns_raw if type(max_turns_raw) is int else 8
     try:
         accepted = bool(
             submit_browser_task(
@@ -541,7 +510,6 @@ def _dispatch_durable_task(checkpoint: object, *, state: TaskSubmissionState) ->
                 required_tools=_string_tuple(stored.get("required_tools")),
                 denied_capabilities=_string_tuple(stored.get("denied_capabilities")),
                 previous_run_id=str(stored.get("previous_run_id") or ""),
-                initial_shell_results=_mapping_tuple(stored.get("initial_shell_results")),
                 input=input_value,
                 get_state=lambda: state,
                 review_source_run_id=str(stored.get("review_source_run_id") or ""),
@@ -560,37 +528,10 @@ def _dispatch_durable_task(checkpoint: object, *, state: TaskSubmissionState) ->
         raise
 
 
-def _task_input_from_payload(value: object) -> TaskInput | None:
-    if not isinstance(value, dict):
-        return None
-    row = decode_json_object(value)
-    kind = str(row.get("kind") or "")
-    if kind == "edit_user_message":
-        return EditUserMessage(require_json_string(row["entry_id"], "entry_id"), require_json_string(row["text"], "text"),
-                               require_json_integer(row["expected_revision"], "expected_revision"))
-    if kind == "start_task":
-        return StartTask(str(row.get("text") or ""))
-    if kind == "resume_run":
-        return ResumeRun(str(row.get("source_run_id") or ""), str(row.get("instruction") or ""))
-    if kind == "handoff_run":
-        return HandoffRun(require_json_string(row["source_run_id"], "source_run_id"),
-                          require_json_string(row["instruction"], "instruction"),
-                          require_json_boolean(row["observe_only"], "observe_only"))
-    if kind == "resolve_shell_approval":
-        return ResolveShellApproval(str(row.get("approval_id") or ""))
-    raise ValueError(f"unknown durable task input kind: {kind}")
-
-
 def _string_tuple(value: object) -> tuple[str, ...]:
     if not isinstance(value, (list, tuple)):
         return ()
     return tuple(str(item) for item in value)
-
-
-def _mapping_tuple(value: object) -> tuple[dict[str, object], ...]:
-    if not isinstance(value, (list, tuple)):
-        return ()
-    return tuple(dict(item) for item in value if isinstance(item, dict))
 
 
 def submit_task_after_slot_release(
@@ -605,7 +546,6 @@ def submit_task_after_slot_release(
     get_state: Callable[[], TaskSubmissionState],
     previous_run_id: str = "",
     timeout: float = SHELL_CONTINUATION_IDLE_TIMEOUT,
-    initial_shell_results: tuple[dict[str, object], ...] = (),
     model_selection: ApiRunSelection | None = None,
     input: TaskInput | None = None,
     run_id: str = "",
@@ -633,7 +573,6 @@ def submit_task_after_slot_release(
             get_state=get_state,
             abort_if_stopped=True,
             previous_run_id=previous_run_id,
-            initial_shell_results=tuple(initial_shell_results or ()),
             input=input,
             run_id=run_id,
             model_selection=model_selection,

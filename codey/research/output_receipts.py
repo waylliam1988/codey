@@ -85,6 +85,7 @@ def maybe_externalize_output(
     if len(text.encode("utf-8")) <= RESEARCH_OUTPUT_BUDGET_BYTES:
         return _Outcome(model_text, ok=ok, presentation_result=presentation_result)
     audit: dict[str, object] = {}
+    canonical: dict[str, object] = {}
     if store is not None and session_id and run_id:
         try:
             ref = store.write_tool_output(
@@ -101,7 +102,7 @@ def maybe_externalize_output(
         if ref is None:
             audit["managed_output_failed"] = True
         else:
-            audit["managed_output"] = {
+            canonical["managed_output"] = {
                 "handle": ref.handle,
                 "original_bytes": ref.original_bytes,
                 "stored_bytes": ref.stored_bytes,
@@ -118,6 +119,7 @@ def maybe_externalize_output(
     outcome = _Outcome(visible, ok=ok, presentation_result=presentation_result)
     outcome.truncated = True
     outcome.audit.update(audit)
+    outcome.canonical.update(canonical)
     outcome.audit["externalized"] = True
     return outcome
 

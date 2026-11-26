@@ -13,12 +13,17 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from codey.policies.capabilities import BROWSER_CAPABILITIES, KNOWN_TASK_GRANTS
+from codey.types.json_value import (
+    decode_json_object,
+    require_json_boolean,
+    require_json_string,
+    require_json_strings,
+)
 
-TASK_POLICY_VERSION = 1
-TASK_POLICY_FILE_SCOPE_VERSION = 2
+TASK_POLICY_VERSION = 2
 _TASK_POLICY_FIELDS = frozenset({
     "grants", "strict_research", "sources_open_required", "required_checks",
-    "source", "version", "denied_capabilities",
+    "source", "version", "denied_capabilities", "edit_scope",
 })
 
 # 工具授权唯一来源为 ToolSpec（toolchain.tool_spec.spec_for_tool().grant），
@@ -87,18 +92,25 @@ class TaskPolicy:
     strict_research: bool = False
     required_checks: tuple[str, ...] = ()
     source: str = ""
-    version: int = TASK_POLICY_VERSION
     sources_open_required: bool = False
     denied_capabilities: frozenset[str] = frozenset()
     edit_scope: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "grants", frozenset[str](self.grants))
-        object.__setattr__(self, "denied_capabilities", frozenset[str](self.denied_capabilities))
-        object.__setattr__(self, "required_checks", tuple[str, ...](self.required_checks))
-        object.__setattr__(self, "edit_scope", tuple[str, ...](self.edit_scope))
-        if self.edit_scope and self.version != TASK_POLICY_FILE_SCOPE_VERSION:
-            raise ValueError("file scope requires the corresponding task policy version")
+        if (type(self.strict_research) is not bool or type(self.sources_open_required) is not bool
+                or not isinstance(self.source, str)):
+            raise ValueError("invalid task policy flags or source")
+        grants = frozenset(self.grants)
+        denied = frozenset(self.denied_capabilities)
+        if (grants | denied) - KNOWN_TASK_GRANTS:
+            raise ValueError("grants and denied_capabilities must contain known capability names")
+        checks, scope = tuple(self.required_checks), tuple(self.edit_scope)
+        if any(not isinstance(item, str) or not item.strip() for item in (*checks, *scope)):
+            raise ValueError("required_checks and edit_scope must contain nonempty strings")
+        object.__setattr__(self, "grants", grants)
+        object.__setattr__(self, "denied_capabilities", denied)
+        object.__setattr__(self, "required_checks", checks)
+        object.__setattr__(self, "edit_scope", scope)
 
     def allows(self, grant: object) -> bool:
         text = _normalize_grant(grant)
@@ -115,72 +127,30 @@ class TaskPolicy:
             "sources_open_required": self.sources_open_required,
             "required_checks": list(self.required_checks or ()),
             "source": self.source,
-            "version": self.version,
+            "version": TASK_POLICY_VERSION,
             "denied_capabilities": sorted(self.denied_capabilities or frozenset()),
-            **({"edit_scope": list(self.edit_scope)} if self.version == TASK_POLICY_FILE_SCOPE_VERSION else {}),
+            "edit_scope": list(self.edit_scope),
         }
 
     @staticmethod
     def from_payload(payload: object) -> TaskPolicy:
-        if not isinstance(payload, dict):
-            raise ValueError("task policy must be an object")
-        row: dict[object, object] = payload
+        row = decode_json_object(payload)
         version = row.get("version")
-        if type(version) is not int or version not in {TASK_POLICY_VERSION, TASK_POLICY_FILE_SCOPE_VERSION}:
+        if type(version) is not int or version != TASK_POLICY_VERSION:
             # 冷启动无兼容负担：未知版本直接拒绝，由调用方 fail-closed，
             # 绝不按当前格式继续解释。
             raise ValueError(f"unsupported task policy version: {version!r}")
-        expected = _TASK_POLICY_FIELDS | ({"edit_scope"} if version == TASK_POLICY_FILE_SCOPE_VERSION else set())
-        if set(row) != expected:
-            raise ValueError(f"task policy fields differ: {set(row) ^ expected}")
-        grants = _restored_grants(row["grants"], "grants")
-        denied = _restored_grants(row["denied_capabilities"], "denied_capabilities")
-        raw_checks = row["required_checks"]
-        if not isinstance(raw_checks, (list, tuple)):
-            raise ValueError("required_checks must contain nonempty strings")
-        items: Iterable[object] = raw_checks
-        checks: list[str] = []
-        for item in items:
-            if not isinstance(item, str) or not item.strip():
-                raise ValueError("required_checks must contain nonempty strings")
-            checks.append(item)
-        # Preserve every requirement; the completion gate rejects overflow.
-        strict = _restored_bool(row["strict_research"], "strict_research")
-        sources_open_required = _restored_bool(row["sources_open_required"], "sources_open_required")
-        source = row["source"]
-        if not isinstance(source, str):
-            raise ValueError("source must be a string")
-        from codey.types.json_value import require_json_strings
-
-        edit_scope = tuple(require_json_strings(row["edit_scope"], "edit_scope")) if version == TASK_POLICY_FILE_SCOPE_VERSION else ()
+        if set(row) != _TASK_POLICY_FIELDS:
+            raise ValueError(f"task policy fields differ: {set(row) ^ _TASK_POLICY_FIELDS}")
         return TaskPolicy(
-            grants=frozenset(grants),
-            strict_research=strict,
-            sources_open_required=sources_open_required,
-            required_checks=tuple(checks),
-            source=source,
-            version=version,
-            denied_capabilities=frozenset(denied),
-            edit_scope=edit_scope,
+            grants=frozenset(require_json_strings(row["grants"], "grants")),
+            strict_research=require_json_boolean(row["strict_research"], "strict_research"),
+            sources_open_required=require_json_boolean(row["sources_open_required"], "sources_open_required"),
+            required_checks=tuple(require_json_strings(row["required_checks"], "required_checks")),
+            source=require_json_string(row["source"], "source"),
+            denied_capabilities=frozenset(require_json_strings(row["denied_capabilities"], "denied_capabilities")),
+            edit_scope=tuple(require_json_strings(row["edit_scope"], "edit_scope")),
         )
-
-
-def _restored_grants(value: object, field: str) -> set[str]:
-    if not isinstance(value, (list, tuple, set, frozenset)):
-        raise ValueError(f"{field} must contain known capability names")
-    items: Iterable[object] = value
-    grants: set[str] = set()
-    for item in items:
-        if not isinstance(item, str) or item not in KNOWN_TASK_GRANTS:
-            raise ValueError(f"{field} must contain known capability names")
-        grants.add(item)
-    return grants
-
-
-def _restored_bool(value: object, field: str) -> bool:
-    if type(value) is not bool:
-        raise ValueError(f"{field} must be a boolean")
-    return value
 
 
 def _default_web_grants(kind: str) -> frozenset[str]:
@@ -349,7 +319,6 @@ def build_task_policy(
         sources_open_required=sources_open_required,
         required_checks=tuple(required_checks),
         source=source,
-        version=TASK_POLICY_VERSION,
         denied_capabilities=frozenset(denied),
     )
 

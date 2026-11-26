@@ -159,6 +159,7 @@ class RuntimeMutationLine:
         max_repair_rounds: int,
         task_kind: str = "task",
         model_selection: dict[str, object] | None = None,
+        progress_limit: int | None = None,
     ) -> RuntimeOperationState | None:
         accepted: RuntimeOperationState | None = None
 
@@ -180,6 +181,7 @@ class RuntimeMutationLine:
                 max_repair_rounds=max_repair_rounds,
                 task_kind=task_kind,
                 model_selection=model_selection,
+                progress_limit=progress_limit,
             )
             accepted = state
             return (state,)

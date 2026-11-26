@@ -1,8 +1,4 @@
-"""Decode legacy frozen invocations into finite requests; encode stable v1 wire.
-
-Provider artifact envelopes own the persisted format version. Legacy invocation
-fields are decoded here, never carried into the domain as args/kwargs bags.
-"""
+"""Encode and decode the finite, unversioned provider invocation."""
 
 from __future__ import annotations
 
@@ -136,10 +132,13 @@ def provider_options_payload(options: ProviderRequestOptions) -> JsonObject:
     return {name: json_value(getattr(options, name)) for name in sorted(options.supplied)}
 
 
+PROVIDER_INVOCATION_FIELDS = frozenset({"method", "args", "kwargs"})
+
+
 def decode_provider_request(payload: object) -> ProviderRequest:
     row = decode_json_object(payload)
-    if "schema_version" in row and (type(row["schema_version"]) is not int or row["schema_version"] != 1):
-        raise ValueError("unknown provider invocation version")
+    if set(row) != PROVIDER_INVOCATION_FIELDS:
+        raise ValueError("invalid provider invocation fields")
     method = require_json_string(row.get("method"), "method")
     args, kwargs = row.get("args"), row.get("kwargs")
     if method not in _POSITIONAL or not isinstance(args, list) or not isinstance(kwargs, dict):
@@ -177,7 +176,7 @@ def decode_provider_request(payload: object) -> ProviderRequest:
 
 
 def encode_provider_request(request: ProviderRequest) -> JsonObject:
-    """Canonical legacy-v1 shape; does not rewrite an existing frozen artifact."""
+    """Encode one invocation independently of its admission and context."""
     args: list[JsonValue]
     if isinstance(request, SendTextRequest):
         args = [request.prompt]

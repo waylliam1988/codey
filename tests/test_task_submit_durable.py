@@ -8,7 +8,7 @@ import pytest
 from codey.app import task_submit
 from codey.app.context import AppContext
 from codey.durable.errors import IdempotencyConflict
-from codey.task.model import EditUserMessage, StartTask
+from codey.task.model import EditUserMessage, StartTask, TaskSubmission, task_submission_state
 
 
 @pytest.mark.parametrize("waiting", [False, True])
@@ -72,7 +72,8 @@ def test_scheduler_job_owns_its_queued_reservation_until_completion_projection(t
         state.durable.admit_input(
             conversation_id="session", request_id=reserved.run_id, task_id=reserved.run_id,
             text="work", provider_snapshot={"provider_id": "deepseek"},
-            task_state={"task": "work", "provider_id": "deepseek"},
+            task_state=task_submission_state(TaskSubmission("session", None, "work", 8, False, "deepseek"),
+                                             task_kind="chat"),
         )
         claimed = state.durable.claim_task_checkpoint(reserved.run_id)
         with mock.patch.object(task_submit, "submit_browser_task", return_value=True) as worker:

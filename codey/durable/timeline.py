@@ -11,8 +11,11 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import cast
 
-from codey.durable.model import DurableMutation, EffectRecord, TaskCheckpoint, thaw_json
+from codey.durable.model import DurableMutation, EffectRecord, TaskCheckpoint, require_checkpoint_version, thaw_json
+from codey.types.json_value import require_json_string
 from codey.utils.object_fields import mapping_fields, sequence_items
+
+WORKFLOW_TIMELINE_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -64,8 +67,9 @@ def settlement_histories(
     for sequence, raw in rows:
         if not mapping_fields(raw):
             raise ValueError("invalid workflow timeline payload")
-        task_rows = raw.get("tasks")
-        candidates = task_rows if sequence_items(task_rows) else (raw.get("task"),)
+        if not raw:
+            continue
+        candidates = timeline_task_rows(raw)
         present: set[str] = set()
         for task in candidates:
             if not mapping_fields(task):
@@ -76,8 +80,6 @@ def settlement_histories(
                 present.add(identity)
         if not present:
             continue
-        if raw.get("schema_version") != 1:
-            raise ValueError("unsupported workflow timeline schema")
         effects = raw["effects"]
         if not sequence_items(effects):
             raise ValueError("invalid timeline effects")
@@ -102,18 +104,15 @@ def checkpoint_payload(task: TaskCheckpoint) -> dict[str, object]:
 
 
 def checkpoint_from_payload(raw: Mapping[str, object]) -> TaskCheckpoint:
-    from codey.durable.model import migrate_checkpoint_phase
-
-    phase, version = migrate_checkpoint_phase(str(raw["phase"]), cast(int, raw["schema_version"]))
     return TaskCheckpoint(
         task_id=str(raw["task_id"]), conversation_id=str(raw["conversation_id"]),
-        submission_id=str(raw["submission_id"]), phase=phase,
+        submission_id=str(raw["submission_id"]), phase=require_json_string(raw["phase"], "task phase"),
         revision=cast(int, raw["revision"]),
         provider_snapshot=cast(Mapping[str, object], raw["provider_snapshot"]),
         state=cast(Mapping[str, object], raw["state"]),
         current_turn_id=cast(str | None, raw["current_turn_id"]),
         pending_effect_id=cast(str | None, raw["pending_effect_id"]),
-        status=str(raw["status"]), schema_version=version,
+        status=str(raw["status"]), schema_version=require_checkpoint_version(raw["schema_version"]),
     )
 
 
@@ -123,11 +122,7 @@ def execution_payload(mutation: DurableMutation, head: str | None) -> dict[str, 
         return {}
     changes = ((mutation.effect,) if mutation.effect is not None else ()) + mutation.effects + mutation.settlements
     return {
-        "schema_version": 1,
-        # Keep the singular field for the original timeline format while
-        # carrying every checkpoint changed by one atomic mutation.  Readers
-        # can select the checkpoint belonging to the task they are replaying.
-        "task": checkpoint_payload(tasks[0]),
+        "schema_version": WORKFLOW_TIMELINE_VERSION,
         "tasks": [checkpoint_payload(task) for task in tasks],
         "head_entry_id": head,
         "effects": [
@@ -142,30 +137,30 @@ def execution_payload(mutation: DurableMutation, head: str | None) -> dict[str, 
     }
 
 
-def transition_from_payload(
-    sequence: int,
-    raw: Mapping[str, object],
-    task_id: str | None = None,
-) -> TaskTransition:
-    if raw.get("schema_version") != 1:
+def timeline_task_rows(raw: Mapping[str, object]) -> tuple[Mapping[str, object], ...]:
+    if (set(raw) != {"schema_version", "tasks", "head_entry_id", "effects"}
+            or type(raw["schema_version"]) is not int or raw["schema_version"] != WORKFLOW_TIMELINE_VERSION):
         raise ValueError("unsupported workflow timeline schema")
+    rows = raw["tasks"]
+    if not sequence_items(rows) or not rows:
+        raise ValueError("invalid workflow timeline tasks")
+    tasks: list[Mapping[str, object]] = []
+    for row in rows:
+        if not mapping_fields(row):
+            raise ValueError("invalid workflow timeline task")
+        tasks.append(row)
+    return tuple(tasks)
+
+
+def transition_from_payload(sequence: int, raw: Mapping[str, object], task_id: str) -> TaskTransition:
+    raw_task = next((task for task in timeline_task_rows(raw) if task.get("task_id") == task_id), None)
+    if raw_task is None:
+        raise KeyError(f"task {task_id!r} is not present in timeline commit")
     effects = cast(list[dict[str, object]], raw["effects"])
-    raw_task: Mapping[str, object]
-    task_rows = raw.get("tasks")
-    if task_id is not None and sequence_items(task_rows):
-        selected = next(
-            (item for item in task_rows if mapping_fields(item) and item.get("task_id") == task_id),
-            None,
-        )
-        if selected is None:
-            raise KeyError(f"task {task_id!r} is not present in timeline commit")
-        raw_task = selected
-    else:
-        raw_task = cast(Mapping[str, object], raw["task"])
     return TaskTransition(
         sequence,
         checkpoint_from_payload(raw_task),
-        tuple(effect_from_payload(effect) for effect in effects if task_id is None or effect.get("task_id") == task_id),
+        tuple(effect_from_payload(effect) for effect in effects if effect.get("task_id") == task_id),
         cast(str | None, raw["head_entry_id"]),
     )
 

@@ -400,7 +400,7 @@ def test_restart_does_not_resubmit_continuation_when_durable_task_is_unknown(tmp
 
     def enqueue(session_id: str, project: str | None, task: str, max_turns: int,
                 continue_task: bool, provider_id: str, intent: str, /,
-                *, previous_run_id: str = "", initial_shell_results: tuple[dict[str, object], ...] = (),
+                *, previous_run_id: str = "",
                 model_selection: ApiRunSelection | None = None, run_id: str = "",
                 input: TaskInput | None = None) -> str | None:
         submitted.append(run_id)
@@ -590,14 +590,14 @@ def test_stop_before_continuation_admission_cannot_be_undone_by_new_work(tmp_pat
 
     def submit(session_id: str, project: str | None, task: str, max_turns: int,
                continue_task: bool, provider_id: str, intent: str, /,
-               *, previous_run_id: str = "", initial_shell_results: tuple[dict[str, object], ...] = (),
+               *, previous_run_id: str = "",
                model_selection: ApiRunSelection | None = None, run_id: str = "",
                input: TaskInput | None = None) -> str | None:
         ctx.request_stop()
         ctx.run_registry.stop_flag.clear()
         return task_submit.submit_task(session_id, project, task, max_turns, continue_task, provider_id, intent,
                                        get_state=lambda: ctx, previous_run_id=previous_run_id,
-                                       initial_shell_results=initial_shell_results, model_selection=model_selection,
+                                       model_selection=model_selection,
                                        run_id=run_id, input=input)
 
     try:

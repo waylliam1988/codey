@@ -28,7 +28,7 @@ from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import Target, append_json, production_source_digest
 
 GRANTS = frozenset({'control', 'web.read', 'browser.observe', 'browser.interact', 'browser.effect'})
-DOCUMENT: JsonObject = {'target_id': 'tab', 'loader_id': 'document', 'url': URL}
+DOCUMENT: JsonObject = {'frame_id': 'main', 'target_id': 'tab', 'loader_id': 'document', 'url': URL}
 
 
 def session_with_snapshot(*, checks: tuple[str, ...] = (ab.WAIT,), multiple: bool = False) -> TaskSession:

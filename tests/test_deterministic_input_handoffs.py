@@ -171,7 +171,7 @@ def test_natural_observation_recovery_does_not_require_a_declared_tool_sequence(
 
     session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "browser.observe", "browser.interact"})),
                           task_text="Find the requested official documentation through this page.")
-    document: JsonObject = {"url": URL, "loader_id": "search-document"}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "url": URL, "loader_id": "search-document"}
     refs = replace(binding(), document_json=canonical_json(document), controls=(
         ObservedControl("search-node", role, "Search", "", "", state == "disabled"),))
     if state in {"filled", "uncertain"}:
@@ -413,9 +413,6 @@ def test_all_browser_ref_contracts_share_the_observed_selector(name: str, role: 
     current = reference_spec(spec, refs)
     ref = canonical_json_object(dict(current.parameters)["ref"])
     assert "anyOf" in ref
-    for version in (1, 2, 3):
-        old = replace(refs, presentation_version=1 if version == 1 else 2 if version == 2 else 3)
-        assert reference_spec(spec, old) == spec
 
 
 def test_real_native_controls_use_the_original_nodes_and_reject_replaced_nodes(
@@ -446,7 +443,7 @@ def test_real_native_controls_use_the_original_nodes_and_reject_replaced_nodes(
 @pytest.mark.parametrize("case", ["changed", "first_input", "unchanged", "uncertain", "failed_fill", "other_document", "uncommitted"])
 def test_query_choices_require_a_new_verified_input_and_committed_receipts(case: str) -> None:
     session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "browser.observe", "browser.interact"})))
-    document: JsonObject = {"url": CONTROL_URL, "loader_id": "current"}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "url": CONTROL_URL, "loader_id": "current"}
     if case != "first_input":
         record(session, "browser_fill", {"ref": "input", "value": "before"}, document)
     click = record(session, "browser_click", {"ref": "query"}, document)

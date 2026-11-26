@@ -325,14 +325,13 @@ class ResearchExecutor:
             raise ValueError("first_party_followup_available: review the just-acquired source results before submitting.")
         declared = submit_answer(self._research_scope, call.args, passages=tools.ledger.read_passages)
         from codey.research.report_evidence import (
-            CLAIM_CHECK_VERSION,
             check_report_evidence,
             exhausted_review_answer,
             research_review_key,
             review_submission_issues,
         )
 
-        evidence_check = check_report_evidence(declared, tools.ledger.read_passages, claim_check_version=CLAIM_CHECK_VERSION)
+        evidence_check = check_report_evidence(declared, tools.ledger.read_passages)
         issues = review_submission_issues(declared, evidence_check, tools.ledger.read_passages)
         resolution: dict[str, object] = {}
         if issues:
@@ -349,7 +348,7 @@ class ResearchExecutor:
                     "research_review_key": research_review_key(issue)}), False, None
             declared = fallback
             resolution["research_review_exhausted"] = issue
-            evidence_check = check_report_evidence(declared, tools.ledger.read_passages, claim_check_version=CLAIM_CHECK_VERSION)
+            evidence_check = check_report_evidence(declared, tools.ledger.read_passages)
         if self.session is not None:
             from codey.research.browser_result_evidence import validate_current_result
 

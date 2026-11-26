@@ -31,7 +31,8 @@ from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import clip_event_text
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.task.entry_auth import derive_entry_auth
-from codey.task.model import ResolveShellApproval, ResumeRun, TaskInput, TaskSubmission
+from codey.task.kind import resolve_task_kind_values
+from codey.task.model import ResolveShellApproval, ResumeRun, TaskInput, TaskSubmission, task_submission_state
 
 
 class HeadlessConnector(Protocol):
@@ -338,7 +339,6 @@ def _run_headless_task(
             "continue_task": request.continue_task or isinstance(request.input, (ResumeRun, ResolveShellApproval)),
         }, project=str(project) if project is not None else None)
         intent = auth.inferred_intent or _request_intent(request.intent)
-        from codey.app.task_submit import _task_input_payload
         from codey.providers.snapshot import capture_provider_selection, provider_snapshot
 
         admitted_selection = capture_provider_selection(
@@ -363,36 +363,6 @@ def _run_headless_task(
 
         if selection_payload:
             state.run_registry.bind_api_selection(run_id, ApiRunSelection.from_payload(selection_payload))
-        state.durable.admit_input(
-            conversation_id=session_id,
-            request_id=run_id,
-            task_id=run_id,
-            text=request.task,
-            provider_snapshot=provider_snapshot(
-                request.provider_id,
-                admitted_selection,
-                provider_session_id=state.providers.sessions_snapshot().get(request.provider_id, ""),
-            ),
-            task_state={
-                "project": str(project) if project is not None else None,
-                "task": request.task,
-                "max_turns": request.max_turns,
-                "continue_task": request.continue_task,
-                "provider_id": request.provider_id,
-                "intent": intent,
-                "requested_capabilities": list(auth.requested_capabilities),
-                "strict_research": auth.strict_research,
-                "sources_open_required": auth.sources_open_required,
-                "project_changes_required": auth.project_changes_required,
-                "required_tools": list(request.required_tools),
-                "denied_capabilities": list(auth.denied_capabilities),
-                "review_source_run_id": request.review_source_run_id,
-                "model_selection": selection_payload,
-                "input": _task_input_payload(request.input),
-            },
-        )
-        state.durable.claim_task(run_id)
-        state.durable.start_task(run_id, state={"next": "run"})
         if request.input is not None:
             submission = TaskSubmission.from_input(
                 session_id=session_id,
@@ -433,6 +403,22 @@ def _run_headless_task(
                 required_tools=request.required_tools,
                 input=request.input,
             )
+        state.durable.admit_input(
+            conversation_id=session_id,
+            request_id=run_id,
+            task_id=run_id,
+            text=request.task,
+            provider_snapshot=provider_snapshot(
+                request.provider_id,
+                admitted_selection,
+                provider_session_id=state.providers.sessions_snapshot().get(request.provider_id, ""),
+            ),
+            task_state=task_submission_state(submission, task_kind=resolve_task_kind_values(
+                submission.project, intent,
+            )),
+        )
+        state.durable.claim_task(run_id)
+        state.durable.start_task(run_id, state={"next": "run"})
         run_task_submission(deps, submission)
         terminal = dict(state.run_registry.last_terminal_event() or {})
         run_id = str(terminal.get("run_id") or request.run_id or "")

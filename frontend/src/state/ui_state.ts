@@ -43,11 +43,6 @@ interface UiStateDeps extends UiDeps {
 }
 let deps: UiStateDeps = {};
 const LS_CACHE = 'codey:ui-cache';
-const LS_SESSIONS = 'codey:sessions';
-const LS_ACTIVE = 'codey:active';
-const LS_PROJECTS = 'codey:projects';
-const LS_UI_UPDATED = 'codey:ui-updated';
-const LS_UI_REVISION = 'codey:ui-revision';
 let DEFAULT_PROVIDER: string = 'deepseek';
 let PROVIDER_LABELS: Record<string, string> = {
   deepseek: 'DeepSeek',
@@ -405,25 +400,8 @@ function cachedUiState(): Loose {
     confirmed = isSnapshot(cached.confirmed) ? asSnapshot(cached.confirmed) : null;
     return cached.state;
   }
-  // One-time migration of existing installations, never a second live cache writer.
   confirmed = null;
-  const previous = {
-    active_id: localStorage.getItem(LS_ACTIVE) || '',
-    sessions: loadJson(LS_SESSIONS, []),
-    projects: loadJson(LS_PROJECTS, []),
-    updated_at: Number(localStorage.getItem(LS_UI_UPDATED) || 0) || 0,
-    revision: Number(localStorage.getItem(LS_UI_REVISION) || 0) || 0,
-  };
-  const envelope = JSON.stringify({ schema: 1, state: previous, confirmed: null });
-  safeLocalSet(LS_CACHE, envelope);
-  try {
-    if (localStorage.getItem(LS_CACHE) === envelope)
-      for (const key of [LS_SESSIONS, LS_PROJECTS, LS_ACTIVE, LS_UI_UPDATED, LS_UI_REVISION])
-        localStorage.removeItem(key);
-  } catch {
-    /* Storage is optional; do not discard unmigrated drafts. */
-  }
-  return previous;
+  return { active_id: '', sessions: [], projects: [], updated_at: 0, revision: 0 };
 }
 const asSnapshot = (state: Loose): UiSnapshot => ({
   ...state,

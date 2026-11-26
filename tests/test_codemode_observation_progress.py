@@ -29,7 +29,7 @@ from tools.browser_production_live_gate import run_case
 from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import Target
 
-DOCUMENT: JsonObject = {"url": "https://example.com/record", "target_id": "tab", "loader_id": "document"}
+DOCUMENT: JsonObject = {"frame_id": "main", "url": "https://example.com/record", "target_id": "tab", "loader_id": "document"}
 GRANTS = frozenset({"control", "web.read", "browser.observe", "browser.interact", "browser.effect", "project.read", "project.write"})
 PROGRAM = "const s=unwrap(await tools.browser_snapshot({}));return s.elements[0].ref;"
 

@@ -219,11 +219,11 @@ def test_completed_query_is_not_relabelled_interrupted_after_navigation() -> Non
     session = TaskSession(TaskPolicy(frozenset({'control', 'web.read', 'browser.observe', 'browser.interact'})),
                           task_kind='chat', task_text=f'Navigate to {URL}.')
     session._memory_results['click'] = ToolResult(ToolCall('browser_click', {'ref': 'observed'}), 'delivered', ok=True,
-        canonical={'value': {'delivery': 'delivered'}}, audit={'query_baseline': {'document': {'loader_id': 'old'}}})
+        canonical={'value': {'delivery': 'delivered'}}, audit={'query_baseline': {'document': {'target_id': 'tab', 'frame_id': 'main', 'loader_id': 'old'}}})
     session._memory_results['read'] = ToolResult(ToolCall('browser_read', {}), 'Observed result', ok=True,
         audit={'query_click': 'click'})
     _, text = browser_task_handoff(session, build_turn_snapshot(session),
-                                    CompletionContext(browser_document={'loader_id': 'new'}))
+                                    CompletionContext(browser_document={'target_id': 'tab', 'frame_id': 'main', 'loader_id': 'new'}))
     assert text == ''
 
 

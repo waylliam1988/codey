@@ -62,7 +62,7 @@ def replay_recovery(provider, project, *, seed, enhanced, recoverable):
             if ref is None:
                 raise ValueError("recovery fixture must store its output")
             session._memory_results[identity] = ToolResult(ToolCall("read", {"path": f"module_{wave}.py"}), text, ok=True,
-                audit={"managed_output": {"handle": ref.handle, "sha256": ref.sha256}})
+                canonical={"managed_output": {"handle": ref.handle, "sha256": ref.sha256}})
             registry[f"module_{wave}.py"] = identity
             text += f"\nStored result: {identity}\nRead it with read_tool_result; do not repeat execution."
         items = [{"role": "assistant", "tool_calls": [{"id": identity, "type": "function",

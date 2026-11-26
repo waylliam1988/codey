@@ -10,7 +10,6 @@ from codey.task.model import TaskInput
 
 class ContinuationOptions(TypedDict, total=False):
     previous_run_id: str
-    initial_shell_results: tuple[dict[str, object], ...]
     model_selection: ApiRunSelection
     input: TaskInput
     run_id: str
@@ -35,7 +34,6 @@ class TaskSubmitter(Protocol):
                  requested_capabilities: tuple[str, ...] = (), strict_research: bool = False,
                  sources_open_required: bool = False, project_changes_required: bool = False,
                  denied_capabilities: tuple[str, ...] = (), previous_run_id: str = "",
-                 initial_shell_results: tuple[dict[str, object], ...] = (),
                  message_metadata: dict[str, object] | None = None, review_source_run_id: str = "",
                  model_selection: ApiRunSelection | None = None, run_id: str = "", input: TaskInput | None = None,
                  output_format: str = "text", output_schema: str = "",
@@ -45,6 +43,5 @@ class TaskSubmitter(Protocol):
 class ContinuationSubmitter(Protocol):
     def __call__(self, session_id: str, project: str | None, task: str, max_turns: int,
                  continue_task: bool, provider_id: str, intent: str, /, *, previous_run_id: str = "",
-                 initial_shell_results: tuple[dict[str, object], ...] = (),
                  model_selection: ApiRunSelection | None = None, run_id: str = "",
                  input: TaskInput | None = None) -> str | None: ...

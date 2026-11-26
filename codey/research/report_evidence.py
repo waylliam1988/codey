@@ -18,7 +18,6 @@ _CITATION_PREFIX = re.compile(r"[ \t*_：:]*")
 _NUMBER = r"[0-9]+(?:[.,][0-9]+)?"
 _UNITS = r"%|°[CF]|µg|μg|mg|kg|g|ml|mL|L|km|cm|mm|m|ms|s|h|克|公斤|小时|分钟|天|人"
 _QUANTITY = re.compile(rf"(?<![A-Za-z0-9_.])([+-]?{_NUMBER})\s*({_UNITS})(?![A-Za-z])")
-_LEGACY_QUANTITY = re.compile(rf"(?<![\w.])({_NUMBER})\s*({_UNITS})(?![A-Za-z])")
 _SUM_OR_DIFFERENCE = re.compile(r"\(\s*(?P<left>[^()\n]{1,32}?)\s*(?P<operator>[+−-])\s*(?P<right>[^()\n]{1,32})\s*\)")
 _WORD = re.compile(r"[^\W\d_]{4,}")
 _COMMON_WORDS = frozenset({"about", "average", "according", "approximately", "between", "reported", "showed", "observed", "results", "study", "source", "that", "this", "with", "from", "were"})
@@ -36,19 +35,16 @@ def _passage_span(passage: ReadPassage, quote: str) -> tuple[int, int] | None:
     return (passage.start + match.start(), passage.start + match.end()) if match is not None else None
 
 
-def _quantities(clause: str, cited: Mapping[str, ReadPassage], verified: set[int], *, legacy: bool) -> list[JsonValue]:
+def _quantities(clause: str, cited: Mapping[str, ReadPassage], verified: set[int]) -> list[JsonValue]:
     diagnostics: list[JsonValue] = []
     terms = _terms(clause)
-    # Historical submissions without calculation checks retain their original
-    # diagnostics when the archive verifies the immutable submission receipt.
-    pattern = _LEGACY_QUANTITY if legacy else _QUANTITY
-    for match in pattern.finditer(clause):
+    for match in _QUANTITY.finditer(clause):
         if match.start() in verified:
             continue
         quantity = match[1], match[2].casefold()
         if any((raw[1], raw[2].casefold()) == quantity and (not terms or terms <= _terms(text))
                for passage in cited.values() for text in re.split(r"(?<=[.!?。！？])\s+|\n+", passage.excerpt)
-               for raw in pattern.finditer(text)):
+               for raw in _QUANTITY.finditer(text)):
             continue
         diagnostics.append({"kind": "quantity_needs_context", "quantity": match[0], "labels": list(cited)})
     return diagnostics
@@ -71,7 +67,7 @@ def _claim_row(start: int, end: int, kind: str, state: str, *, refs: tuple[str, 
 
 
 def _calculations(clause: str, cited: Mapping[str, ReadPassage], findings: list[JsonValue],
-                  *, offset: int = 0, checks: list[JsonValue] | None = None) -> set[int]:
+                  *, offset: int, checks: list[JsonValue]) -> set[int]:
     verified: set[int] = set()
     for expression in _SUM_OR_DIFFERENCE.finditer(clause):
         result = next(reversed(tuple(_QUANTITY.finditer(clause, 0, expression.start()))), None)
@@ -93,12 +89,11 @@ def _calculations(clause: str, cited: Mapping[str, ReadPassage], findings: list[
             raise ValueError(f"calculation_mismatch: {left[1]} {expression['operator']} {right[1]} = {actual} {result[2]}; correct the expression or reported value")
         findings.append({"operation": "add" if addition else "subtract", "result": str(actual), "unit": result[2],
                          "left": left[1], "right": right[1], "left_sources": inputs_left, "right_sources": inputs_right})
-        if checks is not None:
-            spans = [*inputs_left, *inputs_right]
-            refs = tuple(dict.fromkeys(ref for span in spans if isinstance(span, dict)
-                                       and isinstance(ref := span.get("passage_ref"), str)))
-            checks.append(_claim_row(offset + result.start(), offset + expression.end(), "calculation", "verified",
-                                     refs=refs, spans=spans))
+        spans = [*inputs_left, *inputs_right]
+        refs = tuple(dict.fromkeys(ref for span in spans if isinstance(span, dict)
+                                   and isinstance(ref := span.get("passage_ref"), str)))
+        checks.append(_claim_row(offset + result.start(), offset + expression.end(), "calculation", "verified",
+                                 refs=refs, spans=spans))
         # The arithmetic is proven; matching numbers alone does not establish
         # the source's entity, denominator, time or study conditions.
         verified.add(result.start())
@@ -141,17 +136,14 @@ def _claim_segment(body: str, start: int, cited: Mapping[str, ReadPassage]) -> J
     return _claim_row(start, end, "claim", "source_text_match", refs=(passage.ref,), spans=[proof])
 
 
-def check_report_evidence(submission: AnswerSubmission, passages: Mapping[str, ReadPassage], *,
-                          verify_calculations: bool = True, claim_check_version: int | None = None) -> JsonObject:
-    if claim_check_version is not None and (type(claim_check_version) is not int or claim_check_version != CLAIM_CHECK_VERSION):
-        raise ValueError("unsupported research claim check version")
+def check_report_evidence(submission: AnswerSubmission, passages: Mapping[str, ReadPassage]) -> JsonObject:
     status = evidence_status_suffix(submission["scope"]["primary_passages"] is not None, submission["state"])
     markdown = mask_markdown_code(submission["markdown"].removesuffix(status))
     browser = bool(submission["scope"].get("execution_refs"))
     validated: list[JsonValue] = []
     unverified: list[JsonValue] = []
     calculations: list[JsonValue] = []
-    claim_checks: list[JsonValue] | None = [] if claim_check_version is not None else None
+    claim_checks: list[JsonValue] = []
     groups: dict[tuple[int, int], dict[str, ReadPassage]] = {}
     for row in submission["citations"]:
         passage = passages.get(row["passage_ref"])
@@ -163,8 +155,7 @@ def check_report_evidence(submission: AnswerSubmission, passages: Mapping[str, R
     for (start, stop), cited in groups.items():
         line_start = markdown.rfind("\n", 0, start) + 1
         clause_start = max(clause_stop, line_start)
-        if claim_checks is not None:
-            claim_checks.extend(_claim_segments(markdown, clause_stop, clause_start, {}))
+        claim_checks.extend(_claim_segments(markdown, clause_stop, clause_start, {}))
         clause = markdown[clause_start:start]
         clause_stop = stop
         quotes = [quote for quote in _DIRECT_QUOTE.finditer(clause) if _CITATION_TAIL.fullmatch(clause[quote.end():])]
@@ -186,17 +177,13 @@ def check_report_evidence(submission: AnswerSubmission, passages: Mapping[str, R
             label, passage, (source_start, source_end) = located
             proof: JsonObject = {"label": label, "passage_ref": passage.ref, "start": source_start, "end": source_end}
             validated.append(proof)
-            if claim_checks is not None:
-                offset = 0 if quote is following else clause_start
-                claim_checks.append(_claim_row(offset + quote.start(), offset + quote.end(), "quote", "verified",
-                                               refs=(passage.ref,), spans=[proof]))
-        verified = (_calculations(clause, cited, calculations, offset=clause_start, checks=claim_checks)
-                    if verify_calculations else set())
-        unverified.extend(_quantities(clause, cited, verified, legacy=not verify_calculations))
-        if claim_checks is not None:
-            claim_checks.extend(_claim_segments(markdown, clause_start, start, cited))
-    if claim_checks is not None:
-        claim_checks.extend(_claim_segments(markdown, clause_stop, len(markdown), {}))
+            offset = 0 if quote is following else clause_start
+            claim_checks.append(_claim_row(offset + quote.start(), offset + quote.end(), "quote", "verified",
+                                           refs=(passage.ref,), spans=[proof]))
+        verified = _calculations(clause, cited, calculations, offset=clause_start, checks=claim_checks)
+        unverified.extend(_quantities(clause, cited, verified))
+        claim_checks.extend(_claim_segments(markdown, clause_start, start, cited))
+    claim_checks.extend(_claim_segments(markdown, clause_stop, len(markdown), {}))
     selected = tuple(dict.fromkeys((row["label"], row["passage_ref"]) for row in submission["citations"]))
     for label, ref in selected:
         passage = passages.get(ref)
@@ -205,8 +192,7 @@ def check_report_evidence(submission: AnswerSubmission, passages: Mapping[str, R
     groups_of_sources = same_source_groups(passages, selected)
     return {"verified_quotes": validated, "needs_review": unverified,
             "shared_source_groups": [list[JsonValue](labels) for labels in groups_of_sources],
-            **({"verified_calculations": calculations} if verify_calculations else {}),
-            **({"claim_check_version": claim_check_version, "claim_checks": claim_checks} if claim_checks is not None else {})}
+            "verified_calculations": calculations, "claim_check_version": CLAIM_CHECK_VERSION, "claim_checks": claim_checks}
 
 
 def _adjacent_groups(groups: dict[tuple[int, int], dict[str, ReadPassage]]) -> dict[tuple[int, int], dict[str, ReadPassage]]:

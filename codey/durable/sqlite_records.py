@@ -18,7 +18,7 @@ from codey.durable.model import (
     SubmissionRecord,
     SubmissionStatus,
     TaskCheckpoint,
-    migrate_checkpoint_phase,
+    require_checkpoint_version,
 )
 from codey.types.json_value import require_json_integer, require_json_string
 from codey.utils.object_fields import object_fields
@@ -75,7 +75,8 @@ def entry_from_row(row: sqlite3.Row) -> EntryDraft:
 
 
 def task_from_row(row: sqlite3.Row) -> TaskCheckpoint:
-    phase, schema_version = migrate_checkpoint_phase(_text(row, "phase"), _integer(row, "schema_version"))
+    phase = _text(row, "phase")
+    schema_version = require_checkpoint_version(_integer(row, "schema_version"))
     return TaskCheckpoint(
         task_id=_text(row, "id"),
         conversation_id=_text(row, "conversation_id"),

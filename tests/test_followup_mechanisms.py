@@ -116,16 +116,13 @@ def test_arithmetic_keeps_entity_and_condition_review(expression: str) -> None:
     assert check["needs_review"], "Arithmetic must not suppress source context checks for its operands"
 
 
-def test_legacy_submission_diagnostics_survive_signed_calculation_support() -> None:
+def test_submission_diagnostics_preserve_signed_quantity() -> None:
     url = "https://example.org/original"
     text = "The measured amount is 7 kg."
     passage = ReadPassage("p1", OpenedSource(url, url, "", "", "original"), text, (), 0, len(text))
     scope = AnswerScope(digest("task"), (("e1", "p1"),), ("attempt",))
     submission = submit_answer(scope, {"state": "answered", "markdown": "The claimed amount is -8 kg [e1]."})
-    old = check_report_evidence(submission, {"p1": passage}, verify_calculations=False)
     current = check_report_evidence(submission, {"p1": passage})
-    assert old == {"verified_quotes": [], "shared_source_groups": [],
-                   "needs_review": [{"kind": "quantity_needs_context", "quantity": "8 kg", "labels": ["e1"]}]}
     reviews = current["needs_review"]
     assert isinstance(reviews, list) and decode_json_object(reviews[0])["quantity"] == "-8 kg"
 

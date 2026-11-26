@@ -21,18 +21,17 @@ from codey.providers.transport import ProviderTransport
 from tests.durable.test_provider_response_receipts import runtime
 
 
-def test_builder_adapts_raw_provider_and_normalizes_single_sink_owner(tmp_path):
+def test_builder_adapts_raw_provider_and_uses_execution_sink(tmp_path):
     durable, _, _, sink = runtime(tmp_path)
     try:
         request = KernelRunRequestBuilder(object(), "r", "task", "local", "work").build(
-            observation=KernelObservationDeps(intent_sink=sink))
+            execution=KernelExecutionDeps(intent_sink=sink),
+            observation=KernelObservationDeps())
         assert isinstance(request.transport.provider, ProviderTransport)
         assert request.execution.intent_sink is sink
-        assert request.observation.intent_sink is None
+        assert not hasattr(request.observation, "intent_sink")
         changed = replace(request, execution=replace(request.execution, permission_profile="other"))
         assert changed.execution.intent_sink is sink
-        assert changed.observation.intent_sink is None
-        # Compatibility construction is converted once, even during a restart.
         replacement = KernelExecutionDeps(intent_sink=sink)
         assert replace(request, execution=replacement).execution is replacement
     finally:
@@ -65,7 +64,7 @@ def test_frozen_context_requires_explicit_scope_even_when_unscoped():
     # malformed and must not silently inherit today's request scope.
     assert ProviderRequestContext.from_payload(payload).effect_scope == ""
     del payload["effect_scope"]
-    with pytest.raises(ValueError, match="effect_scope"):
+    with pytest.raises(ValueError, match="context fields"):
         ProviderRequestContext.from_payload(payload)
 
 

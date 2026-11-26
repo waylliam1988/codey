@@ -199,7 +199,7 @@ def test_research_receipt_externalizes_with_store(tmp_path: Path) -> None:
         ok=True,
     )
     assert outcome.truncated is True
-    managed = outcome.audit["managed_output"]
+    managed = outcome.canonical["managed_output"]
     assert managed["handle"].startswith("out_")
     assert managed["original_bytes"] == 30_000
     assert "externalized" in outcome.model_text

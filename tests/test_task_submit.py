@@ -173,7 +173,7 @@ class TaskSubmitTests(unittest.TestCase):
         state = _FakeState(reserved=True)
         state.admit_and_claim("s", "run-9", "t")
         with (
-            mock.patch.dict(sys.modules, dict[str, object]({"codey.operations.task_entry": None})),
+            mock.patch.dict(sys.modules, dict[str, object]({"codey.operations.task_submission": None})),
             self.assertRaises(ImportError),
         ):
             task_submit.run_task(
@@ -196,7 +196,7 @@ class TaskSubmitTests(unittest.TestCase):
             return state
 
         with (
-            mock.patch.dict(sys.modules, dict[str, object]({"codey.operations.task_entry": None})),
+            mock.patch.dict(sys.modules, dict[str, object]({"codey.operations.task_submission": None})),
             _browser_queue() as queued,
         ):
             run_id = task_submit.submit_task(
@@ -216,7 +216,8 @@ class TaskSubmitTests(unittest.TestCase):
 
         state = _FakeState(reserved=True)
         state.admit_and_claim("s", "run-9", "t")
-        supervisor = state.self_repair
+        supervisor = mock.Mock()
+        state._self_repair = supervisor
         kicks: list[Callable[[], bool]] = []
         entries: list[TaskSubmission] = []
         calls = 0
@@ -236,10 +237,10 @@ class TaskSubmitTests(unittest.TestCase):
             kicks.append(is_busy)
             return False
 
-        module = ModuleType("codey.operations.task_entry")
+        module = ModuleType("codey.operations.task_submission")
         with (
             mock.patch.object(module, "run_task_submission", new=entry, create=True),
-            mock.patch.dict(sys.modules, dict[str, object]({"codey.operations.task_entry": module})),
+            mock.patch.dict(sys.modules, dict[str, object]({"codey.operations.task_submission": module})),
             mock.patch.object(supervisor, "kick_if_idle", new=kick),
         ):
             task_submit.run_task(

@@ -287,7 +287,7 @@ def test_managed_read_recovery_uses_retained_output_offsets(tmp_path: Path, disp
         tool_name="browser_read", display_ref="read-ref", text=original)
     assert retained is not None
     child = ToolResult(ToolCall("browser_read", {}, "p:child:0"), "WINDOW_MIDDLE\n" + "x" * display_chars,
-        ok=True, truncated=True, audit={"managed_output": {"handle": retained.handle, "sha256": retained.sha256,
+        ok=True, truncated=True, canonical={"managed_output": {"handle": retained.handle, "sha256": retained.sha256,
             "original_bytes": retained.original_bytes, "stored_bytes": retained.stored_bytes,
             "stored_truncated": retained.stored_truncated}})
     parent = ToolResult(ToolCall("codemode", {}, "p"), "missing return", ok=False,

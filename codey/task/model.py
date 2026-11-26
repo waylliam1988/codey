@@ -11,6 +11,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
+from codey.types.json_value import decode_json_object, require_json_boolean, require_json_integer, require_json_string
+
 TaskKind = Literal["chat", "project", "research", "review", "planning"]
 
 
@@ -101,10 +103,7 @@ class TaskSubmission:
     # Entry-generated explicit denials (e.g.明确只读 → project.write/shell.approval).
     # build_task_policy() 统一扣除，模型输出与 requested 永远不能加回。
     denied_capabilities: tuple[str, ...] = ()
-    # Shell approval continuation: previous run id (原策略复用）与已裁决的
-    # shell 结果（turn-0 初始行，首发回答原 native 调用）。
     previous_run_id: str = ""
-    initial_shell_results: tuple[dict[str, object], ...] = ()
     # Explicit review reuse source: prior completed run id whose structured
     # review may be reused when every identity and scope condition matches.
     # Empty means fresh review; never a file path.
@@ -170,30 +169,70 @@ class TaskSubmission:
         )
 
     def resolved_input(self) -> TaskInput:
-        """Return only the explicit canonical task input.
-
-        Approval resolution is intentionally never inferred from a result
-        payload. Legacy callers that still carry ``initial_shell_results`` can
-        use :meth:`legacy_resolved_input` while they migrate.
-        """
+        """Resolve external submission parameters before admission."""
         if self.input is not None:
             return self.input
         if self.continue_task and (self.previous_run_id or self.run_id):
             return ResumeRun(self.previous_run_id or self.run_id, self.task)
         return StartTask(self.task)
 
-    def legacy_resolved_input(self) -> TaskInput:
-        """Compatibility adapter for pre-typed callers only."""
-        if self.input is not None:
-            return self.input
-        if self.initial_shell_results:
-            first = self.initial_shell_results[0]
-            approval_id = str(
-                first.get("approval_id") or first.get("call_id")
-                or self.previous_run_id or self.run_id
-            )
-            return ResolveShellApproval(approval_id)
-        return self.resolved_input()
+def task_input_payload(value: TaskInput) -> dict[str, object]:
+    if isinstance(value, EditUserMessage):
+        return {"kind": "edit_user_message", "entry_id": value.entry_id, "text": value.text,
+                "expected_revision": value.expected_revision}
+    if isinstance(value, StartTask):
+        return {"kind": "start_task", "text": value.text}
+    if isinstance(value, ResumeRun):
+        return {"kind": "resume_run", "source_run_id": value.source_run_id, "instruction": value.instruction}
+    if isinstance(value, HandoffRun):
+        return {"kind": "handoff_run", "source_run_id": value.source_run_id, "instruction": value.instruction,
+                "observe_only": value.observe_only}
+    return {"kind": "resolve_shell_approval", "approval_id": value.approval_id}
+
+
+def task_input_from_payload(value: object) -> TaskInput:
+    row = decode_json_object(value)
+    kind = row.get("kind")
+    if kind == "edit_user_message" and set(row) == {"kind", "entry_id", "text", "expected_revision"}:
+        return EditUserMessage(require_json_string(row["entry_id"], "entry_id"), require_json_string(row["text"], "text"),
+                               require_json_integer(row["expected_revision"], "expected_revision"))
+    if kind == "start_task" and set(row) == {"kind", "text"}:
+        return StartTask(require_json_string(row["text"], "text"))
+    if kind == "resume_run" and set(row) == {"kind", "source_run_id", "instruction"}:
+        return ResumeRun(require_json_string(row["source_run_id"], "source_run_id"),
+                         require_json_string(row["instruction"], "instruction"))
+    if kind == "handoff_run" and set(row) == {"kind", "source_run_id", "instruction", "observe_only"}:
+        return HandoffRun(require_json_string(row["source_run_id"], "source_run_id"),
+                          require_json_string(row["instruction"], "instruction"),
+                          require_json_boolean(row["observe_only"], "observe_only"))
+    if kind == "resolve_shell_approval" and set(row) == {"kind", "approval_id"}:
+        return ResolveShellApproval(require_json_string(row["approval_id"], "approval_id"))
+    raise ValueError(f"invalid durable task input: {kind!r}")
+
+
+def task_submission_state(request: TaskSubmission, *, task_kind: str) -> dict[str, object]:
+    """Freeze the same dispatch facts at every durable task entry."""
+    return {
+        "project": request.project,
+        "task": request.task,
+        "max_turns": request.max_turns,
+        "continue_task": request.continue_task,
+        "provider_id": request.provider_id,
+        "intent": request.intent,
+        "task_kind": task_kind,
+        "requested_capabilities": list(request.requested_capabilities),
+        "strict_research": request.strict_research,
+        "sources_open_required": request.sources_open_required,
+        "project_changes_required": request.project_changes_required,
+        "required_tools": list(request.required_tools),
+        "denied_capabilities": list(request.denied_capabilities),
+        "previous_run_id": request.previous_run_id,
+        "review_source_run_id": request.review_source_run_id,
+        "model_selection": dict(request.model_selection),
+        "input": task_input_payload(request.resolved_input()),
+        "output_format": request.output_format,
+        "output_schema": request.output_schema,
+    }
 
 
 def derive_project_changes_required(

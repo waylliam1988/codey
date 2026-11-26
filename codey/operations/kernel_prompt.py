@@ -340,7 +340,7 @@ def _browser_read_context(result: ToolResult, session: TaskSession, *, receipt_r
         row: JsonObject = {"result_ref": reference, "tool": "browser_read", "text": text,
                            "complete_read": complete, "display_omitted": omitted,
                            "source": source, "browser_document": decode_json_value(child.audit.get("browser_document"))}
-        retained = child.audit.get("managed_output") is not None
+        retained = child.canonical.get("managed_output") is not None
         if (omitted or child.truncated and retained) and receipt_recovery and session.policy.allows("control"):
             # Managed output can differ from the display window and its footer.
             row["read_tool_result"] = {"result_ref": reference, "view": "output",

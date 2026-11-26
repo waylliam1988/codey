@@ -473,13 +473,12 @@ def run_command_with_managed_output(
         "original_sha256": ref.original_sha256,
         "stored_truncated": ref.stored_truncated,
     }
-    audit = {**dict(projected.audit), "managed_output": managed_output}
     return ToolOutcome(
         projected.model_text,
         projected.ok,
-        canonical=projected.canonical,
+        canonical={**projected.canonical, "managed_output": managed_output},
         presentation=projected.presentation,
-        audit=audit,
+        audit=projected.audit,
         error_code=projected.error_code,
         exit_code=projected.exit_code,
         changed=projected.changed,

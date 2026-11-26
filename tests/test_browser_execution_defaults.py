@@ -111,7 +111,7 @@ def test_one_javascript_program_uses_the_stage_reached_by_each_committed_click()
         'condition': 'text', 'value': 'Ready', 'timeout_ms': timeout}, after='page_actions', stage=stage)
         for stage, timeout in ((1, 8200), (2, 13300)))
     session = TaskSession(TaskPolicy(GRANTS, required_checks=checks))
-    document: JsonObject = {'url': URL, 'loader_id': 'same-page'}
+    document: JsonObject = {'target_id': 'tab', 'frame_id': 'main', 'url': URL, 'loader_id': 'same-page'}
     record(session, 'browser_navigate', {'url': URL}, document)
     snapshot = restore_snapshot(snapshot_description(build_turn_snapshot(session)))
     delivered: list[ToolCall] = []
@@ -161,7 +161,7 @@ def test_formal_wait_return_repair_keeps_original_timeout_without_redelivery() -
         'condition': 'text', 'value': 'Ready', 'timeout_ms': timeout}, after='page_actions', stage=stage)
         for stage, timeout in ((1, 8200), (2, 13300)))
     session = TaskSession(TaskPolicy(GRANTS, required_checks=checks))
-    document: JsonObject = {'url': URL, 'loader_id': 'same-page'}
+    document: JsonObject = {'target_id': 'tab', 'frame_id': 'main', 'url': URL, 'loader_id': 'same-page'}
     record(session, 'browser_navigate', {'url': URL}, document)
     record(session, 'browser_click', {}, document)
     delivered: list[ToolCall] = []
@@ -204,8 +204,8 @@ def test_reloaded_document_does_not_inherit_old_fill_and_click_progress() -> Non
     checks += (require_tool_success('browser_wait', arguments={'condition': 'text', 'value': 'Ready'}),)
     session = TaskSession(TaskPolicy(GRANTS, strict_research=True, required_checks=checks), task_kind='research',
                           task_text=f'Investigate the record.\n{URL}', required_source_urls=frozenset({URL}))
-    old: JsonObject = {'url': URL, 'loader_id': 'old'}
-    new: JsonObject = {'url': URL, 'loader_id': 'new'}
+    old: JsonObject = {'target_id': 'tab', 'frame_id': 'main', 'url': URL, 'loader_id': 'old'}
+    new: JsonObject = {'target_id': 'tab', 'frame_id': 'main', 'url': URL, 'loader_id': 'new'}
     for name in ('browser_navigate', 'browser_fill', 'browser_click'):
         record(session, name, {}, old)
     record(session, 'browser_navigate', {'url': URL}, new)

@@ -49,6 +49,7 @@ class ToolOutcome:
             model_text,
             truncated=self.truncated,
             audit=audit,
+            managed_output=canonical.get("managed_output"),
         )
         object.__setattr__(self, "model_text", model_text)
         object.__setattr__(self, "error_code", error_code)
@@ -89,7 +90,7 @@ class ToolOutcome:
         return str(value or "") or ("ok" if self.ok else "error")
 
     def managed_output(self) -> Mapping[str, object]:
-        value = self.audit.get("managed_output") if isinstance(self.audit, Mapping) else None
+        value = self.canonical.get("managed_output")
         return normalized_managed_output(value)
 
 

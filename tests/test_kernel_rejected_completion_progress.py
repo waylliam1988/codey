@@ -141,7 +141,7 @@ def test_domain_repair_budget_survives_history_eviction_and_restarts(observation
         saved = ProgressSnapshot.from_payload(parse_json_object(json.dumps(progress.snapshot().to_payload())))
         progress = KernelProgress(stagnant_turns=3, snapshot=saved)
         assert saved.repair_rejections == number + 1
-        assert saved.schema_version == 2
+        assert saved.to_payload()["schema_version"] == 4
         assert progress.stopped == (number == 2)
     # New tool output does not erase an exhausted domain budget.
     progress.observe([ToolResult(ToolCall("save_finding", {"claim": "another variant"}), "new f9", ok=True)], session)
@@ -151,21 +151,22 @@ def test_domain_repair_budget_survives_history_eviction_and_restarts(observation
     assert not progress.stopped and progress.snapshot().repair_rejections == 1
 
 
-def test_legacy_progress_preserves_payload_and_upgrades_only_with_domain_observation() -> None:
+def test_repair_budget_and_stop_survive_reopen_without_a_tool_batch() -> None:
     from codey.operations.kernel_progress import KernelProgress
     from codey.runtime.core.progress import ProgressSnapshot
 
-    payload: dict[str, object] = {"limit": 3, "seen": [], "attempts": [], "idle": 0, "last_batch_id": ""}
-    legacy = ProgressSnapshot.from_payload(payload)
-    assert legacy.to_payload() == payload
-    progress = KernelProgress(3, snapshot=legacy)
-    assert progress.snapshot() == legacy
     session = TaskSession(TaskPolicy(frozenset({"control"})))
-    progress.reject_completion({}, "old failure", session)
-    assert progress.snapshot().schema_version == 1
-    progress.reject_completion({}, "domain failure", session, failure_key="length:report")
-    assert progress.snapshot().schema_version == 2
-    assert progress.snapshot().repair_rejections == 1
+    progress = KernelProgress(2)
+    progress.reject_completion({}, "length:report", session)
+    progress.reject_completion({}, "first keyed failure", session, failure_key="length:report")
+    saved = ProgressSnapshot.from_payload(progress.snapshot().to_payload())
+    assert not saved.last_batch_id and saved.repair_rejections == 1
+    reopened = KernelProgress(5, snapshot=saved)
+    assert reopened.snapshot() == saved and not reopened.stopped
+    reopened.reject_completion({}, "same issue", session, failure_key="length:report")
+    settled = ProgressSnapshot.from_payload(reopened.snapshot().to_payload())
+    assert settled.limit == settled.repair_rejections == 2
+    assert KernelProgress(1, snapshot=settled).stopped
 
 
 @pytest.mark.parametrize("changes", [
@@ -176,7 +177,7 @@ def test_legacy_progress_preserves_payload_and_upgrades_only_with_domain_observa
 def test_repair_progress_codec_rejects_invalid_observations(changes: dict[str, object]) -> None:
     from codey.runtime.core.progress import ProgressSnapshot
 
-    payload = ProgressSnapshot(limit=3, schema_version=2, repair_failure_key="length:report", repair_rejections=1).to_payload()
+    payload = ProgressSnapshot(limit=3, repair_failure_key="length:report", repair_rejections=1).to_payload()
     with pytest.raises(ValueError):
         ProgressSnapshot.from_payload({**payload, **changes})
 
@@ -255,7 +256,7 @@ def test_domain_budget_survives_process_exit_on_rejection_and_request_admission(
         state = operation_from_checkpoint(durable.task("r"), "s")
         assert state is not None
         saved = state.counters.progress
-        assert saved.schema_version == 4 and saved.repair_rejections == 2
+        assert saved.to_payload()["schema_version"] == 4 and saved.repair_rejections == 2
         assert saved.recovery_progress_turn == 2
         assert saved.repair_failure_key.startswith("controlled_domain_issue:")
     finally:

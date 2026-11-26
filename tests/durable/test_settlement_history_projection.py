@@ -51,16 +51,14 @@ def test_projection_ignores_empty_workflows_and_excludes_later_changes(backend: 
         durable.close()
 
 
-@pytest.mark.parametrize("legacy", [False, True])
-def test_projection_selects_its_task_and_retains_each_terminal_occurrence(legacy: bool) -> None:
+def test_projection_selects_its_task_and_retains_each_terminal_occurrence() -> None:
     task = TaskCheckpoint("t", "c", "s", "running", 0, {}, {})
     other = replace(task, task_id="other")
     effect = EffectRecord("e", "t", "tool_call", "unsafe", "digest", "ok", {}, {"exit_code": 0})
     unrelated = replace(effect, effect_id="unrelated", task_id="other")
     mutation = DurableMutation("c", 0, task=task, task_updates=(other,), effects=(effect,))
     payload = execution_payload(mutation, None)
-    if legacy:
-        payload.pop("tasks")
+    assert "task" not in payload
     unrelated_payload = execution_payload(DurableMutation("c", 0, task=other, effects=(unrelated,)), None)
     rows: list[tuple[int, object]] = [(0, unrelated_payload), (1, {}), (2, payload), (3, payload)]
 
@@ -73,12 +71,14 @@ def test_projection_selects_its_task_and_retains_each_terminal_occurrence(legacy
     assert settlement_histories(("t",), [*rows, (4, changed)])[0].settlements[-1][1].settlement == {"exit_code": 1}
 
 
-@pytest.mark.parametrize("corruption", ["schema", "effects", "effect", "intent"])
+@pytest.mark.parametrize("corruption", ["schema", "singular_task", "effects", "effect", "intent"])
 def test_projection_rejects_corrupt_relevant_history(corruption: str) -> None:
     task = TaskCheckpoint("t", "c", "s", "running", 0, {}, {})
     payload = execution_payload(DurableMutation("c", 0, task=task), None)
     if corruption == "schema":
         payload["schema_version"] = 99
+    elif corruption == "singular_task":
+        payload["task"] = payload.pop("tasks")[0]
     elif corruption == "effects":
         payload["effects"] = "not an array"
     elif corruption == "effect":

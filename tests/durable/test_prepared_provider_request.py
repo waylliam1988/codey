@@ -259,7 +259,7 @@ def test_effect_codec_accepts_only_current_schema_and_provider_request_reference
         replace(intent, effect_category="tool_call")
 
 
-def test_request_without_frozen_scope_is_rejected_without_a_new_request(tmp_path: Path) -> None:
+def test_legacy_v1_request_is_rejected_without_a_new_request(tmp_path: Path) -> None:
     from codey.operations.provider_receipts import snapshot_description
     from codey.operations.turn_snapshot import build_turn_snapshot
 
@@ -279,7 +279,7 @@ def test_request_without_frozen_scope_is_rejected_without_a_new_request(tmp_path
         state = operation_from_checkpoint(durable.task("r"), "s")
         assert state is not None
         for _ in range(2):
-            with pytest.raises(RuntimeEffectError, match="no frozen effect scope"):
+            with pytest.raises(RuntimeEffectError, match="artifact envelope mismatch"):
                 sink.load_response(session, state.response_ref)
         provider.send.assert_not_called()
         assert len(durable.effects("r")) == 1

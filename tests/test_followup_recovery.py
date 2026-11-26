@@ -71,9 +71,9 @@ def test_patch_cold_restart_preserves_settled_write_and_original_baseline(
 
     def request(active_sink: KernelEffectSink, active_tracker: ChangeTracker) -> KernelRunRequest:
         return KernelRunRequest(transport=KernelTransportDeps(provider=adapt_provider(Provider()), provider_id="local",
-            run_id="r", effect_scope="outer"), execution=KernelExecutionDeps(project_path=project, tool_fns=AgentToolFns(),
+            run_id="r", effect_scope="outer"), execution=KernelExecutionDeps(intent_sink=active_sink, project_path=project, tool_fns=AgentToolFns(),
             change_tracker=active_tracker, workspace_revision_store=revisions), observation=KernelObservationDeps(
-                intent_sink=active_sink, on_boundary=durable_generation_boundary_callback(durable=active_sink.durable,
+                on_boundary=durable_generation_boundary_callback(durable=active_sink.durable,
                     session_id="s", task_id="r", sink=active_sink)))
 
     original = runtime._write_text_after_final_path_check
@@ -188,8 +188,8 @@ def test_cold_restart_recovers_the_original_project_documentation(tmp_path: Path
 
         return KernelRunRequest(transport=KernelTransportDeps(provider=adapt_provider(Provider(not cold)),
             run_id="r", provider_id="local", effect_scope="outer", user_task=task),
-            execution=KernelExecutionDeps(project_path=project, tool_fns=AgentToolFns(), workspace_revision_store=revisions),
-            observation=KernelObservationDeps(intent_sink=active, on_boundary=cut_after_read))
+            execution=KernelExecutionDeps(intent_sink=active, project_path=project, tool_fns=AgentToolFns(), workspace_revision_store=revisions),
+            observation=KernelObservationDeps(on_boundary=cut_after_read))
 
     def original_reads() -> set[str]:
         return {effect.effect_id for effect in _durable(line).settled_effects("r")

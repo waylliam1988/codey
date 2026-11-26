@@ -60,9 +60,9 @@ class VerificationObservation:
 
 
 def decode_verification_observation(value: object) -> VerificationObservation | None:
-    """Decode legacy rows without losing invalid latest identity/result facts.
+    """Project recorded verification facts without losing an incomplete latest result.
 
-    Non-record entries historically have no command/revision and are ignored.
+    A non-record has no command or revision to associate with a check.
     Integer revisions remain separate from workspace revision; a malformed edit
     revision cannot be assigned to a real edit epoch.
     """
@@ -99,9 +99,7 @@ def decode_verification_observation(value: object) -> VerificationObservation | 
 
 
 def verification_observations(values: Sequence[object]) -> tuple[VerificationObservation, ...]:
-    return tuple(row for value in values
-                 if (row := value if isinstance(value, VerificationObservation)
-                     else decode_verification_observation(value)) is not None)
+    return tuple(row for value in values if (row := decode_verification_observation(value)) is not None)
 
 
 def latest_verification_observations(

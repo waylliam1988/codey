@@ -20,7 +20,7 @@ from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.runtime.observe.terminalizer import terminal_turns
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.task.kind import resolve_task_kind_values, trace_mode, ui_mode
-from codey.task.model import TaskSubmission
+from codey.task.model import TaskSubmission, task_submission_state
 from codey.utils.object_fields import object_fields
 from codey.utils.refs import coerce_int
 from codey.workspace.revision import INITIAL_WORKSPACE_REVISION, WorkspaceRevisionStore, WorkspaceState
@@ -115,25 +115,7 @@ def _ensure_durable_task(state: TaskState, request: TaskSubmission) -> bool:
         task_id=request.run_id,
         text=request.task,
         provider_snapshot=snapshot,
-        task_state={
-            "project": request.project,
-            "task": request.task,
-            "max_turns": request.max_turns,
-            "continue_task": request.continue_task,
-            "provider_id": request.provider_id,
-            "intent": request.intent,
-            "task_kind": resolve_task_kind_values(request.project, request.intent),
-            "requested_capabilities": list(request.requested_capabilities),
-            "strict_research": request.strict_research,
-            "sources_open_required": request.sources_open_required,
-            "project_changes_required": request.project_changes_required,
-            "required_tools": list(request.required_tools),
-            "denied_capabilities": list(request.denied_capabilities),
-            "previous_run_id": request.previous_run_id,
-            "initial_shell_results": list(request.initial_shell_results),
-            "review_source_run_id": request.review_source_run_id,
-            "model_selection": dict(model_selection or {}),
-        },
+        task_state=task_submission_state(request, task_kind=resolve_task_kind_values(request.project, request.intent)),
         initial_phase="accepted",
     )
     durable.claim_task(request.run_id)

@@ -52,9 +52,7 @@ Research 可以读取旧知识作为线索，并核查其固定版本的原始�
 
 ## 数据与 Markdown
 
-当前知识空间下的 `.codey/knowledge.db` 是权威存储。首次打开会事务导入旧笔记，
-保留原 Markdown 和旧索引供核对；历史笔记不会凭空补出缺失的结构化证据。
-索引重建从数据库进行。备份知识空间时应包含数据库；不要只备份导出的 Markdown。
+当前知识空间下的 `.codey/knowledge.db` 是权威存储。索引从数据库重建。备份知识空间时应包含数据库和需要归档的 Markdown 文件。
 
 Markdown 是显式交换格式：`KnowledgeStore.export_note(id)` 导出；
 `import_markdown(text, expected_revision=...)` 校验版本后导入。

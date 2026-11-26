@@ -361,12 +361,12 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(
 
     def request(active_sink: KernelEffectSink) -> KernelRunRequest:
         return KernelRunRequest(transport=KernelTransportDeps(provider=adapt_provider(Provider()), provider_id="local", run_id="r", effect_scope="outer"),
-            execution=KernelExecutionDeps(
+            execution=KernelExecutionDeps(intent_sink=active_sink,
                 project_path=project,
                 tool_fns=AgentToolFns(),
                 workspace_revision_store=revs,
             ),
-            observation=KernelObservationDeps(intent_sink=active_sink, on_boundary=durable_generation_boundary_callback(
+            observation=KernelObservationDeps(on_boundary=durable_generation_boundary_callback(
                 durable=active_sink.durable, session_id="s", task_id="r", sink=active_sink)))
 
     monkeypatch.setattr(NodeWorkerRuntime, "execute", interrupted)
@@ -490,12 +490,11 @@ def test_terminal_native_receipt_drain_settles_received_generation_before_writer
             user_task="Inspect a file",
             stagnant_turns=1,
         ),
-        execution=KernelExecutionDeps(
+        execution=KernelExecutionDeps(intent_sink=sink,
             project_path=project,
             workspace_revision_store=revs,
         ),
         observation=KernelObservationDeps(
-            intent_sink=sink,
             on_boundary=durable_generation_boundary_callback(durable=_durable(m), session_id="s", task_id="r", sink=sink),
         ),
     )

@@ -104,7 +104,7 @@ def test_unverified_receipts_cannot_fill_facts(tmp_path: Path, defect: str) -> N
     if defect == "reloaded":
         source = original.evidence["e1"]
         modified.append(EffectReceipt("later-navigation", ToolResult(call=ToolCall("browser_navigate", {"url": source.url}),
-            ok=True, model_text="Reloaded", audit={"browser_document": {"url": source.url, "loader_id": "other-loader"}}), None))
+            ok=True, model_text="Reloaded", audit={"browser_document": {"target_id": "tab", "frame_id": "main", "url": source.url, "loader_id": "other-loader"}}), None))
     evidence = evidence_from_receipts(modified)
     assert evidence == {}
     output = deliver(declare_needs(plan("orders")), selected("orders"), evidence)

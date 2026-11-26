@@ -127,7 +127,7 @@ it('keeps transient failures silent and restores saving after reconnect', async 
   expect(document.getElementById('ui-save-notice')!.hidden).toBe(true);
 });
 
-it('atomically caches edits with their matching base and migrates old cache only once', () => {
+it('atomically caches edits with their matching base and ignores legacy storage keys', () => {
   ui.cache();
   const envelope: unknown = JSON.parse(localStorage.getItem('codey:ui-cache')!);
   expect(envelope).toMatchObject({ state: { sessions: [{ draft: { text: 'draft' } }] }, confirmed: { revision: 1 } });
@@ -135,9 +135,8 @@ it('atomically caches edits with their matching base and migrates old cache only
   localStorage.removeItem('codey:ui-cache');
   localStorage.setItem('codey:sessions', JSON.stringify([{ id: 'legacy', draft: { text: 'recover' } }]));
   localStorage.setItem('codey:active', 'legacy');
-  expect(ui.cached().sessions).toMatchObject([{ draft: { text: 'recover' } }]);
-  expect(localStorage.getItem('codey:sessions')).toBeNull();
-  expect(JSON.parse(localStorage.getItem('codey:ui-cache')!)).toMatchObject({ confirmed: null });
+  expect(ui.cached()).toMatchObject({ active_id: '', sessions: [], projects: [], revision: 0 });
+  expect(localStorage.getItem('codey:ui-cache')).toBeNull();
 });
 
 it.each([

@@ -17,7 +17,6 @@ import subprocess
 from dataclasses import asdict
 from pathlib import Path
 
-from codey.operations.project_completion_checks import _gap_for_latest_row
 from codey.providers.context_ledger import digest
 from codey.providers.request_codec import decode_provider_request, encode_provider_request
 from codey.providers.response_record import decode_reply, encode_reply
@@ -27,6 +26,7 @@ from codey.runtime.core.operation_payload import LEAVES, RuntimeOperationState
 from codey.runtime.core.operation_reducer import RuntimeDecisionInputs, next_runtime_action
 from codey.runtime.core.verification_observation import (
     CompleteVerification,
+    IncompleteVerification,
     decode_verification_observation,
     latest_verification_observations,
     verification_observations,
@@ -147,7 +147,9 @@ def python_result(case: JsonObject) -> JsonObject:
             row = decode_verification_observation(value)
             succeeded = row is not None and isinstance(row.outcome, CompleteVerification) and row.outcome.succeeded
             raw = canonical_json_object(value)
-            output = {"gap": _gap_for_latest_row(value, str(raw.get("command") or "").strip()), "succeeded": succeeded}
+            gap = row.outcome.gap if row is not None and isinstance(row.outcome, IncompleteVerification) else ""
+            output = {"gap": gap if row is not None and row.command else "verification_result_missing",
+                      "succeeded": succeeded}
         elif operation == "digest":
             output = digest(value)
         elif operation == "latest_verification":

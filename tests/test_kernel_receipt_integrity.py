@@ -74,8 +74,8 @@ def test_missing_output_attachment_does_not_erase_restored_execution_facts(tmp_p
     receipt = ExecutionReceipt("exit", 7, "preview", truncated=True)
     call = ToolCall("run", {"command": "check"}, call_id="call")
     result = ToolResult(call, receipt.render(), ok=False, truncated=True,
-        canonical={"execution": receipt.facts()}, audit={**receipt.audit_facts(),
-            "managed_output": {"handle": ref.handle, "sha256": ref.sha256}})
+        canonical={"execution": receipt.facts(), "managed_output": {"handle": ref.handle, "sha256": ref.sha256}},
+        audit=receipt.audit_facts())
     sink = KernelEffectSink(mutations, session_id="s", run_id="r", provider_id="local", managed_outputs=store, durable=durable)
     sink.begin_turn([("effect", call, 0)], turn=1)
     sink.settle("effect", False, result=result, exit_code=7)

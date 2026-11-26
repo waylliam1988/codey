@@ -120,7 +120,8 @@ def output_reader(root: Path, *, limit: int, payload: bytes) -> Reader:
     session = execution_session()
     truncated = snapshot["stdout"]["truncated"]
     receipt = ExecutionReceipt("exit", 1, "preview only", truncated=True,
-        capture_truncated=truncated, execution_id="execution_test", full_output_retained=not truncated)
+        capture_truncated=truncated, execution_id="execution_test", full_output_retained=not truncated,
+        output_ref=ExecutionOutputReference.from_snapshot(snapshot))
     session._memory_results[REF] = ToolResult(ToolCall("shell", {}), receipt.render(), ok=True, truncated=True,
         canonical={"execution": receipt.facts()}, audit={"exit_code": 1, "capture_truncated": truncated,
                                                        "execution_id": "execution_test"})
@@ -234,7 +235,7 @@ def test_execution_reference_has_priority_over_unused_managed_attachment(tmp_pat
     reader = output_reader(tmp_path, limit=4096, payload=b"authoritative output")
     bind_output(reader)
     original = reader.session._memory_results[REF]
-    reader.session._memory_results[REF] = replace(original, audit={**original.audit,
+    reader.session._memory_results[REF] = replace(original, canonical={**original.canonical,
         "managed_output": {"handle": "out_missing", "sha256": "0" * 64}})
     result = read_tool_result(reader, ToolCall("read_tool_result", {"result_ref": REF}))
     assert result.ok and json.loads(result.model_text)["text"] == "authoritative output"

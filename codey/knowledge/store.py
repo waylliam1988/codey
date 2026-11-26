@@ -71,7 +71,6 @@ class KnowledgeStore:
             conn.execute("INSERT OR IGNORE INTO knowledge_meta VALUES('owner_id',?)", ("owner-" + uuid4().hex,))
             owner: _StoreRow = conn.execute("SELECT value FROM knowledge_meta WHERE key='owner_id'").fetchone()
             self.owner_id = require_json_string(owner[0], "knowledge owner ID")
-        self._import_legacy_once()
 
     def path_for(self, note: KnowledgeNote) -> Path:
         if not is_safe_id(note.id):
@@ -283,27 +282,6 @@ class KnowledgeStore:
             if ".codey" not in path.relative_to(self.root).parts:
                 yield path
 
-    def _import_legacy_once(self) -> None:
-        if self.documents.initialized():
-            return
-        notes: list[tuple[KnowledgeNote, str]] = []
-        seen: set[str] = set()
-        for path in self.iter_note_paths():
-            try:
-                note = KnowledgeNote.from_markdown(path.read_text(encoding="utf-8"))
-            except ValueError:
-                continue
-            self.path_for(note)  # Validate identity before accepting the migration.
-            if note.id in seen:
-                raise ValueError(f"duplicate legacy knowledge identity: {note.id}")
-            seen.add(note.id)
-            notes.append((note, self.rel(path)))
-        # Source files and the old index.db are left untouched for inspection.
-        with self.index.transaction():
-            self.documents.initialize(notes)
-            for note, _path in notes:
-                self._index_body_links(note)
-
     def import_markdown(self, text: str, *, expected_revision: int | None = None) -> str:
         note = KnowledgeNote.from_markdown(text)
         with self.index.transaction():
@@ -359,15 +337,6 @@ class KnowledgeStore:
                 self.delete_note(note_id, purge=True)
             for identity in removed:
                 conn.execute("DELETE FROM note_knowledge_refs WHERE target=?", (identity,))
-        # The pre-migration index is an obsolete, rebuildable projection which
-        # may still contain the deleted text. Never use it as a fallback.
-        if removed:
-            for name in ("index.db", "index.db-wal", "index.db-shm"):
-                legacy = self.root / ".codey" / name
-                if legacy.exists():
-                    if self.root not in legacy.resolve().parents:
-                        raise ValueError("legacy index escapes knowledge root")
-                    legacy.unlink()
         return removed
 
     def close(self) -> None:

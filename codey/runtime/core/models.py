@@ -29,13 +29,13 @@ def model_text_with_audit_markers(
     *,
     truncated: bool = False,
     audit: Mapping[str, object] | None = None,
+    managed_output: object = None,
 ) -> str:
     text = str(model_text or "")
     if truncated and TRUNCATED_RESULT_NOTICE not in text:
         text = f"{text}\n{TRUNCATED_RESULT_NOTICE}"
-    managed = audit.get("managed_output") if isinstance(audit, Mapping) else None
     capture_truncated = bool(audit.get("capture_truncated")) if isinstance(audit, Mapping) else False
-    footer = _managed_output_footer(managed, capture_truncated=capture_truncated)
+    footer = _managed_output_footer(managed_output, capture_truncated=capture_truncated)
     if footer and footer not in text:
         text = f"{text}\n{footer}"
     return text

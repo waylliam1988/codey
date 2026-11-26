@@ -75,9 +75,9 @@ def test_keyword_native_arguments_decode_to_the_same_domain_operation():
     assert positional == keyword
 
 
-@pytest.mark.parametrize("version", [True, 0, 2, "1"])
-def test_unknown_or_noninteger_version_is_rejected(version):
-    with pytest.raises(ValueError, match="version"):
+@pytest.mark.parametrize("version", [True, 0, 1, 2, "1"])
+def test_invocation_rejects_embedded_version(version):
+    with pytest.raises(ValueError, match="invocation fields"):
         decode_provider_request({"schema_version": version, "method": "send", "args": ["prompt"], "kwargs": {}})
 
 

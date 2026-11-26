@@ -7,8 +7,6 @@ rows into the final contract.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 from codey.completion.contract import (
     CHECK_FAIL,
     CHECK_NOT_APPLICABLE,
@@ -34,7 +32,6 @@ from codey.runtime.core.verification_observation import (
     CompleteVerification,
     IncompleteVerification,
     VerificationObservation,
-    decode_verification_observation,
     latest_verification_observations,
     verification_observations,
 )
@@ -76,7 +73,7 @@ def _session_scope_files(session: TaskSession | ProjectCompletionFacts) -> tuple
 
 
 def _session_latest_verification(session: TaskSession | ProjectCompletionFacts) -> VerificationObservation | None:
-    rows = verification_observations(session.verifications)
+    rows = _session_observations(session)
     latest: VerificationObservation | None = None
     latest_revision = -1
     for row in rows:
@@ -175,25 +172,14 @@ def _evidence_with_session_facts(
     return evidence, tuple(gaps)
 
 
-def _latest_observations_by_key(
-    verifications: Sequence[object], latest_edit: int,
-) -> dict[tuple[str, str], VerificationObservation]:
-    """Legacy record boundary; the projection itself only accepts domain rows."""
-    return latest_verification_observations(verification_observations(verifications), latest_edit)
-
-
-def _gap_for_latest_row(row: object, command: str) -> str:
-    """Compatibility codec used by language-neutral legacy wire fixtures."""
-    decoded = decode_verification_observation(row)
-    if not command or decoded is None:
-        return "verification_result_missing"
-    return decoded.outcome.gap if isinstance(decoded.outcome, IncompleteVerification) else ""
+def _session_observations(session: TaskSession | ProjectCompletionFacts) -> tuple[VerificationObservation, ...]:
+    return verification_observations(session.verifications) if isinstance(session, TaskSession) else session.verifications
 
 
 def verification_gap_diagnostics(session: TaskSession | ProjectCompletionFacts) -> str:
     """Bounded explanation from the same decoded observations as the gate."""
     latest_edit = max([0, *session.edited_files.values()])
-    latest = _latest_observations_by_key(session.verifications, latest_edit)
+    latest = latest_verification_observations(_session_observations(session), latest_edit)
     details = [f"{row.outcome.gap}: command={row.command[:160]!r}, cwd={row.cwd[:80]!r}"
                for row in latest.values() if isinstance(row.outcome, IncompleteVerification)]
     return "\n".join(details[:4])

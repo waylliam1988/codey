@@ -64,7 +64,7 @@ def test_real_receipts_complete_the_quoted_task_after_snapshot_restore(click: bo
     snapshot = restore_snapshot(snapshot_description(build_turn_snapshot(session)))
     assert snapshot.policy is not None
     checks = snapshot.policy.required_checks
-    document: JsonObject = {"url": URL, "loader_id": "quoted-task"}
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "url": URL, "loader_id": "quoted-task"}
     record(session, "browser_navigate", {"url": URL}, document)
     record(session, "browser_fill", {"value": "点击继续"}, document)
     if click:

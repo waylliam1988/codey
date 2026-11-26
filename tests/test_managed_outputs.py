@@ -124,7 +124,7 @@ class ManagedOutputStoreTests(unittest.TestCase):
                 ok=True, call=ToolCall(name="run", args={}),
                 model_text="clipped",
                 truncated=True,
-                audit={"managed_output": {
+                canonical={"managed_output": {
                     "handle": ref.handle,
                     "original_bytes": ref.original_bytes,
                     "stored_bytes": ref.stored_bytes,
@@ -255,7 +255,7 @@ class ManagedRunCommandTests(unittest.TestCase):
                 session_id="session",
                 run_id="run",
             )
-            managed = outcome.audit["managed_output"]
+            managed = outcome.canonical["managed_output"]
             saved = store.path_for(
                 "session",
                 "run",

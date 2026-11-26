@@ -65,8 +65,8 @@ def test_restart_reuses_settled_effects_and_original_delivery_frontier(
         return KernelRunRequest(
             transport=KernelTransportDeps(provider=adapt_provider(Provider()), provider_id="local",
                                           run_id="r", effect_scope="outer"),
-            execution=KernelExecutionDeps(project_path=project, workspace_revision_store=revisions),
-            observation=KernelObservationDeps(intent_sink=active_sink, on_boundary=durable_generation_boundary_callback(
+            execution=KernelExecutionDeps(intent_sink=active_sink, project_path=project, workspace_revision_store=revisions),
+            observation=KernelObservationDeps(on_boundary=durable_generation_boundary_callback(
                 durable=active_sink.durable, session_id="s", task_id="r", sink=active_sink)),
         )
 

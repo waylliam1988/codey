@@ -223,12 +223,12 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
         result = run_task_kernel(state, request=KernelRunRequest(
             transport=KernelTransportDeps(provider=provider, run_id="r",
                 provider_id="local", effect_scope="task", user_task="Read app.py using codemode."),
-            execution=KernelExecutionDeps(
+            execution=KernelExecutionDeps(intent_sink=sink,
                 project_path=project,
                 workspace_revision_store=revisions,
                 permission_profile="planning_readonly",
             ),
-            observation=KernelObservationDeps(intent_sink=sink),
+            observation=KernelObservationDeps(),
         ))
         assert result.completed and result.summary == "OBSERVED-729"
         assert provider.step == 3

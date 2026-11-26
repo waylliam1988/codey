@@ -13,7 +13,6 @@ from typing import TypedDict
 
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.effects.effect_records import (
-    RuntimeEffectIntent,
     RuntimeEffectProjection,
     RuntimeEffectSettlement,
     compute_args_digest,
@@ -108,27 +107,13 @@ def result_receipt_fields(result: ToolResult, *, store: ManagedOutputStore | Non
     }
 
 
-def _managed_receipt_payload(settlement: RuntimeEffectSettlement, intent: RuntimeEffectIntent,
+def _managed_receipt_payload(settlement: RuntimeEffectSettlement,
                              store: ManagedOutputStore, session_id: str, run_id: str) -> str:
-    if settlement.result_ref.startswith("out_"):
-        # Legacy receipts hash the original insertion-ordered JSON bytes.
-        # Do not parse/re-encode before checking the settlement digest.
-        payload, metadata = store.read_tool_output(session_id, run_id, settlement.result_ref)
-        if not isinstance(payload, str):
-            raise ValueError("legacy result receipt payload must be text")
-        if (metadata.get("schema_version") != 1 or metadata.get("stored_truncated") is not False
-                or metadata.get("tool_id") != intent.effect_id[:80]
-                or metadata.get("tool_name") != "tool_result"
-                or metadata.get("sha256") != settlement.result_payload_sha256
-                or metadata.get("original_sha256") != settlement.result_payload_sha256):
-            raise ValueError("legacy result receipt has invalid ownership or incomplete bytes")
-    elif settlement.result_ref.startswith("artifact_"):
-        data = store.read_json_artifact({"session_id": session_id, "run_id": run_id,
-            "handle": settlement.result_ref, "schema_version": 2, "sha256": settlement.result_payload_sha256})
-        payload = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
-    else:
+    if not settlement.result_ref.startswith("artifact_"):
         raise ValueError("unknown managed result receipt format")
-    return payload
+    data = store.read_json_artifact({"session_id": session_id, "run_id": run_id,
+        "handle": settlement.result_ref, "schema_version": 2, "sha256": settlement.result_payload_sha256})
+    return json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
 def restore_result_receipt(projection: RuntimeEffectProjection, *, store: ManagedOutputStore | None,
@@ -142,14 +127,14 @@ def restore_result_receipt(projection: RuntimeEffectProjection, *, store: Manage
     if settlement.result_ref:
         if payload or store is None:
             raise ValueError("invalid managed result receipt")
-        payload = _managed_receipt_payload(settlement, intent, store, session_id, run_id)
+        payload = _managed_receipt_payload(settlement, store, session_id, run_id)
     if not payload or text_digest(payload) != settlement.result_payload_sha256:
         raise ValueError("tool result receipt digest mismatch")
     data = parse_json_object(payload)
     expected = {
         "schema_version", "kind", "call_name", "ok", "args", "model_text", "canonical", "presentation", "audit", "truncated", "workspace_identity",
     }
-    if set(data) not in (expected, expected | {"images"}):
+    if set(data) != expected | {"images"}:
         raise ValueError("invalid tool result receipt fields")
     _validate_call_name(data, intent.tool_name)
     if type(data["ok"]) is not bool or data["ok"] != (settlement.status == "ok"):
@@ -169,7 +154,7 @@ def restore_result_receipt(projection: RuntimeEffectProjection, *, store: Manage
             raise ValueError(f"invalid tool result {key}")
     # Verify the full receipt here. External output is checked by the output
     # resolver when read; losing an attachment cannot erase known execution facts.
-    images = data.get("images", [])
+    images = data["images"]
     if not isinstance(images, list):
         raise ValueError("invalid tool result images")
     result = ToolResult(

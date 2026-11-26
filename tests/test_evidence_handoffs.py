@@ -32,7 +32,7 @@ from codey.research.primary_sources import (
     PRIMARY_QUESTION_ID,
     primary_acquisition,
 )
-from codey.research.report_evidence import CLAIM_CHECK_VERSION, check_report_evidence
+from codey.research.report_evidence import check_report_evidence
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.web_intent import explicit_web_intent
 from codey.types.json_value import JsonObject, canonical_json_object, require_json_integer, require_json_string
@@ -180,7 +180,7 @@ def test_first_party_required_uses_committed_passages_and_bound_retry() -> None:
     partial = submit_answer(scope, {**answered, "state": "partial"})
     assert partial["state"] == "partial" and partial["markdown"].endswith("**Evidence status: partial.**")
     assert validate_submission(partial, session.task_text) == partial
-    reviewed = check_report_evidence(partial, ledger.read_passages, claim_check_version=CLAIM_CHECK_VERSION)
+    reviewed = check_report_evidence(partial, ledger.read_passages)
     checks = reviewed["claim_checks"]
     assert isinstance(checks, list) and all(
         isinstance(row, dict) and require_json_integer(row["report_end"], "span") <=

@@ -39,7 +39,7 @@ from tools.completion_artifact_audit import artifacts, tool_receipts
 from tools.completion_explanation_ab import Target
 
 URL = 'https://example.com/record/UN-097'
-DOCUMENT: JsonObject = {'url': URL, 'loader_id': 'original'}
+DOCUMENT: JsonObject = {'target_id': 'tab', 'frame_id': 'main', 'url': URL, 'loader_id': 'original'}
 
 
 def latest_result_citation(directory: Path) -> str:

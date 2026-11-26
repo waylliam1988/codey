@@ -148,9 +148,9 @@ def test_durable_repair_uses_original_journal_context_and_state(
     request = KernelRunRequest(
         transport=KernelTransportDeps(provider=adapt_provider(Provider()), provider_id="local",
                                       run_id="r", effect_scope="outer"),
-        execution=KernelExecutionDeps(project_path=project, workspace_revision_store=revisions,
+        execution=KernelExecutionDeps(intent_sink=sink, project_path=project, workspace_revision_store=revisions,
                                       executors={"read_file": read}),
-        observation=KernelObservationDeps(intent_sink=sink, on_boundary=durable_generation_boundary_callback(
+        observation=KernelObservationDeps(on_boundary=durable_generation_boundary_callback(
             durable=durable, session_id="s", task_id="r", sink=sink)),
     )
     try:
@@ -276,8 +276,8 @@ def test_sqlite_resume_drains_journal_after_pure_race_done(tmp_path: Path, monke
         return KernelRunRequest(
             transport=KernelTransportDeps(provider=adapt_provider(Provider()), provider_id="local",
                                           run_id="r", effect_scope="outer"),
-            execution=KernelExecutionDeps(project_path=project, workspace_revision_store=revisions),
-            observation=KernelObservationDeps(intent_sink=active_sink, on_boundary=durable_generation_boundary_callback(
+            execution=KernelExecutionDeps(intent_sink=active_sink, project_path=project, workspace_revision_store=revisions),
+            observation=KernelObservationDeps(on_boundary=durable_generation_boundary_callback(
                 durable=active_sink.durable, session_id="s", task_id="r", sink=active_sink)),
         )
 

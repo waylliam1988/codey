@@ -268,10 +268,10 @@ class KernelEffectSink:
             raise RuntimeEffectError(str(exc)) from exc
         if context.snapshot.policy != session.policy or context.window_ref != window_ref:
             raise RuntimeEffectError("response authorization or protocol window changed")
-        from codey.providers.request_codec import decode_provider_request
+        from codey.operations.prepared_provider_request import prepared_invocation
         from codey.providers.requests import SendTextRequest, SendTurnRequest
 
-        invocation = decode_provider_request(request)
+        invocation = prepared_invocation(request)
         prompt = invocation.prompt if isinstance(invocation, (SendTextRequest, SendTurnRequest)) else ""
         return ReceivedProviderTurn(decode_reply(response), context.snapshot, prompt, owner_session=session,
             logical_turn=context.logical_turn, window_ref=context.window_ref, effect_scope=context.effect_scope)
@@ -329,7 +329,7 @@ class KernelEffectSink:
             replayed_from_effect_id=identity if identity in self._old_pending else "",
         )
         artifacts: tuple[ArtifactRecord, ...] = ()
-        managed = audit.get("managed_output") if isinstance(audit, dict) else None
+        managed = result.canonical.get("managed_output")
         if isinstance(managed, dict) and self._managed_outputs is not None:
             artifacts = (self._managed_outputs.durable_record(
                 str(managed.get("handle") or ""), session_id=self.session_id, run_id=self.run_id,

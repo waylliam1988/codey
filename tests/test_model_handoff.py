@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from codey.app import task_submit
 from codey.app.context import AppContext
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.operations.model_handoff import authorize_model_handoff, render_model_handoff
@@ -211,7 +210,9 @@ def test_model_handoff_rejects_active_work_and_only_exposes_uncertain_actions_fo
             authorize_model_handoff(durable, request=handoff, target=target,
                                     session_id="session", run_id="new", project=str(tmp_path))
         observed = HandoffRun("old", "Observe the current state", observe_only=True)
-        assert task_submit._task_input_from_payload(task_submit._task_input_payload(observed)) == observed
+        from codey.task.model import task_input_from_payload, task_input_payload
+
+        assert task_input_from_payload(task_input_payload(observed)) == observed
         task, effects = authorize_model_handoff(durable, request=observed, target=target,
                                                 session_id="session", run_id="new", project=str(tmp_path))
         text = render_model_handoff(task, effects, state.task_submission_stores.managed_outputs, durable=durable)

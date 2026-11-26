@@ -97,7 +97,7 @@ MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
                 current_turn_id TEXT,
                 pending_effect_id TEXT,
                 status TEXT NOT NULL DEFAULT 'pending',
-                schema_version INTEGER NOT NULL DEFAULT 1
+                schema_version INTEGER NOT NULL
             ) STRICT""",
             """CREATE TABLE finalization_queue (
                 task_id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE

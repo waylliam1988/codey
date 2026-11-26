@@ -235,8 +235,8 @@ def _recover_formal(project, state, logdir, session_id, run_id):
                             managed_outputs=deps.managed_outputs, durable=durable)
     context = KernelContext(fresh, KernelRunRequest(
         transport=KernelTransportDeps(provider=SimpleNamespace(), provider_id="local", run_id=run_id),
-        execution=KernelExecutionDeps(project_path=project, workspace_revision_store=deps.workspace_revisions),
-        observation=KernelObservationDeps(intent_sink=sink)))
+        execution=KernelExecutionDeps(intent_sink=sink, project_path=project, workspace_revision_store=deps.workspace_revisions),
+        observation=KernelObservationDeps()))
     context.restore_facts()
     rows = list(recovery.recovered_tool_outcomes)
     delivered = dict(fresh._memory_results)
@@ -428,13 +428,12 @@ def test_multi_turn_recovery_keeps_more_than_twenty_observations(monkeypatch):
                         run_id="r-many",
                         user_task="fix a.py",
                     ),
-                    execution=KernelExecutionDeps(
+                    execution=KernelExecutionDeps(intent_sink=sink,
                         executors={"edit": do_edit, "run": do_run},
                         project_path=project,
                         workspace_revision_store=store,
                     ),
                     observation=KernelObservationDeps(
-                        intent_sink=sink,
                         completion_context={"run_id": "r-many", "project": str(project)},
                     ),
                 ),

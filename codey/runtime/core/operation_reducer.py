@@ -109,9 +109,8 @@ def admit_request_counters(
                 or lengths != updated.length_continuations))
             or proposed.invalid_turns not in {0, current.invalid_turns, current.invalid_turns + 1}):
         raise RuntimeOperationTransitionError("request cannot reset or skip execution budgets")
-    if (current.progress != proposed.progress and (current.progress.last_batch_id
-            or replace(current.progress, limit=proposed.progress.limit) != proposed.progress)):
-        raise RuntimeOperationTransitionError("request cannot replace committed batch progress")
+    if current.progress != proposed.progress:
+        raise RuntimeOperationTransitionError("request cannot replace committed progress")
     return proposed
 
 
@@ -134,7 +133,7 @@ def record_progress_observation(
         if current != observed:
             raise RuntimeOperationTransitionError("batch progress is immutable")
         return None
-    if (current != expected or observed.last_batch_id != batch_id or not batch_id
+    if (current != expected or observed.last_batch_id != batch_id or not batch_id or observed.limit != current.limit
             or not current.recovery_progress_turn <= observed.recovery_progress_turn <= state.turn):
         raise RuntimeOperationTransitionError("progress observation has stale counters or identity")
     batch = _batch_by_id(view.batches, batch_id)
