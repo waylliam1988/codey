@@ -3,38 +3,25 @@
 Pure ``project_*`` builders moved verbatim from ``trace.py``: each maps
 one untrusted input to a bounded row ``dict`` (or ``None`` when the
 input is not recordable). They never touch recorder state, dedupe sets,
-manifests, files, or ``checkpoint()`` — the recorder in ``trace.py``
-keeps all keys, appends, caps, warnings, and flush timing.
+manifests, files, or ``checkpoint()``. ResearchTraceRecorder owns
+research keys, appends, caps, and warnings; RunTraceRecorder owns flush timing.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from urllib.parse import urlparse
 
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.research.artifact_lineage import is_valid_derived_ref
-from codey.research.audit_projection import project_audit_diagnostics as project_audit_diagnostics
+from codey.research.audit_projection import project_audit_diagnostics
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
-from codey.research.guards import (
-    generated_ref as _generated_ref,
-)
-from codey.research.guards import (
-    safe_connector_id as _safe_connector_id,
-)
-from codey.research.guards import (
-    valid_digest_ref,
-)
-from codey.research.review_finding import (
-    FINDING_KINDS,
-    FINDING_SEVERITIES,
-    GAP_KINDS,
-    SEVERITY_WARNING,
-    STATUS_OPEN,
-)
+from codey.research.guards import generated_ref as _generated_ref
+from codey.research.guards import safe_connector_id as _safe_connector_id
+from codey.research.guards import valid_digest_ref
+from codey.research.review_finding import FINDING_KINDS, FINDING_SEVERITIES, GAP_KINDS, SEVERITY_WARNING, STATUS_OPEN
 from codey.research.source_trust import SOURCE_CLASSES as _SOURCE_TRUST_CLASSES
-from codey.research.topic_continuity import (
-    TOPIC_CONTINUITY_SCHEMA_VERSION as _TOPIC_CONTINUITY_SCHEMA_VERSION,
-)
+from codey.research.topic_continuity import TOPIC_CONTINUITY_SCHEMA_VERSION as _TOPIC_CONTINUITY_SCHEMA_VERSION
 from codey.runs.text_clip import clip_text as _clip
 from codey.runs.trace_schema import (
     MAX_ANALYSIS_RUNS,
@@ -706,3 +693,31 @@ def project_research_topic_continuity(
         "items": items,
         "candidates": candidates,
     }
+
+
+def source_ref_for_url(url: object, *, final_url: object = "", title: object = "") -> dict[str, str]:
+    requested = str(url or "").strip()
+    final = str(final_url or "").strip()
+    chosen = final or requested
+    if not chosen:
+        return {}
+    host = _host(chosen or requested)
+    payload = {
+        "url_digest": digest_text(chosen),
+    }
+    if host:
+        payload["host"] = _clip(host, 120)
+    if requested and final and requested != final:
+        payload["requested_digest"] = digest_text(requested)
+        payload["final_digest"] = digest_text(final)
+    text_title = _clip(title, 160)
+    if text_title:
+        payload["title_digest"] = digest_text(text_title)
+    return payload
+
+
+def _host(url: str) -> str:
+    try:
+        return (urlparse(url or "").hostname or "").lower()
+    except ValueError:
+        return ""

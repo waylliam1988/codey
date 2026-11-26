@@ -1,125 +1,114 @@
-"""Small self-repair layer for provider page controls.
-
-Provider adapters should keep their normal selectors first.  This module is a
-fallback: when a site moves the message box or send button, Codey can ask the
-user to click the control once and keep only that latest teaching.
-"""
+"""Provider control location, discovery, teaching, and response recovery orchestration."""
 
 from __future__ import annotations
 
-import contextlib
-import json
-import logging
-import re
-import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from functools import wraps
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
-from urllib.parse import urlparse
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from playwright.sync_api import Locator
-
-from codey.providers import discovery as discovery
-from codey.providers import flow as provider_flow
-from codey.providers import profile_doctor
-from codey.providers import revival as provider_revival
+from codey.providers import discovery, profile_doctor
 from codey.providers.assistance import assistance_suppressed, suppress_assistance
-from codey.providers.diagnostics import ResponseMissing
-from codey.providers.profiles import get_profile
-from codey.runtime.core import cancellation
-from codey.storage.local_store import (
-    DEFAULT_STATE_HOME,
-    StoreCorruption,
-    backup_corrupt_file,
-    read_json_strict,
-    write_json_atomic,
+from codey.providers.control_capture import (
+    CapturedControl,
+    ControlTeachCancelled,
+    ControlTeachRequest,
+    cancel_click_capture,
+    finish_click_capture,
+    start_click_capture,
 )
-
-logger = logging.getLogger(__name__)
-_P = ParamSpec("_P")
-_R = TypeVar("_R")
+from codey.providers.control_fingerprint import (
+    CONTROL_LABELS,
+    CONTROL_MESSAGE_BOX,
+    CONTROL_RESPONSE,
+    CONTROL_SEND_BUTTON,
+    _host_matches,
+    _page_host,
+    _provider_host_allowed,
+    control_fingerprint_is_valid,
+    control_label,
+    fingerprint_from_click,
+    selector_candidates,
+)
+from codey.providers.control_recovery import (
+    _context,
+    _doctor_attempts,
+    _pending_map,
+    _remember_pending,
+    _remember_source,
+    _response_locator_map,
+    _source_for,
+    begin_task_context,
+    confirm_control,
+    end_task_context,
+    flow_matches,
+    flow_stage_ready,
+    logger,
+    read_flow_response,
+    recover_flow,
+    reject_control,
+    revival_send,
+)
+from codey.providers.control_store import CONTROL_STORE, load_control, load_controls, save_control
+from codey.runtime.core import cancellation
 
 __all__ = [
+    "CONTROL_LABELS",
     "CONTROL_MESSAGE_BOX",
+    "CONTROL_RESPONSE",
+    "CONTROL_SEND_BUTTON",
+    "CONTROL_STORE",
+    "CapturedControl",
+    "ControlTeachCancelled",
+    "ControlTeachRequest",
+    "begin_task_context",
+    "can_doctor",
+    "can_teach",
+    "cancel_click_capture",
+    "confirm_control",
+    "control_fingerprint_is_valid",
+    "control_has_text",
+    "control_label",
+    "discover_control",
+    "discover_response",
+    "end_task_context",
+    "fingerprint_from_click",
+    "finish_click_capture",
+    "flow_matches",
+    "flow_stage_ready",
+    "load_control",
+    "load_controls",
     "locate_control",
+    "locate_response",
+    "logger",
+    "pending_control",
+    "read_flow_response",
+    "recover_flow",
+    "recover_response",
+    "reject_control",
+    "request_doctor_response",
+    "request_teaching",
+    "resolve_captured_control",
     "response_count",
+    "revival_send",
+    "save_control",
+    "saved_control",
+    "score_control_candidate",
+    "score_response_candidate",
+    "selector_candidates",
+    "set_doctor_handler",
+    "set_teach_handler",
+    "start_click_capture",
+    "start_response_watch",
+    "stop_response_watch",
     "suppress_assistance",
+    "teach_response",
+    "unique_visible_locator",
+    "visible_locator",
 ]
-
-CONTROL_MESSAGE_BOX = "message_box"
-CONTROL_SEND_BUTTON = "send_button"
-CONTROL_RESPONSE = "response"
-CONTROL_LABELS = {
-    CONTROL_MESSAGE_BOX: "message box",
-    CONTROL_SEND_BUTTON: "send button",
-    CONTROL_RESPONSE: "answer",
-}
-CONTROL_STORE = DEFAULT_STATE_HOME / "provider-controls.json"
 _handler: Callable[[ControlTeachRequest], Locator] | None = None
 _doctor_handler: Callable[[profile_doctor.ProfileDoctorRequest], str | None] | None = None
-_context = threading.local()
-_TASK_CONTEXT_FIELDS = (
-    "session_id",
-    "doctor_attempts",
-    "sources",
-    "pending",
-    "response_locators",
-    "response_watches",
-    "revival_attempts",
-    "flow_cache",
-)
-
-
-@dataclass
-class _RevivalSend:
-    host: str
-    staged: dict[str, dict[str, Any]]
-    verified: set[str]
-    learned_verified: set[str]
-    profile_hash: str
-    flow_recipe: dict[str, tuple[str, ...]] | None = None
-    staged_flow: dict[str, tuple[str, ...]] | None = None
-    learned_flow_verified: bool = False
-    loaded_flow_stages: set[str] = field(default_factory=set)
-    flow_evaluated_stages: set[str] = field(default_factory=set)
-    flow_used_stages: set[str] = field(default_factory=set)
-    persistent_failure_recorded: bool = False
-    path: Path | None = None
-
-
-@dataclass(frozen=True)
-class _PendingControl:
-    page: Any
-    fingerprint: dict[str, Any]
-    locator: Locator | None = None
-
-
-class ControlTeachCancelled(cancellation.TaskCancelled):
-    """Raised when the user stops a paused control teaching request."""
-
-
-@dataclass(frozen=True)
-class CapturedControl:
-    fingerprint: dict[str, Any]
-    current_selector: str
-
-
-@dataclass(frozen=True)
-class ControlTeachRequest:
-    provider_id: str
-    action: str
-    page: Any
-    session_id: str = ""
-    require_enabled: bool = False
-
-    @property
-    def message(self) -> str:
-        label = CONTROL_LABELS.get(self.action, "control")
-        return f"Click the {label} in the model page"
 
 
 def set_teach_handler(handler: Callable[[ControlTeachRequest], Locator] | None) -> None:
@@ -140,39 +129,6 @@ def can_teach() -> bool:
 
 def can_doctor() -> bool:
     return _doctor_handler is not None and not assistance_suppressed()
-
-
-def begin_task_context(session_id: str) -> None:
-    end_task_context()
-    _context.session_id = session_id or ""
-    _context.doctor_attempts = set()
-    provider_flow.begin_task_context(session_id)
-
-
-def end_task_context() -> None:
-    for name in _TASK_CONTEXT_FIELDS:
-        if hasattr(_context, name):
-            delattr(_context, name)
-    provider_flow.end_task_context()
-
-
-def revival_send(provider_id: str) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
-    """Wrap one provider send in an atomic local-control recovery transaction."""
-    def decorate(func: Callable[_P, _R]) -> Callable[_P, _R]:
-        @wraps(func)
-        def wrapped(*args: _P.args, **kwargs: _P.kwargs) -> _R:
-            page = cast(Any, args[0]) if args else kwargs.get("page")
-            _begin_revival_send(provider_id, page)
-            try:
-                result = func(*args, **kwargs)
-            except BaseException as exc:
-                _record_revival_flow_failure(provider_id, exc)
-                _abort_revival_send(provider_id)
-                raise
-            _complete_revival_send(provider_id)
-            return result
-        return wrapped
-    return decorate
 
 
 def visible_locator(page: Any, selector: str) -> Locator | None:
@@ -612,50 +568,6 @@ def _discovery_is_usable(
     )
 
 
-def _doctor_attempts() -> set[tuple[str, str, str]]:
-    attempts = getattr(_context, "doctor_attempts", None)
-    if attempts is None:
-        attempts = set()
-        _context.doctor_attempts = attempts
-    return attempts
-
-
-
-
-
-def start_click_capture(page: Any) -> str:
-    cancellation.check()
-    token = "capture_" + str(int(time.time() * 1000))
-    page.evaluate(_INSTALL_CAPTURE_JS, {"token": token})
-    return token
-
-
-def finish_click_capture(
-    page: Any,
-    token: str,
-    action: str,
-    *,
-    timeout: float = 1.0,
-) -> CapturedControl:
-    deadline = time.time() + max(0.2, timeout)
-    try:
-        captured = _wait_for_click(page, deadline)
-        fingerprint = fingerprint_from_click(captured)
-        if control_fingerprint_is_valid(fingerprint, action):
-            return CapturedControl(
-                fingerprint=fingerprint,
-                current_selector=f'[data-session-teach-current="{token}"]',
-            )
-        label = control_label(fingerprint)
-        raise ValueError(label or "clicked item was not usable")
-    finally:
-        _cleanup_capture(page)
-
-
-def cancel_click_capture(page: Any) -> None:
-    _cleanup_capture(page)
-
-
 def resolve_captured_control(request: ControlTeachRequest, captured: CapturedControl) -> Any:
     control = visible_locator(request.page, captured.current_selector)
     if _usable(control, request.require_enabled):
@@ -674,528 +586,6 @@ def resolve_captured_control(request: ControlTeachRequest, captured: CapturedCon
     raise TimeoutError(f"Could not reuse the taught {label}")
 
 
-def load_controls(path: Path | None = None) -> dict[str, Any]:
-    path = path or CONTROL_STORE
-    try:
-        return read_json_strict(
-            path,
-            max_bytes=provider_revival.MAX_PROVIDER_STORE_BYTES,
-        ) or {}
-    except StoreCorruption:
-        backup_corrupt_file(path)
-        return {}
-
-
-def save_control(
-    provider_id: str,
-    action: str,
-    page: Any,
-    fingerprint: dict[str, Any],
-    *,
-    path: Path | None = None,
-    verified: bool = False,
-) -> None:
-    path = path or CONTROL_STORE
-    data = load_controls(path)
-    provider = data.setdefault(provider_id, {})
-    if not isinstance(provider, dict):
-        provider = dict[str, object]()
-        data[provider_id] = provider
-    provider[action] = {
-        "host": _page_host(page),
-        "fingerprint": fingerprint,
-        "verified": verified,
-        "failures": 0,
-    }
-    try:
-        write_json_atomic(
-            path,
-            data,
-            max_bytes=provider_revival.MAX_PROVIDER_STORE_BYTES,
-        )
-    except (OSError, ValueError) as exc:
-        raise OSError(f"Could not save the learned control: {path}") from exc
-
-
-def load_control(provider_id: str, action: str, *, path: Path | None = None) -> dict[str, Any] | None:
-    data = load_controls(path)
-    provider = data.get(provider_id)
-    if not isinstance(provider, dict):
-        return None
-    record = provider.get(action)
-    return record if isinstance(record, dict) else None
-
-
-def confirm_control(provider_id: str, action: str, *, path: Path | None = None) -> None:
-    """Promote the learned control only after the caller observed the expected state."""
-    source = _source_for(provider_id, action)
-    if source == "pending":
-        pending = _pending_map().get((provider_id, action))
-        if pending is None:
-            return
-        page = pending.page
-        fingerprint = pending.fingerprint
-        attempt = _revival_attempts().get(provider_id)
-        if attempt is not None:
-            attempt.staged[action] = fingerprint
-            attempt.verified.add(action)
-            attempt.path = path or attempt.path
-            _remember_source(provider_id, action, "staged")
-            return
-        _pending_map().pop((provider_id, action), None)
-        try:
-            save_control(
-                provider_id,
-                action,
-                page,
-                fingerprint,
-                path=path,
-                verified=True,
-            )
-        except OSError:
-            _remember_source(provider_id, action, "")
-            return
-        _remember_source(provider_id, action, "learned")
-        return
-    if source != "learned":
-        return
-    attempt = _revival_attempts().get(provider_id)
-    if attempt is not None:
-        attempt.verified.add(action)
-        attempt.learned_verified.add(action)
-        attempt.path = path or attempt.path
-        return
-    _update_learned_control(provider_id, action, success=True, path=path)
-
-
-def reject_control(
-    provider_id: str,
-    action: str,
-    *,
-    path: Path | None = None,
-    page: Any | None = None,
-) -> None:
-    """Forget a learned control after repeated failed state validation."""
-    source = _source_for(provider_id, action)
-    if source == "staged":
-        attempt = _revival_attempts().get(provider_id)
-        if attempt is not None:
-            attempt.staged.pop(action, None)
-            attempt.verified.discard(action)
-        _pending_map().pop((provider_id, action), None)
-        _remember_source(provider_id, action, "")
-        return
-    if source == "pending":
-        _pending_map().pop((provider_id, action), None)
-        _remember_source(provider_id, action, "")
-        return
-    if source == "learned":
-        _update_learned_control(provider_id, action, success=False, path=path)
-        return
-    if source or page is None:
-        return
-    record = load_control(provider_id, action, path=path)
-    if not isinstance(record, dict):
-        return
-    if not _host_matches(_page_host(page), str(record.get("host") or "")):
-        return
-    _update_learned_control(provider_id, action, success=False, path=path)
-
-
-def _update_learned_control(
-    provider_id: str,
-    action: str,
-    *,
-    success: bool,
-    path: Path | None,
-) -> None:
-    store = path or CONTROL_STORE
-    try:
-        if success:
-            changed = provider_revival.record_control_success(
-                store,
-                provider_id,
-                action,
-            )
-        else:
-            changed = provider_revival.record_control_failure(
-                store,
-                provider_id,
-                action,
-            )
-        if changed:
-            _invalidate_flow_cache(store, provider_id)
-            if not success:
-                attempt = _revival_attempts().get(provider_id)
-                if attempt is not None:
-                    attempt.persistent_failure_recorded = True
-    except (OSError, ValueError) as exc:
-        logger.warning("Failed to record learned control update for %s: %s", provider_id, exc)
-        return
-
-
-def _source_map() -> dict[tuple[str, str], str]:
-    sources = getattr(_context, "sources", None)
-    if sources is None:
-        sources = dict[tuple[str, str], str]()
-        _context.sources = sources
-    return sources
-
-
-def _pending_map() -> dict[tuple[str, str], _PendingControl]:
-    pending = getattr(_context, "pending", None)
-    if pending is None:
-        pending = dict[tuple[str, str], _PendingControl]()
-        _context.pending = pending
-    return pending
-
-
-def _response_locator_map() -> dict[str, Locator | None]:
-    locators: dict[str, Locator | None] | None = getattr(_context, "response_locators", None)
-    if locators is None:
-        locators = {}
-        _context.response_locators = locators
-    return locators
-
-
-def _revival_attempts() -> dict[str, _RevivalSend]:
-    attempts = getattr(_context, "revival_attempts", None)
-    if attempts is None:
-        attempts = dict[str, _RevivalSend]()
-        _context.revival_attempts = attempts
-    return attempts
-
-
-def _flow_cache() -> dict[tuple[str, str, str], dict[str, tuple[str, ...]] | None]:
-    cache = getattr(_context, "flow_cache", None)
-    if cache is None:
-        cache = dict[tuple[str, str, str], dict[str, tuple[str, ...]] | None]()
-        _context.flow_cache = cache
-    return cache
-
-
-def _flow_cache_key(
-    path: Path,
-    provider_id: str,
-    profile_digest: str,
-) -> tuple[str, str, str]:
-    try:
-        store = str(path.resolve())
-    except OSError:
-        store = str(path.absolute())
-    return provider_id, profile_digest, store
-
-
-def _load_flow_cached(
-    path: Path,
-    provider_id: str,
-    profile_digest: str,
-) -> dict[str, tuple[str, ...]] | None:
-    key = _flow_cache_key(path, provider_id, profile_digest)
-    cache = _flow_cache()
-    if key not in cache:
-        cache[key] = provider_revival.load_flow_recipe(
-            path,
-            provider_id,
-            profile_digest,
-        )
-    return cache[key]
-
-
-def _invalidate_flow_cache(path: Path, provider_id: str) -> None:
-    target = _flow_cache_key(path, provider_id, "")[2]
-    for key in tuple(_flow_cache()):
-        if key[0] == provider_id and key[2] == target:
-            _flow_cache().pop(key, None)
-
-
-def _begin_revival_send(provider_id: str, page: Any) -> None:
-    _abort_revival_send(provider_id)
-    profile_digest = provider_flow.profile_hash(get_profile(provider_id))
-    try:
-        flow_recipe = _load_flow_cached(CONTROL_STORE, provider_id, profile_digest)
-    except (OSError, ValueError) as exc:
-        logger.warning("Failed to load revival flow for %s: %s", provider_id, exc)
-        flow_recipe = None
-    _revival_attempts()[provider_id] = _RevivalSend(
-        host=_page_host(page),
-        staged={},
-        verified=set(),
-        learned_verified=set(),
-        profile_hash=profile_digest,
-        flow_recipe=flow_recipe,
-        loaded_flow_stages=set(flow_recipe or {}),
-    )
-
-
-def _abort_revival_send(provider_id: str) -> None:
-    _revival_attempts().pop(provider_id, None)
-    for key in tuple(_pending_map()):
-        if key[0] == provider_id:
-            _pending_map().pop(key, None)
-            if _source_for(*key) in {"pending", "staged"}:
-                _remember_source(*key, "")
-    for key, source in tuple(_source_map().items()):
-        if key[0] == provider_id and source in {"pending", "staged"}:
-            _remember_source(*key, "")
-
-
-def _complete_revival_send(provider_id: str) -> None:
-    attempt = _revival_attempts().pop(provider_id, None)
-    if attempt is None:
-        return
-    try:
-        path = attempt.path or CONTROL_STORE
-        changed = provider_revival.complete_send(
-            path,
-            provider_id,
-            attempt.host,
-            attempt.staged,
-            attempt.verified,
-            attempt.learned_verified,
-            staged_flow=attempt.staged_flow,
-            learned_flow_verified=attempt.learned_flow_verified,
-            built_in_profile_hash=attempt.profile_hash,
-        )
-        if changed:
-            _invalidate_flow_cache(path, provider_id)
-    except (OSError, ValueError) as exc:
-        logger.warning("Failed to complete revival send for %s: %s", provider_id, exc)
-        for action in attempt.staged:
-            _remember_source(provider_id, action, "")
-        _clear_pending_controls(provider_id)
-        return
-    _clear_pending_controls(provider_id)
-    for action in attempt.staged:
-        _remember_source(provider_id, action, "learned")
-
-
-def flow_matches(
-    provider_id: str,
-    stage: str,
-    observation: provider_flow.FlowObservation,
-    trace: provider_flow.FlowTrace | None = None,
-    *,
-    mark_used: bool = True,
-) -> bool:
-    attempt = _revival_attempts().get(provider_id)
-    if attempt is None or attempt.flow_recipe is None:
-        return False
-    if stage not in attempt.flow_recipe:
-        return False
-    if stage in attempt.loaded_flow_stages:
-        attempt.flow_evaluated_stages.add(stage)
-    matched = provider_flow.evaluate(attempt.flow_recipe, stage, observation, trace)
-    if matched:
-        attempt.learned_flow_verified = True
-        if mark_used and stage in attempt.loaded_flow_stages:
-            attempt.flow_used_stages.add(stage)
-    return matched
-
-
-def flow_stage_ready(
-    page: Any,
-    provider_id: str,
-    stage: str,
-    trace: provider_flow.FlowTrace,
-    observation: provider_flow.FlowObservation,
-    *,
-    built_in_ready: bool,
-    allow_recovery: bool = False,
-) -> bool:
-    """Evaluate built-in state first, then a verified or recoverable recipe."""
-    if built_in_ready:
-        flow_matches(
-            provider_id,
-            stage,
-            observation,
-            trace,
-            mark_used=False,
-        )
-        return True
-    if flow_matches(provider_id, stage, observation, trace):
-        return True
-    return allow_recovery and recover_flow(page, provider_id, stage, trace)
-
-
-def read_flow_response(
-    provider_id: str,
-    stage: str,
-    reader: Callable[[], str],
-) -> str:
-    """Type an unreadable final answer only when a loaded Flow chose completion."""
-    try:
-        return reader()
-    except RuntimeError as exc:
-        attempt = _revival_attempts().get(provider_id)
-        if attempt is not None and stage in attempt.flow_used_stages:
-            raise ResponseMissing(str(exc), stage=stage) from exc
-        raise
-
-
-def recover_flow(
-    page: Any,
-    provider_id: str,
-    stage: str,
-    trace: provider_flow.FlowTrace,
-) -> bool:
-    """Stage one model-selected recipe only when current boolean facts prove it."""
-    attempt = _revival_attempts().get(provider_id)
-    if attempt is None:
-        return False
-    recipe = provider_flow.request_recovery(provider_id, stage, trace, page)
-    if recipe is None or not provider_flow.evaluate(
-        recipe,
-        stage,
-        trace.latest(),
-        trace,
-    ):
-        return False
-    attempt.staged_flow = recipe
-    attempt.flow_recipe = recipe
-    attempt.learned_flow_verified = False
-    return True
-
-
-def _record_revival_flow_failure(provider_id: str, error: BaseException) -> None:
-    attempt = _revival_attempts().get(provider_id)
-    if (
-        attempt is None
-        or attempt.staged_flow is not None
-        or attempt.persistent_failure_recorded
-    ):
-        return
-    kind = str(getattr(error, "provider_failure_kind", "") or "")
-    stage = str(getattr(error, "provider_failure_stage", "") or "")
-    if (
-        kind not in provider_flow.RECOVERABLE_FAILURE_KINDS
-        or stage not in attempt.loaded_flow_stages
-        or stage not in attempt.flow_evaluated_stages
-    ):
-        return
-    store = attempt.path or CONTROL_STORE
-    try:
-        if provider_revival.record_flow_failure(store, provider_id):
-            _invalidate_flow_cache(store, provider_id)
-    except (OSError, ValueError) as exc:
-        logger.warning("Failed to record revival flow failure for %s: %s", provider_id, exc)
-
-
-def _clear_pending_controls(provider_id: str) -> None:
-    for key in tuple(_pending_map()):
-        if key[0] == provider_id:
-            _pending_map().pop(key, None)
-
-
-def _remember_pending(
-    provider_id: str,
-    action: str,
-    page: Any,
-    fingerprint: dict[str, Any],
-    locator: Locator | None = None,
-) -> None:
-    _pending_map()[(provider_id, action)] = _PendingControl(
-        page,
-        fingerprint,
-        locator,
-    )
-
-
-def _remember_source(provider_id: str, action: str, source: str) -> None:
-    _source_map()[(provider_id, action)] = source
-
-
-def _source_for(provider_id: str, action: str) -> str:
-    return _source_map().get((provider_id, action), "")
-
-
-def fingerprint_from_click(data: Any) -> dict[str, Any]:
-    raw = data if isinstance(data, dict) else {}
-    return {
-        "tag": _clean(raw.get("tag"), 32).lower(),
-        "role": _clean(raw.get("role"), 48).lower(),
-        "type": _clean(raw.get("type"), 32).lower(),
-        "aria_label": _clean(raw.get("ariaLabel"), 80),
-        "title": _clean(raw.get("title"), 80),
-        "placeholder": _clean(raw.get("placeholder"), 120),
-        "text": _clean(raw.get("text"), 80),
-        "contenteditable": bool(raw.get("contentEditable")),
-        "classes": _stable_classes(raw.get("classes")),
-        "data": _stable_data(raw.get("data")),
-    }
-
-
-def selector_candidates(fingerprint: dict[str, Any], action: str = "") -> list[str]:
-    tag = _selector_tag(fingerprint.get("tag"))
-    raw_data = fingerprint.get("data")
-    data = raw_data if isinstance(raw_data, dict) else dict[str, object]()
-    candidates: list[str] = []
-    for attr in ("data-testid", "data-test-id", "data-track-id", "data-track-name", "data-qa", "data-role"):
-        value = _clean(data.get(attr), 120)
-        if value:
-            candidates.append(f'{tag}[{attr}={_css_str(value)}]')
-            candidates.append(f'[{attr}={_css_str(value)}]')
-
-    for attr in ("aria_label", "title", "placeholder"):
-        value = _clean(fingerprint.get(attr), 120)
-        if not value:
-            continue
-        html_attr = attr.replace("_", "-")
-        candidates.append(f'{tag}[{html_attr}={_css_str(value)}]')
-        candidates.append(f'[{html_attr}={_css_str(value)}]')
-
-    input_type = _clean(fingerprint.get("type"), 32)
-    if input_type:
-        candidates.append(f'{tag}[type={_css_str(input_type)}]')
-
-    raw_classes = fingerprint.get("classes")
-    classes = [cls for cls in raw_classes if _stable_token(cls)] if isinstance(raw_classes, list) else list[str]()
-    if classes:
-        parts = "".join(f'[class~={_css_str(cls)}]' for cls in classes[:3])
-        candidates.append(f"{tag}{parts}")
-
-    text = _clean(fingerprint.get("text"), 48)
-    if text and action == CONTROL_SEND_BUTTON:
-        candidates.append(f'{tag}:has-text({_css_str(text)})')
-        candidates.append(f'[role="button"]:has-text({_css_str(text)})')
-        candidates.append(f'button:has-text({_css_str(text)})')
-
-    return _dedupe(candidates)
-
-
-def control_fingerprint_is_valid(fingerprint: dict[str, Any], action: str) -> bool:
-    if action == CONTROL_MESSAGE_BOX:
-        return _looks_like_message_box(fingerprint)
-    if action == CONTROL_SEND_BUTTON:
-        return _looks_like_send_button(fingerprint) and not _looks_like_upload(fingerprint)
-    if action == CONTROL_RESPONSE:
-        return _looks_like_response(fingerprint)
-    return True
-
-
-def control_label(fingerprint: dict[str, Any]) -> str:
-    for key in ("aria_label", "title", "placeholder", "text", "role", "tag"):
-        value = _clean(fingerprint.get(key), 80)
-        if value:
-            return value
-    return ""
-
-
-def _wait_for_click(page: Any, deadline: float) -> dict[str, Any]:
-    while time.time() < deadline:
-        cancellation.check()
-        captured = page.evaluate("window.__sessionTeachClick || null")
-        if captured:
-            return cast(dict[str, Any], captured)
-        cancellation.wait(0.1)
-    raise TimeoutError("Timed out waiting for a click in the model page")
-
-
-def _cleanup_capture(page: Any) -> None:
-    with contextlib.suppress(Exception):
-        page.evaluate("window.__sessionTeachCleanup && window.__sessionTeachCleanup()")
-
-
 def _usable(control: Any | None, require_enabled: bool) -> bool:
     if control is None:
         return False
@@ -1205,180 +595,3 @@ def _usable(control: Any | None, require_enabled: bool) -> bool:
         return bool(control.is_enabled())
     except Exception:
         return False
-
-
-def _page_host(page: Any) -> str:
-    try:
-        return (urlparse(str(page.url or "")).hostname or "").lower()
-    except Exception:
-        return ""
-
-
-def _host_matches(current: str, saved: str) -> bool:
-    if not saved or not current:
-        return False
-    current = (current or "").lower()
-    saved = (saved or "").lower()
-    return current == saved or current.endswith("." + saved)
-
-
-def _provider_host_allowed(page: Any, provider_id: str) -> bool:
-    current = _page_host(page)
-    try:
-        hosts = get_profile(provider_id).hosts
-    except KeyError:
-        return False
-    return bool(current) and any(_host_matches(current, host) for host in hosts)
-
-
-def _clean(value: Any, limit: int = 120) -> str:
-    text = re.sub(r"\s+", " ", str(value or "")).strip()
-    return text[:limit]
-
-
-def _stable_classes(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [cls for cls in (_clean(item, 64) for item in value) if _stable_token(cls)][:8]
-
-
-def _stable_data(value: Any) -> dict[str, str]:
-    if not isinstance(value, dict):
-        return {}
-    out: dict[str, str] = {}
-    for key, item in value.items():
-        attr = _clean(key, 48)
-        if not attr.startswith("data-") or attr.startswith("data-session-"):
-            continue
-        text = _clean(item, 120)
-        if text:
-            out[attr] = text
-    return out
-
-
-def _stable_token(value: str) -> bool:
-    if not value or len(value) > 48:
-        return False
-    if re.fullmatch(r"[\da-f]{6,}", value, re.IGNORECASE):
-        return False
-    return bool(re.search(r"[a-zA-Z]", value))
-
-
-def _selector_tag(value: Any) -> str:
-    tag = _clean(value, 32).lower()
-    return tag if re.fullmatch(r"[a-z][a-z0-9-]*", tag) else "*"
-
-
-def _css_str(value: str) -> str:
-    return json.dumps(value)
-
-
-def _dedupe(items: list[str]) -> list[str]:
-    out: list[str] = []
-    for item in items:
-        if item and item not in out:
-            out.append(item)
-    return out
-
-
-def _combined_text(fingerprint: dict[str, Any]) -> str:
-    raw_data = fingerprint.get("data")
-    data = raw_data if isinstance(raw_data, dict) else dict[str, object]()
-    classes = fingerprint.get("classes")
-    if not isinstance(classes, list):
-        classes = list[str]()
-    parts = [
-        fingerprint.get("tag"),
-        fingerprint.get("role"),
-        fingerprint.get("type"),
-        fingerprint.get("aria_label"),
-        fingerprint.get("title"),
-        fingerprint.get("placeholder"),
-        fingerprint.get("text"),
-        " ".join(str(value) for value in classes),
-        " ".join(str(value) for value in data.values()),
-    ]
-    return " ".join(_clean(part, 120).lower() for part in parts if part)
-
-
-def _looks_like_message_box(fingerprint: dict[str, Any]) -> bool:
-    tag = _clean(fingerprint.get("tag"), 32).lower()
-    role = _clean(fingerprint.get("role"), 48).lower()
-    input_type = _clean(fingerprint.get("type"), 32).lower()
-    if tag == "input" and input_type in {"file", "hidden", "password"}:
-        return False
-    return tag in {"textarea", "input"} or role in {"textbox", "searchbox"} or bool(
-        fingerprint.get("contenteditable") or fingerprint.get("placeholder")
-    )
-
-
-def _looks_like_response(fingerprint: dict[str, Any]) -> bool:
-    tag = _clean(fingerprint.get("tag"), 32).lower()
-    if tag in {"button", "textarea", "input", "nav", "header", "footer"}:
-        return False
-    return bool(
-        fingerprint.get("text")
-        or fingerprint.get("classes")
-        or fingerprint.get("data")
-    )
-
-
-def _looks_like_send_button(fingerprint: dict[str, Any]) -> bool:
-    tag = _clean(fingerprint.get("tag"), 32).lower()
-    role = _clean(fingerprint.get("role"), 48).lower()
-    if tag == "button" or role == "button":
-        return True
-    classes = {
-        _clean(item, 64).lower()
-        for item in fingerprint.get("classes", [])
-        if isinstance(item, str)
-    }
-    if "enter" in classes:
-        return True
-    text = _combined_text(fingerprint)
-    return any(word in text for word in ("send", "submit", "发送", "送出"))
-
-
-def _looks_like_upload(fingerprint: dict[str, Any]) -> bool:
-    text = _combined_text(fingerprint)
-    return any(word in text for word in ("upload", "attach", "file", "上传", "附件"))
-
-
-_INSTALL_CAPTURE_JS = r"""
-({ token }) => {
-  if (window.__sessionTeachCleanup) window.__sessionTeachCleanup();
-  window.__sessionTeachClick = null;
-  const interactive = 'button,[role="button"],textarea,input,[contenteditable="true"],[contenteditable="plaintext-only"]';
-  const handler = (event) => {
-    const raw = event.target;
-    const el = raw && raw.closest ? (raw.closest(interactive) || raw) : raw;
-    if (!el || !el.getBoundingClientRect) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-    el.setAttribute('data-session-teach-current', token);
-    const data = {};
-    for (const attr of Array.from(el.attributes || [])) {
-      if (attr.name && attr.name.startsWith('data-')) data[attr.name] = attr.value || '';
-    }
-    window.__sessionTeachClick = {
-      tag: (el.tagName || '').toLowerCase(),
-      role: el.getAttribute('role') || '',
-      type: el.getAttribute('type') || '',
-      ariaLabel: el.getAttribute('aria-label') || '',
-      title: el.getAttribute('title') || '',
-      placeholder: el.getAttribute('placeholder') || '',
-      text: (el.innerText || el.textContent || '').trim(),
-      contentEditable: !!el.isContentEditable,
-      classes: Array.from(el.classList || []),
-      data,
-    };
-    window.__sessionTeachCleanup();
-  };
-  document.addEventListener('click', handler, true);
-  window.__sessionTeachCleanup = () => {
-    document.removeEventListener('click', handler, true);
-    window.__sessionTeachCleanup = null;
-  };
-}
-"""
