@@ -12,6 +12,7 @@ from codey.types.json_value import JsonObject, canonical_json_object
 from codey.types.research_answer import MAX_UPDATES
 
 if TYPE_CHECKING:
+    from codey.research.report_snapshot import ReportEvidence
     from codey.research.report_values import EvidenceBinding
 
 from codey.knowledge.archive import stable_identity
@@ -147,7 +148,7 @@ def evidence_labels(updates: Sequence[KnowledgeUpdate]) -> list[str]:
                              if _EVIDENCE_LABEL.fullmatch(ref["ref"])))
 
 
-def compile_updates(updates: list[KnowledgeUpdate], evidence: Sequence[EvidenceBinding], *, scope: str, owner: str,
+def compile_updates(updates: list[KnowledgeUpdate], evidence: Sequence[EvidenceBinding | ReportEvidence], *, scope: str, owner: str,
                     namespace: str, submission_digest: str) -> list[MutationPayload]:
     """No writes, model calls or current-head resolution; all objects remain candidates."""
     bindings = {row["label"]: (row["evidence_id"], row["evidence_revision"]) for row in evidence}

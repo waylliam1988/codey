@@ -415,7 +415,7 @@ def advance_execution(
     if work_ref is not None:
         updates["work_ref"] = _text(work_ref, "work_ref", allow_empty=True)
     if counters is not None:
-        updates["counters"] = RuntimeExecutionCounters.from_payload(counters.to_payload())
+        updates["counters"] = counters
     if leaf in _PENDING_LEAVES:
         updates["driver"] = state.driver or (DRIVER_REPAIR if _is_repair_leaf(state.leaf, state.driver) else DRIVER_WRITER)
         updates["turn"] = state.turn

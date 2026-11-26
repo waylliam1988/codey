@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from copy import deepcopy
 from dataclasses import Field, dataclass
 from dataclasses import fields as dataclass_fields
-from typing import Protocol
 
-from codey.knowledge.model import KnowledgeMutation, KnowledgeObject
 from codey.knowledge.store import KnowledgeStore
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS
 from codey.research.answer_contract import (
@@ -17,21 +14,22 @@ from codey.research.answer_contract import (
     digest,
     validate_submission,
 )
-from codey.research.knowledge_update_types import KnowledgeBatch, KnowledgeUpdate, MutationPayload
+from codey.research.knowledge_update_types import KnowledgeBatch, KnowledgeUpdate
 from codey.research.knowledge_updates import compile_updates, evidence_labels, normalize_updates
 from codey.research.ledger import ResearchLedger
+from codey.research.report_snapshot import (
+    ReportCitation,
+    ReportEvidence,
+    ReportKnowledgeBatch,
+    ReportMutation,
+    ReportReference,
+    ReportSource,
+)
 from codey.research.report_values import (
-    CitationBinding,
     EvidenceBinding,
     SourceVersion,
-    VersionReference,
-    citation_binding,
-    evidence_binding,
-    mutation_payload,
     object_rows,
-    source_version,
     strings,
-    version_reference,
 )
 from codey.research.staging import StagedKnowledgeStore
 from codey.types.json_value import (
@@ -49,10 +47,6 @@ KNOWLEDGE_REPORT_SCHEMA = "research_answer_v2"
 DELIVERY_CHECKS = RESEARCH_ANSWER_REQUIRED_CHECKS
 
 
-class _KnowledgeDecoder(Protocol):
-    def from_dict(self, raw: JsonObject) -> KnowledgeObject: ...
-
-
 @dataclass(frozen=True)
 class AnswerReport:
     text: str
@@ -60,15 +54,15 @@ class AnswerReport:
     state: str
     task_digest: str
     proposal_digest: str
-    citation_bindings: tuple[CitationBinding, ...]
-    source_versions: tuple[SourceVersion, ...]
-    evidence_bindings: tuple[EvidenceBinding, ...]
-    knowledge_refs: tuple[VersionReference, ...]
-    knowledge_mutations: tuple[MutationPayload, ...]
+    citation_bindings: tuple[ReportCitation, ...]
+    source_versions: tuple[ReportSource, ...]
+    evidence_bindings: tuple[ReportEvidence, ...]
+    knowledge_refs: tuple[ReportReference, ...]
+    knowledge_mutations: tuple[ReportMutation, ...]
     attempt_refs: tuple[str, ...]
     selection_receipts: tuple[str, ...]
     questions: tuple[str, ...]
-    knowledge_batch: KnowledgeBatch | None = None
+    knowledge_batch: ReportKnowledgeBatch | None = None
 
     @property
     def finding_ids(self) -> tuple[str, ...]:
@@ -83,13 +77,21 @@ class AnswerReport:
         return self.questions if self.state != "answered" else ()
 
     def __post_init__(self) -> None:
-        """Own detached wire containers; frozen prevents rebinding, not nested mutation."""
-        object.__setattr__(self, "citation_bindings", deepcopy(self.citation_bindings))
-        object.__setattr__(self, "source_versions", deepcopy(self.source_versions))
-        object.__setattr__(self, "evidence_bindings", deepcopy(self.evidence_bindings))
-        object.__setattr__(self, "knowledge_refs", deepcopy(self.knowledge_refs))
-        object.__setattr__(self, "knowledge_mutations", deepcopy(self.knowledge_mutations))
-        object.__setattr__(self, "knowledge_batch", deepcopy(self.knowledge_batch))
+        for value in (self.text, self.markdown, self.state, self.task_digest, self.proposal_digest):
+            require_json_string(value, "report text")
+        for rows, record_type in (
+            (self.citation_bindings, ReportCitation), (self.source_versions, ReportSource),
+            (self.evidence_bindings, ReportEvidence), (self.knowledge_refs, ReportReference),
+            (self.knowledge_mutations, ReportMutation),
+        ):
+            if not isinstance(rows, tuple) or any(not isinstance(row, record_type) for row in rows):
+                raise ValueError("report records must be immutable decoded values")
+        for refs in (self.attempt_refs, self.selection_receipts, self.questions):
+            if not isinstance(refs, tuple) or any(not isinstance(ref, str) for ref in refs):
+                raise ValueError("report references must be an immutable tuple of strings")
+        if self.knowledge_batch is not None and not isinstance(self.knowledge_batch, ReportKnowledgeBatch):
+            raise ValueError("report knowledge batch must be immutable")
+        _validate_report(self)
 
     def to_payload(self) -> JsonObject:
         fields = decode_json_object(encode_transport_value(self))
@@ -111,34 +113,29 @@ class AnswerReport:
                 or not isinstance(schema, str) or schema not in {REPORT_SCHEMA, KNOWLEDGE_REPORT_SCHEMA}
                 or raw["compilation_digest"] != digest({k: v for k, v in raw.items() if k != "compilation_digest"})):
             raise ValueError("invalid frozen whole-answer report")
-        evidence = tuple(evidence_binding(row) for row in object_rows(raw["evidence_bindings"], "evidence_bindings"))
-        batch = _decode_batch(raw["knowledge_batch"], evidence) if "knowledge_batch" in fields else None
+        evidence = tuple(ReportEvidence(row) for row in object_rows(raw["evidence_bindings"], "evidence_bindings"))
+        batch = ReportKnowledgeBatch(raw["knowledge_batch"]) if "knowledge_batch" in fields else None
         report = cls(require_json_string(raw["text"], "text"), require_json_string(raw["markdown"], "markdown"),
             require_json_string(raw["state"], "state"), require_json_string(raw["task_digest"], "task_digest"),
             require_json_string(raw["proposal_digest"], "proposal_digest"),
-            tuple(citation_binding(row) for row in object_rows(raw["citation_bindings"], "citation_bindings")),
-            tuple(source_version(row) for row in object_rows(raw["source_versions"], "source_versions")), evidence,
-            tuple(version_reference(row) for row in object_rows(raw["knowledge_refs"], "knowledge_refs")),
-            tuple(mutation_payload(row) for row in object_rows(raw["knowledge_mutations"], "knowledge_mutations")),
+            tuple(ReportCitation(row) for row in object_rows(raw["citation_bindings"], "citation_bindings")),
+            tuple(ReportSource(row) for row in object_rows(raw["source_versions"], "source_versions")), evidence,
+            tuple(ReportReference(row) for row in object_rows(raw["knowledge_refs"], "knowledge_refs")),
+            tuple(ReportMutation(row) for row in object_rows(raw["knowledge_mutations"], "knowledge_mutations")),
             strings(raw["attempt_refs"], "attempt_refs"), strings(raw["selection_receipts"], "selection_receipts"),
             strings(raw["questions"], "questions"), batch)
-        _validate_report(report)
         # A decoder must never silently strip fields from a digest-bound snapshot.
         if report.to_payload() != raw:
             raise ValueError("report contains noncanonical or unknown fields")
         return report
 
 
-def _decode_batch(value: object, evidence: Sequence[EvidenceBinding]) -> KnowledgeBatch:
-    batch = canonical_json_object(value)
-    if set(batch) != {"updates", "scope", "scope_id", "session_id"}:
-        raise ValueError("invalid frozen knowledge batch")
+def _decode_batch(value: ReportKnowledgeBatch, evidence: Sequence[ReportEvidence]) -> KnowledgeBatch:
+    batch = value.to_payload()
     updates = normalize_updates(batch["updates"], {row["label"] for row in evidence})
     if not updates or batch["updates"] != updates:
         raise ValueError("knowledge batch must contain normalized authored entries")
-    return KnowledgeBatch(updates=updates, scope=require_json_string(batch["scope"], "scope"),
-        scope_id=require_json_string(batch["scope_id"], "scope_id"),
-        session_id=require_json_string(batch["session_id"], "session_id"))
+    return KnowledgeBatch(updates=updates, scope=value["scope"], scope_id=value["scope_id"], session_id=value["session_id"])
 
 
 def _validate_report(report: AnswerReport) -> None:
@@ -147,8 +144,8 @@ def _validate_report(report: AnswerReport) -> None:
             or len(report.questions) != 1 or digest(report.questions[0]) != report.task_digest):
         raise ValueError("whole-answer report has no original task, submission or investigation")
     material = report.knowledge_mutations
-    if report.knowledge_batch is not None:
-        batch = report.knowledge_batch
+    batch = _decode_batch(report.knowledge_batch, report.evidence_bindings) if report.knowledge_batch is not None else None
+    if batch is not None:
         explicit = compile_updates(batch["updates"], report.evidence_bindings, scope=batch["scope"], owner=batch["scope_id"],
             namespace=digest([report.proposal_digest, report.selection_receipts, batch["session_id"]]),
             submission_digest=report.proposal_digest)
@@ -156,16 +153,14 @@ def _validate_report(report: AnswerReport) -> None:
             raise ValueError("knowledge mutations differ from the explicitly authored batch")
         material = material[:-len(explicit)]
     for row in material:
-        decoder: _KnowledgeDecoder = KnowledgeObject
-        mutation = KnowledgeMutation(decoder.from_dict(row["value"]), row["expected_revision"])
-        if mutation.value.kind not in {"source", "evidence"}:
+        if row["value"]["kind"] not in ("source", "evidence"):
             raise ValueError("whole-answer preparation cannot manufacture claims or write a second answer")
     citations = citation_occurrences(report.markdown)
     if citations != [{"label": row["label"], "start": row["start"], "end": row["end"]} for row in report.citation_bindings]:
         raise ValueError("report citation locations differ from its original Markdown")
     bindings = {row["label"]: row for row in report.evidence_bindings}
     labels = {row["label"] for row in report.citation_bindings}
-    updates: list[KnowledgeUpdate] = report.knowledge_batch["updates"] if report.knowledge_batch is not None else []
+    updates: list[KnowledgeUpdate] = batch["updates"] if batch is not None else []
     if (len(bindings) != len(report.evidence_bindings) or set(bindings) != labels | set(evidence_labels(updates))
             or not citations and report.state != "unresolved"):
         raise ValueError("report citations differ from selected evidence")
@@ -179,7 +174,7 @@ def _validate_report(report: AnswerReport) -> None:
         raise ValueError("report rendering differs from the frozen answer")
 
 
-def render_answer(markdown: str, sources: Sequence[SourceVersion], evidence: Sequence[EvidenceBinding]) -> str:
+def render_answer(markdown: str, sources: Sequence[SourceVersion | ReportSource], evidence: Sequence[EvidenceBinding | ReportEvidence]) -> str:
     labels = {row["label"] for row in citation_occurrences(markdown)}
     evidence = [row for row in evidence if row["label"] in labels]
     if not evidence:
@@ -277,9 +272,20 @@ def compile_answer_report(session: AnswerSessionView, ledger: ResearchLedger, st
     if len(mutations) >= 128:
         raise ValueError("knowledge updates exceed the original publication transaction budget")
     body_labels = {row["label"] for row in submission["citations"]}
-    report = AnswerReport(render_answer(submission["markdown"], tuple(source_version(row) for row in sources), tuple(evidence_binding(row) for row in evidence)), submission["markdown"],
-        submission["state"], submission["task_digest"], submission["submission_digest"], tuple(citation_binding(row) for row in submission["citations"]),
-        tuple(source_version(row) for row in sources), tuple(evidence_binding(row) for row in evidence), tuple({"id": row["evidence_id"], "revision": row["evidence_revision"]}
-                                             for row in evidence if row["label"] in body_labels),
-        tuple(mutation_payload(row) for row in mutations), tuple(scope["attempt_refs"]), (receipt,), (session.task_text,), batch)
-    return AnswerReport.from_payload(report.to_payload())
+    return AnswerReport(
+        text=render_answer(submission["markdown"], sources, evidence),
+        markdown=submission["markdown"],
+        state=submission["state"],
+        task_digest=submission["task_digest"],
+        proposal_digest=submission["submission_digest"],
+        citation_bindings=tuple(ReportCitation(row) for row in submission["citations"]),
+        source_versions=tuple(ReportSource(row) for row in sources),
+        evidence_bindings=tuple(ReportEvidence(row) for row in evidence),
+        knowledge_refs=tuple(ReportReference({"id": row["evidence_id"], "revision": row["evidence_revision"]})
+                             for row in evidence if row["label"] in body_labels),
+        knowledge_mutations=tuple(ReportMutation(row) for row in mutations),
+        attempt_refs=tuple(scope["attempt_refs"]),
+        selection_receipts=(receipt,),
+        questions=(session.task_text,),
+        knowledge_batch=ReportKnowledgeBatch(batch) if batch is not None else None,
+    )

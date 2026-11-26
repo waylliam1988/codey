@@ -69,8 +69,8 @@ class KernelResult:
     def to_payload(self) -> KernelResultPayload:
         return {"schema_version": 2, "completed": self.completed, "summary": self.summary,
                 "turns": self.turns, "stop_reason": self.stop_reason, "delivery": self.delivery,
-                "proof": decode_json_object(self.proof.to_payload()) if self.proof is not None else None,
-                "research_report": decode_json_object(self.research_report.to_payload()) if self.research_report is not None else None}
+                "proof": self.proof.to_payload() if self.proof is not None else None,
+                "research_report": self.research_report.to_payload() if self.research_report is not None else None}
 
 
 def result_from_payload(payload: object) -> KernelResult:

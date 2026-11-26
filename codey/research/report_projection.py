@@ -50,7 +50,6 @@ def validate_accepted_projection(result: ResearchRunResult, *, run_id: str, sess
     compiled = result.accepted_report
     if not isinstance(compiled, AnswerReport):
         raise ValueError("accepted projection requires a compiled report")
-    AnswerReport.from_payload(compiled.to_payload())
     if compiled.questions != (result.question,):
         raise ValueError("whole answer belongs to another task")
     raw_proof = result.completion_proof

@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from codey.policies.redaction import looks_prompt_visible_secret
+from codey.types.json_value import JsonObject
 from codey.utils.refs import bounded_refs, digest_text, identifier, stable_ref
 
 COMPLETION_CONTRACT_PREFIX = "completion_contract"
@@ -113,8 +114,8 @@ class CompletionCheck:
     status: str
     reason_code: str = ""
 
-    def to_payload(self) -> dict[str, object]:
-        payload: dict[str, object] = {
+    def to_payload(self) -> JsonObject:
+        payload: JsonObject = {
             "check_id": identifier(self.check_id, 80),
             "status": identifier(self.status, 20),
         }
@@ -168,7 +169,7 @@ class CompletionProof:
     external_refs: tuple[str, ...]
     diagnostic_refs: tuple[str, ...] = ()
 
-    def to_payload(self) -> dict[str, object]:
+    def to_payload(self) -> JsonObject:
         return completion_proof_payload(self)
 
 
@@ -318,14 +319,14 @@ def project_completion_proof(contract: CompletionContract | None) -> CompletionP
     )
 
 
-def completion_proof_payload(proof: CompletionProof | None) -> dict[str, object]:
+def completion_proof_payload(proof: CompletionProof | None) -> JsonObject:
     """Bounded refs-only payload of a proof; empty groups stay omitted."""
 
     if proof is None:
         return {}
     status = identifier(proof.status, 40)
     satisfied = status in COMPLETION_SATISFIED_STATUSES
-    payload: dict[str, object] = {
+    payload: JsonObject = {
         "proof_id": proof.proof_id,
         "contract_id": proof.contract_id,
         "domain": identifier(proof.domain, 20),
@@ -361,7 +362,7 @@ class _ProofPayload(Protocol):
     def to_payload(self) -> object: ...
 
 
-def completion_proof_trace_payload(proof: object) -> dict[str, object]:
+def completion_proof_trace_payload(proof: object) -> JsonObject:
     """Trace projection accepting a CompletionProof, its payload, or a mapping.
 
     Payloads without resolvable proof/contract ids fail closed to an empty

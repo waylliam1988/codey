@@ -81,6 +81,7 @@ def test_oracle_rejects_report_citing_unopened_source_ledger_unchanged(tmp_path,
 
     from codey.operations.completion_gate import evaluate
     from codey.research.answer_report import AnswerReport, render_answer
+    from codey.research.report_snapshot import ReportSource
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
     from tests.test_research_findings import URL, execute, setup
     from tests.test_research_whole_answer import record_submission
@@ -108,7 +109,7 @@ def test_oracle_rejects_report_citing_unopened_source_ledger_unchanged(tmp_path,
         else:
             # Forge a self-consistent report, including a fresh digest and rendering.
             # The independent oracle must still check the actual read receipt.
-            sources = tuple({**row, "url": "https://unopened.example/b"} for row in report.source_versions)
+            sources = tuple(ReportSource({**row, "url": "https://unopened.example/b"}) for row in report.source_versions)
             report = replace(report, source_versions=sources,
                 text=render_answer(report.markdown, sources, report.evidence_bindings))
             assert AnswerReport.from_payload(report.to_payload()) == report

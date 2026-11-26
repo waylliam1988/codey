@@ -1,15 +1,20 @@
 """Durable delivery must preserve the observation, not just its preview."""
 
+from pathlib import Path
+
+import pytest
+
 from codey.operations.task_effects import KernelEffectSink
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.effects.effect_records import RuntimeEffectStore
 from codey.storage.managed_outputs import ManagedOutputStore
 from tests.support.receipt_fixtures import rebuild_settled_tool_result
-from tests.test_settled_delivery_recovery import _accept_and_mark, _new_log
+from tests.test_settled_delivery_recovery import _accept_and_mark, _new_runtime
 
 
-def test_long_model_result_and_metadata_survive_restart(tmp_path):
-    log, mutations, durable = _new_log(tmp_path, "session", "run")
+def test_long_model_result_and_metadata_survive_restart(tmp_path: Path, request: pytest.FixtureRequest) -> None:
+    mutations, durable = _new_runtime(tmp_path, "session", "run")
+    request.addfinalizer(durable.close)
     _accept_and_mark(mutations, "session", "run", str(tmp_path))
     store = ManagedOutputStore(tmp_path / "state")
     # Exhaust optional output attachments before settling a mandatory receipt.
@@ -41,7 +46,7 @@ def test_long_model_result_and_metadata_survive_restart(tmp_path):
     assert projection.settlement.result_ref.startswith("artifact_")
 
 
-def test_managed_receipt_preserves_crlf_bytes(tmp_path):
+def test_managed_receipt_preserves_crlf_bytes(tmp_path: Path) -> None:
     store = ManagedOutputStore(tmp_path)
     text = "first\r\nsecond\r\n"
     ref = store.write_tool_output(session_id="s", run_id="r", tool_id="t",
@@ -52,14 +57,15 @@ def test_managed_receipt_preserves_crlf_bytes(tmp_path):
     assert restored == text
 
 
-def test_missing_output_attachment_does_not_erase_restored_execution_facts(tmp_path):
+def test_missing_output_attachment_does_not_erase_restored_execution_facts(tmp_path: Path, request: pytest.FixtureRequest) -> None:
     from codey.operations.task_session import TaskSession
     from codey.operations.tool_result_reader import read_tool_result
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.execution_receipt import ExecutionReceipt, execution_receipt
     from tests.test_execution_claims_and_output_recovery import Reader
 
-    _, mutations, durable = _new_log(tmp_path, "s", "r")
+    mutations, durable = _new_runtime(tmp_path, "s", "r")
+    request.addfinalizer(durable.close)
     _accept_and_mark(mutations, "s", "r", str(tmp_path))
     store = ManagedOutputStore(tmp_path / "state")
     ref = store.write_tool_output(session_id="s", run_id="r", tool_id="effect", permission_profile="coding_writer",
@@ -85,13 +91,14 @@ def test_missing_output_attachment_does_not_erase_restored_execution_facts(tmp_p
     assert not page.ok and "missing" in page.model_text
 
 
-def test_large_source_observation_survives_real_result_receipt_and_restart(tmp_path):
+def test_large_source_observation_survives_real_result_receipt_and_restart(tmp_path: Path, request: pytest.FixtureRequest) -> None:
     from codey.operations.kernel_facts import record_facts_for_result
     from codey.operations.task_session import TaskSession
     from codey.research.ledger import ResearchLedger
     from codey.research.ledger_receipts import ledger_observation, restore_ledger_observation
 
-    _, mutations, durable = _new_log(tmp_path, "session", "run")
+    mutations, durable = _new_runtime(tmp_path, "session", "run")
+    request.addfinalizer(durable.close)
     _accept_and_mark(mutations, "session", "run", str(tmp_path))
     store = ManagedOutputStore(tmp_path / "state")
     sink = KernelEffectSink(mutations, session_id="session", run_id="run",

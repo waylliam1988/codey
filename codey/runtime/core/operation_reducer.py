@@ -101,7 +101,6 @@ class OperationSettlement:
 def admit_request_counters(
     current: RuntimeExecutionCounters, proposed: RuntimeExecutionCounters,
 ) -> RuntimeExecutionCounters:
-    proposed = RuntimeExecutionCounters.from_payload(proposed.to_payload())
     lengths = proposed.length_continuations
     if (proposed.closing_round < current.closing_round
             or proposed.closing_round > current.closing_round + 1
@@ -143,7 +142,7 @@ def record_progress_observation(
             or batch is None or not _batch_fully_settled(batch, view.effects)
             or any(_external_outcome_unknown(effect) for effect in view.effects)):
         raise RuntimeOperationTransitionError("progress requires the current complete result batch")
-    counters = replace(state.counters, progress=ProgressSnapshot.from_payload(observed.to_payload()))
+    counters = replace(state.counters, progress=observed)
     return replace(state, counters=counters)
 
 

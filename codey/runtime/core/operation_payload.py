@@ -25,6 +25,17 @@ class RuntimeExecutionCounters:
     closing_round: int = 0
     progress: ProgressSnapshot = field(default_factory=ProgressSnapshot)
 
+    def __post_init__(self) -> None:
+        if (type(self.invalid_turns) is not int or self.invalid_turns < 0
+                or type(self.closing_round) is not int or not 0 <= self.closing_round <= 4
+                or not isinstance(self.progress, ProgressSnapshot)):
+            raise RuntimeOperationTransitionError("invalid operation execution counters")
+        used = self.length_continuations
+        if (not isinstance(used, tuple) or len(used) > MAX_LENGTH_CONTINUATIONS
+                or any(type(turn) is not int or turn < 0 for turn in used)
+                or any(before >= after for before, after in zip(used, used[1:], strict=False))):
+            raise RuntimeOperationTransitionError("invalid length continuations")
+
     @property
     def length_continuation_used(self) -> bool:
         return bool(self.length_continuations)
@@ -46,8 +57,7 @@ class RuntimeExecutionCounters:
         if (not isinstance(value, dict)
                 or set(value) not in ({"invalid_turns", "length_continuation_used", "closing_round", "progress"},
                                       {"invalid_turns", "length_continuations", "closing_round", "progress"})
-                or type(value["invalid_turns"]) is not int or value["invalid_turns"] < 0
-                or type(value["closing_round"]) is not int or not 0 <= value["closing_round"] <= 4):
+                or type(value["invalid_turns"]) is not int or type(value["closing_round"]) is not int):
             raise RuntimeOperationTransitionError("invalid operation execution counters")
         lengths: object = value.get("length_continuations")
         if "length_continuation_used" in value:
@@ -55,12 +65,10 @@ class RuntimeExecutionCounters:
                 raise RuntimeOperationTransitionError("invalid legacy continuation")
             legacy_lengths: list[int] = [0] if legacy else []
             lengths = legacy_lengths
-        if (not isinstance(lengths, list) or len(lengths) > MAX_LENGTH_CONTINUATIONS
-                or any(type(turn) is not int or turn < 0 for turn in lengths)
-                or any(before >= after for before, after in zip(lengths, lengths[1:], strict=False))):
+        if not isinstance(lengths, list) or len(lengths) > MAX_LENGTH_CONTINUATIONS:
             raise RuntimeOperationTransitionError("invalid length continuations")
-        used = tuple(require_json_integer(turn, "continuation turn") for turn in lengths)
         try:
+            used = tuple(require_json_integer(turn, "continuation turn") for turn in lengths)
             progress = ProgressSnapshot.from_payload(value["progress"])
         except ValueError as exc:
             raise RuntimeOperationTransitionError(str(exc)) from exc

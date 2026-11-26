@@ -42,7 +42,7 @@ class ProviderRequestContext:
         from codey.operations.provider_receipts import snapshot_description
 
         return {"logical_turn": self.logical_turn, "snapshot": snapshot_description(self.snapshot),
-                "window": decode_json_object(self.window_ref.to_payload()) if self.window_ref is not None else None,
+                "window": self.window_ref.to_payload() if self.window_ref is not None else None,
                 "context": {"text": self.context_text, "memory_sources": encode_transport_value(self.memory_sources)},
                 "effect_scope": self.effect_scope, "close_reply": self.close_reply,
                 "delivery_purpose": self.delivery_purpose, "work_ref": self.work_ref,

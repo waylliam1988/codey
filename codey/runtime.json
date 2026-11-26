@@ -627,6 +627,7 @@
     "codey/research/report_evidence.py",
     "codey/research/report_projection.py",
     "codey/research/report_quality.py",
+    "codey/research/report_snapshot.py",
     "codey/research/report_values.py",
     "codey/research/reproducibility.py",
     "codey/research/review_finding.py",

@@ -9,7 +9,9 @@ from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, KnowledgeR
 from codey.research.answer_contract import AnswerScope, answer_scope, submit_answer
 from codey.research.answer_report import AnswerReport, compile_answer_report
 from codey.research.passages import describe_section_window, describe_window
+from codey.research.report_snapshot import ReportMutation
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.types.json_value import canonical_json_object
 from tests.test_research_findings import URL, execute, setup
 
 
@@ -67,7 +69,7 @@ def test_cross_source_submission_prepares_one_atomic_archive_without_claims(tmp_
         assert len(report.source_versions) == 2
         assert {row["value"]["kind"] for row in report.knowledge_mutations} == {"source", "evidence"}
         assert AnswerReport.from_payload(report.to_payload()) == report
-        mutations = [KnowledgeMutation(KnowledgeObject.from_dict(row["value"]), row["expected_revision"])
+        mutations = [KnowledgeMutation(KnowledgeObject.from_dict(canonical_json_object(row["value"])), row["expected_revision"])
                      for row in report.knowledge_mutations]
         answer = KnowledgeObject("answer-test", "answer", report.text, "model_inference", scope="personal", scope_id=store.owner_id,
             references=tuple(KnowledgeReference(row["id"], row["revision"], "uses") for row in report.knowledge_refs))
@@ -211,16 +213,15 @@ def test_changed_frozen_report_is_rejected(tmp_path, change):
         session._memory_results["read"] = execute(delegate, tools, session, "open_url", {"url": URL})
         record_submission(session, {"state": "answered", "markdown": "Readers and writers can overlap [e1]."})
         report = compile_answer_report(session, tools.ledger, store, project="", session_id="first")
-        if change == "task":
-            report = replace(report, questions=("Another task",))
-        elif change == "citation":
-            report = replace(report, citation_bindings=())
-        elif change == "text":
-            report = replace(report, text="A different answer")
-        else:
-            report = replace(report, knowledge_mutations=({"value": KnowledgeObject("invented", "claim", "Claim", "model_extraction").to_dict(),
-                                                          "expected_revision": 0},))
         with pytest.raises(ValueError):
-            AnswerReport.from_payload(report.to_payload())
+            if change == "task":
+                report = replace(report, questions=("Another task",))
+            elif change == "citation":
+                report = replace(report, citation_bindings=())
+            elif change == "text":
+                report = replace(report, text="A different answer")
+            else:
+                report = replace(report, knowledge_mutations=(ReportMutation({"value": KnowledgeObject("invented", "claim", "Claim", "model_extraction").to_dict(),
+                                                                              "expected_revision": 0}),))
     finally:
         store.close()

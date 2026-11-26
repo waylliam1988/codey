@@ -251,12 +251,11 @@ def research_completion_feedback(session: TaskSession, text: str, context: objec
 
 
 def _ledger_checks(session: TaskSession, done_text: str, compiled: AnswerReport | None) -> list[CompletionCheck]:
-    from codey.research.answer_report import DELIVERY_CHECKS, AnswerReport
+    from codey.research.answer_report import DELIVERY_CHECKS
     from codey.research.report_values import report_delivery_matches
 
     if compiled is None:
         return [CompletionCheck("research_report_sections", CHECK_FAIL, "structured_report_missing")]
-    AnswerReport.from_payload(compiled.to_payload())
     if not report_delivery_matches(done_text, compiled.text, combined=not report_completes_task(session)):
         return [CompletionCheck("research_report_sections", CHECK_FAIL, "answer_text_changed")]
     return [CompletionCheck(check, CHECK_PASS, "whole_answer_delivery_not_semantic_verification")

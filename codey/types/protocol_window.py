@@ -12,6 +12,8 @@ import json
 from dataclasses import dataclass
 from uuid import uuid4
 
+from codey.types.json_value import JsonObject
+
 REPLAY_BINDING = "_codey_replay_binding"
 RESPONSES_REASONING = "_codey_responses_reasoning"
 ANTHROPIC_BLOCKS = "_codey_anthropic_blocks"
@@ -42,7 +44,7 @@ class ProviderBinding:
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{name} must be a non-empty string")
 
-    def to_payload(self) -> dict[str, str]:
+    def to_payload(self) -> JsonObject:
         return {
             "connection_id": self.connection_id,
             "connection_revision": self.connection_revision,
@@ -84,7 +86,7 @@ class ProtocolWindowRef:
     def new(cls, session_id: str, binding: ProviderBinding) -> ProtocolWindowRef:
         return cls(session_id, binding, "window_" + uuid4().hex)
 
-    def to_payload(self) -> dict[str, object]:
+    def to_payload(self) -> JsonObject:
         return {"session_id": self.session_id, "binding": self.binding.to_payload(), "window_id": self.window_id}
 
     @classmethod

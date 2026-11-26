@@ -15,6 +15,7 @@ from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS
 from codey.research.answer_archive import publication_command
 from codey.research.answer_contract import AnswerScope, submit_answer, validate_submission
 from codey.research.answer_report import AnswerReport, compile_answer_report
+from codey.types.json_value import canonical_json_object
 from tests.test_research_deterministic_completion import _run
 from tests.test_research_findings import URL, execute, setup
 from tests.test_research_whole_answer import record_submission
@@ -238,7 +239,7 @@ def test_update_only_historical_material_preserves_scope_and_exact_old_source(tm
         report = compile_answer_report(session, tools.ledger, store, project="", session_id="first")
         assert report.knowledge_batch["scope"] == "session" and report.knowledge_batch["scope_id"] == "first"
         binding = report.evidence_bindings[1]
-        evidence = next(row["value"] for row in report.knowledge_mutations if row["value"]["id"] == binding["evidence_id"])
+        evidence = canonical_json_object(next(row["value"] for row in report.knowledge_mutations if row["value"]["id"] == binding["evidence_id"]))
         assert evidence["content"] == source.content
         assert evidence["references"] == [KnowledgeReference(source.id, 1, "from_source").__dict__]
         command = publication_command(report, task=session.task_text, run_id="r", projection="p", note_id="n",
@@ -277,10 +278,10 @@ def test_explicit_batch_does_not_allow_unrequested_mutations_or_rebinding(tmp_pa
             return
         else:
             batch = {**report.knowledge_batch, "scope": "project", "scope_id": "unrelated"}
-            report = replace(report, knowledge_batch=batch)
+            from codey.research.report_snapshot import ReportKnowledgeBatch
+
             with pytest.raises(ValueError):
-                publication_command(report, task=session.task_text, run_id="r", projection="p", note_id="n",
-                                    session_id="first", project="", store=store)
+                replace(report, knowledge_batch=ReportKnowledgeBatch(batch))
             return
         from codey.research.answer_contract import digest
 
@@ -340,6 +341,6 @@ def test_first_pass_cold_restart_keeps_exact_knowledge_and_one_answer(tmp_path, 
         counts = store.index._read_conn().execute("SELECT kind,COUNT(*) FROM knowledge_versions GROUP BY kind").fetchall()
         assert dict(counts) == {"answer": 1, "source": 1, "evidence": 1, "claim": 1, "inference": 1}
         for row in result.accepted_report.knowledge_mutations:
-            assert store.repository.read(row["value"]["id"], 1).value.to_dict() == row["value"]
+            assert store.repository.read(row["value"]["id"], 1).value.to_dict() == canonical_json_object(row["value"])
     finally:
         store.close()

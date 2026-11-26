@@ -15,6 +15,7 @@ from codey.types.json_value import JsonObject, canonical_json_object
 
 if TYPE_CHECKING:
     from codey.research.answer_report import AnswerReport
+    from codey.research.report_snapshot import ReportEvidence, ReportMutation
 
 from codey.knowledge.archive import stable_identity
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, KnowledgeReference
@@ -135,10 +136,10 @@ def prepare_evidence(submission: AnswerSubmission, ledger: ResearchLedger, store
             [source_version(row) for row in sources.values()], [evidence_binding(row) for row in bindings])
 
 
-def prepared_scope(mutations: Sequence[MutationPayload], evidence: Sequence[EvidenceBinding], store: KnowledgeStore | StagedKnowledgeStore, *, project: str, session_id: str) -> tuple[str, str]:
+def prepared_scope(mutations: Sequence[MutationPayload | ReportMutation], evidence: Sequence[EvidenceBinding | ReportEvidence], store: KnowledgeStore | StagedKnowledgeStore, *, project: str, session_id: str) -> tuple[str, str]:
     from codey.knowledge.model import KnowledgeVersion
 
-    pending = {value.id: value for row in mutations for value in (KnowledgeObject.from_dict(row["value"]),)}
+    pending = {value.id: value for row in mutations for value in (KnowledgeObject.from_dict(canonical_json_object(row["value"])),)}
     versions = [KnowledgeVersion(pending[row["evidence_id"]], row["evidence_revision"], "", "")
                 if row["evidence_id"] in pending else store.repository.read(row["evidence_id"], row["evidence_revision"])
                 for row in evidence]
@@ -151,10 +152,8 @@ def publication_command(report: AnswerReport, *, task: str, run_id: str, project
     from dataclasses import asdict
 
     from codey.knowledge.note import KnowledgeNote
-    from codey.research.answer_report import AnswerReport
     from codey.research.synthesis import synthesis_title
 
-    report = AnswerReport.from_payload(report.to_payload())
     if report.task_digest != digest(task):
         raise ValueError("publication task differs from the submitted answer")
     scope, owner = prepared_scope(report.knowledge_mutations, report.evidence_bindings, store,
@@ -169,15 +168,16 @@ def publication_command(report: AnswerReport, *, task: str, run_id: str, project
         tags=["research", *([f"session:{session_id}"] if session_id else [])],
         sources=sorted({row["url"] for row in report.source_versions}), session_id=session_id, project=project,
         open_questions=list(report.open_questions), id=note_id)
+    payload = report.to_payload()
     answer_id = stable_identity("answer", run_id, projection)
     answer = KnowledgeObject(answer_id, "answer", report.text, "model_inference", title=note.title,
         status="active", scope=scope, scope_id=owner, references=references,
         provenance={"run_id": run_id, "session_id": session_id, "project": project, "task": task,
             "synthesis_id": note_id, "basis": "settled_whole_answer_submission", "publication_schema": 2,
             "projection": projection, "answer_state": report.state, "semantic_review": None,
-            "submission_digest": report.proposal_digest, "compilation_digest": report.to_payload()["compilation_digest"],
-            "citation_bindings": list(report.citation_bindings), "evidence_bindings": list(report.evidence_bindings),
-            "source_versions": list(report.source_versions), "attempt_refs": list(report.attempt_refs),
+            "submission_digest": report.proposal_digest, "compilation_digest": payload["compilation_digest"],
+            "citation_bindings": payload["citation_bindings"], "evidence_bindings": payload["evidence_bindings"],
+            "source_versions": payload["source_versions"], "attempt_refs": list(report.attempt_refs),
             "selection_receipts": list(report.selection_receipts)})
     return canonical_json_object({"schema": 1, "note": asdict(note), "commit_id": stable_identity("answer-commit", run_id, projection),
             "mutations": [*report.knowledge_mutations, {"value": answer.to_dict(), "expected_revision": 0}]})

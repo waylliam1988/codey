@@ -20,6 +20,7 @@ from codey.types.json_value import (
 
 if TYPE_CHECKING:
     from codey.research.answer_values import CitationOccurrence
+    from codey.research.report_snapshot import ReportCitation
 
 
 @dataclass(frozen=True)
@@ -99,7 +100,7 @@ def render_fields(fields: tuple[AnswerField, ...], markdown: str, state: str) ->
 
 
 def validate_fields(fields: tuple[AnswerField, ...], markdown: str,
-                    citations: Sequence[CitationOccurrence]) -> None:
+                    citations: Sequence[CitationOccurrence | ReportCitation]) -> None:
     """Use the same whole-document citation positions as the published report."""
     for field in fields:
         lines = (markdown[markdown.rfind("\n", 0, row["start"]) + 1:

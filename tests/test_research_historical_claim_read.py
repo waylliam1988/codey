@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -36,17 +37,15 @@ def seed_history():
 
 
 @pytest.mark.parametrize("kind", ["claim", "inference", "observation"])
-def test_whole_prior_interpretation_requires_a_separate_pinned_material_read(tmp_path, kind):
+def test_whole_prior_interpretation_requires_a_separate_pinned_material_read(tmp_path: Path, kind: str) -> None:
     store = KnowledgeStore(tmp_path)
     store.repository.commit("seed", seed_history())
     store.close()
     store = KnowledgeStore(tmp_path)
     tools = ResearchTools(None, store, None, session_id="later")
     session = strict_session()
-    delegate = ExecutionDelegate(session=session, research_tools=tools)
-
     def read(identity):
-        delegate._research_scope = answer_scope(session)
+        delegate = ExecutionDelegate(session=session, research_tools=tools, research_scope=answer_scope(session))
         result = execute(delegate, tools, session, "knowledge_read", {"id": identity, "revision": 1})
         assert result.ok, result.model_text
         session._memory_results[identity] = result
@@ -90,16 +89,15 @@ def test_whole_prior_interpretation_requires_a_separate_pinned_material_read(tmp
 
 @pytest.mark.parametrize("whole", [False, True])
 @pytest.mark.parametrize("current_note", [False, True])
-def test_document_note_read_uses_its_admitted_submission_contract(tmp_path, whole, current_note):
+def test_document_note_read_uses_its_admitted_submission_contract(tmp_path: Path, whole: bool, current_note: bool) -> None:
     store = KnowledgeStore(tmp_path)
     note = KnowledgeNote.create(type="fact", title="Writer history", body="Prior writer interpretation.")
     store.publish_note(note, "seed", seed_history())
     tools = ResearchTools(None, store, None, session_id="later", answer_submission=True, finding_report=True,
                           created_ids=[note.id] if current_note else [])
     session = strict_session()
-    delegate = ExecutionDelegate(session=session, research_tools=tools)
-    if whole:
-        delegate._research_scope = answer_scope(session)
+    delegate = ExecutionDelegate(session=session, research_tools=tools,
+                                 research_scope=answer_scope(session) if whole else None)
     try:
         result = execute(delegate, tools, session, "knowledge_read", {"id": note.id})
         assert result.ok, result.model_text
@@ -118,7 +116,7 @@ def test_document_note_read_uses_its_admitted_submission_contract(tmp_path, whol
 
 
 @pytest.mark.parametrize("native", [False, True])
-def test_cold_history_claim_to_material_to_whole_publication(tmp_path, native):
+def test_cold_history_claim_to_material_to_whole_publication(tmp_path: Path, native: bool) -> None:
     source = ("from pathlib import Path; from tests.test_research_long_term_loop import run_longitudinal; "
               "import sys; run_longitudinal(Path(sys.argv[1]), phase='first', native=sys.argv[2]=='True')")
     first = subprocess.run([sys.executable, "-c", source, str(tmp_path), str(native)],
@@ -148,7 +146,7 @@ def test_cold_history_claim_to_material_to_whole_publication(tmp_path, native):
             turn = len(calls)
             if turn == 1:
                 assert "This summary is a locator" in prompt
-                assert "fN" not in prompt
+                assert "submit_research_answer" in prompt
                 name, args = "knowledge_search", {"query": "writer", "depth": 2}
             elif turn == 2:
                 assert "old-inference" in prompt
