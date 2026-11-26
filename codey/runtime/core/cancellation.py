@@ -256,13 +256,17 @@ def start_process(
     env: dict[str, str] | None = None,
     shell: bool = False,
     stdin: bool = False,
+    hide_console: bool = False,
 ) -> tuple[subprocess.Popen[bytes], ProcessTreeOwner | None]:
     """Check cancellation once, then spawn. Callers holding a spawn gate must
     keep the gate across their final Stop check and this call so Stop cannot
     land between check and Popen."""
     check()
     # CREATE_SUSPENDED keeps Windows descendants inside their Job before execution.
-    group_args: _ProcessGroupArgs = {"creationflags": 0x200 | 0x4} if os.name == "nt" else {"start_new_session": True}
+    group_args: _ProcessGroupArgs = {"start_new_session": True}
+    if sys.platform == "win32":
+        flags = subprocess.CREATE_NO_WINDOW if hide_console else subprocess.CREATE_NEW_PROCESS_GROUP
+        group_args = {"creationflags": flags | 0x4}
     process_env = os.environ.copy() if env is None else dict(env)
     process_env.update(PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
     proc = subprocess.Popen(
@@ -505,7 +509,8 @@ def run_process(
         process_env.update(PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
         proc, job, endpoint = start_terminal(args, cwd=cwd, env=process_env, options=options)
     else:
-        pipe, job = start_process(args, cwd=cwd, env=env, shell=shell, stdin=options.stdin)
+        pipe, job = start_process(args, cwd=cwd, env=env, shell=shell, stdin=options.stdin,
+                                  hide_console=options.hide_console)
         proc = pipe
         try:
             endpoint = ProcessIO(proc, pipe.stdin)

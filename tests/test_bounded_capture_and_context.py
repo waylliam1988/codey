@@ -817,6 +817,7 @@ class WaitProcessCleanupOwnershipTests(unittest.TestCase):
         read_file = os.fdopen(read_fd, "rb")
         write_file = os.fdopen(write_fd, "wb")
         proc = SimpleNamespace(
+            args=["cmd"],
             pid=99999998,
             returncode=0,
             stdout=read_file,
@@ -874,7 +875,7 @@ class WaitProcessCleanupOwnershipTests(unittest.TestCase):
         deadline = time.monotonic() + 10.0
         while not reader.is_alive() and time.monotonic() < deadline:
             time.sleep(0.01)
-        proc = SimpleNamespace(stdout=read_file, stderr=None)
+        proc = SimpleNamespace(args=["cmd"], pid=99999998, stdout=read_file, stderr=None)
         try:
             started = time.monotonic()
             cancellation._close_owned_pipes(proc, [(read_file, state)])

@@ -65,7 +65,15 @@ class RepairPolicyResult:
 
 
 def readonly_reference_files(provider_id: str) -> tuple[str, ...]:
-    return PROVIDER_TEST_FILES.get(normalize_provider_id(provider_id), ())
+    provider = normalize_provider_id(provider_id)
+    files = PROVIDER_TEST_FILES.get(provider, ())
+    if not files:
+        return ()
+    common = ("tests/__init__.py", "tests/provider_control_testkit.py")
+    if provider == "glm":
+        return (*files, *common, "tests/support/__init__.py", "tests/support/research_protocol.py",
+                "tests/support/research_protocol_diagnostics.py", "tests/support/research_tool_contract.py")
+    return (*files, *common)
 
 
 def classify_impact(changed_files: list[str] | set[str] | tuple[str, ...]) -> tuple[str, ...]:

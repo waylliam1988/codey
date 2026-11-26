@@ -160,6 +160,7 @@ def run_self_repair_job(
     state_home: str | Path | None,
     providers: ProviderRegistry,
     job: SelfRepairJob,
+    source_root: Path | None = None,
 ) -> AdapterRepairResult:
     """Run one repair job with sibling helpers from the provider registry."""
     from codey.app import provider_services
@@ -167,8 +168,13 @@ def run_self_repair_job(
 
     if state_home is None:
         return AdapterRepairResult(False, job.provider_id, error="self-repair state is unavailable")
+    from codey.repairs.adapter_overrides import adapter_base_hash
     from codey.repairs.sandbox import repair_source_root
 
+    running_root = repair_source_root()
+    source = source_root or running_root
+    if source != running_root and adapter_base_hash(job.provider_id, source) != adapter_base_hash(job.provider_id, running_root):
+        return AdapterRepairResult(False, job.provider_id, error="repair checkout adapter differs from the running release")
     return run_self_repair_worker(
         job,
         helper_ids=providers.self_repair_candidates(
@@ -176,7 +182,7 @@ def run_self_repair_job(
             ordered=provider_services.provider_failover_order(providers),
         ),
         state_home=state_home,
-        source_root=repair_source_root(),
+        source_root=source,
     )
 
 

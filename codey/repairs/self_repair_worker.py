@@ -42,6 +42,9 @@ def run_self_repair_worker(
     timeout: float = DEFAULT_REPAIR_TIMEOUT,
 ) -> AdapterRepairResult:
     """Run one self-repair job in an isolated Python process."""
+    from codey.repairs.sandbox import repair_source_root
+
+    runtime_root = repair_source_root()
     command = [
         sys.executable,
         "-B",
@@ -63,13 +66,12 @@ def run_self_repair_worker(
     for helper_id in helper_ids[:3]:
         command.extend(["--helper", helper_id])
     env = dict(os.environ)
-    source_root = Path(source_root).resolve()
     existing = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = str(source_root) + (os.pathsep + existing if existing else "")
+    env["PYTHONPATH"] = str(runtime_root) + (os.pathsep + existing if existing else "")
     try:
         proc = cancellation.run_process(
             command,
-            cwd=str(source_root),
+            cwd=runtime_root,
             env=env,
             timeout=timeout,
             capture_limit_bytes=MAX_WORKER_OUTPUT,

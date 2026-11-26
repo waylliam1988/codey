@@ -45,6 +45,7 @@ class ProcessOptions:
     tty: bool = False
     cols: int = 100
     rows: int = 30
+    hide_console: bool = False
 
     def __post_init__(self) -> None:
         if not 1 <= self.cols <= 1000 or not 1 <= self.rows <= 1000:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -50,6 +51,8 @@ from codey.providers.web_provider import (
     StepFunWebProvider,
     WebChatProvider,
 )
+from codey.repairs.settings import self_repair_source
+from codey.storage.local_store import DEFAULT_STATE_HOME
 
 PROVIDER_TYPES: dict[str, type[WebChatProvider]] = {
     "deepseek": DeepSeekWebProvider,
@@ -66,6 +69,20 @@ class _BorrowedSession:
 
     def close(self) -> None:
         """The owning provider connection keeps this Playwright context alive."""
+
+
+def _connect_repaired_provider(provider_id: str, port: int) -> ChatProvider | None:
+    if os.environ.get(WORKER_CHILD_ENV) == "1" or self_repair_source(DEFAULT_STATE_HOME) is None:
+        return None
+    from codey.providers.worker import WorkerChatProvider
+    from codey.repairs.adapter_overrides import load_enabled_override
+    from codey.repairs.sandbox import repair_source_root
+
+    override = load_enabled_override(provider_id, state_home=DEFAULT_STATE_HOME, current_root=repair_source_root())
+    if override is None:
+        return None
+    return WorkerChatProvider(provider_id, override,
+        port=port + PROVIDER_WORKER_PORT_OFFSETS.get(provider_id, 100), state_home=DEFAULT_STATE_HOME)
 
 
 def provider_tab_availability(*, allowed: set[str] | None = None) -> dict[str, bool]:
@@ -108,6 +125,8 @@ def connect_provider(
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported provider: {provider_id}")
+    if open_if_missing and (repaired := _connect_repaired_provider(normalized, port)) is not None:
+        return repaired
     return provider_type.connect(
         port=port,
         profile=profile,
@@ -179,6 +198,8 @@ def connect_fresh_provider_tab(
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported provider: {provider_id}")
+    if (repaired := _connect_repaired_provider(normalized, port)) is not None:
+        return repaired
     return provider_type.connect(
         port=port,
         profile=profile,

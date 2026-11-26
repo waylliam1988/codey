@@ -85,3 +85,25 @@ def test_browser_folder_dialog_admits_and_polls_without_waiting_for_the_window(
         release.set()
         picker.close()
     assert picker.start({})[0] == 503
+
+
+def test_unexpected_folder_dialog_failure_releases_the_picker(monkeypatch: pytest.MonkeyPatch) -> None:
+    def run_dialog(mode: str, initial: str) -> dict[str, object]:
+        if mode == "open":
+            raise RuntimeError("unexpected dialog error")
+        return folder_picker.folder_selection(None)
+
+    monkeypatch.setattr(folder_picker, "_run_dialog", run_dialog)
+    picker = folder_picker.FolderPicker()
+    try:
+        status, payload = picker.start({"mode": "open"})
+        assert status == 202
+        identity = payload["id"]
+        assert isinstance(identity, str)
+        deadline = monotonic() + 3
+        while picker.status(identity)[0] == 202 and monotonic() < deadline:
+            sleep(0.01)
+        assert picker.status(identity) == (200, {"error": "folder picker failed"})
+        assert picker.start({"mode": "new"})[0] == 202
+    finally:
+        picker.close()

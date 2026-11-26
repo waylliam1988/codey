@@ -52,6 +52,8 @@ def _source_tree(root: Path) -> None:
     (root / "codey" / "automation").mkdir(parents=True)
     (root / "codey" / "app").mkdir(parents=True)
     (root / "tests").mkdir()
+    (root / "tests" / "__init__.py").write_text("", encoding="utf-8")
+    (root / "tests" / "provider_control_testkit.py").write_text("", encoding="utf-8")
     (root / "codey" / "__init__.py").write_text("", encoding="utf-8")
     (root / "codey" / "providers" / "__init__.py").write_text("", encoding="utf-8")
     (root / "codey" / "providers" / "web_drivers" / "__init__.py").write_text(
@@ -1039,6 +1041,43 @@ class ProviderRegistryOverrideTests(unittest.TestCase):
                 finally:
                     state.close()
 
+    def test_local_switch_controls_queue_and_repaired_provider_selection(self) -> None:
+        from codey.providers import registry, worker
+        from codey.repairs import adapter_overrides
+        from codey.repairs.settings import SELF_REPAIR_SWITCH
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            switch = root / SELF_REPAIR_SWITCH
+            source = Path(__file__).resolve().parents[1]
+            switch.write_text(str(source), encoding="utf-8")
+            with (
+                mock.patch("codey.app.context.DEFAULT_STATE_HOME", root),
+                mock.patch.object(registry, "DEFAULT_STATE_HOME", root),
+                mock.patch.object(adapter_overrides, "load_enabled_override", return_value=mock.sentinel.override) as load,
+                mock.patch.object(worker, "WorkerChatProvider", return_value=mock.sentinel.worker) as connect,
+                mock.patch.object(registry.QwenWebProvider, "connect", return_value=mock.sentinel.builtin),
+            ):
+                state = server.AppContext(root, start_scheduler=False)
+                try:
+                    supervisor = state.self_repair
+                    assert supervisor is not None and supervisor.runner is not None
+                    self.assertIs(state.self_repair, supervisor)
+                    self.assertIs(registry.connect_provider("qwen", port=9100), mock.sentinel.worker)
+                    load.assert_called_once_with("qwen", state_home=root, current_root=source)
+                    connect.assert_called_once_with("qwen", mock.sentinel.override,
+                        port=9100 + registry.PROVIDER_WORKER_PORT_OFFSETS["qwen"], state_home=root)
+                    self.assertIs(registry.connect_fresh_provider_tab("qwen"), mock.sentinel.worker)
+                    self.assertIs(registry.connect_existing_provider("qwen"), mock.sentinel.builtin)
+                    with mock.patch.dict("os.environ", {registry.WORKER_CHILD_ENV: "1"}):
+                        self.assertIs(registry.connect_provider("qwen"), mock.sentinel.builtin)
+                    switch.unlink()
+                    self.assertIsNone(state.self_repair)
+                    self.assertIs(registry.connect_provider("qwen"), mock.sentinel.builtin)
+                    self.assertEqual(load.call_count, 2)
+                finally:
+                    state.close()
+
 
 class TaskEntrySelfRepairIntegrationTests(unittest.TestCase):
     def test_structural_writer_failure_is_offered_to_self_repair_without_blocking_failover(self) -> None:
@@ -1296,6 +1335,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
         self.assertIn("--failure-facts-json", command)
         self.assertIn('{"composer_visible":true}', command)
         self.assertEqual(run.call_args.kwargs["timeout"], 900.0)
+        self.assertEqual(run.call_args.kwargs["cwd"], Path(__file__).resolve().parents[1])
 
     def test_parent_runner_uses_process_tree_cleanup_on_timeout(self) -> None:
         with mock.patch(

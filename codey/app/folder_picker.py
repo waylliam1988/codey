@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import sys
 import threading
@@ -9,10 +10,12 @@ from pathlib import Path
 from uuid import uuid4
 
 from codey.runtime.core import cancellation
+from codey.runtime.core.process_io import ProcessOptions
 from codey.types.json_value import parse_json_object
 
 FOLDER_PICKER_PATH = "/api/pick_folder"
 _RECENT_RESULTS = 32
+logger = logging.getLogger(__name__)
 
 
 def initial_directory(initial: str) -> str:
@@ -65,12 +68,17 @@ class FolderPicker:
             return 404, {"error": "folder selection expired"}
 
     def _run(self, identity: str, mode: str, initial: str) -> None:
-        result = run_folder_dialog(mode, initial, self._closed)
-        with self._lock:
-            self._results[identity] = result
-            if len(self._results) > _RECENT_RESULTS:
-                self._results.pop(next(iter(self._results)))
-            self._active = None
+        result: dict[str, object] = {"error": "folder picker failed"}
+        try:
+            result = run_folder_dialog(mode, initial, self._closed)
+        except Exception:
+            logger.exception("Unexpected folder picker failure")
+        finally:
+            with self._lock:
+                self._results[identity] = result
+                if len(self._results) > _RECENT_RESULTS:
+                    self._results.pop(next(iter(self._results)))
+                self._active = None
 
     def close(self) -> None:
         with self._lock:
@@ -93,6 +101,7 @@ def _run_dialog(mode: str, initial: str) -> dict[str, object]:
     result = cancellation.run_process(
         [sys.executable, "-X", "utf8", "-m", "codey.app.folder_picker", mode, initial],
         cwd=Path.cwd(), timeout=600, capture_limit_bytes=128 * 1024,
+        options=ProcessOptions(hide_console=True),
     )
     if result.returncode != 0 or result.stdout_truncated:
         raise ValueError(result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "folder picker failed")

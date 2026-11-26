@@ -20,7 +20,9 @@ if TYPE_CHECKING:
     from codey.app.fork_workspaces import ForkWorkspaces
     from codey.app.shell_service import ShellExecutionTicket
     from codey.providers.base import ChatProvider
+    from codey.repairs.adapter_repair import AdapterRepairResult
     from codey.repairs.self_repair import SelfRepairSupervisor
+    from codey.repairs.self_repair_job import SelfRepairJob
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.app import event_bus
 from codey.app.active_provider_registry import ActiveProviderRegistry
@@ -229,6 +231,7 @@ class AppContext:
         )
         self.memory = build_memory(self.state_home, self.durable, enabled=memory_enabled)
         self._self_repair: SelfRepairSupervisor | None = None
+        self._automatic_self_repair: SelfRepairSupervisor | None = None
         self.snapshot_store = (
             SnapshotStore(state_home) if state_home else SnapshotStore()
         )
@@ -379,15 +382,33 @@ class AppContext:
 
     @property
     def self_repair(self) -> SelfRepairSupervisor | None:
-        # Production installs no candidate runner until candidate execution is isolated.
+        from codey.repairs.settings import self_repair_source
+
         with self.lock:
-            return self._self_repair
+            if self._self_repair is not None:
+                return self._self_repair
+            if self.state_home != DEFAULT_STATE_HOME or self_repair_source(DEFAULT_STATE_HOME) is None:
+                return None
+            if self._automatic_self_repair is None:
+                from codey.repairs.self_repair import SelfRepairSupervisor
+
+                self._automatic_self_repair = SelfRepairSupervisor(self.state_home, runner=self._run_self_repair)
+            return self._automatic_self_repair
 
     @self_repair.setter
-
     def self_repair(self, value: SelfRepairSupervisor | None) -> None:
         with self.lock:
             self._self_repair = value
+
+    def _run_self_repair(self, job: SelfRepairJob) -> AdapterRepairResult:
+        from codey.repairs.adapter_repair import AdapterRepairResult
+        from codey.repairs.self_repair import run_self_repair_job
+        from codey.repairs.settings import self_repair_source
+
+        source = self_repair_source(DEFAULT_STATE_HOME)
+        if source is None:
+            return AdapterRepairResult(False, job.provider_id, error="automatic self-repair source is unavailable")
+        return run_self_repair_job(state_home=self.state_home, providers=self.providers, job=job, source_root=source)
 
     def load_ui_state(self) -> dict[str, object]:
         with self.ui_state_store_lock:

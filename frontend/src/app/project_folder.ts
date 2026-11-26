@@ -14,6 +14,7 @@ declare global {
 }
 
 const endpoint = '/api/pick_folder';
+const requestTimeoutMs = 10_000;
 
 interface ProjectFolderDeps {
   onBusy(busy: boolean): void;
@@ -46,6 +47,7 @@ async function chooseProjectFolder(mode: FolderMode, initial: string): Promise<F
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mode, initial }),
+    signal: AbortSignal.timeout(requestTimeoutMs),
   });
   const first: unknown = await response.json();
   if (response.status !== 202) return decodeSelection(first);
@@ -53,7 +55,10 @@ async function chooseProjectFolder(mode: FolderMode, initial: string): Promise<F
   const query = new URLSearchParams({ id: first.id });
   do {
     await new Promise<void>((resolve) => setTimeout(resolve, 250));
-    response = await requestResponse(endpoint + '?' + query, { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+    response = await requestResponse(endpoint + '?' + query, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(requestTimeoutMs),
+    });
   } while (response.status === 202);
   return decodeSelection(await response.json());
 }
