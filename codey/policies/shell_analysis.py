@@ -39,6 +39,15 @@ def request_analysis(request: Mapping[str, object]) -> tuple[ShellSpec, ShellAna
 
 
 def analyze_shell(command: str, shell: ShellSpec) -> ShellAnalysis:
+    return _inspect_shell(command, shell, prepare_trailing_quote=False)[1]
+
+
+def prepare_shell_command(command: str, shell: ShellSpec) -> tuple[str, ShellAnalysis]:
+    """Prepare one approval command through the same bounded dialect analysis."""
+    return _inspect_shell(command, shell, prepare_trailing_quote=True)
+
+
+def _inspect_shell(command: str, shell: ShellSpec, *, prepare_trailing_quote: bool) -> tuple[str, ShellAnalysis]:
     digest = hashlib.sha256(command.encode("utf-8")).hexdigest()
     if not command.strip() or "\0" in command:
         result = ShellAnalysis(digest, "invalid", shell.kind, reason="nonempty shell command without NUL required")
@@ -47,12 +56,12 @@ def analyze_shell(command: str, shell: ShellSpec) -> ShellAnalysis:
     elif shell.kind == "cmd":
         result = _cmd(command, digest)
     elif shell.kind == "powershell":
-        from codey.policies.shell_powershell import analyze_powershell
-        result = analyze_powershell(command, shell, digest)
+        from codey.policies.shell_powershell import inspect_powershell
+        command, result = inspect_powershell(command, shell, digest, prepare_trailing_quote=prepare_trailing_quote)
     else:
         from codey.policies.shell_posix import analyze_posix
         result = analyze_posix(command, shell, digest)
-    return replace(result, shell_sha256=shell_identity(shell), parser=parser_identity(shell))
+    return command, replace(result, shell_sha256=shell_identity(shell), parser=parser_identity(shell))
 
 
 def _cmd(command: str, digest: str) -> ShellAnalysis:

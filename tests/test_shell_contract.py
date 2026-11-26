@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
+from typing import Literal
 from unittest.mock import Mock
 
 import pytest
@@ -18,21 +20,23 @@ from codey.operations.task_session import TaskSession
 from codey.policies.command_line import ShellSpec, resolve_shell
 from codey.policies.shell_analysis import analyze_shell
 from codey.policies.task_policy import TaskPolicy
+from codey.runtime.core import cancellation
 from codey.storage.command_permissions import CommandPermissionStore
+from codey.types.json_value import decode_json_object, parse_json_object
 from tests.support.shell_approval import admit_shell_task, seed_requested_approval
 from tests.support.shell_execution import ShellExecutionHarness
 
 
-def spec(kind, executable):
+def spec(kind: Literal["cmd", "sh"], executable: str) -> ShellSpec:
     return ShellSpec(kind, executable, None, "noninteractive", "0" * 64)
 
 
-def test_posix_invocation_keeps_the_entire_command():
+def test_posix_invocation_keeps_the_entire_command() -> None:
     shell = spec("sh", "/bin/sh")
     assert shell.invocation('printf "%s" "a b"') == ["/bin/sh", "-c", 'printf "%s" "a b"']
 
 
-def test_unknown_interpreter_does_not_fall_back():
+def test_unknown_interpreter_does_not_fall_back() -> None:
     from codey.env_names import SHELL_EXECUTABLE_ENV
     with pytest.raises(ValueError, match="unsupported shell"):
         resolve_shell(environ={SHELL_EXECUTABLE_ENV: "unknown-shell"})
@@ -42,12 +46,12 @@ def test_unknown_interpreter_does_not_fall_back():
                                   {"kind": "bash", "executable": "/bin/bash"},
                                   {"kind": "sh", "executable": "/tmp/sh"},
                                   {"kind": "sh", "executable": "/bin/sh", "args": ["-l"]}])
-def test_invalid_or_old_approval_never_infers_an_interpreter(value):
+def test_invalid_or_old_approval_never_infers_an_interpreter(value: object) -> None:
     with pytest.raises(ValueError):
         ShellSpec.from_payload(value)
 
 
-def test_session_prompt_and_approval_keep_the_original_shell(monkeypatch):
+def test_session_prompt_and_approval_keep_the_original_shell(monkeypatch: pytest.MonkeyPatch) -> None:
     shell = spec("cmd", r"C:\Old Windows\System32\cmd.exe")
     session = TaskSession(policy=TaskPolicy(frozenset({"control"})), shell=shell)
     monkeypatch.setenv("COMSPEC", r"D:\Other\cmd.exe")
@@ -64,7 +68,7 @@ def test_session_prompt_and_approval_keep_the_original_shell(monkeypatch):
         '"C:\\Old Windows\\System32\\cmd.exe" /d /s /c "echo "a b""')
 
 
-def test_grants_bind_the_persisted_interpreter(tmp_path):
+def test_grants_bind_the_persisted_interpreter(tmp_path: Path) -> None:
     shell = resolve_shell()
     pending = {"project": str(tmp_path), "command": "git status", "session_id": "s", "shell": shell.to_payload(), "analysis": analyze_shell("git status",shell).to_payload()}
     store = CommandPermissionStore(tmp_path)
@@ -73,32 +77,36 @@ def test_grants_bind_the_persisted_interpreter(tmp_path):
     other = spec("cmd", r"D:\Other\cmd.exe") if os.name == "nt" else spec("cmd", r"C:\Windows\cmd.exe")
     assert not store.matching({**pending, "shell": other.to_payload()})
     assert not store.matching({key: value for key, value in pending.items() if key != "shell"})
-    rules = json.loads(store.path.read_text(encoding="utf-8"))
-    rules["rules"][0]["executor"] = shell.executable
+    rules = parse_json_object(store.path.read_text(encoding="utf-8"))
+    entries = rules["rules"]
+    assert isinstance(entries, list)
+    entry = decode_json_object(entries[0])
+    entry["executor"] = shell.executable
+    entries[0] = entry
     store.path.write_text(json.dumps(rules), encoding="utf-8")
     assert not store.matching(pending), "old grants must not acquire the new startup contract"
 
 
-def test_approval_analysis_uses_the_same_pinned_dialect_as_the_prompt(tmp_path, monkeypatch):
-    from codey.policies.command_approval import analyze_approval_call
+def test_approval_analysis_uses_the_same_pinned_dialect_as_the_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from codey.policies.command_approval import prepare_approval_call
     from codey.runtime.core.models import ToolCall
 
     call = ToolCall("shell", {"command": "python - <<'PY'\nprint(1)\nPY", "path": "."})
     monkeypatch.setenv("COMSPEC", "unsupported-shell.exe")
-    assert analyze_approval_call(call, project=tmp_path, permission_profile="coding_writer",
+    assert prepare_approval_call(call, project=tmp_path, permission_profile="coding_writer",
                          shell=spec("sh", "/bin/sh")) is not None
-    assert analyze_approval_call(call, project=tmp_path, permission_profile="coding_writer",
+    assert prepare_approval_call(call, project=tmp_path, permission_profile="coding_writer",
                          shell=spec("cmd", r"C:\Windows\System32\cmd.exe")) is None
 
 
-def test_command_path_guidance_appears_once_for_both_tools():
+def test_command_path_guidance_appears_once_for_both_tools() -> None:
     from codey.policies.command_line import COMMAND_WORKDIR_DESCRIPTION
     session = TaskSession(policy=TaskPolicy(frozenset({"control"})))
     prompt = kernel_prompt_for_session(session, tool_names=("run", "shell", "done"))
     assert prompt.count(COMMAND_WORKDIR_DESCRIPTION) == 1
 
 
-def test_restart_restores_the_approved_shell_without_resolving_again(tmp_path, monkeypatch):
+def test_restart_restores_the_approved_shell_without_resolving_again(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     shell = resolve_shell()
     state = AppContext(tmp_path, start_scheduler=False)
     try:
@@ -120,11 +128,12 @@ def test_restart_restores_the_approved_shell_without_resolving_again(tmp_path, m
         restored.close()
 
 
-def test_missing_shell_artifact_cannot_be_recovered_as_executable(tmp_path):
+def test_missing_shell_artifact_cannot_be_recovered_as_executable(tmp_path: Path) -> None:
     from codey.runtime.effects.shell_approval_records import ShellApprovalFact
     state = AppContext(tmp_path, start_scheduler=False)
     try:
         admit_shell_task(state, session_id="s", run_id="r")
+        assert state.managed_outputs is not None
         artifact = state.managed_outputs.write_json_artifact(session_id="s", run_id="r",
             payload={"command": "echo old", "cwd": ".", "project": str(tmp_path)})
         state.record_shell_approval_fact(ShellApprovalFact("old", "s", "r", "requested",
@@ -135,7 +144,8 @@ def test_missing_shell_artifact_cannot_be_recovered_as_executable(tmp_path):
         state.close()
 
 
-def make_ticket(command, cwd, generation, timeout, output_limit, *, shell=None):
+def make_ticket(command: str, cwd: Path, generation: int, timeout: int, output_limit: int, *,
+                shell: ShellSpec | None = None) -> shell_service.ShellExecutionTicket:
     selected = shell if shell is not None else resolve_shell()
     return shell_service.ShellExecutionTicket(command, cwd, generation, timeout, output_limit,
                                               selected, analyze_shell(command, selected))
@@ -146,7 +156,7 @@ def _context() -> ShellExecutionHarness:
 
 
 @pytest.mark.parametrize("exit_code", [0, 7])
-def test_real_shell_keeps_quotes_unicode_cwd_and_exit_status(tmp_path, monkeypatch, exit_code):
+def test_real_shell_keeps_quotes_unicode_cwd_and_exit_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exit_code: int) -> None:
     work = tmp_path / "directory with spaces"
     work.mkdir()
     script = work / "probe script.py"
@@ -167,7 +177,7 @@ def test_real_shell_keeps_quotes_unicode_cwd_and_exit_status(tmp_path, monkeypat
 
 
 @pytest.mark.skipif(os.name != "nt", reason="CMD quoting is a Windows process contract")
-def test_cmd_preserves_raw_quotes_and_environment_assignment(tmp_path):
+def test_cmd_preserves_raw_quotes_and_environment_assignment(tmp_path: Path) -> None:
     command = 'set "SHELL_PROBE=two words" && python -c "import os; print(os.environ[\'SHELL_PROBE\'])"'
     ticket = make_ticket(command, tmp_path, 0, 10, 4000,
                          shell=resolve_shell(environ={**os.environ, SHELL_EXECUTABLE_ENV: "cmd"}))
@@ -177,7 +187,7 @@ def test_cmd_preserves_raw_quotes_and_environment_assignment(tmp_path):
 
 
 @pytest.mark.skipif(os.name != "nt", reason="CMD command-tail quoting is Windows-specific")
-def test_cmd_executes_a_quoted_batch_path_with_spaces(tmp_path):
+def test_cmd_executes_a_quoted_batch_path_with_spaces(tmp_path: Path) -> None:
     script = tmp_path / "batch with spaces.cmd"
     script.write_bytes(b"@echo off\r\necho [%~1]\r\nexit /b 7\r\n")
     ticket = make_ticket(f'"{script}" "two words"', tmp_path, 0, 10, 4000,
@@ -187,16 +197,16 @@ def test_cmd_executes_a_quoted_batch_path_with_spaces(tmp_path):
     assert result["output"] == "[two words]"
 
 
-def test_real_shell_timeout_is_not_a_successful_exit(tmp_path):
+def test_real_shell_timeout_is_not_a_successful_exit(tmp_path: Path) -> None:
     ticket = make_ticket('python -c "import time; time.sleep(30)"', tmp_path, 0, 1, 4000)
     result = shell_service.execute_shell_ticket(_context(), ticket)
     assert not result["ok"] and result["status"] == "timeout" and result["exit_code"] is None, result
 
 
-def test_spawn_error_never_switches_interpreters(tmp_path, monkeypatch):
+def test_spawn_error_never_switches_interpreters(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ticket = make_ticket("echo hello", tmp_path, 0, 10, 4000)
     start = Mock(side_effect=FileNotFoundError("interpreter missing"))
-    monkeypatch.setattr(shell_service.cancellation, "start_process", start)
+    monkeypatch.setattr(cancellation, "start_process", start)
     result = shell_service.execute_shell_ticket(_context(), ticket)
     assert not result["ok"] and result["status"] == "spawn_error" and result["exit_code"] is None
     assert start.call_count == 1

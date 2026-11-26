@@ -1,4 +1,4 @@
-param([Parameter(Mandatory = $true)][string]$SourceBase64)
+param([Parameter(Mandatory = $true)][string]$SourceBase64, [switch]$PrepareTrailingQuote)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $source = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($SourceBase64))
@@ -6,6 +6,34 @@ $tokens = $null
 $parseErrors = $null
 # ParseInput constructs an AST. Never compile or invoke the supplied source.
 $ast = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$tokens, [ref]$parseErrors)
+# Repair only an isolated erroneous quote at the end. Offsets remain UTF-16
+# inside the engine that produced them; neither parse invokes the source.
+if ($PrepareTrailingQuote -and @($parseErrors).Count -gt 0) {
+    $position = $source.TrimEnd().Length - 1
+    $quoteTokens = @($tokens | Where-Object {
+        $_.Kind -eq [System.Management.Automation.Language.TokenKind]::StringExpandable -and
+        ($_.TokenFlags -band [System.Management.Automation.Language.TokenFlags]::TokenInError) -and
+        $_.Text -ceq '"' -and $_.Extent.StartOffset -eq $position -and $_.Extent.EndOffset -eq ($position + 1)
+    })
+    $terminators = @($parseErrors | Where-Object { $_.ErrorId -eq 'TerminatorExpectedAtEndOfString' })
+    $otherErrors = @($parseErrors | Where-Object {
+        $_.ErrorId -notin @('TerminatorExpectedAtEndOfString', 'UnexpectedToken') -or
+        $_.Extent.StartOffset -ne $position -or $_.Extent.EndOffset -ne ($position + 1)
+    })
+    if ($quoteTokens.Count -eq 1 -and $terminators.Count -gt 0 -and $otherErrors.Count -eq 0) {
+        $candidate = $source.Remove($position, 1)
+        $candidateTokens = $null
+        $candidateErrors = $null
+        $candidateAst = [System.Management.Automation.Language.Parser]::ParseInput(
+            $candidate, [ref]$candidateTokens, [ref]$candidateErrors)
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and @($candidateErrors).Count -eq 0) {
+            $source = $candidate
+            $ast = $candidateAst
+            $tokens = $candidateTokens
+            $parseErrors = $candidateErrors
+        }
+    }
+}
 $all = @($ast.FindAll({ param($node) $true }, $true))
 if ($all.Count -gt 10000) { throw 'PowerShell syntax node budget exceeded' }
 $commands = @()
@@ -79,6 +107,6 @@ if (@($parseErrors).Count -gt 0) {
     $status = 'opaque'
     $reason = 'unsupported syntax: ' + (($unknown | Sort-Object -Unique) -join ', ')
 }
-@{ commands = @($commands); operators = @($operators); redirections = @($redirects);
+@{ command = $source; commands = @($commands); operators = @($operators); redirections = @($redirects);
    expansions = @($expansions); dynamic = [bool]$dynamic; status = $status; reason = $reason } |
     ConvertTo-Json -Depth 12 -Compress

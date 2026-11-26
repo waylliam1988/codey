@@ -177,7 +177,7 @@ def _approval_stop(
         return None
     from codey.agents.shell_approval import ShellApprovalRequest, deferred_tool_call_from_call
     from codey.operations.task_execution import effective_project_profile
-    from codey.policies.command_approval import analyze_approval_call
+    from codey.policies.command_approval import prepare_approval_call
     from codey.policies.command_line import resolve_shell
 
     try:
@@ -195,10 +195,6 @@ def _approval_stop(
     for index, call in enumerate(calls):
         from codey.operations.shell_authorization import denied_shell_message
 
-        if denied_shell_message(call, durable=durable, managed_outputs=managed_outputs,
-                                run_id=task_id or str(run_id), project=project_path, shell=selected_shell):
-            # Normal execution settles and delivers the refusal to this call.
-            continue
         if call.name == "run" and len(calls) > 1:
             # Do not park a whole batch and silently skip earlier effects.
             # Normal execution returns a refusal for this command; the model
@@ -206,8 +202,14 @@ def _approval_stop(
             continue
         if call.name == "run" and not policy.allows("project.verify"):
             continue
-        analysis = analyze_approval_call(call, project=project_path, permission_profile=effective_profile, shell=selected_shell)
-        if analysis is None:
+        prepared = prepare_approval_call(call, project=project_path, permission_profile=effective_profile, shell=selected_shell)
+        if prepared is None:
+            continue
+        call, analysis = prepared
+        calls[index] = call
+        if denied_shell_message(call, durable=durable, managed_outputs=managed_outputs,
+                                run_id=task_id or str(run_id), project=project_path, shell=selected_shell):
+            # Execution receives the same prepared call and settles its refusal.
             continue
         deferred = tuple(
             deferred_tool_call_from_call(item, tool_index=offset)

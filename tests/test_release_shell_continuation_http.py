@@ -49,7 +49,8 @@ def _after_return(function: Callable[_P, _T], callback: Callable[[], None]) -> C
 
 @contextmanager
 def model_peer(protocol: str, case: str, tool_name: str = "shell", repeat: bool = False,
-               retry_denied: bool = False) -> Iterator[tuple[str, list[JsonObject], list[str]]]:
+               retry_denied: bool = False, malformed_quote: bool = False,
+               command: str | None = None) -> Iterator[tuple[str, list[JsonObject], list[str]]]:
     requests: list[JsonObject] = []
     errors: list[str] = []
 
@@ -81,7 +82,7 @@ def model_peer(protocol: str, case: str, tool_name: str = "shell", repeat: bool 
                 if retry_denied and len(requests) == 3:
                     expected_id = "repeated-denied-call"
                 if len(requests) == 1 or (repeat and len(requests) % 2 == 1):
-                    name, call_id, args = tool_name, expected_id, {"command": probe_command(case), "path": "."}
+                    name, call_id, args = tool_name, expected_id, {"command": command if command is not None else probe_command(case), "path": "."}
                 else:
                     assert repeat or len(requests) == 2 or retry_denied and len(requests) == 3, "unexpected new generation/retry"
                     if protocol == "openai-responses":
@@ -111,7 +112,9 @@ def model_peer(protocol: str, case: str, tool_name: str = "shell", repeat: bool 
                         assert ("Denied by user" if case == "shell_deny" else "SHELL_GATE_RESULT") in content
                     name, call_id, args = "done", "done-call", {"summary": "Shell result received; " + content}
                     if retry_denied and len(requests) == 2:
-                        name, call_id, args = tool_name, "repeated-denied-call", {"command": probe_command(case), "path": "."}
+                        name, call_id, args = tool_name, "repeated-denied-call", {"command": command if command is not None else probe_command(case), "path": "."}
+                if malformed_quote and name == tool_name:
+                    args["command"] += '"'
                 if protocol == "openai-responses":
                     self.reply({"status": "completed", "output": [{"type": "function_call", "status": "completed",
                         "call_id": call_id, "name": name, "arguments": json.dumps(args)}]})
