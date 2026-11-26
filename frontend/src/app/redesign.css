@@ -32,7 +32,7 @@
 .composer-context .ctx-folder > span { overflow: hidden; text-overflow: ellipsis; }
 .composer-context .ctx-token:hover:not(:disabled) { background: var(--hover); }
 .composer-context .ctx-token.active { background: var(--active); }
-.composer-box .provider-chooser { flex: 0 1 auto; max-width: 45%; }
+.composer-box .provider-chooser { flex: 0 1 auto; max-width: 45%; margin-inline-start: auto; }
 .composer-box .provider-button .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer-box .action-slot { flex-shrink: 0; }
 .composer { position: relative; }

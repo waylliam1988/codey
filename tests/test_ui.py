@@ -359,12 +359,11 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
 
     def test_composer_enter_sends_and_shift_enter_keeps_newline(self) -> None:
-        self.assertIn('id="send-hint">Enter</span>', HTML)
+        self.assertIn('id="send-hint" hidden></span>', HTML)
         self.assertIn("e.key === 'Enter' && !e.shiftKey", COMPOSER_JS)
         self.assertIn("!e.isComposing", COMPOSER_JS)
         self.assertIn("e.keyCode !== 229", COMPOSER_JS)
         self.assertNotIn("e.key === 'Enter' && (e.ctrlKey || e.metaKey)", UI_SOURCE)
-        self.assertNotIn('id="send-hint">Ctrl ↵</span>', HTML)
 
     def test_routine_failures_do_not_use_native_alerts(self) -> None:
         self.assertNotIn("alert(", HTML)

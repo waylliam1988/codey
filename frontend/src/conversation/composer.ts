@@ -279,15 +279,17 @@ function updateSend() {
   const showStop = !has && (running || sendingCurrent || pendingSend);
   send.style.display = showStop ? 'none' : '';
   stop.style.display = showStop ? '' : 'none';
-  $('send-hint').textContent = awaitingAnswer
+  const hint = $('send-hint');
+  hint.textContent = awaitingAnswer
     ? 'Answer above'
     : showStop
-      ? 'Stop'
+      ? ''
       : sendingCurrent || pendingSend
         ? 'Sending…'
         : running
           ? 'Steer'
-          : 'Enter';
+          : '';
+  hint.hidden = !hint.textContent;
   const sendLabel = sendingCurrent || pendingSend ? 'Sending message' : running ? 'Steer current task' : 'Send message';
   send.setAttribute('aria-label', sendLabel);
   send.title = sendLabel;

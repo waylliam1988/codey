@@ -936,6 +936,8 @@ def test_composer_controls_share_frame_and_remain_reachable(page, size):
         assert rect["x"] >= 0 and rect["x"] + rect["width"] <= size[0]
         assert rect["y"] + rect["height"] <= size[1]
     assert page.locator("#send").bounding_box()["width"] >= 32
-    hint = page.locator("#send-hint").bounding_box()
+    expect(page.locator("#send-hint")).to_be_hidden()
+    picker = page.locator("#effort-button") if page.locator("#effort-button").is_visible() else page.locator("#provider-button")
+    choice = picker.bounding_box()
     send = page.locator("#send").bounding_box()
-    assert 0 <= send["x"] - hint["x"] - hint["width"] <= 12
+    assert 0 <= send["x"] - choice["x"] - choice["width"] <= 12

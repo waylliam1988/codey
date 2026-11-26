@@ -133,12 +133,6 @@ function init(nextDeps: ProviderUiDeps): void {
   });
   buildProviderMenu();
   bindHandlers();
-  if (typeof ResizeObserver !== 'undefined') {
-    const observer = new ResizeObserver(syncModelMenuWidth);
-    observer.observe($('provider-button'));
-    observer.observe($('effort-button'));
-  }
-  window.addEventListener('resize', syncModelMenuWidth);
   Settings.init({ $: deps.$, applyLocalMetadata });
   refreshLocalMetadata();
   void Models.load()
@@ -259,13 +253,6 @@ function closeMenu(restoreFocus = false) {
   closeModelMenu(restoreFocus);
 }
 
-function syncModelMenuWidth() {
-  const menu = $('provider-menu');
-  if (!menu.classList.contains('open')) return;
-  const left = $('provider-button').getBoundingClientRect().left;
-  menu.style.setProperty('--model-menu-width', Math.min(240, Math.max(0, innerWidth - left - 16)) + 'px');
-}
-
 function openMenu() {
   closeEffortMenu();
   const menu = $('provider-menu');
@@ -273,7 +260,6 @@ function openMenu() {
   menu.setAttribute('aria-hidden', 'false');
   $('provider-button').classList.add('open');
   $('provider-button').setAttribute('aria-expanded', 'true');
-  syncModelMenuWidth();
   highlightedProvider = selectedKey();
   highlightModel();
   (
@@ -380,7 +366,6 @@ function syncProviderUI(providerId: string): void {
     if (dot) dot.className = 'dot ' + providerAvailability(btn.dataset.provider || '');
   });
   syncThinking();
-  syncModelMenuWidth();
 }
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let lastRequestId = 0;
