@@ -1023,34 +1023,34 @@ class SelfRepairSupervisorTests(unittest.TestCase):
 
 
 class ProviderRegistryOverrideTests(unittest.TestCase):
-    def test_production_provider_entry_points_use_builtin_adapters(self) -> None:
+    def test_production_provider_entry_points_use_builtin_adapters_without_candidate(self) -> None:
         from codey.providers import registry
 
-        with mock.patch.object(registry.QwenWebProvider, "connect", return_value=mock.sentinel.builtin) as connected:
+        with (
+            mock.patch("codey.repairs.adapter_overrides.load_enabled_override", return_value=None),
+            mock.patch.object(registry.QwenWebProvider, "connect", return_value=mock.sentinel.builtin) as connected,
+        ):
             self.assertIs(registry.connect_provider("qwen"), mock.sentinel.builtin)
             self.assertIs(registry.connect_fresh_provider_tab("qwen"), mock.sentinel.builtin)
         self.assertEqual(connected.call_count, 2)
 
-    def test_app_context_has_no_automatic_candidate_runner(self) -> None:
+    def test_app_context_keeps_custom_state_outside_automatic_repair(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with mock.patch("codey.app.context.DEFAULT_STATE_HOME", root):
-                state = server.AppContext(root, start_scheduler=False)
+                state = server.AppContext(root / "custom", start_scheduler=False)
                 try:
                     self.assertIsNone(state.self_repair)
                 finally:
                     state.close()
 
-    def test_local_switch_controls_queue_and_repaired_provider_selection(self) -> None:
+    def test_default_state_enables_queue_and_repaired_provider_selection(self) -> None:
         from codey.providers import registry, worker
         from codey.repairs import adapter_overrides
-        from codey.repairs.settings import SELF_REPAIR_SWITCH
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            switch = root / SELF_REPAIR_SWITCH
             source = Path(__file__).resolve().parents[1]
-            switch.write_text(str(source), encoding="utf-8")
             with (
                 mock.patch("codey.app.context.DEFAULT_STATE_HOME", root),
                 mock.patch.object(registry, "DEFAULT_STATE_HOME", root),
@@ -1071,9 +1071,6 @@ class ProviderRegistryOverrideTests(unittest.TestCase):
                     self.assertIs(registry.connect_existing_provider("qwen"), mock.sentinel.builtin)
                     with mock.patch.dict("os.environ", {registry.WORKER_CHILD_ENV: "1"}):
                         self.assertIs(registry.connect_provider("qwen"), mock.sentinel.builtin)
-                    switch.unlink()
-                    self.assertIsNone(state.self_repair)
-                    self.assertIs(registry.connect_provider("qwen"), mock.sentinel.builtin)
                     self.assertEqual(load.call_count, 2)
                 finally:
                     state.close()

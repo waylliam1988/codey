@@ -51,7 +51,6 @@ from codey.providers.web_provider import (
     StepFunWebProvider,
     WebChatProvider,
 )
-from codey.repairs.settings import self_repair_source
 from codey.storage.local_store import DEFAULT_STATE_HOME
 
 PROVIDER_TYPES: dict[str, type[WebChatProvider]] = {
@@ -72,7 +71,7 @@ class _BorrowedSession:
 
 
 def _connect_repaired_provider(provider_id: str, port: int) -> ChatProvider | None:
-    if os.environ.get(WORKER_CHILD_ENV) == "1" or self_repair_source(DEFAULT_STATE_HOME) is None:
+    if os.environ.get(WORKER_CHILD_ENV) == "1":
         return None
     from codey.providers.worker import WorkerChatProvider
     from codey.repairs.adapter_overrides import load_enabled_override

@@ -382,12 +382,10 @@ class AppContext:
 
     @property
     def self_repair(self) -> SelfRepairSupervisor | None:
-        from codey.repairs.settings import self_repair_source
-
         with self.lock:
             if self._self_repair is not None:
                 return self._self_repair
-            if self.state_home != DEFAULT_STATE_HOME or self_repair_source(DEFAULT_STATE_HOME) is None:
+            if self.state_home != DEFAULT_STATE_HOME:
                 return None
             if self._automatic_self_repair is None:
                 from codey.repairs.self_repair import SelfRepairSupervisor
@@ -401,14 +399,9 @@ class AppContext:
             self._self_repair = value
 
     def _run_self_repair(self, job: SelfRepairJob) -> AdapterRepairResult:
-        from codey.repairs.adapter_repair import AdapterRepairResult
         from codey.repairs.self_repair import run_self_repair_job
-        from codey.repairs.settings import self_repair_source
 
-        source = self_repair_source(DEFAULT_STATE_HOME)
-        if source is None:
-            return AdapterRepairResult(False, job.provider_id, error="automatic self-repair source is unavailable")
-        return run_self_repair_job(state_home=self.state_home, providers=self.providers, job=job, source_root=source)
+        return run_self_repair_job(state_home=self.state_home, providers=self.providers, job=job)
 
     def load_ui_state(self) -> dict[str, object]:
         with self.ui_state_store_lock:

@@ -9,6 +9,8 @@ import pytest
 from codey.control.protocol import ControlError
 from codey.launcher.releases import runtime_digest, snapshot
 from codey.launcher.runtime import dependencies, read_runtime
+from codey.repairs.policy import readonly_reference_files
+from codey.repairs.sandbox import create_repair_sandbox
 from tools.publish_runtime import publish_runtime
 
 
@@ -60,6 +62,24 @@ def test_published_snapshot_requires_neither_checkout_nor_pyproject(published, t
     assert read_runtime(Path(result['source']))['version'] == '1.0'
     assert dependencies(Path(result['source'])) == ['>=3.11', ['some-package>=1'], []]
     assert not (Path(result['source']) / 'pyproject.toml').exists()
+
+
+def test_published_repair_uses_references_without_a_checkout(tmp_path: Path) -> None:
+    source = Path(__file__).resolve().parents[1]
+    published = tmp_path / "published"
+    package = published / "codey" / "repairs"
+    package.mkdir(parents=True)
+    (package / "policy.py").touch()
+    publish_runtime(published, source / "pyproject.toml", version="test")
+
+    references = readonly_reference_files("glm")
+    sandbox = create_repair_sandbox(published, extra_files=references)
+    try:
+        for root in (sandbox.baseline_root, sandbox.candidate_root):
+            for name in ("pyproject.toml", *references):
+                assert (root / name).read_bytes() == (source / name).read_bytes().replace(b"\r\n", b"\n")
+    finally:
+        sandbox.cleanup()
 
 
 @pytest.mark.parametrize('damage', ['missing-file', 'extra-file', 'traversal', 'corrupt', 'missing-manifest'])

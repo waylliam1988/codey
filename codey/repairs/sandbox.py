@@ -23,6 +23,9 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from zipfile import BadZipFile, ZipFile
+
+REPAIR_REFERENCE_BUNDLE = "codey/repairs/references.zip"
 
 _COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".pytest_cache")
 
@@ -59,13 +62,18 @@ def create_repair_sandbox(
     config = source / "pyproject.toml"
     if config.is_symlink():
         raise ValueError(f"repair source tree must not contain symlinks: {config}")
-    reference_files = tuple(_validated_reference(source, rel) for rel in extra_files)
+    references = tuple(_relative_reference(rel) for rel in extra_files)
+    bundle = source / REPAIR_REFERENCE_BUNDLE
+    bundled = not config.is_file() and bundle.is_file()
+    reference_files = () if bundled else tuple(_validated_reference(source, rel) for rel in references)
     temp_root = Path(tempfile.mkdtemp(prefix="codey-adapter-repair-"))
     try:
         baseline = temp_root / "baseline"
         candidate = temp_root / "candidate"
         for destination in (baseline, candidate):
             _materialize_repair_surface(source, destination, reference_files)
+            if bundled:
+                _materialize_bundled_references(bundle, destination, references)
     except BaseException:
         # A half-materialized sandbox must never leak its temp root.
         shutil.rmtree(temp_root, ignore_errors=True)
@@ -88,7 +96,7 @@ def _reject_symlinks(package_root: Path) -> None:
                 raise ValueError(f"repair source tree must not contain symlinks: {candidate}")
 
 
-def _validated_reference(source: Path, rel: str) -> Path:
+def _relative_reference(rel: str) -> Path:
     text = (rel or "").strip()
     if not text:
         raise ValueError("repair reference file path is empty")
@@ -97,16 +105,20 @@ def _validated_reference(source: Path, rel: str) -> Path:
         raise ValueError(f"repair reference file must be relative: {rel}")
     if ".." in rel_path.parts:
         raise ValueError(f"repair reference file must not traverse upward: {rel}")
+    return rel_path
+
+
+def _validated_reference(source: Path, rel_path: Path) -> Path:
     raw_source = source / rel_path
     resolved_source = raw_source.resolve()
     if source not in resolved_source.parents:
-        raise ValueError(f"repair reference file escapes the source root: {rel}")
+        raise ValueError(f"repair reference file escapes the source root: {rel_path}")
     if raw_source.is_symlink():
-        raise ValueError(f"repair reference file must not be a symlink: {text}")
+        raise ValueError(f"repair reference file must not be a symlink: {rel_path}")
     if not resolved_source.is_file():
         # Name the missing input ourselves: raw OS errors do not carry the
         # path on every platform.
-        raise FileNotFoundError(f"repair reference file is missing: {text}")
+        raise FileNotFoundError(f"repair reference file is missing: {rel_path.as_posix()}")
     return resolved_source
 
 
@@ -122,3 +134,14 @@ def _materialize_repair_surface(source: Path, destination: Path, reference_files
             raise ValueError(f"repair reference file escapes the sandbox root: {resolved_source.name}")
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(resolved_source, target)
+
+
+def _materialize_bundled_references(bundle: Path, destination: Path, references: tuple[Path, ...]) -> None:
+    try:
+        with ZipFile(bundle) as archive:
+            for relative_path in (Path("pyproject.toml"), *references):
+                target = destination / relative_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(archive.read(relative_path.as_posix()))
+    except (BadZipFile, KeyError) as exc:
+        raise ValueError("published repair references are missing or corrupt") from exc
