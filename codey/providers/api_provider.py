@@ -15,8 +15,9 @@ from functools import partial
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from codey.providers import api_chat, api_context, api_generation, api_messages, api_responses
+from codey.providers import api_chat, api_context_state, api_envelope, api_generation, api_messages, api_responses
 from codey.providers.api_codec import ApiCodec, AuxiliaryConnection, GenerationSettings
+from codey.providers.api_context_state import ContextAuxiliary
 from codey.providers.api_metering import (
     RequestCounter,
     UsageCollector,
@@ -34,13 +35,13 @@ from codey.providers.api_request_policy import (
 )
 from codey.providers.base import AssistantTurn, ProviderToolDefinition, ProviderToolResult, TurnFinish
 from codey.providers.compaction import CompactionCoordinator
-from codey.providers.compat_transport import optional_callable
 from codey.providers.context_checkpoint import output_reduction_ready
 from codey.providers.context_ledger import ContextLedger
 from codey.providers.display_stream import DisplayStream
+from codey.providers.introspection import optional_callable
 from codey.providers.request_metrics import RequestSection, first_changed_section, request_shape
 from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget, RequestContextCount
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject
 from codey.types.protocol_window import ProtocolWindowRef, ProviderBinding
 
 if TYPE_CHECKING:
@@ -145,7 +146,7 @@ class ApiProvider:
         self._auxiliary: ApiProvider | None = None
         self._history_revision = 0
         self.auxiliary_connection: Callable[[ApiProvider], AuxiliaryConnection] = lambda client: client
-        self.summarize_context: Callable[[list[dict[str, object]], float], str] = partial(api_context.summarize_context, self)
+        self.summarize_context: Callable[[list[dict[str, object]], float], str] = partial(api_context_state.summarize_context, self)
         self.base_url = base_url.strip().rstrip("/")
         self.model = model.strip()
         self.api_key = api_key
@@ -189,8 +190,8 @@ class ApiProvider:
         self._active_control: AttemptControl | None = None
         self._inflight_generation = 0
         self._declared_tools: list[ProviderToolDefinition] = []
-        self._compaction = CompactionCoordinator(codec=self._codec, snapshot=partial(api_context.context_snapshot, self),
-            count=partial(api_context.count_context, self), commit=partial(api_context.commit_context, self),
+        self._compaction = CompactionCoordinator(codec=self._codec, snapshot=partial(api_context_state.context_snapshot, self),
+            count=partial(api_context_state.count_context, self), commit=partial(api_context_state.commit_context, self),
             originals=lambda items, staged: self.context_ledger.original_source(items, checkpoints=staged),
             summarize=lambda source, deadline: self.summarize_context(source, deadline),
             recent_budget=lambda: min(self.context_budget.keep_recent_tokens, self.context_budget.input_limit))
@@ -626,7 +627,7 @@ class ApiProvider:
                 self._active_control = None
             self._send_lock.release()
             if committed and self.purpose == "conversation":
-                api_context.schedule_maintenance(self)
+                api_context_state.schedule_maintenance(self)
             if settle_error is not None and main_error is None:
                 raise settle_error
 
@@ -806,54 +807,7 @@ class ApiProvider:
 
     def _payload(self, messages: list[dict[str, object]], tools: list[ProviderToolDefinition] | None,
                  settings: GenerationSettings, *, clock: str | None = None) -> dict[str, object]:
-        from codey.providers.request_context import clock_context
-
-        view = messages
-        if settings.tool_history_groups:
-            from codey.providers.api_request_view import bounded_history
-
-            # Select complete protocol groups, including native call/result
-            # identities and Responses reasoning. The original history and
-            # durable receipts remain intact; only this request is projected.
-            view = bounded_history(self._codec, messages, settings.tool_history_groups, tools)
-        payload = self._codec.build_payload(view, tools, settings)
-        key = "input" if self.api_protocol == "openai-responses" else "messages"
-        from codey.providers.text_result_views import TEXT_RESULTS_KEY
-
-        # View provenance is local metadata, never an API message property.
-        raw_items = payload.get(key)
-        if not isinstance(raw_items, list):
-            raise ValueError("API codec did not produce its history array")
-        items: list[dict[str, object]] = [
-            {name: value for name, value in decode_json_object(item).items()
-             if name not in {TEXT_RESULTS_KEY, "_codey_attachment_entries"}} for item in raw_items]
-        from codey.providers.task_prompt import project_retry_tasks
-
-        project_retry_tasks(items)
-        if settings.text_tool_contract:
-            # Frozen request declarations, like native tools, belong to this
-            # payload only. Never append obsolete tool catalogs to history.
-            if items and items[0].get("role") == "system" and isinstance(content := items[0].get("content"), str):
-                items[0]["content"] = content + "\n\n" + settings.text_tool_contract
-            else:
-                items.insert(0, {"role": "system", "content": settings.text_tool_contract})
-        if settings.text_tool_observations:
-            # A receipt-derived snapshot describes this request. Keep it
-            # separate from history and before the current result or repair.
-            index = len(items) - 1 if items and items[-1].get("role") == "user" else len(items)
-            items.insert(index, {"role": "user", "content": settings.text_tool_observations})
-        items.append({"role": "user", "content": clock if clock is not None else clock_context()})
-        if self.api_protocol == "anthropic-messages":
-            api_messages.finalize_messages(payload, items)
-        else:
-            payload[key] = items
-        if settings.text_tool_json and self.api_protocol != "anthropic-messages":
-            payload["response_format"] = {"type": "json_schema", "json_schema": {
-                "name": "text_tool_call", "strict": True, "schema": settings.text_tool_schema or {"type": "object", "properties": {
-                    "tool": {"type": "string"}, "args": {"type": "object"}},
-                    "required": ["tool", "args"], "additionalProperties": False}}}
-        self.configure_request(payload)
-        return payload
+        return api_envelope.payload(self, messages, tools, settings, clock=clock)
 
     def _admit_request(self, messages: list[dict[str, object]], tools: list[ProviderToolDefinition] | None,
                        settings: GenerationSettings, deadline: float,
@@ -880,7 +834,7 @@ class ApiProvider:
                 # when a background view commit cannot edit canonical input.
                 if (count.value >= self.context_budget.input_limit * 0.60
                         and output_reduction_ready(self._codec, candidate, self._result_refs, batch_receipts=True)):
-                    reduced = self._compaction.compact(candidate, tools, deadline, api_context.context_snapshot(self),
+                    reduced = self._compaction.compact(candidate, tools, deadline, api_context_state.context_snapshot(self),
                         staged=staged, deterministic_only=True)
                     if reduced is not None:
                         candidate = reduced
@@ -898,7 +852,7 @@ class ApiProvider:
             if minimum_count.value is not None and minimum_count.value > self.context_budget.input_limit:
                 raise ContextOverflowError("current request and declarations exceed the input limit")
             try:
-                snapshot = api_context.context_snapshot(self)
+                snapshot = api_context_state.context_snapshot(self)
                 snapshot = replace(snapshot, checkpoints=snapshot.checkpoints | frozenset(
                     item_digest for checkpoint in staged if isinstance(item_digest := checkpoint.get("item_digest"), str) and item_digest))
                 compacted = self._compaction.compact(candidate, tools, deadline, snapshot,
@@ -935,12 +889,12 @@ class ApiProvider:
                    tools: list[ProviderToolDefinition] | None = None) -> RequestContextCount:
         """Count an empty-window text exchange using the connection's full envelope."""
         items = self._codec.prepare([], [{"role": "user", "content": text}], system=self.system_prompt, tools=tools)
-        return api_context.count_context(self, items, tools, deadline)
+        return api_context_state.count_context(self, items, tools, deadline)
 
     def count_context_messages(self, messages: tuple[Mapping[str, object], ...]) -> int:
         """Count a reconstructed durable context with this provider's request envelope."""
         items, _ = self._replayed_view([dict(message) for message in messages], (), tools=self._declared_tools or None)
-        count = api_context.count_context(self, items, self._declared_tools or None, time.monotonic() + self.timeout)
+        count = api_context_state.count_context(self, items, self._declared_tools or None, time.monotonic() + self.timeout)
         if count.value is None:
             raise ValueError("provider context token count is unavailable")
         return count.value
@@ -978,19 +932,7 @@ class ApiProvider:
         )
 
     def _headers(self, context: RequestContext | None = None) -> dict[str, str]:
-        headers = {"Content-Type": "application/json"}
-        if self.api_protocol == "anthropic-messages":
-            headers["anthropic-version"] = "2023-06-01"
-        if self.api_key:
-            if self.api_protocol == "anthropic-messages":
-                headers["x-api-key"] = self.api_key
-            else:
-                headers["Authorization"] = f"Bearer {self.api_key}"
-        if self.request_headers is not None:
-            headers.update(self.request_headers(self.base_url))
-        if context is not None and self.request_context_headers is not None:
-            headers.update(self.request_context_headers(context))
-        return headers
+        return api_envelope.headers(self, context)
 
     def acknowledge_tool_results(self, results: list[ProviderToolResult],
                                  declared_tools: list[ProviderToolDefinition], timeout: float | None = None) -> AssistantTurn:
@@ -1067,3 +1009,48 @@ class ApiProvider:
     def _observe_http_attempt(self, *, attempt: int, data: bytes, phase: str,
                               response_bytes: int, seconds: float) -> None:
         """Optional transport observation; authorization headers are never supplied."""
+
+
+    def _context_fork_auxiliary(self) -> ApiProvider:
+
+        budget = self.context_budget
+        generation = self._generation
+        headers = self.request_headers
+        configure: Callable[[dict[str, object]], None] = self.configure_request
+        client = ApiProvider(self.base_url, self.model, api_key=self.api_key, timeout=min(120.0, self.timeout),
+            temperature=0.0, api_protocol=self.api_protocol, stream=self.stream,
+            context_window_tokens=budget.window_tokens, context_reserve_tokens=budget.output_tokens + budget.safety_tokens,
+            context_keep_recent_tokens=budget.keep_recent_tokens, output_tokens=min(2048, budget.output_tokens),
+            input_limit_tokens=budget.input_limit_tokens, reasoning_effort=self.reasoning_effort,
+            thinking_enabled=self.thinking_enabled, tool_choice="auto", request_headers=headers,
+            request_counter=self.request_counter, usage_parser=self.usage_parser,
+            configure_request=configure, budget_source=budget.source, purpose="compaction",
+            request_context_headers=self.request_context_headers, codec=self._codec if self.codec_revision else None,
+            codec_revision=self.codec_revision, connection_revision=self.connection_revision)
+        client.request_policy = self.request_policy
+        client.transport_options = self.transport_options
+        http_session: object = self.http_session
+        client.http_session = http_session
+        from codey.providers.introspection import optional_callable
+
+        retain: Callable[[], object] | None = optional_callable(http_session, "retain")
+        if retain is not None:
+            retain()
+        client._parent_cancelled = lambda: generation != self._generation
+        client._attempt_gate = self._attempt_gate
+        client._attempt_gate_prompt = self._attempt_gate_prompt
+        client.bind_usage(self.connection_id, self.on_usage)
+        return client
+
+
+    def _context_auxiliary(self) -> tuple[ContextAuxiliary, AuxiliaryConnection]:
+        client = self._context_fork_auxiliary()
+        connection = self.auxiliary_connection(client)
+        with self._state_lock:
+            self._auxiliary = client
+        return client, connection
+
+    def _context_release_auxiliary(self, client: ContextAuxiliary) -> None:
+        with self._state_lock:
+            if self._auxiliary is client:
+                self._auxiliary = None

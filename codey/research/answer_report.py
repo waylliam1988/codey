@@ -190,7 +190,7 @@ def render_answer(markdown: str, sources: Sequence[SourceVersion | ReportSource]
 
 
 def compile_answer_report(session: AnswerSessionView, ledger: ResearchLedger, store: KnowledgeStore | StagedKnowledgeStore, *, project: str, session_id: str) -> AnswerReport:
-    from codey.research.answer_archive import prepare_evidence, prepared_scope
+    from codey.research.evidence_preparation import prepare_evidence, prepared_scope
 
     found = [(ref, result) for ref, result in session._memory_results.items()
              if result.ok and result.call.name == "submit_research_answer" and "research_submission" in result.canonical]

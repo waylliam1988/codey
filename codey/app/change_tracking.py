@@ -1,4 +1,4 @@
-"""Change-tracker resources owned by the existing AppContext."""
+"""Change-tracker resources owned by the existing ChangeTrackingContext."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 from codey.workspace.changes import ChangeTracker, SnapshotStore
 
 if TYPE_CHECKING:
-    from codey.app.context import AppContext
+    from codey.app.context_ports import ChangeTrackingContext
 
 
-def change_tracker_for(state: AppContext, project: str | Path, *, persistent: bool,
+def change_tracker_for(state: ChangeTrackingContext, project: str | Path, *, persistent: bool,
                        task_id: str, limit: int) -> ChangeTracker:
     root = Path(project).expanduser().resolve()
     if not persistent:

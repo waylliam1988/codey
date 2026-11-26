@@ -71,7 +71,7 @@ def _envelope(database_id: str, conversation_id: str, position: PagePosition) ->
 
 def _body_page(session: SessionKernel, reader: HistoryReader, conversation_id: str,
                position: PagePosition, start: int, end: int) -> dict[str, object]:
-    from codey.durable.conversation_ops import _history_item, _resolve_response_entries
+    from codey.durable.history_projection import _history_item, _resolve_response_entries
 
     version = reader.version(position.anchor)
     identities = [node.value for node in window(reader, version.order, start, end)]

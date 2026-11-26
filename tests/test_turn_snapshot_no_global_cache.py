@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from codey.operations.kernel import kernel_protocol as proto
 from codey.operations.task_session import TaskSession
+from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from tests.support.kernel_protocol_test_helpers import normalize_turn
 
@@ -20,13 +21,13 @@ def test_normalize_turn_requires_explicit_snapshot() -> None:
 def test_registry_change_takes_effect_next_turn_only() -> None:
     from codey.toolchain import tool_spec as spec_mod
     policy = TaskPolicy(grants=frozenset({"control", "project.read"}))
-    snap = proto.build_turn_snapshot(TaskSession(policy=policy))
+    snap = build_turn_snapshot(TaskSession(policy=policy))
     names_before = tuple(snap.tool_names)
     # 注册自定义工具后，本轮快照不变，下一轮可见
     try:
         spec_mod.register_custom_tool("snap_probe_tool_xyz", grant="control",
                                       parameters=(("value", {"type": "integer"}),), required=("value",))
-        snap2 = proto.build_turn_snapshot(TaskSession(policy=policy))
+        snap2 = build_turn_snapshot(TaskSession(policy=policy))
         assert "snap_probe_tool_xyz" not in names_before
         # control 授权下新工具应可见（下一轮）
         assert "snap_probe_tool_xyz" in tuple(snap2.tool_names)
@@ -45,7 +46,7 @@ def test_snapshot_freezes_nested_schema() -> None:
     )
     try:
         sess = TaskSession(policy=policy)
-        snap = proto.build_turn_snapshot(sess)
+        snap = build_turn_snapshot(sess)
         # 篡改注册表定义（模拟本轮后注册表变化）：本轮快照解析应仍按旧定义拒绝 string
         old = dict(spec_mod.tool_specs()["nested_freeze_probe"].parameters)
         spec_mod.tool_specs()["nested_freeze_probe"] = spec_mod.tool_specs()["nested_freeze_probe"].__class__(
@@ -65,7 +66,7 @@ def test_snapshot_freezes_nested_schema() -> None:
             # 恢复
             spec_mod.tool_specs()["nested_freeze_probe"] = spec_mod.tool_specs()["nested_freeze_probe"].__class__(
                 name="nested_freeze_probe", grant="control",
-                parameters=tuple(old.items()) if isinstance(old, dict) else tuple(old),
+                parameters=tuple(old.items()),
                 required=("obj",), executor="custom",
             )
     finally:

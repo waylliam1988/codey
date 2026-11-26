@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from codey.automation.browser_detail import observe_details, read_detail
 from codey.automation.browser_document import same_document
@@ -28,9 +28,20 @@ if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
     from codey.operations.completion_context import CompletionContext
     from codey.operations.kernel.turn_contract import TurnSnapshot
-    from codey.operations.research.execution import ResearchExecutor
     from codey.operations.task_session import TaskSession
+    from codey.research.ledger import ResearchLedger
+    from codey.research.tool_output import ResearchToolOutput
+    from codey.research.tools import ResearchTools
     from codey.toolchain.tool_spec import ToolSpec
+
+
+class ResearchSourceReader(Protocol):
+    @property
+    def session(self) -> TaskSession | None: ...
+    def _reserve_research_acquisition(self, name: str, turn: int, tool_index: int) -> bool: ...
+    def _observation_tools(self, *, source_read: bool = False) -> ResearchTools: ...
+    def _opened_result(self, call: ToolCall, opened: ResearchToolOutput, url: str, *, ledger: ResearchLedger,
+                       turn: int, tool_index: int) -> tuple[ToolResult, bool, int | None]: ...
 
 
 def _can_inspect(session: TaskSession) -> bool:
@@ -201,7 +212,7 @@ def selected_detail(session: TaskSession | None, browser: BrowserSession, call: 
     raise ValueError("This detail action is stale or no longer readable. Observe the current page before selecting again.")
 
 
-def read_browser_source(delegate: ResearchExecutor, browser: BrowserSession, call: ToolCall, *, spec: ToolSpec | None, turn: int,
+def read_browser_source(delegate: ResearchSourceReader, browser: BrowserSession, call: ToolCall, *, spec: ToolSpec | None, turn: int,
                         tool_index: int) -> tuple[ToolResult, bool, int | None]:
     if not delegate._reserve_research_acquisition(call.name, turn, tool_index):
         return ToolResult(ok=False, call=call, model_text="ERROR: research acquisition budget exhausted"), False, None

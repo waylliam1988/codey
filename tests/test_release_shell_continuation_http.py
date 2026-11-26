@@ -8,14 +8,17 @@ import json
 import sys
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import ParamSpec, TypeVar
+from types import FrameType
+from typing import ParamSpec, TypeAlias, TypeVar
 
 import pytest
 
+from codey.app.context import AppContext
+from codey.types.json_value import JsonObject, decode_json_object, require_json_string
 from tools.local_model_gate_attempts import GateTarget
 from tools.local_model_gate_shell import (
     SHELL_CASES,
@@ -28,6 +31,7 @@ from tools.local_model_gate_shell import (
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
+TraceFunction: TypeAlias = Callable[[FrameType, str, object], "TraceFunction | None"]
 
 # These bounds include real Windows shell startup and durable SQLite commits.
 # The barriers impose ordering; elapsed time is only a deadlock watchdog.
@@ -44,15 +48,16 @@ def _after_return(function: Callable[_P, _T], callback: Callable[[], None]) -> C
 
 
 @contextmanager
-def model_peer(protocol, case, tool_name="shell", repeat=False, retry_denied=False):
-    requests = []
-    errors = []
+def model_peer(protocol: str, case: str, tool_name: str = "shell", repeat: bool = False,
+               retry_denied: bool = False) -> Iterator[tuple[str, list[JsonObject], list[str]]]:
+    requests: list[JsonObject] = []
+    errors: list[str] = []
 
     class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *args):
+        def log_message(self, format: str, *args: object) -> None:
             pass
 
-        def reply(self, body, status=200):
+        def reply(self, body: JsonObject, status: int = 200) -> None:
             raw = json.dumps(body).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
@@ -60,15 +65,18 @@ def model_peer(protocol, case, tool_name="shell", repeat=False, retry_denied=Fal
             self.end_headers()
             self.wfile.write(raw)
 
-        def do_GET(self):
+        def do_GET(self) -> None:
             self.reply({"data": [{"id": "shell-fixture"}]} if self.path == "/v1/models" else {})
 
-        def do_POST(self):
+        def do_POST(self) -> None:
             try:
-                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                raw_body: object = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                body = decode_json_object(raw_body)
                 requests.append(body)
                 assert body["model"] == "shell-fixture"
-                items = body.get("input", body.get("messages"))
+                raw_items = body.get("input", body.get("messages"))
+                assert isinstance(raw_items, list)
+                items = [decode_json_object(item) for item in raw_items]
                 expected_id = f"original-shell-call-{(len(requests) - 1) // 2}" if repeat else "original-shell-call"
                 if retry_denied and len(requests) == 3:
                     expected_id = "repeated-denied-call"
@@ -85,13 +93,18 @@ def model_peer(protocol, case, tool_name="shell", repeat=False, retry_denied=Fal
                         assert calls[-1]["name"] == tool_name
                         content = results[-1]["output"]
                     else:
-                        calls = [call for item in items for call in item.get("tool_calls", [])]
+                        calls = []
+                        for item in items:
+                            raw_calls = item.get("tool_calls", [])
+                            assert isinstance(raw_calls, list)
+                            calls.extend(decode_json_object(call) for call in raw_calls)
                         results = [item for item in items if item.get("role") == "tool"]
                         if not repeat and not retry_denied:
                             assert len(calls) == len(results) == 1
                         assert calls[-1]["id"] == results[-1]["tool_call_id"] == expected_id
-                        assert calls[-1]["function"]["name"] == tool_name
+                        assert decode_json_object(calls[-1]["function"])["name"] == tool_name
                         content = results[-1]["content"]
+                    assert isinstance(content, str)
                     if retry_denied and len(requests) == 3:
                         assert "not executed" in content and "new user request" in content
                     else:
@@ -121,7 +134,8 @@ def model_peer(protocol, case, tool_name="shell", repeat=False, retry_denied=Fal
         thread.join(timeout=5)
 
 
-def wait_for_completed_task(ctx, events, run_id, requests, errors, *, timeout=TASK_TIMEOUT):
+def wait_for_completed_task(ctx: AppContext, events: Sequence[Mapping[str, object]], run_id: str,
+                            requests: list[JsonObject], errors: list[str], *, timeout: float = TASK_TIMEOUT) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         terminal = next((event for event in reversed(events)
@@ -144,7 +158,7 @@ def wait_for_completed_task(ctx, events, run_id, requests, errors, *, timeout=TA
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
 @pytest.mark.parametrize("case", SHELL_CASES)
 @pytest.mark.parametrize("tool_name", ["shell", "run"])
-def test_http_approval_returns_original_result_without_another_user_message(tmp_path, protocol, case, tool_name):
+def test_http_approval_returns_original_result_without_another_user_message(tmp_path: Path, protocol: str, case: str, tool_name: str) -> None:
     with model_peer(protocol, case, tool_name) as (url, requests, errors):
         target = GateTarget(url, "shell-fixture", 32768, 8192, 12000,
                             api_protocol=protocol, request_timeout=10)
@@ -156,23 +170,23 @@ def test_http_approval_returns_original_result_without_another_user_message(tmp_
     # Approval settlement resumes the original durable task checkpoint; no
     # second task identity or synthetic user submission is created.
     assert proof["source_run_id"] == proof["continuation_run_id"]
-    assert "Shell result received" in proof["summary"]
+    assert "Shell result received" in require_json_string(proof["summary"], "summary")
 
 
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
 @pytest.mark.parametrize("tool_name", ["shell", "run"])
-def test_http_denial_refuses_model_retry_without_another_approval(tmp_path, protocol, tool_name):
+def test_http_denial_refuses_model_retry_without_another_approval(tmp_path: Path, protocol: str, tool_name: str) -> None:
     with model_peer(protocol, "shell_deny", tool_name, retry_denied=True) as (url, requests, errors):
         target = GateTarget(url, "shell-fixture", 32768, 8192, 12000,
                             api_protocol=protocol, request_timeout=10)
         proof = run_shell_case("shell_deny", target, tmp_path)
         assert not errors and len(requests) == 3
         assert proof["ok"] and proof["stop_reason"] == "done"
-        assert "not executed" in proof["summary"]
+        assert "not executed" in require_json_string(proof["summary"], "summary")
 
 
 @pytest.mark.parametrize('protocol', ['openai-completions', 'openai-responses'])
-def test_remembered_run_approval_automatically_resumes_next_task(protocol, tmp_path):
+def test_remembered_run_approval_automatically_resumes_next_task(protocol: str, tmp_path: Path) -> None:
     # Worker lanes are process-wide; separate parametrized app instances must not share one.
     session_id = 'remembered-' + hashlib.sha256(str(tmp_path).encode()).hexdigest()[:12]
     with model_peer(protocol, 'shell_approve', 'run', repeat=True) as (url, requests, errors):
@@ -185,13 +199,14 @@ def test_remembered_run_approval_automatically_resumes_next_task(protocol, tmp_p
                     'provider': 'local', 'model_selection': {'model': target.model, 'base_url': url},
                     'intent': 'chat', 'max_turns': 6,
                 })
-                run_id = submitted['run_id']
+                run_id = require_json_string(submitted['run_id'], 'run_id')
                 if attempt == 0:
                     assert wait_for_run(client, run_id, TASK_TIMEOUT)['stop_reason'] == 'approval'
                     approval_id = next(iter(ctx.pending_shell_approvals()))
                     client.post('/api/shell_approval', {'id': approval_id, 'approved': True, 'scope': 'session'})
                 wait_for_completed_task(ctx, events, run_id, requests, errors)
-                assert ctx.shell_approval_workflow.for_source(session_id, run_id)['execution'] == 'settled'
+                approval = ctx.shell_approval_workflow.for_source(session_id, run_id)
+                assert approval is not None and approval['execution'] == 'settled'
             assert len(requests) == 4 and not errors
 
 
@@ -205,10 +220,9 @@ def test_remembered_approval_keeps_worker_reservation_when_http_admission_loses_
     from codey.app.run_registry import RunSnapshot
     from codey.app.task_lifecycle import TaskLifecycleCoordinator
     from codey.app.task_runtime import TaskRuntimeCoordinator
+    from codey.app.task_state import TaskSubmissionState
     from codey.durable import DurableSession
     from codey.durable.model import CommitResult
-    from codey.operations.task_state import TaskSubmissionState
-    from codey.types.json_value import JsonObject
 
     original_claim = task_submit._claim_admitted_task
     reserve = TaskRuntimeCoordinator.reserve_run
@@ -284,7 +298,8 @@ def test_remembered_approval_keeps_worker_reservation_when_http_admission_loses_
 @pytest.mark.parametrize('protocol', ['openai-completions', 'openai-responses'])
 @pytest.mark.parametrize('resume_before_dispatch_bookkeeping', [False, True])
 def test_zen_wrapper_restores_approved_call_before_native_continuation(
-        protocol, tmp_path, monkeypatch, resume_before_dispatch_bookkeeping):
+        protocol: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        resume_before_dispatch_bookkeeping: bool) -> None:
     from codey.providers import local_connection
     from codey.providers.zen.connection import ZenProvider
 
@@ -295,6 +310,7 @@ def test_zen_wrapper_restores_approved_call_before_native_continuation(
     if resume_before_dispatch_bookkeeping:
         from codey.app import task_submit
         from codey.durable import DurableSession
+        from codey.durable.model import CommitResult
         from codey.durable.scheduler import DurableTaskScheduler
 
         # Exercise the valid admission race in which the scheduler, rather
@@ -307,12 +323,13 @@ def test_zen_wrapper_restores_approved_call_before_native_continuation(
                                      if line.strip().startswith('if current.state.get("cancel_requested")'))
         settle = DurableSession.settle_approval
 
-        def settle_and_signal(self, *args, **kwargs):
-            result = settle(self, *args, **kwargs)
+        def settle_and_signal(self: DurableSession, approval_id: str, *, settlement: Mapping[str, object],
+                              resume: bool, tool_results: tuple[Mapping[str, object], ...] = ()) -> CommitResult | None:
+            result = settle(self, approval_id, settlement=settlement, resume=resume, tool_results=tool_results)
             approval_settled.set()
             return result
 
-        def trace(frame, event, arg):
+        def trace(frame: FrameType, event: str, arg: object) -> TraceFunction | None:
             if frame.f_code is not finish_accepted_dispatch.__code__:
                 return None
             if event == 'line' and frame.f_lineno == snapshot_line and not snapshot_observed.is_set():
@@ -320,7 +337,7 @@ def test_zen_wrapper_restores_approved_call_before_native_continuation(
                 assert approval_settled.wait(5), 'approval did not reach the durable settlement boundary'
             return trace
 
-        def reconcile_with_barrier(self):
+        def reconcile_with_barrier(self: DurableTaskScheduler) -> None:
             previous = sys.gettrace()
             sys.settrace(trace)
             try:

@@ -72,9 +72,16 @@ def test_acyclic_top_level_graph_can_execute_a_deferred_import_during_startup(
     assert any(request[1] == "codey.fixture.a" for request in result["initializing_module_requests"])
 
 
-
 def test_research_uses_no_operation_modules() -> None:
     modules = module_paths(Path(__file__).resolve().parents[1])
     reverse_edges = [(edge.source, edge.target) for edge in scan_imports(modules)
                      if edge.source.startswith("codey.research.") and edge.target.startswith("codey.operations")]
     assert reverse_edges == []
+
+
+def test_codey_explicit_import_graphs_are_acyclic() -> None:
+    modules = module_paths(Path(__file__).resolve().parents[1])
+    graphs = static_report(modules, scan_imports(modules))
+    for name, graph in graphs.items():
+        assert graph["components"] == [], (name, graph["components"])
+        assert graph["self_imports"] == [], (name, graph["self_imports"])

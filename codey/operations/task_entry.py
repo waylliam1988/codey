@@ -19,6 +19,9 @@ from codey.agents.handoff import ConversationContext
 from codey.agents.tools import AgentToolFns
 from codey.knowledge.changes import KnowledgeChanges
 from codey.memory.context import MemoryContext, retrieve_context
+from codey.operations.entry_policy import _TASK_KINDS as _TASK_KINDS
+from codey.operations.entry_policy import _task_kind as _task_kind
+from codey.operations.entry_policy import build_task_policy_for_entry as build_task_policy_for_entry
 from codey.operations.kernel_contracts import KernelResult
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_state import TaskState
@@ -33,7 +36,7 @@ from codey.workspace.config import ProjectConfigLoadResult
 
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession
-    from codey.operations.task_run import TaskRunDeps
+    from codey.operations.run_dependencies import TaskRunDeps
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
 
@@ -67,9 +70,6 @@ class _ResearchChangeRecorder(Protocol):
     def record_research_changes(self, run_id: str, changes: object, session_id: str = "") -> None: ...
 
 
-_TASK_KINDS = frozenset({"project", "research", "hybrid", "planning", "planning_readonly", "readonly"})
-
-
 @dataclass(frozen=True)
 class FreshSessionOutcome:
     ok: bool
@@ -93,38 +93,6 @@ def _open_fresh_session(
     except Exception as exc:
         return FreshSessionOutcome(ok=False, error=f"conversation reset failed: {exc}")
     return FreshSessionOutcome(ok=True)
-
-
-def _task_kind(task_kind: object) -> str:
-    kind = str(task_kind or "").strip().lower()
-    if kind in _TASK_KINDS:
-        return "planning" if kind in {"planning_readonly", "readonly"} else kind
-    return "chat" if kind == "auto" else kind
-
-
-def build_task_policy_for_entry(request: TaskSubmission, task_kind: object) -> TaskPolicy:
-    from codey.agents.protocol import task_forbids_verification
-    from codey.policies.task_policy import policy_for_dispatch
-
-    kind = _task_kind(task_kind)
-    strict = kind == "research" or request.strict_research is True
-    policy = policy_for_dispatch(request, kind, strict_research=strict)
-    if policy is None:
-        raise RuntimeError("task policy configuration failed")
-    if task_forbids_verification(request.task):
-        policy = replace(policy, grants=policy.grants - {"project.verify"},
-                         denied_capabilities=policy.denied_capabilities | {"project.verify"},
-                         source=policy.source + ";verification:forbidden")
-    if request.project and policy.allows("project.write"):
-        from codey.operations.project.project_delivery import declared_edit_scope, declared_project_checks
-        from codey.policies.task_policy import TASK_POLICY_FILE_SCOPE_VERSION
-
-        checks = declared_project_checks(request.task)
-        if checks:
-            policy = replace(policy, required_checks=tuple(dict.fromkeys((*policy.required_checks, *checks))))
-        if edit_scope := declared_edit_scope(Path(request.project), request.task):
-            policy = replace(policy, edit_scope=edit_scope, version=TASK_POLICY_FILE_SCOPE_VERSION)
-    return policy
 
 
 def start_task_session(frame: RunFrame, work: RunWork, policy: TaskPolicy, kind: str,

@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING
 
 from codey.durable.model import ArtifactRecord, thaw_json
 from codey.knowledge.model import canonical_json
@@ -69,11 +69,6 @@ if TYPE_CHECKING:
     from codey.durable.session import DurableSession
     from codey.operations.progress_comparison import ProjectCheckComparison
     from codey.operations.task_effects import KernelEffectSink
-    from codey.research.tools import ResearchTools
-
-
-class _ResearchProjector(Protocol):
-    def project_urls(self, tools: ResearchTools) -> None: ...
 
 
 def _host_acquisition_result(result: ToolResult) -> bool:
@@ -290,7 +285,7 @@ class KernelContext:
                 or envelope["kind"] != "kernel_decision"
                 or not isinstance(envelope["data"], dict)):
             raise RecoveryFailed("invalid kernel decision")
-        from codey.operations.kernel_control import validate_decision
+        from codey.operations.kernel.decision_codec import validate_decision
 
         try:
             decision: KernelDecision = validate_decision(
@@ -371,7 +366,7 @@ class KernelContext:
             if ledger is not None:
                 assert staged_ledger is not None
                 ledger.commit_projection(staged_ledger)
-                from codey.operations.research.research_continuation import restore_note_proposals
+                from codey.operations.research.projection import restore_note_proposals
                 tools = self.execution.research_tools
                 if tools is not None:
                     restore_note_proposals(tools, result.canonical)
@@ -393,9 +388,9 @@ class KernelContext:
         _evidence_with_session_facts(self.completion_context.execution_evidence, self.session)
         tools = self.execution.research_tools
         if tools is not None:
-            from codey.operations.research.research_continuation import ResearchContinuation
-            projector: _ResearchProjector = ResearchContinuation
-            projector.project_urls(tools)
+            from codey.operations.research.projection import project_urls
+
+            project_urls(tools)
         if self.execution.browser_session is not None:
             self.execution.browser_session.prepare_from_receipts(tuple(self.session._memory_results.values()))
 
@@ -888,7 +883,7 @@ class KernelContext:
             reason = "stopped" if cancelled else "max_turns" if turn >= self.session.max_turns else "no_progress"
             summary = {"stopped": "stopped", "no_progress": "stopped after repeated tool results without progress",
                        "max_turns": self.session.last_done_text or "max turns reached"}[reason]
-            from codey.operations.kernel_control import no_progress_result
+            from codey.operations.kernel.decision_codec import no_progress_result
             self.close(state, no_progress_result(self.session, turn) if reason == "no_progress"
                        else KernelResult(False, summary, turn, reason))
             return

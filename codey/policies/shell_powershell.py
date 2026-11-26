@@ -8,7 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from codey.policies.command_line import ShellSpec
-from codey.policies.shell_analysis import ShellAnalysis, dynamic_name, parser_identity, shell_identity
+from codey.policies.shell_model import ShellAnalysis, dynamic_name, parser_identity, shell_identity
 from codey.runtime.core import cancellation
 from codey.types.json_value import parse_json_object
 

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
-from codey.toolchain.tool_spec import ToolSpec
+from codey.toolchain.spec_model import ToolSpec
 
 
 def browser_read_specs() -> dict[str, ToolSpec]:

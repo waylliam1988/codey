@@ -10,11 +10,12 @@ from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.types.json_value import ToolArgs, canonical_json_object, require_json_string
 
 if TYPE_CHECKING:
-    from codey.research.tools import ResearchToolOutput, ResearchTools
+    from codey.research.input_tools import ResearchInputTools
+    from codey.research.tool_output import ResearchToolOutput
 
 
-def save_finding(tools: ResearchTools, args: ToolArgs) -> ResearchToolOutput:
-    from codey.research.tools import ResearchToolOutput
+def save_finding(tools: ResearchInputTools, args: ToolArgs) -> ResearchToolOutput:
+    from codey.research.tool_output import ResearchToolOutput
 
     try:
         if set(args) - {"claim", "source_ref", "passage_ref", "additional_passage_refs", "conditions", "comparison", "question_ref"}:
@@ -113,12 +114,12 @@ def save_finding(tools: ResearchTools, args: ToolArgs) -> ResearchToolOutput:
         return ResearchToolOutput(f"ERROR: {exc}", ok=False)
 
 
-def _saved(tools: ResearchTools, identity: str, claim: str, ref: object, extra: list[str], question: str) -> ResearchToolOutput:
+def _saved(tools: ResearchInputTools, identity: str, claim: str, ref: object, extra: list[str], question: str) -> ResearchToolOutput:
     from codey.knowledge.archive import stable_identity
     from codey.research.references import bind_version, read_version
     from codey.research.source_literals import version_anchors, version_mentions
     from codey.research.task_requirements import conclusion_characters
-    from codey.research.tools import ResearchToolOutput
+    from codey.research.tool_output import ResearchToolOutput
 
     if tools.store is None:
         raise ValueError("saved finding requires its knowledge store")

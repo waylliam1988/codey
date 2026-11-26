@@ -22,7 +22,7 @@ from codey.utils.object_fields import require_object_fields as _fields
 from codey.utils.object_fields import require_object_rows as _rows
 
 if TYPE_CHECKING:
-    from codey.app.context import AppContext
+    from codey.app.context_ports import ControlContext
     from codey.durable.model import CommitResult, DurableMutation, TaskCheckpoint
 
 
@@ -77,7 +77,7 @@ class _ReleaseOwner:
 
 
 class ControlService:
-    def __init__(self, ctx: AppContext, *, allowed_roots: tuple[Path, ...], instance_id: str = "", release_id: str = "source") -> None:
+    def __init__(self, ctx: ControlContext, *, allowed_roots: tuple[Path, ...], instance_id: str = "", release_id: str = "source") -> None:
         self.ctx = ctx
         self.allowed_roots = tuple(root.resolve() for root in allowed_roots)
         self.instance_id = instance_id or uuid.uuid4().hex

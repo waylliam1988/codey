@@ -15,7 +15,7 @@ from codey.durable.model import TaskCheckpoint, thaw_json
 from codey.utils.object_fields import object_fields, sequence_items
 
 if TYPE_CHECKING:
-    from codey.app.context import AppContext
+    from codey.app.context_ports import QueryContext
 
 IGNORED_DIRS = frozenset({".git", ".codey", "node_modules", ".venv", "__pycache__", ".pytest_cache",
                           ".mypy_cache", ".ruff_cache", "reference-projects", "build", "dist", ".e2e-artifacts", "artifacts"})
@@ -60,7 +60,7 @@ def project_digest(project: str) -> str:
     return digest.hexdigest()
 
 
-def task_for(ctx: AppContext, session_id: str, run_id: str) -> TaskCheckpoint:
+def task_for(ctx: QueryContext, session_id: str, run_id: str) -> TaskCheckpoint:
     try:
         task = ctx.durable.task(run_id)
     except KeyError as exc:
@@ -70,7 +70,7 @@ def task_for(ctx: AppContext, session_id: str, run_id: str) -> TaskCheckpoint:
     return task
 
 
-def run_snapshot(ctx: AppContext, session_id: str, run_id: str, *, candidate: bool = False) -> dict[str, object]:
+def run_snapshot(ctx: QueryContext, session_id: str, run_id: str, *, candidate: bool = False) -> dict[str, object]:
     task = task_for(ctx, session_id, run_id)
     question: object = ctx.user_questions.pending(session_id)
     attention: list[dict[str, object]] = []
@@ -139,7 +139,7 @@ def run_snapshot(ctx: AppContext, session_id: str, run_id: str, *, candidate: bo
     return result
 
 
-def evidence_page(ctx: AppContext, params: Mapping[str, object]) -> dict[str, object]:
+def evidence_page(ctx: QueryContext, params: Mapping[str, object]) -> dict[str, object]:
     session_id, run_id = params["conversation_id"], params["run_id"]
     if not isinstance(session_id, str) or not isinstance(run_id, str):
         raise ControlError("INVALID_ARGUMENT", "Conversation and run IDs must be strings")

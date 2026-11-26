@@ -5,7 +5,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from codey.automation.browser_document import same_document
 from codey.automation.browser_receipts import (
@@ -27,7 +27,30 @@ from codey.types.json_value import JsonObject, decode_json_value, parse_json_obj
 from codey.workspace.paths import path_hash, safe_join
 
 if TYPE_CHECKING:
-    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.runtime.core.execution_record import ExecutionRecord
+
+class ProjectDeliverySession(Protocol):
+    @property
+    def project(self) -> str: ...
+    @property
+    def task_text(self) -> str: ...
+    @property
+    def policy(self) -> TaskPolicy: ...
+    @property
+    def executed(self) -> Mapping[str, ExecutionRecord]: ...
+    @property
+    def _memory_results(self) -> Mapping[str, ToolResult]: ...
+    @property
+    def source_ids(self) -> dict[str, str]: ...
+    @property
+    def handoff_source_urls(self) -> tuple[str, ...]: ...
+    @property
+    def workspace_revision(self) -> int: ...
+    @property
+    def workspace_fingerprint(self) -> str: ...
+    def source_id_for(self, url: str) -> str: ...
+
 
 SOURCE_BEFORE_EDIT = "project_live_record_before_edit"
 PAGE_AFTER_EDIT = "project_live_page_after_edit"
@@ -69,14 +92,14 @@ class ProjectFileBasis:
     version: str = ""
 
 
-def _delivery_documentation(session: TaskSession) -> tuple[str, ...]:
+def _delivery_documentation(session: ProjectDeliverySession) -> tuple[str, ...]:
     root = Path(session.project)
     return tuple(text for ref, result in session._memory_results.items()
                  if ref in session.executed and result.call.name == "read_file" and result.ok
                  and (text := _current_documentation_text(root, result)))
 
 
-def observed_delivery_links(session: TaskSession) -> ProjectDeliveryLinks:
+def observed_delivery_links(session: ProjectDeliverySession) -> ProjectDeliveryLinks:
     checks = session.policy.required_checks
     task = instruction_text(session.task_text)
     wants_specification = SOURCE_BEFORE_EDIT in checks and "documented record format" in task.casefold()
@@ -97,7 +120,7 @@ def observed_delivery_links(session: TaskSession) -> ProjectDeliveryLinks:
                                 next(iter(application)) if wants_application and len(application) == 1 else "")
 
 
-def documented_verification_paths(session: TaskSession) -> tuple[str, ...]:
+def documented_verification_paths(session: ProjectDeliverySession) -> tuple[str, ...]:
     if not session.project or not {SOURCE_BEFORE_EDIT, PAGE_AFTER_EDIT} <= set(session.policy.required_checks):
         return ()
     root = Path(session.project).resolve()
@@ -113,7 +136,7 @@ def documented_verification_paths(session: TaskSession) -> tuple[str, ...]:
     return tuple(paths)
 
 
-def documented_record_fields(session: TaskSession | None, path: str) -> tuple[str, ...]:
+def documented_record_fields(session: ProjectDeliverySession | None, path: str) -> tuple[str, ...]:
     if session is None or not session.project or SOURCE_BEFORE_EDIT not in session.policy.required_checks:
         return ()
     schemas = {tuple(sorted(re.findall(r"`([^`]+)`", fields))) for text in _delivery_documentation(session)
@@ -219,12 +242,12 @@ def _read_url(result: ToolResult) -> str:
     return source.final_url
 
 
-def _read_ref_for_url(session: TaskSession, url: str) -> str:
+def _read_ref_for_url(session: ProjectDeliverySession, url: str) -> str:
     return next((ref for ref, result in reversed(tuple(session._memory_results.items()))
                  if ref in session.executed and _read_url(result) == url), "")
 
 
-def live_source_basis(session: TaskSession) -> tuple[str, ToolResult] | None:
+def live_source_basis(session: ProjectDeliverySession) -> tuple[str, ToolResult] | None:
     match = _LIVE_SOURCE.search(instruction_text(session.task_text))
     if match is None:
         return None
@@ -246,7 +269,7 @@ def _live_subject(task: str) -> str:
     return " ".join(match[1].split()) if match is not None else ""
 
 
-def _subject_selection_verified(session: TaskSession, read: ToolResult) -> bool:
+def _subject_selection_verified(session: ProjectDeliverySession, read: ToolResult) -> bool:
     subject = _live_subject(session.task_text)
     document = read.audit.get("browser_document")
     if not subject:
@@ -265,7 +288,7 @@ def _subject_selection_verified(session: TaskSession, read: ToolResult) -> bool:
     return _observed_form_state(session, document) is False
 
 
-def _observed_form_state(session: TaskSession, document: object) -> bool | None:
+def _observed_form_state(session: ProjectDeliverySession, document: object) -> bool | None:
     for ref, result in reversed(tuple(session._memory_results.items())):
         if (ref not in session.executed or not result.ok or result.call.name != "browser_snapshot"
                 or not same_document(document, result.audit.get("browser_document"))):
@@ -278,7 +301,7 @@ def _observed_form_state(session: TaskSession, document: object) -> bool | None:
     return None
 
 
-def live_record_subject_call(session: TaskSession, references: BrowserReferences | None,
+def live_record_subject_call(session: ProjectDeliverySession, references: BrowserReferences | None,
                              document: JsonObject | None) -> ToolCall | None:
     if SOURCE_BEFORE_EDIT not in session.policy.required_checks or references is None or document is None:
         return None
@@ -296,7 +319,7 @@ def live_record_subject_call(session: TaskSession, references: BrowserReferences
     return ToolCall("browser_fill", {"ref": choices[0], "value": subject}) if len(choices) == 1 else None
 
 
-def project_file_basis(session: TaskSession, project: Path, path: str, args: JsonObject) -> ProjectFileBasis:
+def project_file_basis(session: ProjectDeliverySession, project: Path, path: str, args: JsonObject) -> ProjectFileBasis:
     root = project.resolve()
     target = safe_join(root, path)
     relative = target.relative_to(root).as_posix()
@@ -323,7 +346,7 @@ def project_source_binding(basis: tuple[str, ToolResult], file: ProjectFileBasis
             "path": file.path, "base_result_ref": file.read_ref, "file_version": file.version}
 
 
-def project_write_basis(session: TaskSession) -> tuple[tuple[str, ToolResult] | None, str]:
+def project_write_basis(session: ProjectDeliverySession) -> tuple[tuple[str, ToolResult] | None, str]:
     if SOURCE_BEFORE_EDIT not in session.policy.required_checks:
         return None, ""
     basis = live_source_basis(session)
@@ -335,7 +358,7 @@ def project_write_basis(session: TaskSession) -> tuple[tuple[str, ToolResult] | 
     return basis, ""
 
 
-def project_citation_labels(session: TaskSession) -> tuple[str, ...]:
+def project_citation_labels(session: ProjectDeliverySession) -> tuple[str, ...]:
     """Select the actual record and documented format used for the requested edit."""
     if SOURCE_BEFORE_EDIT not in session.policy.required_checks or not user_requests_citations(session.task_text):
         return ()
@@ -356,7 +379,7 @@ def project_citation_labels(session: TaskSession) -> tuple[str, ...]:
     return tuple(labels)
 
 
-def original_handoff_citation(session: TaskSession) -> tuple[str, str] | None:
+def original_handoff_citation(session: ProjectDeliverySession) -> tuple[str, str] | None:
     if len(session.handoff_source_urls) != 1 or not user_requests_citations(session.task_text):
         return None
     url, = session.handoff_source_urls
@@ -376,7 +399,7 @@ def _action_page(result: ToolResult) -> str:
     return ""
 
 
-def verified_project_page(session: TaskSession, current_document: JsonObject | None, *, expected_page: str) -> str:
+def verified_project_page(session: ProjectDeliverySession, current_document: JsonObject | None, *, expected_page: str) -> str:
     if current_document is None:
         return ""
     candidate = ""
@@ -402,7 +425,7 @@ def verified_project_page(session: TaskSession, current_document: JsonObject | N
     return candidate
 
 
-def project_delivery_context(session: TaskSession, document: JsonObject | None, links: ProjectDeliveryLinks) -> JsonObject:
+def project_delivery_context(session: ProjectDeliverySession, document: JsonObject | None, links: ProjectDeliveryLinks) -> JsonObject:
     checks = session.policy.required_checks
     rows: JsonObject = {}
     if session.policy.edit_scope:
@@ -426,7 +449,7 @@ def project_delivery_context(session: TaskSession, document: JsonObject | None, 
     return rows
 
 
-def project_delivery_checks(session: TaskSession, document: JsonObject | None) -> list[CompletionCheck]:
+def project_delivery_checks(session: ProjectDeliverySession, document: JsonObject | None) -> list[CompletionCheck]:
     checks: list[CompletionCheck] = []
     required = session.policy.required_checks
     if SOURCE_BEFORE_EDIT in required:

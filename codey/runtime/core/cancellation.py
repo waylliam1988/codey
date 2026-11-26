@@ -5,38 +5,47 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
-import signal
 import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Generator, Sequence
-from contextlib import contextmanager, suppress
+from collections.abc import Callable, Sequence
+from contextlib import suppress
 from pathlib import Path
 from typing import Protocol, SupportsIndex, SupportsInt, TypedDict, runtime_checkable
 
+from codey.runtime.core.cancellation_state import POLL_INTERVAL as POLL_INTERVAL
+from codey.runtime.core.cancellation_state import CancellationSignal as CancellationSignal
+from codey.runtime.core.cancellation_state import DeadlineExceeded as DeadlineExceeded
+from codey.runtime.core.cancellation_state import TaskCancelled as TaskCancelled
+from codey.runtime.core.cancellation_state import _CancellationContext as _CancellationContext
+from codey.runtime.core.cancellation_state import _context as _context
+from codey.runtime.core.cancellation_state import _LinkedEvent as _LinkedEvent
+from codey.runtime.core.cancellation_state import _safe_timeout as _safe_timeout
+from codey.runtime.core.cancellation_state import check as check
+from codey.runtime.core.cancellation_state import cleanup_scope as cleanup_scope
+from codey.runtime.core.cancellation_state import current_deadline as current_deadline
+from codey.runtime.core.cancellation_state import current_event as current_event
+from codey.runtime.core.cancellation_state import deadline_scope as deadline_scope
+from codey.runtime.core.cancellation_state import linked_scope as linked_scope
+from codey.runtime.core.cancellation_state import scope as scope
+from codey.runtime.core.cancellation_state import set_event as set_event
+from codey.runtime.core.cancellation_state import wait as wait
 from codey.runtime.core.output_capture import (
     DRAIN_TIMEOUT_SECONDS,
     READ_CHUNK_BYTES,
     READER_CLEANUP_TIMEOUT_SECONDS,
     BoundedByteCapture,
 )
+from codey.runtime.core.process_contracts import ProcessTreeOwner as ProcessTreeOwner
 from codey.runtime.core.process_io import ChildProcess, Process, ProcessIO, ProcessOptions, ReadPipe, start_terminal
+from codey.runtime.core.process_tree import _kill_process_group as _kill_process_group
+from codey.runtime.core.process_tree import _process_group_exists as _process_group_exists
+from codey.runtime.core.process_tree import _terminate_process_tree as _terminate_process_tree
+from codey.runtime.core.process_tree import terminate_direct_child as terminate_direct_child
+from codey.runtime.core.process_tree import terminate_process_tree as terminate_process_tree
 
 logger = logging.getLogger(__name__)
-
-POLL_INTERVAL = 0.2
-
-
-class ProcessTreeOwner(Protocol):
-    """Platform-specific owner for a spawned process tree."""
-
-    def terminate(self) -> None: ...
-    def close(self) -> None: ...
-
-
-class CancellationSignal(Protocol):
-    def is_set(self) -> bool: ...
 
 
 class ProcessOutputObserver(Protocol):
@@ -63,28 +72,6 @@ def _safe_capture_limit(value: object) -> int:
     return max(1, parsed)
 
 
-def _safe_timeout(value: object) -> float:
-    if isinstance(value, bool):
-        return 0.0
-    try:
-        if not isinstance(value, (str, int, float)):
-            return 0.0
-        number = float(value)
-    except (TypeError, ValueError, OverflowError):
-        return 0.0
-    import math as _math
-    if not _math.isfinite(number) or number < 0:
-        return 0.0
-    return number
-class _CancellationContext(threading.local):
-    def __init__(self) -> None:
-        self.event: threading.Event | None = None
-        self.deadline: float | None = None
-
-
-_context = _CancellationContext()
-
-
 class _WindowsJob:
     """Keep the existing job attachment boundary, backed by typed native calls."""
 
@@ -98,14 +85,6 @@ class _WindowsJob:
 
     def close(self) -> None:
         self._job.close()
-
-
-class TaskCancelled(RuntimeError):
-    """Raised when the user stops the active task."""
-
-
-class DeadlineExceeded(TimeoutError):
-    """Raised when a bounded provider operation exhausts its total budget."""
 
 
 class PipeDrainTimeout(RuntimeError):
@@ -139,114 +118,6 @@ class CapturedProcess:
     stderr_bytes: int
     stdout_truncated: bool
     stderr_truncated: bool
-
-
-def current_event() -> threading.Event | None:
-    return _context.event
-
-
-def current_deadline() -> float | None:
-    return _context.deadline
-
-
-def set_event(event: threading.Event | None) -> threading.Event | None:
-    previous = current_event()
-    _context.event = event
-    return previous
-
-
-@contextmanager
-def scope(event: threading.Event | None) -> Generator[None, None, None]:
-    previous = set_event(event)
-    try:
-        yield
-    finally:
-        set_event(previous)
-
-
-@contextmanager
-def deadline_scope(deadline: float | None) -> Generator[None, None, None]:
-    previous = current_deadline()
-    active = deadline
-    if previous is not None and (active is None or previous < active):
-        active = previous
-    _context.deadline = active
-    try:
-        yield
-    finally:
-        _context.deadline = previous
-
-
-@contextmanager
-def cleanup_scope() -> Generator[None, None, None]:
-    """Allow bounded resource cleanup after its owning operation was cancelled."""
-    event, deadline = _context.event, _context.deadline
-    _context.event, _context.deadline = None, None
-    try:
-        yield
-    finally:
-        _context.event, _context.deadline = event, deadline
-
-
-class _LinkedEvent(threading.Event):
-    """A local stop request also observes its enclosing cancellation sources."""
-
-    def __init__(self, parents: tuple[CancellationSignal, ...]) -> None:
-        super().__init__()
-        self._parents = parents
-
-    def is_set(self) -> bool:
-        return super().is_set() or any(parent.is_set() for parent in self._parents)
-
-    def wait(self, timeout: float | None = None) -> bool:
-        end = None if timeout is None else time.monotonic() + _safe_timeout(timeout)
-        while not self.is_set():
-            remaining = POLL_INTERVAL if end is None else min(POLL_INTERVAL, end - time.monotonic())
-            if remaining <= 0:
-                return self.is_set()
-            super().wait(remaining)
-        return True
-
-
-@contextmanager
-def linked_scope(
-    event: CancellationSignal | None = None, *, deadline: float | None = None,
-) -> Generator[threading.Event, None, None]:
-    """Own local cancellation without replacing the enclosing stop or deadline.
-
-    Blocking child threads receive the yielded event and current deadline through
-    the ordinary scopes. The owner must join its children before leaving.
-    """
-    parents = tuple(parent for parent in (current_event(), event) if parent is not None)
-    local = _LinkedEvent(parents)
-    with scope(local), deadline_scope(deadline):
-        try:
-            yield local
-        finally:
-            local.set()
-
-
-def check() -> None:
-    event = current_event()
-    if event is not None and event.is_set():
-        raise TaskCancelled("task stopped")
-    deadline = current_deadline()
-    if deadline is not None and time.monotonic() >= deadline:
-        raise DeadlineExceeded("provider operation timed out")
-
-
-def wait(seconds: float) -> None:
-    check()
-    event = current_event()
-    timeout = _safe_timeout(seconds)
-    deadline = current_deadline()
-    if deadline is not None:
-        timeout = min(timeout, max(0.0, deadline - time.monotonic()))
-    if event is None:
-        time.sleep(timeout)
-    elif event.wait(timeout):
-        raise TaskCancelled("task stopped")
-    check()
 
 
 def start_process(
@@ -565,100 +436,6 @@ def attach_process_tree(proc: Process | subprocess.Popen[str]) -> ProcessTreeOwn
         raise
 
 
-def terminate_process_tree(
-    proc: ChildProcess,
-    job: ProcessTreeOwner | None = None,
-) -> None:
-    """Terminate a process tree started in its own process group.
-
-    Contract: ``proc`` comes from ``start_process()`` (POSIX
-    ``start_new_session=True``, Windows Job Object) so ``proc.pid`` is the
-    group leader. Arbitrary external ``Popen`` objects need their own
-    direct-child termination path and must not share this helper.
-    """
-    _terminate_process_tree(proc, job)
-
-
-def terminate_direct_child(proc: ChildProcess) -> None:
-    """Terminate one direct child without group signalling."""
-    with suppress(Exception):
-        proc.terminate()
-    with suppress(Exception):
-        proc.wait(timeout=1)
-    with suppress(Exception):
-        if proc.poll() is None:
-            proc.kill()
-    with suppress(Exception):
-        proc.wait(timeout=1)
-
-
-def _process_group_exists(pgid: int) -> bool:
-    """Check a process group without touching its (possibly reaped) leader."""
-    try:
-        _kill_process_group(pgid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return True
-    return True
-
-
-def _terminate_process_tree(
-    proc: ChildProcess,
-    job: ProcessTreeOwner | None = None,
-) -> None:
-    if os.name == "nt":
-        if job is not None:
-            with suppress(Exception):
-                job.terminate()
-        with suppress(Exception):
-            proc.kill()
-        try:
-            proc.wait(timeout=1)
-        except Exception:
-            with suppress(Exception):
-                proc.kill()
-            with suppress(Exception):
-                proc.wait(timeout=1)
-    else:
-        # Processes from start_process() run in a new session, so the known
-        # group id is proc.pid: no getpgid() on a possibly reaped parent.
-        pgid = proc.pid
-        if not isinstance(pgid, int) or isinstance(pgid, bool) or pgid <= 0:
-            # Not a real group leader (closed proc or non-process double):
-            # fall back to direct-child termination instead of signalling
-            # a meaningless group id.
-            terminate_direct_child(proc)
-            return
-        try:
-            _kill_process_group(pgid, signal.SIGTERM)
-        except ProcessLookupError:
-            with suppress(Exception):
-                proc.terminate()
-        except OSError:
-            with suppress(Exception):
-                proc.terminate()
-        with suppress(Exception):
-            proc.wait(timeout=1)
-        # proc.wait() only reaps the direct child; grandchildren holding
-        # pipes are judged by group existence, never by the parent's wait.
-        if _process_group_exists(pgid):
-            with suppress(Exception):
-                _kill_process_group(pgid, 9)
-            with suppress(Exception):
-                proc.wait(timeout=1)
-
-
 @runtime_checkable
 class _BufferedReadPipe(ReadPipe, Protocol):
     def read1(self, size: int = -1, /) -> bytes: ...
-
-
-if sys.platform != "win32":
-    def _kill_process_group(pgid: int, sig: int) -> None:
-        os.killpg(pgid, sig)
-else:
-    def _kill_process_group(pgid: int, sig: int) -> None:
-        raise ProcessLookupError("POSIX process groups are unavailable on Windows")

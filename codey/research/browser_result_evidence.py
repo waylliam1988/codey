@@ -115,7 +115,7 @@ def validate_current_result(records: Mapping[str, ExecutionRecord], results: Map
     if not action:
         return
     labels = {label for label, passage in aliases if passage in current}
-    from codey.research.answer_contract import citation_occurrences
+    from codey.research.answer_citations import citation_occurrences
 
     if state == "answered" and (not current or not any(row["label"] in labels for row in citation_occurrences(markdown))):
         raise ValueError("browser_result_evidence_missing: cite a complete formal browser_read after the latest page action. "

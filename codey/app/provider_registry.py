@@ -74,13 +74,18 @@ class ProviderRegistry:
 
     def failover_order(
         self,
-        tab_availability: Callable[[], dict[str, bool]],
+        tab_availability: Callable[[], dict[str, bool]] | None = None,
     ) -> tuple[str, ...]:
         allowed = tuple(pid for pid in PROVIDER_LABELS if pid not in API_CONNECTIONS and self.model_preferences.allows(pid))
         if not allowed:
             return ()
         try:
-            statuses = tab_availability()
+            if tab_availability is None:
+                from codey.providers.registry import provider_tab_availability
+
+                statuses = provider_tab_availability(allowed=set(allowed))
+            else:
+                statuses = tab_availability()
         except TaskCancelled:
             raise
         except Exception:

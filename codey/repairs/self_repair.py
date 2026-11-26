@@ -163,7 +163,6 @@ def run_self_repair_job(
     source_root: Path | None = None,
 ) -> AdapterRepairResult:
     """Run one repair job with sibling helpers from the provider registry."""
-    from codey.app import provider_services
     from codey.repairs.self_repair_worker import run_self_repair_worker
 
     if state_home is None:
@@ -179,7 +178,7 @@ def run_self_repair_job(
         job,
         helper_ids=providers.self_repair_candidates(
             job.provider_id,
-            ordered=provider_services.provider_failover_order(providers),
+            ordered=providers.failover_order(),
         ),
         state_home=state_home,
         source_root=source,

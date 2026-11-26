@@ -5,7 +5,7 @@ import re
 from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Protocol
 
-from codey.research.answer_contract import AnswerSessionView
+from codey.research.answer_scope import AnswerSessionView
 from codey.research.passages import read_passage_refs
 from codey.research.source_observation import source_observation
 from codey.research.source_trust import primary_source_url

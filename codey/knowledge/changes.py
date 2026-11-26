@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from codey.knowledge.change_snapshot import KnowledgeChangesSnapshot as KnowledgeChangesSnapshot
 from codey.storage.atomic_io import write_text_atomic
 from codey.workspace.changes import RestoreResult
 from codey.workspace.paths import (
@@ -24,14 +25,6 @@ MAX_SNAPSHOT_FILE_BYTES = 512 * 1024
 MAX_SNAPSHOT_FILES = 200
 MAX_SNAPSHOT_TOTAL_BYTES = 32 * 1024 * 1024
 
-
-@dataclass(frozen=True)
-class KnowledgeChangesSnapshot:
-    before: dict[str, str | None]
-    after_hashes: dict[str, str]
-    touched: frozenset[str]
-    last_restore_result: RestoreResult | None = None
-    document_revisions: dict[str, int] = field(default_factory=dict)
 
 @dataclass
 class KnowledgeChanges:

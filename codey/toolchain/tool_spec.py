@@ -92,7 +92,7 @@ def _coding_specs() -> dict[str, ToolSpec]:
 def _research_specs() -> dict[str, ToolSpec]:
     from codey.research.calculation_schema import calculation_output_schema, data_output_schema
     from codey.research.knowledge_schema import schema_object, schema_strings
-    from codey.research.tool_contract import TOOL_CONTRACTS
+    from codey.research.tool_declarations import TOOL_CONTRACTS
     from codey.types.json_value import canonical_json_object
 
     grant_by_tool = {

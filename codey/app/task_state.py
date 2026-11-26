@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from codey.app.lifecycle import AppLifecycle
     from codey.app.provider_registry import ProviderRegistry
     from codey.app.run_registry import RunRegistry, RunSnapshot
-    from codey.app.shell_service import ShellExecutionTicket
+    from codey.app.shell_ticket import ShellExecutionTicket
     from codey.app.task_runtime import TaskRuntimeCoordinator
     from codey.durable.scheduler import DurableTaskScheduler
 

@@ -22,7 +22,8 @@ from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 from codey.policies.command_line import ShellSpec, resolve_shell
-from codey.types.json_value import JsonObject, decode_json_object, require_json_string
+from codey.providers.local_tool_compat import safe_native_tools
+from codey.types.json_value import JsonObject, decode_json_object, encode_transport_value, require_json_string
 from tools.local_model_gate_attempts import (
     GateTarget,
     isolate_gate_secondary_models,
@@ -192,7 +193,7 @@ def wait_for_run(client: GateHTTPClient, run_id: str, timeout: float) -> JsonObj
 
 
 def verify_shell_events(
-    events: list[dict[str, object]], source_run: str, case: str, original_window: JsonObject,
+    events: list[dict[str, object]], source_run: str, case: str, original_window: JsonObject | None,
 ) -> dict[str, object]:
     terminals = [row for row in events if row.get("type") == "task_done"]
     if any(row.get("stop_reason") not in {"approval", "done"} for row in terminals):
@@ -245,8 +246,12 @@ def run_shell_case(case: str, target: GateTarget, directory: Path) -> dict[str, 
         if record.get("command") != probe_command(case):
             raise AssertionError("model requested a different command; gate will not approve it")
         original_window = record.get("window_ref")
-        if not isinstance(original_window, dict) or not record.get("call_id"):
+        native = target.provider_id != "local" or safe_native_tools(
+            target.base_url, target.model, api_protocol=target.api_protocol, requested=True)
+        if native and (not isinstance(original_window, dict) or not record.get("call_id")):
             raise AssertionError("approval lacks native window/call identity")
+        window = decode_json_object(original_window) if original_window is not None else None
+        write_json(directory / "approval-before-decision.json", decode_json_object(encode_transport_value(record)))
         approved = client.post("/api/shell_approval", {"id": approval_id, "approved": case != "shell_deny"})
         expected_decision = "deny" if case == "shell_deny" else "allow"
         if approved.get("decision") != expected_decision:
@@ -275,30 +280,48 @@ def run_shell_case(case: str, target: GateTarget, directory: Path) -> dict[str, 
             })
             raise AssertionError(f"approval continuation did not finish: {approval}; "
                                  f"last terminal: {snapshot.get('last_terminal_event')}; busy: {snapshot.get('busy')}")
-        proof = verify_shell_events(events, source_run, case, original_window)
+        proof = verify_shell_events(events, source_run, case, window)
         # Durable session history is the canonical protocol fact source.  The
         # provider window remains an execution handle, while tool results are
         # recovered from the same SQLite admission used after a restart.
         from codey.durable.model import thaw_json
         from codey.types.protocol_window import ProtocolWindowRef
 
-        ref = ProtocolWindowRef.from_payload(original_window)
-        if state.durable.task(_string(approval.get("continuation_run_id", ""))).conversation_id != ref.session_id:
+        source_session = state.durable.task(source_run).conversation_id
+        if state.durable.task(_string(approval.get("continuation_run_id", ""))).conversation_id != source_session:
             raise AssertionError("approval continuation changed the protocol session")
-        result_items = []
-        for entry in state.durable.entries(ref.session_id):
-            if entry.kind != "tool_result":
-                continue
-            payload = thaw_json(entry.payload)
-            if isinstance(payload, dict) and payload.get("call_id") == record["call_id"]:
-                result_items.append(payload)
-        if len(result_items) != 1:
-            raise AssertionError("original shell result was not committed exactly once")
+        receipt = state.resolve_shell_approval(approval_id)
+        if receipt is None or receipt.get("source_run_id") != source_run or receipt.get("command") != probe_command(case):
+            raise AssertionError("approval lost its original command/result receipt")
+        if native:
+            assert window is not None
+            ref = ProtocolWindowRef.from_payload(window)
+            if source_session != ref.session_id:
+                raise AssertionError("approval continuation changed its native window")
+            result_items = []
+            for entry in state.durable.entries(ref.session_id):
+                if entry.kind != "tool_result":
+                    continue
+                payload = thaw_json(entry.payload)
+                if isinstance(payload, dict) and payload.get("call_id") == record["call_id"]:
+                    result_items.append(payload)
+            if len(result_items) != 1:
+                raise AssertionError("original shell result was not committed exactly once")
+        else:
+            rows = [decode_json_object(json.loads(line)) for line in
+                    (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
+            requests = [row for row in rows if row.get("type") == "request"]
+            marker = SHELL_MARKER if case != "shell_deny" else "Denied by user"
+            if len(requests) < 2 or not any(marker in json.dumps(row.get("payload"), ensure_ascii=False)
+                                           for row in requests[1:]):
+                raise AssertionError("text continuation did not receive its original shell result")
+        proof["protocol"] = "native" if native else "json_schema"
+        proof["native_history_verified"] = native
         status, repeated = client.request("/api/shell_approval", {"id": approval_id, "approved": case != "shell_deny"})
         if status != 202 or repeated.get("decision") != expected_decision:
             raise AssertionError("approval reply is not idempotent")
         if not state.shell_approval_workflow.wait(5):
             raise AssertionError("repeated approval did not settle")
-        verify_shell_events(events, source_run, case, original_window)
+        verify_shell_events(events, source_run, case, window)
         return {"case": case, "ok": True, "seconds": round(time.monotonic() - started, 2),
                 "scope": "approval_continuation", "failure_stage": "", **proof}

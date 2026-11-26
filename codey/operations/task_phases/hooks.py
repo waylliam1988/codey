@@ -8,7 +8,6 @@ import uuid
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Any
 
 from codey.agents.shell_approval import (
     ShellApprovalRequest,
@@ -21,11 +20,16 @@ from codey.operations.project_completion_context import (
     ProjectCompletionDeps,
     handle_project_tool_event,
 )
+from codey.operations.provider_health_events import record_provider_failure_event as record_provider_failure_event
+from codey.operations.provider_health_events import record_provider_success_event as record_provider_success_event
+from codey.operations.run_dependencies import TaskRunDeps
 from codey.operations.task_state import TaskState
 from codey.policies.shell_risk import classify_shell_risk
 from codey.providers.diagnostics import ProviderFailure
-from codey.providers.supervisor import HealthStoreError
+from codey.providers.supervisor import ProviderSupervisor
+from codey.repairs.self_repair import SelfRepairSupervisor
 from codey.runs.ledger import LedgerWriteFailed, RunLedgerWriter
+from codey.runs.work_checkpoint import WorkCheckpoint, WorkCheckpointStore
 from codey.runtime.observe.events import (
     RunEvent,
     render_run_event,
@@ -36,53 +40,12 @@ from codey.runtime.observe.terminalizer import nonnegative_event_count
 
 logger = logging.getLogger(__name__)
 
-def record_provider_failure_event(
-    append_ledger_provider_failure: Callable[[str, ProviderFailure], None],
-    trace_sink: Any,
-    supervisor: Any,
-    self_repair: Any,
-    pid: str,
-    failure: ProviderFailure,
-) -> None:
-    """Fan out one provider failure to ledger, trace, supervisor, self-repair."""
-    append_ledger_provider_failure(pid, failure)
-    trace_sink.call("record_provider_failure", pid, failure)
-    if supervisor is None:
-        return
-    try:
-        health = supervisor.record_failure(pid, failure)
-    except HealthStoreError:
-        # The failure is already in the ledger; without durable health there
-        # is nothing honest to enqueue for repair, so log and continue with
-        # provider cleanup/failover instead of crashing the run.
-        logger.exception("provider health record failed for %s", pid)
-        return
-    if self_repair is not None:
-        try:
-            self_repair.maybe_enqueue(pid, failure, health)
-        except Exception:
-            logger.exception("self-repair enqueue failed for provider %s", pid)
-
-
-def record_provider_success_event(supervisor: Any, pid: str) -> None:
-    """Record one provider success; a storage fault is logged, not fatal.
-
-    The attempt genuinely succeeded, so the run continues with its result;
-    later events rebuild the health picture once the store is writable.
-    """
-    if supervisor is None:
-        return
-    try:
-        supervisor.record_success(pid)
-    except HealthStoreError:
-        logger.exception("provider health success record failed for %s", pid)
-
 
 @dataclass(kw_only=True)
 class _RunHookCallbacks:
     """Own callback state for one run; all callbacks share this lifetime."""
 
-    deps: Any
+    deps: TaskRunDeps
     state: TaskState
     work: RunWork
     session_id: str
@@ -93,8 +56,8 @@ class _RunHookCallbacks:
     review_log_lines: int
     project_completion_deps: ProjectCompletionDeps
     current_provider_id: Callable[[], str] | None
-    supervisor: Any
-    self_repair: Any
+    supervisor: ProviderSupervisor | None
+    self_repair: SelfRepairSupervisor | None
     logged_provider_failures: set[tuple[str, str, str, str]] = field(default_factory=set)
 
     def append_ledger(self, action: Callable[[RunLedgerWriter], None]) -> None:
@@ -124,7 +87,7 @@ class _RunHookCallbacks:
         self.logged_provider_failures.add(key)
         self.append_ledger(lambda ledger: ledger.append_provider_failure(pid, failure))
 
-    def update_checkpoint(self, action: Callable[[Any, Any], Any]) -> None:
+    def update_checkpoint(self, action: Callable[[WorkCheckpointStore, WorkCheckpoint], WorkCheckpoint]) -> None:
         if self.deps.work_checkpoints is None or self.work.work_checkpoint is None:
             return
         with suppress(OSError, ValueError):
@@ -228,7 +191,7 @@ class _RunHookCallbacks:
                 "risk_title": str(pending.get("risk_title") or ""),
                 "risk_detail": str(pending.get("risk_detail") or ""),
                 "post_approval_instructions": str(pending.get("post_approval_instructions") or ""),
-                "deferred_tool_calls": pending.get("deferred_tool_calls") or list[dict[str, Any]](),
+                "deferred_tool_calls": pending.get("deferred_tool_calls") or list[dict[str, object]](),
             }
             artifact = managed_outputs.write_json_artifact(
                 session_id=self.session_id,
@@ -273,7 +236,7 @@ class _RunHookCallbacks:
 
 
 def build_hooks(
-    deps: Any,
+    deps: TaskRunDeps,
     state: TaskState,
     work: RunWork,
     *,

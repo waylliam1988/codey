@@ -15,7 +15,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Literal, ParamSpec, TypedDict
 
 if TYPE_CHECKING:
-    from codey.app.context import AppContext
+    from codey.app.context_ports import ApprovalWorkflowContext
 
 from codey.agents.shell_approval import shell_command_event_fields
 from codey.app.shell_approval_state import (
@@ -71,7 +71,7 @@ _CONTINUATION_STATES: dict[str, ApprovalContinuation] = {
 
 
 class ShellApprovalWorkflow:
-    def __init__(self, ctx: AppContext) -> None:
+    def __init__(self, ctx: ApprovalWorkflowContext) -> None:
         self.ctx = ctx
         self._condition = threading.Condition()
         self._workers: dict[str, threading.Thread] = {}

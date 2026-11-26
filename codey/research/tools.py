@@ -31,6 +31,7 @@ from codey.research.source_search import (
     render_results,
 )
 from codey.research.staging import StagedKnowledgeChanges, StagedKnowledgeStore
+from codey.research.staging import base_changes as _base_changes
 from codey.research.tool_args import KnowledgeCommitRequest, decode_conditions
 from codey.research.tool_output import ResearchToolOutput as ResearchToolOutput
 from codey.research.url_selection import source_candidate_skip_reason
@@ -41,13 +42,6 @@ _CITED_TYPES = {"fact", "conclusion", "decision", "implementation", "verificatio
 
 class _DiagnosticRecord(Protocol):
     def __call__(self, area: str, action: str, error: object, /, *, url: str, model: object) -> object: ...
-
-
-def _base_changes(changes: KnowledgeChanges | StagedKnowledgeChanges | None) -> KnowledgeChanges | None:
-    """Return the durable change tracker; staged tracking is intentionally in-memory only."""
-    return changes if isinstance(changes, KnowledgeChanges) else None
-
-
 
 
 @dataclass

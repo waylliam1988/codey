@@ -7,13 +7,20 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Protocol
 
+from codey.app.context_ports import ConversationStoreContext
 from codey.storage.local_store import read_json_strict, write_json_atomic
 from codey.utils.object_fields import require_object_fields
 
-if TYPE_CHECKING:
-    from codey.app.context import AppContext
+
+class ForkContext(ConversationStoreContext, Protocol):
+    fork_workspaces: ForkWorkspaces | None
+    @property
+    def lock(self) -> threading.Lock: ...
+    @property
+    def state_home(self) -> Path | None: ...
+    def shutdown_requested(self) -> bool: ...
 
 
 class GitCommandError(ValueError):
@@ -83,7 +90,7 @@ def capabilities(path: str) -> dict[str, object]:
 
 
 class ForkWorkspaces:
-    def __init__(self, ctx: AppContext, home: Path) -> None:
+    def __init__(self, ctx: ForkContext, home: Path) -> None:
         self.ctx = ctx
         self.home = home / 'chat-forks'
         self.lock = threading.Lock()
@@ -131,7 +138,7 @@ class ForkWorkspaces:
                 data['project_path'] = str(Path(_job_text(data, 'root')) / source_path.relative_to(repository))
             data.update(status='pending', error='')
             write_json_atomic(path, data)
-            from codey.app.conversation_routes import register_fork
+            from codey.app.conversation_registration import register_fork
 
             register_fork(self.ctx, source, child, workspace=_job_text(data, 'project_path'), preserve_title=True)
             worker = threading.Thread(target=self._run, args=(child, data), daemon=True, name=f'worktree-{child}')
@@ -176,7 +183,7 @@ class ForkWorkspaces:
             workspace = target / relative
             if not workspace.is_dir():
                 raise ValueError('The project directory is missing from the new worktree.')
-            from codey.app.conversation_routes import register_fork
+            from codey.app.conversation_registration import register_fork
 
             register_fork(self.ctx, _job_text(data, 'source'), child, workspace=str(workspace), preserve_title=True)
             data.update(status='ready', project_path=str(workspace), error='')
@@ -195,7 +202,7 @@ class ForkWorkspaces:
         return not any(worker.is_alive() for worker in workers)
 
 
-def service(ctx: AppContext) -> ForkWorkspaces:
+def service(ctx: ForkContext) -> ForkWorkspaces:
     with ctx.lock:
         current = ctx.fork_workspaces
         if current is None:
@@ -207,7 +214,7 @@ def service(ctx: AppContext) -> ForkWorkspaces:
         return current
 
 
-def ensure_workspace_ready(ctx: AppContext, identity: str) -> None:
+def ensure_workspace_ready(ctx: ForkContext, identity: str) -> None:
     if (ctx.state_home is not None and identity.startswith('fork_') and len(identity) == 37
             and all(c in '0123456789abcdef' for c in identity[5:])):
         status = service(ctx).status(identity)

@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from codey.operations.kernel.executor import ToolExecutor
+from codey.operations.kernel.received_turn import ReceivedProviderTurn as ReceivedProviderTurn
 from codey.operations.kernel.turn_contract import TurnSnapshot
-from codey.operations.kernel_contracts import ToolExecutor
 from codey.operations.kernel_tool_args import (
     _canonical_name,
     _controller_allows,
@@ -34,27 +35,12 @@ from codey.toolchain.tool_spec import (
     is_text_batch_tool,
 )
 from codey.types.json_value import JsonValue, ToolArgs, decode_json_object
-from codey.types.protocol_window import ProtocolWindowRef
 
 MAX_NATIVE_CALLS_PER_TURN = 8
 
 if TYPE_CHECKING:
-    from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.protocols.json_repair import JsonTailClosure
-
-
-@dataclass(frozen=True)
-class ReceivedProviderTurn:
-    """A received response with its original request's declarations and turn."""
-
-    reply: AssistantTurn | str
-    snapshot: TurnSnapshot
-    prompt: str
-    owner_session: TaskSession
-    logical_turn: int = 1
-    window_ref: ProtocolWindowRef | None = None
-    effect_scope: str = ""
 
 
 def frozen_spec_map(snapshot: TurnSnapshot | None) -> dict[str, ToolSpec] | None:

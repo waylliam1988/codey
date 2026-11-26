@@ -193,7 +193,8 @@ def test_native_approval_resume_keeps_original_task_and_tool_history(
         assert len(observations) == 1
         observation = observations[0]
         assert isinstance(observation, str)
-        assert f'"user_task": "{task}"' in observation
+        user_messages = [message["content"] for message in messages if message["role"] == "user"]
+        assert sum(content == task for content in user_messages) == 1
         assert "Resolve the shell approval" not in observation
         assert len(executions) == int(approved)
         assert len(starts) == 2 and all(event["task"] == task for event in starts)

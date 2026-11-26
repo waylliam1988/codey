@@ -13,6 +13,9 @@ if TYPE_CHECKING:
     from codey.toolchain.spec_model import ToolSpec
 
 
+MAX_TEXT = 4096
+
+
 @dataclass(frozen=True)
 class BrowserTurnInputs:
     copy: CopyTurn | None = None
@@ -46,7 +49,6 @@ class BrowserTurnInputs:
         cls, payload: JsonObject, *, copy: CopyTurn | None, overlay_compatible: bool,
         tool_names: list[str], nested_names: list[str], specs: list[ToolSpec], policy: TaskPolicy,
     ) -> BrowserTurnInputs:
-        from codey.operations.browser.browser_followups import MAX_TEXT
         from codey.operations.browser.browser_references import BrowserReferences
 
         inventory = set(tool_names).union(nested_names)

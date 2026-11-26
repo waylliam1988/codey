@@ -188,3 +188,8 @@ class StagedKnowledgeChanges:
 
     def record_after(self, rel: str, path: Path) -> None:
         del rel, path
+
+
+def base_changes(changes: KnowledgeChanges | StagedKnowledgeChanges | None) -> KnowledgeChanges | None:
+    """Return the durable change tracker; staged tracking is intentionally in-memory only."""
+    return changes if isinstance(changes, KnowledgeChanges) else None

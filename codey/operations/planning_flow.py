@@ -41,7 +41,7 @@ class PlanningFlowDeps:
 
 def _planning_entry_policy(frame: RunFrame, request: TaskSubmission) -> TaskPolicy:
     """Require a read-only policy before constructing execution resources."""
-    from codey.operations.task_entry import build_task_policy_for_entry
+    from codey.operations.entry_policy import build_task_policy_for_entry
 
     policy = frame.entry_policy
     if policy is None:

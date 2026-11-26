@@ -11,7 +11,7 @@ from codey.toolchain.spec_model import ToolSpec
 from codey.toolchain.tool_spec import freeze_spec_parameters
 
 if TYPE_CHECKING:
-    from codey.operations.kernel_contracts import ToolExecutor
+    from codey.operations.kernel.executor import ToolExecutor
     from codey.policies.task_policy import TaskPolicy
 
 

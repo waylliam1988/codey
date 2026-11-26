@@ -154,7 +154,7 @@ def _run_one_writer_attempt(
 
 def _writer_research_tools(ctx: ProjectRun) -> ResearchTools | None:
     """Reuse one authorized source adapter across writer repair attempts."""
-    from codey.operations.task_entry import build_task_policy_for_entry
+    from codey.operations.entry_policy import build_task_policy_for_entry
 
     policy = ctx.frame.entry_policy or build_task_policy_for_entry(ctx.request, "project")
     if not any(policy.allows(grant) for grant in ("web.read", "knowledge.read", "knowledge.write", "knowledge.link")):
@@ -258,7 +258,7 @@ def _build_writer_failover(ctx: ProjectRun) -> WriterFailoverRunner:
     assert ctx.tried_writers is not None
     # Function-level: task_phases.dispatch imports this module, so a
     # top-level import would cycle.
-    from codey.operations.task_phases.hooks import (
+    from codey.operations.provider_health_events import (
         record_provider_success_event as _record_provider_success_event,
     )
 

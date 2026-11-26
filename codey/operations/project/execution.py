@@ -22,10 +22,9 @@ if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
     from codey.agents.tools import AgentToolFns
     from codey.automation.browser_session import BrowserSession
-    from codey.operations.task_execution import ProjectPolicyCheck
+    from codey.operations.project.policy_check import ProjectPolicyCheck
     from codey.operations.task_session import TaskSession
     from codey.toolchain.runtime import ToolOutcome
-
 
 
 class ProjectExecutor:

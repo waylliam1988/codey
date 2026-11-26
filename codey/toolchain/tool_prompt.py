@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codey.toolchain.definition import ToolDefinition
-    from codey.toolchain.tool_spec import ToolSpec
+    from codey.toolchain.spec_model import ToolSpec
 
 
 def tool_signature(spec: ToolSpec) -> str:

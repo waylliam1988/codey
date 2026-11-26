@@ -1,4 +1,8 @@
-import { fetchChangeFile, fetchChanges, fetchRunChanges, restoreChanges } from '../api/changes';
+import { createContextMenus } from '../conversation/context_menus';
+import { renameInputEl } from '../conversation/rename_input';
+import { statusRow } from '../conversation/status_row';
+import { createWorkspaceDocuments } from '../workspace/workspace_documents';
+import { fetchRunChanges } from '../api/changes';
 import { createProjectFolderPicker } from './project_folder';
 import { requestResponse } from '../api/transport';
 import { ChangesDrawer } from '../workspace/changes_drawer';
@@ -27,7 +31,6 @@ import { SessionStateStore } from '../state/session_state_store';
 import { forgetSessionOnServer } from '../state/session_deletion';
 import { SessionStateViews } from '../state/session_state_views';
 import { ChatFork } from '../conversation/chat_fork';
-import { DocumentPane, type DocumentRef } from '../workspace/document_pane';
 import { HistoryPanel } from '../workspace/history_panel';
 import type { HistoryTask } from '../conversation/history_repository';
 import { RecordedPanels } from '../workspace/recorded_panels';
@@ -36,30 +39,15 @@ import '../conversation/chat_fork.css';
 import { CommandPalette } from './command_palette';
 import '../workspace/workspace.css';
 import { showCommandPermissions } from '../runs/command_permissions';
-import { reportDesktopFailure, reportDesktopReady } from './desktop_ready';
-import { hydrateDocumentContent } from '../workspace/document_content';
+import { reportDesktopFailure } from './desktop_ready';
 import type { QueuedInput } from '../runs/input_outbox';
 import type { LifecycleInput } from '../runs/run_lifecycle';
 import { createApprovalController } from '../runs/shell_approvals';
 import { createSidebar } from '../conversation/sidebar';
 import { type UserQuestion, UserQuestions } from '../runs/user_questions';
-import { mountCharacterPond } from './character_pond';
-import { decodeServerEvent, isRecord, type ServerEvent } from '../domain/protocol';
+import { bootApplication } from './application_boot';
+import { decodeServerEvent, type ServerEvent } from '../domain/protocol';
 import type { Message, Project, RunState, Session } from '../types/domain';
-
-type RenameCommit = (value: string | undefined) => void;
-interface StatusAction {
-  label: string;
-  disabled?: boolean;
-  onclick: () => void;
-}
-interface StatusRowOptions {
-  kind?: string;
-  err?: boolean;
-  actions?: StatusAction[];
-  action?: StatusAction;
-  copyText?: string;
-}
 
 export function mountApp(): void {
   // ============================ state & storage ============================
@@ -67,49 +55,7 @@ export function mountApp(): void {
   const $ = <T extends HTMLElement = AppElement>(id: string): T => document.getElementById(id) as T;
   const eventElement = (event: Event): Element | null => (event.target instanceof Element ? event.target : null);
   const workspace = new Workspace();
-  const documentPane = new DocumentPane({
-    docked: true,
-    visibility: (visible) => (visible ? workspace.reveal('files') : workspace.panelClosed('files')),
-    read: async (sessionId, ref, workspace) => {
-      const response = await requestResponse('/api/documents/read', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, expected_workspace: workspace, ...ref }),
-      });
-      const data: unknown = await response.json();
-      if (!isRecord(data)) throw new Error('Invalid document response');
-      if (!response.ok || data.ok !== true)
-        throw new Error(
-          typeof data.message === 'string'
-            ? data.message
-            : typeof data.error === 'string'
-              ? data.error
-              : 'Could not load document',
-        );
-      const { content, path, version, title, format, workspace: scope } = data;
-      if (
-        typeof content !== 'string' ||
-        typeof path !== 'string' ||
-        typeof version !== 'string' ||
-        typeof title !== 'string' ||
-        typeof format !== 'string' ||
-        typeof scope !== 'string'
-      )
-        throw new Error('Invalid document response');
-      return { content, path, version, title, format, workspace: scope };
-    },
-    markdown: (container, text, scope) => {
-      Render.renderMarkdown(container, text);
-      if (scope)
-        void hydrateDocumentContent(container, {
-          sessionId: scope.sessionId,
-          workspace: scope.workspace.startsWith('research:') ? undefined : scope.workspace,
-          parent: scope.path.split('/').slice(0, -1).join('/'),
-        });
-    },
-    copy: (text) => Render.copyText(text),
-  });
-  workspace.register('files', 'Files', documentPane.element, () => documentPane.show(sessionState.activeId));
+  const { documentPane, openDocument, previewHtml } = createWorkspaceDocuments(workspace, () => sessionState.activeId);
   workspace.register('changes', 'Changes', $('changes-drawer'), (target) => {
     const project = sessionProjectPath(sessionState.activeId);
     if (project) void ChangesDrawer.open(project, target.path || '');
@@ -229,36 +175,10 @@ export function mountApp(): void {
     observe: observeUserQuestion,
     changed: () => Composer?.updateSend(),
   });
-  function openDocument(sessionId: string, ref: DocumentRef): void {
-    void documentPane.open(sessionId, ref);
-  }
-  function previewHtml(sessionId: string, path: string, project: string): void {
-    if (sessionId === sessionState.activeId) {
-      void documentPane.open(
-        sessionId,
-        { kind: 'workspace', path },
-        { workspace: project || undefined, preview: true },
-      );
-    }
-  }
-  document.addEventListener('click', (event) => {
-    const link = eventElement(event)?.closest<HTMLElement>('[data-document-path]');
-    if (!link) return;
-    event.preventDefault();
-    const path = link.dataset.documentPath;
-    if (path) {
-      const line = Number(link.dataset.documentLine) || undefined;
-      openDocument(
-        sessionState.activeId,
-        link.closest('.document-pane') ? documentPane.fileLink(path, line) : { kind: 'workspace', path, line },
-      );
-    }
-  });
   // Escape and receipt helpers are provided by the render module.
   const escapeHtml = Render.escapeHtml;
   const receiptSummary = Render.receiptSummary;
   const receiptChangedCount = Render.receiptChangedCount;
-  let DEFAULT_PROVIDER = UiState.DEFAULT_PROVIDER;
   const PROVIDER_LABELS = UiState.PROVIDER_LABELS;
   const PROVIDERS = UiState.PROVIDERS;
   const sessionState: SessionStateStore = new SessionStateStore({
@@ -302,8 +222,6 @@ export function mountApp(): void {
   const { apply: applyUiState, cache: cacheUiState, cached: cachedUiState } = UiState;
   const persistActive = UiState.persist;
   const persistActiveNow = UiState.persistNow;
-  const bindUiStatePagehide = UiState.bindPagehide;
-  const restoreUiStateFromServer = UiState.restoreFromServer;
 
   const bootCachedState = cachedUiState();
 
@@ -404,34 +322,17 @@ export function mountApp(): void {
   }
 
   // ============================ inline rename & confirm ============================
-  let armedDangerTimer: ReturnType<typeof setTimeout> | null = null;
-  function renameInputEl(value: string, commit: RenameCommit, cancel: () => void) {
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'rename-input';
-    input.value = value || '';
-    input.maxLength = 80;
-    input.setAttribute('aria-label', 'Rename');
-    let settled = false;
-    const finish = (fn: RenameCommit | (() => void), arg?: string) => {
-      if (settled) return;
-      settled = true;
-      fn(arg);
-    };
-    input.onmousedown = (e) => e.stopPropagation();
-    input.onclick = (e) => e.stopPropagation();
-    input.onkeydown = (e) => {
-      if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) {
-        e.preventDefault();
-        finish(commit, input.value);
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        finish(cancel, undefined);
-      }
-    };
-    input.onblur = () => finish(commit, input.value);
-    return input;
-  }
+  const { openProjectMenu, openSessionMenu, closeAllMenus } = createContextMenus({
+    projectMenu: $('proj-menu'),
+    sessionMenu: $('sess-menu'),
+    deleteProject,
+    deleteSession,
+    newSession,
+    renameProject,
+    renameSession,
+    menuOpened: ConversationUI.menuOpened,
+    menusClosed: ConversationUI.menusClosed,
+  });
   function commitSessionRename(id: string, value: string | undefined) {
     sessionState.renameSession(id, value);
   }
@@ -468,66 +369,11 @@ export function mountApp(): void {
   function renderSidebar(): void {
     sidebar.render();
   }
-  function disarmDangerButtons() {
-    if (armedDangerTimer !== null) {
-      clearTimeout(armedDangerTimer);
-      armedDangerTimer = null;
-    }
-    document.querySelectorAll<HTMLButtonElement>('.ctx-menu button.arming').forEach((b) => {
-      const button = b as HTMLButtonElement;
-      button.classList.remove('arming');
-      if (button.dataset.label) button.textContent = button.dataset.label;
-    });
-  }
-  function armDanger(btn: HTMLButtonElement, run: () => void) {
-    if (btn.classList.contains('arming')) {
-      disarmDangerButtons();
-      closeAllMenus();
-      run();
-      return;
-    }
-    disarmDangerButtons();
-    btn.dataset.label = btn.textContent;
-    btn.textContent = btn.dataset.confirm || 'Confirm';
-    btn.classList.add('arming');
-    armedDangerTimer = setTimeout(disarmDangerButtons, 3000);
-  }
-
   // ============================ chat rendering ============================
   function renderChat() {
     workspace.setSession(sessionState.activeId);
     documentPane.setSession(sessionState.activeId);
     ConversationUI.renderChat();
-  }
-
-  function statusRow(prefix: string, text: string, opts: StatusRowOptions = {}) {
-    const div = document.createElement('div');
-    div.className = 'msg ' + (opts.kind || '');
-    const row = document.createElement('div');
-    row.className = 'status-row' + (opts.err ? ' err' : '');
-    const pre = document.createElement('span');
-    pre.className = 'sr-prefix';
-    pre.textContent = prefix;
-    const txt = document.createElement('span');
-    txt.className = 'sr-text';
-    let body = text || '';
-    if (opts.err) body = body.replace(/^ERROR:\s*/i, '');
-    txt.textContent = body;
-    row.append(pre, txt);
-    const actions = Array.isArray(opts.actions) ? opts.actions.slice() : [];
-    if (opts.action) actions.push(opts.action);
-    for (const action of actions) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'link-btn';
-      btn.textContent = action.label;
-      btn.disabled = !!action.disabled;
-      btn.onclick = action.onclick;
-      row.appendChild(btn);
-    }
-    div.appendChild(row);
-    if (opts.copyText) addMessageCopyButton(div, opts.copyText);
-    return div;
   }
 
   // Markdown, copy, and tool-line helpers live in the render module.
@@ -605,68 +451,6 @@ export function mountApp(): void {
   }
 
   // ============================ context menus ============================
-  function openMenuAt(menu: HTMLElement, anchor: HTMLElement) {
-    const rect = anchor.getBoundingClientRect();
-    menu.classList.add('open');
-    const mr = menu.getBoundingClientRect();
-    let left = rect.right - mr.width;
-    if (left < 8) left = rect.left;
-    let top = rect.bottom + 4;
-    if (top + mr.height > window.innerHeight - 8) top = rect.top - mr.height - 4;
-    menu.style.left = Math.max(8, left) + 'px';
-    menu.style.top = Math.max(8, top) + 'px';
-    ConversationUI.menuOpened(menu, anchor);
-  }
-  function closeAllMenus() {
-    disarmDangerButtons();
-    document.querySelectorAll('.ctx-menu.open').forEach((m) => m.classList.remove('open'));
-    ConversationUI.menusClosed();
-  }
-  function openProjectMenu(anchor: HTMLElement, projectId: string) {
-    closeAllMenus();
-    const menu = $('proj-menu');
-    menu.dataset.projectId = projectId;
-    openMenuAt(menu, anchor);
-  }
-  function openSessionMenu(anchor: HTMLElement, sessionId: string) {
-    closeAllMenus();
-    const menu = $('sess-menu');
-    menu.dataset.sessionId = sessionId;
-    openMenuAt(menu, anchor);
-  }
-  $('proj-menu').addEventListener('click', (e) => {
-    const btn = eventElement(e)?.closest<HTMLButtonElement>('button[data-act]');
-    if (!btn) return;
-    const id = $('proj-menu').dataset.projectId;
-    const act = btn.dataset.act;
-    if (act === 'remove') {
-      if (id) armDanger(btn, () => deleteProject(id));
-      return;
-    }
-    closeAllMenus();
-    if (!id) return;
-    if (act === 'newchat') newSession(id);
-    else if (act === 'rename') renameProject(id);
-  });
-  $('sess-menu').addEventListener('click', (e) => {
-    const btn = eventElement(e)?.closest<HTMLButtonElement>('button[data-act]');
-    if (!btn) return;
-    const id = $('sess-menu').dataset.sessionId;
-    const act = btn.dataset.act;
-    if (act === 'delete') {
-      if (id) armDanger(btn, () => deleteSession(id));
-      return;
-    }
-    closeAllMenus();
-    if (!id) return;
-    if (act === 'rename') renameSession(id);
-  });
-  document.addEventListener('click', (e) => {
-    if (eventElement(e)?.closest('.ctx-menu')) return;
-    if (eventElement(e)?.closest('.project-more, .session-more')) return;
-    closeAllMenus();
-  });
-
   // ============================ SSE event ingestion ============================
   const researchPanel = createResearchPanel({
     workspace,
@@ -958,67 +742,27 @@ export function mountApp(): void {
     }
   });
   // ============================ boot ============================
-  async function boot() {
-    const main = document.querySelector('main');
-    if (main) mountCharacterPond(main);
-    await OperatorAuth.authorize();
-    await ProviderUI.adoptCatalog();
-    DEFAULT_PROVIDER = UiState.DEFAULT_PROVIDER;
-    bindUiStatePagehide(Composer.captureDraft);
-    researchPanel.init();
-    ChangesDrawer.init({
+  function boot(): Promise<void> {
+    return bootApplication({
+      $,
       workspace,
-      $,
-      fetchChanges,
-      fetchRunChanges,
-      fetchChangeFile,
-      restoreChanges,
-      escapeHtml,
-      previewHtml: (project: string, path: string) => previewHtml(sessionState.activeId, path, project),
-    });
-    LocalContextDrawer.init({
-      $,
-      getActiveId: () => sessionState.activeId,
-      currentProjectPath: () => currentProjectPath(),
-      copyText,
-    });
-    RunDetails.init({ workspace, getActiveId: () => sessionState.activeId });
-    ProviderUI.init({
-      updateSend,
-      $,
-      escapeHtml,
-      PROVIDERS,
-      PROVIDER_LABELS,
-      DEFAULT_PROVIDER,
+      sessionState,
+      runEvents,
+      chatFork,
+      userQuestions,
+      approvalController,
+      researchPanel,
+      projectFolderPicker,
+      previewHtml,
+      currentProjectPath,
       currentProviderId,
       setActiveProvider,
       activeSession,
       persistActiveNow,
-    });
-    Sse.init({
-      forRun: Requests.forRun,
       setStatus,
-      applyRunState,
-      handleServerEvent: (event, cursor) => runEvents.handleServerEvent(event, 'event', cursor),
       refreshProviderStatus,
-      acceptRun: (runId: string | null, sessionId: string | null) => {
-        if (runId && sessionId)
-          applyLifecycle({ type: 'task_start', run_id: runId, session_id: sessionId }, 'admission');
-      },
-      setProviderBusy: (busy: boolean) => {
-        $('provider-button').disabled = !!busy;
-        $('effort-button').disabled = !!busy;
-      },
       updateSend,
       updateComposerContext,
-    });
-    Requests.init({
-      composer: Composer,
-      $,
-      getSessions: () => sessionState.sessions,
-      getActiveId: () => sessionState.activeId,
-      getRunningSessionId: () => runProjection.primaryRun?.sessionId ?? null,
-      persistActiveNow,
       persistActive,
       pushMsgToSession,
       addToSession,
@@ -1026,103 +770,30 @@ export function mountApp(): void {
       renderChat,
       scrollChat,
       statusRow,
-    });
-    Composer.init({
-      chatFork,
-      userQuestions,
-      applyApproval: approvalController.apply,
-      refreshHistory: ConversationUI.refreshHistory,
-      updateNotice: ConversationUI.updateNotice,
-      $,
-      PROVIDERS,
-      getActiveId: () => sessionState.activeId,
-      getRunningSessionId: () => runProjection.primaryRun?.sessionId ?? null,
-      getRunningRunId: () => runProjection.primaryRun?.runId ?? null,
-      getRunningRunIdForSession: (sessionId: string) => runProjection.runIdForSession(sessionId),
       isSessionRunning,
-      activeSession,
-      findSession: (sessionId: string | null | undefined) =>
-        sessionId ? sessionState.sessions.find((x) => x.id === sessionId) : undefined,
       sessionProject,
       sessionProjectPath,
       currentIntentForSession,
-      currentProviderId,
-      persistActive,
-      persistActiveNow,
-      updateComposerContext,
-      renderChat,
-      addToSession,
       addSendError,
       acceptRunResponse,
       syncProviderUI,
       switchSession,
       openLocalProviderConfig,
-      projectPickerBusy: projectFolderPicker.busy,
       attachCurrentChatToPickedProject,
       observeQueuedInput,
-    });
-    Messages.init({
-      chatFork,
-      userQuestions,
-      approvals: approvalController,
-      composer: Composer,
-      historyRevision: ConversationUI.historyRevision,
-      isSessionRunning,
       openDocument,
-      statusRow,
-      currentProjectPath,
-      attachCurrentChatToPickedProject,
       approveCommand,
       continueTask,
       resumeTeaching,
-      getActiveId: () => sessionState.activeId,
-      getRunningSessionId: () => runProjection.primaryRun?.sessionId ?? null,
-      getSessions: () => sessionState.sessions,
-    });
-    Process.setLayoutListener(ConversationUI.updateLatest);
-    ConversationUI.init({
-      syncComposer: Composer.syncSession,
-      chatFork,
-      userQuestions,
-      projectTasks: (tasks: HistoryTask[], sessionId: string) =>
-        projectTaskStates(tasks, new Map(runProjection.entries()), sessionId),
-      activeSession,
       activeProject,
-      getSessions: () => sessionState.sessions,
-      getProjects: () => sessionState.projects,
-      getActiveId: () => sessionState.activeId,
-      getRunningSessionId: () => runProjection.primaryRun?.sessionId ?? null,
-      sessionProject,
-      currentProjectPath,
-      currentProviderId,
-      syncProviderUI,
-      updateComposerContext,
       syncResearchUseProjectButton,
-      appendMessageNode,
-      switchSession,
       renderSidebar,
       closeAllMenus,
       closeOtherDrawers,
-      renameInputEl,
       commitSessionRename,
+      resizeTask,
+      syncResearchUI,
     });
-    renderSidebar();
-    renderChat();
-    resizeTask();
-    updateSend();
-    syncProviderUI(currentProviderId());
-    syncResearchUseProjectButton();
-    refreshProviderStatus(true);
-    // Legacy form retained for callers without an immediate probe: refreshProviderStatus();
-    syncResearchUI();
-    setStatus('', 'ok');
-    await restoreUiStateFromServer();
-    await userQuestions.refresh();
-    await Composer.refreshQueuedInputs();
-    Composer.setReady();
-    syncResearchUseProjectButton();
-    connectEvents();
-    reportDesktopReady();
   }
 
   // Transitional test bridge is opt-in so the shipped page does not expose

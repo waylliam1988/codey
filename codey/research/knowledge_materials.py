@@ -14,7 +14,8 @@ from codey.research.source_observation import source_snapshot
 from codey.types.json_value import require_json_integer, require_json_string
 
 if TYPE_CHECKING:
-    from codey.research.tools import ResearchToolOutput, ResearchTools
+    from codey.research.input_tools import ResearchInputTools
+    from codey.research.tool_output import ResearchToolOutput
 
 
 def _source_quality(value: object) -> SourceQuality:
@@ -39,9 +40,9 @@ def _page_texts(value: object) -> dict[int, str]:
     return result
 
 
-def read_material(tools: ResearchTools, version: KnowledgeVersion, *, offset: int = 0, limit: int = 6000) -> ResearchToolOutput:
+def read_material(tools: ResearchInputTools, version: KnowledgeVersion, *, offset: int = 0, limit: int = 6000) -> ResearchToolOutput:
     """No acquisition or writes. Every displayed byte belongs to an exact version."""
-    from codey.research.tools import ResearchToolOutput
+    from codey.research.tool_output import ResearchToolOutput
 
     if tools.store is None:
         raise ValueError("knowledge material requires a store")

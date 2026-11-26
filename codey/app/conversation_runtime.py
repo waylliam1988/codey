@@ -12,7 +12,7 @@ from codey.durable.questions import DurableUserQuestionStore
 from codey.utils.object_fields import require_object_fields
 
 if TYPE_CHECKING:
-    from codey.app.context import AppContext
+    from codey.app.context_ports import RunContext
     from codey.durable.session import DurableSession
 
 
@@ -25,7 +25,7 @@ class ConversationRuntime:
         self.starts: dict[str, float] = {}
         self.admissions: dict[str, dict[str, object]] = {}
 
-    def prepare(self, ctx: AppContext, payload: dict[str, object]) -> dict[str, object] | None:
+    def prepare(self, ctx: RunContext, payload: dict[str, object]) -> dict[str, object] | None:
         kind, run_id = payload.get("type"), str(payload.get("run_id") or "")
         if kind == "task_start" and run_id:
             self.starts.setdefault(run_id, time.monotonic())

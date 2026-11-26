@@ -12,7 +12,7 @@ from codey.providers.base import ChatProvider
 from codey.runs.trace import RunTraceRecorder
 
 if TYPE_CHECKING:
-    from codey.operations.task_run import TaskRunDeps
+    from codey.operations.run_dependencies import TaskRunDeps
 
 from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.conversation_plan import plan_conversation

@@ -10,12 +10,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 from codey.runtime.core import cancellation
+from codey.toolchain.outcome import ToolOutcome
 from codey.toolchain.result_schema import search_output_schema, validate_output
-from codey.toolchain.runtime import ToolOutcome
 from codey.toolchain.search_page import page_footer
+from codey.types.json_value import decode_json_object
 from codey.workspace.bounded_scan import BoundedScanBudget
 
 SEARCH_TIMEOUT_SECONDS = 30
@@ -99,14 +100,15 @@ def _batches(files: list[Path], base: list[str]) -> Iterable[list[str]]:
         yield batch
 
 
-def _line_text(data: Any) -> tuple[str, str, int]:
+def _line_text(data: object) -> tuple[str, str, int]:
     try:
-        path_text = data["path"]["text"]
-        lines = data["lines"]
-        text = lines["text"]
-        line = data["line_number"]
+        row = decode_json_object(data)
+        lines = decode_json_object(row["lines"])
         if "bytes" in lines:
             raise SearchError("matching line is not UTF-8 text; search is incomplete", "search_invalid_encoding")
+        path_text = decode_json_object(row["path"])["text"]
+        text = lines["text"]
+        line = row["line_number"]
         if not isinstance(path_text, str) or not isinstance(text, str) or type(line) is not int or line < 1:
             raise ValueError("invalid line event")
         if text.endswith("\n"):
@@ -114,9 +116,7 @@ def _line_text(data: Any) -> tuple[str, str, int]:
         return path_text, text, line
     except SearchError:
         raise
-    except (KeyError, TypeError, IndexError) as exc:
-        if isinstance(data, dict) and isinstance(data.get("lines"), dict) and "bytes" in data["lines"]:
-            raise SearchError("matching line is not UTF-8 text; search is incomplete", "search_invalid_encoding") from exc
+    except (KeyError, TypeError, IndexError, ValueError) as exc:
         raise SearchError("malformed ripgrep line event", "search_malformed_output") from exc
 
 
@@ -139,7 +139,7 @@ def _canonical_path(path_text: str, root: Path, allowed: set[Path] | None) -> st
         raise SearchError("result path escaped the workspace", "search_malformed_output") from exc
 
 
-def _match(data: Any, root: Path, allowed: set[Path] | None) -> dict[str, object]:
+def _match(data: object, root: Path, allowed: set[Path] | None) -> dict[str, object]:
     path_text, text, line = _line_text(data)
     parts = data.get("submatches") if isinstance(data, dict) else None
     if not isinstance(parts, list) or not parts:
@@ -151,7 +151,7 @@ def _match(data: Any, root: Path, allowed: set[Path] | None) -> dict[str, object
             "column_byte": start + 1, "text": text}
 
 
-def _context(data: Any, root: Path, allowed: set[Path] | None) -> dict[str, object]:
+def _context(data: object, root: Path, allowed: set[Path] | None) -> dict[str, object]:
     path_text, text, line = _line_text(data)
     return {"path": _canonical_path(path_text, root, allowed), "line": line,
             "text": text, "relation": "before"}
@@ -164,14 +164,14 @@ def _line_number(value: object) -> int:
 
 
 def _event_row(raw: str) -> tuple[str, dict[str, object]]:
-    row = json.loads(raw)
+    row = decode_json_object(json.loads(raw))
     kind = row.get("type") if isinstance(row, dict) else None
     if not isinstance(kind, str):
         raise ValueError("unknown ripgrep event")
     data = row.get("data") if isinstance(row, dict) else None
     if not isinstance(data, dict):
         raise ValueError("missing ripgrep event data")
-    return kind, data
+    return kind, dict[str, object](data)
 
 
 def _summary_stats(data: dict[str, object], matches: list[dict[str, object]]) -> tuple[int | None, int | None]:
@@ -315,12 +315,31 @@ def _select_context(matches: list[dict[str, object]], contexts: Iterable[dict[st
     return sorted(by_key.values(), key=lambda row: (str(row["path"]), _line_number(row["line"])))
 
 
-def _render(value: dict[str, Any], budget: BoundedScanBudget, scan: Scan, max_file_bytes: int, max_scan_bytes: int) -> ToolOutcome:
+class SearchPage(TypedDict):
+    query: str
+    path: str
+    literal: bool
+    case_sensitive: bool
+    include: str
+    exclude: list[str]
+    before_context: int
+    after_context: int
+    offset: int
+    limit: int
+    matches: list[dict[str, object]]
+    context: list[dict[str, object]]
+    has_more: bool
+    scan_complete: bool
+    next_offset: int | None
+    coverage: dict[str, object]
+
+
+def _render(value: SearchPage, budget: BoundedScanBudget, scan: Scan, max_file_bytes: int, max_scan_bytes: int) -> ToolOutcome:
     rows: list[tuple[str, int, str, bool]] = []
     for match in value["matches"]:
-        rows.append((str(match["path"]), int(match["line"]), str(match["text"]), False))
+        rows.append((str(match["path"]), _line_number(match["line"]), str(match["text"]), False))
     for row in value["context"]:
-        rows.append((str(row["path"]), int(row["line"]), f"[context {row['relation']}] {row['text']}", True))
+        rows.append((str(row["path"]), _line_number(row["line"]), f"[context {row['relation']}] {row['text']}", True))
     rows.sort(key=lambda item: (item[0], item[1], item[3]))
     lines = [f"{path}:{line}: {text.strip() if len(text.strip()) <= 240 else text.strip()[:237] + '...'}"
              for path, line, text, _ in rows]
@@ -393,7 +412,7 @@ def search(root: Path, files: Iterable[Path], budget: BoundedScanBudget, *, quer
         has_more = len(matches) > limit
         page_matches = matches[:limit]
         page_context = _select_context(page_matches, contexts, before_context, after_context)
-        value = {"query": query, "path": path, "literal": literal, "case_sensitive": case_sensitive,
+        value: SearchPage = {"query": query, "path": path, "literal": literal, "case_sensitive": case_sensitive,
                  "include": include, "exclude": list(exclude), "before_context": before_context,
                  "after_context": after_context, "offset": offset, "limit": limit,
                  "next_offset": offset + limit if has_more else 0, "has_more": has_more,

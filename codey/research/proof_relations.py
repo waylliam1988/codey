@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TypedDict
 
 from codey.research.counter_status import counter_investigation_incomplete
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
+from codey.research.proof_diagnostic import ProofDiagnostic
 from codey.research.proof_helpers import _positive_ints
 from codey.utils.refs import bounded_refs, clip, identifier, nonnegative_int
 
-if TYPE_CHECKING:
-    from codey.research.proof_quality import ProofDiagnostic
 
 class _RelationReview(TypedDict):
     citation_present: bool
@@ -21,13 +20,9 @@ class _RelationReview(TypedDict):
     missing_evidence: tuple[str, ...]
     diagnostics: tuple[ProofDiagnostic, ...]
 
-def _proof_diagnostic(**kwargs: object) -> ProofDiagnostic:
-    from codey.research.proof_quality import ProofDiagnostic
-    return ProofDiagnostic(**cast(Any, kwargs))
-
 def _append_relation_hard(hard: list[str], diagnostics: list[ProofDiagnostic], claims: Mapping[str, Mapping[str, object]], evidence: Mapping[str, Mapping[str, object]], sources: Mapping[str, Mapping[str, object]], reason_code: str, *, claim_ref: str='', evidence_ref: str='', source_ref: str='', relation_ref: str='') -> None:
     hard.append(reason_code)
-    diagnostics.append(_proof_diagnostic(reason_code=reason_code, claim_ref=claim_ref if claim_ref in claims else '', evidence_ref=evidence_ref if evidence_ref in evidence else '', source_ref=source_ref if source_ref in sources else '', relation_ref=_normalize_runtime_ref(relation_ref, kind='relation')))
+    diagnostics.append(ProofDiagnostic(reason_code=reason_code, claim_ref=claim_ref if claim_ref in claims else '', evidence_ref=evidence_ref if evidence_ref in evidence else '', source_ref=source_ref if source_ref in sources else '', relation_ref=_normalize_runtime_ref(relation_ref, kind='relation')))
 
 def _check_support_relation(from_ref: str, to_ref: str, relation_id: str, evidence: Mapping[str, Mapping[str, object]], source_ids: set[str], support_by_claim: dict[str, set[str]], hard: list[str], diagnostics: list[ProofDiagnostic], claims: Mapping[str, Mapping[str, object]], sources: Mapping[str, Mapping[str, object]]) -> None:
     ev = evidence.get(to_ref)

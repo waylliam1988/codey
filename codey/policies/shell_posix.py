@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from codey.policies.command_line import ShellSpec
-from codey.policies.shell_analysis import (
+from codey.policies.shell_model import (
     ShellAnalysis,
     ShellCommand,
     ShellRedirect,

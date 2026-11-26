@@ -30,8 +30,8 @@ from codey.workspace.context_admission import ContextCandidate
 
 if TYPE_CHECKING:
     from codey.operations.browser.browser_copy import CopyTurn
+    from codey.operations.kernel.executor import ToolExecutor
     from codey.operations.kernel.turn_contract import ModelInputBinding, TurnSnapshot
-    from codey.operations.kernel_contracts import ToolExecutor
     from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.tool_spec import ToolSpec
 

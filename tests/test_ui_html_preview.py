@@ -78,7 +78,7 @@ def test_finished_html_opens_and_runs_in_isolated_workspace_preview(page: Page) 
     page.wait_for_function("id => ConversationUI.acceptsRun('a', id)", arg=run)
     page.evaluate("""id => handleServerEvent({
         type:'task_done', run_id:id, session_id:'a', mode:'chat', stop_reason:'done',
-        changed:true, changes:{changed_count:1, files:[{path:'game.html', status:'A'}]}
+        changed:true, changes:{changed_count:1, mode:'snapshot', files:[{path:'game.html', status:'A'}]}
     })""", run)
 
     workspace = page.locator("#right-workspace")

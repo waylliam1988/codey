@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from functools import partial
 from threading import Event
 from typing import Protocol
@@ -14,8 +14,9 @@ from codey.knowledge.research_interest import (
 )
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.context import RunFrame, RunHooks
+from codey.operations.research.dependencies import ResearchFlowDeps as ResearchFlowDeps
 from codey.operations.result import ModeOutcome
-from codey.operations.task_state import TaskState, stop_flag_for
+from codey.operations.task_state import stop_flag_for
 from codey.policies.permissions import allows_context_source, profile_for_name
 from codey.policies.task_policy import TaskPolicy
 from codey.research.context import ResearchContext, RunTraceResearchSink
@@ -39,8 +40,6 @@ from codey.runs.trace import RunTraceRecorder
 from codey.runtime.core import cancellation
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
-from codey.runtime.write.mutation_line import RuntimeMutationLine
-from codey.storage.managed_outputs import ManagedOutputStore
 
 
 class ResearchPipelineRunner(Protocol):
@@ -71,15 +70,6 @@ class ResearchIterationRunner(Protocol):
                  publish_synthesis: bool = True) -> ResearchIterationRun: ...
 
 
-@dataclass(frozen=True)
-class ResearchFlowDeps:
-    state: TaskState
-    knowledge_store: KnowledgeStore | None
-    search_factory: Callable[[], object]
-    managed_outputs: ManagedOutputStore | None = None
-    runtime_mutations: RuntimeMutationLine | None = None
-
-
 def record_research_proof_review_trace(trace: object | None, review: ResearchProofReview | None) -> None:
     if trace is None or review is None:
         return
@@ -107,8 +97,6 @@ def record_research_plan_trace(
     sink = FailOpenPromptTrace(trace)
     sink.call("record_research_plan", payload)
     sink.call("flush")
-
-
 
 
 def run_research_mode(

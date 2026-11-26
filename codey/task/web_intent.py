@@ -5,9 +5,9 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from itertools import groupby
-from urllib.parse import urlsplit, urlunsplit
 
 from codey.task.instruction_text import instruction_text, quoted_value
+from codey.task.url_identity import source_url_key as source_url_key
 from codey.types.json_value import canonical_json_object
 
 _CODE = re.compile(r"```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`|(?m:^[ \t]*>[^\n]*)")
@@ -124,15 +124,6 @@ def _click_mentions(text: str) -> int:
     text = re.sub(r"browser_click\s*点击|点击\s*browser_click", "browser_click", text)
     return sum(_NEGATED.search(text[:match.start()]) is None
                for match in re.finditer(r"点击|\bbrowser_click\b", text))
-
-
-def source_url_key(url: str) -> str:
-    try:
-        parts = urlsplit(url)
-    except ValueError:
-        # User/tool input is validated by the acquisition network policy.
-        return url
-    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path or "/", parts.query, ""))
 
 
 def _open_clause(clause: str) -> bool:

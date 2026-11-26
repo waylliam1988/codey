@@ -23,7 +23,7 @@ from codey.task.model import TaskSubmission
 from codey.types.json_value import JsonObject
 
 if TYPE_CHECKING:
-    from codey.operations.task_run import CollectChanges
+    from codey.operations.run_dependencies import CollectChanges
     from codey.workspace.changes import ChangeTracker
 
 VALIDATE_TASK = 'Validate the stopped candidate using the original authorized checks. Do not edit files.'

@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING, Literal, NotRequired, Protocol, TypedDict
 
 from codey.memory.contracts import MemoryTrace
 from codey.operations.generation_boundary import GenerationBoundaryRequest, GenerationBoundaryResult
+from codey.operations.kernel.executor import ToolExecutor as ToolExecutor
 from codey.providers.attempt_gate import AttemptGateCallback
 from codey.providers.transport import ProviderTransport
-from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.questions import QuestionPayload
 from codey.types.json_value import (
     JsonObject,
@@ -37,7 +37,6 @@ if TYPE_CHECKING:
     from codey.workspace.revision import WorkspaceRevisionStore
 
 
-ToolExecutor = Callable[[ToolCall], ToolResult]
 DeliveryStatus = Literal["not_required", "success", "failed", "unknown"]
 
 

@@ -20,7 +20,7 @@ from codey.types.json_value import (
 )
 
 if TYPE_CHECKING:
-    from codey.research.answer_contract import AnswerScope, AnswerSessionView
+    from codey.research.answer_scope import AnswerScope, AnswerSessionView
     from codey.toolchain.tool_spec import ToolSpec
 
 _UNITS = {"": ("scalar", "1"), "%": ("percent", "1"), "kg": ("mass", "1000"), "g": ("mass", "1"),

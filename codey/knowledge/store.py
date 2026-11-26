@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Protocol, TypedDict
 from uuid import uuid4
 
-from codey.knowledge.changes import KnowledgeChanges
+from codey.knowledge.change_snapshot import KnowledgeChangesSnapshot
 from codey.knowledge.documents import KnowledgeDocuments
 from codey.knowledge.index import KnowledgeIndex
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, canonical_json
@@ -20,6 +20,14 @@ from codey.knowledge.recall import KnowledgeAccess, KnowledgeHit, KnowledgeRecal
 from codey.knowledge.repository import KnowledgeRepository
 from codey.storage.atomic_io import write_text_atomic
 from codey.types.json_value import JsonObject, require_json_integer, require_json_string
+
+
+class KnowledgeChangeRecorder(Protocol):
+    def snapshot(self) -> KnowledgeChangesSnapshot: ...
+    def restore_snapshot(self, snapshot: KnowledgeChangesSnapshot) -> None: ...
+    def capture_content(self, rel: str, content: str | None, *, document_revision: int | None = None) -> None: ...
+    def record_content(self, rel: str, content: str | None) -> None: ...
+
 
 RELATED_HEADING = "## Related"
 
@@ -97,7 +105,7 @@ class KnowledgeStore:
         self,
         note: KnowledgeNote,
         *,
-        changes: KnowledgeChanges | None = None,
+        changes: KnowledgeChangeRecorder | None = None,
         answer_reference: tuple[str, int] | None = None,
     ) -> str:
         rel = self.rel(self.path_for(note))
@@ -156,7 +164,7 @@ class KnowledgeStore:
         dst_target: str,
         kind: str = "relates",
         *,
-        changes: KnowledgeChanges | None = None,
+        changes: KnowledgeChangeRecorder | None = None,
     ) -> KnowledgeLinkResult:
         kind = kind if kind in LINK_KINDS else "relates"
         src_id = self.index.resolve(src_target)
@@ -186,7 +194,7 @@ class KnowledgeStore:
         return KnowledgeLinkResult(True, f"linked: {src_id} -> {dst_id} ({kind})", created=True)
 
     def publish_note(self, note: KnowledgeNote, commit_id: str, mutations: list[KnowledgeMutation],
-                     *, changes: KnowledgeChanges | None = None, shared_staged: bool = False) -> str:
+                     *, changes: KnowledgeChangeRecorder | None = None, shared_staged: bool = False) -> str:
         answers = [row.value for row in mutations if _is_published_answer(row.value)]
         if answers:
             provenance: Mapping[str, object] = answers[0].provenance
@@ -218,7 +226,7 @@ class KnowledgeStore:
             raise
 
     def commit_knowledge(self, commit_id: str, mutations: list[KnowledgeMutation], *,
-                         changes: KnowledgeChanges | None = None, session_id: str = "", project: str = "",
+                         changes: KnowledgeChangeRecorder | None = None, session_id: str = "", project: str = "",
                          shared_staged: bool = False) -> dict[str, int]:
         """Commit facts and their undo/context projections in the same transaction."""
         snapshot = changes.snapshot() if changes is not None else None

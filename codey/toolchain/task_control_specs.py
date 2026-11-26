@@ -4,11 +4,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from codey.toolchain.tool_spec import ToolSpec
+    from codey.toolchain.spec_model import ToolSpec
 
 
 def task_control_specs() -> dict[str, ToolSpec]:
-    from codey.toolchain.tool_spec import ToolSpec
+    from codey.toolchain.spec_model import ToolSpec
 
     common: tuple[tuple[str, object], ...] = (
         ("task_ref", {"type": "string", "minLength": 1}),

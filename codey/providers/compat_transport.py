@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 from codey.providers.attempt_gate import AttemptGateCallback, AttemptGateView
 from codey.providers.base import ProviderToolDefinition
+from codey.providers.introspection import ProviderHook
+from codey.providers.introspection import optional_callable as optional_callable
+from codey.providers.introspection import provider_attribute as provider_attribute
+from codey.providers.introspection import unwrap_provider as unwrap_provider
 from codey.providers.request_codec import provider_options_payload
 from codey.providers.requests import (
     AcknowledgeToolResultsBoundRequest,
@@ -19,34 +21,6 @@ from codey.providers.requests import (
 from codey.providers.transport import ProviderTransport
 from codey.types.json_value import decode_json_object, require_json_string
 from codey.types.protocol_window import ProtocolWindowRef
-
-
-def unwrap_provider(provider: object) -> object:
-    seen: set[int] = set()
-    while isinstance(provider, ProviderTransport):
-        if id(provider) in seen:
-            raise ValueError("cyclic provider adapter chain")
-        seen.add(id(provider))
-        provider = provider.provider
-    return provider
-
-
-def provider_attribute(provider: object, name: str) -> object:
-    """Compatibility capability lookup, never an open core interface."""
-    unwrap_provider(provider)
-    while isinstance(provider, ProviderTransport):
-        # Explicit wrapper state (for example an episode timeout) takes
-        # precedence; absence never manufactures a capability.
-        attributes: dict[str, object] = vars(provider)
-        if name in attributes:
-            return attributes[name]
-        provider = provider.provider
-    return getattr(provider, name, None)
-
-
-def optional_callable(provider: object, name: str) -> Callable[..., object] | None:
-    value = provider_attribute(provider, name)
-    return value if callable(value) else None
 
 
 def provider_window_ref(provider: object) -> ProtocolWindowRef | None:
@@ -91,7 +65,7 @@ def bind_attempt_gate(provider: object, gate: AttemptGateCallback | None) -> boo
     return True
 
 
-def declared_callable(provider: object, name: str, *, forwarding_owner: type[object] | None = None) -> Callable[..., object] | None:
+def declared_callable(provider: object, name: str, *, forwarding_owner: type[object] | None = None) -> ProviderHook | None:
     """Find a declared hook; ignore dynamic attributes on providers and mocks."""
     seen: set[int] = set()
     while provider is not None and id(provider) not in seen:
@@ -113,7 +87,7 @@ def declared_callable(provider: object, name: str, *, forwarding_owner: type[obj
     return None
 
 
-def require_callable(provider: object, name: str) -> Callable[..., object]:
+def require_callable(provider: object, name: str) -> ProviderHook:
     method: object = getattr(provider, name, None)
     if not callable(method):
         raise TypeError(f"provider does not support {name}")

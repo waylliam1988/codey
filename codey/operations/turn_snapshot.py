@@ -24,7 +24,7 @@ from codey.toolchain.tool_spec import freeze_spec_parameters, is_text_batch_tool
 
 if TYPE_CHECKING:
     from codey.completion.verification_policy import VerificationCandidate
-    from codey.operations.kernel_contracts import ToolExecutor
+    from codey.operations.kernel.executor import ToolExecutor
     from codey.policies.task_policy import TaskPolicy
     from codey.research.answer_contract import AnswerScope
     from codey.runtime.core.execution_record import ExecutionRecord

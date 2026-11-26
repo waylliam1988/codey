@@ -12,24 +12,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Protocol
 
+from codey.runtime.core.process_contracts import ChildProcess as ChildProcess
+
 if TYPE_CHECKING:
-    from codey.runtime.core.cancellation import ProcessTreeOwner
+    from codey.runtime.core.process_contracts import ProcessTreeOwner
 
 
 class ReadPipe(Protocol):
     def read(self, size: int = -1, /) -> bytes: ...
     def close(self) -> None: ...
-
-
-class ChildProcess(Protocol):
-    @property
-    def pid(self) -> int: ...
-    @property
-    def args(self) -> object: ...
-    def poll(self) -> int | None: ...
-    def wait(self, timeout: float | None = None) -> int: ...
-    def kill(self) -> None: ...
-    def terminate(self) -> None: ...
 
 
 class Process(ChildProcess, Protocol):
@@ -79,7 +70,7 @@ class ProcessIO:
                 os.set_blocking(writer.fileno(), False)
 
     def write_input(self, data: bytes, *, eof: bool, valid: Callable[[], bool], timeout: float = 2) -> InputDelivery:
-        from codey.runtime.core import cancellation
+        from codey.runtime.core import cancellation_state as cancellation
 
         if len(data) > 65536:
             raise ValueError("input exceeds 65536 UTF-8 bytes")
@@ -238,7 +229,7 @@ if sys.platform != "win32":
 
             return process, None, ProcessIO(process, writer, terminal=True, resize=resize)
         except BaseException:
-            from codey.runtime.core.cancellation import terminate_process_tree
+            from codey.runtime.core.process_tree import terminate_process_tree
 
             terminate_process_tree(process)
             if writer is not None:

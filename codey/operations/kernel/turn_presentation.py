@@ -11,8 +11,8 @@ from codey.operations.browser.catalog import snapshot_catalog
 from codey.toolchain.tool_prompt import json_contract_text
 
 if TYPE_CHECKING:
+    from codey.operations.kernel.executor import ToolExecutor
     from codey.operations.kernel.turn_contract import TurnSnapshot
-    from codey.operations.kernel_contracts import ToolExecutor
     from codey.toolchain.tool_spec import ToolSpec
 
 

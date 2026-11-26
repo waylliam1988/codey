@@ -47,14 +47,14 @@ if TYPE_CHECKING:
     from codey.completion.contract import CompletionProof
     from codey.completion.decision import CompletionDecision
     from codey.completion.verification_policy import VerificationPlan
-    from codey.operations.task_context import ProjectTaskContext
-    from codey.operations.task_run import (
+    from codey.operations.run_dependencies import (
         CaptureProviderFailure,
         CollectChanges,
         ConsensusTask,
         ProjectAuditTask,
         ReviewTask,
     )
+    from codey.operations.task_context import ProjectTaskContext
     from codey.operations.task_session import TaskSession
     from codey.research.pipeline import ResearchPipelineResult
     from codey.research.run_result import ResearchRunResult

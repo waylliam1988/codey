@@ -15,7 +15,7 @@ from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import JsonObject, decode_json_object
 
 if TYPE_CHECKING:
-    from codey.app.shell_approval_coordinator import ShellApprovalContext
+    from codey.app.shell_approval_context import ShellApprovalContext
 
 PendingApproval = dict[str, object]
 ApprovalHistory = tuple[ShellApprovalFact, ...]
@@ -34,7 +34,8 @@ class ApprovalRecoveryDurable(ApprovalFactDurable, Protocol):
 class ApprovalStateContext(ApprovalFactContext, Protocol):
     """Approval projection resources used by claim and reconstruction paths."""
 
-    managed_outputs: ManagedOutputStore | None
+    @property
+    def managed_outputs(self) -> ManagedOutputStore | None: ...
     approvals: ApprovalRegistry
 
 
@@ -373,7 +374,6 @@ def claim_pending_shell_approval_locked(
     # Never consume the UI projection before durable admission succeeds.
     ctx.approvals.pop_shell(approval_id)
     return pending
-
 
 
 def expire_shell_results_locked(

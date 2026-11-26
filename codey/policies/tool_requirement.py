@@ -593,7 +593,7 @@ def report_read_scope(receipt: ToolResult, selector: BrowserTextSelector, *,
                       require_complete: bool = True, include_missing: bool = False) -> SourceReadScope | None:
     """Select formal source ownership independently of an explicit after-query obligation."""
     from codey.research.source_observation import source_observation
-    from codey.task.web_intent import source_url_key
+    from codey.task.url_identity import source_url_key
 
     try:
         source, body, _pages = source_observation(receipt.canonical.get("research_observation"))

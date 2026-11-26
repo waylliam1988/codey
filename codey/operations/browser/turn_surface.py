@@ -2,18 +2,28 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from codey.operations.browser import browser_followups
 from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 
 if TYPE_CHECKING:
     from codey.operations.kernel.turn_contract import TurnSnapshot
-    from codey.operations.turn_snapshot import KernelSessionView
     from codey.types.json_value import ToolArgs
 
 
-def offer_browser_tools(snapshot: TurnSnapshot, session: KernelSessionView) -> TurnSnapshot:
+class BrowserOfferSession(Protocol):
+    @property
+    def task_text(self) -> str: ...
+
+    @property
+    def model_tool_names(self) -> tuple[str, ...] | None: ...
+
+    @property
+    def controller_denied(self) -> tuple[str, ...]: ...
+
+
+def offer_browser_tools(snapshot: TurnSnapshot, session: BrowserOfferSession) -> TurnSnapshot:
     from codey.toolchain.browser_native_specs import browser_native_specs
 
     exposed = session.model_tool_names
@@ -31,7 +41,7 @@ def offer_browser_tools(snapshot: TurnSnapshot, session: KernelSessionView) -> T
     return refresh_snapshot_contract(offered)
 
 
-def offer_browser_call(snapshot: TurnSnapshot, session: KernelSessionView, name: str, *, research: bool = False) -> TurnSnapshot:
+def offer_browser_call(snapshot: TurnSnapshot, session: BrowserOfferSession, name: str, *, research: bool = False) -> TurnSnapshot:
     """Offer an existing leaf through the same single-step CodeMode lowering."""
     eligible = set(browser_followups.FOLLOWUP_TOOLS)
     if (name not in eligible

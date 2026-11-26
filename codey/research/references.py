@@ -23,7 +23,8 @@ from codey.research.staging import StagedKnowledgeStore
 from codey.types.json_value import ToolArgs, decode_json_object, require_json_integer, require_json_string
 
 if TYPE_CHECKING:
-    from codey.research.tools import ResearchToolOutput, ResearchTools
+    from codey.research.input_tools import ResearchInputTools
+    from codey.research.tool_output import ResearchToolOutput
 
 
 def read_version(store: KnowledgeStore | StagedKnowledgeStore, identity: str, revision: int | None = None) -> KnowledgeVersion | None:
@@ -81,8 +82,9 @@ def resolve_version(ledger: ResearchLedger, store: KnowledgeStore | StagedKnowle
     return version
 
 
-def save_inference(tools: ResearchTools, args: ToolArgs) -> ResearchToolOutput:
-    from codey.research.tools import ResearchToolOutput, _base_changes
+def save_inference(tools: ResearchInputTools, args: ToolArgs) -> ResearchToolOutput:
+    from codey.research.staging import base_changes as _base_changes
+    from codey.research.tool_output import ResearchToolOutput
 
     try:
         from codey.research.questions import question_ref

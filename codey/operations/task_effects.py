@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from codey.durable.model import ArtifactRecord
     from codey.durable.session import DurableSession
-    from codey.operations.kernel.kernel_protocol import ReceivedProviderTurn
+    from codey.operations.kernel.received_turn import ReceivedProviderTurn
     from codey.operations.kernel.turn_contract import TurnSnapshot
     from codey.operations.task_session import TaskSession
     from codey.runtime.write.mutation_line import RuntimeMutationLine
@@ -239,7 +239,7 @@ class KernelEffectSink:
                 if isinstance(reply, AssistantTurn) and reply.tool_calls else ())
 
     def load_response(self, session: TaskSession, response_ref: str, *, window_ref: ProtocolWindowRef | None = None) -> ReceivedProviderTurn:
-        from codey.operations.kernel.kernel_protocol import ReceivedProviderTurn
+        from codey.operations.kernel.received_turn import ReceivedProviderTurn
         from codey.operations.provider_receipts import (
             REQUEST_KIND,
             RESPONSE_KIND,

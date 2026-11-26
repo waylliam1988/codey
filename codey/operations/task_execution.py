@@ -10,13 +10,13 @@ state, never from substring matching or model-supplied parameters.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codey.operations.browser.browser_detail import read_browser_source
 from codey.operations.browser.execution import BrowserExecutor
 from codey.operations.project.execution import ProjectExecutor
+from codey.operations.project.policy_check import ProjectPolicyCheck as ProjectPolicyCheck
 from codey.operations.research.execution import ResearchExecutor
 from codey.operations.research.research_resources import (
     bind_browser_session as bind_browser_session,
@@ -57,14 +57,6 @@ def effective_project_profile(permission_profile: object) -> str:
     """
     return "coding_writer" if str(permission_profile or "") == "research" else str(
         permission_profile or "coding_writer")
-
-
-@dataclass(frozen=True)
-class ProjectPolicyCheck:
-    denied: bool
-    message: str = ""
-    approval_required: bool = False
-    reason_code: str = ""
 
 
 class ExecutionDelegate:

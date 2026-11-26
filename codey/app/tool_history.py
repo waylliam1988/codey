@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING
 from codey.app.event_payloads import browser_event_payload
 
 if TYPE_CHECKING:
-    from codey.app.context import AppContext
+    from codey.app.context_ports import DurableContext
 
 
-def record_reasoning_display(ctx: AppContext, event: dict[str, object]) -> None:
+def record_reasoning_display(ctx: DurableContext, event: dict[str, object]) -> None:
     """Keep accepted reasoning visible after history refresh and restart."""
     if event.get("type") not in {"turn", "reasoning"}:
         return
@@ -27,7 +27,7 @@ def record_reasoning_display(ctx: AppContext, event: dict[str, object]) -> None:
     ctx.durable.record_display_message(session, run_id=run, identity=f"reasoning:{turn}", payload=payload)
 
 
-def record_tool_display(ctx: AppContext, event: dict[str, object]) -> None:
+def record_tool_display(ctx: DurableContext, event: dict[str, object]) -> None:
     if event.get('type') not in {'tool_started', 'tool'} or not event.get('call_id'):
         return
     session, run = str(event.get('session_id') or ''), str(event.get('run_id') or '')

@@ -1,7 +1,7 @@
 """Additional native browser operations in the existing ToolSpec registry."""
 from __future__ import annotations
 
-from codey.toolchain.tool_spec import ToolSpec
+from codey.toolchain.spec_model import ToolSpec
 
 
 def browser_native_specs() -> dict[str, ToolSpec]:

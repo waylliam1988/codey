@@ -13,10 +13,10 @@ from codey.types.json_value import require_json_integer, require_json_string, re
 from codey.utils.object_fields import require_object_fields, require_object_rows
 
 if TYPE_CHECKING:
-    from codey.app.context import AppContext
+    from codey.app.context_ports import ConversationStoreContext
 
 
-def configurations(ctx: AppContext) -> list[dict[str, object]]:
+def configurations(ctx: ConversationStoreContext) -> list[dict[str, object]]:
     configs: list[dict[str, object]] = []
     for key in ctx.durable.conversation_ids():
         config: object = control.latest(ctx.durable, key)
@@ -25,7 +25,7 @@ def configurations(ctx: AppContext) -> list[dict[str, object]]:
     return configs
 
 
-def publish_inventory(ctx: AppContext) -> None:
+def publish_inventory(ctx: ConversationStoreContext) -> None:
     configs = configurations(ctx)
     with ctx.ui_state_store_lock:
         raw_state: object = ctx.ui_state_store.load()
@@ -63,7 +63,7 @@ def publish_inventory(ctx: AppContext) -> None:
     ctx.emit({"type": "conversation_inventory_changed"})
 
 
-def import_ui(ctx: AppContext) -> None:
+def import_ui(ctx: ConversationStoreContext) -> None:
     """Idempotently adopt configured UI sessions without changing history."""
     state = ctx.load_ui_state()
     projects = {require_json_string(item["id"], "project ID"): require_json_string(item["path"], "project path")
@@ -88,7 +88,7 @@ def import_ui(ctx: AppContext) -> None:
             control.write(ctx.durable, identity, "user", "import_ui", params, result, config=config)
 
 
-def config_for(ctx: AppContext, actor: Actor, conversation_id: str) -> dict[str, object]:
+def config_for(ctx: ConversationStoreContext, actor: Actor, conversation_id: str) -> dict[str, object]:
     raw_config: object = control.latest(ctx.durable, conversation_id)
     if raw_config is None:
         raise ControlError("NOT_FOUND", "Conversation not found")

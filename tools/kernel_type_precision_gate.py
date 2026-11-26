@@ -36,9 +36,10 @@ TARGETS = (
 
 SCOPED_TARGETS = {
     "codey/operations/task_entry.py": (
-        "build_task_policy_for_entry", "start_task_session",
+        "start_task_session",
         "_entry_policy_with_recovery", "_entry_check_conflict",
     ),
+    "codey/operations/entry_policy.py": ("build_task_policy_for_entry",),
     "codey/operations/context.py": ("RunFrame.entry_policy", "RunFrame.entry_session"),
 }
 

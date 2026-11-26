@@ -7,6 +7,7 @@ from types import MappingProxyType
 
 from codey.toolchain.result_schema import text_output_schema
 from codey.toolchain.schema_validation import _valid_custom_schema
+from codey.toolchain.schema_validation import thaw_schema_value as thaw_schema_value
 from codey.types.json_value import JsonObject, canonical_json_object
 
 EXECUTION_CLAIMS_GUIDANCE = (
@@ -53,16 +54,6 @@ def _freeze_schema_value(value: object) -> object:
         return MappingProxyType({key: _freeze_schema_value(item) for key, item in mapping.items()})
     if isinstance(value, (list, tuple)):
         return tuple(_freeze_schema_value(item) for item in value)
-    return value
-
-
-def thaw_schema_value(value: object) -> object:
-    """Create an independent JSON-compatible transport value."""
-    if isinstance(value, Mapping):
-        mapping: Mapping[object, object] = value
-        return {key: thaw_schema_value(item) for key, item in mapping.items()}
-    if isinstance(value, (list, tuple)):
-        return [thaw_schema_value(item) for item in value]
     return value
 
 

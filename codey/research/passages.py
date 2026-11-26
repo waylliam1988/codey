@@ -5,13 +5,15 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, NotRequired, TypedDict
+from typing import NotRequired, Protocol, TypedDict
 
+from codey.research.source_document import OpenedSource, SourceDocument
 from codey.types.json_value import JsonObject, canonical_json_object, require_json_integer, require_json_string
 
-if TYPE_CHECKING:
-    from codey.research.ledger import ResearchLedger
-    from codey.research.source_document import OpenedSource, SourceDocument
+
+class PassageLedger(Protocol):
+    @property
+    def read_passages(self) -> dict[str, ReadPassage]: ...
 
 
 class PassageDescriptor(TypedDict):
@@ -242,7 +244,7 @@ def receipt_passages(observation: object, descriptors: object) -> tuple[ReadPass
     return tuple(passages)
 
 
-def restore_passages(ledger: ResearchLedger, observation: object, descriptors: object) -> None:
+def restore_passages(ledger: PassageLedger, observation: object, descriptors: object) -> None:
     """Rebuild immutable bindings from the same source receipt, never a live URL."""
     pending: dict[str, ReadPassage] = {}
     for value in receipt_passages(observation, descriptors):
@@ -256,7 +258,7 @@ def restore_passages(ledger: ResearchLedger, observation: object, descriptors: o
     ledger.read_passages.update(pending)
 
 
-def passage_evidence_valid(ledger: ResearchLedger, url: str, excerpt: str, locator: str) -> bool:
+def passage_evidence_valid(ledger: PassageLedger, url: str, excerpt: str, locator: str) -> bool:
     if not locator.startswith("passage:"):
         return False
     passage = ledger.read_passages.get(locator.removeprefix("passage:"))

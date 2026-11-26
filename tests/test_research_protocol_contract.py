@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from dataclasses import fields
 
+import pytest
+
 from codey.research.tool_contract import (
     PROTOCOL_DIRECT_ANSWER,
     PROTOCOL_INVALID_ARGS,
@@ -13,10 +15,11 @@ from codey.research.tool_contract import (
     ToolContract,
     validate_tool_args,
 )
+from codey.runtime.core.models import ToolPlan
 from tests.support.research_protocol import JsonToolCodec
 
 
-def parse(payload: dict) -> object:
+def parse(payload: dict[str, object]) -> ToolPlan:
     return JsonToolCodec().parse(json.dumps(payload))
 
 
@@ -311,20 +314,25 @@ def test_knowledge_write_single_relation_object_normalizes_to_list() -> None:
     assert "arg 'relations' must be array" in plan.protocol_error
 
 
-def test_knowledge_write_synthesis_is_reserved_for_done() -> None:
+@pytest.mark.parametrize("native", [False, True])
+def test_knowledge_write_synthesis_is_reserved_for_done(native: bool) -> None:
     from codey.operations.kernel.kernel_protocol import normalize_turn
     from codey.operations.task_session import TaskSession
     from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.protocols.text_turn import decode_text_turn
+    from codey.providers.base import AssistantTurn, ProviderToolCall
+    from codey.types.json_value import ToolArgs
 
     state = TaskSession(TaskPolicy(frozenset({"control", "web.read", "knowledge.write"}), strict_research=True),
                         task_kind="research", task_text="Research alpha", research_questions=("What is alpha?",))
     state.record_open("https://example.com/a", source_id="s1")
-    plan = normalize_turn(decode_text_turn(json.dumps({"tool": "knowledge_write", "args": {
-        "type": "synthesis", "title": "Report", "body": "final report"}})), snapshot=build_turn_snapshot(state))
+    args: ToolArgs = {"type": "synthesis", "title": "Report", "body": "final report"}
+    reply = (AssistantTurn(tool_calls=(ProviderToolCall("write-report", "knowledge_write", args),)) if native else
+             decode_text_turn(json.dumps({"tool": "knowledge_write", "args": args})))
+    plan = normalize_turn(reply, snapshot=build_turn_snapshot(state, native=native))
     assert not plan.calls and plan.control is None
-    assert "knowledge_write" in plan.protocol_error and "not allowed" in plan.protocol_error
+    assert "knowledge_write" in plan.protocol_error and "type" in plan.protocol_error
 
 
 def test_done_requires_summary_and_rejects_aliases() -> None:

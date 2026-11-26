@@ -2,31 +2,14 @@
 
 from __future__ import annotations
 
-import threading
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING
 
-from codey.app.approval_registry import ApprovalRegistry
-from codey.app.run_registry import RunRegistry
-from codey.app.shell_approval_durable import ApprovalFactDurable
-from codey.runtime.effects.shell_approval_records import ShellApprovalFact, ShellApprovalRecordStore
-from codey.storage.managed_outputs import ManagedOutputStore
+from codey.app.shell_approval_context import ShellApprovalContext as ShellApprovalContext
+from codey.runtime.effects.shell_approval_records import ShellApprovalFact
 from codey.types.json_value import JsonObject
 
 if TYPE_CHECKING:
     from codey.app.shell_service import ShellExecutionTicket
-
-
-class ShellApprovalContext(Protocol):
-    """The concrete resources needed by shell approval coordination."""
-
-    lock: threading.Lock
-    approvals: ApprovalRegistry
-    @property
-    def durable(self) -> ApprovalFactDurable: ...
-
-    run_registry: RunRegistry
-    managed_outputs: ManagedOutputStore | None
-    shell_approval_records: ShellApprovalRecordStore
 
 
 class ShellApprovalCoordinator:
@@ -155,7 +138,7 @@ class ShellApprovalCoordinator:
         if outputs is None:
             return None
         value = resolve_shell_approval(self._context.durable, outputs, approval_id)
-        return cast(dict[str, object] | None, value)
+        return dict[str, object](value) if value is not None else None
 
     def claim_ticket(
         self, approval_id: str, *, timeout: int, output_limit: int,

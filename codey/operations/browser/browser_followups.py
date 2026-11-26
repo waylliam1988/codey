@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from codey.automation.browser_document import document_changed, same_document
 from codey.automation.browser_receipts import delivery, query_document
 from codey.operations.browser.browser_waits import BrowserWaitPlan, wait_plan
+from codey.operations.browser.turn_inputs import MAX_TEXT
 from codey.policies.browser_requirement import BrowserPageRounds, BrowserResearchSequence, parse_browser_requirement
 from codey.policies.tool_requirement import parse_tool_success_check
 from codey.runtime.core.models import ToolResult
@@ -26,7 +27,6 @@ SINGLE_STEP_TOOLS = ("browser_wait", "browser_eval", "browser_tab_list", "browse
 FOLLOWUP_TOOLS = (*DIRECT_TOOLS, *SINGLE_STEP_TOOLS, "browser_navigate")
 PURPOSES = ("result", "controls", "action")
 TEXT_SOURCE = "task_text"
-MAX_TEXT = 4096
 PURPOSE_DESCRIPTION = (
     "For a query or detail needed to answer, use purpose=result when offered to read the result. "
     "For a menu or form needed for another action, use controls to observe new refs. "

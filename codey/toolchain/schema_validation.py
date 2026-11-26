@@ -306,3 +306,13 @@ def check_schema_value(spec_name: str, key: str, schema: object, value: object, 
     if want == "object":
         return _check_object_value(spec_name, key, schema, value, strict=strict)
     return ""
+
+
+def thaw_schema_value(value: object) -> object:
+    """Create an independent JSON-compatible transport value."""
+    if isinstance(value, Mapping):
+        mapping: Mapping[object, object] = value
+        return {key: thaw_schema_value(item) for key, item in mapping.items()}
+    if isinstance(value, (list, tuple)):
+        return [thaw_schema_value(item) for item in value]
+    return value

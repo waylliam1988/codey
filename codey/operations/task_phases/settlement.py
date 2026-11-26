@@ -13,7 +13,7 @@ from codey.providers.base import ChatProvider
 from codey.providers.transport import ProviderTransport
 
 if TYPE_CHECKING:
-    from codey.operations.task_run import TaskRunDeps
+    from codey.operations.run_dependencies import TaskRunDeps
 
 from codey.durable.errors import DurableStoreError
 from codey.durable.events import committed_task_version
@@ -51,12 +51,6 @@ def _display_reply_text(outcome: ModeOutcome) -> str:
         if text:
             return text
     return ""
-
-
-
-
-
-
 
 
 def _publish_display_after_commit(deps: TaskRunDeps, outcome: ModeOutcome) -> None:
@@ -166,7 +160,7 @@ def _settle_research_publications(deps: TaskRunDeps, session_id: str, run_id: st
     from codey.runtime.write.checkpoint import operation_from_checkpoint
     from codey.runtime.write.research_publication import PUBLICATION_TOOL
 
-    mutations = getattr(deps, "runtime_mutations", None)
+    mutations = deps.runtime_mutations
     if mutations is None:
         return
     try:
@@ -176,11 +170,11 @@ def _settle_research_publications(deps: TaskRunDeps, session_id: str, run_id: st
     if position is None or position.task_kind != "research":
         return
     if not any(effect.intent.get("tool_name") == PUBLICATION_TOOL and effect.settlement is None
-               for effect in mutations.durable.effects(run_id)):
+               for effect in deps.state.durable.effects(run_id)):
         return
     history = ResearchContinuation(mutations, deps.managed_outputs, durable=deps.state.durable,
                                    session_id=session_id, run_id=run_id)
-    settle_cancelled_publications(history, getattr(deps, "knowledge_store", None))
+    settle_cancelled_publications(history, deps.knowledge_store)
 
 
 def _finish_failed_operation(deps: TaskRunDeps, work: RunWork | None, event: dict[str, object]) -> None:

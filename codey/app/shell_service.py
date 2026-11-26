@@ -23,13 +23,14 @@ from codey.agents.shell_approval import render_deferred_tool_calls
 from codey.app.approval_registry import ApprovalRegistry
 from codey.app.lifecycle import AppLifecycle
 from codey.app.run_registry import RunRegistry, RunSnapshot
+from codey.app.shell_ticket import ShellExecutionTicket as ShellExecutionTicket
 from codey.app.task_runtime import TaskRuntimeCoordinator
 from codey.app.task_state import AppTaskState
 from codey.completion.verification_policy import VerificationCandidate
 from codey.operations.task_context import safe_verification_candidates
-from codey.policies.command_line import ShellSpec, resolve_shell
+from codey.policies.command_line import resolve_shell
 from codey.policies.limits import SHELL_OUTPUT_LIMIT, SHELL_TIMEOUT
-from codey.policies.shell_analysis import ShellAnalysis, analyze_shell, bound_analysis, request_analysis
+from codey.policies.shell_analysis import analyze_shell, bound_analysis, request_analysis
 from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.runtime.core import cancellation
@@ -170,29 +171,6 @@ def shell_result_payload(row: RecoveredToolOutcome | None) -> dict[str, object] 
         }
     except Exception:
         return None
-
-
-@dataclass(frozen=True)
-class ShellExecutionTicket:
-    """Single-use, immutable shell spawn authorization.
-
-    Minted under the claim lock by ``claim_shell_ticket``: generation, stop
-    flag, resolved cwd, and approval consumption happen together, so an
-    Allow cannot outrun a concurrent Stop. The execution layer only accepts
-    this ticket and re-validates it under the same lock immediately before
-    Popen (spawn gate).
-    """
-
-    command: str
-    cwd: Path
-    generation: int
-    timeout: int
-    output_limit: int
-    shell: ShellSpec
-    analysis: ShellAnalysis
-    execution_id: str = ""
-    session_id: str = ""
-    run_id: str = ""
 
 
 def _approval_generation_current(ctx: ShellExecutionContext, expected: int) -> bool:
