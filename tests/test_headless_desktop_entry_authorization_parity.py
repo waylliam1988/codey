@@ -26,4 +26,4 @@ def test_headless_submission_preserves_the_same_authorization_as_desktop(tmp_pat
         assert getattr(request, name) == getattr(expected, name), name
     deps = captured[0][0]
     assert callable(deps.run_consensus)
-    assert callable(deps.run_project_audit)
+    assert deps.run_project_audit is None

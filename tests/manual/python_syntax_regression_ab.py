@@ -26,7 +26,8 @@ from codey.agents.tools import AgentToolFns
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.runtime.observe.events import RunEvent, render_run_event
-from codey.toolchain.runtime import ToolOutcome, _python_syntax_regression_hint
+from codey.toolchain.edit_tools import _python_syntax_regression_hint
+from codey.toolchain.runtime import ToolOutcome
 from codey.toolchain.runtime import edit_file as runtime_edit_file
 from codey.workspace.revision import WorkspaceRevisionStore
 from tests.manual.project_task_context import render_production_project_map

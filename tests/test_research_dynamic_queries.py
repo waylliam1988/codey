@@ -87,7 +87,7 @@ def test_ordinary_research_selects_a_record_bound_query_and_receives_new_evidenc
         yield action
         messages = '\n'.join(text_values(requests(directory)[-1]['messages']))
         assert 'Friday 18:37' in messages
-        assert 'Execute this next step:' not in messages
+        assert 'Do not repeat' in messages or 'without repeating' in messages
         headings = list(re.finditer(r'(?m)^\[(e[0-9]+)\] [^\n]+\n', messages))
         label = next(match[1] for index, match in enumerate(headings)
                      if 'Friday 18:37' in messages[match.end():headings[index + 1].start()
@@ -175,7 +175,8 @@ def test_slow_query_continues_from_the_delivered_click_after_first_capture_timeo
         yield decode_json_object(chosen['call'])
         rows = tool_receipts(directory / 'state')
         first = next(item.result for item in reversed(rows) if item.result.call.name == 'browser_read')
-        assert 'query_click' not in first.audit
+        assert not first.ok and first.audit.get('query_click')
+        assert decode_json_object(first.canonical['query_read'])['reason'] == 'query_update_unconfirmed'
         assert all(item.result.call.name != 'browser_click' or item.result.ok for item in rows)
         yield {'tool': 'browser_wait', 'args': {'condition': 'text', 'value': 'Friday 18:37',
                                                'timeout_ms': 10000, 'run_in_background': False}}
@@ -187,7 +188,7 @@ def test_slow_query_continues_from_the_delivered_click_after_first_capture_timeo
     assert row['stop_reason'] == 'done', row
     receipts = [item.result for item in tool_receipts(directory / 'state')]
     assert sum(item.call.name == 'browser_click' for item in receipts) == 1
-    assert [item.ok for item in receipts if item.call.name == 'browser_read'] == [True, True]
+    assert [item.ok for item in receipts if item.call.name == 'browser_read'] == [False, True]
 
 
 @pytest.mark.parametrize('change', ['replace', 'relationship'])

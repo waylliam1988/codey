@@ -34,9 +34,9 @@ def test_path_change_with_same_markdown_is_a_new_document_revision(tmp_path: Pat
 def test_store_write_moves_identical_imported_note_and_records_undo(tmp_path: Path) -> None:
     note = KnowledgeNote("legacy", title="Legacy", body="Existing text")
     old_path = "legacy.md"
-    (tmp_path / old_path).write_text(note.to_markdown(), encoding="utf-8")
 
     with closing(KnowledgeStore(tmp_path)) as store:
+        store.documents.write(note, old_path, reason="import")
         changes = KnowledgeChanges(tmp_path)
         new_path = store.write_note(note, changes=changes)
         assert new_path == "notes/legacy.md"

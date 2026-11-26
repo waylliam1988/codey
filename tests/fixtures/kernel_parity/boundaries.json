@@ -278,7 +278,7 @@
       "current_owners": [
         "tests/support/research_done_finalizer.py",
         "codey/research/answer_report.py",
-        "codey/research/finding_report.py"
+        "codey/research/answer_report.py"
       ],
       "tests": [
         "tests/test_kernel_legacy_parity.py"
@@ -510,6 +510,83 @@
       "tests": [
         "tests/test_memory_boundary.py",
         "tests/test_memory_integrity.py"
+      ]
+    },
+    "codey/research/completion_gate.py": {
+      "current_owners": [
+        "codey/operations/completion_gate.py"
+      ],
+      "tests": [
+        "tests/test_research_deterministic_completion.py"
+      ]
+    },
+    "codey/research/contract.py": {
+      "current_owners": [
+        "codey/research/answer_contract.py",
+        "codey/research/answer_report.py"
+      ],
+      "tests": [
+        "tests/test_research_whole_answer.py"
+      ]
+    },
+    "codey/research/evidence_ledger.py": {
+      "current_owners": [
+        "codey/research/ledger.py",
+        "codey/research/report_evidence.py"
+      ],
+      "tests": [
+        "tests/test_research_whole_answer.py"
+      ]
+    },
+    "codey/reviews/report_sections.py": {
+      "current_owners": [
+        "codey/research/answer_report.py"
+      ],
+      "tests": [
+        "tests/test_research_deterministic_completion.py"
+      ]
+    },
+    "codey/runtime/effects/keep_policies.py": {
+      "current_owners": [
+        "codey/providers/context_ledger.py",
+        "codey/providers/compaction.py"
+      ],
+      "tests": [
+        "tests/test_context_compaction_transactions_and_lifecycle.py"
+      ]
+    },
+    "codey/runtime/log/compaction.py": {
+      "current_owners": [
+        "codey/providers/compaction.py"
+      ],
+      "tests": [
+        "tests/test_context_compaction_transactions_and_lifecycle.py"
+      ]
+    },
+    "codey/runtime/log/entries.py": {
+      "current_owners": [
+        "codey/durable/model.py",
+        "codey/durable/history.py"
+      ],
+      "tests": [
+        "tests/durable/test_session.py"
+      ]
+    },
+    "codey/runtime/log/session_log.py": {
+      "current_owners": [
+        "codey/durable/session.py",
+        "codey/durable/history.py"
+      ],
+      "tests": [
+        "tests/durable/test_session.py"
+      ]
+    },
+    "codey/runtime/log/session_projection.py": {
+      "current_owners": [
+        "codey/durable/history_projection.py"
+      ],
+      "tests": [
+        "tests/durable/test_history_snapshot_paging.py"
       ]
     }
   },

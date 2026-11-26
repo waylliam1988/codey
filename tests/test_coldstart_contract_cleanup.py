@@ -286,19 +286,19 @@ class PromptSurfaceStrictTests(unittest.TestCase):
         self.assertEqual(row.to_payload()["schema_version"], 0)
 
     def test_append_uses_validated_version_directly(self) -> None:
-        import codey.runs.trace as trace_mod
+        import codey.runs.trace_prompt as trace_mod
 
         source = std_inspect.getsource(
-            trace_mod.RunTraceRecorder._append_prompt_surface
+            trace_mod.PromptTraceRecorder._append_prompt_surface
         )
         self.assertNotIn("or 1", source)
         self.assertIn('payload["schema_version"]', source)
 
     def test_unreachable_empty_checks_removed_but_dedupe_kept(self) -> None:
-        import codey.runs.trace as trace_mod
+        import codey.runs.trace_prompt as trace_mod
 
         source = std_inspect.getsource(
-            trace_mod.RunTraceRecorder._append_prompt_surface
+            trace_mod.PromptTraceRecorder._append_prompt_surface
         )
         self.assertNotIn("if not surface_id", source)
         self.assertNotIn("if not send_ref", source)

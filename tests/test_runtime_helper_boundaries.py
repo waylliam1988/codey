@@ -105,12 +105,12 @@ class BrowserWorkerSplitTests(unittest.TestCase):
         self.assertIsNotNone(active2)
 
     def test_abandon_transitions(self) -> None:
-        queued = _Job(fn=lambda: None, args=(), kwargs={})
+        queued = _Job(run=lambda: None)
         _abandon_browser_job(queued)
         self.assertTrue(queued.abandoned)
         self.assertEqual(queued.state, _JobState.CANCELLED)
 
-        running = _Job(fn=lambda: None, args=(), kwargs={}, state=_JobState.RUNNING)
+        running = _Job(run=lambda: None, state=_JobState.RUNNING)
         _abandon_browser_job(running)
         self.assertEqual(running.state, _JobState.ABANDONED)
 

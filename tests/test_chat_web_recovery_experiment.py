@@ -114,8 +114,8 @@ def test_fixed_search_has_no_answer_hint_and_both_variants_receive_same_source(t
     case = CASES["food_recovery"]
     with fixed_sources(case, tmp_path):
         provider = WebSourceProvider()
-        assert "汉语文字" in str(provider.search("福州美食 推荐 吃什么 福州小吃")[0]["title"])
-        hits = provider.search("福州美食")
+        assert "汉语文字" in str(provider.search("福州美食 推荐 吃什么 福州小吃").rows[0]["title"])
+        hits = provider.search("福州美食").rows
         assert hits[0]["url"] == case.url
         assert all(term not in str(hits[0]["snippet"]) for term in case.expected)
         assert provider.fetch(case.url)["text"] == case.body

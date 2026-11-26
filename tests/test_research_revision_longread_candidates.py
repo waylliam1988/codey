@@ -126,12 +126,12 @@ def test_revision_retains_kind_access_and_exact_field_guards(tmp_path, patch_val
     try:
         value = KnowledgeObject("claim", "claim", "Original", "model_extraction", scope="personal", scope_id=store.owner_id)
         store.repository.commit("seed", [KnowledgeMutation(value)])
-        delegate._research_scope = answer_scope(session)
-        read, _, _ = delegate._execute_research(ToolCall("knowledge_read", {"id": "claim", "revision": 1}))
+        delegate.research_executor._research_scope = answer_scope(session)
+        read, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_read", {"id": "claim", "revision": 1}))
         assert read.ok
         session._memory_results["read"] = read
         with treatment("revision"):
-            result, _, _ = delegate._execute_research(ToolCall("knowledge_commit", {
+            result, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_commit", {
                 "commit_id": "bad", "changes": [{"value": {"id": "claim", **patch_value}}]}))
         assert not result.ok
         assert store.repository.read("claim").revision == 1
@@ -145,17 +145,17 @@ def test_revision_identical_retry_and_invalid_second_change_are_atomic(tmp_path)
     try:
         value = KnowledgeObject("claim", "claim", "Original", "model_extraction")
         store.repository.commit("seed", [KnowledgeMutation(value)])
-        delegate._research_scope = answer_scope(session)
-        read, _, _ = delegate._execute_research(ToolCall("knowledge_read", {"id": "claim"}))
+        delegate.research_executor._research_scope = answer_scope(session)
+        read, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_read", {"id": "claim"}))
         assert read.ok
         session._memory_results["read"] = read
         args = {"commit_id": "edit", "changes": [{"value": {"id": "claim", "title": "After"}}]}
         with treatment("revision"):
-            bad, _, _ = delegate._execute_research(ToolCall("knowledge_commit", {
+            bad, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_commit", {
                 **args, "changes": [*args["changes"], {"value": {"id": "new-incomplete"}}]}))
             assert not bad.ok and store.repository.read("claim").revision == 1
-            first, _, _ = delegate._execute_research(ToolCall("knowledge_commit", args))
-            again, _, _ = delegate._execute_research(ToolCall("knowledge_commit", args))
+            first, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_commit", args))
+            again, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_commit", args))
         assert first.ok and again.ok and first.model_text == again.model_text
         assert first.call.args == args and store.repository.read("claim").revision == 2
     finally:
@@ -170,12 +170,12 @@ def test_flat_revision_format_and_success_receipt_are_directly_usable(tmp_path):
     try:
         value = KnowledgeObject("claim", "claim", "Original", "model_extraction")
         store.repository.commit("seed", [KnowledgeMutation(value)])
-        delegate._research_scope = answer_scope(session)
-        read, _, _ = delegate._execute_research(ToolCall("knowledge_read", {"id": "claim"}))
+        delegate.research_executor._research_scope = answer_scope(session)
+        read, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_read", {"id": "claim"}))
         session._memory_results["read"] = read
         call = ToolCall("knowledge_commit", {"commit_id": "edit", "changes": [{"id": "claim", "title": "After"}]})
         with treatment("revision_flat"):
-            result, _, _ = delegate._execute_research(call)
+            result, _, _ = delegate.research_executor._execute_research(call)
         assert result.ok, result.model_text
         session._memory_results["commit"] = result
         scope = answer_scope(session)
@@ -194,17 +194,17 @@ def test_unchanged_edits_cannot_create_another_version_after_reread(tmp_path):
     session.task_kind = "coding"  # Isolated maintenance experiment, outside Research.
     try:
         store.repository.commit("seed", [KnowledgeMutation(KnowledgeObject("claim", "claim", "Original", "model_extraction"))])
-        delegate._research_scope = answer_scope(session)
-        read, _, _ = delegate._execute_research(ToolCall("knowledge_read", {"id": "claim", "revision": 1}))
+        delegate.research_executor._research_scope = answer_scope(session)
+        read, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_read", {"id": "claim", "revision": 1}))
         session._memory_results["read"] = read
         with treatment("revision_flat_noop"):
             args = {"commit_id": "edit", "changes": [{"id": "claim", "title": "After"}]}
-            first, _, _ = delegate._execute_research(ToolCall("knowledge_commit", args))
+            first, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_commit", args))
             assert first.ok
             session._memory_results["edit"] = first
-            read, _, _ = delegate._execute_research(ToolCall("knowledge_read", {"id": "claim", "revision": 2}))
+            read, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_read", {"id": "claim", "revision": 2}))
             session._memory_results["read2"] = read
-            again, _, _ = delegate._execute_research(ToolCall("knowledge_commit", {**args, "commit_id": "edit-again"}))
+            again, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_commit", {**args, "commit_id": "edit-again"}))
             assert not again.ok and "No fields differ" in again.model_text
             assert store.repository.read("claim").revision == 2
     finally:
@@ -221,18 +221,18 @@ def test_explicit_creation_candidate_never_infers_creation_from_unknown_edit_id(
     store, tools, session, delegate = setup(tmp_path)
     session.task_kind = "coding"  # Isolated maintenance experiment, outside Research.
     try:
-        delegate._research_scope = answer_scope(session)
+        delegate.research_executor._research_scope = answer_scope(session)
         value = KnowledgeObject("new-entity", "entity", "Explicitly requested entity", "user_statement",
                                 scope="personal", scope_id=store.owner_id)
         with treatment("revision_explicit_create"):
-            unknown, _, _ = delegate._execute_research(ToolCall("knowledge_commit", {
+            unknown, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_commit", {
                 "commit_id": "typo", "changes": [value.to_dict()]}))
             assert not unknown.ok and store.repository.read(value.id) is None
             args = {"commit_id": "create", "changes": [{**value.to_dict(), "create": True}]}
-            created, _, _ = delegate._execute_research(ToolCall("knowledge_commit", args))
-            again, _, _ = delegate._execute_research(ToolCall("knowledge_commit", args))
+            created, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_commit", args))
+            again, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_commit", args))
             assert created.ok and again.ok and created.model_text == again.model_text
-            overwrite, _, _ = delegate._execute_research(ToolCall("knowledge_commit", {
+            overwrite, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_commit", {
                 "commit_id": "overwrite", "changes": [{**value.to_dict(), "content": "Cannot overwrite", "create": True}]}))
             assert not overwrite.ok
             assert store.repository.read(value.id).value == value
@@ -253,7 +253,7 @@ def test_production_full_read_keeps_old_originals_and_restores_real_receipts(tmp
     store, tools, session, delegate = setup(tmp_path)
     session.task_kind = "coding"  # Isolated maintenance experiment, outside Research.
     try:
-        delegate._research_scope = answer_scope(session)
+        delegate.research_executor._research_scope = answer_scope(session)
         session._memory_results["old"] = execute(delegate, tools, session, "open_url", {"url": URL})
         tools.coherent_passages = True
         tools.search.text = "## Long source\n\n" + "New original sentence. " * 420 + "\n\nTail condition."
@@ -267,7 +267,7 @@ def test_production_full_read_keeps_old_originals_and_restores_real_receipts(tmp
 
         provider = SimpleNamespace(context_budget=ContextBudget(10000, 1000, 0, 1000), count_text=count)
         tools.context_provider = provider
-        opened = delegate._observation_tools(source_read=True).open_url(URL + "/next")
+        opened = delegate.research_executor._observation_tools(source_read=True).open_url(URL + "/next")
         for args in ({"limit": 500}, {"pages": "1"}):
             assert fitting_full_read(session, tools.ledger,
                                      ToolCall("open_url", {"url": URL + "/next", **args}), opened,

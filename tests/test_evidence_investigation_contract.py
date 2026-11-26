@@ -31,7 +31,10 @@ def test_parent_research_uses_complete_answer_contract_before_and_after_question
     for questions in ((), ("What does the source establish?",)):
         session.research_questions = questions
         snapshot = build_turn_snapshot(session)
-        assert "done" not in snapshot.inventory_names
+        done = next(item for item in snapshot.frozen_specs if item.name == "done")
+        assert set(dict(done.parameters)) == {"summary", "execution_claims"}
+        assert set(done.required) == {"summary"}
+        assert "A summary cannot replace the research submission or verification receipts" in done.description
         spec = next(item for item in snapshot.frozen_specs if item.name == "submit_research_answer")
         assert set(dict(spec.parameters)) == {"markdown", "state", "knowledge_updates"}
         assert set(spec.required) == {"markdown", "state"}

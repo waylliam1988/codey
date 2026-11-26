@@ -47,7 +47,7 @@ def test_project_actions_preview_search_and_quiet_copy(tmp_path: Path, monkeypat
             page = browser.new_page(viewport={"width": 1440, "height": 1000})
             page.goto(httpd.launch_url(f"http://127.0.0.1:{httpd.server_port}/"))
             expect(page.locator(".project-main")).to_have_text("Project")
-            expect(page.locator(".topbar-actions button")).to_have_count(1)
+            expect(page.locator(".topbar-actions button")).to_have_count(2)
             expect(page.locator("#btn-settings")).to_be_visible()
             children = page.locator(".project-children")
             expect(children.locator(".session-item")).to_have_count(5)

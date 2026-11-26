@@ -95,6 +95,7 @@ def test_task_create_and_revert_are_net_changes(tmp_path: Path) -> None:
 
 def test_original_checkpoint_owns_scope_and_resume_reuses_it(tmp_path: Path) -> None:
     from codey.app.context import AppContext
+    from codey.operations.task_changes import RunChangeTracker
 
     root, home = tmp_path / "project", tmp_path / "state"
     root.mkdir()
@@ -111,10 +112,14 @@ def test_original_checkpoint_owns_scope_and_resume_reuses_it(tmp_path: Path) -> 
         assert collect_task_changes(root, second)["changed_count"] == 0
         resumed = _task_tracker(state, root, "resume", source_id="first")
         assert state.durable.task("resume").state["change_scope"] == "first"
-        assert collect_task_changes(root, resumed)["changed_count"] == 1
+        assert isinstance(resumed, RunChangeTracker)
+        assert collect_task_changes(root, resumed)["changed_count"] == 0
+        assert collect_task_changes(root, resumed.recovery)["changed_count"] == 1
     with closing(AppContext(home, start_scheduler=False)) as state:
         resumed = _task_tracker(state, root, "resume")
-        assert collect_task_changes(root, resumed)["changed_count"] == 1
+        assert isinstance(resumed, RunChangeTracker)
+        assert collect_task_changes(root, resumed)["changed_count"] == 0
+        assert collect_task_changes(root, resumed.recovery)["changed_count"] == 1
 
 
 def test_corrupt_scoped_baseline_never_becomes_an_empty_change_set(tmp_path: Path) -> None:
@@ -174,6 +179,7 @@ def test_tracker_cache_keeps_recent_scopes_and_retires_evicted_writers(tmp_path:
 
 def test_recovery_skips_owned_scopes_without_a_baseline(tmp_path: Path) -> None:
     from codey.app.context import AppContext
+    from codey.operations.task_changes import RunChangeTracker
 
     root = tmp_path / "project"
     root.mkdir()
@@ -193,7 +199,8 @@ def test_recovery_skips_owned_scopes_without_a_baseline(tmp_path: Path) -> None:
 
         selected = state.change_tracker_for(root, persistent=True)
 
-        assert selected is older
+        assert isinstance(older, RunChangeTracker)
+        assert selected is older.recovery
         assert selected.store is not None and selected.store.task_id == "older"
         assert collect_task_changes(root, selected)["changed_count"] == 1
 

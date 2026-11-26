@@ -302,10 +302,13 @@ def test_legacy_admission_restores_original_args_and_current_version_detaches_in
     payload = request.to_payload()
     args["command"] = "changed"
     assert ToolTaskInput.from_payload(payload).args["command"] == "python -m pytest -q"
-    payload["schema_version"] = 1
-    payload.pop("resource_binding")
-    legacy = ToolTaskInput.from_payload(payload)
-    assert legacy.args == {"command": "python -m pytest -q", "run_in_background": True}
-    payload["args"] = legacy.args
-    with pytest.raises(ValueError, match="legacy tool task"):
-        ToolTaskInput.from_payload(payload)
+    restored = ToolTaskInput.from_payload(payload)
+    payload["args"] = {"command": "changed after decode"}
+    assert restored.args == {"command": "python -m pytest -q"}
+    for version in (1, 2):
+        retired = request.to_payload()
+        retired["schema_version"] = version
+        if version == 1:
+            retired.pop("resource_binding")
+        with pytest.raises(ValueError, match="invalid tool task input version/fields"):
+            ToolTaskInput.from_payload(retired)

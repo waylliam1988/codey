@@ -12,7 +12,7 @@ from codey.providers.submission import SendAttempt, SubmissionUncertain
 from codey.providers.web_drivers import qwen
 from codey.runtime.core import cancellation
 from codey.storage.local_store import read_json, write_json_atomic
-from tests.provider_control_testkit import IsolatedProviderControlsMixin
+from tests.provider_control_testkit import IsolatedProviderControlsMixin, control_store_at
 
 
 class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
@@ -118,7 +118,7 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 return textarea
 
             with (
-                mock.patch.object(qwen.controls, "CONTROL_STORE", path),
+                control_store_at(path),
                 mock.patch.object(qwen, "wait_ready"),
                 mock.patch.object(qwen, "_response_count", return_value=0),
                 mock.patch.object(qwen, "_message_box", side_effect=learned_message_box),
@@ -152,7 +152,7 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 set(),
             )
             with (
-                mock.patch.object(qwen.controls, "CONTROL_STORE", path),
+                control_store_at(path),
                 mock.patch.object(qwen, "_send_button", return_value=None),
             ):
                 for _ in range(2):
@@ -183,7 +183,7 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 set(),
             )
             with (
-                mock.patch.object(qwen.controls, "CONTROL_STORE", path),
+                control_store_at(path),
                 mock.patch.object(qwen, "_resolve_preference"),
                 mock.patch.object(qwen, "_copy_last_text", return_value=""),
                 mock.patch.object(qwen, "_last_text", return_value=""),
@@ -262,7 +262,7 @@ class QwenDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 return attempt
 
             with (
-                mock.patch.object(qwen.controls, "CONTROL_STORE", path),
+                control_store_at(path),
                 mock.patch.object(qwen, "wait_ready"),
                 mock.patch.object(qwen, "_response_count", return_value=0),
                 mock.patch.object(qwen, "_message_box", return_value=textarea),

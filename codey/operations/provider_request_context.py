@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from codey.memory.codec import trace_from_payload
 from codey.memory.contracts import MemoryTrace
+from codey.operations.provider_receipts import PROVIDER_CONTEXT_FIELDS
 from codey.types.json_value import (
     JsonObject,
     decode_json_object,
@@ -21,12 +22,6 @@ from codey.workspace.context_admission import ContextCandidate
 
 if TYPE_CHECKING:
     from codey.operations.kernel.turn_contract import TurnSnapshot
-
-
-PROVIDER_CONTEXT_FIELDS = frozenset({
-    "logical_turn", "snapshot", "window", "context", "effect_scope", "close_reply",
-    "delivery_purpose", "work_ref", "source_response_ref", "tool_task_notifications", "memory_traces",
-})
 
 
 @dataclass(frozen=True)

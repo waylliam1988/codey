@@ -35,10 +35,12 @@ from codey.policies.tool_requirement import (
     require_browser_read_field,
     require_tool_success,
 )
+from codey.providers import model_preferences
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.source_document import OpenedSource
+from codey.research.source_observation import source_snapshot
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
@@ -106,7 +108,7 @@ def test_browser_body_binding_uses_complete_original_receipt_before_format(state
     source = OpenedSource(url, url, "Page", "2026-11-11T00:00:00+00:00",
                           "tampered" if state == "bad_hash" else digest, truncated=state == "truncated")
     read = ToolResult(ToolCall("browser_read", {}, "read"), "decoy display", ok=True, canonical={
-        "research_observation": {"source": source.to_dict(), "text": text, "pages": []},
+        "research_observation": source_snapshot(source, text, {}),
         "read_passages": [{"start": 1 if state == "partial" else 0, "end": len(text)}],
     })
     if state != "missing":
@@ -172,7 +174,10 @@ def test_strict_research_rejects_prose_mode_before_reserving_application_state()
                     strict_research=True, output_format="json_explanation")
 
 
-def test_api_forwards_production_output_mode_and_receipt_bindings() -> None:
+def test_api_forwards_production_output_mode_and_receipt_bindings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(model_preferences, "DEFAULT_STATE_HOME", tmp_path / "model-settings")
     binding = require_tool_success("read_file", answer_pointer="/code", result_pointer="/text")
     submitted: dict[str, object] = {}
 
@@ -310,7 +315,7 @@ def test_headless_binds_latest_browser_text_field(
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
 @pytest.mark.parametrize(("state", "field"), [
     ("complete", ""), ("missing", "amount"), ("partial", "unit"), ("wrong_type", "amount"),
-    ("truncated", "amount"), ("stale", "amount"), ("failed_parent", "amount"),
+    ("large", ""), ("stale", "amount"), ("failed_parent", "amount"),
 ])
 def test_headless_binds_declared_business_fields_from_current_browser_receipt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, state: str, field: str,
@@ -324,7 +329,7 @@ def test_headless_binds_declared_business_fields_from_current_browser_receipt(
         del initial["unit"]
     if state == "wrong_type":
         initial["amount"] = "173"
-    if state == "truncated":
+    if state == "large":
         initial["padding"] = "X" * 40_000
     browser = BrowserSearchProvider(headless=True, browser_path=chromium_executable())
     navigation_count = 0
@@ -358,10 +363,10 @@ def test_headless_binds_declared_business_fields_from_current_browser_receipt(
     if state == "stale":
         replies.append({"tool": "codemode", "args": {"code": nav + "return null;", "inputs": {"url": url}}})
     replies.append(done)
-    if state != "complete":
+    if state not in {"complete", "large"}:
         prefix = meta if state == "stale" else ("const s=unwrap(await tools.browser_snapshot({}));"
                   "unwrap(await tools.browser_click({ref:s.elements.find(e=>e.name==='Refresh record').ref}));"
-                  if state in {"partial", "wrong_type", "truncated"} else "")
+                  if state in {"partial", "wrong_type"} else "")
         replies.extend([{"tool": "codemode", "args": {"code": prefix + read, "inputs": {"url": url}}}, done])
     provider = ScriptedProvider(replies, native=False)
 
@@ -395,17 +400,17 @@ def test_headless_binds_declared_business_fields_from_current_browser_receipt(
         provider.close()
     terminal = next(row for row in reversed(events) if row["type"] == "task_done")
     assert result.stop_reason == "done", terminal
-    expected = record if state in {"complete", "missing", "failed_parent"} else later_record
+    expected = record if state in {"complete", "large", "missing", "failed_parent"} else later_record
     assert parse_json_object(str(terminal["summary"])) == {"page_url": url, "token": token, "explanation": prose, **expected}
     assert provider.calls == len(replies)
     receipts = tool_receipts(tmp_path / "state")
     read_receipts = [r.result for r in receipts if r.result.ok and r.result.call.args.get("code") == "window.__record"]
-    assert len(read_receipts) == (1 if state in {"complete", "missing"} else 2)
+    assert len(read_receipts) == (1 if state in {"complete", "large", "missing"} else 2)
     documents = [decode_json_object(r.audit["browser_document"]) for r in read_receipts]
     assert all(document["url"] == url for document in documents)
     if state == "stale":
         assert documents[0]["loader_id"] != documents[1]["loader_id"]
-    if state in {"partial", "wrong_type", "truncated"}:
+    if state in {"partial", "wrong_type"}:
         assert documents[0] == documents[1]
     rejection = rejection_audit(tmp_path / "state")["first_rejection"]
     if state == "stale":

@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 
 from codey.operations import kernel_prompt, knowledge_context
-from codey.research import answer_contract
+from codey.research import answer_contract, task_mode
 from tests.manual.research_workflow_ablation import ablation, seed_history
 
 
@@ -28,7 +28,7 @@ def test_production_answer_surface_keeps_new_knowledge_and_hides_revision():
 
 def test_recall_ablation_keeps_explicit_tools_and_restores_automatic_owner(monkeypatch):
     monkeypatch.setattr(knowledge_context, "knowledge_background", lambda *args: "prior background")
-    monkeypatch.setattr(answer_contract, "whole_research", lambda session: session == "whole")
+    monkeypatch.setattr(task_mode, "whole_research", lambda session: session == "whole")
     with ablation("no_auto_recall"):
         assert knowledge_context.knowledge_background(None, "whole", "query") == ""
         assert knowledge_context.knowledge_background(None, "other", "query") == "prior background"

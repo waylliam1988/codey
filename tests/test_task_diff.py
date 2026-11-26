@@ -12,7 +12,7 @@ from codey.operations.task_changes import task_change_tracker
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.task_diff import load_task_changes, record_task_changes
 from codey.storage.managed_outputs import ManagedOutputStore
-from codey.workspace import changes
+from codey.workspace import change_tracker
 from codey.workspace.changes import ChangeTracker
 from codey.workspace.paths import read_text_or_none
 from codey.workspace.task_changes import collect_task_changes
@@ -109,7 +109,7 @@ def test_task_diff_reads_each_output_once(tmp_path: Path) -> None:
         source.write_text("outside\n", encoding="utf-8")
         return text
 
-    with patch.object(changes, "_read_text_or_none", side_effect=read_and_write) as observed:
+    with patch.object(change_tracker, "_read_text_or_none", side_effect=read_and_write) as observed:
         result = collect_task_changes(tmp_path, tracker)
         assert observed.call_count == 1
     body = result["diff"]

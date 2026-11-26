@@ -48,7 +48,9 @@ def ablation(arm):
             original_background = knowledge_context.knowledge_background
 
             def explicit_recall_only(tools, session, question):
-                if answer_contract.whole_research(session):
+                from codey.research.task_mode import whole_research
+
+                if whole_research(session):
                     return ""
                 return original_background(tools, session, question)
 

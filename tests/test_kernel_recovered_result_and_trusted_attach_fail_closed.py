@@ -56,10 +56,7 @@ class KernelRecoveredResultAndTrustedAttachFailClosedTests(unittest.TestCase):
                 return ToolResult(ok=True, call=_c, model_text="edited", audit={"changed": True})
 
             with mock.patch(
-                "codey.operations.kernel_provenance._with_trusted_workspace_state",
-                side_effect=RuntimeError("attach boom"),
-            ), mock.patch(
-                "codey.operations.kernel.kernel_execution._with_trusted_workspace_state",
+                "codey.operations.project.edit_settlement._with_trusted_workspace_state",
                 side_effect=RuntimeError("attach boom"),
             ):
                 results = ke.execute_turn(

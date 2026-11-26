@@ -25,13 +25,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sqlite3
 import sys
 import time
 from pathlib import Path
 from unittest import mock
 
 from codey.durable.model import DurableMutation
-from codey.memory.contracts import MemoryItem
+from codey.ghost.projection import project_event
+from codey.memory.contracts import MemoryEvent
 from codey.storage import atomic_io
 from codey.types.json_value import (
     JsonObject,
@@ -158,10 +160,11 @@ def _point_ghost_partial_batch(world: StressWorld) -> dict[str, object]:
     atomic counterpart of the old partial-file test).
     """
     baseline = _crash_baseline(world)
-    def _abort_after_rows(_item: MemoryItem) -> str:
+    def _abort_after_rows(connection: sqlite3.Connection, event: MemoryEvent) -> None:
+        project_event(connection, event)
         raise _CrashPointReached("ghost transaction aborted before commit")
 
-    with mock.patch("codey.ghost.backend._payload", _abort_after_rows):
+    with mock.patch("codey.ghost.backend.project_event", _abort_after_rows):
         try:
             world.ghost_append(5, tag="cp")
         except _CrashPointReached:
@@ -179,10 +182,11 @@ def _point_ghost_partial_batch(world: StressWorld) -> dict[str, object]:
 def _point_ghost_torn_row(world: StressWorld) -> dict[str, object]:
     """Abort a Ghost SQLite transaction before commit; no torn row is visible."""
     baseline = _crash_baseline(world)
-    def _abort_after_rows(_item: MemoryItem) -> str:
+    def _abort_after_rows(connection: sqlite3.Connection, event: MemoryEvent) -> None:
+        project_event(connection, event)
         raise _CrashPointReached("ghost transaction aborted before commit")
 
-    with mock.patch("codey.ghost.backend._payload", _abort_after_rows):
+    with mock.patch("codey.ghost.backend.project_event", _abort_after_rows):
         try:
             world.ghost_append(3, tag="cp")
         except _CrashPointReached:

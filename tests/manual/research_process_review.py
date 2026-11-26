@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
 from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -21,6 +22,10 @@ from urllib.request import urlopen
 from uuid import uuid4
 
 from codey.operations import turn_snapshot
+from codey.research.answer_contract import AnswerScope
+from codey.research.answer_values import AnswerSubmission
+from codey.research.passages import ReadPassage
+from codey.types.json_value import ToolArgs
 from tests.manual import research_framework_comparison as framework
 from tests.manual.research_experiment_identity import freeze_experiment, verify_experiment
 from tests.manual.research_workflow_ablation import ablation as previous_ablation
@@ -119,10 +124,11 @@ def ablation(arm):
                 _edit_answer_spec(answer_contract.answer_spec, remove="state")))
             original_submit = answer_contract.submit_answer
 
-            def conservative_state(scope, args):
+            def conservative_state(scope: AnswerScope, args: ToolArgs, *,
+                                   passages: Mapping[str, ReadPassage] | None = None) -> AnswerSubmission:
                 # No semantic certification is invented: cited bodies stay partial.
                 state = "partial" if answer_contract.citation_occurrences(args.get("markdown", "")) else "unresolved"
-                return original_submit(scope, {**args, "state": args.get("state", state)})
+                return original_submit(scope, {**args, "state": args.get("state", state)}, passages=passages)
 
             stack.enter_context(patch.object(answer_contract, "submit_answer", conservative_state))
         if guidance != answer_contract.ANSWER_GUIDANCE:
@@ -184,17 +190,7 @@ def ablation(arm):
             from codey.operations.kernel_progress import KernelProgress
 
             stack.enter_context(patch.object(KernelProgress, "repeat_feedback", lambda self: ""))
-        if arm == "no_proof_audit":
-            from codey.research.audit_result import AuditDiagnostic, AuditOutcome
-            from codey.research.pipeline import ResearchPipeline
-
-            def skip_review(*_args, phase, diagnostics, **_kwargs):
-                diagnostic = AuditDiagnostic("proof_review", "skipped", phase, "experiment_disabled")
-                diagnostics.append(diagnostic)
-                return AuditOutcome(diagnostic)
-
-            stack.enter_context(patch.object(ResearchPipeline, "_review", skip_review))
-            stack.enter_context(patch.object(ResearchPipeline, "_record_final_findings", lambda *a, **kw: None))
+        # no_proof_audit is a no-op: the post-run proof reviewer was retired.
         yield
 
 

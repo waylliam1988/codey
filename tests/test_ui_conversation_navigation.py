@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from playwright.sync_api import expect
+from playwright.sync_api import Page, expect
 
 from tests.test_ui_workflow import admit_run, model_settings_route
 from tests.test_ui_workflow import page as page
@@ -347,7 +347,7 @@ def test_long_histories_keep_ticks_inside_view_and_keyboard_can_reach_every_ques
     expect(nav.locator('button').last).to_have_attribute('aria-current', 'location')
 
 
-def test_drawers_and_settings_hide_navigation_and_cancel_delayed_previews(page):
+def test_drawers_and_settings_hide_navigation_and_cancel_delayed_previews(page: Page) -> None:
     append_turns(page)
     read_turn(page, 13)
     nav = page.locator('#conversation-nav')
@@ -358,6 +358,7 @@ def test_drawers_and_settings_hide_navigation_and_cancel_delayed_previews(page):
     page.wait_for_timeout(300)
     expect(page.get_by_role('tooltip')).to_be_hidden()
     page.evaluate("UiState.setDrawerOpen('changes-drawer',false)")
+    page.get_by_role('button', name='Close workspace', exact=True).click()
     expect(nav).to_be_visible()
     model_settings_route(page)
     page.locator('#btn-settings').click()

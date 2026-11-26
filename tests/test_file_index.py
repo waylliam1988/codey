@@ -21,7 +21,7 @@ def test_cold_warm_and_reopen_preserve_incomplete_discovery(tmp_path):
     (project / "a.py").write_text("other\n")
     (project / "b.py").write_text("needle\n")
     index = IncrementalFileIndex(state)
-    with mock.patch("codey.toolchain.runtime.SEARCH_MAX_SCAN_FILES", 1):
+    with mock.patch("codey.toolchain.read_tools.SEARCH_MAX_SCAN_FILES", 1):
         cold = search_files(project, ".", "needle", file_index=index)
         warm = search_files(project, ".", "needle", file_index=index)
         reopened = search_files(project, ".", "needle", file_index=IncrementalFileIndex(state))
@@ -150,7 +150,7 @@ def test_new_entry_beyond_a_full_prefix_cannot_keep_complete_coverage(tmp_path, 
         lambda path: (path, 0, *directory(path)[2:])))
     monkeypatch.setattr(Path, "iterdir", lambda path: iter(sorted(listing(path))))
     index = IncrementalFileIndex(state)
-    with mock.patch("codey.toolchain.runtime.SEARCH_MAX_DIR_ENTRIES", 1):
+    with mock.patch("codey.toolchain.read_tools.SEARCH_MAX_DIR_ENTRIES", 1):
         before = search_files(project, ".", "needle", file_index=index)
         assert before.ok and before.canonical["value"]["scan_complete"] is True
         (project / "b.py").write_text("needle")

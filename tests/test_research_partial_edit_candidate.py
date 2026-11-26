@@ -61,7 +61,7 @@ def test_new_creation_still_requires_original_zero_and_complete_value(tmp_path):
         assert normalize_edits(session, store, args) == args
         incomplete = {"changes": [{"expected_revision": 0, "value": {"id": "incomplete", "title": "Not enough"}}]}
         normalized = normalize_edits(session, store, incomplete)
-        with pytest.raises(TypeError):
+        with pytest.raises(ValueError, match="kind must be a string"):
             KnowledgeObject.from_dict(normalized["changes"][0]["value"])
         assert store.repository.read("incomplete") is None
     finally:
@@ -91,26 +91,26 @@ def test_real_dispatch_keeps_frozen_call_and_original_creation_protocol(tmp_path
         value = KnowledgeObject("old-object", "claim", "Original", "model_extraction",
                                 scope="personal", scope_id=store.owner_id, aliases=("kept",))
         store.repository.commit("seed", [KnowledgeMutation(value)])
-        delegate._research_scope = answer_scope(session)
-        result, _, _ = delegate._execute_research(ToolCall("knowledge_read", {"id": value.id, "revision": 1}))
+        delegate.research_executor._research_scope = answer_scope(session)
+        result, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_read", {"id": value.id, "revision": 1}))
         session._memory_results["read"] = result
         call = ToolCall("knowledge_commit", {"commit_id": "edit", "changes": [
             {"expected_revision": 1, "value": {"id": value.id, "title": "New title"}}]})
         with treatment("partial_edit"):
-            result, _, _ = delegate._execute_research(call)
+            result, _, _ = delegate.research_executor._execute_research(call)
             assert result.ok, result.model_text
             assert result.call == call
             assert store.repository.read(value.id).value == replace(value, title="New title")
-            retry, _, _ = delegate._execute_research(call)
+            retry, _, _ = delegate.research_executor._execute_research(call)
             assert retry.ok and retry.model_text == result.model_text
             invalid = ToolCall("knowledge_commit", {"commit_id": "bad", "changes": [
                 {"expected_revision": 1, "value": {"id": value.id, "title": "Another"}},
                 {"expected_revision": 1, "value": {"id": "not-read", "title": "Not valid"}}]})
-            failed, _, _ = delegate._execute_research(invalid)
+            failed, _, _ = delegate.research_executor._execute_research(invalid)
             assert not failed.ok and store.repository.read(value.id).revision == 2
             entity = KnowledgeObject("new-entity", "entity", "New", "model_extraction",
                                      scope="personal", scope_id=store.owner_id)
-            created, _, _ = delegate._execute_research(ToolCall("knowledge_commit", {"commit_id": "create", "changes": [
+            created, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_commit", {"commit_id": "create", "changes": [
                 {"expected_revision": 0, "value": entity.to_dict()}]}))
             assert created.ok, created.model_text
             assert store.repository.read(entity.id).value == entity
@@ -143,11 +143,11 @@ def test_partial_edits_retain_original_kind_access_and_field_guards(tmp_path, fi
         value = KnowledgeObject("old-object", "claim", "Original", "model_extraction",
                                 scope="personal", scope_id=store.owner_id)
         store.repository.commit("seed", [KnowledgeMutation(value)])
-        delegate._research_scope = answer_scope(session)
-        result, _, _ = delegate._execute_research(ToolCall("knowledge_read", {"id": value.id, "revision": 1}))
+        delegate.research_executor._research_scope = answer_scope(session)
+        result, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_read", {"id": value.id, "revision": 1}))
         session._memory_results["read"] = result
         with treatment("partial_edit"):
-            result, _, _ = delegate._execute_research(ToolCall("knowledge_commit", {
+            result, _, _ = delegate.research_executor._execute_research(ToolCall("knowledge_commit", {
                 "commit_id": "not-allowed", "changes": [{"expected_revision": 1,
                     "value": {"id": value.id, "title": "New", **fields}}]}))
         assert not result.ok, result.model_text

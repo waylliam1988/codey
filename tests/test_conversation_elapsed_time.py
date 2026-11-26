@@ -15,6 +15,9 @@ class _Clock:
     def monotonic(self) -> float:
         return next(self.ticks)
 
+    def time_ns(self) -> int:
+        return 100_000_000_000
+
 
 def test_elapsed_time_comes_from_the_server_run_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = AppContext(tmp_path)
@@ -32,6 +35,7 @@ def test_elapsed_time_comes_from_the_server_run_lifecycle(tmp_path: Path, monkey
             patch.setattr(conversation_runtime, "time", _Clock(ticks))
             ctx.emit({"type": "task_start", "run_id": "r", "session_id": "s", "mode": "chat"})
             ctx.emit({"type": "task_done", "run_id": "r", "session_id": "s", "stop_reason": "done"})
+        assert seen[0]["started_at_ms"] == 100_000
         assert seen[-1]["elapsed_ms"] == 42_750
     finally:
         ctx.close()

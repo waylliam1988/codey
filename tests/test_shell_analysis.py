@@ -121,7 +121,12 @@ def test_analysis_roundtrip_is_bound_to_command_and_full_shell_contract():
 
 def test_native_parser_timeout_is_opaque_without_retry_or_execution(monkeypatch):
     from unittest.mock import Mock
+
+    from codey.policies import shell_powershell
+
     shell = installed("pwsh")
+    # Earlier tests may have cached this command; exercise the process boundary.
+    shell_powershell._inspect.cache_clear()
     run = Mock(side_effect=subprocess.TimeoutExpired("parser", 5))
     monkeypatch.setattr("codey.policies.shell_powershell.cancellation.run_process", run)
     analysis = analyze_shell("git status", shell)

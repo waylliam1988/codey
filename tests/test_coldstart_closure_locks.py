@@ -6,9 +6,18 @@ Red-first: each test encodes the desired post-fix behavior described in the
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+
+import pytest
 
 from codey.operations import turn_snapshot
 from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
+from codey.providers import model_preferences
+
+
+@pytest.fixture(autouse=True)
+def isolated_model_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(model_preferences, "DEFAULT_STATE_HOME", tmp_path / "model-settings")
 
 
 class WorkspaceFingerprintStaleTests(unittest.TestCase):
@@ -155,9 +164,10 @@ class ProjectChangesRequiredChainTests(unittest.TestCase):
 
         from codey.app import api as api_mod
 
-        seen: dict = {}
+        seen: dict[str, object] = {}
 
-        def fake_submit(session_id, project, task, max_turns, continue_task, provider_id, intent, **kwargs):
+        def fake_submit(session_id: str, project: str | None, task: str, max_turns: int,
+                        continue_task: bool, provider_id: str, intent: str, **kwargs: object) -> str:
             seen.update(kwargs)
             seen["intent"] = intent
             seen["project"] = project
@@ -188,9 +198,10 @@ class ProjectChangesRequiredChainTests(unittest.TestCase):
 
         from codey.app import api as api_mod
 
-        seen: dict = {}
+        seen: dict[str, object] = {}
 
-        def fake_submit(session_id, project, task, max_turns, continue_task, provider_id, intent, **kwargs):
+        def fake_submit(session_id: str, project: str | None, task: str, max_turns: int,
+                        continue_task: bool, provider_id: str, intent: str, **kwargs: object) -> str:
             seen.update(kwargs)
             seen["intent"] = intent
             return "run-124"
@@ -309,7 +320,8 @@ class TaskEntryOwnershipTests(unittest.TestCase):
         self.assertFalse((root / "codey" / "operations" / "unified_mode.py").exists(), "unified_mode.py must be deleted; impl lives in task_entry.py")
         text = (root / "codey" / "operations" / "task_entry.py").read_text(encoding="utf-8")
         self.assertIn("def run_task_mode", text, "task_entry must own run_task_mode")
-        self.assertIn("def run_task_submission", text, "task_entry must own run_task_submission")
+        submission = (root / "codey" / "operations" / "task_submission.py").read_text(encoding="utf-8")
+        self.assertIn("def run_task_submission", submission)
         self.assertNotIn("from codey.operations.task_entry import", text)
 
     def test_unified_alias_removed_everywhere(self) -> None:

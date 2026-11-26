@@ -63,7 +63,7 @@ def bound_session(*, kind: str = "chat", only: bool = False) -> TaskSession:
     return session
 
 
-@pytest.fixture
+@pytest.fixture()
 def handoffs(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     captured: list[str] = []
     original = KernelContext.request_snapshot
@@ -135,7 +135,13 @@ def test_compile_recovery_requires_a_bound_page_and_preserves_actions(state: str
     remember(session, "failure", failure)
     _, hint = browser_task_handoff(session, build_turn_snapshot(session), CompletionContext(browser_document=document),
                                   1, delivered_results=delivered)
-    assert "Execute this next step:" not in hint
+    if state in {"no_batch", "success", "other_error", "children", "missing_children", "unbound",
+                 "other_navigation", "research"}:
+        action = next_step(hint)
+        assert action == {"tool": "browser_snapshot", "args": {}}
+        assert "Compilation failed before any child action" not in hint
+    else:
+        assert "Execute this next step:" not in hint
 
 
 @pytest.mark.parametrize("state", ["current", "generation", "document", "truncated"])
@@ -173,7 +179,8 @@ def test_original_basic_compile_failure_executes_the_offered_snapshot(
         assert isinstance(elements, list) and any(isinstance(item, dict) and item.get("name") == "Locality"
                                                 for item in elements)
         yield json.dumps(code_action(LOAD + WAIT + f"return {READ};"))
-        yield json.dumps({"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}})
+        done: JsonObject = {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}
+        yield json.dumps(done)
 
     install_original_http(monkeypatch, replies())
     row = run_case(directory, "chat", TARGET, max_turns=4,
@@ -196,17 +203,20 @@ def test_original_download_unpack_failure_reuses_the_snapshot_and_downloads_once
     def replies() -> Iterator[str]:
         yield original_reply("download")
         receipts = tool_receipts(directory / "state")
-        observed, = [r.result for r in receipts if r.result.call.name == "browser_snapshot"]
+        observation, = [r for r in receipts if r.result.call.name == "browser_snapshot"]
+        observed = observation.result
         elements = decode_json_object(observed.canonical["value"])["elements"]
         assert isinstance(elements, list)
         ref = next(require_json_string(item["ref"], "ref") for item in elements
                    if isinstance(item, dict) and item.get("name") == "Download fixture")
-        assert ref in handoffs[-1] and "Choose the requested download target" in handoffs[-1]
-        yield json.dumps({"tool": "codemode", "args": {
-            "code": "return unwrap(await tools.browser_download(inputs));", "inputs": {"ref": ref}}})
+        assert observation.identity in handoffs[-1] and "Current controls are available" in handoffs[-1]
+        action: JsonObject = {"tool": "codemode", "args": {
+            "code": "return unwrap(await tools.browser_download(inputs));", "inputs": {"ref": ref}}}
+        yield json.dumps(action)
         yield json.dumps(code_action(f"return {READ};"))
         download, = [r.result for r in tool_receipts(directory / "state") if r.result.call.name == "browser_download"]
-        yield json.dumps({"tool": "done", "args": {"summary": json.dumps(download.canonical["value"])}})
+        done: JsonObject = {"tool": "done", "args": {"summary": json.dumps(download.canonical["value"])}}
+        yield json.dumps(done)
 
     install_original_http(monkeypatch, replies())
     row = run_case(directory, "chat", TARGET, download_file=True, max_turns=4)
@@ -237,7 +247,8 @@ def test_compile_failure_after_a_delivered_click_only_completes_its_wait_and_rea
         read = next_step(handoffs[-1])
         assert read["tool"] == "browser_read"
         yield json.dumps(read)
-        yield json.dumps({"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}})
+        done: JsonObject = {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}
+        yield json.dumps(done)
 
     install_original_http(monkeypatch, replies())
     row = run_case(directory, "chat", TARGET, max_turns=5, additional_required_tools=(require_tool_success(

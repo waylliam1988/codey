@@ -48,9 +48,12 @@ def _spawn_crashpoint(point: str, state_home: Path, rendezvous: Path):
     )
 
 
-def _wait_file(path: Path, timeout: float = PHASE_TIMEOUT) -> None:
+def _wait_file(path: Path, timeout: float = PHASE_TIMEOUT, *, process: subprocess.Popen[str] | None = None) -> None:
     deadline = time.monotonic() + timeout
     while not path.exists():
+        if process is not None and process.poll() is not None:
+            _, stderr = process.communicate()
+            raise RuntimeError(f"worker exited before checkpoint {path}: {process.returncode}\n{stderr}")
         if time.monotonic() >= deadline:
             raise TimeoutError(f"checkpoint never appeared: {path}")
         time.sleep(0.05)

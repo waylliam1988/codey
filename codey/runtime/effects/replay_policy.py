@@ -24,7 +24,8 @@ IDEMPOTENT_RUNTIME_TOOL_NAMES = frozenset({
 UNSAFE_RUNTIME_TOOL_NAMES = SUPPORTED_RUNTIME_TOOL_NAMES - SAFE_RUNTIME_TOOL_NAMES
 # CodeMode is a resumable container. Its recovery still re-enters the kernel;
 # it is never passed to the information-tool dispatcher.
-REPLAYABLE_SAFE_TOOL_NAMES = SAFE_RUNTIME_TOOL_NAMES | IDEMPOTENT_RUNTIME_TOOL_NAMES | {"codemode"}
+# Recovery only replays tools with a canonical argument schema and dispatcher.
+REPLAYABLE_SAFE_TOOL_NAMES = frozenset({"read", "ls", "search", "references", "codemode"}) | IDEMPOTENT_RUNTIME_TOOL_NAMES
 
 
 def is_replayable_safe_tool(tool_name: str) -> bool:

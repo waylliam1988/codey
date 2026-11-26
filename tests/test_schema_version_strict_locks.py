@@ -73,7 +73,7 @@ def test_strict_source_present_in_all_readers() -> None:
     loose_files = [
         "workspace/revision.py",
         "workspace/facts.py",
-        "workspace/changes.py",
+        "workspace/snapshot_store.py",
         "workspace/config.py",
         "storage/ui_state_store.py",
         "runs/ledger.py",

@@ -723,7 +723,7 @@ def _exec_completion_produce(scheduler: SoakScheduler, world: Any, ctx: SoakCont
                     "path": relpath,
                     "replacements": [{"old_string": old_content, "new_string": content}],
                 }}),
-                json.dumps({"tool": "run", "args": {"command": run_command, "path": "."}}),
+                json.dumps({"tool": "run", "args": {"command": run_command, "path": ".", "run_in_background": False}}),
                 json.dumps({"tool": "done", "args": {"summary": "done"}}),
             ])
 

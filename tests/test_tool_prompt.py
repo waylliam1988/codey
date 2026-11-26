@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 
+from codey.policies.task_policy import build_task_policy
+from codey.task.model import TaskSubmission
 from codey.toolchain.definition import TOOL_DEFINITIONS
 from codey.toolchain.tool_prompt import (
     coding_model_tool_contract_hash,
@@ -9,6 +11,7 @@ from codey.toolchain.tool_prompt import (
     render_coding_system_prompt,
     render_coding_tool_contract_text,
 )
+from tests.support.kernel_protocol_test_helpers import normalize_turn
 from tests.support.legacy_json_codec import JsonToolCodec
 from tests.support.research_controller import controller_action_contract_hash, controller_system_prompt
 from tests.support.research_protocol import JsonToolCodec as ResearchCodec
@@ -85,11 +88,11 @@ class ToolPromptTests(unittest.TestCase):
         self.assertTrue(full_hash.startswith("sha256:"))
 
     def test_tool_definition_examples_are_parseable(self) -> None:
-        codec = JsonToolCodec()
+        policy = build_task_policy(TaskSubmission(session_id="examples", project="demo", task="check project", max_turns=8, continue_task=False, provider_id="local"), task_kind="hybrid")
         for definition in TOOL_DEFINITIONS:
             for example in definition.examples:
                 with self.subTest(tool=definition.name, example=example):
-                    plan = codec.parse(example)
+                    plan = normalize_turn(example, policy=policy)
                     self.assertEqual(plan.protocol_error, "")
                     self.assertTrue(plan.calls or plan.control is not None)
 

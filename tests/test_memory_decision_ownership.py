@@ -13,6 +13,7 @@ from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.model import EffectRecord
 from codey.operations.kernel_contracts import DoneDecision, KernelResult
 from codey.runtime.core.operation_payload import RuntimeOperationState
+from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
 from codey.storage.managed_outputs import ManagedOutputStore
 from tests.support.sqlite_store import TemporarySQLiteStore
 
@@ -52,7 +53,7 @@ def _decision_checkpoint(
     )
     durable.register_artifacts("run", (artifact,))
     state = RuntimeOperationState(
-        session_id="chat", run_id="run", operation_id="operation", lane="writer", project_ref="",
+        session_id="chat", run_id="run", operation_id=operation_id_for_run("run"), lane=lane_for_run("run"), project_ref="",
         provider_id="local", turn_budget=4, max_repair_rounds=1, leaf="kernel_settled",
         started_at=NOW, updated_at=NOW, work_ref=artifact.handle, driver="writer",
     )

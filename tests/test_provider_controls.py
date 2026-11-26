@@ -5,8 +5,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from codey.providers import control_capture, control_recovery, control_store, profiles
 from codey.providers import controls as controls
-from tests.provider_control_testkit import IsolatedProviderControlsMixin
+from codey.providers import revival as provider_revival
+from tests.provider_control_testkit import IsolatedProviderControlsMixin, control_store_at
 
 
 class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
@@ -17,7 +19,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
 
     def test_page_injected_helpers_do_not_expose_product_name(self) -> None:
         scripts = (
-            controls._INSTALL_CAPTURE_JS,
+            control_capture._INSTALL_CAPTURE_JS,
             controls.discovery._DISCOVER_CONTROLS_JS,
             controls.discovery._START_RESPONSE_WATCH_JS,
             controls.discovery._READ_RESPONSE_WATCH_JS,
@@ -28,21 +30,21 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
     def test_task_context_cleanup_removes_all_task_local_state(self) -> None:
         page = mock.Mock()
         controls.begin_task_context("session-1")
-        controls._doctor_attempts().add(("session-1", "qwen", "send_button"))
-        controls._remember_source("qwen", controls.CONTROL_SEND_BUTTON, "pending")
-        controls._remember_pending(
+        control_recovery._doctor_attempts().add(("session-1", "qwen", "send_button"))
+        control_recovery._remember_source("qwen", controls.CONTROL_SEND_BUTTON, "pending")
+        control_recovery._remember_pending(
             "qwen",
             controls.CONTROL_SEND_BUTTON,
             page,
             {"tag": "button"},
         )
-        controls._response_locator_map()["qwen"] = mock.Mock()
-        controls._context.response_watches = {"qwen": "watch"}
+        control_recovery._response_locator_map()["qwen"] = mock.Mock()
+        control_recovery._context.response_watches = {"qwen": "watch"}
 
         controls.end_task_context()
 
-        for name in controls._TASK_CONTEXT_FIELDS:
-            self.assertFalse(hasattr(controls._context, name), name)
+        for name in control_recovery._TASK_CONTEXT_FIELDS:
+            self.assertFalse(hasattr(control_recovery._context, name), name)
 
     def test_save_control_overwrites_latest_teaching(self) -> None:
         page = mock.Mock()
@@ -106,7 +108,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 controls.fingerprint_from_click({"tag": "button", "ariaLabel": "Send"}),
                 path=path,
             )
-            with mock.patch.object(controls, "CONTROL_STORE", path):
+            with control_store_at(path):
                 result = controls.saved_control(page, "qwen", controls.CONTROL_SEND_BUTTON)
 
         self.assertIsNone(result)
@@ -125,13 +127,13 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         page.locator.side_effect = lambda selector: (
             missing if "data-revival-fault" in selector else locator
         )
-        controls._remember_pending(
+        control_recovery._remember_pending(
             "qwen",
             controls.CONTROL_SEND_BUTTON,
             page,
             controls.fingerprint_from_click({"tag": "button", "ariaLabel": "Send"}),
         )
-        controls._remember_source(
+        control_recovery._remember_source(
             "qwen",
             controls.CONTROL_SEND_BUTTON,
             "pending",
@@ -153,14 +155,14 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         saved.assert_not_called()
         discover.assert_not_called()
         self.assertEqual(
-            controls._source_for("qwen", controls.CONTROL_SEND_BUTTON),
+            control_recovery._source_for("qwen", controls.CONTROL_SEND_BUTTON),
             "pending",
         )
 
     def test_pending_control_is_not_reused_on_another_page(self) -> None:
         original_page = mock.Mock()
         other_page = mock.Mock()
-        controls._remember_pending(
+        control_recovery._remember_pending(
             "qwen",
             controls.CONTROL_SEND_BUTTON,
             original_page,
@@ -182,7 +184,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         candidate = mock.Mock()
         candidate.is_visible.return_value = True
         candidate.is_enabled.return_value = True
-        controls._remember_pending(
+        control_recovery._remember_pending(
             "qwen",
             controls.CONTROL_SEND_BUTTON,
             page,
@@ -347,7 +349,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
             )
             self.assertFalse(controls.load_control("qwen", controls.CONTROL_SEND_BUTTON, path=path)["verified"])
 
-            controls._remember_source("qwen", controls.CONTROL_SEND_BUTTON, "learned")
+            control_recovery._remember_source("qwen", controls.CONTROL_SEND_BUTTON, "learned")
             controls.confirm_control("qwen", controls.CONTROL_SEND_BUTTON, path=path)
 
             record = controls.load_control("qwen", controls.CONTROL_SEND_BUTTON, path=path)
@@ -359,17 +361,17 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         page.url = "https://chat.qwen.ai/"
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "controls.json"
-            controls._remember_pending(
+            control_recovery._remember_pending(
                 "qwen",
                 controls.CONTROL_SEND_BUTTON,
                 page,
                 {"tag": "button", "aria_label": "Send"},
             )
-            controls._remember_source("qwen", controls.CONTROL_SEND_BUTTON, "pending")
+            control_recovery._remember_source("qwen", controls.CONTROL_SEND_BUTTON, "pending")
             with mock.patch.object(
-                controls,
+                control_store,
                 "write_json_atomic",
-                wraps=controls.write_json_atomic,
+                wraps=control_store.write_json_atomic,
             ) as write:
                 controls.confirm_control("qwen", controls.CONTROL_SEND_BUTTON, path=path)
 
@@ -382,19 +384,19 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         page = mock.Mock(url="https://chat.qwen.ai/")
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "controls.json"
-            with mock.patch.object(controls, "CONTROL_STORE", path):
-                controls._begin_revival_send("qwen", page)
+            with control_store_at(path):
+                control_recovery._begin_revival_send("qwen", page)
             for action, fingerprint in (
                 (controls.CONTROL_MESSAGE_BOX, {"tag": "textarea"}),
                 (controls.CONTROL_SEND_BUTTON, {"tag": "button", "aria_label": "Send"}),
                 (controls.CONTROL_RESPONSE, {"tag": "article", "classes": ["answer"]}),
             ):
-                controls._remember_pending("qwen", action, page, fingerprint)
-                controls._remember_source("qwen", action, "pending")
+                control_recovery._remember_pending("qwen", action, page, fingerprint)
+                control_recovery._remember_source("qwen", action, "pending")
                 controls.confirm_control("qwen", action, path=path)
             self.assertFalse(path.exists())
 
-            controls._complete_revival_send("qwen")
+            control_recovery._complete_revival_send("qwen")
 
             provider = controls.load_controls(path)["qwen"]
             self.assertEqual(provider["_revival"]["status"], "provisional")
@@ -410,16 +412,16 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         locator.is_enabled.return_value = True
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "controls.json"
-            with mock.patch.object(controls, "CONTROL_STORE", path):
-                controls._begin_revival_send("qwen", page)
-            controls._remember_pending(
+            with control_store_at(path):
+                control_recovery._begin_revival_send("qwen", page)
+            control_recovery._remember_pending(
                 "qwen",
                 controls.CONTROL_SEND_BUTTON,
                 page,
                 controls.fingerprint_from_click({"tag": "button", "role": "button"}),
                 locator,
             )
-            controls._remember_source(
+            control_recovery._remember_source(
                 "qwen",
                 controls.CONTROL_SEND_BUTTON,
                 "pending",
@@ -432,7 +434,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
             )
 
             self.assertEqual(
-                controls._source_for("qwen", controls.CONTROL_SEND_BUTTON),
+                control_recovery._source_for("qwen", controls.CONTROL_SEND_BUTTON),
                 "staged",
             )
             self.assertIs(
@@ -445,7 +447,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 locator,
             )
 
-            controls._complete_revival_send("qwen")
+            control_recovery._complete_revival_send("qwen")
 
             self.assertIsNone(
                 controls.pending_control(
@@ -462,16 +464,16 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         locator.is_enabled.return_value = True
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "controls.json"
-            with mock.patch.object(controls, "CONTROL_STORE", path):
-                controls._begin_revival_send("qwen", page)
-                controls._remember_pending(
+            with control_store_at(path):
+                control_recovery._begin_revival_send("qwen", page)
+                control_recovery._remember_pending(
                     "qwen",
                     controls.CONTROL_SEND_BUTTON,
                     page,
                     controls.fingerprint_from_click({"tag": "button", "role": "button"}),
                     locator,
                 )
-                controls._remember_source(
+                control_recovery._remember_source(
                     "qwen",
                     controls.CONTROL_SEND_BUTTON,
                     "pending",
@@ -489,7 +491,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                     )
                 )
                 self.assertEqual(
-                    controls._source_for("qwen", controls.CONTROL_SEND_BUTTON),
+                    control_recovery._source_for("qwen", controls.CONTROL_SEND_BUTTON),
                     "",
                 )
 
@@ -499,13 +501,13 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
             path = Path(td) / "controls.json"
             @controls.revival_send("qwen")
             def failing_send(current_page):
-                controls._remember_pending(
+                control_recovery._remember_pending(
                     "qwen",
                     controls.CONTROL_SEND_BUTTON,
                     current_page,
                     {"tag": "button"},
                 )
-                controls._remember_source(
+                control_recovery._remember_source(
                     "qwen", controls.CONTROL_SEND_BUTTON, "pending"
                 )
                 controls.confirm_control(
@@ -513,20 +515,20 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 )
                 raise TimeoutError("network timeout")
 
-            with mock.patch.object(controls, "CONTROL_STORE", path), self.assertRaisesRegex(TimeoutError, "network timeout"):
+            with control_store_at(path), self.assertRaisesRegex(TimeoutError, "network timeout"):
                 failing_send(page)
 
             self.assertFalse(path.exists())
-            self.assertNotIn("qwen", controls._revival_attempts())
+            self.assertNotIn("qwen", control_recovery._revival_attempts())
             self.assertEqual(
-                controls._source_for("qwen", controls.CONTROL_SEND_BUTTON), ""
+                control_recovery._source_for("qwen", controls.CONTROL_SEND_BUTTON), ""
             )
 
     def test_transient_failure_does_not_reduce_learned_bundle_health(self) -> None:
         page = mock.Mock(url="https://chat.qwen.ai/")
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "controls.json"
-            controls.provider_revival.complete_send(
+            provider_revival.complete_send(
                 path,
                 "qwen",
                 "chat.qwen.ai",
@@ -539,7 +541,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
             @controls.revival_send("qwen")
             def timed_out(current_page):
                 del current_page
-                controls._remember_source(
+                control_recovery._remember_source(
                     "qwen", controls.CONTROL_RESPONSE, "learned"
                 )
                 controls.confirm_control(
@@ -558,9 +560,9 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
 
         page = mock.Mock(url="https://chat.qwen.ai/")
         with (
-            mock.patch.object(controls, "CONTROL_STORE", Path("provider-controls.json")),
+            control_store_at(Path("provider-controls.json")),
             mock.patch.object(
-                controls,
+                control_recovery,
                 "_load_flow_cached",
                 return_value={
                     provider_flow.STAGE_COMPLETION: (
@@ -569,17 +571,17 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 },
             ),
             mock.patch.object(
-                controls.provider_revival,
+                provider_revival,
                 "record_flow_failure",
                 side_effect=OSError("disk full"),
             ),
-            self.assertLogs("codey.providers.controls", level="WARNING") as logs,
+            self.assertLogs("codey.providers.control_recovery", level="WARNING") as logs,
         ):
 
             @controls.revival_send("qwen")
             def failing_send(current_page):
                 del current_page
-                attempt = controls._revival_attempts()["qwen"]
+                attempt = control_recovery._revival_attempts()["qwen"]
                 attempt.loaded_flow_stages.add(provider_flow.STAGE_COMPLETION)
                 attempt.flow_evaluated_stages.add(provider_flow.STAGE_COMPLETION)
                 raise ResponseMissing("missing", stage=provider_flow.STAGE_COMPLETION)
@@ -636,7 +638,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                     provider_flow,
                     "_handler",
                     lambda request: request.candidates[0].candidate_id,
-                ), mock.patch.object(controls, "CONTROL_STORE", path):
+                ), control_store_at(path):
                     self.assertTrue(recovered_send(page))
                     self.assertEqual(
                         controls.load_controls(path)["qwen"]["_revival"]["status"],
@@ -689,7 +691,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                         "_handler",
                         lambda request: request.candidates[0].candidate_id,
                     ),
-                    mock.patch.object(controls, "CONTROL_STORE", path),
+                    control_store_at(path),
                     self.assertRaisesRegex(TimeoutError, "response read failed"),
                 ):
                     failing_send(page)
@@ -711,7 +713,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "controls.json"
-            profile_digest = provider_flow.profile_hash(controls.get_profile("qwen"))
+            profile_digest = provider_flow.profile_hash(profiles.get_profile("qwen"))
             provider_revival.complete_send(
                 path,
                 "qwen",
@@ -763,7 +765,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                     ),
                 )
 
-            with mock.patch.object(controls, "CONTROL_STORE", path):
+            with control_store_at(path):
                 for expected in (1, None):
                     with self.assertRaises(ResponseMissing):
                         structurally_failing_send(page)
@@ -786,7 +788,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "controls.json"
-            profile_digest = provider_flow.profile_hash(controls.get_profile("qwen"))
+            profile_digest = provider_flow.profile_hash(profiles.get_profile("qwen"))
             provider_revival.complete_send(
                 path,
                 "qwen",
@@ -828,7 +830,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 )
 
             with (
-                mock.patch.object(controls, "CONTROL_STORE", path),
+                control_store_at(path),
                 self.assertRaisesRegex(RuntimeError, "read failed"),
             ):
                 builtin_send(page)
@@ -848,7 +850,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "controls.json"
-            profile_digest = provider_flow.profile_hash(controls.get_profile("qwen"))
+            profile_digest = provider_flow.profile_hash(profiles.get_profile("qwen"))
             provider_revival.complete_send(
                 path,
                 "qwen",
@@ -892,7 +894,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                         built_in_ready=False,
                     )
                 )
-                controls._remember_source(
+                control_recovery._remember_source(
                     "qwen",
                     controls.CONTROL_RESPONSE,
                     "learned",
@@ -909,7 +911,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 )
 
             with (
-                mock.patch.object(controls, "CONTROL_STORE", path),
+                control_store_at(path),
                 self.assertRaises(ResponseMissing),
             ):
                 unreadable_send(page)
@@ -933,7 +935,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "controls.json"
-            profile_digest = provider_flow.profile_hash(controls.get_profile("qwen"))
+            profile_digest = provider_flow.profile_hash(profiles.get_profile("qwen"))
             provider_revival.complete_send(
                 path,
                 "qwen",
@@ -970,7 +972,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 )
                 raise error
 
-            with mock.patch.object(controls, "CONTROL_STORE", path):
+            with control_store_at(path):
                 for error in (
                     TimeoutError("network stalled"),
                     SubmissionUncertain("submission uncertain"),
@@ -993,9 +995,9 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 return "ok"
 
             with (
-                mock.patch.object(controls, "CONTROL_STORE", path),
+                control_store_at(path),
                 mock.patch.object(
-                    controls.provider_revival,
+                    provider_revival,
                     "load_flow_recipe",
                     return_value=None,
                 ) as load,
@@ -1004,13 +1006,13 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 self.assertEqual(healthy_send(page), "ok")
                 self.assertEqual(load.call_count, 1)
 
-                attempt = controls._RevivalSend(
+                attempt = control_recovery._RevivalSend(
                     host="chat.qwen.ai",
                     staged={},
                     verified=set(),
                     learned_verified=set(),
                     profile_hash=provider_flow.profile_hash(
-                        controls.get_profile("qwen")
+                        profiles.get_profile("qwen")
                     ),
                     staged_flow={
                         provider_flow.STAGE_COMPLETION: (
@@ -1019,8 +1021,8 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                         )
                     },
                 )
-                controls._revival_attempts()["qwen"] = attempt
-                controls._complete_revival_send("qwen")
+                control_recovery._revival_attempts()["qwen"] = attempt
+                control_recovery._complete_revival_send("qwen")
                 self.assertEqual(healthy_send(page), "ok")
                 self.assertEqual(load.call_count, 2)
 
@@ -1029,16 +1031,16 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         page.url = "https://chat.qwen.ai/"
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "controls.json"
-            controls._remember_pending(
+            control_recovery._remember_pending(
                 "qwen",
                 controls.CONTROL_SEND_BUTTON,
                 page,
                 {"tag": "button", "aria_label": "Send"},
             )
-            controls._remember_source("qwen", controls.CONTROL_SEND_BUTTON, "pending")
+            control_recovery._remember_source("qwen", controls.CONTROL_SEND_BUTTON, "pending")
 
             with mock.patch.object(
-                controls,
+                control_store,
                 "write_json_atomic",
                 side_effect=OSError("disk full"),
             ):
@@ -1046,7 +1048,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
 
             self.assertIsNone(controls.load_control("qwen", controls.CONTROL_SEND_BUTTON, path=path))
             self.assertEqual(
-                controls._source_for("qwen", controls.CONTROL_SEND_BUTTON),
+                control_recovery._source_for("qwen", controls.CONTROL_SEND_BUTTON),
                 "",
             )
 
@@ -1062,7 +1064,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
                 {"tag": "button", "aria_label": "Send"},
                 path=path,
             )
-            controls._remember_source("qwen", controls.CONTROL_SEND_BUTTON, "learned")
+            control_recovery._remember_source("qwen", controls.CONTROL_SEND_BUTTON, "learned")
             controls.reject_control("qwen", controls.CONTROL_SEND_BUTTON, path=path)
             self.assertIsNotNone(controls.load_control("qwen", controls.CONTROL_SEND_BUTTON, path=path))
 
@@ -1121,7 +1123,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         controls.start_response_watch(page, "qwen")
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "controls.json"
-            with mock.patch.object(controls, "CONTROL_STORE", path):
+            with control_store_at(path):
                 response = controls.discover_response(page, "qwen")
                 self.assertIs(response, candidate)
                 self.assertIsNone(controls.load_control("qwen", controls.CONTROL_RESPONSE, path=path))
@@ -1135,12 +1137,12 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         page = mock.Mock()
         response = mock.Mock()
         response.is_visible.return_value = True
-        controls._response_locator_map()["qwen"] = response
+        control_recovery._response_locator_map()["qwen"] = response
         try:
             with mock.patch.object(controls, "visible_locator", return_value=None):
                 result = controls.locate_response(page, "qwen", (".missing",))
         finally:
-            controls._response_locator_map().pop("qwen", None)
+            control_recovery._response_locator_map().pop("qwen", None)
 
         self.assertIs(result, response)
 
@@ -1337,7 +1339,7 @@ class ProviderControlsTests(IsolatedProviderControlsMixin, unittest.TestCase):
         doctor = mock.Mock(return_value="c1")
         controls.begin_task_context("session-1")
         controls.set_doctor_handler(doctor)
-        controls._context.response_watches = {"qwen": "watch"}
+        control_recovery._context.response_watches = {"qwen": "watch"}
         with (
             mock.patch.object(controls.discovery, "response_candidates", return_value=(candidate,)),
             mock.patch.object(controls.discovery, "select_response_candidate", return_value=None),

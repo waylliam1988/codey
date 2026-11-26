@@ -9,16 +9,16 @@ from codey.protocols.codemode import CodeModeInputError, parse_codemode_args
 
 
 @pytest.mark.parametrize('native', [False, True])
-def test_shell_lookup_guidance_is_capability_driven_not_topic_driven(native):
+def test_shell_lookup_guidance_is_capability_driven_not_topic_driven(native: bool) -> None:
     session = TaskSession(policy=TaskPolicy(frozenset({'control'})),
                           task_text='Get current public information', project='workspace', shell=resolve_shell())
     prompt = kernel_prompt_for_session(session, tool_names=('shell', 'codemode', 'done'), native=native)
-    assert 'explicit connection and total timeouts' in prompt
-    assert 'Do not launch a browser' in prompt
-    assert 'Keep shell approval intact' in prompt
+    assert 'obtain actual source data using the authorized tools' in prompt
+    assert 'Shell runs on the execution host and requires approval' in prompt
+    assert 'Execution host platform:' in prompt
     assert 'not evidence that the host has no network access' in prompt
     restricted = kernel_prompt_for_session(session, tool_names=('codemode', 'done'), native=native)
-    assert 'shell can request' not in restricted
+    assert 'Execution host platform:' not in restricted
 
 
 def test_codemode_rejection_explains_the_scope_without_executing_network_code():

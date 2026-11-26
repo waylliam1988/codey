@@ -212,7 +212,23 @@ def coding_loop(case, legacy):
         root = Path(td)
         for name, content in case.get("files", {"a.py": "x = 1\n", "b.py": "y = 2\n"}).items():
             (root / name).write_text(content, encoding="utf-8")
-        provider = ScriptedProvider(case)
+        active_case = case
+        if not legacy:
+            from codey.types.json_value import decode_json_object, parse_json_object, require_json_string
+
+            replies: list[str] = []
+            for raw_reply in case["replies"]:
+                reply = require_json_string(raw_reply, "script reply")
+                if reply.lstrip().startswith("{"):
+                    action = parse_json_object(reply)
+                    if action.get("tool") == "run":
+                        arguments = decode_json_object(action["args"])
+                        arguments["run_in_background"] = False
+                        action["args"] = arguments
+                        reply = json.dumps(action)
+                replies.append(reply)
+            active_case = {**case, "replies": replies}
+        provider = ScriptedProvider(active_case)
         flag = threading.Event()
         provider.stop_flag = flag
         if case.get("pre_cancelled"):
@@ -282,7 +298,12 @@ def research_loop(case, legacy):
     class Search(search_base):
         def search(self, query, limit=8):
             operations.append(["search", query])
-            return [{"title": "Helium article", "url": "https://example.com/helium", "snippet": "Helium supply."}]
+            rows = [{"title": "Helium article", "url": "https://example.com/helium", "snippet": "Helium supply."}]
+            if legacy:
+                return rows
+            from tests.support.search_fixture import search_outcome
+
+            return search_outcome(query, rows, limit=limit)
 
         def fetch(self, url):
             operations.append(["fetch", url])

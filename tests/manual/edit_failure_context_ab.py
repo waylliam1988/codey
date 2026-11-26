@@ -23,6 +23,7 @@ from codey.agents.tools import AgentToolFns
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.runtime.observe.events import RunEvent, render_run_event
+from codey.toolchain import edit_tools
 from codey.toolchain import runtime as tool_runtime
 from codey.workspace.revision import WorkspaceRevisionStore
 from tests.manual.project_task_context import render_production_project_map
@@ -105,9 +106,9 @@ def _run_arm(provider, arm: str, max_turns: int) -> dict[str, Any]:
         root.mkdir()
         _write_project(root)
         probe = _EditProbe(root)
-        original_context = tool_runtime._render_edit_failure_context
+        original_context = edit_tools._render_edit_failure_context
         if arm == "baseline":
-            tool_runtime._render_edit_failure_context = lambda _content, _search: ""
+            edit_tools._render_edit_failure_context = lambda _content, _search: ""
         try:
             result = _agent_kernel_request(
                 AgentRequest(
@@ -124,7 +125,7 @@ def _run_arm(provider, arm: str, max_turns: int) -> dict[str, Any]:
                 )
             )
         finally:
-            tool_runtime._render_edit_failure_context = original_context
+            edit_tools._render_edit_failure_context = original_context
 
         content = (root / TARGET).read_text(encoding="utf-8")
         final_tests_passed = _run_check(root)
@@ -214,13 +215,13 @@ def run_self_test() -> None:
             path.read_text(encoding="utf-8").replace(ORIGINAL_LINE, STALE_BLOCK),
             encoding="utf-8",
         )
-        hint = tool_runtime._render_edit_failure_context(
+        hint = edit_tools._render_edit_failure_context(
             path.read_text(encoding="utf-8"),
             ORIGINAL_LINE,
         )
         assert "4 |" in hint
         assert "# seconds" in hint
-        assert len(hint) <= tool_runtime.EDIT_FAILURE_MAX_CHARS
+        assert len(hint) <= edit_tools.EDIT_FAILURE_MAX_CHARS
     print("self-test passed")
 
 

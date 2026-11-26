@@ -26,6 +26,7 @@ from tests.support.kernel_fixture import run_task_kernel, runtime
 def test_terminal_results_keep_original_declarations_without_executing_new_calls(stop: str) -> None:
     flag = threading.Event()
     max_turns = 2 if stop == "no_progress" else 1
+    progress_limit = 1 if stop in {"no_progress", "invalid_protocol"} else None
     session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.read"})),
                           task_kind="project", project="", max_turns=max_turns, task_text="Inspect a file")
     snapshot = build_turn_snapshot(session, native=True)
@@ -53,7 +54,7 @@ def test_terminal_results_keep_original_declarations_without_executing_new_calls
             return AssistantTurn()
 
     provider = adapt_provider(Provider())
-    with runtime(task="Inspect a file", provider_id="local", max_turns=max_turns) as sink:
+    with runtime(task="Inspect a file", provider_id="local", max_turns=max_turns, progress_limit=progress_limit) as sink:
         if stop == "received_first_turn":
             sink.bind_request(snapshot, logical_turn=1)
             reference = prepare_provider_request(sink, SendTurnRequest("Inspect a file", tuple(expected)), counters=None)
@@ -61,8 +62,8 @@ def test_terminal_results_keep_original_declarations_without_executing_new_calls
             flag.set()
         result = run_task_kernel(session, request=KernelRunRequest(
             transport=KernelTransportDeps(provider=provider, run_id=sink.run_id, provider_id="local", stop_flag=flag,
-                                          stagnant_turns=1 if stop in {"no_progress", "invalid_protocol"} else None),
+                                          stagnant_turns=progress_limit),
             execution=KernelExecutionDeps(intent_sink=sink)))
     expected_stop = {"budget": "max_turns", "no_progress": "no_progress", "invalid_protocol": "protocol"}.get(stop, "stopped")
-    assert result.stop_reason == expected_stop
+    assert result.stop_reason == expected_stop, result
     assert closed == ["call-1"]

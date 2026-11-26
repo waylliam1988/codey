@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from codey.operations.browser.browser_task_handoff import handoff_call
 from codey.operations.browser.turn_surface import offer_browser_tools
 from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel.kernel_protocol import normalize_turn
@@ -72,8 +73,9 @@ def test_handoff_keeps_each_frozen_interface_validation(nested: bool, args: Json
     assert (action is not None) is available
     if available:
         assert action is not None
-        assert action['tool'] == ('codemode' if nested else 'browser_click')
-        assert not normalize_turn(decode_text_turn(json.dumps(action)), snapshot=snapshot).protocol_error
+        offered, expected, _ = handoff_call(session, snapshot, ToolCall('browser_click', args))
+        assert action == expected and action['tool'] == 'browser_click'
+        assert not normalize_turn(decode_text_turn(json.dumps(action)), snapshot=offered).protocol_error
 
 
 def test_handoff_does_not_offer_result_for_a_bare_wait() -> None:

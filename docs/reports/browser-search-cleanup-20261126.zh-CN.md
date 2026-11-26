@@ -79,8 +79,8 @@
 默认不需要 API Key，使用浏览器搜索。用户可在可信进程环境中设置：
 
 ```powershell
-$env:CODEY_SEARCH_SEARXNG_URL = "http://127.0.0.1:8080/search"
-# 需要 Bearer 认证的服务再设置 CODEY_SEARCH_API_TOKEN。
+$env:SEARCH_SEARXNG_URL = "http://127.0.0.1:8080/search"
+# 需要 Bearer 认证的服务再设置 SEARCH_API_TOKEN。
 ```
 
 配置后，通用检索优先请求 SearXNG JSON。有效命中或确认零结果不会启动浏览器；HTTP、形状、上游失败或协议异常进入浏览器降级。禁止意外 API 重定向，避免凭据投递到新主机。本地授权仅用于明确配置的 API 端点，不放开搜索结果或页面资源对内网的访问。

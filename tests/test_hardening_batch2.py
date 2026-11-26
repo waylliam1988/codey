@@ -18,10 +18,18 @@ from types import SimpleNamespace
 from typing import NoReturn
 from unittest import mock
 
+import pytest
+
 from codey.app import api as app_api
 from codey.app import shell_service
 from codey.automation.browser_worker import BrowserWorker
+from codey.providers import model_preferences
 from codey.runtime.core import cancellation
+
+
+@pytest.fixture(autouse=True)
+def isolated_model_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(model_preferences, "DEFAULT_STATE_HOME", tmp_path / "model-settings")
 
 
 class ApprovalFailClosedTests(unittest.TestCase):

@@ -20,7 +20,7 @@ from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.toolchain import runtime
+from codey.toolchain import edit_tools, runtime
 from codey.toolchain.runtime import ToolOutcome
 from codey.types.json_value import JsonObject, decode_json_object
 from codey.workspace.revision import WorkspaceRevisionStore
@@ -34,14 +34,14 @@ def test_patch_preflights_all_files_before_writing(tmp_path: Path, monkeypatch: 
     for name in ("first.txt", "second.py"):
         (project / name).write_bytes(b"before\r\nkeep\n")
     if scenario in {"conflict", "guest_conflict"}:
-        final_check = runtime._write_text_after_final_path_check
+        final_check = edit_tools._write_text_after_final_path_check
 
         def concurrent_write(root: Path, rel: str, content: str, *, tool: str, expected_version: str | None = None) -> ToolOutcome | None:
             if rel == "second.py":
                 (root / rel).write_bytes(b"external\n")
             return final_check(root, rel, content, tool=tool, expected_version=expected_version)
 
-        monkeypatch.setattr(runtime, "_write_text_after_final_path_check", concurrent_write)
+        monkeypatch.setattr(edit_tools, "_write_text_after_final_path_check", concurrent_write)
     session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "project.write"})), project=str(project))
     snapshot = build_turn_snapshot(session)
     revisions = WorkspaceRevisionStore(tmp_path / "state")

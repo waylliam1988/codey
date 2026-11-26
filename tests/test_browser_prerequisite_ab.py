@@ -41,29 +41,31 @@ def test_research_wait_read_and_citation_use_the_same_document(
     row = experiment.run_arm(directory, case, arm, TARGET)
     checks = row["checks"]
     assert isinstance(checks, list) and checks, row
-    early = decode_json_object(checks[0])
-    assert early["next_step"] == next_step, row
-    if arm == "A" and case != "missing_wait":
-        assert row["early_accepted"] and row["stop_reason"] == "done" and not row["passed"], row
-        assert row["model_calls"] == 0
-    else:
-        assert not row["early_accepted"] and row["passed"], row
-        assert row["model_calls"] == len(replies)
+    assert not row["early_accepted"] and row["passed"] and row["stop_reason"] == "done", row
+    assert row["model_calls"] == len(replies)
     receipts = tool_receipts(directory / "state")
+    first_submission_index = next(index for index, receipt in enumerate(receipts)
+                                  if receipt.result.call.name == "submit_research_answer")
+    progress = experiment.research_progress(receipts[:first_submission_index])
+    assert progress.next_step == next_step
+    submissions = [receipt.result for receipt in receipts if receipt.result.call.name == "submit_research_answer"]
+    assert [result.ok for result in submissions] == [False, True]
+    assert submissions[0].model_text in feedback_requests(directory)[0]
+    assert experiment.research_progress(receipts).next_step == ""
+    assert all(decode_json_object(check)["next_step"] == "" and decode_json_object(check)["accepted"] is True
+               for check in checks)
     if case == "other_tab":
         waits = [r.result for r in receipts if r.result.call.name == "browser_wait" and r.result.ok]
         reads = [r.result for r in receipts if r.result.call.name == "browser_read" and r.result.ok]
         assert experiment.browser_document(waits[0]) != experiment.browser_document(reads[0])
     if arm == "B":
-        assert early["accepted"] is False and str(early["feedback"]) in feedback_requests(directory)[0]
         proof = [data for _, body in artifacts(directory / "state")
                  if isinstance(data := body.get("data"), dict) and data.get("purpose") == "done"]
         assert any(experiment.CHECK in json.dumps(data) for data in proof)
-        if case == "old_citation":
-            reads = [r.result for r in receipts if r.result.call.name == "browser_read"]
-            assert sum("required-source:navigation" in r.call.call_id for r in reads) == 1
-            assert sum("required-source:navigation" not in r.call.call_id for r in reads) == 2
-            assert "[e2]" in str(early["feedback"]) and row["model_calls"] == 1
+    if case == "old_citation":
+        assert "[e1]" in str(submissions[0].call.args["markdown"])
+        assert "[e2]" in str(submissions[-1].call.args["markdown"])
+        assert row["model_calls"] == 1
 
 
 @pytest.mark.parametrize("arm", ["A", "B"])

@@ -138,11 +138,12 @@ def test_admission_snapshot_survives_reopen_and_prompt_changes(tmp_path: Path) -
                               state={"source_requirements": {"version": 1, "required_urls": []}})
 
 
-def test_legacy_requirements_use_stored_input_and_reject_invalid_snapshots() -> None:
+def test_source_requirements_need_frozen_snapshot_and_reject_invalid_snapshots() -> None:
     from codey.task.web_intent import restored_source_requirements
 
-    assert restored_source_requirements({"input_text": f"打开 {URL}"}) == {URL}
-    assert restored_source_requirements({"task": f"打开 {OTHER}"}) == {OTHER}
+    for state in ({"input_text": f"打开 {URL}"}, {"task": f"打开 {OTHER}"}):
+        with pytest.raises(ValueError):
+            restored_source_requirements(state)
     for snapshot in ({"version": True, "required_urls": []}, {"version": 2, "required_urls": []},
                      {"version": 1, "required_urls": [7]}, {"version": 1}):
         with pytest.raises(ValueError):

@@ -37,7 +37,7 @@ def test_custom_required_check_survives_natural_answer(tmp_path):
 def test_reset_failure_stops_before_model_or_tool_execution(tmp_path):
     provider = NativeConversation(AssistantTurn(text="must not send"))
     provider.new_chat = lambda: (_ for _ in ()).throw(RuntimeError("reset failed"))
-    with closing(AppContext(tmp_path / "state")) as state:
+    with closing(AppContext(tmp_path / "state", start_scheduler=False)) as state:
         result, _ = execute_frame(workspace_frame(tmp_path, provider), state)
     assert result.event["stop_reason"] == "provider_failure"
     assert not provider.requests and not provider.results

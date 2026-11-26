@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from codey.storage import file_lock
-from codey.workspace import changes
+from codey.workspace import snapshot_store
 from codey.workspace.changes import SnapshotStore
 
 
@@ -17,7 +17,7 @@ def test_contended_write_is_explicitly_rejected_and_retry_preserves_first_baseli
     store = SnapshotStore(tmp_path / "state")
     entered = Event()
     release = Event()
-    write_body = changes._write_bytes_atomic
+    write_body = snapshot_store._write_bytes_atomic
 
     def paused_body_write(path, data):
         entered.set()
@@ -26,7 +26,7 @@ def test_contended_write_is_explicitly_rejected_and_retry_preserves_first_baseli
 
     with (
         ThreadPoolExecutor(max_workers=2) as pool,
-        patch.object(changes, "_write_bytes_atomic", side_effect=paused_body_write),
+        patch.object(snapshot_store, "_write_bytes_atomic", side_effect=paused_body_write),
     ):
         holder = pool.submit(store.put_baseline, root, "first.txt", "original")
         try:

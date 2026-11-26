@@ -37,13 +37,13 @@ from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.kernel_tool_args import _invalid_plan
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
-from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_guidance import task_result_context
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import ToolObservation, _browser_body, require_tool_success
 from codey.protocols.text_turn import DecodedTextTurn, TextRequest, TextRequests, decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolResult
+from codey.providers.task_prompt import TaskPromptSpan
 from codey.providers.text_result_views import TextResultSpan
 from codey.research import provenance
 from codey.research.answer_contract import AnswerScope
@@ -190,12 +190,14 @@ _restoring_fill_text: ContextVar[str] = ContextVar("restoring_fill_text", defaul
 
 
 def with_fill_text(snapshot: TurnSnapshot, value: str) -> BoundFillSnapshot:
-    bound = BoundFillSnapshot(snapshot.allowed, snapshot.contract_text)
-    attributes: dict[str, object] = vars(snapshot)
-    for name, attribute in attributes.items():
-        object.__setattr__(bound, name, attribute)
-    object.__setattr__(bound, "fill_text", value)
-    return bound
+    return BoundFillSnapshot(
+        allowed=snapshot.allowed, contract_text=snapshot.contract_text, model_specs=snapshot.model_specs,
+        tool_names=snapshot.tool_names, policy=snapshot.policy, frozen_specs=snapshot.frozen_specs,
+        custom_executors=snapshot.custom_executors, implementation_compatible=snapshot.implementation_compatible,
+        nested_tool_names=snapshot.nested_tool_names, research=snapshot.research,
+        ignore_runtime_claims=snapshot.ignore_runtime_claims, input_binding=snapshot.input_binding,
+        browser=snapshot.browser, project=snapshot.project, fill_text=value,
+    )
 
 
 def model_fill_spec(spec: ToolSpec) -> ToolSpec:
@@ -450,13 +452,14 @@ def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
     def freeze(context: KernelContext, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int,
                prompt: str = "", messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                counters: RuntimeExecutionCounters | None = None, text_result_spans: tuple[TextResultSpan, ...] = (),
-               coding_context_prepared: bool = False, initial_source_batch: bool = False, handoff: str | None = None) -> None:
+               coding_context_prepared: bool = False, initial_source_batch: bool = False, handoff: str | None = None,
+               task_span: TaskPromptSpan | None = None) -> None:
         if (arm == "fill_observe" or arm in PURPOSE_ARMS) and "browser_fill" in snapshot.tool_names:
             prompt += (
                 "\nA successful direct browser_fill automatically obtains a new browser_snapshot. Use its newest refs.")
         original_freeze(context, state, snapshot, turn=turn, prompt=prompt, messages=messages, acknowledge=acknowledge,
                         counters=counters, text_result_spans=text_result_spans, coding_context_prepared=coding_context_prepared,
-                        initial_source_batch=initial_source_batch, handoff=handoff)
+                        initial_source_batch=initial_source_batch, handoff=handoff, task_span=task_span)
 
     def run_parent(executor: CodeModeKernelExecutor, call: ToolCall) -> ToolResult:
         code = str(call.args.get("code"))
@@ -468,7 +471,7 @@ def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
         finally:
             active.pop(executor.execution_id, None)
 
-    def execute(delegate: ExecutionDelegate, browser: BrowserSession, call: ToolCall, *, turn: int,
+    def execute(delegate: BrowserExecutor, browser: BrowserSession, call: ToolCall, *, turn: int,
                 tool_index: int) -> tuple[ToolResult, bool, int | None]:
         parent = call.call_id.rpartition(":child:")[0]
         session = delegate.session
@@ -511,7 +514,7 @@ def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
             result = replace(result, audit={**result.audit, "query_click": ref})
         return result, ok, code
 
-    def execute_with_wait(delegate: ExecutionDelegate, browser: BrowserSession, call: ToolCall, *, turn: int,
+    def execute_with_wait(delegate: BrowserExecutor, browser: BrowserSession, call: ToolCall, *, turn: int,
                           tool_index: int) -> tuple[ToolResult, bool, int | None]:
         if arm not in PURPOSE_ARMS or call.name != "browser_wait" or delegate.session is None or pending_click(delegate.session) is None:
             return execute(delegate, browser, call, turn=turn, tool_index=tool_index)

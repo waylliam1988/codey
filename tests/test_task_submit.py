@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import unittest
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import ParamSpec
 from unittest import mock
 
@@ -82,6 +84,15 @@ def _browser_queue(*, accepted: bool = True, error: RuntimeError | None = None) 
 
 
 class TaskSubmitTests(unittest.TestCase):
+    def setUp(self) -> None:
+        from codey.providers import model_preferences
+
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        preferences = mock.patch.object(model_preferences, "DEFAULT_STATE_HOME", Path(temporary.name))
+        preferences.start()
+        self.addCleanup(preferences.stop)
+
     def test_submit_task_returns_run_id_and_expires_approvals(self) -> None:
         state = _FakeState(reserved=True)
         with _browser_queue() as queued:

@@ -13,6 +13,7 @@ from codey.research import answer_context, answer_contract
 from codey.research.answer_report import AnswerReport, compile_answer_report
 from codey.runtime.core.models import ToolCall, ToolResult
 from tests.test_research_findings import URL, execute, setup
+from tests.test_research_whole_answer import record_submission
 from tests.test_research_whole_kernel import run_whole
 
 
@@ -34,9 +35,7 @@ def test_previously_read_but_undisplayed_original_compiles_exactly(tmp_path):
         assert old.excerpt not in text and "previously_read_snapshots" in text
         assert "read_tool_result" not in text and "read_receipt_index" not in text
         args = {"state": "answered", "markdown": "The original permits concurrency [e1]."}
-        submitted = answer_contract.submit_answer(scope, args)
-        session._memory_results["s"] = ToolResult(ToolCall("submit_research_answer", args), "Recorded", ok=True,
-            canonical={"research_submission": submitted})
+        record_submission(session, args)
         report = compile_answer_report(session, tools.ledger, store, project="", session_id="test")
         assert report.evidence_bindings[0]["excerpt"] == old.excerpt
         assert report.evidence_bindings[0]["passage_ref"] == old.ref

@@ -47,7 +47,7 @@ def test_enabled_context_and_effort_are_readable_at_desktop_and_narrow_widths(pa
         assert_readable(page.locator(selector))
     expect(page.locator("#ctx-folder")).to_have_css("font-size", "11.5px")
     expect(page.locator("#effort-button")).to_have_css("font-size", "12.5px")
-    expect(page.locator(".ctx-sep")).to_have_css("color", "rgb(74, 74, 74)")
+    expect(page.locator(".ctx-sep")).to_have_count(0)
     expect(page.locator("#task")).to_have_css("color", "rgb(230, 230, 230)")
     assert page.locator("#task").evaluate(
         "e => getComputedStyle(e, '::placeholder').color"
@@ -63,7 +63,7 @@ def test_context_and_effort_keep_hover_active_keyboard_and_disabled_hierarchy(pa
     page.mouse.move(1000, 100)
     expect(research).to_have_attribute("aria-pressed", "true")
     expect(research).to_have_css("color", "rgb(230, 230, 230)")
-    expect(research).to_have_css("background-color", "rgba(0, 0, 0, 0)")
+    expect(research).to_have_css("background-color", "rgb(47, 47, 47)")
     expect(research).to_have_css("font-weight", "400")
 
     effort = page.locator("#effort-button")

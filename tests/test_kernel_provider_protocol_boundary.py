@@ -45,6 +45,7 @@ def test_kernel_operations_do_not_import_concrete_provider_modules() -> None:
         "codey.providers.requests", "codey.providers.request_codec",
         "codey.providers.transport", "codey.providers.text_result_views",
         "codey.providers.attempt_gate", "codey.providers.compat_transport",
+        "codey.providers.task_prompt",
     }
     concrete_imports: list[str] = []
     for path in operations.glob("kernel*.py"):

@@ -1993,16 +1993,17 @@ class AppContextLifecycleTests(unittest.TestCase):
 
     def test_app_context_close_cleans_resources_when_finished(self) -> None:
         store = mock.Mock()
-        evidence = mock.Mock()
+        execution_outputs = mock.Mock()
         ctx = AppContext()
         try:
             ctx._knowledge_store = store
-            ctx.evidence_ledgers = evidence
+            ctx.execution_outputs.close()
+            ctx.execution_outputs = execution_outputs
             assert ctx._ephemeral_runtime_home is not None
             with mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup:
                 self.assertTrue(ctx.close())
                 store.close.assert_called_once()
-                evidence.close.assert_called_once()
+                execution_outputs.close.assert_called_once()
                 cleanup.assert_called_once()
                 self.assertTrue(ctx.run_registry.stop_flag.is_set())
                 self.assertTrue(ctx.closed)
@@ -2012,28 +2013,31 @@ class AppContextLifecycleTests(unittest.TestCase):
 
     def test_app_context_close_retries_cleanup_failures(self) -> None:
         store = mock.Mock()
-        evidence = mock.Mock()
+        execution_outputs = mock.Mock()
         ctx = AppContext()
         try:
             ctx._knowledge_store = store
-            ctx.evidence_ledgers = evidence
+            ctx.execution_outputs.close()
+            ctx.execution_outputs = execution_outputs
             assert ctx._ephemeral_runtime_home is not None
             with mock.patch.object(ctx._ephemeral_runtime_home, "cleanup") as cleanup:
                 cleanup.side_effect = [PermissionError("locked"), None]
                 self.assertFalse(ctx.close())
                 store.close.assert_called_once()
-                evidence.close.assert_called_once()
+                execution_outputs.close.assert_called_once()
                 self.assertIsNone(ctx._knowledge_store)
                 self.assertFalse(ctx._knowledge_store_enabled)
-                self.assertIsNone(ctx.evidence_ledgers)
+                self.assertFalse(hasattr(ctx, "evidence_ledgers"))
                 self.assertIsNotNone(ctx._ephemeral_runtime_home)
                 self.assertFalse(ctx.closed)
                 self.assertTrue(ctx.close())
                 store.close.assert_called_once()
-                evidence.close.assert_called_once()
+                self.assertEqual(execution_outputs.close.call_count, 2)
                 self.assertEqual(cleanup.call_count, 2)
                 self.assertIsNone(ctx._ephemeral_runtime_home)
                 self.assertTrue(ctx.closed)
+                self.assertTrue(ctx.close())
+                self.assertEqual(execution_outputs.close.call_count, 2)
         finally:
             ctx._resources_closed = True
 

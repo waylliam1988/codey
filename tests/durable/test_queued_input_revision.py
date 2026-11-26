@@ -12,6 +12,7 @@ import pytest
 from codey.app.input_queue import DurableConversationInputQueue, InputItem
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.errors import CommitConflict
+from codey.task.model import StartTask, task_input_from_payload
 from codey.utils.object_fields import mapping_fields
 from tests.support.sqlite_store import TemporarySQLiteStore
 
@@ -43,6 +44,7 @@ def test_edit_then_steer_preserves_identity_and_consumes_the_edited_text_once(qu
     request = queue.durable.task("queued").state["input_request"]
     assert mapping_fields(request) and request["task"] == "original"
     assert queue.durable.task("queued").state["task"] == "edited"
+    assert task_input_from_payload(queue.durable.task("queued").state["input"]) == StartTask("edited")
     content = queue.durable.submission(queue.durable.task("queued").submission_id).content
     assert content is not None and content["text"] == "edited"
     assert [entry.payload.get("text") for entry in queue.durable.context("chat")] == ["current"]

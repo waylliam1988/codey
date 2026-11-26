@@ -19,6 +19,7 @@ from codey.operations.research.execution import ResearchExecutor
 from codey.operations.task_execution import ExecutionDelegate
 from codey.policies.tool_requirement import _browser_body
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
+from codey.providers.task_prompt import TaskPromptSpan
 from codey.providers.text_result_views import TextResultSpan
 from codey.research.answer_contract import AnswerScope, citation_occurrences
 from codey.research.passages import read_passage_refs
@@ -52,7 +53,7 @@ CASES = {
 _RECORD = """(record) => {
  const nodes = [...document.querySelectorAll('article[aria-label], section[aria-label], tr, [role=row]')];
  const found = nodes.filter(el => (el.getAttribute('aria-label') || el.cells?.[0]?.innerText || '')
-     .split(/[^A-Za-z0-9_-]+/).includes(record) && el.getClientRects().length);
+     .split(/[^A-Za-z0-9_-]+/).includes(record) && el.getBoundingClientRect().height > 0);
  return {count: found.length, text: found.length === 1 ? found[0].innerText : '',
      expandable: found.length === 1 && !!found[0].querySelector('button[aria-controls][aria-expanded=false]')};
 }"""
@@ -64,8 +65,8 @@ _CONTROL = """button => {
  return {id, text:region.innerText, owner:owner.getAttribute('aria-label') || owner.cells?.[0]?.innerText || ''};
 }"""
 _READY = """({id,text}) => {
- const region = document.getElementById(id);
- return !!region && region.getAttribute('aria-busy') !== 'true' && region.getClientRects().length > 0
+ const region = document.querySelector('[id=' + JSON.stringify(id) + ']');
+ return !!region && region.getAttribute('aria-busy') !== 'true' && region.getBoundingClientRect().height > 0
      && !!region.innerText.trim() && region.innerText !== text;
 }"""
 
@@ -78,7 +79,7 @@ class Click:
 
 
 def record_id(question: str) -> str:
-    ids = set(re.findall(r"(?<![\w-])[A-Z]+-\d+(?![\w-])", question))
+    ids = {match[0] for match in re.finditer(r"(?<![\w-])[A-Z]+-\d+(?![\w-])", question)}
     return next(iter(ids)) if len(ids) == 1 else ""
 
 
@@ -95,8 +96,10 @@ def control_region(browser: BrowserSession, ref: str) -> JsonObject | None:
     if not isinstance(identity, str) or attrs.get("aria-expanded") != "false":
         return None
     expression = """id => {
-        const region=document.getElementById(id);
-        const owner=region?.closest('article[aria-label],section[aria-label],tr,[role=row]');
+        const region=document.querySelector('[id=' + JSON.stringify(id) + ']');
+        let owner=region;
+        while (owner && !['ARTICLE','SECTION','TR'].includes(owner.tagName)
+            && owner.getAttribute('role') !== 'row') owner=owner.parentElement;
         return region && owner ? {id,text:region.innerText,
             owner:owner.getAttribute('aria-label')||owner.cells?.[0]?.innerText||''} : null;
     }"""
@@ -130,7 +133,7 @@ def wait_for_readback(browser: BrowserSession, click: Click) -> str | None:
         if browser.document_identity() != click.document:
             return None
         if browser.inspect_state("(" + _READY + ")(" + json.dumps(click.region) + ")") is True:
-            text = browser.inspect_state("document.getElementById(" + json.dumps(click.region["id"]) + ")?.innerText")
+            text = browser.inspect_state("document.querySelector(" + json.dumps('[id=' + json.dumps(click.region["id"]) + ']') + ")?.innerText")
             return text if isinstance(text, str) and text.strip() else None
         cancellation.wait(0.05)
     return None
@@ -142,7 +145,7 @@ def cites_post_click(browser: BrowserSession, click: Click | None, rows: tuple[T
     if click is None or click.document != document:
         return True
 
-    updated = (browser.inspect_state("document.getElementById(" + json.dumps(click.region["id"]) + ")?.innerText")
+    updated = (browser.inspect_state("document.querySelector(" + json.dumps('[id=' + json.dumps(click.region["id"]) + ']') + ")?.innerText")
                if browser.inspect_state("(" + _READY + ")(" + json.dumps(click.region) + ")") is True else None)
     index = next((i for i, result in enumerate(rows) if result.ok and result.call.call_id == click.call_id), None)
     if not isinstance(updated, str) or not updated.strip() or index is None:
@@ -178,7 +181,7 @@ def readback_experiment(directory: Path, arm: Arm, case: natural.Case, *,
                 return {**result, "text": text}
         return result
 
-    def source(delegate: ExecutionDelegate, call: ToolCall, tools: ResearchTools, *, turn: int,
+    def source(delegate: ResearchExecutor, call: ToolCall, tools: ResearchTools, *, turn: int,
                tool_index: int) -> tuple[ToolResult, bool, int | None]:
         nonlocal active, source_scoped
         active = delegate.browser_session
@@ -261,7 +264,7 @@ def readback_experiment(directory: Path, arm: Arm, case: natural.Case, *,
             tool_call_history_groups=tool_call_history_groups, output_token_limit=output_token_limit,
             require_tool_call=require_tool_call)
 
-    def submission(delegate: ExecutionDelegate, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
+    def submission(delegate: ResearchExecutor, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
         scope, browser, session = delegate._research_scope, delegate.browser_session, delegate.session
         if isinstance(scope, AnswerScope) and browser is not None and session is not None and call.args.get("state") == "answered":
             document = browser.document_identity()
@@ -285,7 +288,7 @@ def readback_experiment(directory: Path, arm: Arm, case: natural.Case, *,
                 prompt: str = "", messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                 counters: RuntimeExecutionCounters | None = None, text_result_spans: tuple[TextResultSpan, ...] = (),
                 coding_context_prepared: bool = False, initial_source_batch: bool = False,
-                handoff: str | None = None) -> None:
+                handoff: str | None = None, task_span: TaskPromptSpan | None = None) -> None:
         nonlocal hinted, read_available
         read_available = "codemode" in snapshot.tool_names and "browser_read" in snapshot.nested_tool_names
         browser = active
@@ -299,7 +302,7 @@ def readback_experiment(directory: Path, arm: Arm, case: natural.Case, *,
                     hinted = True
         freeze(context, state, snapshot, turn=turn, prompt=prompt, messages=messages, acknowledge=acknowledge,
             counters=counters, text_result_spans=text_result_spans, coding_context_prepared=coding_context_prepared,
-            initial_source_batch=initial_source_batch, handoff=handoff)
+            initial_source_batch=initial_source_batch, handoff=handoff, task_span=task_span)
 
     if arm == "A" or not record:
         yield
@@ -354,12 +357,19 @@ def run_arm(directory: Path, case: natural.Case, arm: Arm, target: Target, *, ma
     return row
 
 
+class _Arguments(argparse.Namespace):
+    run_dir: Path
+    base_url: str
+    seed_click: bool
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--seed-click", action="store_true", help="Run the two interactive scenarios with an identical scripted initial click.")
-    args = parser.parse_args()
+    args = _Arguments()
+    parser.parse_args(namespace=args)
     target = select_target(90, args.base_url)
     args.run_dir.mkdir(parents=True, exist_ok=False)
     runs: list[JsonObject] = []

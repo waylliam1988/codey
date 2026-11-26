@@ -6,19 +6,26 @@ from dataclasses import replace
 import pytest
 
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, KnowledgeReference
+from codey.operations.task_session import TaskSession
 from codey.research.answer_contract import AnswerScope, answer_scope, submit_answer
 from codey.research.answer_report import AnswerReport, compile_answer_report
-from codey.research.passages import describe_section_window, describe_window
+from codey.research.answer_values import AnswerSubmission
+from codey.research.passages import describe_section_window, describe_window, receipt_passages
+from codey.research.report_evidence import check_report_evidence
 from codey.research.report_snapshot import ReportMutation
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.types.json_value import canonical_json_object
+from codey.types.json_value import ToolArgs, canonical_json_object
 from tests.test_research_findings import URL, execute, setup
 
 
-def record_submission(session, args):
-    submission = submit_answer(answer_scope(session), args)
+def record_submission(session: TaskSession, args: ToolArgs) -> AnswerSubmission:
+    passages = {passage.ref: passage for result in session._memory_results.values()
+        if result.ok and result.canonical.get("read_passages")
+        for passage in receipt_passages(result.canonical["research_observation"], result.canonical["read_passages"])}
+    submission = submit_answer(answer_scope(session), args, passages=passages)
     session._memory_results["submitted"] = ToolResult(ToolCall("submit_research_answer", args), "Recorded", ok=True,
-        canonical={"research_submission": submission})
+        canonical=canonical_json_object({"research_submission": submission,
+            "research_evidence_check": check_report_evidence(submission, passages)}))
     return submission
 
 

@@ -34,7 +34,7 @@ def test_search_page_footer_malformed_does_not_crash() -> None:
 
 
 def test_changes_numstat_unicode_does_not_crash() -> None:
-    from codey.workspace.changes import _merge_numstat
+    from codey.workspace.git_changes import _merge_numstat
 
     stats: dict[str, dict[str, int]] = {}
     _merge_numstat(stats, "2\t5\tfoo.py")
@@ -172,7 +172,7 @@ def test_local_config_window_malformed_rejects_cleanly() -> None:
 
 
 def test_browser_search_evil_subdomain_is_public() -> None:
-    from codey.research.browser_search import _looks_like_public_result_url
+    from codey.research.search_urls import _looks_like_public_result_url
 
     assert _looks_like_public_result_url("https://www.bing.com/search?q=x") is False
     assert _looks_like_public_result_url("https://bing.com.evil.example/search") is True

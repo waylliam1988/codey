@@ -268,7 +268,7 @@ def test_managed_output_failure_never_falls_back_to_preview(tmp_path: Path, corr
     assert ref is not None
     session = execution_session()
     original = session._memory_results[REF]
-    session._memory_results[REF] = replace(original, truncated=True, audit={**original.audit,
+    session._memory_results[REF] = replace(original, truncated=True, canonical={**original.canonical,
         "managed_output": {"handle": ref.handle, "sha256": "0" * 64 if corruption == "digest" else ref.sha256}})
     path = store.path_for("s", "r", ref.handle)
     if corruption == "missing":

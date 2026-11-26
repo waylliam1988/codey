@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -88,7 +89,8 @@ def test_missing_one_fact_repairs_only_explanation_after_committed_edit(
         "url": URL, "city": "福州", "wait_text": "鱼丸", "path": "result.json",
         "changes": {"amount": 173, "code": "QUARTZ_851"}}}}
     directory = tmp_path / "run"
-    row = run_case(directory, "hybrid", TARGET, max_turns=3, explanation_output=True, restore_snapshots=True,
+    row = run_case(directory, "hybrid", replace(TARGET, context_window_tokens=65536),
+        max_turns=3, explanation_output=True, restore_snapshots=True,
         acquisition_action=acquisition,
         task_transform=lambda task: task + "\n必须手写 JavaScript。")
     assert row["passed"] is True and row["stop_reason"] == "done", row

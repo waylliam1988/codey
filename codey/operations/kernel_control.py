@@ -150,10 +150,12 @@ def _reject_completion(context: KernelContext, state: RuntimeOperationState, fol
                 context.session.last_done_args)
     progress.reject_completion(proposal, followup, context.session, failure_key=failure_key)
     done_spec = next((spec for spec in context.response(state).snapshot.model_specs if spec.name == "done"), None)
+    reply = context.response(state).reply
+    draft = reply if research and not proposal and isinstance(reply, AssistantTurn) and not reply.tool_calls else None
     decision = RetryDecision(
         purpose="retry", prompt=kernel_prompt._completion_followup(followup, native=context.native,
             structured_report=done_spec is not None and "report_sections" in done_spec.required,
-            whole_submission=research, done_spec=done_spec), error="",
+            whole_submission=research, done_spec=done_spec, draft=draft), error="",
         error_source=error_source, error_type=error_type)
     context.advance(state, operation_payload.LEAF_CONTROL_READY, data=decision,
                     counters=replace(state.counters, progress=progress.snapshot()))

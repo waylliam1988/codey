@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import sys
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager, nullcontext
@@ -15,12 +14,12 @@ from unittest.mock import patch
 from codey.automation.browser_receipts import committed_results
 from codey.automation.browser_session import BrowserSession
 from codey.completion.contract import CHECK_FAIL, CHECK_PASS, CompletionCheck
-from codey.operations import completion_gate, task_execution
+from codey.operations import completion_gate
+from codey.operations.browser import execution as browser_execution
 from codey.operations.browser.browser_completion import _snapshot_ref
 from codey.operations.browser.execution import BrowserExecutor
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import tool_facts
-from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
 from codey.policies.browser_requirement import PAGE_TRANSITIONS, browser_receipt_tools
 from codey.policies.requirement import RequirementEvaluation
@@ -28,7 +27,7 @@ from codey.policies.tool_requirement import ToolObservation, _browser_body
 from codey.research.answer_report import AnswerReport
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 from tools import browser_production_live_gate as gate
 from tools.browser_three_fixes_ab import RECORD
 from tools.completion_artifact_audit import tool_receipts
@@ -52,16 +51,17 @@ DELAYED_HTML = gate.HTML.replace(
 
 
 def loaded_record(rows: Iterable[tuple[str, ToolResult]], committed: set[str]) -> JsonObject | None:
-    document = None
+    document: JsonObject | None = None
     control = click = ""
     evidence: JsonObject | None = None
     for ref, result in rows:
         name = result.call.name
         if name == "edit":
             break
-        identity = result.audit.get("browser_document")
+        raw_identity = result.audit.get("browser_document")
+        identity = decode_json_object(raw_identity) if isinstance(raw_identity, dict) else None
         if name in PAGE_TRANSITIONS:
-            document = identity if isinstance(identity, dict) and identity.get("url") == gate.URL else None
+            document = identity if identity is not None and identity.get("url") == gate.URL else None
             control = click = ""
             evidence = None
         elif document is not None and identity == document:
@@ -76,9 +76,9 @@ def loaded_record(rows: Iterable[tuple[str, ToolResult]], committed: set[str]) -
                     body = _browser_body(result, url=gate.URL)
                 except (TypeError, ValueError, KeyError):
                     body = None
-                matches = RECORD.findall(body or "")
+                matches = list(RECORD.finditer(body or ""))
                 evidence = ({"click_ref": click, "read_ref": ref, "document": document,
-                             "changes": {"amount": int(matches[0][0]), "code": matches[0][1]}}
+                             "changes": {"amount": int(matches[0][1]), "code": matches[0][2]}}
                             if len(matches) == 1 else None)
     return evidence
 
@@ -102,7 +102,7 @@ def readiness_candidate(directory: Path, *, enabled: bool) -> Iterator[None]:
     checks = completion_gate._required_tool_checks
     pending: dict[BrowserSession, JsonObject] = {}
 
-    def browser_operation(delegate: ExecutionDelegate, browser: BrowserSession, call: ToolCall, *,
+    def browser_operation(delegate: BrowserExecutor, browser: BrowserSession, call: ToolCall, *,
                           turn: int, tool_index: int) -> tuple[ToolResult, bool, int | None]:
         name = call.name
         if name in PAGE_TRANSITIONS:
@@ -135,9 +135,12 @@ def readiness_candidate(directory: Path, *, enabled: bool) -> Iterator[None]:
             [*baseline.rows, CompletionCheck(CHECK, CHECK_PASS if outcome.passed else CHECK_FAIL, outcome.reason_code)],
             {**baseline.evaluations, CHECK: outcome}, baseline.tool_bindings)
 
+    def receipt_tools(declared: tuple[str, ...]) -> frozenset[str]:
+        return browser_receipt_tools(declared) | OBSERVED
+
     with (patch.object(BrowserExecutor, "execute_operation", browser_operation) if enabled else nullcontext(),
           patch.object(completion_gate, "_required_tool_checks", required_checks),
-          patch.object(task_execution, "browser_receipt_tools", lambda declared: browser_receipt_tools(declared) | OBSERVED)):
+          patch.object(browser_execution, "browser_receipt_tools", receipt_tools)):
         yield
 
 
@@ -146,7 +149,7 @@ def run_arm(directory: Path, case: str, arm: str, target: Target, *, max_turns: 
     stale = case != "legacy_structured"
     candidate = arm == "B"
     with (readiness_candidate(directory, enabled=candidate) if stale else nullcontext(),
-          patch("codey.app.provider_services.provider_tab_availability", return_value={}),
+          patch("codey.app.provider_services.provider_tab_availability", return_value=dict[str, object]()),
           patch("codey.app.review_service.run_review", return_value=None)):
         row = decode_json_object(gate.run_case(directory, "hybrid" if stale else "chat", target,
             max_turns=max_turns, structured=not stale and not candidate, explanation_output=not stale and candidate,
@@ -154,7 +157,7 @@ def run_arm(directory: Path, case: str, arm: str, target: Target, *, max_turns: 
             stale_edit=stale, preserve_external_field=stale, explicit_wait=not (stale and candidate),
             fixture_html=DELAYED_HTML if case == "stale_edit_delayed" else gate.HTML))
     if not stale and candidate and row.get("passed") is True:
-        answer = decode_json_object(json.loads(str(row["answer"])))
+        answer = parse_json_object(str(row["answer"]))
         rendered = f"{answer['explanation']}\n\n页面地址：{answer['page_url']}\nToken：{answer['token']}\n"
         (directory / "rendered-answer.txt").write_text(rendered, encoding="utf-8")
         row["rendered_answer"] = rendered
@@ -164,7 +167,7 @@ def run_arm(directory: Path, case: str, arm: str, target: Target, *, max_turns: 
         row["explicit_waits"] = sum(r.result.ok and r.result.call.name == "browser_wait" for r in receipts)
         for file in ("readiness", "evidence"):
             path = directory / f"{file}.jsonl"
-            row[file] = [decode_json_object(json.loads(line))
+            row[file] = [parse_json_object(line)
                          for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
         evidence = row["evidence"]
         row["passed"] = (row["passed"] is True and isinstance(evidence, list) and bool(evidence)
@@ -174,6 +177,17 @@ def run_arm(directory: Path, case: str, arm: str, target: Target, *, max_turns: 
                **provider_metrics(directory / "provider.jsonl"))
     write_json(directory / "summary.json", row)
     return row
+
+
+class Options(argparse.Namespace):
+    run_dir: Path
+    worker: str | None
+    arm: str
+    model: str | None
+    timeout: float
+    budget: float
+    max_turns: int
+    base_url: str
 
 
 def main() -> int:
@@ -186,7 +200,7 @@ def main() -> int:
     parser.add_argument("--budget", default=300.0, type=float)
     parser.add_argument("--max-turns", default=10, type=int)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
-    args = parser.parse_args()
+    args = parser.parse_args(namespace=Options())
     target = gate.select_target(args.timeout, args.base_url)
     root = args.run_dir.resolve()
     if args.worker:
@@ -223,7 +237,7 @@ def main() -> int:
             (directory / "worker.log").write_text(log, encoding="utf-8")
             row: JsonObject = ({"case": case, "arm": arm, "passed": False, "error": error or "missing summary"}
                    if error or not (directory / "summary.json").exists()
-                   else decode_json_object(json.loads((directory / "summary.json").read_text(encoding="utf-8"))))
+                   else parse_json_object((directory / "summary.json").read_text(encoding="utf-8")))
             runs.append(row)
             print(f"{index} {case}/{arm}: passed={row['passed']} stop={row.get('stop_reason')} calls={row.get('model_calls')} error={row.get('error')}", flush=True)
             write_json(root / "progress.json", {"runs": runs})

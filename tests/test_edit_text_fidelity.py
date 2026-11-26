@@ -251,7 +251,7 @@ def test_numbered_fragment_preserves_mixed_endings(tmp_path: Path) -> None:
 def test_exact_edit_does_not_overwrite_a_concurrent_content_change(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, external: bytes,
 ) -> None:
-    from codey.toolchain import runtime
+    from codey.toolchain import edit_tools as runtime
 
     path = tmp_path / "app.txt"
     path.write_bytes(b"old\r\nkeep\n")

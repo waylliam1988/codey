@@ -11,6 +11,7 @@ from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition
 from codey.providers.text_tool_schema import text_tool_schema
 from codey.runtime.core.api_selection import ApiRunSelection
+from codey.types.json_value import JsonObject, JsonValue, canonical_json_object
 
 
 def test_json_mode_roundtrips_and_rejects_incompatible_settings():
@@ -154,7 +155,7 @@ def test_research_schema_accepts_whole_answers_and_rejects_old_submission(native
     assert "research_plan" not in snapshot.tool_names and "knowledge_commit" not in snapshot.tool_names
 
 
-def test_shared_strict_report_tools_require_done_coverage_state():
+def test_shared_strict_report_tools_require_whole_answer_state() -> None:
     from codey.operations.task_session import TaskSession
     from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
@@ -162,53 +163,63 @@ def test_shared_strict_report_tools_require_done_coverage_state():
 
     session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "knowledge.write"}), strict_research=True),
                           task_kind="hybrid")
-    # Shared report callers retain this contract outside the Research task.
+    # Strict research uses whole answers even outside the Research task kind.
     session.research_questions = ("What does the source establish?",)
     schema = text_tool_schema(tools_from_specs(build_turn_snapshot(session, native=False).model_specs))
     validator = Draft202012Validator(schema)
-    coverage = {"question_ref": "q1", "state": "not_investigated",
+    coverage: JsonObject = {"question_ref": "q1", "state": "not_investigated",
                 "findings": [], "investigations": []}
-    raw = {"tool": "done", "args": {"report_sections": {"coverage": [coverage]}}}
+    retired: JsonObject = {"tool": "done", "args": {"report_sections": {"coverage": [coverage]}}}
+    assert not validator.is_valid(retired)
+    submission: JsonObject = {
+        "markdown": "The requested source evidence has not been established.", "state": "unresolved"}
+    raw: JsonObject = {"tool": "submit_research_answer", "args": submission}
     assert validator.is_valid(raw)
-    del coverage["state"]
+    del submission["state"]
     assert not validator.is_valid(raw)
 
 
-def test_strict_report_task_refs_bind_the_original_task_in_both_contracts():
+def test_strict_report_scope_binds_the_original_task_in_both_contracts() -> None:
     from codey.operations.kernel.kernel_protocol import normalize_turn
     from codey.operations.task_session import TaskSession
     from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
+    from codey.research.answer_contract import digest
 
-    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="hybrid",
+    session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "knowledge.write"}), strict_research=True), task_kind="hybrid",
                           task_text="Explain writers. Identify version gaps.")
     session.research_questions = ("Writer limits and version gaps?",)
     snapshot = build_turn_snapshot(session)
     validator = Draft202012Validator(text_tool_schema(tools_from_specs(snapshot.model_specs)))
-    row = {"question_ref": "q1", "state": "not_investigated",
-           "findings": [], "investigations": [], "task_refs": ["r1", "r2"]}
-    raw = {"tool": "done", "args": {"report_sections": {"coverage": [row]}}}
+    scope = snapshot.research.scope
+    assert scope is not None and scope.task_digest == digest(session.task_text)
+    args: JsonObject = {"markdown": "Writer limits and version gaps remain unresolved.", "state": "unresolved"}
+    raw: JsonObject = {"tool": "submit_research_answer", "args": args}
     assert validator.is_valid(raw)
-    for invalid in (["r999"], None):
-        if invalid is None:
-            row.pop("task_refs")
-        else:
-            row["task_refs"] = invalid
+    accepted = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("submit", "submit_research_answer", args),)), snapshot=snapshot)
+    assert len(accepted.calls) == 1 and not accepted.protocol_error
+    invalid_refs: tuple[JsonValue, ...] = (["r999"], None)
+    for invalid in invalid_refs:
+        args["task_refs"] = invalid
         assert not validator.is_valid(raw)
-        plan = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("done", "done", raw["args"]),)), snapshot=snapshot)
+        plan = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("submit", "submit_research_answer", args),)), snapshot=snapshot)
         assert plan.control is None and "task_refs" in plan.protocol_error
+    session.task_text = "A different original task."
+    current = build_turn_snapshot(session).research.scope
+    assert scope.task_digest != digest(session.task_text)
+    assert current is not None and current.task_digest == digest(session.task_text)
 
 
 @pytest.mark.parametrize("native", [False, True])
-def test_report_question_choices_follow_registered_receipts_and_freeze_per_turn(native):
+def test_whole_answer_contract_does_not_synthesize_question_choices(native: bool) -> None:
     from codey.operations.kernel.kernel_protocol import normalize_turn
     from codey.operations.task_session import TaskSession
     from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
 
-    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="hybrid",
+    session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "knowledge.write"}), strict_research=True), task_kind="hybrid",
                           task_text="Investigate the substantive questions. Write a short report.")
     session.research_questions = tuple(f"Actual question {n}?" for n in range(1, 6))
     snapshot = build_turn_snapshot(session, native=native)
@@ -216,31 +227,42 @@ def test_report_question_choices_follow_registered_receipts_and_freeze_per_turn(
     rows = [{"question_ref": f"q{n}", "state": "not_investigated",
              "findings": [], "investigations": [], "task_refs": ["r1", "r2"] if n == 1 else []}
             for n in range(1, 6)]
-    raw = {"tool": "done", "args": {"report_sections": {"coverage": rows}}}
-    assert validator.is_valid(raw)
-    rows.append({**rows[-1], "question_ref": "q6"})
+    report_args = canonical_json_object({"report_sections": {"coverage": rows}})
+    raw = {"tool": "done", "args": report_args}
     assert not validator.is_valid(raw)
-    turn = AssistantTurn(tool_calls=(ProviderToolCall("done", "done", raw["args"]),))
+    answer_args: JsonObject = {
+        "markdown": "The substantive questions remain unresolved without source evidence.", "state": "unresolved"}
+    answer: JsonObject = {"tool": "submit_research_answer", "args": answer_args}
+    assert validator.is_valid(answer)
+    rows.append({**rows[-1], "question_ref": "q6"})
+    report_args["report_sections"] = canonical_json_object({"coverage": rows})
+    assert not validator.is_valid(raw)
+    turn = AssistantTurn(tool_calls=(ProviderToolCall("done", "done", report_args),))
     rejected = normalize_turn(turn, snapshot=snapshot)
-    assert rejected.control is None and "coverage" in rejected.protocol_error
+    assert rejected.control is None and rejected.protocol_error
 
-    # Only a newly registered question may change the next frozen contract.
+    # Question registration cannot revive the retired report wire format.
     session.research_questions += ("A newly registered substantive question?",)
     assert not validator.is_valid(raw)
     current = build_turn_snapshot(session, native=native)
-    assert Draft202012Validator(text_tool_schema(tools_from_specs(current.model_specs))).is_valid(raw)
-    assert normalize_turn(turn, snapshot=current).control is not None
+    current_validator = Draft202012Validator(text_tool_schema(tools_from_specs(current.model_specs)))
+    assert not current_validator.is_valid(raw) and current_validator.is_valid(answer)
+    assert next(spec for spec in snapshot.model_specs if spec.name == "submit_research_answer") == next(
+        spec for spec in current.model_specs if spec.name == "submit_research_answer")
+    accepted = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall(
+        "submit", "submit_research_answer", answer_args),)), snapshot=current)
+    assert len(accepted.calls) == 1 and not accepted.protocol_error
 
 
 @pytest.mark.parametrize("native", [False, True])
-def test_format_requirement_needs_no_qn_or_task_ref_and_duplicate_repairs_are_rejected(native):
+def test_format_requirement_needs_no_qn_or_task_ref_and_duplicate_repairs_are_rejected(native: bool) -> None:
     from codey.operations.kernel.kernel_protocol import normalize_turn
     from codey.operations.task_session import TaskSession
     from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
 
-    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="hybrid",
+    session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "knowledge.write"}), strict_research=True), task_kind="hybrid",
                           task_text="Explain concurrency. 给出约800字的中文研究结论。")
     session.research_questions = ("What is the limit?", "What is still unknown?")
     snapshot = build_turn_snapshot(session, native=native)
@@ -248,30 +270,42 @@ def test_format_requirement_needs_no_qn_or_task_ref_and_duplicate_repairs_are_re
     rows = [{"question_ref": f"q{n}", "state": "not_investigated",
              "findings": [], "investigations": [], "task_refs": ["r1"] if n == 1 else []} for n in (1, 2)]
     raw = {"tool": "done", "args": {"report_sections": {"coverage": rows}}}
-    assert validator.is_valid(raw)
+    assert not validator.is_valid(raw)
+    answer: JsonObject = {"tool": "submit_research_answer", "args": {
+        "markdown": "并发限制尚缺少原始证据，当前无法给出已证实的结论。", "state": "unresolved"}}
+    assert validator.is_valid(answer)
+    from codey.operations.kernel_preparation import prepare_kernel_turn
+
+    prepared = prepare_kernel_turn(session, user_task=session.task_text, context_text="", task_guidance="", native=native)
+    assert session.task_text in prepared.prompt
     rows[0]["task_refs"] = ["r2"]
     assert not validator.is_valid(raw)
     rows[0]["task_refs"] = ["r1"]
     rows.append({**rows[0], "task_refs": ["r1"]})
     assert not validator.is_valid(raw)
-    result = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("done", "done", raw["args"]),)), snapshot=snapshot)
+    result = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("done", "done", canonical_json_object(raw["args"])),)), snapshot=snapshot)
     assert result.control is None
 
 
-def test_format_only_task_has_valid_empty_task_refs_schema():
+def test_format_only_task_has_valid_empty_task_refs_schema() -> None:
     from codey.operations.task_session import TaskSession
     from codey.operations.turn_snapshot import build_turn_snapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import tools_from_specs
 
-    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="hybrid",
+    session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "knowledge.write"}), strict_research=True), task_kind="hybrid",
                           task_text="请用中文回答。")
     session.research_questions = ("Research context?",)
     schema = text_tool_schema(tools_from_specs(build_turn_snapshot(session).model_specs))
-    Draft202012Validator.check_schema(schema)
-    assert Draft202012Validator(schema).is_valid({"tool": "done", "args": {"report_sections": {"coverage": [{
+    validator = Draft202012Validator(schema)
+    validator.check_schema(schema)
+    valid: JsonObject = {"tool": "submit_research_answer", "args": {
+        "markdown": "当前尚缺少可核查的原始材料，无法给出已证实的研究结论。", "state": "unresolved"}}
+    assert validator.is_valid(valid)
+    retired: JsonObject = {"tool": "done", "args": {"report_sections": {"coverage": [{
         "question_ref": "q1", "state": "not_investigated", "findings": [],
-        "investigations": [], "task_refs": []}]}}})
+        "investigations": [], "task_refs": []}]}}}
+    assert not validator.is_valid(retired)
 
 
 def test_explicit_schema_reaches_payload_but_does_not_leak_to_next_send(monkeypatch):

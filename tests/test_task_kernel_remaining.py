@@ -411,7 +411,8 @@ class HybridAndPlanningTests(unittest.TestCase):
             return fn
 
         project, store = _project_runtime(self)
-        session = TaskSession(policy=policy, task_kind="hybrid", project=str(project), max_turns=12)
+        session = TaskSession(policy=policy, task_kind="hybrid", project=str(project), max_turns=12,
+                              task_text="Search the web for documentation, then fix the project and verify it.")
         outcome = run_task_kernel(
             session,
             request=KernelRunRequest(

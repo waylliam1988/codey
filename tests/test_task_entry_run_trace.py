@@ -10,6 +10,7 @@ from codey.agents.handoff import ConversationSnapshot, render_summary_prompt
 from codey.agents.request import AgentRequest
 from codey.app import server
 from codey.app import task_submit as task_submit
+from codey.app.context import AppContext
 from codey.operations.task_run import TaskRunDeps
 from codey.operations.task_submission import run_task_submission
 from codey.research.ledger import ResearchLedger
@@ -17,9 +18,16 @@ from codey.research.object_model import ResearchRecord, build_research_record
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.run_result import ResearchRunResult
-from codey.runs.trace import digest_text
 from codey.runtime.core.run_result import RunResult
 from codey.task.model import TaskSubmission
+from codey.types.json_value import (
+    JsonObject,
+    decode_json_object,
+    parse_json_object,
+    require_json_string,
+    require_json_strings,
+)
+from codey.utils.refs import digest_text
 
 RESEARCH_ITERATION = "codey.operations.research_iteration.run_research_iteration"
 
@@ -99,10 +107,10 @@ def _runner(
     )
 
 
-def _trace_payload(state: server.AppContext, session_id: str, run_id: str) -> dict:
+def _trace_payload(state: AppContext, session_id: str, run_id: str) -> JsonObject:
     assert state.run_traces is not None
     path = state.run_traces.path_for(session_id, run_id)
-    return json.loads(path.read_text(encoding="utf-8"))
+    return parse_json_object(path.read_text(encoding="utf-8"))
 
 
 def _research_record(project: Path | None = None) -> ResearchRecord:
@@ -239,8 +247,9 @@ def test_explicit_research_result_writes_structured_trace_refs() -> None:
     """Explicit Research archives bounded report refs without source-body leaks."""
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        state = server.AppContext(root / "state")
+        state = AppContext(root / "state")
         main_provider = _Provider("ACTION: research\nPLAN: 查最新 storage 方案")
+        record = _research_record()
 
         result = ResearchRunResult(
             question="Research storage",
@@ -257,17 +266,7 @@ def test_explicit_research_result_writes_structured_trace_refs() -> None:
                     "title": "Example Source",
                 }
             ],
-            research_record={
-                "record_id": "research_record:" + "b" * 16,
-                "answer_status": "partial",
-                "source_count": 1,
-                "evidence_count": 2,
-                "claim_count": 3,
-                "assumption_count": 1,
-                "unsupported_claim_count": 1,
-                "record_digest": "sha256:" + "b" * 64,
-                "summary": "SECRET_RESEARCH_RECORD_SHOULD_NOT_BE_SAVED",
-            },
+            research_record=record,
         )
 
         with mock.patch.object(state, "get_provider", return_value=main_provider):
@@ -286,40 +285,37 @@ def test_explicit_research_result_writes_structured_trace_refs() -> None:
                     )
                 )
 
-        run_id = state.run_registry.last_terminal_event()["run_id"]
+        terminal = decode_json_object(state.run_registry.last_terminal_event())
+        run_id = require_json_string(terminal["run_id"], "run_id")
         payload = _trace_payload(state, "session-research-trace", run_id)
         serialized = json.dumps(payload, ensure_ascii=False)
-        research_payload = state.run_registry.last_terminal_event()["research"]
+        research_payload = decode_json_object(terminal["research"])
 
         assert payload["mode_initial"] == "research"
         assert payload["mode_final"] == "research"
         assert payload["permission_profile"] == "research"
-        assert payload["mode_selection"]["source"] == "explicit_user_choice"
-        assert payload["mode_selection"]["reason_code"] == "intent_selected"
+        mode_selection = decode_json_object(payload["mode_selection"])
+        assert mode_selection["source"] == "explicit_user_choice"
+        assert mode_selection["reason_code"] == "intent_selected"
         research_iteration.assert_called_once()
-        assert set(payload["research_note_ids"]) == {"note-created", "note-updated", "synth-1"}
-        assert payload["research_source_refs"][0]["host"] == "example.com"
-        assert payload["research_pipeline_runs"]
-        assert payload["research_pipeline_runs"][-1]["followup_applied"] is False
-        assert payload["research_records"] == [
-            {
-                "record_id": "research_record:" + "b" * 16,
-                "answer_status": "partial",
-                "source_count": 1,
-                "evidence_count": 2,
-                "claim_count": 3,
-                "assumption_count": 1,
-                "unsupported_claim_count": 1,
-                "record_digest": "sha256:" + "b" * 64,
-            }
-        ]
+        assert set(require_json_strings(payload["research_note_ids"], "note_ids")) == {
+            "note-created", "note-updated", "synth-1"}
+        source_refs = payload["research_source_refs"]
+        assert isinstance(source_refs, list)
+        assert decode_json_object(source_refs[0])["host"] == "example.com"
+        pipeline_runs = payload["research_pipeline_runs"]
+        assert isinstance(pipeline_runs, list) and len(pipeline_runs) == 1
+        assert decode_json_object(pipeline_runs[0])["followup_applied"] is False
+        assert payload["research_records"] == [record.to_summary_payload()]
         assert "https://example.com/request" not in serialized
         assert "https://example.com/final" not in serialized
         assert "Example Source" not in serialized
-        assert "SECRET_RESEARCH_RECORD_SHOULD_NOT_BE_SAVED" not in serialized
-        assert research_payload["followup_applied"] is False
-        assert research_payload["followup_rounds"] == 0
-        assert "planner_stop_reason" in research_payload
+        assert "SECRET_TOKEN" not in serialized
+        assert research_payload["pipeline_stop_reason"] == "done"
+        assert research_payload["final_evidence_count"] == 0
+        assert "followup_applied" not in research_payload
+        assert "followup_rounds" not in research_payload
+        assert "planner_stop_reason" not in research_payload
         assert "research_record" not in research_payload
 
 
@@ -328,7 +324,7 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
         root = Path(td)
         project = root / "project"
         project.mkdir()
-        state = server.AppContext(root / "state")
+        state = AppContext(root / "state")
         record = _research_record(project)
         result = ResearchRunResult(
             question="Research helium",
@@ -364,86 +360,37 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
                 )
             )
 
-        assert state.evidence_ledgers is not None
-        snapshot = state.evidence_ledgers.load(
-            session_id="session-evidence-ledger",
-            project=project,
-        )
-        run_id = state.run_registry.last_terminal_event()["run_id"]
+        terminal = decode_json_object(state.run_registry.last_terminal_event())
+        run_id = require_json_string(terminal["run_id"], "run_id")
         trace_payload = _trace_payload(state, "session-evidence-ledger", run_id)
-        terminal_research_payload = state.run_registry.last_terminal_event()["research"]
+        terminal_research_payload = decode_json_object(terminal["research"])
         serialized_trace = json.dumps(trace_payload, ensure_ascii=False)
 
-        assert snapshot.available is True
-        assert len(snapshot.payload["records"]) == 1
-        assert trace_payload["research_evidence_ledgers"] == [
-            {
-                "ok": True,
-                "skipped": False,
-                "reason_code": "",
-                "ledger_ref": snapshot.payload["ledger_ref"],
-                "record_id": record.record_id,
-                "counts": {
-                    "records": 1,
-                    "sources": 1,
-                    "evidence": 1,
-                    "claims": 3,
-                    "assumptions": 1,
-                    "relations": 3,
-                },
-            }
-        ]
-        assert trace_payload["research_records"][0]["record_id"] == record.record_id
-        proof_reviews = trace_payload["research_proof_reviews"]
-        assert len(proof_reviews) == 1
-        proof_review = proof_reviews[0]
-        research_plans = trace_payload["research_plans"]
-        assert len(research_plans) == 1
-        research_plan = research_plans[0]
+        assert trace_payload["research_evidence_ledgers"] == []
+        assert trace_payload["research_records"] == [record.to_summary_payload()]
+        assert trace_payload["research_proof_reviews"] == []
+        assert trace_payload["research_plans"] == []
         pipeline_runs = trace_payload["research_pipeline_runs"]
         assert pipeline_runs == [
             {
                 "followup_applied": False,
                 "followup_rounds": 0,
                 "stop_reason": "done",
-                "planner_stop_reason": "strict_writer_owns_followup",
+                "planner_stop_reason": "",
                 "fresh_source_count": 0,
                 "new_evidence_count": 0,
-                "final_evidence_count": 1,
+                "final_evidence_count": 0,
                 "attempted_fresh_source_count": 0,
                 "attempted_new_evidence_count": 0,
-                "audit_diagnostics": [
-                    {"stage": stage, "phase": phase, "status": "ok", "reason_code": "", "error_type": ""}
-                    for stage, phase in (
-                        ("proof_review", "initial"), ("ledger_read", "final"), ("proof_review", "final"),
-                        ("snapshot", "final"), ("findings", "final"), ("planner_gaps", "final"),
-                        ("source_trust", "final"), ("brief", "final"),
-                    )
-                ],
             }
         ]
 
-        assert proof_review["proof_ref"].startswith("research_proof:")
-        assert proof_review["record_id"] == record.record_id
-        assert proof_review["record_digest"] == record.record_digest
-        assert proof_review["question_digest"].startswith("sha256:")
-        assert proof_review["ok"] is True
-        assert proof_review["answers_question"] is True
-        assert proof_review["answer_status"] == "answered"
-        assert proof_review["answer_coverage_score"] == 1.0
-        assert proof_review["gap_count"] == 0
-        assert proof_review["planner_signal_count"] >= 1
-        assert proof_review["reason_codes"] == []
-        assert research_plan["plan_ref"].startswith("research_plan:")
-        assert research_plan["proof_ref"] == proof_review["proof_ref"]
-        assert research_plan["question_digest"] == proof_review["question_digest"]
-        assert research_plan["dry_run"] is True
-        assert "query_preview" not in research_plan
         assert "SECRET_TOKEN" not in serialized_trace
-        assert terminal_research_payload["followup_applied"] is False
-        assert terminal_research_payload["followup_rounds"] == 0
+        assert "followup_applied" not in terminal_research_payload
+        assert "followup_rounds" not in terminal_research_payload
         assert terminal_research_payload["pipeline_stop_reason"] == "done"
-        assert terminal_research_payload["planner_stop_reason"] == "strict_writer_owns_followup"
+        assert terminal_research_payload["final_evidence_count"] == 0
+        assert "planner_stop_reason" not in terminal_research_payload
         assert "research_record" not in terminal_research_payload
         assert "research_proof" not in terminal_research_payload
         assert "research_plan" not in terminal_research_payload

@@ -145,7 +145,7 @@ def _evidence_with_session_facts(
     """
     if evidence is None:
         return None, ()
-    observations = verification_observations(session.verifications)
+    observations = _session_observations(session)
     if not observations:
         return evidence, ()
     exact_edits = [value for value in session.edited_files.values() if type(value) is int]
@@ -234,7 +234,8 @@ def _normalized_scope_and_change(session: TaskSession | ProjectCompletionFacts, 
             task_changed = bool(provided_changed) or bool(context_scope or edits)
         except Exception:
             task_changed = bool(context_scope or edits)
-    scope = tuple(dict.fromkeys((*context_scope, *edits, *(session.verification_paths if task_changed else ()))))
+    scope_paths = (*context_scope, *edits, *(session.verification_paths if task_changed else ()))
+    scope = tuple({path: None for path in scope_paths})
     return scope, task_changed
 
 

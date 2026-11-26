@@ -72,7 +72,7 @@ def test_direct_control_choice(
     row = probe.run_arm(directory, case, arm, Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10))
     assert row["passed"] is (scenario not in {"timeout", "not_offered"}), row
     assert row["successful_clicks"] == (0 if scenario in {"visible", "not_offered"} else 1)
-    assert row["automatic_reads"] == (1 if scenario in {"interactive", "wrong_record", "stale"} else 0)
+    assert row["automatic_reads"] == (1 if scenario in {"interactive", "stale"} else 0)
     if scenario in {"manual", "interactive"}:
         assert row["model_calls"] == (3 if scenario == "manual" else 2)
     requests = [record for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()

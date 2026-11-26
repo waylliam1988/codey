@@ -30,7 +30,7 @@ def test_retired_selection_is_hidden_from_picker_but_explained_in_settings(page,
     page.locator('#btn-settings').click()
     section = page.locator('.model-source[data-source-id="partner"]')
     section.locator('summary').first.click()
-    expect(section.locator('.model-source-count')).to_have_text('0 selected · 1 unavailable')
+    expect(section.locator('.model-source-count')).to_have_text('0 of 1 selected · 1 unavailable')
     expect(section.get_by_role('checkbox', name='Use Chosen model', exact=True)).to_have_count(0)
     section.get_by_text('1 unavailable selection', exact=True).click()
     expect(section.locator('.model-source-unavailable')).to_contain_text('Chosen model · No longer available')
@@ -56,7 +56,7 @@ def test_manual_refresh_is_forced_and_updates_picker_without_saving_staged_choic
     source.get_by_role('button', name='Refresh models', exact=True).click()
     expect(source.get_by_role('checkbox', name='Use New arrival', exact=True)).not_to_be_checked()
     assert calls[-1] == {'source': 'partner', 'force': True}
-    expect(source.locator('.model-source-count')).to_have_text('0 selected · 2 unavailable')
+    expect(source.locator('.model-source-count')).to_have_text('0 of 1 selected · 2 unavailable')
     assert posts == []
     page.locator('#model-settings-cancel').click()
     page.locator('#provider-button').click()

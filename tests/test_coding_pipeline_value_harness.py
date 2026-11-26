@@ -1,12 +1,13 @@
 """Audit controls: external oracles, real memory reload, and honest wire costs."""
 import json
 from contextlib import closing
-from types import SimpleNamespace
 
 import pytest
 
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.task_context import ProjectTaskContextBuilder
+from codey.providers.api_provider import ApiProvider
+from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget, ReportedUsage, RequestContextCount
 from codey.workspace.facts import ProjectFactsStore
 from tests.manual.archive_coding_pipeline_evidence import compact, expand
 from tests.manual.coding_pipeline_cases import BY_NAME
@@ -52,19 +53,8 @@ def test_external_oracle_catches_flaws_hidden_by_visible_tests(tmp_path, name, f
     assert not grade(tmp_path, case)["scope_ok"]
 
 
-def test_wire_accounting_preserves_native_and_missing_reported_tokens():
-    class Provider:
-        native_tools = True
-        api_protocol = "openai-completions"
-        request_scoped_tool_context = True
-
-        def _observe_http_attempt(self, **kwargs):
-            pass
-
-        def bind_usage(self, connection_id, sink):
-            self.sink = sink
-
-    concrete = Provider()
+def test_wire_accounting_preserves_native_and_missing_reported_tokens() -> None:
+    concrete = ApiProvider("http://unused.test/v1", "fixture", native_tools=True)
     observed = EvidenceProvider(concrete)
     from codey.providers.compat_transport import provider_attribute, unwrap_provider
 
@@ -73,10 +63,11 @@ def test_wire_accounting_preserves_native_and_missing_reported_tokens():
     assert provider_attribute(observed, "request_scoped_tool_context") is True
     assert provider_attribute(observed, "api_protocol") == concrete.api_protocol
     mark = observed.mark()
-    concrete._observe_http_attempt(phase="request", data=json.dumps({"messages": [
-        {"role": "user", "content": "Coding current local context:"}]}).encode())
-    concrete.sink(SimpleNamespace(to_payload=lambda: {"usage": {"input_tokens": None, "output_tokens": None},
-                                                       "context": {"value": 123, "method": "tokenizer"}}))
+    concrete._observe_http_attempt(attempt=1, phase="request", response_bytes=0, seconds=0.0,
+        data=json.dumps({"messages": [{"role": "user", "content": "Coding current local context:"}]}).encode())
+    assert concrete.on_usage is not None
+    concrete.on_usage(ApiExchangeUsage("exchange", "local", "fixture", "openai-completions",
+        RequestContextCount(123, "tokenizer"), ContextBudget(1024, 128, 0, 256), ReportedUsage(), "unreported", "ok"))
     row = observed.evidence(mark)
     assert row["http_requests"] == 1
     assert row["reported_input_tokens"] is None

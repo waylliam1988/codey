@@ -7,6 +7,7 @@ import pytest
 from codey.operations import kernel_prompt, knowledge_context, turn_snapshot
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS
 from codey.research import answer_context, answer_contract
+from codey.research.pipeline import ResearchPipeline
 from tests.manual.research_process_review import ARMS, _rewrite_view, ablation
 from tests.test_research_deterministic_completion import _run
 from tests.test_research_findings import URL
@@ -20,7 +21,9 @@ def test_each_experimental_patch_restores_original_owners(arm):
                (answer_contract, "answer_spec"), (answer_contract, "ANSWER_GUIDANCE"))
     before = [getattr(module, name) for module, name in targets]
     with ablation(arm):
-        pass
+        if arm == "no_proof_audit":
+            assert not hasattr(ResearchPipeline, "_review")
+            assert not hasattr(ResearchPipeline, "_record_final_findings")
     assert before == [getattr(module, name) for module, name in targets]
 
 

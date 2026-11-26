@@ -523,7 +523,7 @@ class PromptSurfaceTests(unittest.TestCase):
                 flush_count += 1
                 return orig_flush()
 
-            recorder.flush = counting_flush
+            recorder._prompt.flush = counting_flush
 
             surf1 = prompt_surface_id(phase="writer", send_ref="effect_1", prompt_digest="sha256:" + "b" * 64)
             payload = {

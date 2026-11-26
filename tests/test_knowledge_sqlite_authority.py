@@ -15,7 +15,7 @@ def test_explicit_import_restart_export_and_rebuild_have_one_authority(tmp_path)
     store = KnowledgeStore(tmp_path)
     try:
         assert store.read_note(note.id) is None
-        store.import_markdown(path.read_text(encoding="utf-8"))
+        store.import_markdown(path.read_text(encoding="utf-8"), expected_revision=0)
         assert store.read_note(note.id).aliases == ["别名"]
         store.write_note(replace(note, body="Revised"))
         path.write_text(note.to_markdown(), encoding="utf-8")

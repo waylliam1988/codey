@@ -26,13 +26,13 @@ def test_complete_result_is_available_without_ordering_a_redundant_receipt_read(
     assert "If more detail" in text
 
 
-def test_truncated_result_guides_literal_search_instead_of_reexecution():
+def test_truncated_failed_execution_offers_its_original_receipt():
     session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.write"})))
     result = ToolResult(ToolCall("run", {}), "bounded preview", ok=False, truncated=True)
     session._memory_results["exec-1"] = result
     text = _result_context(result, session)
-    assert "query" in text and "literal" in text
-    assert "do not repeat execution" in text
+    assert 'Recover omitted output with read_tool_result({"result_ref":"rc1"})' in text
+    assert "Available receipt views: output" in text
 
 
 @pytest.mark.parametrize("native", [False, True])

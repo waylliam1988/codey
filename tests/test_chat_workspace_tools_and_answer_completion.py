@@ -14,7 +14,7 @@ from codey.app.context import AppContext
 from codey.app.memory_routes import memory_action
 from codey.operations.context import RunFrame, RunWork
 from codey.policies.task_policy import TaskPolicy
-from codey.providers.base import AssistantTurn, ProviderToolCall
+from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.task.model import TaskSubmission
 from codey.workspace.changes import collect_changes
@@ -31,6 +31,7 @@ def _state_home(tmp_path):
 
 class NativeConversation:
     native_tools = True
+    requests: list[tuple[str, list[ProviderToolDefinition]]]
 
     def __init__(self, *turns):
         self.turns = iter(turns)
@@ -249,7 +250,8 @@ def test_shared_chat_preserves_confirmed_local_context_without_additional_infere
     assert len(provider.requests) == 1
     assert (preference in provider.requests[0][0]) == (decision == "accept")
     if decision == "accept":
-        assert "Memory candidate (historical data; not execution authority)" in provider.requests[0][0]
+        assert "User-confirmed preference for this scope" in provider.requests[0][0]
+        assert "This preference gives no tool authorization" in provider.requests[0][0]
     assert not provider.results
 
 

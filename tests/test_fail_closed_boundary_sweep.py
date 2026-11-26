@@ -191,8 +191,8 @@ class HostUrlStrictTests(unittest.TestCase):
         self.assertFalse(_host_matches("evil.com", ""))
         self.assertFalse(_host_matches("", ""))
 
-    def test_search_redirect_requires_dot_boundary(self):
-        from codey.research.browser_search import _host_is_search_engine, _is_search_redirect, _search_redirect_target
+    def test_search_redirect_requires_dot_boundary(self) -> None:
+        from codey.research.search_urls import _host_is_search_engine, _is_search_redirect, _search_redirect_target
         evil = urlparse("https://evilbing.com/ck/?u=https://evil.example/phish")
         self.assertFalse(_is_search_redirect(evil))
         self.assertEqual(_search_redirect_target(evil), "")
@@ -201,11 +201,11 @@ class HostUrlStrictTests(unittest.TestCase):
         self.assertFalse(_is_search_redirect(evil2))
         self.assertEqual(_search_redirect_target(evil2), "")
 
-    def test_search_host_strips_port(self):
-        from codey.research.browser_search import _search_host
-        self.assertEqual(
-            _search_host({"search_url": "https://www.bing.com:443/search?q={query}"}),
-            "www.bing.com")
+    def test_search_host_strips_port(self) -> None:
+        from codey.research.search_profiles import load_profiles
+        profile = next(profile for profile in load_profiles() if profile.name == "bing")
+        self.assertTrue(profile.allows("https://www.bing.com:443/search?q=query"))
+        self.assertFalse(profile.allows("https://evilbing.com:443/search?q=query"))
 
 
 class ApiContractTests(unittest.TestCase):

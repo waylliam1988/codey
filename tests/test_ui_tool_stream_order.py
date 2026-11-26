@@ -31,7 +31,8 @@ def begin(page):
         addToSession('a', {type:'user',text:'Fix the login form and verify the changes.'});
         handleServerEvent({type:'task_start',schema_version:1,session_id:'a',run_id:'order-review',provider:'local'});
     }""")
-    page.locator('.process-summary').click()
+    if not page.locator('.process-group').evaluate('el => el.open'):
+        page.locator('.process-summary').click()
 
 
 def order(page, selector='.process-body'):
@@ -134,7 +135,8 @@ def test_history_replay_keeps_start_order_after_reverse_completions(page):
         ctx.durable.record_display_message('a', run_id='history-order', identity=f'review:{index}', payload=message)
     page.evaluate("ConversationUI.refreshHistory('a')")
     expect(page.locator('.process-summary')).to_be_visible()
-    page.locator('.process-summary').click()
+    if not page.locator('.process-group').evaluate('el => el.open'):
+        page.locator('.process-summary').click()
     assert order(page) == ['a', 'b', 'edit', 'c']
     page.locator('.tool-group-summary').click()
     page.locator('[data-call-id="a"] summary').click()

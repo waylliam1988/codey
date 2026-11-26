@@ -182,6 +182,7 @@ def test_real_steer_is_consumed_by_the_current_task_without_a_second_run(tmp_pat
                 expect(page.locator('.pending-inputs')).to_contain_text('Steer at next boundary')
                 release.set()
                 expect(page.locator('.pending-inputs')).to_be_hidden()
+                expect(page.locator('.msg.asst .body').last).to_contain_text('排队补充已送达。')
                 expect(page.locator('.spinner:visible')).to_have_count(0, timeout=20000)
                 assert len(requests) == 2
                 assert '请把当前回答改成简短中文' in json.dumps(requests[1], ensure_ascii=False)

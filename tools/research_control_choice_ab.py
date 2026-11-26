@@ -16,11 +16,12 @@ from codey.operations.kernel.kernel_context import KernelContext
 from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.protocols.text_turn import DecodedTextTurn, TextError, TextRequest, TextRequests
 from codey.providers.base import AssistantTurn, ProviderToolResult
+from codey.providers.task_prompt import TaskPromptSpan
 from codey.providers.text_result_views import TextResultSpan
 from codey.runtime.core.models import ToolPlan, ToolResult
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, json_contract_text, validate_args_with_spec
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object, require_json_integer
 from tools import research_click_readback_ab as readback
 from tools import research_natural_handoff_ab as natural
 from tools.browser_production_live_gate import select_target
@@ -101,11 +102,12 @@ def observed_controls(browser: BrowserSession, document: JsonObject) -> list[Jso
     return capture()
 
 
-def choice_snapshot(snapshot: TurnSnapshot, document: JsonObject, rows: list[JsonObject]) -> TurnSnapshot:
+def choice_snapshot(snapshot: TurnSnapshot, document: JsonObject, rows: list[JsonObject], *, turn: int) -> TurnSnapshot:
+    declaration: JsonObject = {"turn": turn, "document": document, "controls": list[JsonValue](rows)}
     spec = freeze_spec_parameters(ToolSpec(
         name=TOOL, description="Choose an observed detail button by its choice ID. The runtime handles its browser reference.",
         parameters=(("choice", {"type": "string", "enum": [row["choice"] for row in rows]}),), required=("choice",),
-        declarations=json.dumps({"document": document, "controls": rows}, ensure_ascii=False),
+        declarations=json.dumps(declaration, ensure_ascii=False),
     ))
     position = len(snapshot.tool_names)
     return replace(snapshot, tool_names=(*snapshot.tool_names, TOOL),
@@ -116,12 +118,12 @@ def choice_snapshot(snapshot: TurnSnapshot, document: JsonObject, rows: list[Jso
 
 
 def public_spec(spec: ToolSpec) -> ToolSpec:
-    view = decode_json_object(json.loads(spec.declarations))
+    view = parse_json_object(spec.declarations)
     controls = view["controls"]
     assert isinstance(controls, list)
     rows = [decode_json_object(raw) for raw in controls]
-    return replace(spec, declarations=json.dumps(
-        [{key: row[key] for key in ("choice", "label", "record")} for row in rows], ensure_ascii=False))
+    public_rows: list[JsonValue] = [{key: row[key] for key in ("choice", "label", "record")} for row in rows]
+    return replace(spec, declarations=json.dumps(public_rows, ensure_ascii=False))
 
 
 def control_prompt(rows: list[JsonObject]) -> str:
@@ -142,7 +144,7 @@ def experiment(directory: Path, case: natural.Case, arm: Arm) -> Generator[None,
                     prompt: str = "", messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                     counters: RuntimeExecutionCounters | None = None, text_result_spans: tuple[TextResultSpan, ...] = (),
                     coding_context_prepared: bool = False, initial_source_batch: bool = False,
-                    handoff: str | None = None) -> None:
+                    handoff: str | None = None, task_span: TaskPromptSpan | None = None) -> None:
             nonlocal active
             research = context.execution.research_tools
             active = research.browser_session if research is not None else None
@@ -155,12 +157,12 @@ def experiment(directory: Path, case: natural.Case, arm: Arm) -> Generator[None,
                         and any(row.ok and row.call.name in natural.READS for row in context.session._memory_results.values())
                         and (document := active.document_identity()) is not None and document.get("url") == case.url
                         and (rows := observed_controls(active, document))):
-                    snapshot = choice_snapshot(snapshot, document, rows)
+                    snapshot = choice_snapshot(snapshot, document, rows, turn=turn)
                     prompt += "\n\n" + control_prompt(rows)
                     append_json(directory / "choices.jsonl", {"event": "offered", "turn": turn, "controls": rows})
             freeze(context, state, snapshot, turn=turn, prompt=prompt, messages=messages, acknowledge=acknowledge,
                 counters=counters, text_result_spans=text_result_spans, coding_context_prepared=coding_context_prepared,
-                initial_source_batch=initial_source_batch, handoff=handoff)
+                initial_source_batch=initial_source_batch, handoff=handoff, task_span=task_span)
 
         def lower(reply: DecodedTextTurn | AssistantTurn, *, snapshot: TurnSnapshot) -> ToolPlan:
             if isinstance(reply, TextRequests) and any(item.tool == TOOL for item in reply.items):
@@ -170,7 +172,7 @@ def experiment(directory: Path, case: natural.Case, arm: Arm) -> Generator[None,
                 args = reply.items[0].args
                 if error := validate_args_with_spec(spec, args):
                     return normalize(TextError(error, tool=TOOL), snapshot=snapshot)
-                view = decode_json_object(json.loads(spec.declarations))
+                view = parse_json_object(spec.declarations)
                 controls = view["controls"]
                 assert isinstance(controls, list)
                 row = next(decode_json_object(raw) for raw in controls if decode_json_object(raw)["choice"] == args["choice"])
@@ -186,7 +188,7 @@ def experiment(directory: Path, case: natural.Case, arm: Arm) -> Generator[None,
                             and readback.unique_text(readback.projection(browser, record)) is not None)
 
                 valid = matches_current_record()
-                append_json(directory / "choices.jsonl", {"event": "selected", "choice": args["choice"],
+                append_json(directory / "choices.jsonl", {"event": "selected", "turn": view["turn"], "choice": args["choice"],
                             "record": row["record"], "valid": valid})
                 if not valid:
                     return normalize(TextError("The control is stale or belongs to a different record. "
@@ -207,7 +209,7 @@ def run_arm(directory: Path, case: natural.Case, arm: str, target: Target, *, ma
         row = natural.run_arm(directory, case, "A", target, max_turns=max_turns)
     receipts = [entry.result for entry in tool_receipts(directory / "state")]
     trace = directory / "choices.jsonl"
-    choices = [decode_json_object(json.loads(line)) for line in trace.read_text(encoding="utf-8").splitlines()] if trace.exists() else []
+    choices = [parse_json_object(line) for line in trace.read_text(encoding="utf-8").splitlines()] if trace.exists() else []
     clicks = [entry for entry in receipts if entry.ok and entry.call.name == "browser_click"]
     selections = selection_events(choices)
     row.update(arm=arm, offered_turns=sum(entry["event"] == "offered" for entry in choices),
@@ -238,17 +240,21 @@ def passes_case(row: JsonObject, case: natural.Case, receipts: list[ToolResult])
 
 def selection_events(trace: list[JsonObject]) -> list[JsonValue]:
     selections: list[JsonValue] = []
-    turn: JsonValue = None
     seen: set[tuple[int, str]] = set()
     for entry in trace:
-        if entry["event"] == "offered":
-            turn = entry["turn"]
-        elif entry["event"] == "selected" and type(turn) is int:
+        if entry["event"] == "selected":
+            turn = require_json_integer(entry["turn"], "choice turn")
             key = (turn, str(entry["choice"]))
             if key not in seen:
-                selections.append({**entry, "turn": turn})
+                selections.append(entry)
                 seen.add(key)
     return selections
+
+
+class Options(argparse.Namespace):
+    run_dir: Path
+    base_url: str
+    paraphrases: bool
 
 
 def main() -> int:
@@ -256,7 +262,7 @@ def main() -> int:
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--paraphrases", action="store_true", help="Repeat the two interactive scenarios with alternative wording.")
-    args = parser.parse_args()
+    args = parser.parse_args(namespace=Options())
     target = select_target(90, args.base_url)
     args.run_dir.mkdir(parents=True, exist_ok=False)
     runs: list[JsonObject] = []

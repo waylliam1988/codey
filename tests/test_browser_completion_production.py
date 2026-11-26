@@ -46,9 +46,13 @@ def test_research_requires_the_declared_wait_read_and_citation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str, next_step: str,
 ) -> None:
     add_requirement(monkeypatch, require_browser_research_sequence(url=gate.URL, condition="text", value="鱼丸"))
-    monkeypatch.setattr(gate, "HTML", gate.HTML.replace("尚未加载记录。请填写 Locality 并点击 Load record。",
-        "旧缓存：福州样本净重 101 克，校验码 OLD_101。请填写 Locality 并点击 Load record。"))
+    html = gate.HTML.replace("尚未加载记录。请填写 Locality 并点击 Load record。",
+        "旧缓存：福州样本净重 101 克，校验码 OLD_101。请填写 Locality 并点击 Load record。")
     replies = fixture.prefix("old_citation" if case == "mixed_citation" else case)
+    if case in {"missing_wait", "wrong_wait", "old_read", "other_tab"}:
+        # Browser actions now read their result automatically. Cite that current
+        # result so completion reaches the explicitly declared wait/read check.
+        replies[1] = fixture.submission("e2", current=True)
     if case == "mixed_citation":
         replies[1] = {"tool": "submit_research_answer", "args": {"state": "answered",
             "markdown": "福州页面出现了两份记录。旧记录 [e1] 和新记录 [e2]。"}}
@@ -59,12 +63,13 @@ def test_research_requires_the_declared_wait_read_and_citation(
     replies.append(fixture.submission("e2", current=True))
     install_http(monkeypatch, replies)
     directory = tmp_path / "run"
-    row = gate.run_case(directory, "research", TARGET, strict_research=True, max_turns=6)
+    row = gate.run_case(directory, "research", TARGET, strict_research=True, max_turns=6, fixture_html=html)
     assert row["passed"] and row["stop_reason"] == "done", row
     messages = request_messages(directory)
     assert len(messages) == len(replies)
-    assert next_step in messages[2]
-    if next_step == "browser_post_wait_citation_missing":
+    expected_rejection = "browser_result_evidence_missing" if case == "old_citation" else next_step
+    assert expected_rejection in messages[2]
+    if case == "mixed_citation":
         assert "[e2] for the required page" in messages[2]
     receipts = tool_receipts(directory / "state")
     waits = [r.result for r in receipts if r.result.call.name == "browser_wait" and r.result.ok]
@@ -76,8 +81,8 @@ def test_research_requires_the_declared_wait_read_and_citation(
         initial = [r for r in reads if "required-source:navigation" in r.call.call_id]
         assert len(initial) == 1
         scripted = [r for r in reads if r not in initial]
-        assert len(scripted) == 2
-        assert scripted[0].audit["browser_document"] == scripted[1].audit["browser_document"]
+        assert len(scripted) == 4
+        assert all(read.audit["browser_document"] == scripted[0].audit["browser_document"] for read in scripted)
         assert initial[0].audit["browser_document"] != scripted[0].audit["browser_document"]
     decisions = [value for _, body in artifacts(directory / "state")
                  if isinstance(value := body.get("data"), dict) and value.get("purpose") == "done"]

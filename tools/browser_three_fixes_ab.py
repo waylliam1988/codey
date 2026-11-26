@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import re
 import sys
 from collections.abc import Generator
@@ -14,13 +13,14 @@ from unittest.mock import patch
 
 from codey.automation.browser_receipts import committed_results
 from codey.automation.browser_session import BrowserSession, BrowserToolOutput
-from codey.operations import kernel_control, task_execution
+from codey.operations import kernel_control
+from codey.operations.browser import execution as browser_execution
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import CompletionOutput, prepare_completion_output, tool_facts
 from codey.operations.task_session import TaskSession
 from codey.policies.browser_requirement import PAGE_TRANSITIONS, browser_receipt_tools
 from codey.policies.tool_requirement import _browser_body
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 from tools import browser_production_live_gate as gate
 from tools import receipt_bound_edit_ab as edit
 from tools.completion_explanation_ab import Target, append_json, provider_metrics
@@ -41,12 +41,13 @@ def record_from_reads(session: TaskSession, context: CompletionContext) -> JsonO
     records, results = tool_facts(session, context)
     parented = {child for row in records.values() if row["name"] == "codemode" and row["ok"]
                 for child in row.get("child_effect_ids", ())}
-    document = None
+    document: JsonObject | None = None
     initial = click = ""
-    latest = None
+    latest: JsonObject | None = None
     for ref, result in committed_results(records, results, READ_TOOLS):
         name = result.call.name
-        identity = result.audit.get("browser_document")
+        raw_identity = result.audit.get("browser_document")
+        identity = decode_json_object(raw_identity) if isinstance(raw_identity, dict) else None
         if name in PAGE_TRANSITIONS:
             document = identity if isinstance(identity, dict) and identity.get("url") == gate.URL else None
             initial = click = ""
@@ -66,9 +67,9 @@ def record_from_reads(session: TaskSession, context: CompletionContext) -> JsonO
                 if body and "尚未加载记录" in body:
                     initial = ref
                 continue
-            matches = RECORD.findall(body or "")
+            matches = list(RECORD.finditer(body or ""))
             latest = ({"initial_ref": initial, "click_ref": click, "read_ref": ref,
-                       "amount": int(matches[0][0]), "code": matches[0][1]}
+                       "amount": int(matches[0][1]), "code": matches[0][2]}
                       if initial and len(matches) == 1 else None)
     return latest
 
@@ -106,7 +107,7 @@ def candidate(directory: Path, scenario: str, *, enabled: bool) -> Generator[Non
             return browser_receipt_tools(checks) | READ_TOOLS
 
         with (patch.object(kernel_control, "prepare_completion_output", assemble),
-              patch.object(task_execution, "browser_receipt_tools", receipt_tools)):
+              patch.object(browser_execution, "browser_receipt_tools", receipt_tools)):
             yield
     else:
         raise ValueError(f"unknown scenario: {scenario}")
@@ -116,7 +117,7 @@ def run_arm(directory: Path, scenario: str, arm: str, target: Target, *, max_tur
     before = edit.production_source_digest()
     stale_edit = scenario == "stale_edit"
     with (candidate(directory, scenario, enabled=arm == "B"),
-          patch("codey.app.provider_services.provider_tab_availability", return_value={}),
+          patch("codey.app.provider_services.provider_tab_availability", return_value=dict[str, object]()),
           patch("codey.app.review_service.run_review", return_value=None)):
         row = decode_json_object(gate.run_case(directory, "hybrid" if stale_edit else "chat", target,
             max_turns=max_turns, structured=scenario == "legacy_structured", reread=scenario == "reread",
@@ -124,7 +125,7 @@ def run_arm(directory: Path, scenario: str, arm: str, target: Target, *, max_tur
             task_transform=(lambda task: task + "\n必须手写 JavaScript，使用 content 写回。") if stale_edit else None))
     stable = before == edit.production_source_digest()
     log = directory / "candidate.jsonl"
-    actions: list[JsonValue] = [decode_json_object(json.loads(line)) for line in log.read_text(encoding="utf-8").splitlines()
+    actions: list[JsonValue] = [parse_json_object(line) for line in log.read_text(encoding="utf-8").splitlines()
                ] if log.exists() else []
     row.update(scenario=scenario, arm=arm, source=before, source_stable=stable,
                passed=stable and row.get("passed") is True, candidate_actions=actions,
@@ -132,6 +133,17 @@ def run_arm(directory: Path, scenario: str, arm: str, target: Target, *, max_tur
                **provider_metrics(directory / "provider.jsonl"))
     edit.write_json(directory / "summary.json", row)
     return row
+
+
+class Options(argparse.Namespace):
+    run_dir: Path
+    worker: str | None
+    arm: str
+    expected_model: str | None
+    max_turns: int
+    timeout: float
+    budget: float
+    kobold_base_url: str
 
 
 def main() -> int:
@@ -144,7 +156,7 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=90)
     parser.add_argument("--budget", type=float, default=300)
     parser.add_argument("--kobold-base-url", default="http://127.0.0.1:5001/v1")
-    args = parser.parse_args()
+    args = parser.parse_args(namespace=Options())
     target = gate.select_target(args.timeout, args.kobold_base_url)
     root = args.run_dir.resolve()
     if args.worker:
@@ -202,7 +214,7 @@ def run_worker(directory: Path, scenario: str, arm: str, target: Target, *, budg
     (directory / "worker.log").write_text(output + error, encoding="utf-8")
     summary = directory / "summary.json"
     if not error and summary.exists():
-        return decode_json_object(json.loads(summary.read_text(encoding="utf-8")))
+        return parse_json_object(summary.read_text(encoding="utf-8"))
     return {"scenario": scenario, "arm": arm, "passed": False, "error": error or "missing worker summary"}
 
 

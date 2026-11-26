@@ -26,8 +26,9 @@ from codey.agents.tools import AgentToolFns
 from codey.providers import controls as provider_controls
 from codey.providers.registry import connect_provider, provider_ids
 from codey.runtime.observe.events import RunEvent, render_run_event
+from codey.toolchain.constants import SEARCH_EXCLUDED_DIRS
+from codey.toolchain.path_checks import _raw_path_symlink_reason
 from codey.toolchain.runtime import (
-    SEARCH_EXCLUDED_DIRS,
     SEARCH_MAX_DIR_ENTRIES,
     SEARCH_MAX_FILE_BYTES,
     SEARCH_MAX_RESULTS,
@@ -35,7 +36,6 @@ from codey.toolchain.runtime import (
     SEARCH_MAX_SCAN_DIRS,
     SEARCH_MAX_SCAN_FILES,
     ToolOutcome,
-    _raw_path_symlink_reason,
     safe_join,
 )
 from codey.toolchain.runtime import (

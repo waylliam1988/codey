@@ -121,10 +121,10 @@ def test_runtime_connect_uses_snapshot_and_rejects_unknown_thinking_control():
     from codey.providers.local_discovery import LocalEndpoint
 
     config = LocalProviderConfig(base_url="http://localhost:5001/v1", model="chosen", thinking_enabled=False)
-    with mock.patch("codey.providers.local_discovery.resolve_local_endpoint", return_value=LocalEndpoint(config.base_url, ("chosen",))), mock.patch("codey.providers.local_selection.model_metadata", return_value={"thinking_options": ["off", "high"]}):
+    with mock.patch("codey.providers.local_discovery.resolve_local_endpoint", return_value=LocalEndpoint(config.base_url, ("chosen",))), mock.patch("codey.providers.local_connection.model_metadata", return_value={"thinking_options": ["off", "high"]}):
         provider = connect_local(config=config, verify_thinking=True)
     assert provider.model == "chosen" and provider.thinking_enabled is False
-    with mock.patch("codey.providers.local_discovery.resolve_local_endpoint", return_value=LocalEndpoint(config.base_url, ("chosen",))), mock.patch("codey.providers.local_selection.model_metadata", return_value={"thinking_options": []}), pytest.raises(ValueError, match="thinking"):
+    with mock.patch("codey.providers.local_discovery.resolve_local_endpoint", return_value=LocalEndpoint(config.base_url, ("chosen",))), mock.patch("codey.providers.local_connection.model_metadata", return_value={"thinking_options": []}), pytest.raises(ValueError, match="thinking"):
         connect_local(config=config, verify_thinking=True)
 
 
@@ -169,7 +169,7 @@ def test_effort_selection_is_captured_and_sent_on_the_wire(effort, enabled, wire
     saved = LocalProviderConfig(base_url='http://localhost:5001/v1', model='gemma')
     with mock.patch('codey.providers.local_selection.load_local_config', return_value=saved):
         snapshot = capture_local_run_config({'base_url':saved.base_url, 'model':'gemma', 'effort':effort})
-    with mock.patch('codey.providers.local_discovery.resolve_local_endpoint', return_value=LocalEndpoint(saved.base_url, ('gemma',))), mock.patch('codey.providers.local_selection.model_metadata', return_value={'thinking_options':['off','minimal','low','medium','high']}):
+    with mock.patch('codey.providers.local_discovery.resolve_local_endpoint', return_value=LocalEndpoint(saved.base_url, ('gemma',))), mock.patch('codey.providers.local_connection.model_metadata', return_value={'thinking_options':['off','minimal','low','medium','high']}):
         provider = connect_local(config=snapshot, verify_thinking=True)
     sent = _install_fake(monkeypatch, {"choices": [{"finish_reason": "stop", "message": {"content": "hello"}}]})
     assert provider.send("hello") == "hello"
@@ -195,7 +195,7 @@ def test_runtime_rejects_an_effort_not_in_current_model_capabilities():
     from codey.providers.local_discovery import LocalEndpoint
 
     config = LocalProviderConfig(base_url='http://localhost/v1', model='m', thinking_enabled=True, reasoning_effort='max')
-    with mock.patch('codey.providers.local_discovery.resolve_local_endpoint', return_value=LocalEndpoint(config.base_url, ('m',))), mock.patch('codey.providers.local_selection.model_metadata', return_value={'thinking_options':['off','high']}), pytest.raises(ValueError, match='effort'):
+    with mock.patch('codey.providers.local_discovery.resolve_local_endpoint', return_value=LocalEndpoint(config.base_url, ('m',))), mock.patch('codey.providers.local_connection.model_metadata', return_value={'thinking_options':['off','high']}), pytest.raises(ValueError, match='effort'):
         connect_local(config=config, verify_thinking=True)
 
 

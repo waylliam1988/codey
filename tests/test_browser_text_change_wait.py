@@ -358,9 +358,11 @@ def test_observation_wait_preserves_timeout_cancellation_and_original_document(
         result = browser.wait_for_text_change(text, document, 150)
         assert not result.ok and result.observation["reason"] == "timeout"
     elif stop == "deadline":
-        with cancellation.deadline_scope(time.monotonic() + 0.3):
-            result = browser.wait_for_text_change(text, document, 5000)
-        assert not result.ok and result.observation["reason"] in {"deadline", "cancelled"}
+        with (
+            cancellation.deadline_scope(time.monotonic() + 0.3),
+            pytest.raises(cancellation.DeadlineExceeded),
+        ):
+            browser.wait_for_text_change(text, document, 5000)
     else:
         stopped = threading.Event()
         timer = threading.Timer(0.3, stopped.set)

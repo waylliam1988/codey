@@ -10,6 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request
 
+from codey.env_names import SEARCH_API_TOKEN_ENV, SEARCH_SEARXNG_URL_ENV
 from codey.policies.network import check_fetch_url
 from codey.research.http_redirects import build_no_redirect_opener
 from codey.research.search_contracts import SearchOutcome, complete_search, failed_search
@@ -44,8 +45,8 @@ class SearchApi:
 
     @classmethod
     def configured(cls) -> SearchApi | None:
-        endpoint = os.environ.get("CODEY_SEARCH_SEARXNG_URL", "").strip()
-        return cls(endpoint, os.environ.get("CODEY_SEARCH_API_TOKEN", "")) if endpoint else None
+        endpoint = os.environ.get(SEARCH_SEARXNG_URL_ENV, "").strip()
+        return cls(endpoint, os.environ.get(SEARCH_API_TOKEN_ENV, "")) if endpoint else None
 
     def search(self, query: str, *, limit: int, timeout: float) -> SearchOutcome:
         cancellation.check()

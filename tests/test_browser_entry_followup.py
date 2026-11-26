@@ -62,7 +62,7 @@ def test_identical_wait_fault_then_real_timeout_and_recovery(
     field = "args.condition" if scenario == "snapshot_restore" else "args.timeout_ms"
     assert error.startswith("browser_wait") and f"'{field}'" in error
     timed, waited = [r for r in receipts if r.call.name == "browser_wait"]
-    assert not timed.ok and "wait timed out" in timed.model_text and waited.ok
+    assert not timed.ok and decode_json_object(timed.canonical["value"])["reason"] == "timeout" and waited.ok
     if scenario == "stale_ref":
         stale, fresh = [r for r in receipts if r.call.name == "browser_click"]
         assert decode_json_object(stale.canonical["value"])["reason"] == "stale_ref"

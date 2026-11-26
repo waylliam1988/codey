@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from codey.policies.tool_requirement import _browser_body
 from codey.types.json_value import JsonObject
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import research_click_readback_ab as probe
@@ -58,7 +59,7 @@ def test_research_click_readback_and_record_scope(tmp_path: Path, monkeypatch: p
     row = probe.run_arm(directory, case, "B", Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10))
     assert row["passed"] is (name not in {"timeout", "ambiguous", "reload"}), row
     assert row["model_calls"] == len(replies)
-    assert row["automatic_reads"] == (1 if name in {"interactive", "missing"} else 0)
+    assert row["automatic_reads"] == (1 if name == "interactive" else 0)
     receipts = [item.result for item in tool_receipts(directory / "state")]
     if name in {"missing", "table"}:
         assert "周四 12:10" not in str(row["scoped_texts"])
@@ -71,9 +72,11 @@ def test_research_click_readback_and_record_scope(tmp_path: Path, monkeypatch: p
     if name == "timeout":
         assert "no confirmed updated text" in (directory / "provider.jsonl").read_text(encoding="utf-8")
     if name == "already_read":
-        assert row["browser_reads"] == 1
+        assert row["browser_reads"] == 2
         assert '"already_read": true' in (directory / "readback.jsonl").read_text(encoding="utf-8")
     if name in {"interactive", "missing"}:
-        selected, = [result for result in receipts if result.call.name == "browser_read" and result.audit.get("readback_of")]
+        selected, = [result for result in receipts if result.call.name == "browser_read"
+                     and result.audit.get("record_id") == probe.record_id(case.question)
+                     and all(fact in (_browser_body(result) or "") for fact in case.facts)]
         assert selected.audit["record_id"] == probe.record_id(case.question)
         assert "[e2]" in str(row["answer"])

@@ -14,6 +14,7 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.automation.browser_contracts import RouteDecision as Route
 from codey.automation.browser_receipts import committed_results
 from codey.operations.browser.browser_upload import browser_opened
+from codey.operations.browser.turn_inputs import BrowserTurnInputs
 from codey.operations.kernel import kernel_protocol
 from codey.operations.kernel.kernel_context import KernelContext
 from codey.operations.kernel.turn_contract import TurnSnapshot
@@ -23,6 +24,7 @@ from codey.policies.browser_requirement import PAGE_TRANSITIONS
 from codey.policies.tool_requirement import _browser_body
 from codey.protocols.text_turn import DecodedTextTurn, TextError, TextRequest, TextRequests
 from codey.providers.base import AssistantTurn, ProviderToolResult
+from codey.providers.task_prompt import TaskPromptSpan
 from codey.providers.text_result_views import TextResultSpan
 from codey.research.answer_contract import AnswerScope
 from codey.research.browser_result_evidence import complete_page_passages
@@ -132,7 +134,7 @@ def assessment_snapshot(snapshot: TurnSnapshot, evidence: Evidence) -> TurnSnaps
     spec = next(spec for spec in snapshot.frozen_specs if spec.name == "codemode")
     spec = replace(spec, description=ASSESS, declarations=json.dumps({"key": evidence.key, "labels": list(evidence.texts)}))
     return replace(snapshot, tool_names=("codemode",), nested_tool_names=(), frozen_specs=(spec,),
-        browser=replace(snapshot.browser, references=None, fill_text=None, followups=False),
+        browser=BrowserTurnInputs(), input_binding=None,
         custom_executors=tuple(row for row in snapshot.custom_executors if row[0] == "codemode"),
         model_specs=(assessment_spec(spec),), contract_text=json_contract_text((assessment_spec(spec),)))
 
@@ -172,7 +174,7 @@ def experiment(directory: Path, arm: Arm) -> Generator[None, None, None]:
             result = replace(result, audit={**result.audit, "browser_document": before})
         return result, ok, code
 
-    def opened(delegate: ExecutionDelegate, call: ToolCall, tools: ResearchTools, *, turn: int,
+    def opened(delegate: ResearchExecutor, call: ToolCall, tools: ResearchTools, *, turn: int,
                tool_index: int) -> tuple[ToolResult, bool, int | None]:
         result, ok, code = open_source(delegate, call, tools, turn=turn, tool_index=tool_index)
         browser = delegate.browser_session
@@ -186,7 +188,7 @@ def experiment(directory: Path, arm: Arm) -> Generator[None, None, None]:
                prompt: str = "", messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                counters: RuntimeExecutionCounters | None = None, text_result_spans: tuple[TextResultSpan, ...] = (),
                coding_context_prepared: bool = False, initial_source_batch: bool = False,
-               handoff: str | None = None) -> None:
+               handoff: str | None = None, task_span: TaskPromptSpan | None = None) -> None:
         scope = snapshot.research.scope
         if isinstance(scope, AnswerScope) and not acknowledge:
             tools = context.execution.research_tools
@@ -233,7 +235,7 @@ def experiment(directory: Path, arm: Arm) -> Generator[None, None, None]:
                 prompt += "\n\n" + hint
         original_freeze(context, state, snapshot, turn=turn, prompt=prompt, messages=messages, acknowledge=acknowledge,
             counters=counters, text_result_spans=text_result_spans, coding_context_prepared=coding_context_prepared,
-            initial_source_batch=initial_source_batch, handoff=handoff)
+            initial_source_batch=initial_source_batch, handoff=handoff, task_span=task_span)
 
     with (patch.object(ExecutionDelegate, "_execute_browser", read), patch.object(ResearchExecutor, "_execute_source_open", opened),
           patch.object(kernel_protocol, "normalize_turn", lower),

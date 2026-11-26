@@ -56,12 +56,14 @@ def test_strict_research_rejects_summary_only_even_with_a_complete_markdown_repo
     state = session()
     snapshot = build_turn_snapshot(state, native=native)
     done = next(spec for spec in snapshot.frozen_specs if spec.name == "done")
-    assert set(done.required) == {"report_sections"}
+    assert set(done.required) == {"summary"}
+    assert "report_sections" not in dict(done.parameters)
     assert "Alternatively" not in snapshot.contract_text
     reply = (AssistantTurn(tool_calls=(ProviderToolCall("old-format", "done", {"summary": report}),)) if native
              else decode_text_turn(json.dumps({"tool": "done", "args": {"summary": report}})))
     plan = normalize_turn(reply, snapshot=snapshot)
-    assert plan.control is None and "report_sections" in plan.protocol_error
+    assert plan.control is not None and plan.control.body == report and not plan.protocol_error
+    assert not completion_gate.evaluate(state, report, context={"research_ledger": ResearchLedger()}).complete
 
 
 @pytest.mark.parametrize("native", [True, False])
@@ -81,10 +83,12 @@ def test_native_completion_guidance_matches_frozen_phase_schema(kind):
     state.task_kind = kind
     prepared = prepare_kernel_turn(state, user_task="Investigate the evidence", context_text="",
                                    task_guidance="", native=True)
-    if kind == "research":
-        assert "done" not in prepared.snapshot.tool_names
+    if kind in {"research", "chat"}:
+        assert "done" in prepared.snapshot.tool_names
         assert "submit_research_answer" in prepared.snapshot.tool_names
-        assert "Submit the whole answer" in prepared.prompt
+        assert "Submit the research report with submit_research_answer" in prepared.prompt
+        done = next(spec for spec in prepared.snapshot.model_specs if spec.name == "done")
+        assert "report_sections" not in dict(done.parameters)
         return
     done = next(spec for spec in prepared.snapshot.model_specs if spec.name == "done")
     structured = "report_sections" in done.required
@@ -96,7 +100,7 @@ def test_native_completion_guidance_matches_frozen_phase_schema(kind):
         if kind == "evidence_followup":
             assert "brief receipt of saved findings" in text
         else:
-            assert ("summary is the complete user-facing" in text) != structured
+            assert done.description in text
         example = text.split("Native done arguments example (replace sample content with verified task facts): ", 1)[1]
         args = json.JSONDecoder().raw_decode(example)[0]
         assert set(done.required) <= set(args)
@@ -106,8 +110,11 @@ def test_native_completion_guidance_matches_frozen_phase_schema(kind):
 @pytest.mark.parametrize("reply", [AssistantTurn(text="A plain research report"),
                                    decode_text_turn("A plain research report")])
 def test_plain_text_cannot_bypass_required_research_report_arguments(reply):
-    plan = normalize_turn(reply, snapshot=build_turn_snapshot(session()))
-    assert plan.control is None and "report_sections" in plan.protocol_error
+    state = session()
+    plan = normalize_turn(reply, snapshot=build_turn_snapshot(state))
+    assert plan.control is not None and not plan.protocol_error
+    assert not completion_gate.evaluate(state, plan.control.body,
+                                       context={"research_ledger": ResearchLedger()}).complete
 
 
 def test_grouped_citations_are_compiled_but_unobserved_numbers_still_fail():

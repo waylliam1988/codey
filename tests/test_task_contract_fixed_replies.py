@@ -110,11 +110,10 @@ def test_original_failure_replies(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         assert result["version_check_reached"] is False
         assert result["true_stale_conflicts"] == 0
         assert result["project_result"] == {"amount": 0, "code": "unknown"}
-        assert not any(r.call.name in {"read_file", "edit"} for r in receipts)
-        repairs = result["repair_attempts"]
-        assert isinstance(repairs, list)
-        assert any("codemode missing required arg 'path'" in str(decode_json_object(repair)["reason"])
-                   for repair in repairs)
+        assert any(r.call.name == "read_file" and r.ok for r in receipts)
+        assert not any(r.call.name == "edit" for r in receipts)
+        assert any("JSON field edit rejected: use an original complete tools.read_file result" in r.model_text
+                   for r in parents)
 
 
 @pytest.mark.parametrize("followup", ["snapshot_only", "unchecked_fill", "checked_fill"])

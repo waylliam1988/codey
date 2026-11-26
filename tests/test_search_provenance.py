@@ -45,14 +45,15 @@ def test_search_record_preserves_final_state_and_attempts_on_restart(state: str)
     assert restored.searches == ledger.searches
 
 
-def test_legacy_empty_receipt_is_unknown_instead_of_confirmed_no_results() -> None:
+def test_legacy_empty_receipt_is_rejected_instead_of_confirmed_no_results() -> None:
     ledger = ResearchLedger()
     ledger.record_search("query", [])
     payload = ledger_observation(ledger, "web_search")
     row = decode_json_object(payload["search"])
     for key in ("version", "state", "failure_kind", "attempts"):
         row.pop(key)
-    assert search_observation({"search": row}).state == "unknown"
+    with pytest.raises(ValueError, match="observation fields"):
+        search_observation({"search": row})
     row["version"] = 99
     row["state"] = "unknown"
     row["failure_kind"] = ""
@@ -61,13 +62,14 @@ def test_legacy_empty_receipt_is_unknown_instead_of_confirmed_no_results() -> No
         search_observation({"search": row})
 
 
-def test_old_attempt_is_decoded_without_inventing_success() -> None:
+def test_old_attempt_is_rejected_without_inventing_success() -> None:
     from codey.research.search_provenance import decode_search_attempt
     attempt = SearchAttempt("query", "bing")
     row = decode_json_object(encode_transport_value(attempt))
     for key in ("version", "state", "effective_query", "coverage", "detail", "diagnostics"):
         row.pop(key)
-    assert decode_search_attempt(row) == attempt
+    with pytest.raises(ValueError, match="invalid search provenance"):
+        decode_search_attempt(row)
 
 
 def test_current_search_receipts_do_not_invent_missing_fields() -> None:

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codey.toolchain.runtime import EditBlock, _line_vote_positions, edit_file
+from codey.toolchain.edit_tools import _line_vote_positions
+from codey.toolchain.runtime import EditBlock, edit_file
 
 
 def test_line_vote_counts_repeated_offsets_and_accepts_a_partial_tail() -> None:

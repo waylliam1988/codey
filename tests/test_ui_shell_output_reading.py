@@ -84,7 +84,7 @@ def test_live_output_follows_only_until_the_user_reads_up_and_stderr_is_not_dupl
         query = parse_qs(urlsplit(route.request.url).query)
         assert query['session_id'] == ['a']
         assert query['run_id'] == ['live-run']
-        if int(query['after_revision'][0]) >= snapshot['revision']:
+        if int(query.get('after_revision', ['-1'])[0]) >= snapshot['revision']:
             route.fulfill(status=304, body='')
         else:
             route.fulfill(json=snapshot)

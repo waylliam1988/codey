@@ -16,7 +16,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 from unittest.mock import patch
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from codey.automation.browser_contracts import RouteDecision as Route
 from codey.automation.browser_session import BrowserSession
@@ -82,7 +82,7 @@ def fixtures() -> tuple[tuple[Case, Expected], ...]:
     )
 
     def search_page(hits: tuple[tuple[str, str, str], ...]) -> str:
-        return document('<ol>' + ''.join('<li class="b_algo"><h2><a href="' + html.escape(url, quote=True)
+        return document('<ol id="b_results">' + ''.join('<li class="b_algo"><h2><a href="' + html.escape(url, quote=True)
             + '">' + html.escape(title) + '</a></h2><div class="b_caption"><p>' + html.escape(snippet)
             + '</p></div></li>' for title, url, snippet in hits) + '</ol>')
 
@@ -126,8 +126,14 @@ def source_fixture(browser: BrowserSearchProvider, case: Case, directory: Path) 
 
     def route(request: Route) -> None:
         url = request.request.url
-        is_search = urlsplit(url).hostname == "www.bing.com" and urlsplit(url).path == "/search"
-        body = case.search_html if is_search and case.search_html else documents.get(url)
+        parsed = urlsplit(url)
+        body = documents.get(url)
+        if parsed.hostname == "www.bing.com" and parsed.path in {"/", "/search"}:
+            query = parse_qs(parsed.query).get("q", [""])[0]
+            form = ('<form action="/search"><input id="sb_form_q" name="q" value="'
+                    + html.escape(query, quote=True) + '"><button id="sb_form_go" type="submit">Search</button></form>')
+            body = (case.search_html.replace("<body>", "<body>" + form)
+                    if parsed.path == "/search" and case.search_html else document(form))
         append_json(directory / "network.jsonl", {"url": url, "status": 200 if body is not None else 404})
         request.fulfill(status=200 if body is not None else 404, content_type="text/html", body=body or "Fixture unavailable")
 
@@ -252,7 +258,7 @@ def run_arm(directory: Path, case: Case, expected: Expected, arm: Arm, target: T
                     {"question": case.question}), schema(("query",)))
                 write_json(directory / "query.json", query)
                 query_text = require_json_string(query["query"], "query")
-                rows = browser.search(query_text, limit=8)
+                rows = browser.search(query_text, limit=8).rows
                 candidates = Candidates.observe("search", rows)
                 observed = {"query": query_text, "results": list[JsonValue](rows)}
             else:

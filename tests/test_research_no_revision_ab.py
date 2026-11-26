@@ -57,11 +57,12 @@ def test_research_rejects_direct_revision_calls_without_touching_the_store(tmp_p
 
     store, tools, session, delegate = setup(tmp_path)
     try:
-        result, ok, _ = delegate._execute_research(ToolCall("knowledge_commit", {
+        delegate.research_executor._research_scope = answer_scope(session)
+        result, ok, _ = delegate.research_executor._execute_research(ToolCall("knowledge_commit", {
             "commit_id": "blocked", "changes": [],
         }))
         assert not ok and not result.ok
-        assert "does not modify existing knowledge objects" in result.model_text
+        assert "Use knowledge_updates in submit_research_answer" in result.model_text
         assert not store.repository.committed("blocked", [])
     finally:
         store.close()

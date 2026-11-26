@@ -82,9 +82,8 @@ def test_fake_workspace_audit_cannot_establish_current_pass(tmp_path: Path) -> N
     result = ToolResult(call=ToolCall("run", {"command": "python -m pytest -q"}), ok=True,
         model_text="1 passed", audit={"exit_code": 0, "workspace_fingerprint": fp, "workspace_revision": 1})
     snapshot = build_snapshot(project, WorkInputs(results=(("fake", result),), fingerprint=fp))
-    node = snapshot.nodes["execution:fake"]
-    assert node.version == ""
-    assert "matches_current_workspace=False" in node.text
+    assert "execution:fake" not in snapshot.nodes
+    assert not any(node.kind == "execution_observation" for node in snapshot.nodes.values())
 
 
 def test_model_claim_is_not_a_verification_observation(tmp_path: Path) -> None:
@@ -182,7 +181,7 @@ def test_real_headless_native_and_json_source_refresh_and_durable_query_receipts
     project = fixture(tmp_path)
     actions: list[tuple[str, JsonObject]] = [
         (TOOL_NAME, {"query": "retry", "path": "relay/rules.py", "view": "gaps"}),
-        ("open_url", {"url": RETRY_NEW}),
+        ("codemode", {"code": "return await tools.open_url(" + json.dumps({"url": RETRY_NEW}) + ");"}),
         (TOOL_NAME, {"query": "retry", "path": "relay/rules.py", "view": "gaps"}),
         ("done", {"summary": "Read the v2 source and inspected candidate constraints: " + RETRY_NEW}),
     ]
@@ -260,11 +259,11 @@ def test_real_run_failure_counterexample_and_edit_invalidate_old_observation(tmp
     query: JsonObject = {"query": "retry verification", "view": "gaps", "path": "relay/rules.py"}
     actions: list[tuple[str, JsonObject]] = [
         ("read_file", {"path": "relay/rules.py"}),
-        ("run", {"command": "python -m pytest -q tests/test_regression.py"}),
+        ("run", {"command": "python -m pytest -q tests/test_regression.py", "run_in_background": False}),
         (TOOL_NAME, query),
         ("edit", {"path": "relay/rules.py", "replacements": [{"old_string": old, "new_string": new}]}),
         (TOOL_NAME, query),
-        ("run", {"command": "python -m pytest -q"}),
+        ("run", {"command": "python -m pytest -q", "run_in_background": False}),
         (TOOL_NAME, query),
         ("done", {"summary": "Fixed strict retry input validation and verified."}),
     ]
@@ -276,7 +275,9 @@ def test_real_run_failure_counterexample_and_edit_invalidate_old_observation(tmp
     with (patch.dict("os.environ", {NATIVE_TOOLS_ENV: "1", LOCAL_OPENAI_BASE_URL_ENV: "http://127.0.0.1:1/v1",
           LOCAL_OPENAI_MODEL_ENV: "offline-graph-integration"}), controlled(cases()["relay"], tmp_path),
           kernel_binding(tmp_path, "graph")):
-        result = run_headless(HeadlessRequest(project, "Fix retry input validation and add regression verification.",
+        result = run_headless(HeadlessRequest(project,
+            "Run python -m pytest -q tests/test_regression.py before editing. "
+            "Fix retry input validation and then run python -m pytest -q.",
             provider_id="local", intent="chat", max_turns=12, state_home=tmp_path / "state",
             project_changes_required=True, sources_open_required=False, requested_capabilities=("web.read",),
             model_selection={"model": "offline-graph-integration", "base_url": "http://127.0.0.1:1/v1"}),

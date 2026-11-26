@@ -81,7 +81,7 @@ def test_initial_result_and_repair_prompt_surfaces_have_frozen_hashes() -> None:
     assert tuple(dict(done.parameters)) == ("summary",)
     assert '"report_sections":' not in repair and '"open_questions":' not in repair
     assert '"properties":{"summary":{"type":"string"}}' in repair
-    assert _sha256(repair) == "e5ebb6deb053d48d57addb92a457460e39d53f1a90bfdb6472bc7c595826983e"
+    assert _sha256(repair) == "9210fdc7568b309821b9bd4560d1199c9adf71fab25a1a392686ae276288cff7"
 
 
 @dataclass(frozen=True)
@@ -130,11 +130,13 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path, monkey
     assert "submit_research_review" not in prompt
     assert "Calls return Result<T>" in prompt
     assert "Only frozen read-only tools" not in prompt
-    # Reviewed: the bounded catalog uses base_result_ref for JSON edits and
-    # exposes discovery for omitted declarations. Writes still require actions.
-    assert "base_result_ref: string; changes: Record<string, JsonEditValue>" in prompt
+    # Reviewed: ordinary project tasks pin the file preflight overload. JSON
+    # field declarations are offered when the task or a read identifies JSON.
+    assert "base_result_ref. Result.patch lists the per-file outcome" in prompt
+    assert '"files": Array<' in prompt
+    assert "changes: Record<string, JsonEditValue>" not in prompt
     assert "await describe('tools.NAME') for the full omitted declaration" in prompt
     assert "Returning modified data does not persist it" in prompt
-    # Reviewed: browser tools are baseline capabilities and task URLs are runtime-resolved.
-    assert "browser_navigate" in prompt
-    assert _sha256(prompt) == "69dc0a767ced36636facc5fa312fe6136b57f4839ec33ad392938b65bff9dd65"
+    # Reviewed: browser tools remain available through bounded catalog discovery.
+    assert "// browser: 25 tools" in prompt
+    assert _sha256(prompt) == "32ecd244d18ec664333ebec34e4bb750eb63f2d39c86920a857a5ab26aaee3aa"

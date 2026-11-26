@@ -17,11 +17,12 @@ from codey.operations.task_session import TaskSession
 from codey.operations.tool_result_reader import read_tool_result
 from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy
-from codey.research.passages import passage_ref
+from codey.research.passages import describe_captured_window
 from codey.research.source_document import OpenedSource
+from codey.research.source_observation import source_snapshot
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.storage.managed_outputs import ManagedOutputStore
-from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
+from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object, parse_json_object
 from tests.test_production_navigation_ab import action, fixed_flow
 from tests.test_task_contract_fixed_replies import TARGET, install_original_http
 from tools.completion_artifact_audit import tool_receipts
@@ -152,13 +153,17 @@ def test_wrong_source_and_invalid_ref_can_reobserve_and_reselect(
     wrong_url = scenario.source.documents[2][0]
     documents = tuple((url, '<html><head><meta charset="utf-8"><title>North warehouse</title></head>'
                        '<body><h1>北仓 RX-08</h1><p>This page contains North warehouse information. '
-                       'No West warehouse controls are present.</p><button>North only</button></body></html>'
+                       'No West warehouse controls are present.</p>'
+                       '<input aria-label="Refresh controls" oninput="const button=this.nextElementSibling;'
+                       'button.replaceWith(button.cloneNode(true))"><button>North only</button></body></html>'
                        if url == wrong_url else body)
                       for url, body in scenario.source.documents)
     scenario = replace(scenario, source=replace(scenario.source, documents=documents))
     original = fixed_flow(scenario, expected, "B", 3)
     observe = "const s=unwrap(await tools.browser_snapshot({}));"
-    invalid = (observe + "unwrap(await tools.browser_snapshot({}));return unwrap(await tools.browser_click({ref:s.elements[0].ref}));"
+    invalid = (observe + "const old=s.elements.find(e=>e.name==='North only').ref;"
+               "unwrap(await tools.browser_fill({ref:s.elements.find(e=>e.name==='Refresh controls').ref,value:'refresh'}));"
+               "return unwrap(await tools.browser_click({ref:old}));"
                if reference == "expired" else observe + "return unwrap(await tools.browser_click({ref:'invented'}));")
     missing = action(observe + "if (!s.elements.some(e=>e.name===inputs.name)) throw new Error('Target absent on observed page');"
                      "return s;", {"name": expected.click_name})
@@ -175,9 +180,9 @@ def test_wrong_source_and_invalid_ref_can_reobserve_and_reselect(
         assert "Historical source selections" in wire and wrong_url in wire and "North warehouse" in wire
         assert "r1" in wire
     if reference == "expired":
-        assert "fresh browser_snapshot" in after_rejection and "reselect" in after_rejection
+        assert "stale_ref" in after_rejection and "browser_snapshot" in after_rejection
     else:
-        assert "unknown browser element reference" in after_rejection and "browser_snapshot" in after_rejection
+        assert "unknown_ref" in after_rejection and "browser_snapshot" in after_rejection
     assert "Target absent on observed page" in after_observing
     receipts = [row.result for row in tool_receipts(directory / "state")]
     opened = [row for row in receipts if row.call.name == "open_result"]
@@ -217,9 +222,10 @@ def test_large_read_feedback_recovers_original_receipt_without_claiming_missing_
     url = "https://example.com/orders/A-173"
     source = OpenedSource(url, url, "Order A-173", "2026-11-13T00:00:00+00:00",
                          hashlib.sha256(body.encode()).hexdigest()[:16], truncated=not complete)
+    observation = source_snapshot(source, body, {})
     child = ToolResult(ToolCall("browser_read", {}, "p:child:0"), body, ok=True, truncated=not complete,
-        canonical={"research_observation": {"source": source.to_dict(), "text": body, "pages": []},
-                   "read_passages": [{"ref": "passage", "start": 0, "end": len(body)}]})
+        canonical=canonical_json_object({"research_observation": observation,
+            "read_passages": describe_captured_window(observation, 0, len(body))}))
     parent = ToolResult(ToolCall("codemode", {}, "p"), "missing return", ok=False,
         canonical={"child_effect_ids": ["read-ref"]}, audit={"codemode_execution_id": "p"})
     session._memory_results.update({"read-ref": child, "parent-ref": parent})
@@ -255,9 +261,10 @@ def test_browser_repair_never_dispatches_new_actions(tmp_path: Path, mode: str) 
         url = "https://example.com/browser-record"
         text_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
         source = OpenedSource(url, url, "Browser record", "2026-11-13T00:00:00+00:00", text_hash)
-        return ToolResult(call, text, ok=True, canonical={
-            "research_observation": {"source": source.to_dict(), "text": text, "pages": []},
-            "read_passages": [{"ref": passage_ref(url, text_hash, 0, len(text)), "start": 0, "end": len(text)}]})
+        observation = source_snapshot(source, text, {})
+        return ToolResult(call, text, ok=True, canonical=canonical_json_object({
+            "research_observation": observation,
+            "read_passages": describe_captured_window(observation, 0, len(text))}))
 
     executors: dict[str, ToolExecutor] = {"browser_read": read, "browser_snapshot": read}
     prefix = "unwrap(await tools.browser_read({limit:500}));"

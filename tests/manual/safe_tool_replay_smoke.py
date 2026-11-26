@@ -65,7 +65,7 @@ class _ScriptedResumeProvider:
         self.prompts: list[str] = []
         self.replies = [
             '{"tool":"edit","args":{"path":"config.py","replacements":[{"old_string":"FEATURE_FLAG = False","new_string":"FEATURE_FLAG = True"}]}}',
-            '{"tool":"run","args":{"command":"python -m py_compile config.py","path":"."}}',
+            '{"tool":"run","args":{"command":"python -m py_compile config.py","path":".","run_in_background":false}}',
             '{"tool":"done","args":{"summary":"same-run resume smoke completed"}}',
         ]
 

@@ -34,7 +34,7 @@ def run_grouped(root: Path, *, resume: bool = False, native: bool = False, bound
         provider.send = send
         return provider
 
-    return _run(root, task=f"Read {URL}?read=1 and the other writer references; explain writer limits.",
+    return _run(root, task="Read all sixteen required writer references and explain writer limits.",
                 native=native, resume=resume, budget=MAX_REQUIRED_TOOLS + 2, boundary=boundary,
                 boundary_turn=MAX_REQUIRED_TOOLS + 1, provider_factory=factory,
                 required_checks=(*RESEARCH_ANSWER_REQUIRED_CHECKS, *(require_tool_success(
@@ -48,16 +48,16 @@ def test_sixteen_tool_predicates_publish_once_and_replay_without_new_io(tmp_path
     assert result.stop_reason == "done", result.summary
     validate_accepted_projection(result, run_id="r", session_id="s", project="")
     checks = result.completion_proof.checks
-    assert len(checks) == 9 <= MAX_COMPLETION_CHECKS
+    assert len(checks) == 8 <= MAX_COMPLETION_CHECKS
     assert {row.check_id for row in checks} >= {*RESEARCH_ANSWER_REQUIRED_CHECKS,
                                                "required_tools_satisfied", "research_publication"}
     before = (tmp_path / "calls.jsonl").read_bytes()
     assert run_grouped(tmp_path, native=native, resume=True) == result
     assert (tmp_path / "calls.jsonl").read_bytes() == before
     rows = [json.loads(line) for line in before.splitlines()]
-    # The explicit first source is prefetched once before the model's reads.
+    # Each independently required source has one committed read receipt.
     assert Counter(row["fetch"] for row in rows if "fetch" in row) == Counter(
-        [f"{URL}?read=1", *(f"{URL}?read={i}" for i in range(1, MAX_REQUIRED_TOOLS + 1))])
+        [f"{URL}?read={i}" for i in range(1, MAX_REQUIRED_TOOLS + 1)])
     assert sum("publication" in row for row in rows) == 1
 
 
@@ -75,12 +75,12 @@ def test_tool_group_cold_restart_preserves_original_receipts(tmp_path, boundary)
     rows = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
     assert sum("grouped_request" in row for row in rows) == MAX_REQUIRED_TOOLS + 1
     assert Counter(row["fetch"] for row in rows if "fetch" in row) == Counter(
-        [f"{URL}?read=1", *(f"{URL}?read={i}" for i in range(1, MAX_REQUIRED_TOOLS + 1))])
+        [f"{URL}?read={i}" for i in range(1, MAX_REQUIRED_TOOLS + 1)])
     assert sum("publication" in row for row in rows) == 1
 
 
 def _publication_padding(_inputs: CompletionCheckInput) -> list[CompletionCheck]:
-    return [CompletionCheck(f"padding_{i}", CHECK_PASS) for i in range(4)]
+    return [CompletionCheck(f"padding_{i}", CHECK_PASS) for i in range(5)]
 
 
 def test_seventeen_distinct_tool_predicates_exceed_the_declared_bound():

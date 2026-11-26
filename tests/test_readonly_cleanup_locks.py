@@ -152,7 +152,7 @@ class ResponseCharsetLocks(unittest.TestCase):
         self.assertFalse(hasattr(connector_search, "_response_charset"))
         self.assertTrue(hasattr(http_redirects, "response_charset"))
 
-    def test_charset_helper_keeps_attribute_error_tolerance(self) -> None:
+    def test_charset_helper_distinguishes_missing_charset_from_header_errors(self) -> None:
         from codey.research.http_redirects import response_charset
 
         class _Headers:
@@ -168,7 +168,8 @@ class ResponseCharsetLocks(unittest.TestCase):
         self.assertEqual(response_charset(_Headers("utf-8")), "utf-8")
         self.assertEqual(response_charset(_Headers(None)), "utf-8")
         self.assertEqual(response_charset(_Headers("gbk")), "gbk")
-        self.assertEqual(response_charset(_Headers("x", explode=True)), "utf-8")
+        with self.assertRaises(AttributeError):
+            response_charset(_Headers("x", explode=True))
         self.assertEqual(response_charset(object()), "utf-8")
 
 

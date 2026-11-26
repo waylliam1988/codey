@@ -12,15 +12,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
 
-from playwright.sync_api import Route
-
 from codey.app.headless_runner import HeadlessRequest, run_headless
+from codey.automation.browser_contracts import RouteDecision
 from codey.automation.browser_session import BrowserSession
 from codey.codemode.host import CodeModeHost
 from codey.env_names import NATIVE_TOOLS_ENV
-from codey.operations import task_execution
+from codey.operations.browser import execution as browser_execution
 from codey.operations.browser.execution import BrowserExecutor
-from codey.operations.task_execution import ExecutionDelegate
 from codey.policies.browser_requirement import browser_receipt_tools
 from codey.policies.tool_requirement import (
     BrowserTextSelector,
@@ -158,7 +156,7 @@ def field_binding(directory: Path, *, table_projection: str = TABLE,
     browser: BrowserSession | None = None
     expired = False
 
-    def observe(delegate: ExecutionDelegate, active: BrowserSession, call: ToolCall, *,
+    def observe(delegate: BrowserExecutor, active: BrowserSession, call: ToolCall, *,
                 turn: int, tool_index: int) -> tuple[ToolResult, bool, int | None]:
         nonlocal browser
         browser = active
@@ -225,7 +223,7 @@ def field_binding(directory: Path, *, table_projection: str = TABLE,
         return browser_receipt_tools(checks) | {"browser_read", "browser_eval"}
 
     with (patch.object(BrowserExecutor, "execute_operation", observe),
-          patch.object(task_execution, "browser_receipt_tools", receipt_tools),
+          patch.object(browser_execution, "browser_receipt_tools", receipt_tools),
           patch.object(CodeModeHost, "invoke", bind)):
         yield
 
@@ -266,7 +264,7 @@ def run_case(directory: Path, case: Case, target: Target, *, max_turns: int,
             injected_bytes = file.read_bytes()
             injected = True
 
-    def route(_provider: BrowserSearchProvider, request: Route) -> None:
+    def route(request: RouteDecision) -> None:
         match = request.request.url == case.url
         request.fulfill(status=200 if match else 404, content_type="text/html; charset=utf-8",
                         body=case.html if match else "Unknown fixture URL")
@@ -301,16 +299,23 @@ def run_case(directory: Path, case: Case, target: Target, *, max_turns: int,
     recorder = (provider_factory(target, directory) if provider_factory is not None
                 else ExperimentProvider(target, directory, fixed_acquisition=False))
 
-    def connect(_provider_id: str, **_kwargs: object) -> ExperimentProvider:
+    def connect(provider_id: str, *, port: int) -> ExperimentProvider:
         return recorder
+
+    source = BrowserSearchProvider(headless=True)
+
+    def source_factory() -> BrowserSearchProvider:
+        return source
 
     available: dict[str, bool] = {"local": True}
     unavailable: dict[str, bool] = {}
-    selection: dict[str, str] = {"model": target.model, "base_url": target.base_url}
+    selection: dict[str, object] = {"model": target.model, "base_url": target.base_url}
     try:
         with (field_binding(directory, table_projection=table_projection, expire_url=case.url if expire_source else None),
               patch.dict(os.environ, dict[str, str]([(NATIVE_TOOLS_ENV, "1")])),
-              patch.object(BrowserSearchProvider, "_guard_request", route),
+              patch.object(source, "_guard_request", route),
+              patch("codey.research.search_factory.default_research_search_provider", source_factory),
+              patch("codey.operations.task_phases.dispatch.default_research_search_provider", source_factory),
               patch("codey.app.provider_services.provider_availability", return_value=available),
               patch("codey.app.provider_services.provider_tab_availability", return_value=unavailable),
               patch("codey.app.review_service.run_review", return_value=None)):
@@ -324,6 +329,7 @@ def run_case(directory: Path, case: Case, target: Target, *, max_turns: int,
             ), emit_jsonl=observe, connect_provider=connect)
     finally:
         recorder.close()
+        source.close()
     receipts = tool_receipts(state)
     audit = receipt_audit([(item.identity, item.result) for item in receipts])
     write_json(directory / "receipts.json", audit)

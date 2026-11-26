@@ -39,6 +39,10 @@ REQUEST_KIND = "provider_request"
 RESPONSE_KIND = "provider_response"
 PROVIDER_ARTIFACT_VERSIONS = {REQUEST_KIND: 2, RESPONSE_KIND: 1}
 TURN_SNAPSHOT_SCHEMA = 23
+PROVIDER_CONTEXT_FIELDS = frozenset({
+    "logical_turn", "snapshot", "window", "context", "effect_scope", "close_reply",
+    "delivery_purpose", "work_ref", "source_response_ref", "tool_task_notifications", "memory_traces",
+})
 
 
 def restore_context(payload: object) -> tuple[str, tuple[ContextCandidate, ...]]:
@@ -107,7 +111,6 @@ def read_provider_artifact(store: ManagedOutputStore, record: ArtifactRecord, *,
         raise RuntimeEffectError("provider artifact ownership mismatch")
     body = decode_json_object(payload["payload"])
     if kind == REQUEST_KIND:
-        from codey.operations.provider_request_context import PROVIDER_CONTEXT_FIELDS
         from codey.providers.request_codec import PROVIDER_INVOCATION_FIELDS
 
         required = PROVIDER_INVOCATION_FIELDS | {"admission"}

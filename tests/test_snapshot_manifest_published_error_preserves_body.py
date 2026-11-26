@@ -7,7 +7,7 @@ import pytest
 
 from codey.storage import atomic_io
 from codey.storage.local_store import StoreCorruption
-from codey.workspace import changes
+from codey.workspace import snapshot_store
 from codey.workspace.changes import ChangeTracker, SnapshotStore
 
 
@@ -19,7 +19,7 @@ def test_published_manifest_error_preserves_baseline_and_retry_adopts_it(tmp_pat
     source.write_text("original\n", encoding="utf-8")
     store = SnapshotStore(tmp_path / "state")
     tracker = ChangeTracker(root, store)
-    read_manifest = changes.read_json_strict
+    read_manifest = snapshot_store.read_json_strict
     published = False
 
     def fail_after_manifest_replace(directory):
@@ -35,7 +35,7 @@ def test_published_manifest_error_preserves_baseline_and_retry_adopts_it(tmp_pat
 
     with (
         patch.object(atomic_io, "_fsync_dir", side_effect=fail_after_manifest_replace),
-        patch.object(changes, "read_json_strict", side_effect=read_or_fail),
+        patch.object(snapshot_store, "read_json_strict", side_effect=read_or_fail),
         pytest.raises(OSError, match="manifest directory fsync failed"),
     ):
         tracker.capture_before("app.py")

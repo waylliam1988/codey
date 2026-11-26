@@ -8,8 +8,10 @@ from unittest import mock
 
 from codey.providers import controls as controls
 from codey.providers import flow as flow
+from codey.providers import profiles
 from codey.providers import revival as revival
 from codey.providers.diagnostics import ResponseMissing
+from tests.provider_control_testkit import IsolatedProviderControlsMixin, control_store_at
 
 
 @dataclass(frozen=True)
@@ -41,7 +43,7 @@ def _trace(*frames: _DomFrame) -> flow.FlowTrace:
     return trace
 
 
-class ProviderFlowFaultInjectionTests(unittest.TestCase):
+class ProviderFlowFaultInjectionTests(IsolatedProviderControlsMixin, unittest.TestCase):
     def tearDown(self) -> None:
         flow.set_recovery_handler(None)
         controls.end_task_context()
@@ -84,7 +86,7 @@ class ProviderFlowFaultInjectionTests(unittest.TestCase):
 
             helper = mock.Mock()
             flow.set_recovery_handler(helper)
-            with mock.patch.object(controls, "CONTROL_STORE", path):
+            with control_store_at(path):
                 controls.begin_task_context("fault-recovery")
                 self.assertTrue(recover(page))
                 provisional = controls.load_controls(path)["qwen"]["_revival"]
@@ -139,7 +141,7 @@ class ProviderFlowFaultInjectionTests(unittest.TestCase):
 
     def test_qwen_unreadable_flow_response_rolls_back_after_second_failure(self) -> None:
         page = mock.Mock(url="https://chat.qwen.ai/")
-        profile_digest = flow.profile_hash(controls.get_profile("qwen"))
+        profile_digest = flow.profile_hash(profiles.get_profile("qwen"))
         old_flow = {
             flow.STAGE_COMPLETION: (
                 flow.PREDICATE_RESPONSE_STABLE,
@@ -210,7 +212,7 @@ class ProviderFlowFaultInjectionTests(unittest.TestCase):
                     lambda: (_ for _ in ()).throw(RuntimeError("unreadable")),
                 )
 
-            with mock.patch.object(controls, "CONTROL_STORE", path):
+            with control_store_at(path):
                 controls.begin_task_context("failure-1")
                 with self.assertRaises(ResponseMissing):
                     unreadable(page)

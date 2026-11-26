@@ -45,6 +45,7 @@ from codey.policies.tool_requirement import (
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.research.source_document import OpenedSource
+from codey.research.source_observation import source_snapshot
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.web_intent import explicit_browser_checks
 from codey.toolchain.spec_model import schema_for_spec
@@ -68,7 +69,7 @@ def record(session: TaskSession, name: str, args: JsonObject, document: JsonObje
     if body:
         source = OpenedSource(str(document["url"]), str(document["url"]), "Record", "2026-11-15T00:00:00Z",
                               hashlib.sha256(body.encode()).hexdigest()[:16])
-        canonical = {"research_observation": {"source": source.to_dict(), "text": body, "pages": []},
+        canonical = {"research_observation": source_snapshot(source, body, {}),
                      "read_passages": [{"start": 0, "end": len(body)}]}
     result = ToolResult(ToolCall(name, args, ref), body or "receipt", ok=ok, canonical=canonical,
                         audit={"browser_document": document})
@@ -314,9 +315,9 @@ def test_strict_research_selects_its_contract_without_explanation_or_chat(
                           task_text="Explain the observed restriction.")
     session.research_questions = ("What is the restriction?",)
     snapshot = restore_snapshot(snapshot_description(build_turn_snapshot(session, native=native)))
-    name = "submit_research_answer" if kind == "research" else "done"
+    name = "submit_research_answer"
     selected = next(spec for spec in snapshot.model_specs if spec.name == name)
-    assert selected.required == (("markdown", "state") if kind == "research" else ("report_sections",))
+    assert selected.required == ("markdown", "state")
     assert "paragraphs" not in dict(selected.parameters) and "summary" not in dict(selected.parameters)
     assert not normalize_turn(decode_text_turn(selected.json_examples[0]), snapshot=snapshot).protocol_error
     if kind == "research":
@@ -324,7 +325,7 @@ def test_strict_research_selects_its_contract_without_explanation_or_chat(
         assert post_submission.required == ("summary",) and "knowledge_refs" not in dict(post_submission.parameters)
     else:
         source = next(spec for spec in snapshot.frozen_specs if spec.name == "open_url")
-        assert "question_ref" in source.required
+        assert "question_ref" not in source.required
 
 
 def test_explanation_cannot_override_strict_research_at_snapshot_entry() -> None:
@@ -506,8 +507,8 @@ def test_schema_shape_repair_reuses_original_production_receipt_once(tmp_path: P
         body = "original source body"
         url = str(call.args["url"])
         opened = OpenedSource(url, url, "Record", "2026-11-15T00:00:00Z", hashlib.sha256(body.encode()).hexdigest()[:16])
-        return ToolResult(call, body, ok=True, canonical={"research_observation": {
-            "source": opened.to_dict(), "text": body, "pages": []}, "read_passages": [{"start": 0, "end": len(body)}]})
+        return ToolResult(call, body, ok=True, canonical={"research_observation": source_snapshot(opened, body, {}),
+            "read_passages": [{"start": 0, "end": len(body)}]})
 
     bad = run_code(session, "const body=unwrap(await tools.open_url({url:'https://example.com/record'}));return body.text.trim();",
                    1, {"open_url": source})

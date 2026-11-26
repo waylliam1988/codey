@@ -1,24 +1,27 @@
 """Exercise the current memory drawer through its production browser runtime."""
 from __future__ import annotations
 
-import json
+from uuid import UUID
 
 from playwright.sync_api import Page, Route, expect
 
+from codey.types.json_value import JsonObject, parse_json_object
 from tests.test_ui_workflow import page as page
 from tests.test_ui_workflow import ui_browser as ui_browser
 
 
-def memory_summary(*, enabled: bool = True) -> dict[str, object]:
-    item = {"item_id": "memory-1", "kind": "preference", "text": "Use concise answers",
-            "scope": "session:a", "source_refs": ["source-1"]}
+def memory_summary(*, enabled: bool = True) -> JsonObject:
+    item: JsonObject = {"item_id": "memory-1", "kind": "preference", "text": "Use concise answers",
+            "scope": "session:a", "source_refs": ["source-1"], "slot": "", "context": "", "expires_at": ""}
     return {"ok": True, "enabled": enabled, "scope": {"session_id": "a", "project": ""},
-            "items": [item], "pending": [{"proposal_id": "proposal-1", "version": "v1", "item": item}]}
+            "controls": {"accept_events": True, "retrieve_projections": True,
+                         "run_maintenance": True, "admit_hints": True},
+            "records": [], "exposures": [], "items": [item], "pending": [{"proposal_id": "proposal-1", "version": "v1", "item": item}]}
 
 
 def test_failed_accept_preserves_proposal_and_can_retry(page: Page) -> None:
     reads: list[str] = []
-    actions: list[object] = []
+    actions: list[JsonObject] = []
     def summary(route: Route) -> None:
         reads.append(route.request.url)
         data = memory_summary()
@@ -26,7 +29,7 @@ def test_failed_accept_preserves_proposal_and_can_retry(page: Page) -> None:
             data["pending"] = []
         route.fulfill(json=data)
     def action(route: Route) -> None:
-        value: object = json.loads(route.request.post_data or '{}')
+        value = parse_json_object(route.request.post_data or '{}')
         actions.append(value)
         route.fulfill(status=500 if len(actions) == 1 else 200,
                       json={"ok": len(actions) > 1, "error": "activation failed"})
@@ -52,7 +55,9 @@ def test_failed_accept_preserves_proposal_and_can_retry(page: Page) -> None:
     assert len(reads) == 1
     page.get_by_role("button", name="Confirm", exact=True).click()
     expect(page.locator("#local-context-subtitle")).to_have_text("1 items · 0 pending")
-    assert actions == [{"session_id": "a", "project": "", "action": "accept",
+    request_id = actions[0]["request_id"]
+    assert isinstance(request_id, str) and str(UUID(request_id)) == request_id
+    assert actions == [{"request_id": request_id, "session_id": "a", "project": "", "action": "accept",
                         "proposal_id": "proposal-1", "version": "v1"}] * 2
     assert len(reads) == 2
     expect(page.locator(".local-context-row")).to_have_count(1)

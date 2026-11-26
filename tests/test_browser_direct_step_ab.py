@@ -11,6 +11,7 @@ import pytest
 from codey.operations.browser.turn_surface import offer_browser_tools
 from codey.operations.kernel.kernel_protocol import normalize_turn
 from codey.operations.kernel.turn_contract import ModelInputBinding, TurnSnapshot
+from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.kernel_prompt import _text_request_prompt
 from codey.operations.project.declared_field_input import model_spec
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
@@ -20,7 +21,13 @@ from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.research.ledger import ResearchLedger
 from codey.research.passages import restore_passages
-from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object
+from codey.types.json_value import (
+    JsonObject,
+    canonical_json_object,
+    decode_json_object,
+    parse_json_object,
+    require_json_integer,
+)
 from tests.test_research_submission_handoff_production import install_http, requests
 from tools import browser_direct_step_ab as experiment
 from tools.browser_choice_presentation_ab import CASES
@@ -88,7 +95,7 @@ def test_existing_special_contracts_are_never_removed(guard: str) -> None:
         original = replace(original, input_binding=ModelInputBinding(
             "declared_fields", model_spec(spec, ("result.json",)), ("verified-source",)))
     elif guard == "no_free_js":
-        original = replace(original, tool_names=("done",))
+        original = refresh_snapshot_contract(replace(original, tool_names=("done",)))
     assert experiment.model_view(original, task) is original
     before = payload(original)
     assert experiment.project_request(before, original, task) == before
@@ -120,7 +127,7 @@ def test_provider_uses_final_request_snapshot_including_completion_repair(tmp_pa
         first: dict[str, object] = dict(payload(current))
         provider.configure_experiment(first)
         assert '"codemode"' not in json.dumps(first["response_format"])
-        current = replace(current, tool_names=("done",))
+        current = refresh_snapshot_contract(replace(current, tool_names=("done",)))
         repair: dict[str, object] = dict(payload(current))
         provider.configure_experiment(repair)
         assert repair["response_format"] == payload(current)["response_format"]
@@ -159,7 +166,7 @@ def test_scripted_production_run_completes_without_repeating_actions(
                 yield {"tool": "browser_click", "args": {"ref": {"role": "button", "name": button}}}
             yield {"tool": "browser_read", "args": {}}
         if name == "file_copy":
-            yield {"tool": "codemode", "args": {"path": "result.json"}}
+            yield {"tool": "edit", "args": {"path": "result.json"}}
         ledger = ResearchLedger()
         for row in tool_receipts(directory / "state"):
             if row.result.ok and row.result.call.name in {"browser_read", "open_url"}:
@@ -180,7 +187,17 @@ def test_scripted_production_run_completes_without_repeating_actions(
     if arm == "B":
         # The old failure receipt may quote its original JS contract. Preserve
         # that history; only this request's system declaration is projected.
-        for row in wire:
+        projections = [parse_json_object(line) for line in (directory / "projection.jsonl").read_text(
+            encoding="utf-8").splitlines()]
+        final_projections = {require_json_integer(row["exchange"], "exchange"): row for row in projections
+                             if isinstance(decode_json_object(row["request_before_projection"]).get("response_format"), dict)}
+        assert len(final_projections) == len(wire)
+        for exchange, row in enumerate(wire, 1):
+            projection = final_projections[exchange]
+            if projection["bound_input"] is not None:
+                assert projection["changed"] is False
+                assert row["messages"] == decode_json_object(projection["request_before_projection"])["messages"]
+                continue
             messages = row["messages"]
             assert isinstance(messages, list)
             assert all("Write an async JavaScript" not in str(message.get("content", ""))

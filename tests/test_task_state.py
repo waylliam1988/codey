@@ -11,6 +11,7 @@ from codey.app import provider_services, shell_service
 from codey.app.context import AppContext
 from codey.app.event_bus import RUN_EVENT_TYPES, stamp_run_scope
 from codey.app.provider_registry import ProviderRegistry
+from codey.app.task_state import AppTaskState
 from codey.operations.task_state import TaskState
 from codey.providers.base import ChatProvider
 from codey.repairs.adapter_repair import AdapterRepairResult
@@ -68,7 +69,8 @@ class TaskStateProtocolTests(unittest.TestCase):
             self.assertFalse(hasattr(AppContext, name), name)
 
     def test_ticket_claim_is_an_explicit_coordination_port(self) -> None:
-        self.assertIn("claim_shell_ticket", _protocol_members())
+        self.assertNotIn("claim_shell_ticket", _protocol_members())
+        self.assertTrue(hasattr(AppTaskState, "claim_shell_ticket"))
         self.assertTrue(hasattr(AppContext, "claim_shell_ticket"))
 
     def test_protocol_source_has_no_any_leak(self) -> None:

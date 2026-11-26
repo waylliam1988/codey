@@ -242,8 +242,8 @@ class ManagedRunCommandTests(unittest.TestCase):
         )
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch("codey.toolchain.runtime.RUN_OUTPUT_LIMIT", 80),
-            mock.patch("codey.toolchain.runtime.cancellation.run_process", return_value=completed),
+            mock.patch("codey.toolchain.command_runtime.RUN_OUTPUT_LIMIT", 80),
+            mock.patch("codey.toolchain.command_runtime.cancellation.run_process", return_value=completed),
         ):
             store = ManagedOutputStore(Path(td) / "state")
             outcome = run_command_with_managed_output(
@@ -283,7 +283,7 @@ class ManagedRunCommandTests(unittest.TestCase):
         )
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch("codey.toolchain.runtime.cancellation.run_process", return_value=completed),
+            mock.patch("codey.toolchain.command_runtime.cancellation.run_process", return_value=completed),
         ):
             store = ManagedOutputStore(Path(td) / "state")
             outcome = run_command_with_managed_output(

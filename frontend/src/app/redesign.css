@@ -125,8 +125,6 @@
   .composer-box .ctx-token { min-width: 28px; justify-content: center; }
   .composer-box .ctx-token > span { display: none; }
   .composer-box .send-hint { display: none; }
-  .composer-bar:has(.ui-save-notice:not([hidden])) { flex-wrap: wrap; }
-  .composer-bar:has(.ui-save-notice:not([hidden])) .composer-context-row { flex-basis: 100%; }
 }
 @media (max-width: 440px) {
   .change-receipt-summary { flex-basis: 100%; }

@@ -1,11 +1,11 @@
 """The kernel exchanges frozen definitions and results, never API wire messages."""
 from dataclasses import fields
-from types import SimpleNamespace
 
 from codey.operations import kernel_transport, turn_snapshot
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import base
+from codey.runtime.core.models import ToolCall, ToolResult
 
 
 def test_turn_snapshot_has_no_chat_completions_tool_wrapper():
@@ -15,10 +15,10 @@ def test_turn_snapshot_has_no_chat_completions_tool_wrapper():
     assert "native_tools" not in {f.name for f in fields(snapshot)}
 
 
-def test_native_result_delivery_contains_no_api_message_keys(monkeypatch):
-    monkeypatch.setattr("codey.operations.kernel_prompt._result_context", lambda result, session: "ERROR: denied")
-    result = SimpleNamespace(call=SimpleNamespace(call_id="call-exact"))
-    delivered = kernel_transport._native_tool_results([result], object())
+def test_native_result_delivery_contains_no_api_message_keys() -> None:
+    result = ToolResult(ToolCall("read_file", {}, call_id="call-exact"), "ERROR: denied", ok=False)
+    session = TaskSession(TaskPolicy(frozenset({"control"})))
+    delivered = kernel_transport._native_tool_results([result], session, result_context=lambda receipt: receipt.model_text)
     assert delivered == [base.ProviderToolResult("call-exact", "ERROR: denied")]
 
 

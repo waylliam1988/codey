@@ -8,8 +8,17 @@ chain breaks, policy fail-open paths, and dispatch still on old loops.
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+
+import pytest
 
 from codey.operations.task_loop import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+from codey.providers import model_preferences
+
+
+@pytest.fixture(autouse=True)
+def isolated_model_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(model_preferences, "DEFAULT_STATE_HOME", tmp_path / "model-settings")
 
 
 class EntryAuthTests(unittest.TestCase):
@@ -32,14 +41,13 @@ class EntryAuthTests(unittest.TestCase):
 
         from codey.app.api import run_submit_response
 
-        seen: dict = {}
+        seen: list[tuple[tuple[str, ...], bool]] = []
 
-        def fake_submit(session_id, project, task, max_turns, continue_task, provider_id, intent,
-                        requested_capabilities=(), strict_research=False, **kwargs):
-            seen["requested"] = tuple(requested_capabilities)
-            seen["strict"] = bool(strict_research)
-            seen["intent"] = intent
-            seen.update(kwargs)
+        def fake_submit(session_id: str, project: str | None, task: str, max_turns: int,
+                        continue_task: bool, provider_id: str, intent: str, *,
+                        requested_capabilities: tuple[str, ...] = (), strict_research: bool = False,
+                        **kwargs: object) -> str:
+            seen.append((requested_capabilities, strict_research))
             return "run-1"
 
         with tempfile.TemporaryDirectory() as td:
@@ -49,16 +57,15 @@ class EntryAuthTests(unittest.TestCase):
                 fake_submit,
             )
             self.assertEqual(status, 200)
-            self.assertTrue(seen.get("strict"))
+            self.assertTrue(seen[0][1])
 
             from codey.policies.task_policy import build_task_policy
             from codey.task.model import TaskSubmission
 
             policy = build_task_policy(
                 TaskSubmission("s", td, "research caching", 8, False, "local",
-                               requested_capabilities=tuple(seen.get("requested", ())),
-                               strict_research=bool(seen.get("strict"))),
-                task_kind="research", strict_research=bool(seen.get("strict")),
+                               requested_capabilities=seen[0][0], strict_research=seen[0][1]),
+                task_kind="research", strict_research=seen[0][1],
             )
             self.assertTrue(policy.allows("project.read"))
             self.assertTrue(policy.allows("project.verify"))
@@ -69,12 +76,12 @@ class EntryAuthTests(unittest.TestCase):
 
         from codey.app.api import run_submit_response
 
-        seen: dict = {}
+        seen: list[tuple[str, ...]] = []
 
-        def fake_submit(session_id, project, task, max_turns, continue_task, provider_id, intent,
-                        requested_capabilities=(), strict_research=False, **kwargs):
-            seen["requested"] = tuple(requested_capabilities)
-            seen.update(kwargs)
+        def fake_submit(session_id: str, project: str | None, task: str, max_turns: int,
+                        continue_task: bool, provider_id: str, intent: str, *,
+                        requested_capabilities: tuple[str, ...] = (), **kwargs: object) -> str:
+            seen.append(requested_capabilities)
             return "run-1"
 
         with tempfile.TemporaryDirectory() as td:
@@ -85,7 +92,7 @@ class EntryAuthTests(unittest.TestCase):
                 fake_submit,
             )
             self.assertEqual(status, 200)
-            self.assertNotIn("web.read", seen.get("requested", ()))
+            self.assertNotIn("web.read", seen[0])
 
     def test_strict_project_never_defaults_write(self) -> None:
         from codey.policies.task_policy import build_task_policy

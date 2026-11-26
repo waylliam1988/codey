@@ -265,7 +265,11 @@ class CleanRunTests(unittest.TestCase):
 
             facts = state.project_facts.load(str(project))
             self.assertEqual(len(facts.successful_changes), 1)
-            self.assertIn("checks passed", facts.successful_changes[0].receipt)
+            change = facts.successful_changes[0]
+            self.assertEqual(change.receipt, "")
+            self.assertEqual([(check.command, check.cwd) for check in change.checks], [("python -m pytest", ".")])
+            self.assertEqual(change.files, ("src/mod.py",))
+            self.assertIsNotNone(change.source)
 
 
 class MissingDiffRunTests(unittest.TestCase):

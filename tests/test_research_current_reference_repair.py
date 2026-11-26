@@ -15,7 +15,8 @@ def test_manual_knowledge_refs_are_rejected_by_the_frozen_report_contract():
     args = {"report_sections": {"coverage": report_args("f1")["report_sections"]["coverage"]},
             "knowledge_refs": [{"id": "note-id", "revision": 99}]}
     snapshot = build_turn_snapshot(session, native=True)
-    assert "done" not in snapshot.tool_names
+    done = next(spec for spec in snapshot.model_specs if spec.name == "done")
+    assert "knowledge_refs" not in dict(done.parameters) and "report_sections" not in dict(done.parameters)
     plan = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("done", "done", args),)), snapshot=snapshot)
     assert plan.control is None and "done" in plan.protocol_error
     assert args["knowledge_refs"][0]["id"] == "note-id"
@@ -25,7 +26,7 @@ def test_whole_answer_rejects_manual_knowledge_refs_and_global_done():
     session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.write"}), strict_research=True,
         required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS), task_kind="research", task_text="Explain writer limits.")
     snapshot = build_turn_snapshot(session, native=True)
-    assert "submit_research_answer" in snapshot.tool_names and "done" not in snapshot.tool_names
+    assert {"submit_research_answer", "done"} <= set(snapshot.tool_names)
     args = {"markdown": "The requested evidence is unavailable.", "state": "unresolved", "knowledge_refs": []}
     plan = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("submit", "submit_research_answer", args),)),
                           snapshot=snapshot)

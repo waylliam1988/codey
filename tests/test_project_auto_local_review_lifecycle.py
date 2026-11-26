@@ -37,15 +37,15 @@ def test_project_automatically_reviews_with_same_local_model_and_repairs_once(tm
         return reviewer
 
     if desktop_routing:
-        # Use the same run_review callback as the desktop, with no open web
-        # reviewer. Only its transport connector is scripted.
-        monkeypatch.setattr("codey.app.review_service.providers.reviewer_candidates", lambda *_: ())
-        monkeypatch.setattr("codey.app.review_service.providers.connect_fresh_provider_tab", connect_reviewer)
+        # Exercise the desktop's required-review route with a scripted candidate.
+        monkeypatch.setattr("codey.app.review_service.providers.reviewer_candidates", lambda *_: ("local",))
+        monkeypatch.setattr("codey.app.review_service.providers.connect_existing_provider", connect_reviewer)
     writers = iter((writer, repair))
     rows = []
     result = run_headless(
         HeadlessRequest(project=project, task="Fix add to return the sum and document it.",
-                        provider_id="local", intent="project", max_turns=8, state_home=state_home),
+                        provider_id="local", intent="project", max_turns=8, state_home=state_home,
+                        review_policy="require_web" if desktop_routing else "web_if_available"),
         emit_jsonl=rows.append, connect_provider=lambda *_a, **_k: next(writers),
         connect_reviewer=None if desktop_routing else connect_reviewer,
     )
@@ -70,7 +70,7 @@ def test_project_automatically_reviews_with_same_local_model_and_repairs_once(tm
     assert rows.index(review_event) < rows.index(terminal[0])
     recorded = load_recorded_review(state_home, result.session_id, result.run_id)
     assert recorded is not None
-    assert recorded[1].identity.self_review is True
+    assert recorded[1].identity.self_review is (not desktop_routing)
     assert recorded[1].identity.model_id
     assert recorded[1].verdict == 'approved'
     tools = [row for row in rows if row["type"] == "tool" and row.get("ok") is True]

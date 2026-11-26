@@ -73,7 +73,7 @@ def test_search_page_offset_min_one_is_intentional() -> None:
 
 
 def test_trace_missing_count_defaults_to_one() -> None:
-    from codey.runs.trace import _research_connector_error_payload
+    from codey.runs.trace_research import _research_connector_error_payload
 
     # missing count -> 1 is intentional default for one error occurrence
     payload = _research_connector_error_payload(

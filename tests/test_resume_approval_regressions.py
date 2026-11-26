@@ -309,6 +309,7 @@ def test_stop_persists_abandoned_so_old_approval_cannot_resume(tmp_path) -> None
     state = AppContext(tmp_path)
     try:
         _durable_requested_approval(state, approval_id="stale", source_run_id="source-run")
+        requested = state.durable.approval("stale")
         state.add_pending_shell_approval("stale", {
             "session_id": "session", "run_id": "source-run", "command": "python -V",
             "cwd": ".", "project": str(tmp_path), "attached_project": str(tmp_path),
@@ -316,6 +317,7 @@ def test_stop_persists_abandoned_so_old_approval_cannot_resume(tmp_path) -> None
             "max_turns": 1, "call_id": "", "window_ref": None,
             "command_preview": "python -V", "command_sha256": "".join("0" for _ in range(64)),
             "command_chars": 10, "command_truncated": False,
+            "command_ref": requested.command_ref, "command_digest": requested.command_digest,
         })
         state.request_stop()
     finally:

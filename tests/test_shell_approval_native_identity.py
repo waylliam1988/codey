@@ -248,9 +248,9 @@ def test_session_projection_never_shortens_native_call_id() -> None:
         open_runtime: object = _open_runtime
         assert isinstance(open_runtime, _OpenRuntime)
         opened = open_runtime(logdir, state, session_id, run_id, project)
-        assert isinstance(opened, tuple) and len(opened) == 6
+        assert isinstance(opened, tuple) and len(opened) == 5
         fields = tuple[object, ...](opened)
-        rev_store, sink = fields[3], fields[5]
+        rev_store, sink = fields[2], fields[4]
         assert isinstance(rev_store, WorkspaceRevisionStore)
         assert isinstance(sink, KernelEffectSink)
         (project / "a.py").write_text("x = 1\n", encoding="utf-8")

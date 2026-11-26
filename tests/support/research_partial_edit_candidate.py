@@ -115,12 +115,13 @@ def treatment(arm):
 
             def commit(self, call, tools):
                 from codey.research.answer_contract import AnswerScope
+                from codey.runtime.core.models import ToolResult
 
                 if not isinstance(self._research_scope, AnswerScope):
                     return original_commit(self, call, tools)
                 args = normalize_edits(self.session, tools.store, call.args)
-                result, ok, code = original_commit(self, replace(call, args=args), tools)
-                return replace(result, call=call), ok, code
+                outcome = tools.knowledge_commit(args)
+                return ToolResult(call, outcome.model_text, ok=outcome.ok), outcome.ok, None
 
             def view(session, ledger, scope, visible):
                 from codey.knowledge.model import canonical_json

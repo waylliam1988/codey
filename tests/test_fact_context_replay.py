@@ -85,7 +85,7 @@ def request_for(durable: DurableSession, sink: KernelEffectSink, provider: objec
 @pytest.mark.parametrize("historical_claims", [False, True])
 @pytest.mark.parametrize("retry_success", [False, True])
 @pytest.mark.parametrize("legacy", [False, True])
-def test_cold_done_replays_legacy_receipts_and_optional_claims(
+def test_cold_done_preserves_answer_without_promoting_audit_fields(
     tmp_path: Path, native: bool, historical_claims: bool, retry_success: bool, legacy: bool, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     if legacy:
@@ -169,12 +169,21 @@ def test_cold_done_replays_legacy_receipts_and_optional_claims(
     expected_executions = ["open_url", "run"] + (["open_url"] if retry_success else [])
     assert executions == expected_executions
 
-    class NoRequests(Provider):
+    corrections: list[str] = []
+
+    class RecoveryProvider(Provider):
+        def correct_claim(self, feedback: str) -> JsonObject:
+            assert legacy and historical_claims
+            assert "execution_claims.result_ref must identify a distinct execution receipt" in feedback
+            corrections.append(feedback)
+            return {"summary": ANSWER}
+
         def send(self, text: str) -> str:
-            raise AssertionError(f"saved done must not ask the model again: {text[-3000:]}")
+            return json.dumps({"tool": "done", "args": self.correct_claim(text)})
 
         def send_tool_results(self, results: list[ProviderToolResult], tools: list[ToolSpec]) -> AssistantTurn:
-            raise AssertionError(f"saved done must not ask the model again: {results}")
+            args = self.correct_claim("\n".join(result.content for result in results))
+            return AssistantTurn(tool_calls=(ProviderToolCall("corrected", "done", args),))
 
     reopened = DurableSession(SQLiteDurableStore(tmp_path / "runtime.sqlite"))
     reopened.recover_scheduler_state()
@@ -189,17 +198,21 @@ def test_cold_done_replays_legacy_receipts_and_optional_claims(
 
     fresh = replace(session, executed={}, _memory_results={}, restored_effect_ids=set(), last_done_args={}, last_done_text="",
                     opened_sources=set(), source_ids={})
-    resumed = request_for(reopened, recovered_sink, NoRequests(), executors={"run": forbidden, "open_url": forbidden})
+    resumed = request_for(reopened, recovered_sink, RecoveryProvider(), executors={"run": forbidden, "open_url": forbidden})
     resumed = replace(resumed, execution=replace(resumed.execution, research_tools=ResearchTools(None, None, None)))
     try:
         outcome = run_task_kernel(fresh, request=resumed)
         assert outcome.stop_reason == ("done" if retry_success else "blocked") and outcome.summary == ANSWER
-        assert fresh.last_done_args == {key: value for key, value in proposal.items()
-                                       if legacy or key not in {"source_gaps", "execution_claims"}}
+        expected_args = ({"summary": ANSWER} if legacy and historical_claims else
+                         {key: value for key, value in proposal.items()
+                          if legacy or key not in {"source_gaps", "execution_claims"}})
+        assert fresh.last_done_args == expected_args
+        assert len(corrections) == (1 if legacy and historical_claims else 0)
         assert len(fresh._memory_results) == len(expected_executions)
         result = next(result for result in fresh._memory_results.values() if result.call.name == "run")
         receipt = execution_receipt(result)
-        assert receipt is not None and receipt.exit_code == 7 and receipt.exit_code_scope == "process"
+        assert receipt is None
+        assert result.audit["exit_code"] == 7 and "execution" not in result.canonical
         assert bool(fresh.opened_sources) is retry_success
         assert executions == expected_executions
     finally:

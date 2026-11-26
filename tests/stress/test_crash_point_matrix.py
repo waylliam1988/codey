@@ -68,7 +68,7 @@ class CrashPointMatrixTests(unittest.TestCase):
         rendezvous = Path(td) / "ready"
         proc = _spawn_crashpoint(point, home, rendezvous)
         try:
-            _wait_file(rendezvous)
+            _wait_file(rendezvous, process=proc)
             manifest = _read_line(proc)["manifest"]
             time.sleep(0.5)
             _kill(proc)

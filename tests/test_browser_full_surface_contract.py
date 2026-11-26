@@ -96,9 +96,9 @@ def test_path_only_content_entry_reaches_the_original_conflict_injection_and_pre
 
     def replies() -> Iterator[JsonObject]:
         yield browser.code_action(browser.ROUND)
-        yield {"tool": "codemode", "args": {"path": "result.json"}}
+        yield {"tool": "edit", "args": {"path": "result.json"}}
         assert (directory / "injection.json").exists()
-        yield {"tool": "codemode", "args": {"path": "result.json"}}
+        yield {"tool": "edit", "args": {"path": "result.json"}}
         yield {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}
 
     install_http(monkeypatch, replies())

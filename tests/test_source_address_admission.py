@@ -43,9 +43,10 @@ def test_each_source_address_keeps_its_own_revocation() -> None:
     assert explicit_web_intent(task).urls == {other}
 
 
-def test_existing_source_snapshots_and_legacy_tasks_do_not_gain_new_requirements() -> None:
+def test_source_snapshots_require_explicit_frozen_requirements() -> None:
     task = 'Report the record state.\n' + URL
-    assert not restored_source_requirements({'input_text': task})
+    with pytest.raises(ValueError, match="mapping"):
+        restored_source_requirements({'input_text': task})
     assert not restored_source_requirements({'input_text': task, 'source_requirements': {'version': 1, 'required_urls': []}})
     assert restored_source_requirements({'input_text': 'updated prompt', 'source_requirements': source_requirements(task)}) == {KEY}
 

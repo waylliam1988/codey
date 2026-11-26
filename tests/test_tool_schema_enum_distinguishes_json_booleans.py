@@ -40,4 +40,4 @@ def test_object_enum_preserves_json_identity_after_freezing(value: JsonObject, a
     frozen = tool_spec.freeze_spec_parameters(original)
     assert bool(tool_spec.validate_args_with_spec(frozen, {"value": value})) is (not accepted)
     assert schema_typescript(canonical_json_object(dict(frozen.parameters)["value"])) == (
-        '{"role": "textbox", "flags": [true, 1]}')
+        '{"flags": [true, 1], "role": "textbox"}')

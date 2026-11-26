@@ -53,7 +53,7 @@ def test_context_benchmark_real_edit_verify_done_completes():
         json.dumps({"tool": "read_file", "args": {"path": "app.py"}}),
         json.dumps({"tool": "edit", "args": {"path": "app.py", "replacements": [
             {"old_string": "VALUE = 1", "new_string": "VALUE = 2"}]}}),
-        json.dumps({"tool": "run", "args": {"command": "python -m py_compile app.py", "path": "."}}),
+        json.dumps({"tool": "run", "args": {"command": "python -m py_compile app.py", "path": ".", "run_in_background": False}}),
         json.dumps({"tool": "done", "args": {"summary": "changed and verified"}}),
     )
     row = module._run_arm(provider, case, "context", max_turns=4)

@@ -657,7 +657,7 @@ class JsonToolCodecTests(unittest.TestCase):
                 call,
                 "HEAD\nTAIL", ok=True,
                 truncated=True,
-                audit={
+                canonical={
                     "managed_output": {
                         "handle": "out_0001_abcdef",
                         "original_bytes": 1234,
@@ -685,7 +685,7 @@ class JsonToolCodecTests(unittest.TestCase):
                     ToolResult(
                         call,
                         "HEAD\nTAIL", ok=True,
-                        audit={
+                        canonical={
                             "managed_output": {
                                 "handle": "out_0001_abcdef",
                                 "original_bytes": 1234,
@@ -733,7 +733,7 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("If the website says a tool does not exist", prompt)
         self.assertIn("Never say a\n    tool does not exist", prompt)
         self.assertIn("Output exactly one JSON object", prompt)
-        self.assertIn("It never accepts edit, run, shell", prompt)
+        self.assertIn("It never accepts mutating, verification, control, batching, or nested calls.", prompt)
         self.assertIn("read_file page:", prompt)
         self.assertIn("find_references output is lexical reference hints only", prompt)
         self.assertIn("not semantic\n    resolution", prompt)
@@ -746,7 +746,11 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertNotIn("You are Codey", prompt)
 
     def test_tool_contract_names_and_examples_stay_in_sync(self) -> None:
-        codec = JsonToolCodec()
+        from codey.operations.kernel.kernel_protocol import normalize_turn
+        from codey.policies.task_policy import TaskPolicy
+        from codey.protocols.text_turn import decode_text_turn
+
+        policy = TaskPolicy(frozenset({"control", "project.read", "project.write", "project.verify", "shell.approval"}))
         names = [name for spec in TOOL_DEFINITIONS for name in (spec.name, *spec.aliases)]
 
         self.assertEqual(len(names), len(set(names)))
@@ -755,7 +759,7 @@ class JsonToolCodecTests(unittest.TestCase):
             self.assertFalse(spec.parallel_safe and not spec.read_only)
             for example in spec.examples:
                 with self.subTest(tool=spec.name, example=example):
-                    plan = codec.parse(example)
+                    plan = normalize_turn(decode_text_turn(example), policy=policy)
                     self.assertEqual(plan.protocol_error, "")
                     self.assertTrue(plan.calls or plan.control is not None)
 

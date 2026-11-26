@@ -24,7 +24,6 @@ def test_answer_resumes_the_original_durable_task_and_requires_fresh_record_evid
         yield {"tool": "browser_fill", "args": {"ref": {"role": "textbox", "name": "Search records"}, "value": "福州"}}
         yield {"tool": "browser_click", "args": {"ref": {"role": "button", "name": "Search"}, "purpose": purpose}}
         if purpose == "result":
-            yield {"tool": "done", "args": {"summary": "尚未打开实际记录。"}}
             yield {"tool": "browser_snapshot", "args": {}}
         yield {"tool": "browser_click", "args": {"ref": {"role": "link", "name": "福州鱼丸记录"}, "purpose": "action"}}
         yield {"tool": "browser_read", "args": {}}

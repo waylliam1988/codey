@@ -63,7 +63,8 @@ def test_real_conflict_and_local_update(
         transcript = [json.loads(line) for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
         requests = [json.dumps(record["payload"], ensure_ascii=False) for record in transcript if record["type"] == "request"]
         assert len(requests) == 3
-        assert all("changes: {amount: number; code: string}" in request for request in requests)
+        assert all("edit(args: {base_result_ref: string; changes: Record<string, JsonEditValue>})" in request
+                   for request in requests)
         assert all(("持久化步骤：" in request) is (arm == "B") for request in requests)
     if field_edit:
         assert (directory / "after-edit-2.json").read_text(encoding="utf-8") == probe.patch_fields(

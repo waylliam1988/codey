@@ -298,6 +298,7 @@ class ToolResult:
                 self.model_text,
                 truncated=self.truncated,
                 audit=audit,
+                managed_output=canonical.get("managed_output"),
             ),
         )
         object.__setattr__(self, "presentation", presentation)

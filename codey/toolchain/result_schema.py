@@ -54,7 +54,7 @@ def browser_output_schema(name: str) -> dict[str, object]:
            ("browser_click", "browser_fill", "browser_scroll", "browser_press", "browser_hover", "browser_select", "browser_check")},
         "browser_wait": record({**action, "condition": string, "matched": boolean, "page_url": string, "page_id": string, "document": document}, ("action", "condition", "matched", "text")),
         "browser_navigate": record({**action, **page, "previous_url": string}, ("action", "url", "page_id", "generation", "text")),
-        "browser_eval": record({**action, "value": {}, "truncated": boolean}, ("action", "value", "truncated", "text")),
+        "browser_eval": record({**action, "value": {}, "truncated": boolean, "document": document}, ("action", "value", "truncated", "document", "text")),
         "browser_tab_list": record({"text": string, "page_url": string, "tabs": array(record({"index": integer, "page_id": string, "url": string, "title": string}))}, ("text", "page_url", "tabs")),
         "browser_tab_new": record({**action, **page, "previous_url": string}, ("action", "url", "page_id", "generation", "text")),
         "browser_tab_switch": record({**action, "index": integer, "url": string, "page_id": string}, ("action", "index", "url", "text")),

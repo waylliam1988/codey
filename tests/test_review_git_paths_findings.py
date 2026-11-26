@@ -5,6 +5,7 @@ import unittest
 
 from codey.reviews import core as review
 from codey.workspace import changes as change_col
+from codey.workspace.git_changes import _merge_numstat
 
 
 def _changes(files, diff=""):
@@ -40,7 +41,7 @@ class GitStatusPathTests(unittest.TestCase):
 
     def test_git_numstat_rename_matches_status_target(self) -> None:
         stats: dict[str, dict[str, int]] = {}
-        change_col._merge_numstat(stats, "1\t0\told.py => new.py\n")
+        _merge_numstat(stats, "1\t0\told.py => new.py\n")
         self.assertEqual(stats, {"new.py": {"additions": 1, "deletions": 0}})
 
     def test_git_quoted_path_matches_diff_hunks(self) -> None:

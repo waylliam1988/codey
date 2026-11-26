@@ -47,7 +47,34 @@ description: Find bounded lexical reference hints for a simple symbol. This is n
 examples:
 - {"tool":"find_references","args":{"symbol":"createRouter","path":"."}}
 
-[6] parallel
+[6] workspace_diff
+runtime_name: workspace_diff
+aliases: -
+read_only: true
+parallel_safe: false
+description: Compare this task's written files to their original snapshots. Reports external changes and the current task diff.
+examples:
+- {"tool":"workspace_diff","args":{}}
+
+[7] semantic_definition
+runtime_name: semantic_definition
+aliases: -
+read_only: true
+parallel_safe: false
+description: Query an installed Python, JS/TS, Go or Rust language server. operation defaults to definition; references, hover, diagnostics, documentSymbol and rename are read-only queries. Rename returns a version-bound plan. CodeMode application: const receipt=await tools.semantic_definition(inputs); return unwrap(await tools.edit({semantic_result_ref:receipt.result_ref})); Keep the OUTER receipt; do not unwrap it before reading result_ref. Never copy or reconstruct the replacement text. Push diagnostics are observations, not a complete verification.
+examples:
+- {"tool":"semantic_definition","args":{"path":"app.py","line":12,"symbol":"run"}}
+
+[8] syntax_query
+runtime_name: syntax_query
+aliases: -
+read_only: true
+parallel_safe: false
+description: Find bounded syntax nodes in Python or JS/TS. node_type is a grammar node such as FunctionDef, function_declaration, call_expression or import_statement. Returns file version and line ranges, not permission to edit.
+examples:
+- {"tool":"syntax_query","args":{"path":"app.ts","node_type":"function_declaration"}}
+
+[9] parallel
 runtime_name: -
 aliases: -
 read_only: true
@@ -56,18 +83,18 @@ description: Batch at most 4 independent read-only list_dir, read_file, or grep 
 examples:
 - {"tool":"parallel","args":{"calls":[{"tool":"grep","args":{"query":"login","path":"."}},{"tool":"list_dir","args":{"path":"."}}]}}
 
-[7] edit
+[10] edit
 runtime_name: edit
 aliases: -
 read_only: false
 parallel_safe: false
-description: Edit existing files with up to 8 exact replacements, preserving unrelated code. For replacements, omit content and base_result_ref. Create new files with content. For a whole-file update, use content plus base_result_ref. base_result_ref must be a complete read_file receipt from this task; changed versions are rejected. Include surrounding lines and the target text together in old_string of the same replacement so it matches one location uniquely. Preserve those surrounding lines in new_string. Separate replacement objects do not scope one another.
+description: Edit existing files with up to 8 exact replacements, preserving unrelated code. For replacements, omit content and base_result_ref. For a Python definition, use symbol and content. Create new files with content. For a whole-file update, use content plus base_result_ref. base_result_ref must be a complete read_file receipt from this task; changed versions are rejected. Copy old_string exactly, including indentation and whitespace. Include surrounding lines and the target text together in old_string of the same replacement so it matches one location uniquely. Preserve those surrounding lines in new_string. Separate replacement objects do not scope one another. Use the returned current context to refine the replacement; if insufficient, reread the file. Do not repeat the failed search unchanged. For a difficult multiline change, use content with the complete read_file base_result_ref, preserving unrelated text.
 examples:
 - {"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"def process():\n    return old_value\n","new_string":"def process():\n    return new_value\n"}]}}
 - {"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}
 - {"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old1","new_string":"new1"},{"old_string":"old2","new_string":"new2"}]}}
 
-[8] run
+[11] run
 runtime_name: run
 aliases: -
 read_only: false
@@ -76,7 +103,7 @@ description: Run a test, build, lint, or check. Use output_tail_lines to limit d
 examples:
 - {"tool":"run","args":{"command":"python -m unittest","path":"."}}
 
-[9] shell
+[12] shell
 runtime_name: shell
 aliases: -
 read_only: false
@@ -85,7 +112,7 @@ description: Ask the user to approve a necessary non-allowlisted command.
 examples:
 - {"tool":"shell","args":{"command":"git status --short","path":"."}}
 
-[10] done
+[13] done
 runtime_name: -
 aliases: -
 read_only: false
@@ -112,13 +139,22 @@ examples:
   {"tool":"find_references","args":{"symbol":"createRouter","path":"."}}
     Find bounded lexical reference hints for a simple symbol. This is not semantic resolution; use read_file before editing.
 
+  {"tool":"workspace_diff","args":{}}
+    Compare this task's written files to their original snapshots. Reports external changes and the current task diff.
+
+  {"tool":"semantic_definition","args":{"path":"app.py","line":12,"symbol":"run"}}
+    Query an installed Python, JS/TS, Go or Rust language server. operation defaults to definition; references, hover, diagnostics, documentSymbol and rename are read-only queries. Rename returns a version-bound plan. CodeMode application: const receipt=await tools.semantic_definition(inputs); return unwrap(await tools.edit({semantic_result_ref:receipt.result_ref})); Keep the OUTER receipt; do not unwrap it before reading result_ref. Never copy or reconstruct the replacement text. Push diagnostics are observations, not a complete verification.
+
+  {"tool":"syntax_query","args":{"path":"app.ts","node_type":"function_declaration"}}
+    Find bounded syntax nodes in Python or JS/TS. node_type is a grammar node such as FunctionDef, function_declaration, call_expression or import_statement. Returns file version and line ranges, not permission to edit.
+
   {"tool":"parallel","args":{"calls":[{"tool":"grep","args":{"query":"login","path":"."}},{"tool":"list_dir","args":{"path":"."}}]}}
     Batch at most 4 independent read-only list_dir, read_file, or grep calls. Local results are returned in request order.
 
   {"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"def process():\n    return old_value\n","new_string":"def process():\n    return new_value\n"}]}}
   {"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}
   {"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old1","new_string":"new1"},{"old_string":"old2","new_string":"new2"}]}}
-    Edit existing files with up to 8 exact replacements, preserving unrelated code. For replacements, omit content and base_result_ref. Create new files with content. For a whole-file update, use content plus base_result_ref. base_result_ref must be a complete read_file receipt from this task; changed versions are rejected. Include surrounding lines and the target text together in old_string of the same replacement so it matches one location uniquely. Preserve those surrounding lines in new_string. Separate replacement objects do not scope one another.
+    Edit existing files with up to 8 exact replacements, preserving unrelated code. For replacements, omit content and base_result_ref. For a Python definition, use symbol and content. Create new files with content. For a whole-file update, use content plus base_result_ref. base_result_ref must be a complete read_file receipt from this task; changed versions are rejected. Copy old_string exactly, including indentation and whitespace. Include surrounding lines and the target text together in old_string of the same replacement so it matches one location uniquely. Preserve those surrounding lines in new_string. Separate replacement objects do not scope one another. Use the returned current context to refine the replacement; if insufficient, reread the file. Do not repeat the failed search unchanged. For a difficult multiline change, use content with the complete read_file base_result_ref, preserving unrelated text.
 
   {"tool":"run","args":{"command":"python -m unittest","path":"."}}
     Run a test, build, lint, or check. Use output_tail_lines to limit displayed output instead of a shell pipe. Other commands request user approval when available.

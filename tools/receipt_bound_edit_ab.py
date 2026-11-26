@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 import traceback
-from collections.abc import Callable, Generator, Mapping, Sequence
+from collections.abc import Callable, Generator, Iterable, Mapping, Sequence
 from contextlib import AbstractContextManager, ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -28,13 +28,14 @@ from codey.codemode.state import CodeModeStateStore
 from codey.codemode.types import CodeModeResult, DeliveryReference, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.env_names import NATIVE_TOOLS_ENV
 from codey.operations import turn_snapshot
+from codey.operations.kernel import turn_presentation
 from codey.operations.kernel.turn_contract import TurnSnapshot
 from codey.operations.kernel.turn_presentation import refresh_snapshot_contract
 from codey.operations.turn_snapshot import KernelSessionView
 from codey.policies.tool_requirement import require_tool_success
 from codey.protocols.codemode import CodeModeLimits
 from codey.runtime.core import cancellation
-from codey.toolchain.tool_spec import is_text_batch_tool
+from codey.toolchain.tool_spec import ToolSpec, is_text_batch_tool
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object, require_json_integer
 from tools import local_model_gate_attempts as attempts
 from tools.shell_web_diagnostic_gate import select_target
@@ -174,11 +175,17 @@ def prototype_helper(directory: Path, *, enabled: bool, helper: str = HELPER,
     def helper_declarations(
         snapshot: ToolCatalogSnapshot, *, budget_bytes: int = codemode_catalog.MODEL_CATALOG_BUDGET_BYTES,
         outer_descriptions: Mapping[str, str] | None = None,
+        outer_specs: Iterable[ToolSpec] = (), detail_budget_bytes: int | None = None,
+        detail_names: tuple[str, ...] = (), include_json_edit: bool = False,
     ) -> str:
         if not any(entry.name == "edit" for entry in snapshot.entries):
-            return declarations(snapshot, budget_bytes=budget_bytes, outer_descriptions=outer_descriptions)
+            return declarations(snapshot, budget_bytes=budget_bytes, outer_descriptions=outer_descriptions,
+                outer_specs=outer_specs, detail_budget_bytes=detail_budget_bytes, detail_names=detail_names,
+                include_json_edit=include_json_edit)
         visible = replace(snapshot, entries=tuple(entry for entry in snapshot.entries if entry.name != "edit"))
-        return declarations(visible, budget_bytes=budget_bytes, outer_descriptions=outer_descriptions).replace(
+        return declarations(visible, budget_bytes=budget_bytes, outer_descriptions=outer_descriptions,
+            outer_specs=outer_specs, detail_budget_bytes=detail_budget_bytes, detail_names=detail_names,
+            include_json_edit=include_json_edit).replace(
             "\n};", "\n" + declaration + "};", 1,
         )
 
@@ -214,6 +221,7 @@ def prototype_helper(directory: Path, *, enabled: bool, helper: str = HELPER,
         if enabled:
             stack.enter_context(patch.object(NodeWorkerRuntime, "contract_digest", bound_contract_digest))
             stack.enter_context(patch.object(codemode_catalog, "render_declarations", helper_declarations))
+            stack.enter_context(patch.object(turn_presentation, "render_declarations", helper_declarations))
         yield
 
 

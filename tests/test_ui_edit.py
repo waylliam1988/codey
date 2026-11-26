@@ -64,7 +64,7 @@ def test_edit_replaces_old_work_and_suffix_and_rejects_late_events(page, positio
       handleServerEvent({type:'task_start',session_id:'a',run_id:run,task_revision:2,task_status:'running'});
       for(const type of ['reply','reply_stream','shell_result','task_done'])
         handleServerEvent({type,session_id:'a',run_id:'second',id:'late-approval',command:'OLD COMMAND',
-          text:'LATE OLD ANSWER',delta:'LATE OLD ANSWER',stream_id:'late',sequence:1,generation:1,
+          text:'LATE OLD ANSWER',delta:'LATE OLD ANSWER',stream_id:'late',sequence:1,generation:1,state:'partial',
           task_revision:100,task_status:'cancelled',stop_reason:'stopped'});
     }""", new_run)
     page.wait_for_timeout(100)  # Flush the animation-frame stream coalescer.

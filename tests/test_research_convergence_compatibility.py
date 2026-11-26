@@ -42,6 +42,10 @@ def test_known_kernel_result_formats(shape):
         del payload["schema_version"]
     if shape == "six":
         del payload["research_report"]
+    if shape != "versioned":
+        with pytest.raises(ValueError, match="invalid persisted kernel result"):
+            result_from_payload(payload)
+        return
     assert result_from_payload(payload) == original
     assert result_from_payload(result_from_payload(payload).to_payload()) == original
 
@@ -77,11 +81,12 @@ def test_legacy_receipt_checks_raw_bytes_scope_effect_and_digest(tmp_path, fault
     if fault == "payload":
         _, metadata = store.read_tool_output("s", "r", receipt.handle)
         monkeypatch.setattr(store, "read_tool_output", lambda *args: ({"not": "text"}, metadata))
-        with pytest.raises(ValueError, match="legacy result receipt payload must be text"):
+        with pytest.raises(ValueError, match="unknown managed result receipt format"):
             restore_result_receipt(projection, store=store, session_id="s", run_id="r")
         return
     if fault:
         with pytest.raises((ValueError, OSError)):
             restore_result_receipt(projection, store=store, session_id="other" if fault == "session" else "s", run_id="r")
     else:
-        assert restore_result_receipt(projection, store=store, session_id="s", run_id="r") == result
+        with pytest.raises(ValueError, match="unknown managed result receipt format"):
+            restore_result_receipt(projection, store=store, session_id="s", run_id="r")

@@ -27,7 +27,7 @@ from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runtime.core.models import ToolResult
 from codey.runtime.write.mutation_line import RuntimeMutationLine
-from codey.toolchain import runtime
+from codey.toolchain import edit_tools as runtime
 from codey.toolchain.runtime import ToolOutcome
 from codey.types.json_value import JsonObject
 from codey.workspace.changes import ChangeTracker, SnapshotStore

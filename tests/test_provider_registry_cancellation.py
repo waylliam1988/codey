@@ -1,13 +1,15 @@
 """An active Writer's stop must not become a normal provider failover order."""
 
+from pathlib import Path
+
 import pytest
 
 from codey.app.provider_registry import ProviderRegistry
 from codey.runtime.core.cancellation import TaskCancelled
 
 
-def test_user_stop_propagates_from_failover_availability_probe() -> None:
-    registry = ProviderRegistry()
+def test_user_stop_propagates_from_failover_availability_probe(tmp_path: Path) -> None:
+    registry = ProviderRegistry(tmp_path)
 
     def cancelled() -> dict[str, bool]:
         raise TaskCancelled("task stopped")
@@ -19,8 +21,8 @@ def test_user_stop_propagates_from_failover_availability_probe() -> None:
         registry.connection_status.close()
 
 
-def test_ordinary_probe_failure_keeps_the_configured_fallback_order() -> None:
-    registry = ProviderRegistry()
+def test_ordinary_probe_failure_keeps_the_configured_fallback_order(tmp_path: Path) -> None:
+    registry = ProviderRegistry(tmp_path)
 
     def offline() -> dict[str, bool]:
         raise RuntimeError("browser status unavailable")

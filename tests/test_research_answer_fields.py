@@ -4,11 +4,13 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterator
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from codey.knowledge.store import KnowledgeStore
 from codey.operations.browser.browser_task_handoff import browser_task_handoff
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import _required_tool_checks
@@ -26,14 +28,18 @@ from codey.research.answer_contract import (
     submit_answer,
     validate_submission,
 )
-from codey.research.answer_report import AnswerReport
+from codey.research.answer_report import AnswerReport, compile_answer_report
+from codey.research.ledger import ResearchLedger
+from codey.research.passages import describe_captured_window, restore_passages
 from codey.research.source_document import OpenedSource
+from codey.research.source_observation import source_snapshot
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tests.test_declared_work_continuation import declared_session, record
 from tests.test_research_dynamic_queries import query_choices
 from tests.test_research_submission_handoff_production import NativeExperimentProvider, install_http, requests
+from tests.test_research_whole_answer import record_submission
 from tools import research_query_delivery_live_gate as live
 from tools.completion_artifact_audit import artifacts, tool_receipts
 from tools.completion_explanation_ab import Target
@@ -97,9 +103,10 @@ def read(session: TaskSession, body: str, *, context: str = '', region: str = ''
             audit['query_click'] = click_ref
     if record:
         audit['record_regions'] = [{'label': record, 'start': 0, 'end': len(body), 'complete': True}]
+    observation = source_snapshot(source, body, {})
     result = ToolResult(ToolCall(tool, {}, identity), body, ok=True,
-        canonical={'research_observation': {'source': source.to_dict(), 'text': body, 'pages': []},
-                   'read_passages': [{'ref': 'p' + hashlib.sha256(body.encode()).hexdigest()[:12], 'start': 0, 'end': len(body)}]}, audit=audit)
+        canonical={'research_observation': observation,
+                   'read_passages': describe_captured_window(observation, 0, len(body))}, audit=audit)
     session._memory_results[identity] = result
     project_execution_record(session, identity, result.call, result, ok=True)
     return result
@@ -388,14 +395,20 @@ def test_contextless_partial_read_of_another_region_does_not_replace_the_field(q
     assert '173' in submit_answer(scope, {'markdown': '已核对库存。\n{{field:/quantity}}', 'state': 'answered'})['markdown']
 
 
-def test_completion_gate_rechecks_report_values_and_formal_citation_positions() -> None:
+def compile_field_answer(session: TaskSession, root: Path, markdown: str) -> AnswerReport:
+    ledger = ResearchLedger()
+    for result in tuple(session._memory_results.values()):
+        if 'research_observation' in result.canonical:
+            restore_passages(ledger, result.canonical['research_observation'], result.canonical['read_passages'])
+    record_submission(session, {'markdown': markdown, 'state': 'answered'})
+    with closing(KnowledgeStore(root)) as store:
+        return compile_answer_report(session, ledger, store, project='', session_id='fields')
+
+
+def test_completion_gate_rechecks_report_values_and_formal_citation_positions(tmp_path: Path) -> None:
     session = session_for()
     read(session, 'Value: 99 units.')
-    submitted = submit_answer(answer_scope(session), {'markdown': '已核对库存。\n{{field:/quantity}}', 'state': 'answered'})
-    report = AnswerReport(text=submitted['markdown'], markdown=submitted['markdown'], state='answered',
-        task_digest=submitted['task_digest'], proposal_digest=submitted['submission_digest'],
-        citation_bindings=tuple(submitted['citations']), source_versions=(), evidence_bindings=(),
-        knowledge_refs=(), knowledge_mutations=(), attempt_refs=(), selection_receipts=(), questions=())
+    report = compile_field_answer(session, tmp_path, '已核对库存。\n{{field:/quantity}}')
     context = CompletionContext(browser_document=DOCUMENT)
     initial = _required_tool_checks(session, report.markdown, context, None, report)
     assert all(row.passed for row in initial.evaluations.values())
@@ -404,15 +417,10 @@ def test_completion_gate_rechecks_report_values_and_formal_citation_positions() 
     assert all(row.reason_code == 'answer_field_missing' for row in updated.evaluations.values())
 
 
-def test_completion_gate_rejects_a_field_answer_frozen_before_reload() -> None:
+def test_completion_gate_rejects_a_field_answer_frozen_before_reload(tmp_path: Path) -> None:
     session = session_for(context='Record A', missing=True)
     read(session, 'Value: 173 units.', context='Record A', region='Value: 173 units.', target=17)
-    submitted = submit_answer(answer_scope(session), {'markdown': 'Checked quantity.\n{{field:/quantity}}',
-                                                     'state': 'answered'})
-    report = AnswerReport(text=submitted['markdown'], markdown=submitted['markdown'], state='answered',
-        task_digest=submitted['task_digest'], proposal_digest=submitted['submission_digest'],
-        citation_bindings=tuple(submitted['citations']), source_versions=(), evidence_bindings=(),
-        knowledge_refs=(), knowledge_mutations=(), attempt_refs=(), selection_receipts=(), questions=())
+    report = compile_field_answer(session, tmp_path, 'Checked quantity.\n{{field:/quantity}}')
     document = {**DOCUMENT, 'loader_id': 'reloaded'}
     read(session, 'No longer available.', context='Record A', region='No longer available.', target=29,
          document=document)

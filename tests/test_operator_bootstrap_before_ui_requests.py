@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-SOURCE = Path(__file__).resolve().parents[1] / "frontend/src/app/app_runtime.ts"
+SOURCE = Path(__file__).resolve().parents[1] / "frontend/src/app/application_boot.ts"
 
 
 def test_real_ui_boot_awaits_operator_auth_before_catalog_or_sse() -> None:
     source = SOURCE.read_text(encoding="utf-8")
-    boot = source[source.index("async function boot()"):]
-    assert boot.index("await OperatorAuth.authorize()") < boot.index("ProviderUI.adoptCatalog()")
-    assert boot.index("await OperatorAuth.authorize()") < boot.index("connectEvents();")
+    boot = source[source.index("async function bootApplication("):]
+    assert boot.index("await OperatorAuth.authorize()") < boot.index("provider.adoptCatalog()")
+    assert boot.index("await OperatorAuth.authorize()") < boot.index("runs.connect();")
 
 
 def test_expired_bootstrap_and_concurrent_exchange_are_fail_closed() -> None:

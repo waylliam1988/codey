@@ -42,7 +42,8 @@ from codey.policies.tool_requirement import (
 )
 from codey.providers.local_discovery import probe_local_endpoint_detail
 from codey.storage.input_attachments import InputAttachmentStore
-from codey.toolchain import runtime as tool_runtime
+from codey.toolchain import edit_tools as tool_runtime
+from codey.toolchain.path_checks import _write_text_after_final_path_check
 from codey.toolchain.runtime import ToolOutcome
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object, require_json_string
 from codey.workspace.paths import path_hash
@@ -209,7 +210,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
         with (directory / "events.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    final_write_check = tool_runtime._write_text_after_final_path_check
+    final_write_check = _write_text_after_final_path_check
     original_fill = BrowserSession.fill
     stale_ref_injected = False
 
@@ -217,6 +218,10 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
         nonlocal stale_ref_injected
         if not stale_ref_injected:
             before = browser.generation
+            replacement = browser.evaluate("(() => {const input=document.querySelector('#city');"
+                "input.replaceWith(input.cloneNode(true));return true;})()")
+            if not replacement.ok:
+                raise ValueError("stale-ref fixture could not replace the original input")
             observation = browser.snapshot()
             if not observation.ok:
                 raise ValueError("stale-ref fixture could not refresh controls")

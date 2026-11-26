@@ -536,7 +536,7 @@ def test_b3_real_property_target_and_consistent_repair_wire(tmp_path: Path, monk
     def summarize(_provider: ApiProvider, _messages: list[dict[str, object]], _deadline: float) -> str:
         return "Continue the browser record task using its committed tool results."
 
-    monkeypatch.setattr("codey.providers.api_context.summarize_context", summarize)
+    monkeypatch.setattr("codey.providers.api_context_state.summarize_context", summarize)
     actions = browser_steps() + [step("token", "browser_property", {"name": "__contractToken"}),
                                  step("tabs", "browser_tab_list", {})]
     bad = plan(step("bad", "browser_property", {"name": "invalid;code"}))
@@ -1037,7 +1037,7 @@ def test_production_result_contract_points_to_successful_download_receipt(
             "const s=unwrap(await tools.browser_snapshot({}));"
             "const ref=s.elements.find(e=>e.name==='Download fixture').ref;")
     if not download_succeeds:
-        code += "unwrap(await tools.browser_snapshot({}));"
+        code += "unwrap(await tools.browser_navigate({url:inputs.url}));"
     code += ("const download=await tools.browser_download({ref});"
              "unwrap(await tools.browser_read({})); return download.path;")
     request_count = 0
@@ -1118,7 +1118,8 @@ def page_reset_action(*, navigate: bool = True, reread: bool = False) -> JsonObj
 @pytest.mark.parametrize(("scenario", "invalid_args", "error"), [
     ("basic", "condition:'text',value:'鱼丸',timeout_ms:null", "browser_wait arg 'args.timeout_ms' must be integer"),
     ("snapshot_restore", "condition:'invalid',value:'鱼丸',timeout_ms:5000",
-     "browser_wait arg 'args.condition' must be one of ['text', 'selector', 'url_contains']"),
+     "browser_wait arg 'args.condition' must be one of ['text', 'text_absent', 'text_changed', 'controls_changed', "
+     "'selector', 'selector_hidden', 'selector_detached', 'url_contains', 'new_document', 'popup', 'dialog', 'download']"),
     ("stale_ref", "condition:'text',value:'鱼丸',timeout_ms:30001", "browser_wait arg 'args.timeout_ms' must be <= 30000"),
 ])
 def test_production_wait_validates_before_durable_child_registration(
@@ -1160,7 +1161,8 @@ def test_production_wait_validates_before_durable_child_registration(
     assert not fault.ok and fault.model_text.startswith(error) and recovered.ok
     timed, waited = [r for r in receipts if r.call.name == "browser_wait"]
     assert registered_waits == [timed.call.args, waited.call.args]
-    assert not timed.ok and "wait timed out" in timed.model_text and waited.ok
+    assert not timed.ok and timed.model_text == "Wait condition timed out." and waited.ok
+    assert decode_json_object(timed.canonical["value"])["reason"] == "timeout"
     requests = request_payloads(directory)
     assert any(require_json_string(message.get("content", ""), "content").startswith(f"[result: codemode]\n{error}")
                for message in object_rows(requests[1]["messages"]))
@@ -1281,7 +1283,7 @@ def test_page_reset_runtime_navigation_starts_once_and_still_requires_second_loa
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
 def test_page_reset_runtime_navigation_delivers_failure_without_retry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    navigate = BrowserSession._navigate_on_browser_thread
+    navigate = BrowserSession.navigate
     error = "ERROR: scripted fixture navigation failure"
     calls: list[str] = []
 
@@ -1291,7 +1293,7 @@ def test_page_reset_runtime_navigation_delivers_failure_without_retry(tmp_path: 
             return BrowserToolOutput(error, False, {"action": "navigate", "url": url, "delivery": "uncertain"})
         return navigate(session, url)
 
-    monkeypatch.setattr(BrowserSession, "_navigate_on_browser_thread", fail_second)
+    monkeypatch.setattr(BrowserSession, "navigate", fail_second)
     done: JsonObject = {"tool": "done", "args": {"summary": "净重 173，校验码 QUARTZ_851。"}}
     install_http(monkeypatch, [page_reset_action(navigate=False), done, done, done, done])
     directory = tmp_path / "run"

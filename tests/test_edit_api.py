@@ -1,10 +1,17 @@
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 
 from codey.app.api import run_submit_response
 from codey.durable import CommitConflict
+from codey.providers import model_preferences
 from codey.task.model import EditUserMessage
+
+
+@pytest.fixture(autouse=True)
+def isolated_model_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(model_preferences, "DEFAULT_STATE_HOME", tmp_path / "model-settings")
 
 
 def body():

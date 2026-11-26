@@ -281,4 +281,4 @@ class ContextLedger:
                 parts.append(f"{role}: {value}")
             if item.get("type") == "function_call":
                 parts.append(f"Recorded call: {item.get('name')} id={item.get('call_id')}")
-        return "Current project state:\n" + "\n\n".join(parts)
+        return "Current project state:\n" + "\n\n".join(parts) if parts else ""

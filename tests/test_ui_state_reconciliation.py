@@ -113,16 +113,15 @@ def test_inherited_fork_history_never_assigns_source_task_ownership_to_child(pag
         expect(page.locator('.process-title')).to_have_text('Failed · read 1 file')
 
 
-def test_legacy_draft_survives_boot_read_failure_and_retry(page):
+def test_cached_draft_survives_boot_read_failure_and_retry(page):
     baseline = page.evaluate('UiState.current().revision')
     # Seed the next document after pagehide has atomically cached the old page.
     page.add_init_script("""(() => {
-      localStorage.removeItem('codey:ui-cache');
-      localStorage.setItem('codey:sessions',JSON.stringify([
+      localStorage.setItem('codey:ui-cache',JSON.stringify({schema:1,confirmed:null,state:{
+        active_id:'a',projects:[],updated_at:0,revision:0,sessions:[
         {id:'a',provider:'deepseek',draft:{text:'RECOVER ME',revision:3}},
         {id:'deleted',draft:{text:'Do not resurrect'}}
-      ]));
-      localStorage.setItem('codey:active','a');
+      ]}}));
     })();""")
     reads = []
     def unavailable(route):

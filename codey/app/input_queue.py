@@ -15,6 +15,7 @@ import threading
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, NotRequired, TypedDict
 
+from codey.task.model import StartTask, task_input_payload
 from codey.utils.object_fields import mapping_fields, object_fields, require_object_fields, sequence_items
 
 if TYPE_CHECKING:
@@ -196,6 +197,7 @@ class DurableConversationInputQueue:
                     "input_request": admitted_request,
                     "input_state": "queued",
                     **admitted_request,
+                    "input": task_input_payload(StartTask(text)),
                 },
                 placement=placement,
                 mode=str(request.get("input_mode") or "follow_up"),

@@ -163,7 +163,7 @@ class RunEventUiPayloadCharacterizationTests(unittest.TestCase):
             True,
             exit_code=0,
             truncated=True,
-            audit={
+            canonical={
                 "managed_output": {
                     "handle": "out_0001_abc123def456",
                     "original_bytes": 90000,

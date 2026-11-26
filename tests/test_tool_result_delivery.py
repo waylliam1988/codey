@@ -107,6 +107,7 @@ def test_result_prompt_keeps_original_observation(tmp_path):
         assert result.completed
         continuation = [text for kind, text in runtime.events if kind == "send"][-1]
         assert "ORIGINAL_RESULT" in continuation
-        assert "ORIGINAL_GOAL" in continuation
+        initial = next(text for kind, text in runtime.events if kind == "send")
+        assert "ORIGINAL_GOAL" in initial
         assert "Current work observations" in continuation
         assert continuation.index("Current work observations") < continuation.index("ORIGINAL_RESULT")

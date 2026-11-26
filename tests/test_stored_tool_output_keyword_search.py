@@ -23,7 +23,7 @@ def make_delegate(text, tmp_path=None):
         assert ref is not None
         canonical["managed_output"] = {"handle": ref.handle, "sha256": ref.sha256}
     session._memory_results["execution-1"] = ToolResult(ToolCall("run", {}),
-        "bounded preview" if store else text, ok=False, canonical=canonical)
+        "bounded preview" if store else text, ok=False, canonical=canonical, audit={"exit_code": 1})
     return ExecutionDelegate(session=session, managed_outputs=store, session_id="s", run_id="r")
 
 

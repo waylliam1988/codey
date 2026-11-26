@@ -39,7 +39,7 @@ class RunEventUiPayloadTests(unittest.TestCase):
             "exit 0",
             True,
             presentation={"status": "ok", "result": "exit 0"},
-            audit={
+            canonical={
                 "managed_output": {
                     "handle": "out_0001_valid",
                     "original_bytes": 10,

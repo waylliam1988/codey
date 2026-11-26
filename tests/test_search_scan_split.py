@@ -14,6 +14,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from codey.toolchain import read_tools
 from codey.toolchain import runtime as tool_runtime
 from codey.utils.references import find_reference_hints
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
@@ -64,7 +65,7 @@ class SearchFilesBehaviorTests(unittest.TestCase):
             root = Path(td)
             Path(root, "big.py").write_text("needle " * 64, encoding="utf-8")
 
-            with mock.patch.object(tool_runtime, "SEARCH_MAX_FILE_BYTES", 10):
+            with mock.patch.object(read_tools, "SEARCH_MAX_FILE_BYTES", 10):
                 outcome = tool_runtime.search_files(root, ".", "needle")
 
         self.assertTrue(outcome.ok)

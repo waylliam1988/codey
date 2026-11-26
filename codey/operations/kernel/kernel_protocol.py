@@ -311,7 +311,7 @@ def _try_close_done(reply: DecodedTextTurn | AssistantTurn, snapshot: TurnSnapsh
     if snapshot is None:
         return None
     done = next((spec for spec in snapshot.model_specs if spec.name == "done"), None)
-    if done is None or done.required != ("paragraphs",) or set(dict(done.parameters)) != {"paragraphs"}:
+    if done is None or done.required != ("paragraphs",):
         return None
     closed = _closed_done_request(reply)
     if closed is None:

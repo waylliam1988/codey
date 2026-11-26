@@ -43,6 +43,8 @@ jobs:
           python -m pip install --require-hashes -r requirements-ci.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip install -e . --no-deps --no-build-isolation
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
           exit $LASTEXITCODE
       - name: Require native interpreter contracts
         run: python -m tools.shell_matrix_gate --required ${{ matrix.required }} --output .e2e-artifacts/shell-matrix.json

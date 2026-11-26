@@ -9,6 +9,7 @@ from codey.providers import api_generation
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolResult
 from codey.providers.token_accounting import RequestContextCount
+from codey.types.protocol_window import REPLAY_BINDING, RESPONSES_REASONING
 
 
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
@@ -61,8 +62,6 @@ def test_bounded_payload_preserves_protocol_pairs_counts_actual_view_and_keeps_h
         history.extend([{"role": "user", "content": f"ARCHIVED_SCOPE_{n}" + "x" * 2000},
                         {"role": "assistant", "content": f"old judgment {n}"}])
     if native:
-        if protocol == "openai-responses":
-            history.append({"type": "reasoning", "id": "r-latest", "encrypted_content": "preserve-reasoning"})
         history.append({"role": "assistant", "content": "latest submission", "tool_calls": [
             {"id": "current-call", "type": "function",
              "function": {"name": "submit_research_review", "arguments": '{"assessment":{}}'}}]})
@@ -70,6 +69,10 @@ def test_bounded_payload_preserves_protocol_pairs_counts_actual_view_and_keeps_h
     provider = ApiProvider("http://fixture/v1", "fixture", native_tools=native, api_protocol=protocol,
                            request_counter=count, stream=False)
     try:
+        if native and protocol == "openai-responses":
+            history[-2][REPLAY_BINDING] = provider._binding().to_payload()
+            history[-2][RESPONSES_REASONING] = [
+                {"type": "reasoning", "id": "r-latest", "encrypted_content": "preserve-reasoning"}]
         provider.load_durable_context(history, source_entry_ids=tuple(f"entry-{n}" for n in range(len(history))))
         before = copy.deepcopy(provider._messages)
         if native:

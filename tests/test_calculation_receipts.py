@@ -21,6 +21,7 @@ from codey.research.answer_report import AnswerReport, compile_answer_report
 from codey.research.calculation import calculate, calculation_fields, read_data, render_calculations
 from codey.research.ledger import ResearchLedger
 from codey.research.passages import ReadPassage
+from codey.research.report_evidence import check_report_evidence
 from codey.research.source_observation import source_observation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import spec_for_tool
@@ -171,14 +172,16 @@ def test_archive_rechecks_calculation_receipt_and_preserves_original_source(tmp_
     value = calculate({"operation": "growth_rate", "operands": [operand("data", 0), operand("data", 1)]}, task)
     commit(task, "calc", "calculate", value)
     frozen = answer_scope(task)
-    args: JsonObject = {"state": "answered", "markdown": "Same-cohort growth using the first measurement as denominator: {{calc:c1}}."}
-    submitted = ToolResult(ToolCall("submit_research_answer", args), "recorded", ok=True,
-        canonical={"research_submission": submit_answer(frozen, args)})
-    task._memory_results["submit"] = submitted
-    project_execution_record(task, "submit", submitted.call, submitted, ok=True)
     source, body, _ = source_observation(original.canonical["research_observation"])
     ledger = ResearchLedger()
     ledger.read_passages[passage] = ReadPassage(passage, source, body, (), 0, len(body))
+    args: JsonObject = {"state": "answered", "markdown": "Same-cohort growth using the first measurement as denominator: {{calc:c1}}."}
+    submission = submit_answer(frozen, args, passages=ledger.read_passages)
+    submitted = ToolResult(ToolCall("submit_research_answer", args), "recorded", ok=True,
+        canonical={"research_submission": submission,
+                   "research_evidence_check": check_report_evidence(submission, ledger.read_passages)})
+    task._memory_results["submit"] = submitted
+    project_execution_record(task, "submit", submitted.call, submitted, ok=True)
     store = KnowledgeStore(tmp_path / "knowledge")
     try:
         report = compile_answer_report(task, ledger, store, project="", session_id="calculation")

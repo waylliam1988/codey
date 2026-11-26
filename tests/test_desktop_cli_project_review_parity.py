@@ -1,4 +1,4 @@
-"""Real desktop and CLI entries share automatic review and single repair."""
+"""Real desktop and CLI entries share required review and single repair."""
 import json
 from unittest import mock
 
@@ -15,10 +15,10 @@ from tests.support.workspace_conversation import short_test_state_home
 
 @pytest.mark.usefixtures("no_external_advisor_models", "scripted_local_api_connection")
 @pytest.mark.parametrize("finding", [False, True])
-def test_desktop_and_real_cli_automatically_review_and_repair_equally(tmp_path, monkeypatch, capsys, finding):
+def test_desktop_and_real_cli_require_review_and_repair_equally(tmp_path, monkeypatch, capsys, finding):
     monkeypatch.setenv("NATIVE_TOOLS", "0")
-    monkeypatch.setenv(REVIEW_POLICY_ENV, "web_if_available")
-    monkeypatch.setattr("codey.app.review_service.providers.reviewer_candidates", lambda *_: ())
+    monkeypatch.setenv(REVIEW_POLICY_ENV, "require_web")
+    monkeypatch.setattr("codey.app.review_service.providers.reviewer_candidates", lambda *_: ("local",))
     results = []
     for entry in ("desktop", "cli"):
         root = tmp_path / entry
@@ -38,7 +38,7 @@ def test_desktop_and_real_cli_automatically_review_and_repair_equally(tmp_path, 
         approval = {"verdict": "approved", "summary": "Correct documented addition", "findings": []}
         reviewer = ScriptedLocal("reviewer", [response, approval] if finding else [response], [])
         writers = iter((writer, repair))
-        monkeypatch.setattr("codey.app.review_service.providers.connect_fresh_provider_tab", lambda *_, reviewer=reviewer: reviewer)
+        monkeypatch.setattr("codey.app.review_service.providers.connect_existing_provider", lambda *_, reviewer=reviewer: reviewer)
         task = "Fix add to return the sum and document it."
         if entry == "desktop":
             rows = []

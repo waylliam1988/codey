@@ -5,14 +5,16 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest import mock
 
+from codey.research.source_gateway import ResearchSourceGateway, SearchedSources
 from codey.research.tools import ResearchTools
+from tests.test_research_findings import Search
 
 
-def test_search_empty_success_and_error_are_distinct_structured_results():
-    tools = ResearchTools(search=None, store=None, changes=None)
+def test_search_empty_success_and_error_are_distinct_structured_results() -> None:
+    tools = ResearchTools(search=Search(), store=None, changes=None)
     for error, expected in [("", True), ("unavailable", False)]:
-        gateway = SimpleNamespace(search=lambda *_, error=error: SimpleNamespace(error=error, hits=[]))
-        with mock.patch.object(ResearchTools, "gateway", new_callable=mock.PropertyMock, return_value=gateway):
+        outcome = SearchedSources("query", error=error, state="failed" if error else "empty")
+        with mock.patch.object(ResearchSourceGateway, "search", return_value=outcome):
             result = tools.web_search("query")
         assert result.ok is expected
 

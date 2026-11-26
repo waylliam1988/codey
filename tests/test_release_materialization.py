@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -26,7 +27,7 @@ def test_frontend_source_change_is_built_and_published(tmp_path, monkeypatch):
     releases.ensure_frontend(tmp_path)
     assert commands == [
         [releases.sys.executable, "-m", "tools.publish_frontend", "--check"],
-        ["npm", "run", "build"],
+        ["npm.cmd" if sys.platform == "win32" else "npm", "run", "build"],
         [releases.sys.executable, "-m", "tools.publish_frontend"],
     ]
 

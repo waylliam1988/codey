@@ -71,16 +71,21 @@ def test_guarded_persisted_replay_rechecks_workspace_after_batch_check() -> None
 
 @pytest.mark.parametrize("passed", ["false", 0, False])
 def test_completion_gate_rejects_invalid_or_conflicting_passed_with_zero_exit(passed: object) -> None:
+    from codey.operations.completion_inputs import ProjectCompletionFacts
     from codey.operations.project_completion_checks import _evidence_with_session_facts
+    from codey.policies.task_policy import TaskPolicy
+    from codey.runtime.core.verification_observation import verification_observations
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
 
     fingerprint = "sha256:" + "ab" * 32
     evidence = ExecutionEvidence(workspace_revision=2, workspace_fingerprint=fingerprint)
-    session = SimpleNamespace(
+    session = ProjectCompletionFacts(
+        policy=TaskPolicy(frozenset()), project_changes_required=False, verification_forbidden=False,
+        selected_verification=None, verification_candidates_refresh_failed=False,
         edited_files={},
         workspace_revision=2,
         workspace_fingerprint=fingerprint,
-        verifications=[
+        verifications=verification_observations([
             {
                 "command": "pytest",
                 "revision": 2,
@@ -89,7 +94,7 @@ def test_completion_gate_rejects_invalid_or_conflicting_passed_with_zero_exit(pa
                 "workspace_revision": 2,
                 "workspace_fingerprint": fingerprint,
             }
-        ],
+        ]),
     )
     _, _gaps = _evidence_with_session_facts(evidence, session)
     assert evidence.checks_after_edit == []

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -188,13 +189,18 @@ def test_attempt_recovery_fields_survive_storage(tmp_path):
         reopened.close()
 
 
-def test_run_admission_preserves_the_client_attempt_identity():
-    calls = []
+def test_run_admission_preserves_the_client_attempt_identity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from codey.providers import model_preferences
+
+    monkeypatch.setattr(model_preferences, "DEFAULT_STATE_HOME", tmp_path / "state")
+    calls: list[dict[str, object]] = []
     run_id = "run_" + "a" * 32
 
-    def submit(*args, **kwargs):
+    def submit(*args: object, **kwargs: object) -> str:
         calls.append(kwargs)
-        return kwargs.get("run_id", "server-generated")
+        identity = kwargs.get("run_id", "server-generated")
+        assert isinstance(identity, str)
+        return identity
 
     status, data = run_submit_response({"task": "hello", "run_id": run_id}, submit)
     assert status == 200
@@ -209,10 +215,12 @@ def test_malformed_attempt_identity_is_rejected_before_admission():
     assert calls == []
 
 
-def test_admission_reserves_the_same_attempt_for_the_worker():
+def test_admission_reserves_the_same_attempt_for_the_worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.app import task_submit
+    from codey.providers import model_preferences
     from tests.test_task_submit import _FakeState
 
+    monkeypatch.setattr(model_preferences, "DEFAULT_STATE_HOME", tmp_path / "state")
     state = _FakeState()
     run_id = "run_" + "b" * 32
     with (mock.patch.object(state, "reserve_run", wraps=state.reserve_run) as reserve,
@@ -285,11 +293,8 @@ def test_terminal_event_before_ack_is_not_revived_and_double_retry_is_blocked(pa
 
 
 @pytest.mark.parametrize("restored", ["failed", "running", "missing"])
-def test_restored_request_recovers_in_place(page, tmp_path, restored, request):
+def test_restored_history_does_not_promote_browser_attempts(page, tmp_path, restored, request):
     run_id = "run_" + "c" * 32
-    messages = [{"type": "user", "id": "restored", "text": "original", "attempts": [
-        {"runId": run_id, "state": "failed" if restored == "failed" else "running", "error": "Original failure"}]},
-        {"type": "request_status", "sessionId": "a", "requestId": "restored"}]
     store = UiStateStore(tmp_path)
     store.save({"active_id": "a", "sessions": [{"id": "a", "provider": "deepseek"}], "projects": []}, base_revision=0)
     saved = store.load()
@@ -297,31 +302,25 @@ def test_restored_request_recovers_in_place(page, tmp_path, restored, request):
     durable = page.codey_context.durable
     durable.create_conversation("a")
     request.addfinalizer(lambda: durable.delete_conversation("a"))
-    user = durable.append_message("a", "user_message", messages[0])
-    durable.append_message("a", "display_message", {**messages[1], "requestId": user.entry_id})
-    calls, state = backend(page)
-    state.update(busy=restored == "running", run_id=run_id, session_id="a")
-    if restored == "running":
-        state["task_states"] = [{"run_id": run_id, "session_id": "a", "task_revision": 1, "task_status": "running"}]
+    user = durable.append_message("a", "user_message", {
+        "type": "user", "text": "original", "attempts": [
+            {"runId": run_id, "state": restored, "error": "Original failure"}],
+    })
+    durable.append_message("a", "display_message", {
+        "type": "request_status", "sessionId": "a", "requestId": user.entry_id,
+    })
+    backend(page)
     page.reload()
-    page.wait_for_function("sessions.find(s => s.id === activeId)?.messages.length === 2")
-    assert page.evaluate("sessions.find(s => s.id === activeId).messages[0].entryId") == user.entry_id
-    assert "messages" not in page.evaluate("UiState.current().sessions[0]")
+    page.wait_for_function("sessions.find(s => s.id === activeId)?.messages.some(m => m.type === 'user' && m.text === 'original')")
     page.evaluate("Sse.reconcileRunState()")
     expect(page.locator(".msg.user")).to_have_count(1)
-    if restored == "running":
-        expect(page.locator(".request-status")).to_be_hidden()
-        expect(page.locator(".process-summary")).to_contain_text("Waiting for reply")
-        event = {"type": "task_done", "session_id": "a", "run_id": run_id, "task_revision": 2,
-                 "task_status": "failed", "stop_reason": "error", "summary": "ERROR: Original failure"}
-        state.clear()
-        state.update(busy=False, last_terminal_event=event)
-        page.evaluate("handleServerEvent", event)
-    else:
-        expect(page.locator(".request-status")).to_contain_text("Original failure" if restored == "failed" else "Response was not confirmed")
-    retry(page)
-    assert calls[0]["task"] == "original"
-    expect(page.locator(".msg.user")).to_have_count(1)
+    assert page.evaluate("sessions.find(s => s.id === activeId).messages[0].entryId") == user.entry_id
+    assert page.evaluate("sessions.find(s => s.id === activeId).messages[0].attempts") is None
+    assert "messages" not in page.evaluate("UiState.current().sessions[0]")
+    assert page.evaluate("runningRunId") is None
+    expect(page.locator(".request-status")).to_have_count(0)
+    expect(page.locator(".process-summary")).to_have_count(0)
+    expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
 
 
 def test_model_recovery_still_allows_explicit_retry_without_sending_automatically(page):
@@ -414,4 +413,4 @@ def test_orphan_local_update_warnings_are_folded_without_pause_spam(page):
     assert "Local memory update unavailable" not in page.locator("#chat").inner_text()
     page.locator(".process-summary").click()
     expect(page.locator(".process-diagnostic")).to_contain_text("Local memory update unavailable")
-    expect(page.locator(".process-diagnostic")).to_contain_text("observation_commit")
+    expect(page.locator(".process-diagnostic")).to_have_text("Local memory update unavailable")

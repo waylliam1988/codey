@@ -2,7 +2,7 @@
 import pytest
 
 from codey.workspace.change_set import ChangeSet
-from codey.workspace.changes import _merge_numstat, parse_git_status_nul
+from codey.workspace.git_changes import _merge_numstat, parse_git_status_nul
 
 
 @pytest.mark.parametrize("target,source", [("new -> name.py", "old.py"), ("new.py", "old\tname.py")])

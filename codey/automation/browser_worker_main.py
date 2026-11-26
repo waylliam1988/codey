@@ -12,7 +12,8 @@ from codey.automation.browser_binding import BrowserBinding
 from codey.automation.browser_contracts import BrowserCommand, BrowserCompletion, BrowserConfig, BrowserToolOutput
 from codey.automation.browser_ipc import BrowserPacket, read_packet, write_packet
 from codey.automation.browser_network import NetworkPolicy
-from codey.automation.browser_runtime import BrowserRuntime, Progress
+from codey.automation.browser_runtime import BrowserRuntime
+from codey.automation.browser_runtime_state import Progress
 from codey.types.json_value import JsonObject, decode_json_object, require_json_boolean, require_json_string
 
 

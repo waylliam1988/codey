@@ -123,7 +123,7 @@ def test_incomplete_or_malformed_transport_never_becomes_empty_success(tmp_path,
 
 
 def test_empty_admitted_scope_stays_bounded_and_incomplete_when_files_were_omitted(tmp_path, monkeypatch):
-    from codey.toolchain import runtime
+    from codey.toolchain import read_tools as runtime
 
     assert search_files(tmp_path, ".", "TOKEN").ok
     (tmp_path / "a.py").write_text("TOKEN\n", encoding="utf-8")
@@ -298,7 +298,7 @@ def test_glob_preserves_default_excluded_directories(tmp_path):
 def test_glob_respects_discovery_budget_before_search(tmp_path):
     from unittest import mock
 
-    import codey.toolchain.runtime as tool_runtime
+    import codey.toolchain.read_tools as tool_runtime
 
     for index in range(80):
         (tmp_path / f"file-{index:03}.py").write_text("needle\n" * 32, encoding="utf-8")
@@ -394,7 +394,8 @@ def test_adjacent_hit_outside_page_is_available_as_context(tmp_path):
 
 
 def test_glob_never_reenumerates_a_directory_with_unknown_entry_coverage(tmp_path, monkeypatch):
-    from codey.toolchain import rg_search, runtime
+    from codey.toolchain import read_tools as runtime
+    from codey.toolchain import rg_search
     (tmp_path / 'a.py').write_text('needle')
     (tmp_path / 'b.py').write_text('needle')
     monkeypatch.setattr(runtime, 'SEARCH_MAX_DIR_ENTRIES', 1)

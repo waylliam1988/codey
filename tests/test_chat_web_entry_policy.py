@@ -1,12 +1,14 @@
 """Entry defaults grant tools; task text never grants or forces acquisition."""
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 
 from codey.app.api import run_submit_response
 from codey.policies.task_policy import TaskPolicy
+from codey.providers import model_preferences
 from codey.task.entry_auth import derive_entry_auth
 
 
@@ -32,7 +34,10 @@ def test_project_permission_needs_request_instead_of_words() -> None:
 
 
 @pytest.mark.parametrize("allow_web", [None, False, True])
-def test_http_passes_the_same_effective_entry_policy(allow_web: bool | None) -> None:
+def test_http_passes_the_same_effective_entry_policy(
+    allow_web: bool | None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(model_preferences, "DEFAULT_STATE_HOME", tmp_path / "model-settings")
     submit = Mock(return_value="run_" + "a" * 32)
     body: dict[str, object] = {"intent": "chat", "task": "东百中心附近有什么好玩的"}
     if allow_web is not None:

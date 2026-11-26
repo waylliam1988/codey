@@ -22,6 +22,7 @@ from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.tool_requirement import require_tool_success
 from codey.research.source_document import OpenedSource
+from codey.research.source_observation import source_snapshot
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object, require_json_string
 from tests.test_browser_failure_handoff import next_step, remember
@@ -29,7 +30,7 @@ from tests.test_browser_result_adoption_ab import DOCUMENT, session_with_snapsho
 from tests.test_declared_work_continuation import declared_session
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools.browser_prerequisite_ab import LOAD, code_action
-from tools.browser_production_live_gate import run_case
+from tools.browser_production_live_gate import HTML, run_case
 from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import Target
 
@@ -66,7 +67,7 @@ def test_partial_program_uses_child_facts_and_only_the_missing_control_step(pare
     offered, hint = handoff(session, parent, current=current)
     assert "fill-receipt" in hint and "click-rejected" in hint, hint
     assert "not delivered" in hint and "browser_fill" in hint, hint
-    assert "browser_fill" not in offered.tool_names
+    assert "browser_fill" in offered.tool_names
     assert "browser_fill" in offered.nested_tool_names
     assert restore_snapshot(snapshot_description(offered)) == offered
     assert {entry.name for entry in snapshot_catalog(offered).entries} == set(offered.nested_tool_names)
@@ -76,7 +77,7 @@ def test_partial_program_uses_child_facts_and_only_the_missing_control_step(pare
         assert "Execute this next step:" not in hint
     else:
         assert next_step(hint) == {"tool": "browser_snapshot", "args": {}}
-        assert "browser_click" not in offered.tool_names
+        assert "browser_click" in offered.tool_names
 
 
 @pytest.mark.parametrize("later", ["click", "fill", "navigation", "other_page", "uncertain"])
@@ -153,7 +154,7 @@ def test_complete_declared_sources_enter_file_work_despite_an_optional_rejected_
 
 
 @pytest.mark.parametrize("ordered", [False, True])
-def test_only_a_declared_phase_can_hide_remaining_business_actions(ordered: bool) -> None:
+def test_read_guidance_preserves_authorized_business_actions(ordered: bool) -> None:
     session = session_with_snapshot(checks=(require_tool_success("browser_read",
         after="browser_wait" if ordered else ""),))
     remember(session, "click", ToolResult(ToolCall("browser_click", {}, "click"), "Menu opened", ok=True,
@@ -164,11 +165,10 @@ def test_only_a_declared_phase_can_hide_remaining_business_actions(ordered: bool
                                  "page_url": DOCUMENT["url"]}}, audit={"browser_document": DOCUMENT}))
     offered, hint = browser_task_handoff(session, offer_browser_tools(build_turn_snapshot(session), session),
                                      CompletionContext(browser_document=DOCUMENT), 7)
-    assert ("browser_click" in offered.tool_names) is not ordered
-    if ordered:
-        assert next_step(hint)["tool"] == "browser_read"
-    else:
-        assert "Execute this next step:" not in hint and "do not click again" not in hint
+    assert "browser_click" in offered.tool_names
+    assert next_step(hint)["tool"] == "browser_read"
+    if not ordered:
+        assert "If more controls are needed, finish them first" in hint
 
 
 @pytest.mark.parametrize("complete", [False, True])
@@ -179,7 +179,7 @@ def test_successful_program_returning_an_edit_still_delivers_its_plain_browser_r
     source = OpenedSource(url, url, "Observed source", "2026-11-16T00:00:00+00:00",
                          hashlib.sha256(body.encode()).hexdigest()[:16], truncated=not complete)
     read = ToolResult(ToolCall("browser_read", {}, "program:child:0"), body, ok=True, truncated=not complete,
-        canonical={"research_observation": {"source": source.to_dict(), "text": body, "pages": []},
+        canonical={"research_observation": source_snapshot(source, body, {}),
                    "read_passages": [{"ref": "passage", "start": 0, "end": len(body)}]},
         audit={"browser_document": DOCUMENT})
     parent = ToolResult(ToolCall("codemode", {}, "program"), '{"path":"target.json"}', ok=True,
@@ -218,7 +218,7 @@ def test_research_recovers_controls_without_advancing_undeclared_action_prerequi
     if rejected:
         assert next_step(hint) == {"tool": "browser_snapshot", "args": {}}
         assert "fill-receipt" in hint and "click-rejected" in hint
-        assert "browser_fill" not in offered.tool_names
+        assert "browser_fill" in offered.tool_names
     else:
         assert "Execute this next step:" not in hint
 
@@ -269,7 +269,10 @@ def test_original_stale_click_program_recovers_without_filling_again(
         yield {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}
 
     install_http(monkeypatch, replies())
+    html = HTML.replace('<input id="city">', '<input id="city" oninput="'
+        "const button=document.querySelector('button'); button.replaceWith(button.cloneNode(true));\">")
     row = run_case(directory, "chat", Target("http://scripted.test/v1", "scripted-fixture", 123456789, 15),
+        fixture_html=html,
         codemode_only=only, max_turns=6 if only else 4, additional_required_tools=(require_tool_success("browser_wait", arguments={
             "condition": "text", "value": "鱼丸", "timeout_ms": 5000}, after="page_actions"),))
     assert row["passed"], row

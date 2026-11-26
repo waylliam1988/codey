@@ -44,7 +44,7 @@ class RecoveryErrorBuildersUnifiedTests(unittest.TestCase):
         self.assertEqual(direct, [], f"kernel_recovery must not construct ToolResult directly: {direct}")
 
     def test_unified_builders_exist(self) -> None:
-        from codey.operations.kernel import kernel_recovery_result as krr
+        from codey.operations import kernel_recovery_result as krr
 
         self.assertTrue(callable(getattr(krr, "build_recovery_error_result", None)))
         self.assertTrue(callable(getattr(krr, "build_recovery_mismatch_result", None)))

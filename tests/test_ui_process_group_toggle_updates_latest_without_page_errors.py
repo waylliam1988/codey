@@ -33,6 +33,8 @@ def test_completed_work_has_same_compact_answer_gap_after_live_updates(page, exp
     }""")
     group = page.locator('.process-group')
     if expanded:
+        if group.evaluate('el => el.open'):
+            group.locator('.process-summary').click()
         group.locator('.process-summary').click()
     page.evaluate(r"""emptyStreams => {
       for(let i=0;i<20;i++) addToSession('a', {type:'tool',runId:'spacing',toolKey:'tool-'+i,kind:'read',path:'file-'+i+'.py',result:'read contents'});

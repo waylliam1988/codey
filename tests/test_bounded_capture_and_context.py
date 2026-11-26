@@ -189,7 +189,7 @@ class ReaderErrorTests(unittest.TestCase):
         self.assertIs(terminate_calls[0][0], proc)
 
     def test_run_command_maps_read_error_to_failure(self) -> None:
-        from codey.toolchain import runtime as tool_runtime
+        from codey.toolchain import command_runtime as tool_runtime
 
         with tempfile.TemporaryDirectory() as td, mock.patch.object(
             tool_runtime.cancellation,

@@ -25,6 +25,7 @@ from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, tools_from_specs
 from codey.providers.requests import ProviderRequest, SendTextRequest, SendTurnRequest
 from codey.providers.transport import ProviderTransport
+from codey.research.answer_contract import ANSWER_GUIDANCE
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import decode_json_object, parse_json_object
@@ -40,9 +41,10 @@ def _guidance(policy: TaskPolicy) -> str:
 def test_shared_strict_guidance_reviewed_prompt_digest() -> None:
     policy = TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}),
                         strict_research=True)
-    assert hashlib.sha256(_guidance(policy).encode()).hexdigest() == (
-        # Reviewed: adopt exact saved findings without final rewriting; attempts come from receipts.
-        "861f1d5c44a5bbcdcda2a11105fb775422155acaecee3d2a12023f1ecd185034"
+    assert _guidance(policy) == ""
+    assert hashlib.sha256(ANSWER_GUIDANCE.encode()).hexdigest() == (
+        # Whole-answer rules belong to the current task/evidence view.
+        "54c3ce2ebf9787303b78f0e39cdaa8def3426f953248235a4d0b6d0272ec9e01"
     )
 
 
@@ -56,7 +58,7 @@ def test_task_guidance_selects_completion_rules_without_losing_output_requiremen
     text = task_guidance_for_policy(policy, task_kind=kind)
     assert JSON_ANSWER_GUIDANCE in text
     for legacy in ("Register 1..8 questions with research_plan", "Submit only report_sections.coverage"):
-        assert (legacy in text) is (kind != "research")
+        assert (legacy in text) is (kind == "evidence_followup")
     if kind == "research":
         assert "save_finding" not in text
         assert "knowledge_commit" not in text
@@ -115,10 +117,15 @@ def test_ordinary_web_task_has_no_strict_research_guidance() -> None:
     ({"control", "knowledge.read"}, ("web_search", "open_result", "open_url", "knowledge_write")),
 ])
 def test_research_guidance_does_not_direct_unauthorized_tools(grants: set[str], forbidden: tuple[str, ...]) -> None:
-    text = _guidance(TaskPolicy(grants=frozenset(grants), strict_research=True))
-    assert "report_sections.coverage" in text
+    policy = TaskPolicy(grants=frozenset(grants), strict_research=True)
+    text = _guidance(policy)
+    assert text == ""
+    from codey.operations.turn_snapshot import build_turn_snapshot
+
+    snapshot = build_turn_snapshot(TaskSession(policy=policy, task_kind="research"))
     for name in forbidden:
         assert name not in text
+        assert name not in snapshot.inventory_names
 
 
 def test_research_guidance_respects_explicit_capability_denial() -> None:
@@ -181,9 +188,10 @@ def test_note_reader_description_respects_authorized_write_visibility(native: bo
 
 def test_report_compilation_guidance_does_not_request_model_written_sections() -> None:
     text = _guidance(TaskPolicy(grants=frozenset({"control"}), strict_research=True))
-    assert "Submit only report_sections.coverage" in text
-    assert "Do not supply answer prose" in text
-    assert "application compiles the report" in text
+    assert text == ""
+    assert "submit_research_answer with markdown containing the complete answer" in ANSWER_GUIDANCE
+    assert "application publishes that exact submission" in ANSWER_GUIDANCE
+    assert "report_sections" not in ANSWER_GUIDANCE
 
 
 def test_kernel_prompt_has_no_domain_branch_or_completion_dependencies() -> None:
@@ -222,17 +230,21 @@ def test_strict_report_has_one_preferred_example_without_changing_ordinary_done(
     from codey.protocols.text_turn import decode_text_turn
     from codey.research.tool_contract import STRUCTURED_REPORT_EXAMPLE
 
-    strict = TaskSession(policy=TaskPolicy(grants=frozenset({"control"}), strict_research=True))
+    strict = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"}),
+                                          strict_research=True), task_kind="research")
     ordinary = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})))
     def examples(session: TaskSession) -> tuple[str, ...]:
         return next(spec.json_examples for spec in build_turn_snapshot(session).frozen_specs if spec.name == "done")
     assert len(examples(strict)) == 1
     args = decode_json_object(parse_json_object(examples(strict)[0])["args"])
-    assert set(args) == {"report_sections"}
-    sections = decode_json_object(args["report_sections"])
-    assert set(sections) == {"coverage"}
-    assert sections["coverage"] == [
-        {"question_ref": "q1", "state": "partial", "findings": ["f1"]}]
+    assert set(args) == {"summary"}
+    strict_snapshot = build_turn_snapshot(strict)
+    submission = next(spec for spec in strict_snapshot.model_specs if spec.name == "submit_research_answer")
+    assert len(submission.json_examples) == 1
+    submission_args = decode_json_object(parse_json_object(submission.json_examples[0])["args"])
+    assert set(submission_args) == {"markdown", "state"}
+    assert submission_args["state"] == "unresolved"
+    assert not normalize_turn(decode_text_turn(submission.json_examples[0]), snapshot=strict_snapshot).protocol_error
     assert STRUCTURED_REPORT_EXAMPLE not in examples(ordinary)
     ordinary_snapshot = build_turn_snapshot(ordinary)
     ordinary_done = next(s for s in ordinary_snapshot.model_specs if s.name == "done")

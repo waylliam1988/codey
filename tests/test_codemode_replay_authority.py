@@ -398,7 +398,7 @@ def test_formal_resume_reconstructs_pending_parent_without_leaf_reexecution(
             return result
 
         monkeypatch.setattr(subprocess, "run", changed_engine)
-        monkeypatch.setenv("CODEY_TEST_CHANGED_NODE_ENVIRONMENT", "1")
+        monkeypatch.setenv("TEST_CHANGED_NODE_ENVIRONMENT", "1")
     durable = DurableSession(SQLiteDurableStore(state / "durable.sqlite3"))
     durable.recover_scheduler_state()
     if durable.task("r").status == "pending":

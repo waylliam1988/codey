@@ -1,6 +1,7 @@
 """Declared outcomes reuse the shared tool receipts and completion gate."""
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -11,8 +12,14 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.knowledge.model import KnowledgeObject, KnowledgeReference
 from codey.knowledge.store import KnowledgeStore
 from codey.policies.task_policy import build_task_policy
+from codey.providers import model_preferences
 from tests.test_headless_runner import _RouteProvider
 from tests.test_knowledge_repository import example
+
+
+@pytest.fixture(autouse=True)
+def isolated_model_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(model_preferences, "DEFAULT_STATE_HOME", tmp_path / "model-settings")
 
 
 @pytest.mark.parametrize("invalid", [None, "knowledge_commit", [True], ["KnowledgeCommit"], ["x"] * 17])

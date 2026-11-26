@@ -70,6 +70,7 @@ def test_issue2_unified_interleaves_web_and_project(tmp_path):
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import build_task_policy
     from codey.research.tools import ResearchTools
+    from codey.runtime.core.execution_receipt import ExecutionReceipt
     from codey.runtime.core.models import ToolResult
     from codey.task.model import TaskSubmission
     from codey.workspace.revision import WorkspaceRevisionStore
@@ -83,9 +84,9 @@ def test_issue2_unified_interleaves_web_and_project(tmp_path):
     policy = build_task_policy(sub, task_kind="hybrid", strict_research=False)
     session = TaskSession(policy=policy, task_kind="hybrid", project=str(project), max_turns=6)
     replies = iter([
-        '{"tool":"web_search","args":{"query":"docs"}}',
+        '{"tool":"codemode","args":{"code":"return unwrap(await tools.web_search({query:inputs.query}));","inputs":{"query":"docs"}}}',
         '{"tool":"read_file","args":{"path":"file.py"}}',
-        '{"tool":"open_url","args":{"url":"https://example.com/docs"}}',
+        '{"tool":"codemode","args":{"code":"return unwrap(await tools.open_url({url:inputs.url}));","inputs":{"url":"https://example.com/docs"}}}',
         '{"tool":"edit","args":{"path":"new.py","content":"x = 2"}}',
         '{"tool":"run","args":{"path":".","command":"python -m pytest"}}',
         '{"tool":"done","args":{"summary":"finished with interleaved tools"}}',
@@ -101,7 +102,9 @@ def test_issue2_unified_interleaves_web_and_project(tmp_path):
 
     def verify(call):
         assert (project / "new.py").read_text() == "x = 2"
-        return ToolResult(call, "1 passed", ok=True, audit={"exit_code": 0})
+        receipt = ExecutionReceipt("exit", 0, "1 passed", exit_code_scope="process")
+        return ToolResult(call, receipt.render(), ok=True, audit={"exit_code": 0},
+                          canonical={"execution": receipt.facts()})
 
     executors = {
         "web_search": lambda call: observed_tool_result(call, "1. Docs\n   https://example.com/docs"),
@@ -129,7 +132,8 @@ def test_issue2_unified_interleaves_web_and_project(tmp_path):
             observation=KernelObservationDeps(completion_context={"research_ledger": research.ledger}),
         ),
     )
-    assert result.stop_reason == "done", result
+    assert result.stop_reason == "done", (result, session.verifications,
+        [(row.call.name, row.ok, row.model_text[:500]) for row in session._memory_results.values()])
     assert research.ledger.final_url_set() == {"https://example.com/docs"}
     assert session.searches
     assert session.read_files and session.opened_sources
@@ -247,13 +251,16 @@ def test_issue5_strict_initial_snapshot_hides_unavailable_tools():
     session = TaskSession(policy=policy, task_kind="research", max_turns=3)
     controller = controller_allowed_for_session(session)
     assert controller is not None
-    assert "knowledge_write" not in controller, controller
+    assert "knowledge_commit" not in controller, controller
     assert "open_hit" not in controller, controller
     # Per-turn snapshot shown to model must respect controller, not just policy
     contract = build_turn_snapshot(session).contract_text
-    assert "knowledge_write" not in contract, contract
-    names2 = [tool.name for tool in tools_from_specs(build_turn_snapshot(session, native=True).frozen_specs)]
-    assert "knowledge_write" not in names2
+    assert "- knowledge_commit:" not in contract, contract
+    snapshot = build_turn_snapshot(session, native=True)
+    names2 = [tool.name for tool in tools_from_specs(snapshot.frozen_specs)]
+    assert "knowledge_commit" not in names2
+    write = next(spec for spec in snapshot.frozen_specs if spec.name == "knowledge_write")
+    assert "synthesis" not in dict(write.parameters)["type"]["enum"]
 
 
 def test_issue6_native_prompt_and_done_closure(monkeypatch):

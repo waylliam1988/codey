@@ -96,7 +96,8 @@ def test_real_kernel_executes_the_same_fill_click_read_and_rejects_stale_ref(
 ) -> None:
     session, tools, browser = production_browser
     assert browser.navigate(URL).ok
-    install(browser, '''<label>City<input></label><button onclick="
+    install(browser, '''<label>City<input oninput="const button=document.querySelector('button');
+        button.replaceWith(button.cloneNode(true))"></label><button onclick="
         document.querySelector('article').textContent='Verified Fuzhou amount is 37 grams.'">Load</button>
         <article>Initial article amount is 17 grams.</article>''')
     turn = 0

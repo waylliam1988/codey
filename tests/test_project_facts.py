@@ -326,7 +326,7 @@ class ProjectFactsTests(unittest.TestCase):
             replies = iter([
                 '{"tool":"read_file","args":{"path":"backend/app.js"}}',
                 '{"tool":"edit","args":{"path":"backend/app.js","replacements":[{"old_string":"before\\n","new_string":"after\\n"}]}}',
-                '{"tool":"run","args":{"path":"backend","command":"npm test"}}',
+                '{"tool":"run","args":{"path":"backend","command":"npm test","run_in_background":false}}',
                 '{"tool":"done","args":{"summary":"Updated backend and checked it."}}',
             ])
             def send_reply(text: str, timeout: float | None = None) -> str:
@@ -352,7 +352,7 @@ class ProjectFactsTests(unittest.TestCase):
                         observer.close()
                     return CapturedProcess(args, 0, "", "", 0, 0, False, False)
 
-                with mock.patch("codey.toolchain.runtime.cancellation.run_process", run_process):
+                with mock.patch("codey.toolchain.command_runtime.cancellation.run_process", run_process):
                     return run_agent(request)
 
             changes = {
@@ -389,6 +389,7 @@ class ProjectFactsTests(unittest.TestCase):
             facts = state.project_facts.load(project)
             rendered = state.project_facts.render(project)
             stop_reason = state.run_registry.last_stop_reason()
+            self.assertTrue(facts.successful_changes, (stop_reason, rendered, state.run_state_payload()))
             source = facts.successful_changes[-1].source
             assert source is not None and state.run_ledgers is not None
             assert source.session_id == "session-1"

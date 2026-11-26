@@ -163,6 +163,9 @@ class SubmissionOperations(SessionOperations):
         content = dict(submission.content or {})
         if text is not None:
             content["text"] = state["input_text"] = state["task"] = text
+            from codey.task.model import StartTask, task_input_payload
+
+            state["input"] = task_input_payload(StartTask(text))
         if mode is not None:
             state["input_mode"] = mode
         _head, revision = self._kernel.store.head(current.conversation_id)

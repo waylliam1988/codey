@@ -210,6 +210,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     "deepseek",
                     "project",
                     get_state=http_context.get_context,
+                    review_policy="require_web",
                 )
 
             self.assertEqual(get_provider.call_args_list[1].args, ("stepfun",))
@@ -658,7 +659,8 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(task_submit, "collect_task_changes", return_value=changes),
                 mock.patch.object(review_service, "run_review", review),
             ):
-                task_submit.run_task("session-1", str(project), "Fix login", 8, False, "deepseek", "project", get_state=http_context.get_context)
+                task_submit.run_task("session-1", str(project), "Fix login", 8, False, "deepseek", "project",
+                                     get_state=http_context.get_context, review_policy="require_web")
 
             rendered = review.call_args.kwargs["verification_map"]
             execution = review.call_args.kwargs["execution_evidence"]
@@ -710,7 +712,8 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     side_effect=RuntimeError("scan failed"),
                 ),
             ):
-                task_submit.run_task("session-1", str(project), "Change app", 8, False, "deepseek", "project", get_state=http_context.get_context)
+                task_submit.run_task("session-1", str(project), "Change app", 8, False, "deepseek", "project",
+                                     get_state=http_context.get_context, review_policy="require_web")
 
             self.assertEqual(review.call_args.kwargs["verification_map"], "")
 

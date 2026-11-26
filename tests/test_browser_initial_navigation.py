@@ -81,7 +81,12 @@ def test_ordinary_navigation_does_not_override_authorization_or_existing_work(st
         session.task_text = f"打开 {URL}，把运单号原样写入 dispatch.json 的 carrier_label，保留前导零。browser_navigate"
         session.policy = replace(session.policy, grants=GRANTS | {"project.write", "browser.effect"})
     call = initial_navigation(session, build_turn_snapshot(session))
-    if state in {"research", "strict"}:
+    if state == "strict":
+        assert call is not None and call.name == "codemode"
+        assert call.args == {"code": "const action = unwrap(await tools.browser_navigate(inputs)); "
+                            "unwrap(await tools.browser_snapshot({})); await tools.browser_read({}); return action;",
+                            "inputs": {"url": URL}}
+    elif state == "research":
         assert call is not None and call.name == "browser_navigate" and call.args == {"url": URL}
     else:
         assert call is None

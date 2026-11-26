@@ -11,7 +11,6 @@ from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import evaluate
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, TaskPolicy
-from codey.research.answer_contract import answer_scope, submit_answer
 from codey.research.answer_report import AnswerReport
 from codey.research.ledger import ResearchLedger
 from codey.research.search_contracts import SearchOutcome
@@ -20,6 +19,7 @@ from codey.research.source_reading import render_source_read
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.web_intent import explicit_web_intent
 from codey.types.json_value import JsonObject, canonical_json_object
+from tests.test_research_whole_answer import record_submission
 
 URL = "https://example.com/required-record"
 
@@ -71,9 +71,7 @@ def test_whole_answer_checks_actual_attempts_without_claiming_failed_sources_wer
     markdown = ("The independent sample weighs 37 grams [e1]. " if has_original else "") + (
         "The required source was unavailable; its sample weight cannot be established.")
     args: JsonObject = {"state": state, "markdown": markdown}
-    submission = submit_answer(answer_scope(session), args)
-    session._memory_results["submitted"] = ToolResult(ToolCall("submit_research_answer", args), "Recorded", ok=True,
-                                                       canonical={"research_submission": submission})
+    record_submission(session, args)
     store = KnowledgeStore(tmp_path)
     try:
         context = CompletionContext(research_ledger=ledger, knowledge_store=store)

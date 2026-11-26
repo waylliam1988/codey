@@ -23,6 +23,7 @@ from codey.durable.model import (
 from codey.durable.session_kernel import SessionKernel
 from codey.durable.task_queries import read_task_snapshot
 from codey.durable.workflow import workflow_digest
+from codey.task.model import StartTask, task_input_payload
 from codey.utils.object_fields import mapping_fields
 
 
@@ -413,6 +414,7 @@ def fork_task(
         session, conversation_id=conversation_id, request_id=request_id, task_id=task_id,
         text=instruction, provider_snapshot=source.provider_snapshot,
         task_state={**preserved, "task": instruction, "continue_task": False,
+                    "input": task_input_payload(StartTask(instruction)),
                     "workflow_origin": {"task_id": source_task_id, "commit_seq": snapshot.commit_seq}},
         creation=CreateConversation(source.conversation_id, snapshot.head_entry_id),
     )

@@ -124,8 +124,7 @@ class RunsRuntimeSweepTests(unittest.TestCase):
         import inspect
 
         from codey.runtime.core import cancellation as canc
-        src = inspect.getsource(canc)
-        seg = src.split("def wait(")[1][:600] if "def wait(" in src else ""
+        seg = inspect.getsource(canc.wait)
         self.assertIn("_safe_timeout", seg, "wait() still uses bare float()")
 
     def test_output_capture_no_crash(self) -> None:
@@ -307,6 +306,10 @@ class GhostKnowledgeSweepTests(unittest.TestCase):
             (root / "valid.md").write_text(note.to_markdown(), encoding="utf-8")
             store = KnowledgeStore(root)
             try:
+                self.assertIsNone(store.read_note("valid"))
+                store.import_markdown(note.to_markdown(), expected_revision=0)
+                with self.assertRaises(ValueError):
+                    store.import_markdown((root / "bad.md").read_text(encoding="utf-8"), expected_revision=0)
                 self.assertEqual(set(store.read_notes(["valid", "bad"])), {"valid"})
                 self.assertEqual(store.read_note("valid").body, note.body)
             finally:

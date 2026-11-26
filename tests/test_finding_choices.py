@@ -17,6 +17,7 @@ from codey.research.answer_contract import AnswerScope, digest
 from codey.research.finding_choices import finding_choices
 from codey.research.passages import passage_ref
 from codey.research.source_document import OpenedSource
+from codey.research.source_observation import source_snapshot
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import spec_for_tool, validate_args_with_spec
 from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object
@@ -28,7 +29,7 @@ def read_receipt(url: str, text: str, source_id: str = "s1") -> tuple[str, ToolR
     ref = passage_ref(url, text_hash, 0, len(text))
     result = ToolResult(ToolCall("open_url", {"url": url}), text, ok=True, canonical={
         "read_passages": [{"ref": ref, "start": 0, "end": len(text)}],
-        "research_observation": {"source": source.to_dict(), "text": text, "pages": []}, "source_id": source_id})
+        "research_observation": source_snapshot(source, text, {}), "source_id": source_id})
     return ref, result
 
 
@@ -63,7 +64,7 @@ def test_finding_choices_lower_short_labels_to_original_passages() -> None:
     reply = AssistantTurn(tool_calls=(ProviderToolCall("finding", "save_finding", {**good, "passage_ref": "e1"}),))
     plan = normalize_turn(reply, snapshot=restored)
     assert not plan.protocol_error and plan.calls[0].args == good
-    lowered, problem = ExecutionDelegate(session=session)._lower_finding_source({**good, "source_ref": "s1"})
+    lowered, problem = ExecutionDelegate(session=session).research_executor._lower_finding_source({**good, "source_ref": "s1"})
     assert not problem and lowered["source_ref"] == result.call.args["url"]
 
 

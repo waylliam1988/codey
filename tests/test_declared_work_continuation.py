@@ -31,11 +31,13 @@ from codey.policies.tool_requirement import require_browser_file_field, require_
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.source_document import OpenedSource
+from codey.research.source_observation import source_snapshot
 from codey.research.task_browser_source import TaskBrowserSource
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.toolchain import runtime as tool_runtime
+from codey.toolchain import edit_tools as tool_runtime
 from codey.toolchain.constants import STALE_READ_REFERENCE_CODE
+from codey.toolchain.path_checks import _write_text_after_final_path_check
 from codey.toolchain.runtime import ToolOutcome
 from codey.toolchain.spec_model import thaw_schema_value
 from codey.types.json_value import JsonObject, decode_json_object
@@ -53,7 +55,7 @@ def record(session: TaskSession, name: str, args: JsonObject, document: JsonObje
     if body:
         source = OpenedSource(str(document["url"]), str(document["url"]), "Declared source", "2026-11-16T00:00:00Z",
                               hashlib.sha256(body.encode()).hexdigest()[:16])
-        canonical = {"research_observation": {"source": source.to_dict(), "text": body, "pages": []},
+        canonical = {"research_observation": source_snapshot(source, body, {}),
                      "read_passages": [{"ref": "p" + hashlib.sha256(ref.encode()).hexdigest()[:12],
                                         "start": 0, "end": len(body)}]}
     result = ToolResult(ToolCall(name, args, ref), body or "settled", ok=ok, canonical=canonical,
@@ -303,7 +305,7 @@ def test_fixed_program_preserves_values_and_retries_with_a_new_full_read(
     monkeypatch.setattr(browser, "document_identity", current_document)
     research = ResearchTools(search=provider, store=None, changes=None, browser_session=browser)
     versions = WorkspaceRevisionStore(tmp_path.parent / (tmp_path.name + "-revisions"))
-    original = tool_runtime._write_text_after_final_path_check
+    original = _write_text_after_final_path_check
     injected = False
 
     def concurrent_write(root: Path, rel: str, content: str, *, tool: str,

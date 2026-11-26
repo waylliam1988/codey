@@ -4,7 +4,7 @@ from dataclasses import replace
 import pytest
 
 from codey.durable import EffectRecord, TaskCheckpoint
-from codey.durable.model import TASK_PHASE_TRANSITIONS, migrate_checkpoint_phase
+from codey.durable.model import TASK_PHASE_TRANSITIONS, require_checkpoint_version
 from codey.durable.reducer import with_effect_intents, with_effect_settlement
 
 
@@ -13,12 +13,12 @@ from codey.durable.reducer import with_effect_intents, with_effect_settlement
     "assistant_response_unknown", "tool_intent_committed", "tool_effect_running",
     "tool_outcome_ready", "effect_unknown", "verification_pending",
 ])
-def test_version_one_execution_phase_migrates_without_inventing_an_outcome(phase: str) -> None:
-    migrated = migrate_checkpoint_phase(phase, 1)
-    assert migrated == ("running", 2)
-    assert migrate_checkpoint_phase(*migrated) == migrated
+def test_legacy_execution_phase_is_rejected_without_inventing_an_outcome(phase: str) -> None:
+    with pytest.raises(ValueError, match="unsupported task checkpoint schema"):
+        require_checkpoint_version(1)
+    assert require_checkpoint_version(2) == 2
     with pytest.raises(ValueError, match="unknown task phase"):
-        migrate_checkpoint_phase(phase, 2)
+        TaskCheckpoint("t", "c", "s", phase, 1, {}, {})
 
 
 def test_task_lifecycle_contains_no_provider_or_tool_execution_position() -> None:

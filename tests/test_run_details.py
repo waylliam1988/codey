@@ -10,7 +10,8 @@ from codey.durable import DurableSession
 from codey.runs.details import load_run_details, unavailable_summary
 from codey.runs.ledger import RunLedgerStore
 from codey.runs.receipt import build_task_receipt
-from codey.runs.trace import MAX_TRACE_BYTES, SCHEMA_VERSION, RunTraceStore
+from codey.runs.trace import RunTraceStore
+from codey.runs.trace_schema import MAX_TRACE_BYTES, SCHEMA_VERSION
 from codey.runtime.write.checkpoint import RuntimeOperationStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from tests.support.sqlite_store import TemporarySQLiteStore

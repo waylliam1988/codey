@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -13,6 +14,7 @@ from codey.operations.completion_gate import evaluate
 from codey.operations.completion_output import OutputBindingError, prepare_completion_output
 from codey.policies.output_requirement import declaration
 from codey.policies.tool_requirement import require_tool_success
+from codey.providers import model_preferences
 from tests.test_required_tool_lineage import _code, _execute, _restart
 from tests.test_required_tool_lineage import runtime as runtime
 
@@ -26,7 +28,10 @@ def _output(state, text="{}"):
     return prepare_completion_output(state, text, CompletionContext())
 
 
-def test_existing_submission_field_accepts_canonical_bindings_without_granting_permissions():
+def test_existing_submission_field_accepts_canonical_bindings_without_granting_permissions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(model_preferences, "DEFAULT_STATE_HOME", tmp_path / "model-settings")
     from types import SimpleNamespace
 
     from codey.policies.task_policy import build_task_policy

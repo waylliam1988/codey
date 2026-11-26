@@ -15,7 +15,6 @@ _STORE_FIELDS = (
     "workspace_revisions",
     "run_ledgers",
     "run_traces",
-    "evidence_ledgers",
     "managed_outputs",
     "knowledge_store",
     "runtime_mutations",
@@ -38,7 +37,7 @@ def _stores() -> TaskSubmissionStores:
 
 
 def test_submission_state_exposes_one_typed_resource_bundle() -> None:
-    source = (ROOT / "codey" / "operations" / "task_state.py").read_text(encoding="utf-8")
+    source = (ROOT / "codey" / "app" / "task_state.py").read_text(encoding="utf-8")
     assert "def task_submission_stores" in source
     for field in _STORE_FIELDS:
         assert f"def {field}" not in source

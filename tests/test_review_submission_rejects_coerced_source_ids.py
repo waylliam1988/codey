@@ -1,4 +1,5 @@
 """HTTP and task entry reject source IDs before submission or routing."""
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -6,11 +7,13 @@ import pytest
 
 from codey.app.api import run_submit_response
 from codey.operations.task_run import prepare_submission
+from codey.providers import model_preferences
 from codey.task.model import TaskSubmission
 
 
 @pytest.mark.parametrize("value", [True, 42, [], None])
-def test_http_rejects_nonstring_source(tmp_path, value):
+def test_http_rejects_nonstring_source(tmp_path: Path, value: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(model_preferences, "DEFAULT_STATE_HOME", tmp_path / "model-settings")
     submit = Mock(return_value="r")
     status, _payload = run_submit_response({"task": "review", "project": str(tmp_path), "provider": "deepseek",
         "intent": "review", "review_source_run_id": value}, submit)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
 
 from codey.app.provider_registry import ProviderRegistry
@@ -8,7 +9,9 @@ from codey.providers.diagnostics import FAILURE_RATE_LIMITED, ProviderFailure
 
 class ProviderRegistryTests(unittest.TestCase):
     def test_failover_order_prefers_open_tabs(self) -> None:
-        registry = ProviderRegistry()
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        registry = ProviderRegistry(temporary.name)
 
         order = registry.failover_order(lambda: {"qwen": True, "glm": True})
 
@@ -29,7 +32,9 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertEqual(sessions["qwen"], "s2")
 
     def test_self_repair_candidates_skip_broken_and_unavailable(self) -> None:
-        registry = ProviderRegistry()
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        registry = ProviderRegistry(temporary.name)
         registry.supervisor.record_failure(
             "qwen",
             ProviderFailure(

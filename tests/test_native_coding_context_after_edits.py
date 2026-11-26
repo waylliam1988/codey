@@ -18,9 +18,9 @@ def test_native_receipts_include_refreshed_coding_context_after_creation(tmp_pat
         ProviderToolCall("c2", "edit", {"path": "test_app.py", "content":
             "import unittest\nfrom app import VALUE\nclass Tests(unittest.TestCase):\n"
             "    def test_value(self):\n        self.assertEqual(VALUE, 7)\n"}),
-        ProviderToolCall("c3", "run", {"command": "python -m unittest test_app.py", "path": "."}),
+        ProviderToolCall("c3", "run", {"command": "python -m unittest test_app.py", "path": ".", "run_in_background": False}),
         ProviderToolCall("c4", "done", {"summary": "Created and tested the files."}),
-        ProviderToolCall("c5", "run", {"command": "python -m unittest discover", "path": "."}),
+        ProviderToolCall("c5", "run", {"command": "python -m unittest discover", "path": ".", "run_in_background": False}),
         ProviderToolCall("c6", "done", {"summary": "Created and tested the files."}),
     ))
 

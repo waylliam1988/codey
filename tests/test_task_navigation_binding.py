@@ -26,6 +26,7 @@ from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.protocols.text_turn import decode_text_turn
 from codey.research.source_document import OpenedSource
+from codey.research.source_observation import source_snapshot
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.model import TaskSubmission
 from codey.task.web_intent import explicit_web_intent, source_requirements, source_url_key
@@ -87,7 +88,7 @@ def test_specification_handoff_executes_through_the_frozen_surface(
         source = OpenedSource(url, url, "Specification", "2026-11-23T00:00:00Z", hashlib.sha256(body.encode()).hexdigest()[:16])
         return ToolResult(call, body, ok=True, canonical={
             "value": body,
-            "research_observation": {"source": source.to_dict(), "text": body, "pages": []},
+            "research_observation": source_snapshot(source, body, {}),
             "read_passages": [{"start": 0, "end": len(body)}],
         })
 

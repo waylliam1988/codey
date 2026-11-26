@@ -27,7 +27,7 @@ def test_registry_only_lists_executable_connectors() -> None:
     from codey.research.source_connectors import built_in_connector_registry
 
     registry = built_in_connector_registry()
-    assert registry.ids() == ("arxiv", "pubmed")
+    assert registry.ids() == ("arxiv", "crossref", "openalex", "pubmed")
     assert registry.shipped_fixture_ids() == ("arxiv", "pubmed")
 
 

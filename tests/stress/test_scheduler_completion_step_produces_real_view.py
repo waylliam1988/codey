@@ -230,7 +230,7 @@ def test_real_pytest_assertion_failure_blocks_with_failed_observation(tmp_path, 
 
     replies = [
         json.dumps({"tool": "edit", "args": {"path": "a.py", "content": "x = 1\n"}}),
-        json.dumps({"tool": "run", "args": {"command": "python -m pytest test_fail.py -q", "path": "."}}),
+        json.dumps({"tool": "run", "args": {"command": "python -m pytest test_fail.py -q", "path": ".", "run_in_background": False}}),
         json.dumps({"tool": "done", "args": {"summary": "done"}}),
     ]
     it = iter(replies)

@@ -340,14 +340,14 @@ def test_planner_bounds_query_count_and_does_not_execute_registry_connectors() -
     assert plan.source_preferences[0].connector_id == "pubmed"
 
 
-def test_removed_connectors_are_never_planned_and_never_warned() -> None:
+def test_shipped_openalex_is_planned_without_removed_connectors_or_retired_warnings() -> None:
     plan = build_research_plan(
         _review(followup_questions=(), query_rewrite_candidates=(), coverage_gaps=()),
         question="Use OpenAlex RSS feed metadata for topic discovery",
     )
 
     ids = [item.connector_id for item in plan.source_preferences]
-    assert "openalex" not in ids
+    assert ids == ["openalex"]
     assert "rss" not in ids
     assert "local_file" not in ids
     assert "csv_tsv" not in ids

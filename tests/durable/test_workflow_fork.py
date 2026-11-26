@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from codey.durable import CommitConflict, DurableSession, EffectRecord, SQLiteDurableStore
+from codey.task.model import StartTask, task_input_from_payload
 from tests.support.sqlite_store import TemporarySQLiteStore
 
 
@@ -23,6 +24,7 @@ def test_workflow_fork_admits_a_new_task_at_the_historical_cap(backend: str, tmp
         assert session.head("source") == head
         assert [entry.payload["text"] for entry in session.context("child")] == ["original", "Try another approach"]
         assert session.task("new").phase == "accepted"
+        assert task_input_from_payload(session.task("new").state["input"]) == StartTask("Try another approach")
         assert session.task("new").state["task_policy"] == session.task("old").state["task_policy"]
         assert session.task("new").provider_snapshot == session.task("old").provider_snapshot
         assert session.effects("new") == ()

@@ -17,7 +17,6 @@ def test_work_state_retains_failed_check_reference_and_marks_stale_verification(
     assert "exec-17" in text and "python -m pytest -q" in text
     assert "1" in text and "stale" in text
     assert "Do not repeat" in text
-    assert "Keep public API" in text
 
 
 def test_result_delivery_includes_existing_receipt_ref():
@@ -77,7 +76,8 @@ def test_work_state_is_updated_before_each_actual_kernel_send():
         assert result.completed, result
         prompts = [body for kind, body in runtime.events if kind == "send"]
         assert len(prompts) == 2
-        assert all("Current work observations" in prompt and "latest intent" in prompt for prompt in prompts)
+        assert all("Current work observations" in prompt for prompt in prompts)
+        assert "latest intent" in prompts[0]
         assert "ORIGINAL_RESULT" in prompts[-1]
 
 

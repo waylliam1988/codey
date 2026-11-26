@@ -5,8 +5,14 @@ from pathlib import Path
 import pytest
 
 from codey.app.submission_types import TaskSubmitter
+from codey.providers import model_preferences
 from codey.task.entry_auth import EntryAuth
 from codey.types.json_value import JsonValue
+
+
+@pytest.fixture(autouse=True)
+def isolated_model_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(model_preferences, "DEFAULT_STATE_HOME", tmp_path / "model-settings")
 
 
 def _recorder(calls: list[tuple[str, str]]) -> TaskSubmitter:

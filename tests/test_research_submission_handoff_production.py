@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 
 from codey.operations.research.execution import ResearchExecutor
-from codey.operations.task_execution import ExecutionDelegate
 from codey.policies.tool_requirement import require_tool_success
 from codey.providers.api_generation import AttemptObserver
 from codey.research.answer_contract import AnswerScope, digest, submit_answer, validate_submission
@@ -126,17 +125,19 @@ def test_production_handoff_requires_citable_read_on_current_document(
     if scenario in {"lost_on_submit", "legacy_claim_receipt"}:
         original = ResearchExecutor._submit_research_answer
         reloaded = False
+        corrupted = False
 
-        def submit(delegate: ExecutionDelegate, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
-            nonlocal reloaded
+        def submit(delegate: ResearchExecutor, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
+            nonlocal reloaded, corrupted
             outcome = original(delegate, call, tools)
-            if scenario == "legacy_claim_receipt" and outcome[1]:
+            if scenario == "legacy_claim_receipt" and outcome[1] and not corrupted:
                 result, _, exit_code = outcome
                 evidence = decode_json_object(result.canonical["research_evidence_check"])
                 assert evidence.pop("claim_check_version") == CLAIM_CHECK_VERSION
                 assert isinstance(evidence.pop("claim_checks"), list)
+                corrupted = True
                 return replace(result, canonical={**result.canonical, "research_evidence_check": evidence}), True, exit_code
-            if outcome[1] and not reloaded:
+            if scenario == "lost_on_submit" and outcome[1] and not reloaded:
                 assert delegate.browser_session is not None and delegate.browser_session.navigate(gate.URL).ok
                 reloaded = True
             return outcome
@@ -191,6 +192,9 @@ def test_production_handoff_requires_citable_read_on_current_document(
             prefix = fixture.NAVIGATE if workflow else ""
             yield fixture.code_action(prefix + fixture.LOAD + fixture.WAIT + f"return {fixture.READ};")
             label = assert_submitting(directory, sequence=not workflow)
+        if scenario == "legacy_claim_receipt":
+            yield fixture.submission(label, current=True)
+            assert "unsupported research claim check version" in json.dumps(requests(directory)[-1]["messages"])
         yield fixture.submission(label, current=True)
 
     install_http(monkeypatch, replies(), native=native)

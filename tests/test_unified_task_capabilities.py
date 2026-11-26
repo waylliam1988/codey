@@ -20,11 +20,11 @@ from codey.operations.task_session import TaskSession
 from codey.operations.turn_snapshot import build_turn_snapshot
 from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, TaskPolicy, build_task_policy
 from codey.protocols.text_turn import decode_text_turn
-from codey.research.answer_contract import answer_scope, submit_answer
+from codey.research.answer_contract import answer_scope
 from codey.research.search_contracts import SearchOutcome
 from codey.research.task_mode import whole_research
 from codey.research.tools import ResearchTools
-from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.core.models import ToolCall
 from codey.types.json_value import JsonObject
 from tests.support.search_fixture import search_outcome
 
@@ -119,8 +119,11 @@ def test_report_cannot_finish_required_implementation_or_failed_verification(tmp
         session._memory_results["read"] = result
         scope = answer_scope(session)
         args: JsonObject = {"state": "answered", "markdown": "Only one writer at a time [e1]."}
-        session._memory_results["report"] = ToolResult(ToolCall("submit_research_answer", args), "Recorded", ok=True,
-            canonical={"research_submission": submit_answer(scope, args)})
+        delegate.research_executor._research_scope = scope
+        report_call = ToolCall("submit_research_answer", args)
+        report, report_ok, _ = delegate.execute(report_call)
+        assert report_ok, report.model_text
+        session._memory_results["report"] = report
         context = CompletionContext(research_ledger=tools.ledger, knowledge_store=store)
         assert not report_completes_task(session)
         assert not evaluate(session, "Implemented the requested behavior.", context=context).complete

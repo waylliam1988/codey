@@ -114,12 +114,17 @@ def test_policy_recovery_rejects_missing_schema_fields(field):
 @pytest.mark.parametrize("field,value", [("version", True), ("version", "1"),
                                          ("strict_research", "false"),
                                          ("sources_open_required", 1)])
-def test_serialization_cannot_launder_invalid_policy_values(field, value):
+def test_serialization_cannot_launder_invalid_policy_values(field: str, value: object) -> None:
     from dataclasses import replace
 
-    invalid = replace(TaskPolicy(frozenset({"control"})), **{field: value})
+    policy = TaskPolicy(frozenset({"control"}))
+    if field != "version":
+        with pytest.raises(ValueError, match="flags"):
+            replace(policy, **{field: value})
+    payload = policy.to_payload()
+    payload[field] = value
     with pytest.raises(ValueError, match=field):
-        TaskPolicy.from_payload(invalid.to_payload())
+        TaskPolicy.from_payload(payload)
 
 
 def test_policy_roundtrip_preserves_denials_without_rewriting_grants():

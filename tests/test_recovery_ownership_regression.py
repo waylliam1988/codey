@@ -81,7 +81,7 @@ class SnapshotNullEntryTests(unittest.TestCase):
             # Shrink the limit via patch to simulate 1-file cap.
             (root / "b.py").write_text("B", encoding="utf-8")
             with mock.patch(
-                "codey.workspace.changes.MAX_SNAPSHOT_FILES", 1
+                "codey.workspace.change_tracker.MAX_SNAPSHOT_FILES", 1
             ), self.assertRaises(ValueError):
                 tracker.capture_before("b.py")
             after_payload = json.loads(manifest.read_text(encoding="utf-8"))
@@ -95,7 +95,7 @@ class SnapshotNullEntryTests(unittest.TestCase):
             (root / "a.py").write_text("A", encoding="utf-8")
             store.put_baseline(root, "a.py", "A")
             (root / "b.py").write_text("B", encoding="utf-8")
-            with mock.patch("codey.workspace.changes.MAX_SNAPSHOT_FILES", 1), self.assertRaises(ValueError):
+            with mock.patch("codey.workspace.snapshot_store.MAX_SNAPSHOT_FILES", 1), self.assertRaises(ValueError):
                 store.put_baseline(root, "b.py", "B")
 
     def test_cached_capture_validates_disk(self) -> None:

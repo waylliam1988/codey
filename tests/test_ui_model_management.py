@@ -267,7 +267,10 @@ def test_refresh_catalog_keeps_staged_choices_and_never_selects_new_models(page,
 
 @pytest.mark.parametrize("source_id", ["websites", "partner", "local"])
 @pytest.mark.parametrize("action", ["uncheck", "clear"])
-def test_empty_selection_turns_source_off_and_explicit_selection_turns_it_on(page, models, source_id, action):
+def test_empty_selection_turns_source_off_and_explicit_selection_turns_it_on(
+    page, models, source_id: str, action: str,
+):
+    available_count = {"websites": 3, "partner": 2, "local": 1}[source_id]
     page.locator("#btn-settings").click()
     source = page.locator(f'.model-source[data-source-id="{source_id}"]')
     source.locator("summary").first.click()
@@ -277,7 +280,7 @@ def test_empty_selection_turns_source_off_and_explicit_selection_turns_it_on(pag
     else:
         for item in source.locator(".model-choice input").all():
             item.uncheck()
-    expect(source.locator(".model-source-count")).to_have_text("0 selected")
+    expect(source.locator(".model-source-count")).to_have_text(f"0 of {available_count} selected")
     expect(toggle).not_to_be_checked()
     expect(toggle).to_be_disabled()
     assert models[1] == []
@@ -285,7 +288,7 @@ def test_empty_selection_turns_source_off_and_explicit_selection_turns_it_on(pag
     expect(page.locator("#local-config-pop")).to_be_hidden()
     assert models[0]["preferences"]["sources"][source_id] == {"enabled": False, "models": []}
     page.locator("#btn-settings").click()
-    expect(source.locator(".model-source-count")).to_have_text("0 selected")
+    expect(source.locator(".model-source-count")).to_have_text(f"0 of {available_count} selected")
     if source.locator("details").first.get_attribute("open") is None:
         source.locator("summary").first.click()
     expect(toggle).not_to_be_checked()
@@ -305,7 +308,7 @@ def test_select_all_reenables_empty_source_without_restoring_other_sources(page,
     source.get_by_role("button", name="Clear", exact=True).click()
     source.get_by_role("button", name="Select all", exact=True).click()
     expect(source.locator(".model-source-toggle")).to_be_checked()
-    expect(source.locator(".model-source-count")).to_have_text("3 selected")
+    expect(source.locator(".model-source-count")).to_have_text("3 of 3 selected")
     page.locator("#model-settings-save").click()
     expect(page.locator("#local-config-pop")).to_be_hidden()
     for source_id in ("local", "partner"):

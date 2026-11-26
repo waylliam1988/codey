@@ -13,7 +13,7 @@ from unittest import mock
 
 from codey.agents.request import AgentRequest
 from codey.storage.local_store import StoreCorruption
-from codey.workspace import changes
+from codey.workspace import change_tracker, changes, git_changes, snapshot_store
 from codey.workspace.changes import ChangeTracker, SnapshotStore
 from tests.support.kernel_runtime import run_agent as _agent_kernel_request
 
@@ -55,7 +55,7 @@ class ChangeTrackerTests(unittest.TestCase):
 
             new_file = root / "untracked.py"
             new_file.write_text("x\ny\n", encoding="utf-8")
-            untracked = changes._untracked_file_diff(root, "untracked.py")
+            untracked = git_changes._untracked_file_diff(root, "untracked.py")
 
             self.assertIsNotNone(untracked)
             body, line_count = untracked
@@ -71,7 +71,7 @@ class ChangeTrackerTests(unittest.TestCase):
                 args=[], returncode=0, stdout="", stderr="",
                 stdout_truncated=False, stderr_truncated=False,
             )
-            changes._run_git(Path("C:/project"), ["status", "--porcelain=v1", "-z", "--untracked-files=all"])
+            git_changes._run_git(Path("C:/project"), ["status", "--porcelain=v1", "-z", "--untracked-files=all"])
 
         argv = run.call_args.args[0]
         self.assertEqual(argv[:4], ["git", "-c", "core.quotePath=false", "-C"])
@@ -84,7 +84,7 @@ class ChangeTrackerTests(unittest.TestCase):
                 args=[], returncode=0, stdout="", stderr="",
                 stdout_truncated=False, stderr_truncated=False,
             )
-            changes._run_git(Path("C:/project"), [
+            git_changes._run_git(Path("C:/project"), [
                 "status", "--porcelain=v1", "-z", "--untracked-files=all",
             ])
 
@@ -95,7 +95,7 @@ class ChangeTrackerTests(unittest.TestCase):
             root = Path(td)
             path = root / "large.js"
             path.write_text("x" * (changes.MAX_UNTRACKED_DIFF_BYTES + 1), encoding="utf-8")
-            preview = changes._untracked_file_preview(root, "large.js")
+            preview = git_changes._untracked_file_preview(root, "large.js")
 
         self.assertEqual(preview["status"], "too_large")
         self.assertGreater(preview["size"], changes.MAX_UNTRACKED_DIFF_BYTES)
@@ -119,7 +119,7 @@ class ChangeTrackerTests(unittest.TestCase):
                     return _proc(args, "")
                 raise AssertionError(f"unexpected git command: {args}")
 
-            with mock.patch.object(changes, "_run_git", side_effect=run_git) as run:
+            with mock.patch.object(git_changes, "_run_git", side_effect=run_git) as run:
                 data = changes.collect_git_changes(root)
 
         self.assertTrue(data["ok"])
@@ -149,7 +149,7 @@ class ChangeTrackerTests(unittest.TestCase):
                     return _proc(args, " M a.py\n", truncated=True)
                 raise AssertionError(f"unexpected git command: {args}")
 
-            with mock.patch.object(changes, "_run_git", side_effect=run_git):
+            with mock.patch.object(git_changes, "_run_git", side_effect=run_git):
                 data = changes.collect_git_changes(root)
 
         self.assertFalse(data["ok"])
@@ -182,7 +182,7 @@ class ChangeTrackerTests(unittest.TestCase):
                     return _proc(args, "")
                 raise AssertionError(f"unexpected git command: {args}")
 
-            with mock.patch.object(changes, "_run_git", side_effect=run_git):
+            with mock.patch.object(git_changes, "_run_git", side_effect=run_git):
                 data = changes.collect_git_changes(root)
 
         self.assertTrue(data["ok"])
@@ -389,13 +389,13 @@ class ChangeTrackerTests(unittest.TestCase):
             (root / "b.py").write_text("bbb", encoding="utf-8")
             tracker = ChangeTracker(root, SnapshotStore(state_td))
 
-            with mock.patch("codey.workspace.changes.MAX_SNAPSHOT_FILES", 1):
+            with mock.patch("codey.workspace.change_tracker.MAX_SNAPSHOT_FILES", 1):
                 tracker.capture_before("a.py")
                 with self.assertRaisesRegex(ValueError, "file limit"):
                     tracker.capture_before("b.py")
 
             other = ChangeTracker(root, SnapshotStore(Path(state_td) / "other"))
-            with mock.patch("codey.workspace.changes.MAX_SNAPSHOT_TOTAL_BYTES", 2), self.assertRaisesRegex(ValueError, "size limit"):
+            with mock.patch("codey.workspace.change_tracker.MAX_SNAPSHOT_TOTAL_BYTES", 2), self.assertRaisesRegex(ValueError, "size limit"):
                 other.capture_before("b.py")
 
     def test_binary_file_without_text_baseline_is_rejected(self) -> None:
@@ -423,7 +423,7 @@ class ChangeTrackerTests(unittest.TestCase):
             manifest_before = store.path_for(root).read_bytes()
 
             with (
-                mock.patch("codey.workspace.changes.MAX_SNAPSHOT_FILE_BYTES", 2),
+                mock.patch("codey.workspace.change_tracker.MAX_SNAPSHOT_FILE_BYTES", 2),
                 self.assertRaisesRegex(ValueError, "file too large for snapshot"),
             ):
                 tracker.collect()
@@ -565,14 +565,14 @@ class ChangeTrackerTests(unittest.TestCase):
 
             hashing = threading.Event()
             release = threading.Event()
-            real_hash = changes._path_hash
+            real_hash = change_tracker._path_hash
 
             def slow_hash(path: Path) -> str:
                 hashing.set()
                 release.wait(2.0)
                 return real_hash(path)
 
-            with mock.patch.object(changes, "_path_hash", slow_hash):
+            with mock.patch.object(change_tracker, "_path_hash", slow_hash):
                 worker = threading.Thread(
                     target=lambda: tracker.capture_after("app.py")
                 )
@@ -736,7 +736,7 @@ class ChangeTrackerTests(unittest.TestCase):
 
             # Patch the manifest commit to raise during baseline creation.
             with mock.patch(
-                "codey.workspace.changes.write_json_atomic",
+                "codey.workspace.snapshot_store.write_json_atomic",
                 side_effect=OSError("disk full"),
             ), self.assertRaises(OSError):
                 tracker.capture_before("temp.txt")
@@ -768,7 +768,7 @@ class ChangeTrackerTests(unittest.TestCase):
                     return _proc(args, "", returncode=128)
                 raise AssertionError(f"unexpected git command after failure: {args}")
 
-            with mock.patch.object(changes, "_run_git", side_effect=run_git):
+            with mock.patch.object(git_changes, "_run_git", side_effect=run_git):
                 data = changes.collect_git_changes(root)
 
         self.assertFalse(data["ok"])
@@ -802,7 +802,7 @@ class ChangeTrackerTests(unittest.TestCase):
                     return _proc(args, "", returncode=1)
                 raise AssertionError(f"unexpected git command after failure: {args}")
 
-            with mock.patch.object(changes, "_run_git", side_effect=run_git):
+            with mock.patch.object(git_changes, "_run_git", side_effect=run_git):
                 data = changes.collect_git_changes(root)
 
         self.assertFalse(data["ok"])
@@ -839,7 +839,7 @@ class ChangeTrackerTests(unittest.TestCase):
                     return _proc(args, "", returncode=1)
                 raise AssertionError(f"unexpected git command after failure: {args}")
 
-            with mock.patch.object(changes, "_run_git", side_effect=run_git):
+            with mock.patch.object(git_changes, "_run_git", side_effect=run_git):
                 data = changes.collect_git_changes(root)
 
         self.assertFalse(data["ok"])
@@ -872,7 +872,7 @@ class ChangeTrackerTests(unittest.TestCase):
                     stdout_truncated=False, stderr_truncated=False,
                 )
 
-            with mock.patch.object(changes, "_run_git", side_effect=run_git):
+            with mock.patch.object(git_changes, "_run_git", side_effect=run_git):
                 failed = changes.collect_changes(root, tracker)
                 ambiguous = changes.collect_git_changes(root)
 
@@ -904,7 +904,7 @@ class ChangeTrackerTests(unittest.TestCase):
                     stdout_truncated=False, stderr_truncated=False,
                 )
 
-            with mock.patch.object(changes, "_run_git", side_effect=run_git):
+            with mock.patch.object(git_changes, "_run_git", side_effect=run_git):
                 data = changes.collect_changes(root, tracker)
 
         self.assertTrue(data["ok"])
@@ -929,7 +929,7 @@ class ChangeTrackerTests(unittest.TestCase):
                     )
                 raise subprocess.TimeoutExpired(["git", *args], changes.GIT_TIMEOUT)
 
-            with mock.patch.object(changes, "_run_git", side_effect=run_git):
+            with mock.patch.object(git_changes, "_run_git", side_effect=run_git):
                 data = changes.collect_changes(root, tracker)
 
         self.assertFalse(data["ok"])
@@ -947,7 +947,7 @@ class ChangeTrackerTests(unittest.TestCase):
 
             reading = threading.Event()
             proceed = threading.Event()
-            real_read = changes._read_text_or_none
+            real_read = change_tracker._read_text_or_none
             gated = {"done": False}
 
             def slow_read(path: Path, *, max_bytes: int) -> str | None:
@@ -965,7 +965,7 @@ class ChangeTrackerTests(unittest.TestCase):
                 except BaseException as exc:  # pragma: no cover - must not happen
                     result["error"] = exc
 
-            with mock.patch.object(changes, "_read_text_or_none", side_effect=slow_read):
+            with mock.patch.object(change_tracker, "_read_text_or_none", side_effect=slow_read):
                 worker = threading.Thread(target=collect)
                 worker.start()
                 self.assertTrue(reading.wait(10.0))
@@ -1073,7 +1073,7 @@ class ChangeTrackerTests(unittest.TestCase):
             manifest = store.path_for(root)
             original = manifest.read_bytes()
             with (
-                mock.patch.object(changes, "MAX_SNAPSHOT_TOTAL_BYTES", 100),
+                mock.patch.object(snapshot_store, "MAX_SNAPSHOT_TOTAL_BYTES", 100),
                 self.assertRaisesRegex(StoreCorruption, "baseline total budget exceeded"),
             ):
                 SnapshotStore(state_td).load(root)
@@ -1119,7 +1119,7 @@ class ChangeTrackerTests(unittest.TestCase):
             # A second write for the same path returns the persisted value
             # and must not rewrite the manifest at all.
             with mock.patch(
-                "codey.workspace.changes.write_json_atomic",
+                "codey.workspace.snapshot_store.write_json_atomic",
                 side_effect=AssertionError("manifest must not be rewritten"),
             ):
                 self.assertEqual(store.put_baseline(root, "app.py", "second\n"), "first\n")
@@ -1133,7 +1133,7 @@ class ChangeTrackerTests(unittest.TestCase):
             root = Path(td)
             store = SnapshotStore(state_td)
             with mock.patch(
-                "codey.workspace.changes.write_json_atomic",
+                "codey.workspace.snapshot_store.write_json_atomic",
                 side_effect=OSError("manifest disk full"),
             ), self.assertRaises(OSError):
                 store.put_baseline(root, "app.py", "first\n")
@@ -1150,7 +1150,7 @@ class ChangeTrackerTests(unittest.TestCase):
             body = store._baseline_path(root, "app.py")
 
             with mock.patch(
-                "codey.workspace.changes.write_json_atomic",
+                "codey.workspace.snapshot_store.write_json_atomic",
                 side_effect=OSError("manifest disk full"),
             ), self.assertRaises(OSError):
                 store.remove(root, "app.py")
@@ -1169,7 +1169,7 @@ class ChangeTrackerTests(unittest.TestCase):
             tracker = ChangeTracker(root, store)
             self.assertEqual(tracker._before.get("app.py"), "first\n")
             with mock.patch(
-                "codey.workspace.changes.write_json_atomic",
+                "codey.workspace.snapshot_store.write_json_atomic",
                 side_effect=AssertionError("preserve must not rewrite manifest"),
             ):
                 # Already tracked: early return, no store write, no error.
@@ -1299,7 +1299,7 @@ class ChangeTrackerTests(unittest.TestCase):
                 _os.symlink(str(outside), str(link))
             except (OSError, NotImplementedError) as exc:
                 self.skipTest(f"symlinks unavailable: {exc}")
-            result = changes._untracked_file_diff(root, "link.txt")
+            result = git_changes._untracked_file_diff(root, "link.txt")
             self.assertIsNone(result)
 
     def test_untracked_escaped_path_is_rejected(self) -> None:
@@ -1311,11 +1311,11 @@ class ChangeTrackerTests(unittest.TestCase):
             outside = Path(td).parent / "escape-outside.txt"
             outside.write_text("OUTSIDE\n", encoding="utf-8")
             try:
-                self.assertIsNone(changes._untracked_file_diff(root, "../escape-outside.txt"))
+                self.assertIsNone(git_changes._untracked_file_diff(root, "../escape-outside.txt"))
             finally:
                 with contextlib.suppress(OSError):
                     outside.unlink()
-            self.assertIsNone(changes._untracked_file_diff(root, "../escape.txt"))
+            self.assertIsNone(git_changes._untracked_file_diff(root, "../escape.txt"))
 
     def test_absolute_paths_rejected_on_raw_value(self) -> None:
         from codey.utils.change_paths import safe_change_path

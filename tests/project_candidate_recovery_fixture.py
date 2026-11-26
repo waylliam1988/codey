@@ -13,6 +13,7 @@ from typing import TypedDict
 from unittest import mock
 
 from codey.agents.request import AgentRequest
+from codey.operations.project_candidate_validation import VALIDATE_TASK as VALIDATE_TASK
 from codey.providers.diagnostics import ProviderFailure
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent
@@ -52,7 +53,6 @@ BAD = "def clean_name(text): return ''\n"
 VISIBLE = ("import unittest\nfrom names import clean_name\nclass Names(unittest.TestCase):\n"
            "    def test_punctuation(self): self.assertEqual(clean_name(' A! '), 'a')\n"
            "    def test_digits(self): self.assertEqual(clean_name('Ab42'), 'ab42')\n")
-VALIDATE_TASK = 'Validate the stopped candidate using the original authorized check; do not edit files.'
 
 
 def action(name: str, **args: JsonValue) -> JsonObject:

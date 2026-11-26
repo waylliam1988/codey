@@ -83,7 +83,7 @@ class RunLedgerStoreTests(unittest.TestCase):
                 ToolOutcome(
                     "ok",
                     True,
-                    audit={
+                    canonical={
                         "managed_output": {
                             "handle": "out_0001_abc",
                             "original_bytes": 1234,
@@ -176,7 +176,7 @@ class RunLedgerStoreTests(unittest.TestCase):
                 ToolOutcome(
                     "ok",
                     True,
-                    audit={
+                    canonical={
                         "managed_output": {
                             "handle": "out_0001_valid",
                             "original_bytes": 1234,

@@ -9,7 +9,7 @@ from unittest import mock
 from codey.providers.submission import SendAttempt
 from codey.providers.web_drivers import mimo
 from codey.runtime.core import cancellation
-from tests.provider_control_testkit import IsolatedProviderControlsMixin
+from tests.provider_control_testkit import IsolatedProviderControlsMixin, control_store_at
 
 
 class MimoDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
@@ -702,7 +702,7 @@ class MimoDriverTests(IsolatedProviderControlsMixin, unittest.TestCase):
             mimo.controls.begin_task_context("mimo-chat-flow")
             try:
                 with (
-                    mock.patch.object(mimo.controls, "CONTROL_STORE", path),
+                    control_store_at(path),
                     mock.patch.object(mimo.provider_flow, "_handler", helper),
                     mock.patch.object(mimo, "wait_ready"),
                     mock.patch.object(mimo, "_message_box", return_value=textarea),

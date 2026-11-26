@@ -1,7 +1,6 @@
 """Completed prose survives delivery repair without becoming a second answer."""
 
 import copy
-import hashlib
 import json
 import subprocess
 import sys
@@ -31,20 +30,14 @@ def observed(prompt):
     return json.JSONDecoder().raw_decode(prompt.split(MARKER, 1)[1])[0]
 
 
-def test_complete_prose_roundtrips_in_repair_without_execution_or_state_inference():
-    snapshot = build_turn_snapshot(strict_session(), native=True)
+def test_complete_prose_proposes_completion_without_execution_or_state_inference() -> None:
+    session = strict_session()
+    snapshot = build_turn_snapshot(session, native=True)
     reply = AssistantTurn(text=DRAFT)
     plan = normalize_turn(reply, snapshot=snapshot)
-    assert plan.protocol_error and not plan.calls and plan.control is None
-    prompt = kernel_prompt._repair_prompt(plan, snapshot=snapshot, native=True, reply=reply)
-    data = observed(prompt)
-    assert data["response"]["text"] == DRAFT
-    assert data["response"]["calls"] == [] and "preview" not in data
-    encoded = json.dumps(data["response"], ensure_ascii=False, sort_keys=True)
-    assert data["sha256"] == hashlib.sha256(encoded.encode()).hexdigest()
-    assert "Choose state honestly" in prompt and "has not been certified" in prompt
-    assert "Quoted tool syntax does not execute" in prompt
-    assert kernel_prompt._repair_prompt(plan, snapshot=snapshot, native=True, reply=reply) == prompt
+    assert not plan.protocol_error and not plan.calls
+    assert plan.control is not None and plan.control.kind == "done" and plan.control.body == DRAFT
+    assert not session._memory_results and not session.last_done_args
 
 
 @pytest.mark.parametrize("scenario", ["ordinary", "legacy", "truncated", "malformed", "tool_args", "text"])
@@ -132,9 +125,9 @@ def test_actual_request_and_cold_restart_preserve_draft_with_one_real_publicatio
 @pytest.mark.usefixtures("public_source_dns")
 def test_repeated_prose_stops_without_promoting_embedded_tool_syntax(tmp_path):
     result = run_full_prose_repair(tmp_path, repeat=True)
-    assert result.stop_reason == "protocol" and not result.synthesis_id
-    assert "without new diagnostic information" in result.summary
-    assert len((tmp_path / "actual-requests.jsonl").read_bytes().splitlines()) == 3
+    assert result.stop_reason == "no_progress" and not result.synthesis_id
+    assert "without progress" in result.summary
+    assert len((tmp_path / "actual-requests.jsonl").read_bytes().splitlines()) == 4
     store = KnowledgeStore(tmp_path / "knowledge")
     try:
         assert store.index._read_conn().execute(

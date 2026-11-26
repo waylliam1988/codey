@@ -5,6 +5,7 @@ from pathlib import Path
 from codey.app.context import AppContext
 from codey.durable.model import TaskStatus
 from codey.runtime.core.api_selection import ApiRunSelection
+from codey.task.model import StartTask, task_input_from_payload
 
 SELECTION = ApiRunSelection("local", "fixture", "fixture", "openai-completions", True)
 
@@ -28,6 +29,7 @@ def test_app_input_is_a_durable_submission_without_legacy_input_database(tmp_pat
         item = state.input_queue.create("input-one", _request(run_id), model_selection=SELECTION)
         assert item["state"] == "submitted"
         assert state.durable.task(run_id).state["input_identity"] == "input-one"
+        assert task_input_from_payload(state.durable.task(run_id).state["input"]) == StartTask("hello durable input")
         assert len(state.durable.entries("chat")) == 1
         assert not (root / "conversation_inputs.sqlite3").exists()
     finally:

@@ -603,9 +603,9 @@ def test_late_changes_response_cannot_replace_new_project_or_reopen_drawer(page)
 
 
 def test_change_file_link_expands_exact_file_and_escape_returns_focus(page):
-    page.route("**/api/changes", lambda route: route.fulfill(json={"ok": True, "mode": "snapshot", "files": [
+    page.route("**/api/run_changes?**", lambda route: route.fulfill(json={"ok": True, "mode": "snapshot", "files": [
         {"path": "one.py"}, {"path": "two.py"}], "diff": "diff --git a/two.py b/two.py\n@@ -1 +1 @@\n-old\n+new"}))
-    page.evaluate("addToSession('a',{type:'changes',project:'E:/project-alpha',files:[{path:'two.py'}]})")
+    page.evaluate("addToSession('a',{type:'changes',sessionId:'a',runId:'file-link',project:'E:/project-alpha',files:[{path:'two.py'}]})")
     link = page.get_by_role("button", name="two.py", exact=True)
     link.click()
     expect(page.locator('.change-file[data-path="two.py"] pre')).to_be_visible()

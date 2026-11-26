@@ -28,11 +28,11 @@ def test_status_header_reserves_budget_and_records_actual_clipping() -> None:
 @pytest.mark.parametrize("code", [True, "7", 1.5])
 def test_invalid_exit_code_is_not_coerced(code: object) -> None:
     with pytest.raises(ValueError, match="exit_code"):
-        ExecutionReceipt.from_payload({"exit_code": code})
+        ExecutionReceipt.from_shell_result({"exit_code": code})
 
 
 def test_unknown_exit_and_denial_do_not_become_success() -> None:
-    text = ExecutionReceipt.from_payload({"status": "denied", "exit_code": None}).bounded().render()
+    text = ExecutionReceipt.from_shell_result({"status": "denied", "exit_code": None}).bounded().render()
     assert "Execution status: denied" in text
     assert "Exit code: unknown" in text
     assert "Available receipt views: output" in text
@@ -77,7 +77,7 @@ def test_native_receipt_facts_and_ok_survive_durable_restart(
     from codey.storage.managed_outputs import ManagedOutputStore
     from codey.toolchain.runtime import RunCommandRawResult, project_run_command_result, run_command
     from tests.support.receipt_fixtures import rebuild_settled_tool_result
-    from tests.test_settled_delivery_recovery import _accept_and_mark, _new_log
+    from tests.test_settled_delivery_recovery import _accept_and_mark, _new_runtime
 
     command = "python -m pytest"
     if error:
@@ -103,7 +103,7 @@ def test_native_receipt_facts_and_ok_survive_durable_restart(
                                                truncated=bool(error), capture_truncated=bool(error)).facts()
     assert result.ok is (code == 0)
     assert result.audit["exit_code_scope"] == "process"
-    _, mutations, durable = _new_log(tmp_path, "s", "r")
+    mutations, durable = _new_runtime(tmp_path, "s", "r")
     _accept_and_mark(mutations, "s", "r", str(tmp_path))
     store = ManagedOutputStore(tmp_path / "state")
     sink = KernelEffectSink(mutations, session_id="s", run_id="r", provider_id="local",
@@ -114,16 +114,20 @@ def test_native_receipt_facts_and_ok_survive_durable_restart(
     restored = rebuild_settled_tool_result(effect, managed_store=store, session_id="s", run_id="r")
     assert restored is not None and restored.ok is result.ok
     assert execution_receipt(restored) == expected
+    durable.close()
 
 
-def test_legacy_decoder_preserves_scope_and_does_not_infer_from_display() -> None:
+def test_canonical_decoder_preserves_scope_and_does_not_infer_from_audit_or_display() -> None:
     for name, scope in (("shell", "shell"), ("run", "process")):
+        original = ExecutionReceipt("exit", 7, "original", truncated=True,
+                                    exit_code_scope="shell" if name == "shell" else "process")
         result = ToolResult(ToolCall(name, {}), "exit 0: misleading preview", ok=True,
-                            audit={"exit_code": 7}, truncated=True)
+                            canonical={"execution": original.facts()}, audit={"exit_code": 0}, truncated=True)
         receipt = execution_receipt(result)
         assert receipt is not None and receipt.exit_code == 7 and receipt.exit_code_scope == scope
         assert receipt.truncated and not receipt.full_output_recoverable
     assert execution_receipt(ToolResult(ToolCall("shell", {}), "Exit code: 0", ok=True)) is None
+    assert execution_receipt(ToolResult(ToolCall("run", {}), "Exit code: 0", ok=True, audit={"exit_code": 7})) is None
 
 
 def test_denied_native_run_has_no_process_execution_receipt(tmp_path: Path) -> None:

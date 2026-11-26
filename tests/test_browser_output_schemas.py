@@ -9,7 +9,7 @@ from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.result_schema import schema_typescript, validate_output
 from codey.toolchain.tool_spec import tool_specs
-from codey.types.json_value import decode_json_object
+from codey.types.json_value import JsonObject, decode_json_object
 from tests.test_browser_production_execution import URL, BrowserFixture
 from tests.test_browser_production_execution import production_browser as production_browser
 
@@ -44,6 +44,21 @@ def test_declared_browser_fields_are_typed_and_missing_data_is_rejected() -> Non
     assert isinstance(properties, Mapping)
     with pytest.raises(ValueError, match="JSON cannot encode"):
         validate_output("eval", properties["value"], {"nested": object()})
+
+
+def test_browser_eval_requires_its_complete_document_identity() -> None:
+    schema = tool_specs()["browser_eval"].output_schema
+    value: JsonObject = {"action": "eval", "value": "token", "truncated": False, "text": "token"}
+    with pytest.raises(ValueError, match="missing required property 'document'"):
+        validate_output("browser_eval", schema, value)
+    document: JsonObject = {"target_id": "tab", "frame_id": "main", "loader_id": "loaded", "url": URL}
+    validate_output("browser_eval", schema, {**value, "document": document})
+    with pytest.raises(ValueError, match="missing required property 'loader_id'"):
+        validate_output("browser_eval", schema, {
+            **value, "document": {key: item for key, item in document.items() if key != "loader_id"},
+        })
+    with pytest.raises(ValueError, match="unexpected property 'extra'"):
+        validate_output("browser_eval", schema, {**value, "document": {**document, "extra": True}})
 
 
 @pytest.mark.parametrize(("code", "expected"), [

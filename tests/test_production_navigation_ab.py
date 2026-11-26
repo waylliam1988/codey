@@ -91,7 +91,7 @@ def test_native_source_interfaces_and_real_click_chain(
         observations = read_jsonl(directory / "click-observations.jsonl")
         before = decode_json_object(observations[0]["before"])
         element = decode_json_object(before["element"])
-        assert element["href"] != expected.final_url
+        assert decode_json_object(element["attributes"])["href"] != expected.final_url
     # Both paths use native references; there is no experimental candidate schema.
     wire = (directory / "provider.jsonl").read_text(encoding="utf-8")
     assert "candidate_id" not in wire

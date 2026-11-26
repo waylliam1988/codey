@@ -4,7 +4,7 @@ from __future__ import annotations
 from unittest import mock
 
 import pytest
-from playwright.sync_api import expect
+from playwright.sync_api import Page, expect
 
 from codey.app import api
 from tests.test_ui_workflow import model_settings_route, open_connection_settings
@@ -151,15 +151,20 @@ def test_search_project_name_and_chat_title_keep_only_matching_groups(page):
     expect(page.locator(".session-title")).to_have_text("Loose chat")
 
 
-def test_search_accessible_name_explains_both_objects_without_changing_style(page):
+def test_search_accessible_name_explains_both_objects_without_changing_style(page: Page) -> None:
     trigger = page.get_by_role("button", name="Search chats and projects", exact=True)
-    expect(trigger).to_have_text("Search")
+    expect(trigger.locator(".label")).to_have_text("Search")
+    expect(trigger.locator(".sidebar-search-shortcut")).to_have_text("Ctrl+K")
     box = trigger.bounding_box()
+    assert box is not None
     trigger.click()
     search = page.get_by_role("searchbox", name="Search chats and projects", exact=True)
     expect(search).to_be_focused()
-    assert abs(search.bounding_box()["height"] - box["height"]) < 1
-    assert search.evaluate("e => getComputedStyle(e).borderTopWidth") == "0px"
+    search_box = search.bounding_box()
+    assert search_box is not None
+    assert abs(search_box["height"] - box["height"]) < 1
+    border_width: object = search.evaluate("e => getComputedStyle(e).borderTopWidth")
+    assert border_width == "0px"
 
 
 def test_search_clear_uses_neutral_outline_icon_in_default_and_hover_states(page):

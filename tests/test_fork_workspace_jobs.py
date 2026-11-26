@@ -7,7 +7,7 @@ from threading import Event
 
 import pytest
 
-from codey.app import conversation_routes, fork_workspaces
+from codey.app import conversation_registration, fork_workspaces
 from codey.app.context import AppContext
 from codey.storage.local_store import write_json_atomic
 
@@ -43,7 +43,7 @@ def test_start_cannot_publish_a_worker_after_context_close(
 
     monkeypatch.setattr(ctx, "shutdown_requested", delayed_shutdown_check)
     monkeypatch.setattr(fork_workspaces, "git", simulated_git)
-    monkeypatch.setattr(conversation_routes, "register_fork", register)
+    monkeypatch.setattr(conversation_registration, "register_fork", register)
     monkeypatch.setattr(jobs, "_run", run)
     try:
         with ThreadPoolExecutor(max_workers=1) as pool:
@@ -119,7 +119,7 @@ def test_snapshot_pipeline_uses_a_separate_index_and_owned_destination(
         registered.append((source, child, workspace))
 
     monkeypatch.setattr(fork_workspaces, "git", simulated_git)
-    monkeypatch.setattr(conversation_routes, "register_fork", register)
+    monkeypatch.setattr(conversation_registration, "register_fork", register)
     data: dict[str, object] = {
         "session_id": CHILD, "source": "source", "entry": "entry", "workspace": str(source),
         "root": str(target), "status": "pending",
@@ -172,7 +172,7 @@ def test_close_retains_active_worker_and_fences_later_starts(tmp_path: Path, mon
         return None
 
     monkeypatch.setattr(jobs, "_run", run)
-    monkeypatch.setattr(conversation_routes, "register_fork", register)
+    monkeypatch.setattr(conversation_registration, "register_fork", register)
     # Existing project_path skips even the simulated repository lookup.
     write_json_atomic(jobs._file(CHILD), {
         "session_id": CHILD, "source": "source", "entry": "entry", "workspace": str(tmp_path),

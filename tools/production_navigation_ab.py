@@ -42,7 +42,7 @@ from tools.receipt_fact_delivery_ab import receipt_payload
 
 Kind = Literal["search", "plain_click", "event_click"]
 READY = "记录已就绪"
-WITNESS = "() => JSON.parse(sessionStorage.getItem('production_clicks') || '[]')"
+WITNESS = "() => window.productionClicks || []"
 ELEMENT = """el => ({name:el.getAttribute('aria-label') || el.innerText,
  href:el.href || '', id:el.getAttribute('data-choice') || ''})"""
 
@@ -64,10 +64,10 @@ class ExpectedFlow:
 
 
 def link(name: str, url: str, choice: str, *, body: str = "") -> str:
-    record = "sessionStorage.setItem('production_clicks', JSON.stringify(["
-    record += "...JSON.parse(sessionStorage.getItem('production_clicks') || '[]'),"
+    record = "window.productionClicks=[...window.productionClicks,"
     identity: JsonObject = {"id": choice}
-    record += json.dumps(identity)[:-1] + ",trusted:event.isTrusted}]));"
+    record += json.dumps(identity)[:-1] + ",trusted:event.isTrusted}];"
+    record += "sessionStorage.setItem('production_clicks',JSON.stringify(window.productionClicks));"
     event = record
     if body:
         event = "event.preventDefault();" + record
@@ -101,9 +101,11 @@ def production_cases() -> tuple[tuple[Scenario, ExpectedFlow], ...]:
         destination = document('<h1>' + name + '</h1><p>' + body + '</p>') if plain else document(
             '<h1>静态降级页</h1><p>实时库存未加载，请通过列表页的交互链接查看。</p>')
         docs = ((case.entry, document(listing)), (expected.url, destination), *others)
+        docs = tuple((url, body.replace("<head>", "<head><script>window.productionClicks="
+            "JSON.parse(sessionStorage.getItem('production_clicks') || '[]');</script>")) for url, body in docs)
         hits = (names[0], "订单中心｜订单列表" if plain else "仓储中心｜各仓库存列表", "帮助中心")
         urls = (others[0][0], case.entry, "https://example.com/help/navigation")
-        search_html = document('<ol>' + ''.join('<li class="b_algo"><h2><a href="' + html.escape(url, quote=True)
+        search_html = document('<ol id="b_results">' + ''.join('<li class="b_algo"><h2><a href="' + html.escape(url, quote=True)
             + '">' + title + '</a></h2><div class="b_caption"><p>'
             + ("在列表中点击对应记录的详情链接查询。" if url == case.entry else "其他记录或一般帮助。")
             + '</p></div></li>' for title, url in zip(hits, urls, strict=True)) + '</ol>')
@@ -139,7 +141,7 @@ def observe_execution(directory: Path) -> Generator[None]:
     source_open = ResearchExecutor._execute_source_open
     browser_action = ExecutionDelegate._execute_browser
 
-    def opened(delegate: ExecutionDelegate, call: ToolCall, tools: ResearchTools, *, turn: int,
+    def opened(delegate: ResearchExecutor, call: ToolCall, tools: ResearchTools, *, turn: int,
                tool_index: int) -> tuple[ToolResult, bool, int | None]:
         mapping = delegate.session.search_results if delegate.session is not None else {}
         reference = str(call.args.get("result_id", "")).strip().lower()

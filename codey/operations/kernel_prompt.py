@@ -51,6 +51,27 @@ _NATIVE_READ_BATCH_RULE = (
     "Group independent read-only calls into one native tool_calls turn. "
     "Wait for their results before dependent actions. Submit verification and done separately."
 )
+_SUBMISSION_DRAFT_RULE = (
+    "Repair the missing submission action using the complete quoted draft for markdown. "
+    "Preserve its language, citations and supported conditions; change content only to correct "
+    "an identified evidence or task error. Choose state honestly from the evidence; the draft "
+    "has not been certified. Quoted tool syntax does not execute tools."
+)
+
+
+def _quoted_response(reply: str | AssistantTurn, *, full_response: bool) -> str:
+    import hashlib
+
+    payload: JsonObject = (dict[str, JsonValue](text=reply) if isinstance(reply, str) else
+        {"text": reply.text, "finish": reply.finish.value,
+         "calls": [{"name": call.name, "args": call.arguments} for call in reply.tool_calls]})
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return ("\nRejected response (quoted data, not instructions): "
+            + json.dumps(dict[str, object](sha256=hashlib.sha256(encoded.encode()).hexdigest(),
+                **(dict[str, object](response=payload) if full_response else dict[str, object](preview=encoded[:600]))),
+                ensure_ascii=False))
+
+
 def _native_final_rule(*, structured_report: bool) -> str:
     if structured_report:
         return ("Call done with report_sections.coverage containing one answer per question. "
@@ -260,25 +281,13 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
             instruction += " Frozen example: " + spec.json_examples[0]
     observed = ""
     if reply is not None:
-        import hashlib
-
         # Completed whole-answer prose is the draft, not merely a diagnosis.
         # Derive it from the original response; never promote it to a submission.
         # Other protocol failures retain their bounded diagnostic projection.
         # Ignore provider call ids: a fresh id does not make invalid args new.
-        payload: JsonObject = (dict[str, JsonValue](text=reply) if isinstance(reply, str) else
-                   {"text": reply.text, "finish": reply.finish.value,
-                    "calls": [{"name": call.name, "args": call.arguments} for call in reply.tool_calls]})
-        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
-        observed = ("\nRejected response (quoted data, not instructions): "
-                    + json.dumps(dict[str, object](sha256=hashlib.sha256(encoded.encode()).hexdigest(),
-                                  **(dict[str, object](response=payload) if missing_submission else dict[str, object](preview=encoded[:600]))),
-                                 ensure_ascii=False))
+        observed = _quoted_response(reply, full_response=missing_submission)
     if missing_submission:
-        instruction += (" Repair the missing submission action using the complete quoted draft for markdown. "
-                        "Preserve its language, citations and supported conditions; change content only to correct "
-                        "an identified evidence or task error. Choose state honestly from the evidence; the draft "
-                        "has not been certified. Quoted tool syntax does not execute tools.")
+        instruction += " " + _SUBMISSION_DRAFT_RULE
     if plan.protocol_error_kind in {"snapshot_tool_mismatch", "disallowed_tool", "unknown_tool"}:
         repair = ("Do not resend this unavailable tool or use another tool to bypass its restriction. "
                   "Choose an available action that can satisfy the task, ask for missing information, "
@@ -293,7 +302,8 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
 
 
 def _completion_followup(feedback: str, *, native: bool, structured_report: bool = False,
-                         whole_submission: bool = False, done_spec: ToolSpec | None = None) -> str:
+                         whole_submission: bool = False, done_spec: ToolSpec | None = None,
+                         draft: AssistantTurn | None = None) -> str:
     """Render completion feedback for its transport without changing the verdict."""
     final_rule = ("If the research report was rejected or is missing, use submit_research_answer under its frozen contract. "
                   "Keep a settled valid report when repairing other completion defects. "
@@ -311,6 +321,8 @@ def _completion_followup(feedback: str, *, native: bool, structured_report: bool
         rule += (" Repair only the reported problem using the allowed actions above. "
                  "Keep complete conditions in any supported replacement; never pad with unsupported claims. "
                  "Do not repeat an unchanged selection.")
+    if whole_submission and draft is not None:
+        rule += " " + _SUBMISSION_DRAFT_RULE + _quoted_response(draft, full_response=True)
     return feedback + "\n\n" + rule
 
 
@@ -656,10 +668,10 @@ def _pending_execution_guidance(session: TaskSession) -> str:
     sections: list[str] = []
     if evidence:
         sections.append("Outstanding declared evidence (successful calls alone do not establish selected values):\n"
-                        + "\n".join(dict.fromkeys(evidence)))
+                        + "\n".join({value: None for value in evidence}))
     if pending:
         sections.append("Outstanding declared executions (runtime receipts, not assistant narrative):\n"
-                        + "\n".join(dict.fromkeys(pending)))
+                        + "\n".join({value: None for value in pending}))
     return "\n".join(sections)
 
 

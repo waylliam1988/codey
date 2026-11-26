@@ -310,9 +310,9 @@ def test_durable_receipt_loss_fault(tmp_path, monkeypatch):
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.storage.managed_outputs import ManagedOutputStore
     from tests.support.receipt_fixtures import rebuild_settled_tool_result
-    from tests.test_settled_delivery_recovery import _accept_and_mark, _new_log
+    from tests.test_settled_delivery_recovery import _accept_and_mark, _new_runtime
 
-    _, mutations, durable = _new_log(tmp_path, "session", "run")
+    mutations, durable = _new_runtime(tmp_path, "session", "run")
     try:
         _accept_and_mark(mutations, "session", "run", str(tmp_path))
         managed = ManagedOutputStore(tmp_path / "state")
@@ -341,17 +341,17 @@ def test_durable_receipt_loss_fault(tmp_path, monkeypatch):
 
 @pytest.mark.usefixtures("public_source_dns")
 def test_post_run_audit_removal_keeps_original_kernel_result(tmp_path):
+    from codey.research.pipeline import ResearchPipeline
     from tests.manual.research_process_review import ablation
 
-    results = []
-    for arm in ("baseline", "no_proof_audit"):
-        with ablation(arm):
-            result = run_whole(tmp_path / arm)
-        calls = [json.loads(line) for line in (tmp_path / arm / "calls.jsonl").read_text().splitlines()]
-        results.append((result.summary, result.accepted_report.state, result.turns, result.stop_reason,
-                        sum("whole_request" in row for row in calls), sum("publication" in row for row in calls)))
-    assert results[0] == results[1]
-    assert results[0][2:] == (2, "done", 2, 1)
+    assert not hasattr(ResearchPipeline, "_review")
+    assert not hasattr(ResearchPipeline, "_record_final_findings")
+    with ablation("baseline"):
+        result = run_whole(tmp_path)
+    calls = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    assert result.accepted_report is not None
+    assert (result.turns, result.stop_reason, sum("whole_request" in row for row in calls),
+            sum("publication" in row for row in calls)) == (2, "done", 2, 1)
     record("post_run_proof_projection", {"turns": 2, "publications": 1}, {"turns": 2, "publications": 1},
            boundary="original_kernel_then_pipeline_projection",
            limitation="Identical scripted writer output; diagnostic trace loss is separate from answer quality.")

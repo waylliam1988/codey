@@ -142,7 +142,7 @@ def test_mismatch_feedback_shows_requested_and_current_difference(tmp_path: Path
 
 
 def test_recovered_edit_does_not_overwrite_concurrent_file_change(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from codey.toolchain import runtime
+    from codey.toolchain import edit_tools as runtime
 
     path = tmp_path / "checkout.py"
     path.write_text(SOURCE, encoding="utf-8")
